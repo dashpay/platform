@@ -1,10 +1,11 @@
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::consensus::basic::BasicError;
 use crate::{consensus::ConsensusError, identity::core_script::CoreScript};
 
 // TODO not primitive
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Output script {output_script:?} must be either p2pkh or p2sh")]
 pub struct InvalidIdentityCreditWithdrawalTransitionOutputScriptError {
     output_script: CoreScript,

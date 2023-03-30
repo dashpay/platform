@@ -5,7 +5,11 @@ use std::{
     sync::Arc,
 };
 
-use crate::consensus::basic::document::{DataContractNotPresentError, DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError, InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError, InvalidDocumentTypeError};
+use crate::consensus::basic::document::{
+    DataContractNotPresentError, DuplicateDocumentTransitionsWithIdsError,
+    DuplicateDocumentTransitionsWithIndicesError, InvalidDocumentTransitionActionError,
+    InvalidDocumentTransitionIdError, InvalidDocumentTypeError,
+};
 use crate::document::state_transition::documents_batch_transition::property_names;
 use crate::document::validation::basic::find_duplicates_by_id::find_duplicates_by_id;
 use crate::validation::SimpleValidationResult;

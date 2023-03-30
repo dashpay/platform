@@ -1,9 +1,10 @@
 use crate::consensus::basic::BasicError;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Asset Lock proof core chain height {proof_core_chain_locked_height:?} is higher than the current consensus core height {current_core_chain_locked_height:?}.")]
 pub struct InvalidAssetLockProofCoreChainHeightError {
     proof_core_chain_locked_height: u32,

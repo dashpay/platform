@@ -1,10 +1,11 @@
 use crate::consensus::basic::BasicError;
-use thiserror::Error;
 use crate::consensus::ConsensusError;
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 use crate::identity::KeyID;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Identity key {public_key_id} has invalid signature")]
 pub struct InvalidIdentityKeySignatureError {
     public_key_id: KeyID,

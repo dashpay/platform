@@ -1,35 +1,33 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::data_contract::document_type::Index;
-
-// TODO not primitive
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
-#[error("System property '{property_name}' is already indexed and can't be used in other indices for '{document_type}' document")]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[error("System property '{property_name}' is already indexed and can't be used in '{index_name}' index of '{document_type}' document")]
 pub struct SystemPropertyIndexAlreadyPresentError {
     document_type: String,
-    index_definition: Index,
+    index_name: String,
     property_name: String,
 }
 
 impl SystemPropertyIndexAlreadyPresentError {
-    pub fn new(document_type: String, index_definition: Index, property_name: String) -> Self {
+    pub fn new(document_type: String, index_name: String, property_name: String) -> Self {
         Self {
             document_type,
-            index_definition,
+            index_name,
             property_name,
         }
     }
 
-    pub fn document_type(&self) -> String {
-        self.document_type.clone()
+    pub fn document_type(&self) -> &str {
+        &self.document_type
     }
-    pub fn index_definition(&self) -> Index {
-        self.index_definition.clone()
+    pub fn index_name(&self) -> &str {
+        &self.index_name
     }
-    pub fn property_name(&self) -> String {
-        self.property_name.clone()
+    pub fn property_name(&self) -> &str {
+        &self.property_name
     }
 }
 

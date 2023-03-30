@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
@@ -43,7 +44,9 @@ use crate::consensus::ConsensusError;
 
 use platform_value::Error as ValueError;
 
-#[derive(Error, Debug)]
+// TODO: Remove extra fields form serialization
+
+#[derive(Error, Debug, Serialize, Deserialize)]
 pub enum BasicError {
     #[error(transparent)]
     ProtocolVersionParsingError(ProtocolVersionParsingError),
@@ -52,6 +55,7 @@ pub enum BasicError {
     SerializedObjectParsingError(SerializedObjectParsingError),
 
     #[error(transparent)]
+    #[serde(skip)] // TODO: Figure this out
     JsonSchemaError(JsonSchemaError),
 
     #[error(transparent)]
@@ -237,6 +241,7 @@ pub enum BasicError {
     ),
 
     #[error(transparent)]
+    #[serde(skip)] // TODO: Figure this out
     ValueError(ValueError),
 }
 

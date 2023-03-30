@@ -1,9 +1,10 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::identity::KeyID;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Duplicated public keys ${duplicated_ids:?} found")]
 pub struct DuplicatedIdentityPublicKeyBasicError {
     duplicated_ids: Vec<KeyID>,

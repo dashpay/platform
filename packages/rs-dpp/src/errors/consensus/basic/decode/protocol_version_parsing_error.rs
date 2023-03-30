@@ -1,19 +1,23 @@
 use crate::consensus::basic::BasicError;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
-use crate::ProtocolError;
 
 // TODO not primitive
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Serialize, Deserialize)]
 #[error("Can't read protocol version from serialized object: {parsing_error}")]
 pub struct ProtocolVersionParsingError {
-    pub parsing_error: ProtocolError,
+    parsing_error: String,
 }
 
 impl ProtocolVersionParsingError {
-    pub fn new(parsing_error: ProtocolError) -> Self {
+    pub fn new(parsing_error: String) -> Self {
         Self { parsing_error }
+    }
+
+    pub fn parsing_error(&self) -> &str {
+        &self.parsing_error
     }
 }
 

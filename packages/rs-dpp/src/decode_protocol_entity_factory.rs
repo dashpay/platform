@@ -4,11 +4,11 @@ use std::convert::TryInto;
 
 use platform_value::Value;
 
+use crate::consensus::basic::decode::SerializedObjectParsingError;
 use crate::consensus::basic::BasicError;
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::{errors::consensus::ConsensusError, errors::ProtocolError};
-use crate::consensus::basic::decode::SerializedObjectParsingError;
 
 #[derive(Default, Clone, Copy)]
 pub struct DecodeProtocolEntity {}
@@ -23,7 +23,7 @@ impl DecodeProtocolEntity {
 
         let cbor_value: CborValue = ciborium::de::from_reader(document_bytes).map_err(|e| {
             ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
-                SerializedObjectParsingError::new(anyhow!("Decode protocol entity: {:#?}", e))
+                SerializedObjectParsingError::new(format!("Decode protocol entity: {:#?}", e)),
             ))
         })?;
 

@@ -1,8 +1,9 @@
 use crate::consensus::basic::BasicError;
-use thiserror::Error;
 use crate::consensus::ConsensusError;
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error(
     "Unique compound index properties {:?} are partially set for {document_type}",
     index_properties

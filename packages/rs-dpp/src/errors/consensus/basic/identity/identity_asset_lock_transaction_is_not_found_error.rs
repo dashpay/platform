@@ -2,11 +2,12 @@ use std::fmt::{Display, Formatter};
 
 use crate::consensus::basic::BasicError;
 use dashcore::hashes::hex::ToHex;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IdentityAssetLockTransactionIsNotFoundError {
     transaction_id: [u8; 32],
 }

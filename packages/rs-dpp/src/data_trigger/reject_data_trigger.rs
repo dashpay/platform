@@ -1,9 +1,9 @@
+use crate::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
+use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 use crate::{
     document::document_transition::DocumentTransition, get_from_transition, prelude::Identifier,
     state_repository::StateRepositoryLike,
 };
-use crate::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
-use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
@@ -18,14 +18,10 @@ where
     let mut result = DataTriggerExecutionResult::default();
 
     result.add_error(
-        DataTriggerError::DataTriggerConditionError(
-            DataTriggerConditionError::new(
-                context.data_contract.id,
+        DataTriggerConditionError::new(
+            context.data_contract.id,
             get_from_transition!(document_transition, id).to_owned(),
-                        String::from("Action is not allowed"),
-                None,
-                        None,
-            )
+            String::from("Action is not allowed"),
         )
         .into(),
     );

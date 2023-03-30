@@ -1,10 +1,11 @@
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::prelude::Identifier;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Insufficient identity ${identity_id} balance ${balance}")]
 pub struct IdentityInsufficientBalanceError {
     pub identity_id: Identifier,

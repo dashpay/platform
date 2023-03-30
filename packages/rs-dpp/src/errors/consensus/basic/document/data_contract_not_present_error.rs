@@ -1,9 +1,10 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use platform_value::Identifier;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Data Contract {data_contract_id} is not present")]
 pub struct DataContractNotPresentError {
     data_contract_id: Identifier,

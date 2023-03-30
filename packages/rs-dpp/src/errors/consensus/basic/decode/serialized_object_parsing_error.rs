@@ -1,22 +1,20 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-// TODO not primitive
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Serialize, Deserialize)]
 #[error("Parsing of serialized object failed due to: {parsing_error}")]
 pub struct SerializedObjectParsingError {
-    parsing_error: anyhow::Error
+    parsing_error: String,
 }
 
 impl SerializedObjectParsingError {
-    pub fn new(parsing_error: anyhow::Error) -> Self {
-        Self {
-            parsing_error
-        }
+    pub fn new(parsing_error: String) -> Self {
+        Self { parsing_error }
     }
 
-    pub fn parsing_error(&self) -> &anyhow::Error {
+    pub fn parsing_error(&self) -> &str {
         &self.parsing_error
     }
 }

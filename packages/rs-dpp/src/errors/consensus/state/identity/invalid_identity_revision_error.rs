@@ -1,19 +1,19 @@
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::prelude::{Identifier, Revision};
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
-#[error( "Identity {identity_id} has invalid revision. The current revision is {current_revision}")]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[error("Identity {identity_id} has invalid revision. The current revision is {current_revision}")]
 pub struct InvalidIdentityRevisionError {
     identity_id: Identifier,
     current_revision: Revision,
 }
 
 impl InvalidIdentityRevisionError {
-    pub fn new( identity_id: Identifier,
-                current_revision: Revision,) -> Self {
+    pub fn new(identity_id: Identifier, current_revision: Revision) -> Self {
         Self {
             identity_id,
             current_revision,

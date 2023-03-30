@@ -1,8 +1,9 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Asset Lock Transaction Output with index ${output_index} not found")]
 pub struct IdentityAssetLockTransactionOutputNotFoundError {
     output_index: usize,

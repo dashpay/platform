@@ -1,7 +1,11 @@
 use std::convert::TryInto;
 
-use crate::consensus::basic::data_contract::{DataContractImmutablePropertiesUpdateError, IncompatibleDataContractSchemaError, InvalidDataContractVersionError};
+use crate::consensus::basic::data_contract::{
+    DataContractImmutablePropertiesUpdateError, IncompatibleDataContractSchemaError,
+    InvalidDataContractVersionError,
+};
 use crate::consensus::basic::decode::ProtocolVersionParsingError;
+use crate::consensus::basic::document::DataContractNotPresentError;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::validation::AsyncDataValidatorWithContext;
 use crate::{
@@ -24,7 +28,6 @@ use platform_value::patch::PatchOperation;
 use platform_value::Value;
 use serde_json::{json, Value as JsonValue};
 use std::sync::Arc;
-use crate::consensus::basic::document::DataContractNotPresentError;
 
 use super::schema_compatibility_validator::validate_schema_compatibility;
 use super::schema_compatibility_validator::DiffVAlidatorError;
@@ -94,7 +97,7 @@ where
                 Ok(v) => v,
                 Err(parsing_error) => {
                     return Ok(SimpleValidationResult::new_with_errors(vec![
-                        ProtocolVersionParsingError::new(parsing_error.into()).into(),
+                        ProtocolVersionParsingError::new(parsing_error.to_string()).into(),
                     ]))
                 }
             };
@@ -207,8 +210,6 @@ where
                             existing_data_contract.id,
                             operation_name.to_owned(),
                             property_name.to_owned(),
-                            document_schema.clone(),
-                            new_document_schema.clone(),
                         ),
                     ));
                 }

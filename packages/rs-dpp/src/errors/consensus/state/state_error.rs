@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
@@ -22,7 +23,7 @@ use crate::consensus::state::identity::{
 };
 use crate::consensus::ConsensusError;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Serialize, Deserialize)]
 pub enum StateError {
     #[error(transparent)]
     IdentityAlreadyExistsError(IdentityAlreadyExistsError),
@@ -30,7 +31,6 @@ pub enum StateError {
     #[error(transparent)]
     IdentityInsufficientBalanceError(IdentityInsufficientBalanceError),
 
-    // Document Errors
     #[error(transparent)]
     DocumentAlreadyPresentError(DocumentAlreadyPresentError),
 

@@ -1,9 +1,10 @@
 use crate::consensus::basic::BasicError;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Duplicate index name '{duplicate_index_name}' defined in '{document_type}' document")]
 pub struct DuplicateIndexNameError {
     document_type: String,

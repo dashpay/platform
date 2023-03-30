@@ -111,7 +111,6 @@ impl<T: BlsModule> TPublicKeysValidator for PublicKeysValidator<T> {
                 result.add_error(InvalidIdentityPublicKeyDataError::new(
                     public_key.id,
                     error.to_string(),
-                    Some(error),
                 ));
             }
         }

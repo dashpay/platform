@@ -1,8 +1,9 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Asset lock output ${output_index} is not a valid standard OP_RETURN output")]
 pub struct InvalidIdentityAssetLockTransactionOutputError {
     output_index: usize,

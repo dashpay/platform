@@ -1,9 +1,10 @@
 use crate::consensus::basic::BasicError;
-use crate::prelude::Identifier;
-use thiserror::Error;
 use crate::consensus::ConsensusError;
+use crate::prelude::Identifier;
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error(
     "Invalid document transition id {}, expected {}",
     invalid_id,

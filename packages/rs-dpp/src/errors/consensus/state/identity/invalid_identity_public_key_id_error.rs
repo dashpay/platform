@@ -1,19 +1,18 @@
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
-use thiserror::Error;
 use crate::identity::KeyID;
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Identity Public Key with Id {id} does not exist")]
 pub struct InvalidIdentityPublicKeyIdError {
-    id: KeyID
+    id: KeyID,
 }
 
 impl InvalidIdentityPublicKeyIdError {
     pub fn new(id: KeyID) -> Self {
-        Self {
-            id
-        }
+        Self { id }
     }
 
     pub fn id(&self) -> KeyID {

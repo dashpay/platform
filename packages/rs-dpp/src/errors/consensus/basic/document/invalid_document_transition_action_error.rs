@@ -1,9 +1,10 @@
 use crate::consensus::basic::BasicError;
-use thiserror::Error;
 use crate::consensus::ConsensusError;
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 // TODO wrong param - in js action is number
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Document transition action {} is not supported", action)]
 pub struct InvalidDocumentTransitionActionError {
     action: String,
@@ -14,8 +15,8 @@ impl InvalidDocumentTransitionActionError {
         Self { action }
     }
 
-    pub fn action(&self) -> String {
-        self.action.clone()
+    pub fn action(&self) -> &str {
+        &self.action
     }
 }
 

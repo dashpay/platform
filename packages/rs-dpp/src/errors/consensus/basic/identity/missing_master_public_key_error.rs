@@ -1,8 +1,9 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[error(
     "Identity doesn't contain any master key, thus can not be updated. Please add a master key"
 )]

@@ -44,10 +44,11 @@ use dpp::consensus::basic::BasicError::{
 };
 use dpp::consensus::fee::fee_error::FeeError;
 use dpp::consensus::signature::signature_error::SignatureError;
+use dpp::consensus::state::data_contract::data_trigger::data_trigger_error::DataTriggerError;
+use dpp::consensus::state::data_contract::data_trigger::data_trigger_error::DataTriggerError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::errors::consensus::codes::ErrorWithCode;
 use wasm_bindgen::JsValue;
-use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 
 use crate::errors::consensus::basic::data_contract::{
     DataContractHaveNewUniqueIndexErrorWasm, DataContractImmutablePropertiesUpdateErrorWasm,
@@ -128,11 +129,15 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
 
     match state_error.deref() {
         StateError::DuplicatedIdentityPublicKeyIdStateError(e) => {
-            DuplicatedIdentityPublicKeyIdStateErrorWasm::new(e.duplicated_ids().clone(), code).into()
+            DuplicatedIdentityPublicKeyIdStateErrorWasm::new(e.duplicated_ids().clone(), code)
+                .into()
         }
         StateError::DuplicatedIdentityPublicKeyStateError(e) => {
-            DuplicatedIdentityPublicKeyStateErrorWasm::new(e.duplicated_public_key_ids().clone(), code)
-                .into()
+            DuplicatedIdentityPublicKeyStateErrorWasm::new(
+                e.duplicated_public_key_ids().clone(),
+                code,
+            )
+            .into()
         }
         StateError::DocumentAlreadyPresentError(e) => {
             DocumentAlreadyPresentErrorWasm::new(*e.document_id(), code).into()
@@ -153,27 +158,79 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::DocumentTimestampsMismatchError(e) => {
             DocumentTimestampsMismatchErrorWasm::new(*e.document_id(), code).into()
         }
-        StateError::DocumentTimestampWindowViolationError(e) => DocumentTimestampWindowViolationErrorWasm::new(
-            e.timestamp_name().clone(),
+        StateError::DocumentTimestampWindowViolationError(e) => {
+            DocumentTimestampWindowViolationErrorWasm::new(
+                e.timestamp_name().clone(),
+                *e.document_id(),
+                *e.timestamp(),
+                *e.time_window_start(),
+                *e.time_window_end(),
+                code,
+            )
+            .into()
+        }
+        StateError::DuplicateUniqueIndexError(e) => DuplicateUniqueIndexErrorWasm::new(
             *e.document_id(),
-            *e.timestamp(),
-            *e.time_window_start(),
-            *e.time_window_end(),
+            e.duplicating_properties().clone(),
             code,
         )
         .into(),
-        StateError::DuplicateUniqueIndexError(e) => DuplicateUniqueIndexErrorWasm::new(*e.document_id(), e.duplicating_properties().clone(), code)
-            .into(),
-        StateError::InvalidDocumentRevisionError(e) => InvalidDocumentRevisionErrorWasm::new(*e.document_id(), *e.current_revision(), code).into(),
-        StateError::InvalidIdentityRevisionError(e) => InvalidIdentityRevisionErrorWasm::new(*e.identity_id(), *e.current_revision(), code).into(),
-        StateError::IdentityPublicKeyDisabledAtWindowViolationError(e) => IdentityPublicKeyDisabledAtWindowViolationErrorWasm::new(
-            e.disabled_at(),
-            e.time_window_start(),
-            e.time_window_end(),
-            code,
-        )
-        .into(),
+        StateError::InvalidDocumentRevisionError(e) => {
+            InvalidDocumentRevisionErrorWasm::new(*e.document_id(), *e.current_revision(), code)
+                .into()
+        }
+        StateError::InvalidIdentityRevisionError(e) => {
+            InvalidIdentityRevisionErrorWasm::new(*e.identity_id(), *e.current_revision(), code)
+                .into()
+        }
+        StateError::IdentityPublicKeyDisabledAtWindowViolationError(e) => {
+            IdentityPublicKeyDisabledAtWindowViolationErrorWasm::new(
+                e.disabled_at(),
+                e.time_window_start(),
+                e.time_window_end(),
+                code,
+            )
+            .into()
+        }
         StateError::IdentityPublicKeyIsReadOnlyError(e) => {
+            DuplicatedIdentityPublicKeyIdStateErrorWasm::new(e.duplicated_ids().clone(), code)
+                .into()
+            DuplicatedIdentityPublicKeyStateErrorWasm::new(
+                e.duplicated_public_key_ids().clone(),
+                code,
+            )
+            .into()
+        StateError::DocumentTimestampWindowViolationError(e) => {
+            DocumentTimestampWindowViolationErrorWasm::new(
+                e.timestamp_name().clone(),
+                *e.document_id(),
+                *e.timestamp(),
+                *e.time_window_start(),
+                *e.time_window_end(),
+                code,
+            )
+            .into()
+        }
+        StateError::DuplicateUniqueIndexError(e) => DuplicateUniqueIndexErrorWasm::new(
+            *e.document_id(),
+            e.duplicating_properties().clone(),
+        StateError::InvalidDocumentRevisionError(e) => {
+            InvalidDocumentRevisionErrorWasm::new(*e.document_id(), *e.current_revision(), code)
+                .into()
+        }
+        StateError::InvalidIdentityRevisionError(e) => {
+            InvalidIdentityRevisionErrorWasm::new(*e.identity_id(), *e.current_revision(), code)
+                .into()
+        }
+        StateError::IdentityPublicKeyDisabledAtWindowViolationError(e) => {
+            IdentityPublicKeyDisabledAtWindowViolationErrorWasm::new(
+                e.disabled_at(),
+                e.time_window_start(),
+                e.time_window_end(),
+                code,
+            )
+            .into()
+        }
             IdentityPublicKeyIsReadOnlyErrorWasm::new(e.public_key_index(), code).into()
         }
         StateError::InvalidIdentityPublicKeyIdError(e) => {
@@ -252,7 +309,7 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
                 .into()
         }
         BasicError::InvalidJsonSchemaRefError(err) => {
-            InvalidJsonSchemaRefErrorWasm::new(err.ref_error(), code).into()
+            InvalidJsonSchemaRefErrorWasm::new(err.error_message(), code).into()
         }
         BasicError::UniqueIndicesLimitReachedError(err) => {
             UniqueIndicesLimitReachedErrorWasm::new(err.document_type(), err.index_limit(), code)
@@ -261,7 +318,7 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         BasicError::SystemPropertyIndexAlreadyPresentError(err) => {
             SystemPropertyIndexAlreadyPresentErrorWasm::new(
                 err.document_type(),
-                err.index_definition(),
+                err.index_name(),
                 err.property_name(),
                 code,
             )
@@ -276,7 +333,7 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         .into(),
         BasicError::InvalidIndexPropertyTypeError(err) => InvalidIndexPropertyTypeErrorWasm::new(
             err.document_type(),
-            err.index_definition(),
+            err.index_name(),
             err.property_name(),
             err.property_type(),
             code,
@@ -294,11 +351,10 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
             .into()
         }
         BasicError::InvalidCompoundIndexError(err) => {
-            InvalidCompoundIndexErrorWasm::new(err.document_type(), err.index_definition(), code)
-                .into()
+            InvalidCompoundIndexErrorWasm::new(err.document_type(), err.index_name(), code).into()
         }
         BasicError::DuplicateIndexError(err) => {
-            DuplicateIndexErrorWasm::new(err.document_type(), err.index_definition(), code).into()
+            DuplicateIndexErrorWasm::new(err.document_type(), err.index_name(), code).into()
         }
         BasicError::JsonSchemaCompilationError(error) => {
             JsonSchemaCompilationErrorWasm::new(error.clone(), code).into()
@@ -335,7 +391,7 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
             MissingDataContractIdErrorWasm::new(code).into()
         }
         BasicError::InvalidIdentifierError(err) => {
-            InvalidIdentifierErrorWasm::new(err.identifier_name(), err.error(), code).into()
+            InvalidIdentifierErrorWasm::new(err.identifier_name(), err.error_message(), code).into()
         }
         BasicError::DataContractUniqueIndicesChangedError(err) => {
             DataContractUniqueIndicesChangedErrorWasm::new(

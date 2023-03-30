@@ -1,8 +1,9 @@
 use crate::consensus::basic::BasicError;
-use thiserror::Error;
 use crate::consensus::ConsensusError;
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Document transitions with duplicate IDs {:?}", references)]
 pub struct DuplicateDocumentTransitionsWithIdsError {
     references: Vec<(String, [u8; 32])>,
@@ -13,8 +14,8 @@ impl DuplicateDocumentTransitionsWithIdsError {
         Self { references }
     }
 
-    pub fn references(&self) -> Vec<(String, [u8; 32])> {
-        self.references.clone()
+    pub fn references(&self) -> &Vec<(String, [u8; 32])> {
+        &self.references
     }
 }
 

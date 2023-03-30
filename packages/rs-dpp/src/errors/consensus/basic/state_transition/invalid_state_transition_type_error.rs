@@ -1,7 +1,8 @@
-use thiserror::Error;
 use crate::consensus::basic::BasicError;
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Invalid State Transition type {transition_type}")]
 pub struct InvalidStateTransitionTypeError {
     transition_type: u8,

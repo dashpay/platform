@@ -1,9 +1,10 @@
 use crate::consensus::basic::BasicError;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Core fee per byte {core_fee_per_byte:?} must be part of fibonacci sequence")]
 pub struct InvalidIdentityCreditWithdrawalTransitionCoreFeeError {
     core_fee_per_byte: u32,

@@ -47,13 +47,12 @@ pub struct SplitProtocolVersionOutcome<'a> {
 pub fn split_protocol_version(
     message_bytes: &[u8],
 ) -> Result<SplitProtocolVersionOutcome, ProtocolError> {
-    let (protocol_version, protocol_version_size) = u32::decode_var(message_bytes).ok_or(
-        ConsensusError::BasicError(BasicError::ProtocolVersionParsingError(
-            ProtocolVersionParsingError::new(ProtocolError::UnknownProtocolVersionError(
+    let (protocol_version, protocol_version_size) =
+        u32::decode_var(message_bytes).ok_or(ConsensusError::BasicError(
+            BasicError::ProtocolVersionParsingError(ProtocolVersionParsingError::new(
                 "protocol version could not be decoded as a varint".to_string(),
             )),
-        )),
-    )?;
+        ))?;
     let (_, main_message_bytes) = message_bytes.split_at(protocol_version_size);
 
     if !check_protocol_version(protocol_version) {

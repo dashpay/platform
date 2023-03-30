@@ -1,9 +1,10 @@
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
-use thiserror::Error;
 use platform_value::Identifier;
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Document {document_id} has duplicate unique properties {duplicating_properties:?} with other documents")]
 pub struct DuplicateUniqueIndexError {
     document_id: Identifier,
@@ -11,7 +12,7 @@ pub struct DuplicateUniqueIndexError {
 }
 
 impl DuplicateUniqueIndexError {
-    pub fn new(document_id: Identifier, duplicating_properties: Vec<String>,) -> Self {
+    pub fn new(document_id: Identifier, duplicating_properties: Vec<String>) -> Self {
         Self {
             document_id,
             duplicating_properties,

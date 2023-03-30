@@ -237,7 +237,7 @@ fn validate_index_definitions(
                 result.add_error(ConsensusError::BasicError(
                     BasicError::InvalidCompoundIndexError(InvalidCompoundIndexError::new(
                         document_type.to_owned(),
-                        index_definition.clone(),
+                        index_definition.name.to_owned(),
                     )),
                 ));
             }
@@ -247,7 +247,10 @@ fn validate_index_definitions(
                 .expect("fingerprint creation shouldn't fail");
             if indices_fingerprints.contains(&indices_fingerprint) {
                 result.add_error(ConsensusError::BasicError(BasicError::DuplicateIndexError(
-                    DuplicateIndexError::new(document_type.to_owned(), index_definition.clone()),
+                    DuplicateIndexError::new(
+                        document_type.to_owned(),
+                        index_definition.name.to_owned(),
+                    ),
                 )));
             }
             indices_fingerprints.push(indices_fingerprint)
@@ -295,9 +298,9 @@ fn validate_property_definition(
         result.add_error(ConsensusError::BasicError(
             BasicError::InvalidIndexPropertyTypeError(InvalidIndexPropertyTypeError::new(
                 document_type.to_owned(),
-                index_definition.clone(),
+                index_definition.name.to_owned(),
                 property_name.to_owned(),
-                invalid_property_type.clone(),
+                invalid_property_type.to_owned(),
             )),
         ));
     }
@@ -343,7 +346,7 @@ fn validate_property_definition(
                 BasicError::InvalidIndexedPropertyConstraintError(
                     InvalidIndexedPropertyConstraintError::new(
                         document_type.to_owned(),
-                        index_definition.clone(),
+                        index_definition.name.to_owned(),
                         property_name.to_owned(),
                         String::from("maxItems"),
                         format!("should be less or equal {}", max_limit),
@@ -361,7 +364,7 @@ fn validate_property_definition(
                 BasicError::InvalidIndexedPropertyConstraintError(
                     InvalidIndexedPropertyConstraintError::new(
                         document_type.to_owned(),
-                        index_definition.clone(),
+                        index_definition.name.to_owned(),
                         property_name.to_owned(),
                         String::from("maxLength"),
                         format!(
@@ -389,7 +392,7 @@ fn validate_not_defined_properties(
             result.add_error(ConsensusError::BasicError(
                 BasicError::UndefinedIndexPropertyError(UndefinedIndexPropertyError::new(
                     document_type.to_owned(),
-                    index_definition.clone(),
+                    index_definition.name.to_owned(),
                     property_name.to_owned().to_owned(),
                 )),
             ))
@@ -440,7 +443,7 @@ fn validate_no_system_indices(
                 BasicError::SystemPropertyIndexAlreadyPresentError(
                     SystemPropertyIndexAlreadyPresentError::new(
                         document_type.to_owned(),
-                        index_definition.clone(),
+                        index_definition.name.to_owned(),
                         property.name.to_owned(),
                     ),
                 ),

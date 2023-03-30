@@ -1,8 +1,9 @@
 use crate::consensus::basic::BasicError;
-use thiserror::Error;
 use crate::consensus::ConsensusError;
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Document with type {document_type} has a new unique index named '{index_name}'. Adding unique indices during Data Contract update is not allowed.")]
 pub struct DataContractHaveNewUniqueIndexError {
     document_type: String,
@@ -17,12 +18,12 @@ impl DataContractHaveNewUniqueIndexError {
         }
     }
 
-    pub fn document_type(&self) -> String {
-        self.document_type.clone()
+    pub fn document_type(&self) -> &str {
+        &self.document_type
     }
 
-    pub fn index_name(&self) -> String {
-        self.index_name.clone()
+    pub fn index_name(&self) -> &str {
+        &self.index_name
     }
 }
 

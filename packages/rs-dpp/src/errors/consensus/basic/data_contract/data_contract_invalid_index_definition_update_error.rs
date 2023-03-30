@@ -1,8 +1,9 @@
 use crate::consensus::basic::BasicError;
-use thiserror::Error;
 use crate::consensus::ConsensusError;
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Document with type {document_type} has badly constructed index '{index_name}'. Existing properties in the indices should be defined in the beginning of it.")]
 pub struct DataContractInvalidIndexDefinitionUpdateError {
     document_type: String,
@@ -17,12 +18,12 @@ impl DataContractInvalidIndexDefinitionUpdateError {
         }
     }
 
-    pub fn document_type(&self) -> String {
-        self.document_type.clone()
+    pub fn document_type(&self) -> &str {
+        &self.document_type
     }
 
-    pub fn index_name(&self) -> String {
-        self.index_name.clone()
+    pub fn index_name(&self) -> &str {
+        &self.index_name
     }
 }
 

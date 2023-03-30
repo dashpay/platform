@@ -1,9 +1,10 @@
 use crate::consensus::basic::BasicError;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Core chain locked height {proof_core_chain_locked_height:?} must be higher than block {transaction_height:?} with Asset Lock transaction")]
 pub struct InvalidAssetLockProofTransactionHeightError {
     proof_core_chain_locked_height: u32,

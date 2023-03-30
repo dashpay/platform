@@ -1,13 +1,13 @@
 use anyhow::{anyhow, bail};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 
+use crate::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
+use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 use crate::data_trigger::dashpay_data_triggers::property_names::CORE_HEIGHT_CREATED_AT;
 use crate::{
     document::document_transition::DocumentTransition, get_from_transition, prelude::Identifier,
     state_repository::StateRepositoryLike, ProtocolError,
 };
-use crate::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
-use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
@@ -51,18 +51,20 @@ where
 
     if !is_dry_run {
         if owner_id == &to_user_id {
-            let err = DataTriggerError::DataTriggerConditionError(
-                DataTriggerConditionError::new(
-                     context.data_contract.id,
-                     document_create_transition.base.id,
-                    format!("Identity {to_user_id} must not be equal to owner id"),
-                    Some(DocumentTransition::Create(
-                        document_create_transition.clone(),
-                )),
-        Some(*context.owner_id),
-            )
+            let mut error = DataTriggerConditionError::new(
+                context.data_contract.id,
+                document_create_transition.base.id,
+                format!("Identity {to_user_id} must not be equal to owner id"),
             );
-            result.add_error(err.into());
+
+            error.set_document_transition(DocumentTransition::Create(
+                document_create_transition.clone(),
+            ));
+
+            error.set_owner_id(*context.owner_id);
+
+            result.add_error(error.into());
+
             return Ok(result);
         }
 
@@ -80,21 +82,22 @@ where
             if core_height_created_at < height_window_start
                 || core_height_created_at > height_window_end
             {
-                let err = DataTriggerError::DataTriggerConditionError(
-                    DataTriggerConditionError::new(
-                        context.data_contract.id,
-                        document_create_transition.base.id,
-                        format!(
-                            "Core height {} is out of block height window from {} to {}",
-                            core_height_created_at, height_window_start, height_window_end
-                        ),
-                         Some(DocumentTransition::Create(
-                            document_create_transition.clone(),
-                    )),
-        Some(*context.owner_id),
-                    )
+                let mut error = DataTriggerConditionError::new(
+                    context.data_contract.id,
+                    document_create_transition.base.id,
+                    format!(
+                        "Core height {} is out of block height window from {} to {}",
+                        core_height_created_at, height_window_start, height_window_end
+                    ),
                 );
-                result.add_error(err.into());
+
+                error.set_document_transition(DocumentTransition::Create(
+                    document_create_transition.clone(),
+                ));
+
+                error.set_owner_id(*context.owner_id);
+
+                result.add_error(error.into());
                 return Ok(result);
             }
         }
@@ -110,18 +113,20 @@ where
         .await?;
 
     if !is_dry_run && identity.is_none() {
-        let err = DataTriggerError::DataTriggerConditionError(
-            DataTriggerConditionError::new(
-                context.data_contract.id,
-                document_create_transition.base.id,
-                format!("Identity {to_user_id} doesn't exist"),
-                Some(DocumentTransition::Create(
-                    document_create_transition.clone(),
-            )),
-Some(*context.owner_id),
-            )
+        let mut error = DataTriggerConditionError::new(
+            context.data_contract.id,
+            document_create_transition.base.id,
+            format!("Identity {to_user_id} doesn't exist"),
         );
-        result.add_error(err.into());
+
+        error.set_document_transition(DocumentTransition::Create(
+            document_create_transition.clone(),
+        ));
+
+        error.set_owner_id(*context.owner_id);
+
+        result.add_error(error.into());
+
         return Ok(result);
     }
 

@@ -1,8 +1,9 @@
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Identity ${identity_id:?} already exists")]
 pub struct IdentityAlreadyExistsError {
     identity_id: [u8; 32], // TODO Identifier?

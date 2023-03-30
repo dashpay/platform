@@ -6,6 +6,7 @@ use std::{
 
 use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
 
+use crate::consensus::basic::decode::SerializedObjectParsingError;
 use crate::data_contract::errors::DataContractNotPresentError;
 use crate::data_contract::state_transition::errors::MissingDataContractIdError;
 use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
@@ -32,7 +33,6 @@ use crate::{
     BlsModule, ProtocolError,
 };
 use platform_value::{Value, ValueMapHelper};
-use crate::consensus::basic::decode::SerializedObjectParsingError;
 
 use super::{
     state_transition_execution_context::StateTransitionExecutionContext,
@@ -117,9 +117,11 @@ where
                 Value::U32(protocol_version),
             ),
             _ => {
-                let consensus_error = ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
-                    SerializedObjectParsingError::new(anyhow!("the '{:?}' is not a map", raw_state_transition))
-                ));
+                let consensus_error = ConsensusError::BasicError(
+                    BasicError::SerializedObjectParsingError(SerializedObjectParsingError::new(
+                        format!("the '{:?}' is not a map", raw_state_transition),
+                    )),
+                );
 
                 return Err(ProtocolError::StateTransitionError(
                     StateTransitionError::InvalidStateTransitionError {

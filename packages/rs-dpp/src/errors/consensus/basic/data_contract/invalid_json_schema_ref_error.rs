@@ -1,21 +1,24 @@
 use crate::consensus::basic::BasicError;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
-#[error("Invalid JSON Schema $ref: {ref_error}")]
+// TODO rename message and error
+
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[error("Invalid JSON Schema $ref: {error_message}")]
 pub struct InvalidJsonSchemaRefError {
-    ref_error: String,
+    error_message: String,
 }
 
 impl InvalidJsonSchemaRefError {
-    pub fn new(ref_error: String) -> Self {
-        Self { ref_error }
+    pub fn new(error_message: String) -> Self {
+        Self { error_message }
     }
 
-    pub fn ref_error(&self) -> String {
-        self.ref_error.clone()
+    pub fn error_message(&self) -> String {
+        self.error_message.clone()
     }
 }
 

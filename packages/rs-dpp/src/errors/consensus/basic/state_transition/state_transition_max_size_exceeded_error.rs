@@ -1,7 +1,10 @@
 use crate::consensus::basic::BasicError;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+// TODO: do not use usize
+
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("State transition size {actual_size_kbytes} KB is more than maximum {max_size_kbytes} KB")]
 pub struct StateTransitionMaxSizeExceededError {
     actual_size_kbytes: usize,

@@ -1,10 +1,11 @@
 use crate::consensus::basic::BasicError;
 use platform_value::Value;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 
-#[derive(Error, Debug, Clone)]
+#[derive(Error, Debug, Clone, Serialize, Deserialize)]
 #[error("only $defs, version and documents fields are allowed to be updated. Forbidden operation '{operation}' on '{field_path}' old value is '{old_value}', new value is '{new_value}'")]
 pub struct DataContractImmutablePropertiesUpdateError {
     operation: String,
@@ -23,20 +24,20 @@ impl DataContractImmutablePropertiesUpdateError {
         }
     }
 
-    pub fn operation(&self) -> String {
-        self.operation.clone()
+    pub fn operation(&self) -> &str {
+        &self.operation
     }
 
-    pub fn field_path(&self) -> String {
-        self.field_path.clone()
+    pub fn field_path(&self) -> &str {
+        &self.field_path
     }
 
-    pub fn old_value(&self) -> Value {
-        self.old_value.clone()
+    pub fn old_value(&self) -> &Value {
+        &self.old_value
     }
 
-    pub fn new_value(&self) -> Value {
-        self.new_value.clone()
+    pub fn new_value(&self) -> &Value {
+        &self.new_value
     }
 }
 

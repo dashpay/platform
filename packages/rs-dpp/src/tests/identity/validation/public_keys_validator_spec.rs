@@ -22,7 +22,7 @@ fn setup_test() -> (Vec<Value>, PublicKeysValidator<NativeBlsModule>) {
 pub mod id {
     use jsonschema::error::ValidationErrorKind;
 
-    use crate::{assert_basic_consensus_errors};
+    use crate::assert_basic_consensus_errors;
     use crate::consensus::basic::BasicError;
     use crate::errors::consensus::ConsensusError;
     use crate::identity::validation::TPublicKeysValidator;
@@ -99,7 +99,7 @@ pub mod id {
 }
 
 pub mod key_type {
-    use crate::{assert_basic_consensus_errors};
+    use crate::assert_basic_consensus_errors;
     use crate::consensus::basic::BasicError;
     use crate::errors::consensus::ConsensusError;
     use crate::identity::validation::TPublicKeysValidator;
@@ -138,7 +138,7 @@ pub mod key_type {
 pub mod data {
     use jsonschema::error::ValidationErrorKind;
 
-    use crate::{assert_basic_consensus_errors};
+    use crate::assert_basic_consensus_errors;
     use crate::consensus::basic::BasicError;
     use crate::errors::consensus::ConsensusError;
     use crate::identity::validation::TPublicKeysValidator;
@@ -189,7 +189,7 @@ pub mod data {
     }
 
     pub mod ecdsa_secp256k1 {
-        use crate::{assert_basic_consensus_errors};
+        use crate::assert_basic_consensus_errors;
         use crate::consensus::basic::BasicError;
         use crate::errors::consensus::ConsensusError;
         use crate::identity::validation::TPublicKeysValidator;
@@ -224,7 +224,7 @@ pub mod data {
     }
 
     pub mod bls12_381 {
-        use crate::{assert_basic_consensus_errors};
+        use crate::assert_basic_consensus_errors;
         use crate::consensus::basic::BasicError;
         use crate::errors::consensus::ConsensusError;
         use crate::identity::validation::TPublicKeysValidator;
@@ -261,8 +261,8 @@ pub mod data {
     }
 
     pub mod bip13_hash_script {
+        use crate::assert_basic_consensus_errors;
         use crate::consensus::basic::BasicError;
-        use crate::{assert_basic_consensus_errors};
         use crate::errors::consensus::ConsensusError;
         use crate::identity::validation::TPublicKeysValidator;
         use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
@@ -298,7 +298,7 @@ pub mod data {
     }
 
     pub mod ecdsa_hash_160 {
-        use crate::{assert_basic_consensus_errors};
+        use crate::assert_basic_consensus_errors;
         use crate::consensus::basic::BasicError;
         use crate::errors::consensus::ConsensusError;
         use crate::identity::validation::TPublicKeysValidator;
@@ -401,11 +401,8 @@ pub fn should_return_invalid_result_if_key_data_is_not_a_valid_der() {
         .expect("expected to set data");
 
     let result = validator.validate_keys(&raw_public_keys).unwrap();
-    let errors = assert_basic_consensus_errors!(
-        &result,
-        BasicError::InvalidIdentityPublicKeyDataError,
-        1
-    );
+    let errors =
+        assert_basic_consensus_errors!(&result, BasicError::InvalidIdentityPublicKeyDataError, 1);
 
     let consensus_error = result.errors.first().unwrap();
     let error = errors.first().unwrap();
@@ -416,7 +413,7 @@ pub fn should_return_invalid_result_if_key_data_is_not_a_valid_der() {
         raw_public_keys[1].get_integer::<KeyID>("id").unwrap()
     );
     assert_eq!(
-        error.validation_error().as_ref().unwrap().message(),
+        error.validation_error(),
         "Key secp256k1 error: malformed public key"
     );
 }
@@ -529,11 +526,8 @@ pub fn should_return_invalid_result_if_bls12_381_public_key_is_invalid() {
 
     let result = validator.validate_keys(raw_public_keys).unwrap();
 
-    let errors = assert_basic_consensus_errors!(
-        &result,
-        BasicError::InvalidIdentityPublicKeyDataError,
-        1
-    );
+    let errors =
+        assert_basic_consensus_errors!(&result, BasicError::InvalidIdentityPublicKeyDataError, 1);
     let consensus_error = result.errors.first().unwrap();
     let error = errors.first().unwrap();
 
@@ -548,8 +542,5 @@ pub fn should_return_invalid_result_if_bls12_381_public_key_is_invalid() {
     );
     // TODO
     //assert_eq!(error.validation_error(), TypeError);
-    assert_eq!(
-        error.validation_error().as_ref().unwrap().message(),
-        "Group decode error"
-    );
+    assert_eq!(error.validation_error(), "Group decode error");
 }

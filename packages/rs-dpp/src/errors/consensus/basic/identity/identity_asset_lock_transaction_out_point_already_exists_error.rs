@@ -1,9 +1,10 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use dashcore::Txid;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Asset lock transaction ${transaction_id:?} output ${output_index:?} already used")]
 pub struct IdentityAssetLockTransactionOutPointAlreadyExistsError {
     transaction_id: Txid,

@@ -1,9 +1,10 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use dashcore::Txid;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("`Instant Lock transaction {instant_lock_transaction_id:?} and Asset lock transaction {asset_lock_transaction_id:?} mismatch`")]
 pub struct IdentityAssetLockProofLockedTransactionMismatchError {
     instant_lock_transaction_id: Txid,

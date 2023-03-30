@@ -100,8 +100,8 @@ fn should_return_invalid_result_if_some_of_unique_indices_have_changed() {
 
     match basic_error {
         BasicError::DataContractUniqueIndicesChangedError(err) => {
-            assert_eq!(err.document_type(), "indexedDocument".to_string());
-            assert_eq!(err.index_name(), "index1".to_string());
+            assert_eq!(err.document_type().clone(), "indexedDocument".to_string());
+            assert_eq!(err.index_name().clone(), "index1".to_string());
         }
         _ => panic!(
             "Expected DataContractUniqueIndicesChangedError, got {}",
@@ -133,8 +133,8 @@ fn should_return_invalid_result_if_non_unique_index_update_failed_due_to_changed
 
     match basic_error {
         BasicError::DataContractInvalidIndexDefinitionUpdateError(err) => {
-            assert_eq!(err.document_type(), "indexedDocument".to_string());
-            assert_eq!(err.index_name(), "index3".to_string());
+            assert_eq!(err.document_type().clone(), "indexedDocument".to_string());
+            assert_eq!(err.index_name().clone(), "index3".to_string());
         }
         _ => panic!(
             "Expected DataContractInvalidIndexDefinitionUpdateError, got {}",

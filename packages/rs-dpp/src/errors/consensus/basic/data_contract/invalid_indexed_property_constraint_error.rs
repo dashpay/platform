@@ -1,15 +1,15 @@
 use crate::consensus::basic::BasicError;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
-use crate::data_contract::document_type::Index;
 
 // TODO not primitive
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Indexed property '{property_name}' for '{document_type}' document has an invalid constraint '{constraint_name}', reason: '{reason}'")]
 pub struct InvalidIndexedPropertyConstraintError {
     document_type: String,
-    index_definition: Index,
+    index_name: String,
     property_name: String,
     constraint_name: String,
     reason: String,
@@ -18,34 +18,34 @@ pub struct InvalidIndexedPropertyConstraintError {
 impl InvalidIndexedPropertyConstraintError {
     pub fn new(
         document_type: String,
-        index_definition: Index,
+        index_name: String,
         property_name: String,
         constraint_name: String,
         reason: String,
     ) -> Self {
         Self {
             document_type,
-            index_definition,
+            index_name,
             property_name,
             constraint_name,
             reason,
         }
     }
 
-    pub fn document_type(&self) -> String {
-        self.document_type.clone()
+    pub fn document_type(&self) -> &str {
+        &self.document_type
     }
-    pub fn index_definition(&self) -> Index {
-        self.index_definition.clone()
+    pub fn index_definition(&self) -> &str {
+        &self.index_name
     }
-    pub fn property_name(&self) -> String {
-        self.property_name.clone()
+    pub fn property_name(&self) -> &str {
+        &self.property_name
     }
-    pub fn constraint_name(&self) -> String {
-        self.constraint_name.clone()
+    pub fn constraint_name(&self) -> &str {
+        &self.constraint_name
     }
-    pub fn reason(&self) -> String {
-        self.reason.clone()
+    pub fn reason(&self) -> &str {
+        &self.reason
     }
 }
 

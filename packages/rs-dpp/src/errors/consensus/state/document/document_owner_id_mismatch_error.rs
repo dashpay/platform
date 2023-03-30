@@ -1,9 +1,10 @@
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
-use thiserror::Error;
 use platform_value::Identifier;
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Provided document {document_id} owner ID {document_owner_id} mismatch with existing {existing_document_owner_id}")]
 pub struct DocumentOwnerIdMismatchError {
     document_id: Identifier,
@@ -12,7 +13,11 @@ pub struct DocumentOwnerIdMismatchError {
 }
 
 impl DocumentOwnerIdMismatchError {
-    pub fn new(document_id: Identifier, document_owner_id: Identifier, existing_document_owner_id: Identifier,) -> Self {
+    pub fn new(
+        document_id: Identifier,
+        document_owner_id: Identifier,
+        existing_document_owner_id: Identifier,
+    ) -> Self {
         Self {
             document_id,
             document_owner_id,

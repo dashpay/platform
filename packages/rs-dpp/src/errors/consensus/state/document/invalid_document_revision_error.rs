@@ -1,11 +1,14 @@
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
-use thiserror::Error;
-use platform_value::Identifier;
 use crate::prelude::Revision;
+use platform_value::Identifier;
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
-#[error("Document {document_id} has invalid revision. The current revision is {current_revision:?}")]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[error(
+    "Document {document_id} has invalid revision. The current revision is {current_revision:?}"
+)]
 pub struct InvalidDocumentRevisionError {
     document_id: Identifier,
     current_revision: Option<Revision>,
