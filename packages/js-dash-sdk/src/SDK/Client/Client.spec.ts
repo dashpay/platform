@@ -25,7 +25,7 @@ const blockHeaderFixture = '00000020e2bddfb998d7be4cc4c6b126f04d6e4bd201687523de
 const privateKeyFixture = '9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2';
 
 let IdentityPublicKey;
-let IdentityPublicKeyCreateTransition;
+let IdentityPublicKeyWithWitness;
 
 describe('Dash - Client', function suite() {
   this.timeout(30000);
@@ -42,7 +42,7 @@ describe('Dash - Client', function suite() {
 
   before(async () => {
     // TODO(wasm): expose primitives by dedicated module?
-    ({ IdentityPublicKey, IdentityPublicKeyCreateTransition } = await loadWasmDpp());
+    ({ IdentityPublicKey, IdentityPublicKeyWithWitness } = await loadWasmDpp());
   });
 
   beforeEach(async function beforeEach() {
@@ -259,7 +259,7 @@ describe('Dash - Client', function suite() {
       const privateKey = new PrivateKey(privateKeyFixture);
 
       const publicKeysToAdd = [
-        new IdentityPublicKeyCreateTransition({
+        new IdentityPublicKeyWithWitness({
           id: 3,
           type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
           data: privateKey.toPublicKey().toBuffer(),
