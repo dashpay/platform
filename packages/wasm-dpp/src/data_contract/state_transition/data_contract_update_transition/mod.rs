@@ -183,10 +183,9 @@ impl DataContractUpdateTransitionWasm {
             Ok(()) => Ok(true),
             Err(protocol_error) => match &protocol_error {
                 ProtocolError::AbstractConsensusError(err) => match err.as_ref() {
-                    ConsensusSignatureErrorVariant(err) => match err {
-                        SignatureError::InvalidStateTransitionSignatureError => Ok(false),
-                        _ => Err(protocol_error),
-                    },
+                    ConsensusSignatureErrorVariant(
+                        SignatureError::InvalidStateTransitionSignatureError,
+                    ) => Ok(false),
                     _ => Err(protocol_error),
                 },
                 _ => Err(protocol_error),

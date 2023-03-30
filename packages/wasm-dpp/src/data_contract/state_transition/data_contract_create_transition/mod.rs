@@ -173,7 +173,6 @@ impl DataContractCreateTransitionWasm {
             .with_js_error()
     }
 
-    // TODO: add verify_signature to other identity signed state transitions
     #[wasm_bindgen(js_name=verifySignature)]
     pub fn verify_signature(
         &self,
@@ -190,10 +189,9 @@ impl DataContractCreateTransitionWasm {
             Ok(()) => Ok(true),
             Err(protocol_error) => match &protocol_error {
                 ProtocolError::AbstractConsensusError(err) => match err.as_ref() {
-                    ConsensusSignatureErrorVariant(err) => match err {
-                        SignatureError::InvalidStateTransitionSignatureError => Ok(false),
-                        _ => Err(protocol_error),
-                    },
+                    ConsensusSignatureErrorVariant(
+                        SignatureError::InvalidStateTransitionSignatureError,
+                    ) => Ok(false),
                     _ => Err(protocol_error),
                 },
                 _ => Err(protocol_error),
