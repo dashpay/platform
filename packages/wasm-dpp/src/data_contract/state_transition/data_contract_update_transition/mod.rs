@@ -6,18 +6,20 @@ use std::collections::HashMap;
 pub use apply::*;
 pub use validation::*;
 
+use dpp::consensus::ConsensusError::SignatureError as ConsensusSignatureErrorVariant;
+
 use dpp::{
     data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition,
     platform_value,
     state_transition::{
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
     },
-    ProtocolError,
+    ProtocolError, consensus::signature::SignatureError,
 };
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
-use crate::utils::WithJsError;
+use crate::{utils::WithJsError, IdentityPublicKeyWasm, bls_adapter::{JsBlsAdapter, BlsAdapter}};
 use crate::{
     buffer::Buffer, errors::protocol_error::from_protocol_error, identifier::IdentifierWrapper,
     with_js_error, DataContractParameters, DataContractWasm, StateTransitionExecutionContextWasm,
@@ -158,5 +160,33 @@ impl DataContractUpdateTransitionWasm {
         serde_object
             .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
             .map_err(|e| e.into())
+    }
+
+    #[wasm_bindgen(js_name=verifySignature)]
+    pub fn verify_signature(
+        &self,
+        identity_public_key: &IdentityPublicKeyWasm,
+        bls: JsBlsAdapter,
+    ) -> Result<bool, JsValue> {
+        let bls_adapter = BlsAdapter(bls);
+
+        let verification_result = self
+            .0
+            .verify_signature(&identity_public_key.to_owned().into(), &bls_adapter);
+
+        match verification_result {
+            Ok(()) => Ok(true),
+            Err(protocol_error) => match &protocol_error {
+                ProtocolError::AbstractConsensusError(err) => match err.as_ref() {
+                    ConsensusSignatureErrorVariant(err) => match err {
+                        SignatureError::InvalidStateTransitionSignatureError => Ok(false),
+                        _ => Err(protocol_error),
+                    },
+                    _ => Err(protocol_error),
+                },
+                _ => Err(protocol_error),
+            },
+        }
+        .with_js_error()
     }
 }
