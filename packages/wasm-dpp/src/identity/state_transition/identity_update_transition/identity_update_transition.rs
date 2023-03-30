@@ -9,7 +9,7 @@ use crate::identifier::IdentifierWrapper;
 
 use crate::{
     buffer::Buffer, errors::RustConversionError,
-    identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransitionWasm,
+    identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitnessWasm,
     identity::IdentityPublicKeyWasm, state_transition::StateTransitionExecutionContextWasm,
     with_js_error,
 };
@@ -94,10 +94,10 @@ impl IdentityUpdateTransitionWasm {
             keys_to_add = keys
                 .iter()
                 .map(|value| {
-                    let public_key: Ref<IdentityPublicKeyCreateTransitionWasm> =
-                        generic_of_js_val::<IdentityPublicKeyCreateTransitionWasm>(
+                    let public_key: Ref<IdentityPublicKeyWithWitnessWasm> =
+                        generic_of_js_val::<IdentityPublicKeyWithWitnessWasm>(
                             value,
-                            "IdentityPublicKeyCreateTransition",
+                            "IdentityPublicKeyWithWitness",
                         )?;
                     Ok(public_key.clone().into())
                 })
@@ -114,7 +114,7 @@ impl IdentityUpdateTransitionWasm {
         self.0
             .get_public_keys_to_add()
             .iter()
-            .map(|key| IdentityPublicKeyCreateTransitionWasm::from(key.to_owned()).into())
+            .map(|key| IdentityPublicKeyWithWitnessWasm::from(key.to_owned()).into())
             .collect()
     }
 
@@ -251,9 +251,7 @@ impl IdentityUpdateTransitionWasm {
         if let Some(public_keys_to_add) = object.public_keys_to_add {
             let keys_objects = public_keys_to_add
                 .into_iter()
-                .map(|key| {
-                    IdentityPublicKeyCreateTransitionWasm::from(key).to_object(options.clone())
-                })
+                .map(|key| IdentityPublicKeyWithWitnessWasm::from(key).to_object(options.clone()))
                 .collect::<Result<js_sys::Array, _>>()?;
 
             js_sys::Reflect::set(
@@ -359,7 +357,7 @@ impl IdentityUpdateTransitionWasm {
         if let Some(public_keys_to_add) = object.public_keys_to_add {
             let keys_objects = public_keys_to_add
                 .into_iter()
-                .map(|key| IdentityPublicKeyCreateTransitionWasm::from(key).to_json())
+                .map(|key| IdentityPublicKeyWithWitnessWasm::from(key).to_json())
                 .collect::<Result<js_sys::Array, _>>()?;
 
             js_sys::Reflect::set(

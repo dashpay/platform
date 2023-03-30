@@ -13,7 +13,7 @@ use crate::{
     identity::state_transition::asset_lock_proof::{
         ChainAssetLockProofWasm, InstantAssetLockProofWasm,
     },
-    identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransitionWasm,
+    identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitnessWasm,
     state_transition::StateTransitionExecutionContextWasm,
     with_js_error,
 };
@@ -97,10 +97,10 @@ impl IdentityCreateTransitionWasm {
         let public_keys = public_keys
             .iter()
             .map(|value| {
-                let public_key: Ref<IdentityPublicKeyCreateTransitionWasm> =
-                    generic_of_js_val::<IdentityPublicKeyCreateTransitionWasm>(
+                let public_key: Ref<IdentityPublicKeyWithWitnessWasm> =
+                    generic_of_js_val::<IdentityPublicKeyWithWitnessWasm>(
                         value,
-                        "IdentityPublicKeyCreateTransition",
+                        "IdentityPublicKeyWithWitness",
                     )?;
                 Ok(public_key.clone().into())
             })
@@ -116,10 +116,10 @@ impl IdentityCreateTransitionWasm {
         let mut public_keys = public_keys
             .iter()
             .map(|value| {
-                let public_key: Ref<IdentityPublicKeyCreateTransitionWasm> =
-                    generic_of_js_val::<IdentityPublicKeyCreateTransitionWasm>(
+                let public_key: Ref<IdentityPublicKeyWithWitnessWasm> =
+                    generic_of_js_val::<IdentityPublicKeyWithWitnessWasm>(
                         value,
-                        "IdentityPublicKeyCreateTransition",
+                        "IdentityPublicKeyWithWitness",
                     )?;
                 Ok(public_key.clone().into())
             })
@@ -136,7 +136,7 @@ impl IdentityCreateTransitionWasm {
             .get_public_keys()
             .iter()
             .map(IdentityPublicKeyWithWitness::to_owned)
-            .map(IdentityPublicKeyCreateTransitionWasm::from)
+            .map(IdentityPublicKeyWithWitnessWasm::from)
             .map(JsValue::from)
             .collect()
     }
@@ -218,7 +218,7 @@ impl IdentityCreateTransitionWasm {
         let keys_objects = object
             .public_keys
             .into_iter()
-            .map(IdentityPublicKeyCreateTransitionWasm::from)
+            .map(IdentityPublicKeyWithWitnessWasm::from)
             .map(|key| key.to_object(options.clone()))
             .collect::<Result<js_sys::Array, _>>()?;
 
@@ -288,7 +288,7 @@ impl IdentityCreateTransitionWasm {
         let keys_objects = object
             .public_keys
             .into_iter()
-            .map(IdentityPublicKeyCreateTransitionWasm::from)
+            .map(IdentityPublicKeyWithWitnessWasm::from)
             .map(|key| key.to_json())
             .collect::<Result<js_sys::Array, _>>()?;
 
