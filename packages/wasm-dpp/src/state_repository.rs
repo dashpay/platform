@@ -454,7 +454,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
             .await
             .map_err(from_js_error)?;
 
-        if maybe_identity.is_undefined() {
+        if maybe_identity.is_undefined() || maybe_identity.is_null() {
             return Ok(None);
         }
 
@@ -542,7 +542,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
             .await
             .map_err(from_js_error)?;
 
-        if maybe_balance.is_undefined() {
+        if maybe_balance.is_undefined() || maybe_balance.is_null() {
             return Ok(None);
         }
 
@@ -567,7 +567,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
             .await
             .map_err(from_js_error)?;
 
-        if maybe_balance.is_undefined() {
+        if maybe_balance.is_undefined() || maybe_balance.is_null() {
             return Ok(None);
         }
 
@@ -649,7 +649,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
             .await
             .map_err(from_js_error)?;
 
-        if maybe_height.is_undefined() {
+        if maybe_height.is_undefined() || maybe_height.is_null() {
             return Ok(None);
         }
 
