@@ -1,7 +1,10 @@
 //! This module implements ABCI application server.
 //!
 use super::config::AbciConfig;
-use crate::{abci::proposal::Proposal, config::PlatformConfig, error::Error, platform::Platform};
+use crate::{
+    abci::proposal::Proposal, config::PlatformConfig, error::Error, platform::Platform,
+    rpc::core::CoreRPCLike,
+};
 use dpp::identity::TimestampMillis;
 use dpp::state_transition::StateTransition;
 use drive::query::TransactionArg;
@@ -18,8 +21,8 @@ use tenderdash_abci::proto::{
 ///
 /// AbciApp implements logic that should be triggered when Tenderdash performs various operations, like
 /// creating new proposal or finalizing new block.
-pub struct AbciApplication<'a, CoreRPCLike> {
-    platform: std::sync::Mutex<&'a Platform<CoreRPCLike>>,
+pub struct AbciApplication<'a, C> {
+    platform: std::sync::Mutex<&'a Platform<C>>,
     transaction: TransactionArg<'a, 'a>,
     config: AbciConfig,
 }
@@ -27,11 +30,12 @@ pub struct AbciApplication<'a, CoreRPCLike> {
 /// Start ABCI server and process incoming connections.
 ///
 /// Should never return.
-pub fn start<CoreRPCLike>(config: &PlatformConfig, core_rpc : CoreRPCLike) -> Result<(), Error> {
+pub fn start<C: CoreRPCLike>(config: &PlatformConfig, core_rpc: C) -> Result<(), Error> {
     let bind_address = config.abci.bind_address.clone();
     let abci_config = config.abci.clone();
 
-    let platform: Platform<CoreRPCLike> = Platform::open(&config.db_path, Some(config.clone()), core_rpc)?;
+    let platform: Platform<C> =
+        Platform::open_with_client(&config.db_path, Some(config.clone()), core_rpc)?;
 
     let abci = AbciApplication::new(abci_config, &platform)?;
 
@@ -50,9 +54,12 @@ pub fn start<CoreRPCLike>(config: &PlatformConfig, core_rpc : CoreRPCLike) -> Re
     }
 }
 
-impl<'a, CoreRPCLike> AbciApplication<'a, CoreRPCLike> {
+impl<'a, C> AbciApplication<'a, C> {
     /// Create new ABCI app
-    pub fn new(config: AbciConfig, platform: &'a Platform<CoreRPCLike>) -> Result<AbciApplication<'a, CoreRPCLike>, Error> {
+    pub fn new(
+        config: AbciConfig,
+        platform: &'a Platform<C>,
+    ) -> Result<AbciApplication<'a, C>, Error> {
         let app = AbciApplication {
             platform: std::sync::Mutex::new(platform),
             transaction: None,
@@ -63,7 +70,7 @@ impl<'a, CoreRPCLike> AbciApplication<'a, CoreRPCLike> {
     }
 
     /// Return locked Platform object
-    fn platform(&self) -> MutexGuard<&'a Platform<CoreRPCLike>> {
+    fn platform(&self) -> MutexGuard<&'a Platform<C>> {
         self.platform
             .lock()
             .expect("cannot acquire lock on platform")
@@ -76,13 +83,16 @@ impl<'a, CoreRPCLike> AbciApplication<'a, CoreRPCLike> {
     }
 }
 
-impl<'a, CoreRPCLike> Debug for AbciApplication<'a, CoreRPCLike> {
+impl<'a, C> Debug for AbciApplication<'a, C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "<AbciApp>")
     }
 }
 
-impl<'a, CoreRPCLike> tenderdash_abci::Application for AbciApplication<'a, CoreRPCLike> {
+impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>
+where
+    C: CoreRPCLike,
+{
     fn info(&self, request: proto::RequestInfo) -> Result<proto::ResponseInfo, ResponseException> {
         if !tenderdash_abci::check_version(&request.abci_version) {
             return Err(ResponseException::from(format!(

@@ -32,55 +32,62 @@
 //! This module defines helper functions related to setting up Platform.
 //!
 
-use crate::config::PlatformConfig;
 use crate::platform::Platform;
-use crate::test::fixture::abci::static_system_identity_public_keys;
-use tempfile::TempDir;
 #[cfg(feature = "fixtures-and-mocks")]
 use crate::rpc::core::MockCoreRPCLike;
-#[cfg(not(feature = "fixtures-and-mocks"))]
-use crate::rpc::core::DefaultCoreRPC;
+use crate::test::fixture::abci::static_system_identity_public_keys;
+use crate::{config::PlatformConfig, rpc::core::DefaultCoreRPC};
+use tempfile::TempDir;
 
-/// A function which sets up Platform.
-pub fn setup_platform_raw<CoreRPCLike>(config: Option<PlatformConfig>) -> Platform<CoreRPCLike> {
-    let tmp_dir = TempDir::new().unwrap();
-
-    #[cfg(not(feature = "fixtures-and-mocks"))]
-        let mut platform: Platform<DefaultCoreRPC> =
-            Platform::open_with_default_core_rpc(tmp_dir, config).expect("should open Platform successfully");
-    #[cfg(feature = "fixtures-and-mocks")]
-        let mut platform: Platform<MockCoreRPCLike> =
-        Platform::open_with_mock_core_rpc(tmp_dir, config).expect("should open Platform successfully");
-
-    platform
+pub struct TestPlatformBuilder<C> {
+    platform: Platform<C>,
 }
 
-/// A function which sets up Platform with its initial state structure.
-pub fn setup_platform_with_initial_state_structure<CoreRPCLike>(config: Option<PlatformConfig>) -> Platform<CoreRPCLike> {
-    let mut platform = setup_platform_raw(config);
+impl TestPlatformBuilder<DefaultCoreRPC> {
+    pub fn new(config: Option<PlatformConfig>) -> Self {
+        let tmp_dir = TempDir::new().unwrap();
+        let platform = Platform::<DefaultCoreRPC>::open(tmp_dir, config)
+            .expect("should open Platform successfully");
 
-    platform
-        .drive
-        .create_initial_state_structure(None)
-        .expect("should create root tree successfully");
-
-    #[cfg(feature = "fixtures-and-mocks")]
-    platform.mock_core_rpc_client();
-
-    platform
+        TestPlatformBuilder { platform }
+    }
 }
 
-/// A function which sets up Platform with its genesis state
-pub fn setup_platform_with_genesis_state<CoreRPCLike>(config: Option<PlatformConfig>) -> Platform<CoreRPCLike> {
-    let platform = setup_platform_raw(config);
+impl TestPlatformBuilder<MockCoreRPCLike> {
+    pub fn new(config: Option<PlatformConfig>) -> Self {
+        let tmp_dir = TempDir::new().unwrap();
+        let platform = Platform::<MockCoreRPCLike>::open(tmp_dir, config)
+            .expect("should open Platform successfully");
 
-    platform
-        .create_genesis_state(
-            Default::default(),
-            static_system_identity_public_keys(),
-            None,
-        )
-        .expect("should create root tree successfully");
+        TestPlatformBuilder { platform }
+    }
+}
 
-    platform
+impl<C> TestPlatformBuilder<C> {
+    /// A function which sets initial state structure for Platform.
+    pub fn set_initial_state_structure(&mut self) -> &mut Self {
+        self.platform
+            .drive
+            .create_initial_state_structure(None)
+            .expect("should create root tree successfully");
+
+        &mut self
+    }
+
+    /// Sets Platform to genesis state.
+    pub fn set_genesis_state(&mut self) -> &mut Self {
+        self.platform
+            .create_genesis_state(
+                Default::default(),
+                static_system_identity_public_keys(),
+                None,
+            )
+            .expect("should create root tree successfully");
+
+        &mut self
+    }
+
+    pub fn build(self) -> Platform<C> {
+        self.platform
+    }
 }

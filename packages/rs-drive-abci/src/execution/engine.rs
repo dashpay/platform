@@ -2,9 +2,13 @@ use crate::abci::handlers::TenderdashAbci;
 use crate::abci::messages::{
     AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFees,
 };
+use crate::block::BlockExecutionContext;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::execution_event::ExecutionEvent;
 use crate::platform::Platform;
+use crate::rpc::core::CoreRPCLike;
+use crate::state::PlatformState;
 use drive::dpp::identity::PartialIdentity;
 use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::drive::batch::DriveOperation;
@@ -13,12 +17,11 @@ use drive::drive::Drive;
 use drive::error::Error::GroveDB;
 use drive::fee::result::FeeResult;
 use drive::grovedb::Transaction;
-use crate::block::BlockExecutionContext;
-use crate::execution::execution_event::ExecutionEvent;
-use crate::rpc::core::CoreRPCLike;
-use crate::state::PlatformState;
 
-impl<CoreRPCLike> Platform<CoreRPCLike> {
+impl<C> Platform<C>
+where
+    C: CoreRPCLike,
+{
     fn run_events(
         &self,
         events: Vec<ExecutionEvent>,
@@ -108,7 +111,8 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             block_time_ms: block_info.time_ms,
             previous_block_time_ms: self
                 .state
-                .read().unwrap()
+                .read()
+                .unwrap()
                 .last_block_info
                 .as_ref()
                 .map(|block_info| block_info.time_ms),

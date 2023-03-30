@@ -5,6 +5,7 @@ use crate::{
     error::{execution::ExecutionError, Error},
     execution::fee_pools::epoch::EpochInfo,
     platform::Platform,
+    rpc::core::CoreRPCLike,
 };
 
 use dpp::util::vec::vec_to_array;
@@ -24,7 +25,7 @@ pub trait Proposal {
     ) -> Result<proto::ResponsePrepareProposal, ResponseException>;
 }
 
-impl<CoreRPCLike> Proposal for Platform<CoreRPCLike> {
+impl<C> Proposal for Platform<C> where C: CoreRPCLike {
     fn prepare_proposal(
         &self,
         request: &proto::RequestPrepareProposal,

@@ -24,15 +24,12 @@ use drive::{
 };
 use serde_json::Value as JsonValue;
 
-use crate::{
-    error::{execution::ExecutionError, Error},
-    platform::Platform,
-};
+use crate::{error::{execution::ExecutionError, Error}, platform::Platform, rpc::core::CoreRPCLike};
 
 const WITHDRAWAL_TRANSACTIONS_QUERY_LIMIT: u16 = 16;
 const NUMBER_OF_BLOCKS_BEFORE_EXPIRED: u32 = 48;
 
-impl<CoreRPCLike> Platform<CoreRPCLike> {
+impl<C> Platform<C> where C: CoreRPCLike {
     /// Update statuses for broadcasted withdrawals
     pub fn update_broadcasted_withdrawal_transaction_statuses(
         &self,

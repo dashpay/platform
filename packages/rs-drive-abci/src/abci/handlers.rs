@@ -32,10 +32,10 @@
 //! This module defines the `TenderdashAbci` trait and implements it for type `Platform`.
 //!
 
-use crate::abci::messages::{
+use crate::{abci::messages::{
     AfterFinalizeBlockRequest, AfterFinalizeBlockResponse, BlockBeginRequest, BlockBeginResponse,
     BlockEndRequest, BlockEndResponse, InitChainRequest, InitChainResponse,
-};
+}, rpc::core::CoreRPCLike};
 use crate::block::{BlockExecutionContext, BlockStateInfo};
 use crate::execution::fee_pools::epoch::EpochInfo;
 use drive::grovedb::TransactionArg;
@@ -78,7 +78,7 @@ pub trait TenderdashAbci {
     ) -> Result<AfterFinalizeBlockResponse, Error>;
 }
 
-impl<CoreRPCLike> TenderdashAbci for Platform<CoreRPCLike> {
+impl<C> TenderdashAbci for Platform<C> where C: CoreRPCLike {
     /// Creates initial state structure and returns response
     fn init_chain(
         &self,

@@ -55,7 +55,7 @@ use serde_json::json;
 mod state_repository;
 
 /// Platform
-pub struct Platform<CoreRPCLike> {
+pub struct Platform<C> {
     /// Drive
     pub drive: Drive,
     /// State
@@ -65,43 +65,50 @@ pub struct Platform<CoreRPCLike> {
     /// Block execution context
     pub block_execution_context: RwLock<Option<BlockExecutionContext>>,
     /// Core RPC Client
-    pub core_rpc: CoreRPCLike,
+    pub core_rpc: C,
 }
 
-impl<CoreRPCLike> std::fmt::Debug for Platform<CoreRPCLike> {
+impl<C> std::fmt::Debug for Platform<C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Platform").finish()
     }
 }
 
-impl<CoreRPCLike> Platform<CoreRPCLike> {
+impl Platform<DefaultCoreRPC> {
     /// Open Platform with Drive and block execution context and default core rpc.
-    pub fn open_with_default_core_rpc<P: AsRef<Path>>(path: P, config: Option<PlatformConfig>) -> Result<Self, Error> {
+    pub fn open<P: AsRef<Path>>(
+        path: P,
+        config: Option<PlatformConfig>,
+    ) -> Result<Platform<DefaultCoreRPC>, Error> {
         let config = config.unwrap_or_default();
-        let core_rpc =
-            DefaultCoreRPC::open(
-                config.core.rpc.url().as_str(),
-                config.core.rpc.username.clone(),
-                config.core.rpc.password.clone(),
-            )
-                .map_err(|_e| {
-                    Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "Could not setup Dash Core RPC client",
-                    ))
-                })?;
-        Self::open(path, Some(config), core_rpc)
+        let core_rpc = DefaultCoreRPC::open(
+            config.core.rpc.url().as_str(),
+            config.core.rpc.username.clone(),
+            config.core.rpc.password.clone(),
+        )
+        .map_err(|_e| {
+            Error::Execution(ExecutionError::CorruptedCodeExecution(
+                "Could not setup Dash Core RPC client",
+            ))
+        })?;
+        Self::open_with_client(path, Some(config), core_rpc)
     }
+}
 
-    #[cfg(feature = "fixtures-and-mocks")]
+#[cfg(feature = "fixtures-and-mocks")]
+impl Platform<MockCoreRPCLike> {
     /// Open Platform with Drive and block execution context and mock core rpc.
-    pub fn open_with_mock_core_rpc<P: AsRef<Path>>(path: P, config: Option<PlatformConfig>) -> Result<Self, Error> {
+    pub fn open<P: AsRef<Path>>(
+        path: P,
+        config: Option<PlatformConfig>,
+    ) -> Result<Platform<MockCoreRPCLike>, Error> {
         let core_rpc_mock = MockCoreRPCLike::new();
 
         core_rpc_mock.expect_get_block_hash().returning(|_| {
             Ok(BlockHash::from_hex(
                 "0000000000000000000000000000000000000000000000000000000000000000",
             )
-                .unwrap())
+            .unwrap())
         });
 
         core_rpc_mock.expect_get_block_json().returning(|_| {
@@ -109,11 +116,17 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
                 "tx": [],
             }))
         });
-        Self::open(path, config, core_rpc_mock)
+        Self::open_with_client(path, config, core_rpc_mock)
     }
+}
 
+impl<C> Platform<C> {
     /// Open Platform with Drive and block execution context.
-    pub fn open<P: AsRef<Path>>(path: P, config: Option<PlatformConfig>, core_rpc: CoreRPCLike) -> Result<Self, Error> {
+    pub fn open_with_client<P: AsRef<Path>>(
+        path: P,
+        config: Option<PlatformConfig>,
+        core_rpc: C,
+    ) -> Result<Platform<C>, Error> {
         let config = config.unwrap_or_default();
         let drive = Drive::open(path, config.drive.clone()).map_err(Error::Drive)?;
 
@@ -139,27 +152,5 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             block_execution_context: RwLock::new(None),
             core_rpc,
         })
-    }
-
-    /// Helper function to be able
-    /// to quickly mock core rpc for tests
-    #[cfg(feature = "fixtures-and-mocks")]
-    pub fn mock_core_rpc_client(&mut self) {
-        let mut core_rpc_mock = MockCoreRPCLike::new();
-
-        core_rpc_mock.expect_get_block_hash().returning(|_| {
-            Ok(BlockHash::from_hex(
-                "0000000000000000000000000000000000000000000000000000000000000000",
-            )
-            .unwrap())
-        });
-
-        core_rpc_mock.expect_get_block_json().returning(|_| {
-            Ok(json!({
-                "tx": [],
-            }))
-        });
-
-        self.core_rpc = Box::new(core_rpc_mock);
     }
 }
