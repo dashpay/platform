@@ -127,66 +127,45 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
     let code = state_error.code();
 
     match state_error.deref() {
-        StateError::DuplicatedIdentityPublicKeyIdStateError { duplicated_ids } => {
-            DuplicatedIdentityPublicKeyIdStateErrorWasm::new(duplicated_ids.clone(), code).into()
+        StateError::DuplicatedIdentityPublicKeyIdStateError(e) => {
+            DuplicatedIdentityPublicKeyIdStateErrorWasm::new(e.duplicated_ids().clone(), code).into()
         }
-        StateError::DuplicatedIdentityPublicKeyStateError {
-            duplicated_public_key_ids,
-        } => {
-            DuplicatedIdentityPublicKeyStateErrorWasm::new(duplicated_public_key_ids.clone(), code)
+        StateError::DuplicatedIdentityPublicKeyStateError(e) => {
+            DuplicatedIdentityPublicKeyStateErrorWasm::new(e.duplicated_public_key_ids().clone(), code)
                 .into()
         }
-        StateError::DocumentAlreadyPresentError { document_id } => {
-            DocumentAlreadyPresentErrorWasm::new(*document_id, code).into()
+        StateError::DocumentAlreadyPresentError(e) => {
+            DocumentAlreadyPresentErrorWasm::new(*e.document_id(), code).into()
         }
-        StateError::DataContractAlreadyPresentError { data_contract_id } => {
-            DataContractAlreadyPresentErrorWasm::new(*data_contract_id, code).into()
+        StateError::DataContractAlreadyPresentError(e) => {
+            DataContractAlreadyPresentErrorWasm::new(*e.data_contract_id(), code).into()
         }
-        StateError::DocumentNotFoundError { document_id } => {
-            DocumentNotFoundErrorWasm::new(*document_id, code).into()
+        StateError::DocumentNotFoundError(e) => {
+            DocumentNotFoundErrorWasm::new(*e.document_id(), code).into()
         }
-        StateError::DocumentOwnerIdMismatchError {
-            document_id,
-            document_owner_id,
-            existing_document_owner_id,
-        } => DocumentOwnerIdMismatchErrorWasm::new(
-            *document_id,
-            *document_owner_id,
-            *existing_document_owner_id,
+        StateError::DocumentOwnerIdMismatchError(e) => DocumentOwnerIdMismatchErrorWasm::new(
+            *e.document_id(),
+            *e.document_owner_id(),
+            *e.existing_document_owner_id(),
             code,
         )
         .into(),
-        StateError::DocumentTimestampsMismatchError { document_id } => {
-            DocumentTimestampsMismatchErrorWasm::new(*document_id, code).into()
+        StateError::DocumentTimestampsMismatchError(e) => {
+            DocumentTimestampsMismatchErrorWasm::new(*e.document_id(), code).into()
         }
-        StateError::DocumentTimestampWindowViolationError {
-            timestamp_name,
-            document_id,
-            timestamp,
-            time_window_start,
-            time_window_end,
-        } => DocumentTimestampWindowViolationErrorWasm::new(
-            timestamp_name.clone(),
-            *document_id,
-            *timestamp,
-            *time_window_start,
-            *time_window_end,
+        StateError::DocumentTimestampWindowViolationError(e) => DocumentTimestampWindowViolationErrorWasm::new(
+            e.timestamp_name().clone(),
+            *e.document_id(),
+            *e.timestamp(),
+            *e.time_window_start(),
+            *e.time_window_end(),
             code,
         )
         .into(),
-        StateError::DuplicateUniqueIndexError {
-            document_id,
-            duplicating_properties,
-        } => DuplicateUniqueIndexErrorWasm::new(*document_id, duplicating_properties.clone(), code)
+        StateError::DuplicateUniqueIndexError(e) => DuplicateUniqueIndexErrorWasm::new(*e.document_id(), e.duplicating_properties().clone(), code)
             .into(),
-        StateError::InvalidDocumentRevisionError {
-            document_id,
-            current_revision,
-        } => InvalidDocumentRevisionErrorWasm::new(*document_id, *current_revision, code).into(),
-        StateError::InvalidIdentityRevisionError {
-            identity_id,
-            current_revision,
-        } => InvalidIdentityRevisionErrorWasm::new(*identity_id, *current_revision, code).into(),
+        StateError::InvalidDocumentRevisionError(e) => InvalidDocumentRevisionErrorWasm::new(*e.document_id(), *e.current_revision(), code).into(),
+        StateError::InvalidIdentityRevisionError(e) => InvalidIdentityRevisionErrorWasm::new(*e.identity_id(), *e.current_revision(), code).into(),
         StateError::IdentityPublicKeyDisabledAtWindowViolationError {
             disabled_at,
             time_window_start,

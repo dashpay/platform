@@ -1,0 +1,35 @@
+use crate::consensus::state::state_error::StateError;
+use crate::consensus::ConsensusError;
+use thiserror::Error;
+use platform_value::Identifier;
+use crate::prelude::Revision;
+
+#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[error("Document {document_id} has invalid revision. The current revision is {current_revision:?}")]
+pub struct InvalidDocumentRevisionError {
+    document_id: Identifier,
+    current_revision: Option<Revision>,
+}
+
+impl InvalidDocumentRevisionError {
+    pub fn new(document_id: Identifier, current_revision: Option<Revision>) -> Self {
+        Self {
+            document_id,
+            current_revision,
+        }
+    }
+
+    pub fn document_id(&self) -> &Identifier {
+        &self.document_id
+    }
+
+    pub fn current_revision(&self) -> &Option<Revision> {
+        &self.current_revision
+    }
+}
+
+impl From<InvalidDocumentRevisionError> for ConsensusError {
+    fn from(err: InvalidDocumentRevisionError) -> Self {
+        Self::StateError(StateError::InvalidDocumentRevisionError(err))
+    }
+}

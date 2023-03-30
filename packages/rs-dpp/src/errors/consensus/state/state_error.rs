@@ -5,8 +5,18 @@ use crate::consensus::state::identity::{
     IdentityAlreadyExistsError, IdentityInsufficientBalanceError,
 };
 use crate::consensus::ConsensusError;
-use crate::prelude::Revision;
-use crate::{identity::KeyID, prelude::Identifier};
+use crate::{identity::KeyID};
+use crate::consensus::state::document::data_contract_already_present_error::DataContractAlreadyPresentError;
+use crate::consensus::state::document::document_already_present_error::DocumentAlreadyPresentError;
+use crate::consensus::state::document::document_not_found_error::DocumentNotFoundError;
+use crate::consensus::state::document::document_owner_id_mismatch_error::DocumentOwnerIdMismatchError;
+use crate::consensus::state::document::document_timestamp_window_violation_error::DocumentTimestampWindowViolationError;
+use crate::consensus::state::document::document_timestamps_mismatch_error::DocumentTimestampsMismatchError;
+use crate::consensus::state::document::duplicate_unique_index_error::DuplicateUniqueIndexError;
+use crate::consensus::state::document::invalid_document_revision_error::InvalidDocumentRevisionError;
+use crate::consensus::state::identity::duplicated_identity_public_key_id_state_error::DuplicatedIdentityPublicKeyIdStateError;
+use crate::consensus::state::identity::duplicated_identity_public_key_state_error::DuplicatedIdentityPublicKeyStateError;
+use crate::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
 
 #[derive(Error, Debug)]
 pub enum StateError {
@@ -17,63 +27,38 @@ pub enum StateError {
     IdentityInsufficientBalanceError(IdentityInsufficientBalanceError),
 
     // Document Errors
-    #[error("Document {document_id} is already present")]
-    DocumentAlreadyPresentError { document_id: Identifier },
+    #[error(transparent)]
+    DocumentAlreadyPresentError(DocumentAlreadyPresentError),
 
-    #[error("{document_id} document not found")]
-    DocumentNotFoundError { document_id: Identifier },
+    #[error(transparent)]
+    DocumentNotFoundError(DocumentNotFoundError),
 
-    #[error("Provided document {document_id} owner ID {document_owner_id} mismatch with existing {existing_document_owner_id}")]
-    DocumentOwnerIdMismatchError {
-        document_id: Identifier,
-        document_owner_id: Identifier,
-        existing_document_owner_id: Identifier,
-    },
+    #[error(transparent)]
+    DocumentOwnerIdMismatchError(DocumentOwnerIdMismatchError),
 
-    #[error("Document {document_id} createdAt and updatedAt timestamps are not equal")]
-    DocumentTimestampsMismatchError { document_id: Identifier },
+    #[error(transparent)]
+    DocumentTimestampsMismatchError(DocumentTimestampsMismatchError),
 
-    #[error("Document {document_id} {timestamp_name} timestamp {timestamp} are out of block time window from {time_window_start} and {time_window_end}")]
-    DocumentTimestampWindowViolationError {
-        timestamp_name: String,
-        document_id: Identifier,
-        timestamp: i64,
-        time_window_start: i64,
-        time_window_end: i64,
-    },
+    #[error(transparent)]
+    DocumentTimestampWindowViolationError(DocumentTimestampWindowViolationError),
 
-    #[error("Document {document_id} has duplicate unique properties {duplicating_properties:?} with other documents")]
-    DuplicateUniqueIndexError {
-        document_id: Identifier,
-        duplicating_properties: Vec<String>,
-    },
+    #[error(transparent)]
+    DuplicateUniqueIndexError(DuplicateUniqueIndexError),
 
-    #[error(
-        "Document {document_id} has invalid revision. The current revision is {current_revision:?}"
-    )]
-    InvalidDocumentRevisionError {
-        document_id: Identifier,
-        current_revision: Option<Revision>,
-    },
+    #[error(transparent)]
+    InvalidDocumentRevisionError(InvalidDocumentRevisionError),
 
-    #[error("Data Contract {data_contract_id} is already present")]
-    DataContractAlreadyPresentError { data_contract_id: Identifier },
+    #[error(transparent)]
+    DataContractAlreadyPresentError(DataContractAlreadyPresentError),
 
-    #[error(
-        "Identity {identity_id} has invalid revision. The current revision is {current_revision}"
-    )]
-    InvalidIdentityRevisionError {
-        identity_id: Identifier,
-        current_revision: Revision,
-    },
+    #[error(transparent)]
+    InvalidIdentityRevisionError(InvalidIdentityRevisionError),
 
-    #[error("Duplicated public keys {duplicated_public_key_ids:?} found")]
-    DuplicatedIdentityPublicKeyStateError {
-        duplicated_public_key_ids: Vec<KeyID>,
-    },
+    #[error(transparent)]
+    DuplicatedIdentityPublicKeyStateError(DuplicatedIdentityPublicKeyStateError),
 
-    #[error("Duplicated public keys ids {duplicated_ids:?} found")]
-    DuplicatedIdentityPublicKeyIdStateError { duplicated_ids: Vec<KeyID> },
+    #[error(transparent)]
+    DuplicatedIdentityPublicKeyIdStateError(DuplicatedIdentityPublicKeyIdStateError),
 
     #[error("Identity public keys disabled time ({disabled_at}) is out of block time window from {time_window_start} and {time_window_end}" )]
     IdentityPublicKeyDisabledAtWindowViolationError {

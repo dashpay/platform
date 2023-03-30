@@ -5,7 +5,7 @@ use crate::errors::consensus::basic::BasicError;
 use crate::errors::consensus::ConsensusError;
 use crate::identity::validation::{IdentityValidator, PublicKeysValidator, PUBLIC_KEY_SCHEMA};
 use crate::version::ProtocolVersionValidator;
-use crate::{assert_basic_consensus_errors, assert_consensus_errors, NativeBlsModule};
+use crate::{assert_basic_consensus_errors, NativeBlsModule};
 
 fn setup_test() -> (
     Value,
@@ -33,7 +33,7 @@ pub mod protocol_version {
     use crate::consensus::basic::BasicError;
     use crate::consensus::ConsensusError;
     use crate::tests::identity::validation::identity_validator_spec::setup_test;
-    use crate::{assert_basic_consensus_errors, assert_consensus_errors};
+    use crate::{assert_basic_consensus_errors};
 
     #[test]
     pub fn should_be_present() {
@@ -99,7 +99,6 @@ pub mod id {
     use jsonschema::error::ValidationErrorKind;
     use platform_value::Value;
 
-    use crate::assert_consensus_errors;
     use crate::consensus::ConsensusError;
     use crate::tests::identity::validation::identity_validator_spec::setup_test;
 
@@ -186,7 +185,6 @@ pub mod balance {
 
     use jsonschema::error::ValidationErrorKind;
 
-    use crate::assert_consensus_errors;
     use crate::errors::consensus::ConsensusError;
     use crate::tests::identity::validation::identity_validator_spec::setup_test;
 
@@ -258,7 +256,6 @@ pub mod balance {
 pub mod public_keys {
     use super::*;
 
-    use crate::assert_consensus_errors;
     use crate::errors::consensus::ConsensusError;
     use crate::tests::identity::validation::identity_validator_spec::setup_test;
     use jsonschema::error::ValidationErrorKind;

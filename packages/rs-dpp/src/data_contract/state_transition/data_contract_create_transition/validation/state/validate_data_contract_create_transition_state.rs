@@ -16,6 +16,7 @@ use crate::{
     validation::AsyncDataValidator,
     ProtocolError,
 };
+use crate::consensus::state::document::data_contract_already_present_error::DataContractAlreadyPresentError;
 
 pub struct DataContractCreateTransitionStateValidator<SR>
 where
@@ -74,9 +75,11 @@ pub async fn validate_data_contract_create_transition_state(
         Ok(action.into())
     } else {
         Ok(ValidationResult::new_with_errors(vec![
-            StateError::DataContractAlreadyPresentError {
-                data_contract_id: state_transition.data_contract.id.to_owned(),
-            }
+            StateError::DataContractAlreadyPresentError(
+                DataContractAlreadyPresentError::new(
+                    state_transition.data_contract.id.to_owned()
+                )
+            )
             .into(),
         ]))
     }

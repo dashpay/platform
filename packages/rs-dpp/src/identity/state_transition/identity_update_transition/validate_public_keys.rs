@@ -12,6 +12,8 @@ use crate::{
     validation::SimpleValidationResult,
     ProtocolError,
 };
+use crate::consensus::state::identity::duplicated_identity_public_key_id_state_error::DuplicatedIdentityPublicKeyIdStateError;
+use crate::consensus::state::identity::duplicated_identity_public_key_state_error::DuplicatedIdentityPublicKeyStateError;
 
 lazy_static! {
     pub static ref IDENTITY_JSON_SCHEMA: JsonValue =
@@ -57,16 +59,20 @@ pub fn validate_public_keys(
     let duplicated_ids = duplicated_key_ids(&public_keys);
     if !duplicated_ids.is_empty() {
         validation_result
-            .add_error(StateError::DuplicatedIdentityPublicKeyIdStateError { duplicated_ids });
+            .add_error(StateError::DuplicatedIdentityPublicKeyIdStateError(
+                DuplicatedIdentityPublicKeyIdStateError::new(duplicated_ids)
+            ));
         return Ok(validation_result);
     }
 
     // Check that there's no duplicated keys
     let duplicated_key_ids = duplicated_keys(&public_keys);
     if !duplicated_key_ids.is_empty() {
-        validation_result.add_error(StateError::DuplicatedIdentityPublicKeyStateError {
-            duplicated_public_key_ids: duplicated_key_ids,
-        });
+        validation_result.add_error(StateError::DuplicatedIdentityPublicKeyStateError(
+            DuplicatedIdentityPublicKeyStateError::new(
+                duplicated_key_ids
+            )
+        ));
     }
 
     Ok(validation_result)

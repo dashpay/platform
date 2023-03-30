@@ -16,6 +16,7 @@ use crate::{
     util::json_schema::{Index, JsonSchemaExt},
     ProtocolError,
 };
+use crate::consensus::state::document::duplicate_unique_index_error::DuplicateUniqueIndexError;
 
 struct QueryDefinition<'a> {
     document_type: &'a str,
@@ -157,15 +158,17 @@ fn validate_uniqueness<'a>(
             continue;
         }
 
-        validation_result.add_error(StateError::DuplicateUniqueIndexError {
-            document_id: futures_meta[i].1.base().id,
-            duplicating_properties: futures_meta[i]
-                .0
-                .properties
-                .iter()
-                .map(|property| property.name.to_owned())
-                .collect_vec(),
-        })
+        validation_result.add_error(StateError::DuplicateUniqueIndexError(
+            DuplicateUniqueIndexError::new(
+                futures_meta[i].1.base().id,
+                futures_meta[i]
+                    .0
+                    .properties
+                    .iter()
+                    .map(|property| property.name.to_owned())
+                    .collect_vec(),
+            )
+        ))
     }
     Ok(validation_result)
 }

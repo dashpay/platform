@@ -20,6 +20,7 @@ use crate::{
     state_repository::StateRepositoryLike, state_transition::StateTransitionLike,
     NonConsensusError, ProtocolError,
 };
+use crate::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
 
 pub struct IdentityCreditWithdrawalTransitionValidator<SR>
 where
@@ -81,10 +82,12 @@ where
 
         // Check revision
         if existing_identity.get_revision() != (state_transition.get_revision() - 1) {
-            result.add_error(StateError::InvalidIdentityRevisionError {
-                identity_id: existing_identity.get_id().to_owned(),
-                current_revision: existing_identity.get_revision(),
-            });
+            result.add_error(StateError::InvalidIdentityRevisionError(
+                InvalidIdentityRevisionError::new(
+                    existing_identity.get_id().to_owned(),
+                    existing_identity.get_revision(),
+                )
+            ));
 
             return Ok(result);
         }

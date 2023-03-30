@@ -3,7 +3,6 @@ use std::sync::Arc;
 use jsonschema::error::ValidationErrorKind;
 use platform_value::Value;
 
-use crate::assert_consensus_errors;
 use crate::errors::consensus::ConsensusError;
 use crate::identity::state_transition::asset_lock_proof::{
     AssetLockProofValidator, AssetLockTransactionValidator, ChainAssetLockProofStructureValidator,

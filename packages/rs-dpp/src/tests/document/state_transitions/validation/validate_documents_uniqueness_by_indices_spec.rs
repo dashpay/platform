@@ -229,12 +229,12 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
     let state_error_1 = get_state_error(&validation_result, 0);
     assert!(matches!(
         state_error_1,
-        StateError::DuplicateUniqueIndexError { document_id, .. } if  document_id == &document_transitions[0].base().id
+        StateError::DuplicateUniqueIndexError(e) if  e.document_id() == &document_transitions[0].base().id
     ));
     let state_error_3 = get_state_error(&validation_result, 2);
     assert!(matches!(
         state_error_3 ,
-        StateError::DuplicateUniqueIndexError { document_id, .. } if  document_id == &document_transitions[1].base().id
+        StateError::DuplicateUniqueIndexError(e) if  e.document_id() == &document_transitions[1].base().id
     ));
 }
 

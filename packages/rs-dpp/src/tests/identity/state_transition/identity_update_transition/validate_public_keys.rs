@@ -45,8 +45,8 @@ fn should_return_invalid_result_if_there_are_duplicate_key_ids() {
 
     assert!(matches!(
         state_error,
-        StateError::DuplicatedIdentityPublicKeyIdStateError { duplicated_ids }
-        if duplicated_ids == &vec![0]
+        StateError::DuplicatedIdentityPublicKeyIdStateError(e)
+        if e.duplicated_ids() == &vec![0]
     ));
     assert_eq!(4022, result.errors[0].code());
 }
@@ -66,8 +66,10 @@ fn should_return_invalid_result_if_there_are_duplicate_keys() {
 
     assert!(matches!(
         state_error,
-        StateError::DuplicatedIdentityPublicKeyStateError { duplicated_public_key_ids }
-        if duplicated_public_key_ids == &vec![1]
+        StateError::DuplicatedIdentityPublicKeyStateError(
+            e
+        )
+        if e.duplicated_public_key_ids() == &vec![1]
     ));
     assert_eq!(4021, result.errors[0].code());
 }

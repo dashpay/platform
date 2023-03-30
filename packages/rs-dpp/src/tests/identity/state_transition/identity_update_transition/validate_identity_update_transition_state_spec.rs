@@ -102,12 +102,9 @@ async fn should_return_invalid_identity_revision_error_if_new_revision_is_not_in
 
     assert!(matches!(
         state_error,
-        StateError::InvalidIdentityRevisionError {
-            identity_id,
-            current_revision
-        } if  {
-            identity_id ==  state_transition.get_identity_id()  &&
-            current_revision == &0
+        StateError::InvalidIdentityRevisionError(e) if  {
+            e.identity_id() ==  state_transition.get_identity_id()  &&
+            e.current_revision() == &0
         }
     ));
 }
