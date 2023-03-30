@@ -67,12 +67,14 @@ impl DocumentFactoryWASM {
     pub(crate) fn new_with_state_repository_wrapper(
         protocol_version: u32,
         document_validator: DocumentValidatorWasm,
+        entropy_generator: ExternalEntropyGenerator,
         state_repository: ExternalStateRepositoryLikeWrapper,
     ) -> Self {
-        let factory = DocumentFactory::new(
+        let factory = DocumentFactory::new_with_entropy_generator(
             protocol_version,
             document_validator.into(),
             DataContractFetcherAndValidator::new(Arc::new(state_repository)),
+            Box::new(entropy_generator),
         );
 
         DocumentFactoryWASM(factory)
