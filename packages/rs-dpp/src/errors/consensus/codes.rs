@@ -7,22 +7,20 @@ use crate::errors::consensus::{
 };
 
 pub trait ErrorWithCode {
-    // Returns the Error Code
+    /// Returns the error code
     fn code(&self) -> u32;
 }
 
 impl ErrorWithCode for ConsensusError {
     fn code(&self) -> u32 {
         match self {
-            Self::StateError(e) => e.code(),
             Self::BasicError(e) => e.code(),
             Self::SignatureError(e) => e.code(),
+            Self::StateError(e) => e.code(),
             Self::FeeError(e) => e.code(),
 
-            // TODO: What is that?
             #[cfg(test)]
-            ConsensusError::TestConsensusError(_) => 1000,
-            ConsensusError::ValueError(_) => 5000,
+            ConsensusError::TestConsensusError(_) => 666,
         }
     }
 }
@@ -35,9 +33,12 @@ impl ErrorWithCode for BasicError {
             Self::SerializedObjectParsingError { .. } => 1001,
             Self::UnsupportedProtocolVersionError(_) => 1002,
             Self::IncompatibleProtocolVersionError(_) => 1003,
+
+            // Structure error
             Self::JsonSchemaCompilationError(..) => 1004,
             Self::JsonSchemaError(_) => 1005,
             Self::InvalidIdentifierError { .. } => 1006,
+            Self::ValueError(_) => 1060,
 
             // DataContract
             Self::DataContractMaxDepthExceedError { .. } => 1007,

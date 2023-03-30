@@ -8,8 +8,6 @@ use crate::consensus::signature::signature_error::SignatureError;
 #[cfg(test)]
 use crate::consensus::test_consensus_error::TestConsensusError;
 
-use platform_value::Error as ValueError;
-
 use crate::errors::consensus::basic::BasicError;
 
 #[derive(Error, Debug)]
@@ -26,18 +24,9 @@ pub enum ConsensusError {
     #[error(transparent)]
     FeeError(FeeError),
 
-    #[error(transparent)]
-    ValueError(ValueError),
-
     #[cfg(test)]
     #[cfg_attr(test, error(transparent))]
     TestConsensusError(TestConsensusError),
-}
-
-impl From<ValueError> for ConsensusError {
-    fn from(err: ValueError) -> Self {
-        Self::ValueError(err)
-    }
 }
 
 #[cfg(test)]

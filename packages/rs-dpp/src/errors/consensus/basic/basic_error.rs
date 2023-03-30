@@ -44,6 +44,8 @@ use crate::consensus::ConsensusError;
 
 use crate::data_contract::state_transition::errors::MissingDataContractIdError;
 
+use platform_value::Error as ValueError;
+
 #[derive(Error, Debug)]
 pub enum BasicError {
     #[error(transparent)]
@@ -236,6 +238,15 @@ pub enum BasicError {
     NotImplementedIdentityCreditWithdrawalTransitionPoolingError(
         NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
     ),
+
+    #[error(transparent)]
+    ValueError(ValueError),
+}
+
+impl From<ValueError> for ConsensusError {
+    fn from(err: ValueError) -> Self {
+        Self::BasicError(BasicError::ValueError(err))
+    }
 }
 
 impl From<IdentityAssetLockTransactionOutPointAlreadyExistsError> for BasicError {

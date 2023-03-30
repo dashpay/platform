@@ -160,7 +160,7 @@ pub async fn validate_documents_batch_transition_basic(
             }
             Ok(Some(id)) => id,
             Err(err) => {
-                result.add_error(ConsensusError::ValueError(err));
+                result.add_error(BasicError::ValueError(err));
                 continue;
             }
         };

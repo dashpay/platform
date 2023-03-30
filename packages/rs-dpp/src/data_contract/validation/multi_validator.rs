@@ -21,7 +21,7 @@ pub fn validate(raw_data_contract: &Value, validators: &[SubValidator]) -> Simpl
                             format!("{}/{}", path, key.non_qualified_string_representation());
                         values_queue.push((current_value, new_path))
                     }
-                    match key.to_str().map_err(ConsensusError::ValueError) {
+                    match key.to_str().map_err(BasicError::ValueError) {
                         Ok(key) => {
                             for validator in validators {
                                 validator(&path, key, value, current_value, &mut result);
@@ -94,14 +94,16 @@ pub fn byte_array_has_no_items_as_parent_validator(
     if key == "byteArray"
         && value.is_bool()
         && (unwrap_error_to_result(
-            parent.get("items").map_err(ConsensusError::ValueError),
+            parent
+                .get("items")
+                .map_err(|e| ConsensusError::BasicError(BasicError::ValueError(e))),
             result,
         )
         .is_some()
             || unwrap_error_to_result(
                 parent
                     .get("prefixItems")
-                    .map_err(ConsensusError::ValueError),
+                    .map_err(|e| ConsensusError::BasicError(BasicError::ValueError(e))),
                 result,
             )
             .is_some())

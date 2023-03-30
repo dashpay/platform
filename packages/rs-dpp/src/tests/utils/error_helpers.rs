@@ -38,7 +38,7 @@ pub fn json_schema_error(consensus_error: &ConsensusError) -> &JsonSchemaError {
 
 pub fn value_error(consensus_error: &ConsensusError) -> &ValueError {
     match consensus_error {
-        ConsensusError::ValueError(err) => err,
+        ConsensusError::BasicError(BasicError::ValueError(err)) => err,
         _ => panic!("error '{:?}' isn't a value error", consensus_error),
     }
 }
