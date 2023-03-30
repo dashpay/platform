@@ -3,6 +3,7 @@ use crate::data_contract::validation::data_contract_validator::DataContractValid
 use crate::data_contract::{DataContract, DataContractFactory};
 
 use crate::prelude::Identifier;
+use crate::util::entropy_generator::EntropyGenerator;
 use crate::validation::SimpleValidationResult;
 use crate::version::ProtocolVersionValidator;
 use crate::ProtocolError;
