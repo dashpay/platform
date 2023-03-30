@@ -2,14 +2,19 @@
 FROM rust as builder
 
 RUN --mount=type=cache,target=/var/cache/apt \
-    apt-get update && apt-get install -y clang && \
-    rustup target add wasm32-unknown-unknown && \
-    cargo install -f wasm-bindgen-cli
+    apt-get update && apt-get install -y clang
 
 WORKDIR /platform
 
 COPY .cargo /platform/.cargo
 COPY Cargo.lock rust-toolchain.toml ./
+
+RUN --mount=type=cache,target=target \
+    --mount=type=cache,target=$CARGO_HOME/git \
+    --mount=type=cache,target=$CARGO_HOME/registry \
+    rustup target add wasm32-unknown-unknown && \
+    cargo install -f wasm-bindgen-cli
+
 # Use Cargo.toml.template instead of Cargo.toml from project root to avoid copying unnecessary Rust packages
 COPY packages/dashmate/Cargo.toml.template ./Cargo.toml
 
