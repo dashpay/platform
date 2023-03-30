@@ -1,6 +1,7 @@
 use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 
 use wasm_bindgen::prelude::*;
+use dpp::state_transition::fee::operations::Operation;
 
 pub mod errors;
 pub mod state_transition_facade;
@@ -10,6 +11,8 @@ pub mod fee;
 pub mod validation;
 use crate::utils::Inner;
 pub use validation::*;
+use crate::fee::{PreCalculatedOperationWasm, ReadOperationWasm, SignatureVerificationOperationWasm};
+use crate::state_transition::conversion::create_operation_from_wasm_instance;
 
 pub(crate) mod conversion;
 
@@ -68,6 +71,30 @@ impl StateTransitionExecutionContextWasm {
     #[wasm_bindgen(js_name=disableDryRun)]
     pub fn disable_dry_run(&self) {
         self.0.disable_dry_run();
+    }
+
+    #[wasm_bindgen(js_name=addOperation)]
+    pub fn add_operation(&self, operation: JsValue) -> Result<(), JsValue> {
+        let operation = create_operation_from_wasm_instance(&operation)?;
+        self.0.add_operation(operation);
+        Ok(())
+    }
+
+    #[wasm_bindgen(js_name=getOperations)]
+    pub fn get_operation(&self) -> Vec<JsValue> {
+        let operations = self.0.get_operations();
+        operations
+            .iter()
+            .map(|operation| match operation {
+                Operation::PreCalculated(operation) => {
+                    PreCalculatedOperationWasm::from(operation.to_owned()).into()
+                }
+                Operation::Read(operation) => ReadOperationWasm::from(operation.to_owned()).into(),
+                Operation::SignatureVerification(operation) => {
+                    SignatureVerificationOperationWasm::from(operation.to_owned()).into()
+                }
+            })
+            .collect()
     }
 }
 

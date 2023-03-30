@@ -1,23 +1,26 @@
-const validateStateTransitionFeeFactory = require('@dashevo/dpp/lib/stateTransition/validation/validateStateTransitionFeeFactory');
-
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
-
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
-const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
 const getIdentityTopUpTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityTopUpTransitionFixture');
 
-const DataContractCreateTransition = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
-const DocumentsBatchTransition = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/DocumentsBatchTransition');
-
-const { expectValidationError } = require('@dashevo/dpp/lib/test/expect/expectError');
-
-const IdentityBalanceIsNotEnoughError = require('@dashevo/dpp/lib/errors/consensus/fee/BalanceIsNotEnoughError');
 const InvalidStateTransitionTypeError = require('@dashevo/dpp/lib/stateTransition/errors/InvalidStateTransitionTypeError');
 
 const { RATIO } = require('@dashevo/dpp/lib/identity/creditsConverter');
-const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
+
+const { expectValidationError } = require('../../../../lib/test/expect/expectError');
+const getDocumentsFixture = require('../../../../lib/test/fixtures/getDocumentsFixture');
+
+const createStateRepositoryMock = require('../../../../lib/test/mocks/createStateRepositoryMock');
+const getBlsMock = require('../../../../lib/test/mocks/getBlsAdapterMock');
+
+const getDataContractFixture = require('../../../../lib/test/fixtures/getDataContractFixture');
+
+let {
+  StateTransitionFeeValidator,
+  DashPlatformProtocol,
+  IdentityBalanceIsNotEnoughError,
+  StateTransitionExecutionContext,
+  PreCalculatedOperation,
+} = require('../../../..');
+const { default: loadWasmDpp } = require('../../../..');
 
 describe('validateStateTransitionFeeFactory', () => {
   let stateRepositoryMock;
@@ -25,9 +28,20 @@ describe('validateStateTransitionFeeFactory', () => {
   let dataContract;
   let calculateStateTransitionFeeMock;
   let fetchAssetLockTransactionOutputMock;
+  let dpp;
+  let dataContractOwnerId;
+  let executionContext;
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
+    ({
+      StateTransitionFeeValidator,
+      IdentityBalanceIsNotEnoughError,
+      DashPlatformProtocol,
+      StateTransitionExecutionContext,
+      PreCalculatedOperation,
+    } = await loadWasmDpp());
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+    stateRepositoryMock.fetchDataContract.resolves(undefined);
 
     const output = getIdentityCreateTransitionFixture().getAssetLockProof().getOutput();
 
@@ -35,133 +49,123 @@ describe('validateStateTransitionFeeFactory', () => {
       desiredAmount: 42,
     });
 
+    dpp = new DashPlatformProtocol(getBlsMock(), stateRepositoryMock);
     fetchAssetLockTransactionOutputMock = this.sinonSandbox.stub().resolves(output);
 
-    validateStateTransitionFee = validateStateTransitionFeeFactory(
-      stateRepositoryMock,
-      calculateStateTransitionFeeMock,
-      fetchAssetLockTransactionOutputMock,
-    );
+    const validator = new StateTransitionFeeValidator(stateRepositoryMock);
 
-    dataContract = getDataContractFixture();
+    validateStateTransitionFee = (st) => validator.validate(st);
+
+    executionContext = new StateTransitionExecutionContext();
+    executionContext.disableDryRun();
+
+    dataContract = await getDataContractFixture();
   });
 
   describe('DataContractCreateTransition', () => {
     let dataContractCreateTransition;
 
     beforeEach(() => {
-      dataContractCreateTransition = new DataContractCreateTransition({
-        dataContract: dataContract.toObject(),
-        entropy: dataContract.getEntropy(),
-      });
+      dataContractOwnerId = dataContract.getOwnerId().toBuffer();
+      dataContractCreateTransition = dpp.dataContract
+        .createDataContractCreateTransition(dataContract);
     });
 
     it('should return invalid result if balance is not enough', async () => {
+      executionContext.addOperation(new PreCalculatedOperation(0, 42, []));
+      dataContractCreateTransition.setExecutionContext(executionContext);
       stateRepositoryMock.fetchIdentityBalance.resolves(1);
 
       const result = await validateStateTransitionFee(dataContractCreateTransition);
 
-      expectValidationError(result, IdentityBalanceIsNotEnoughError);
+      await expectValidationError(result, IdentityBalanceIsNotEnoughError);
 
       const [error] = result.getErrors();
 
       expect(error.getCode()).to.equal(3000);
+      //
       expect(error.getBalance()).to.equal(1);
 
-      expect(stateRepositoryMock.fetchIdentityBalance).to.be.calledOnceWithExactly(
-        dataContract.getOwnerId(),
-        dataContractCreateTransition.getExecutionContext(),
-      );
-
-      expect(calculateStateTransitionFeeMock).to.be.calledOnceWithExactly(
-        dataContractCreateTransition,
-      );
-
-      expect(fetchAssetLockTransactionOutputMock).to.not.be.called();
+      expect(stateRepositoryMock.fetchIdentityBalance).to.be.calledOnce();
+      expect(
+        stateRepositoryMock.fetchIdentityBalance.getCall(0).args[0].toBuffer(),
+      ).to.be.deep.equal(dataContractOwnerId);
     });
 
     it('should return valid result', async () => {
       stateRepositoryMock.fetchIdentityBalance.resolves(42);
 
+      executionContext.addOperation(new PreCalculatedOperation(0, 42, []));
+      dataContractCreateTransition.setExecutionContext(executionContext);
+
       const result = await validateStateTransitionFee(dataContractCreateTransition);
 
       expect(result.isValid()).to.be.true();
+      console.log(result.getErrors()[0]);
 
-      expect(stateRepositoryMock.fetchIdentityBalance).to.be.calledOnceWithExactly(
-        dataContract.getOwnerId(),
-        dataContractCreateTransition.getExecutionContext(),
-      );
-
-      expect(calculateStateTransitionFeeMock).to.be.calledOnceWithExactly(
-        dataContractCreateTransition,
-      );
-
-      expect(fetchAssetLockTransactionOutputMock).to.not.be.called();
+      expect(stateRepositoryMock.fetchIdentityBalance).to.be.calledOnce();
+      expect(
+        stateRepositoryMock.fetchIdentityBalance.getCall(0).args[0].toBuffer(),
+      ).to.be.deep.equal(dataContractOwnerId);
     });
   });
 
   describe('DocumentsBatchTransition', () => {
     let documentsBatchTransition;
+    let ownerId;
 
-    beforeEach(() => {
-      const documents = getDocumentsFixture(dataContract);
-
-      const documentTransitions = getDocumentTransitionsFixture({
-        create: documents,
+    beforeEach(async () => {
+      documentsBatchTransition = await dpp.document.createStateTransition({
+        create: await getDocumentsFixture(),
       });
 
-      documentsBatchTransition = new DocumentsBatchTransition({
-        ownerId: getDocumentsFixture.ownerId,
-        contractId: dataContract.getId(),
-        transitions: documentTransitions.map((t) => t.toObject()),
-      }, [dataContract]);
+      ownerId = documentsBatchTransition.getOwnerId().toBuffer();
     });
 
     it('should return invalid result if balance is not enough', async () => {
       stateRepositoryMock.fetchIdentityBalance.resolves(1);
 
+      executionContext.addOperation(new PreCalculatedOperation(0, 42, []));
+      documentsBatchTransition.setExecutionContext(executionContext);
+
       const result = await validateStateTransitionFee(documentsBatchTransition);
 
-      expectValidationError(result, IdentityBalanceIsNotEnoughError);
+      await expectValidationError(result, IdentityBalanceIsNotEnoughError);
 
       const [error] = result.getErrors();
 
       expect(error.getCode()).to.equal(3000);
       expect(error.getBalance()).to.equal(1);
 
-      expect(stateRepositoryMock.fetchIdentityBalance).to.be.calledOnceWithExactly(
-        getDocumentsFixture.ownerId,
-        documentsBatchTransition.getExecutionContext(),
-      );
-
-      expect(calculateStateTransitionFeeMock).to.be.calledOnceWithExactly(
-        documentsBatchTransition,
-      );
-
-      expect(fetchAssetLockTransactionOutputMock).to.not.be.called();
+      expect(stateRepositoryMock.fetchIdentityBalance).to.be.calledOnce();
+      expect(
+        stateRepositoryMock.fetchIdentityBalance.getCall(0).args[0].toBuffer(),
+      ).to.be.deep.equal(ownerId);
     });
 
     it('should return valid result', async () => {
       stateRepositoryMock.fetchIdentityBalance.resolves(42);
 
+      executionContext.addOperation(new PreCalculatedOperation(0, 42, []));
+      documentsBatchTransition.setExecutionContext(executionContext);
+
       const result = await validateStateTransitionFee(documentsBatchTransition);
 
       expect(result.isValid()).to.be.true();
 
-      expect(stateRepositoryMock.fetchIdentityBalance).to.be.calledOnceWithExactly(
-        getDocumentsFixture.ownerId,
-        documentsBatchTransition.getExecutionContext(),
-      );
-
-      expect(calculateStateTransitionFeeMock).to.be.calledOnceWithExactly(
-        documentsBatchTransition,
-      );
-
-      expect(fetchAssetLockTransactionOutputMock).to.not.be.called();
+      expect(stateRepositoryMock.fetchIdentityBalance).to.be.calledOnce();
+      expect(
+        stateRepositoryMock.fetchIdentityBalance.getCall(0).args[0].toBuffer(),
+      ).to.be.deep.equal(ownerId);
     });
 
     it('should not increase balance on dry run', async () => {
-      documentsBatchTransition.getExecutionContext().enableDryRun();
+      stateRepositoryMock.fetchIdentityBalance.resolves(1);
+
+      executionContext.enableDryRun();
+
+      executionContext.addOperation(new PreCalculatedOperation(0, 42, []));
+      documentsBatchTransition.setExecutionContext(executionContext);
 
       const result = await validateStateTransitionFee(documentsBatchTransition);
 
@@ -169,12 +173,10 @@ describe('validateStateTransitionFeeFactory', () => {
 
       expect(result.isValid()).to.be.true();
 
-      expect(calculateStateTransitionFeeMock).to.be.not.called();
-      expect(stateRepositoryMock.fetchIdentityBalance).to.be.calledOnceWithExactly(
-        getDocumentsFixture.ownerId,
-        documentsBatchTransition.getExecutionContext(),
-      );
-      expect(fetchAssetLockTransactionOutputMock).to.not.be.called();
+      expect(stateRepositoryMock.fetchIdentityBalance).to.be.calledOnce();
+      expect(
+        stateRepositoryMock.fetchIdentityBalance.getCall(0).args[0].toBuffer(),
+      ).to.be.deep.equal(ownerId);
     });
   });
 

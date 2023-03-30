@@ -3,6 +3,7 @@ use dpp::state_transition::validation::validate_state_transition_fee::StateTrans
 use std::sync::Arc;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+use dpp::state_transition::fee::FeeResult;
 use crate::state_transition::conversion::create_state_transition_from_wasm_instance;
 use crate::utils::WithJsError;
 use crate::validation::ValidationResultWasm;

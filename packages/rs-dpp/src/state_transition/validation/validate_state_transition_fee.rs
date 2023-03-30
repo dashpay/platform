@@ -168,18 +168,19 @@ where
         st: &impl StateTransitionIdentitySigned,
     ) -> Result<u64, ProtocolError> {
         let identity_id = st.get_owner_id();
-        let identity = self
+        let maybe_balance = self
             .state_repository
-            .fetch_identity(identity_id, Some(st.get_execution_context()))
-            .await?
-            .map(TryInto::try_into)
-            .transpose()
-            .map_err(Into::into)?
-            .ok_or_else(|| {
-                ProtocolError::IdentityNotPresentError(IdentityNotPresentError::new(*identity_id))
-            })?;
+            .fetch_identity_balance(identity_id, Some(st.get_execution_context()))
+            .await
+            .map_err(ProtocolError::from)?;
 
-        Ok(identity.get_balance())
+        if let Some(balance) = maybe_balance {
+            Ok(balance)
+        } else {
+            Err(ProtocolError::IdentityNotPresentError(
+                IdentityNotPresentError::new(*identity_id),
+            ))
+        }
     }
 }
 

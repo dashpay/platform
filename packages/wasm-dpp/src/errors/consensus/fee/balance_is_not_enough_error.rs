@@ -17,13 +17,13 @@ impl BalanceIsNotEnoughErrorWasm {
 #[wasm_bindgen(js_class=BalanceIsNotEnoughError)]
 impl BalanceIsNotEnoughErrorWasm {
     #[wasm_bindgen(js_name=getBalance)]
-    pub fn get_balance(&self) -> Credits {
-        self.balance
+    pub fn get_balance(&self) -> f64 {
+        self.balance as f64
     }
 
     #[wasm_bindgen(js_name=getFee)]
-    pub fn get_fee(&self) -> Credits {
-        self.fee
+    pub fn get_fee(&self) -> f64 {
+        self.fee as f64
     }
 
     #[wasm_bindgen(js_name=getCode)]

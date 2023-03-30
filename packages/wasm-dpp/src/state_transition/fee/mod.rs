@@ -1,6 +1,8 @@
 use dpp::state_transition::fee::operations::Operation;
 use wasm_bindgen::prelude::*;
 
+pub use operations::*;
+
 use crate::utils::Inner;
 mod calculate_operation_fees;
 mod calculate_state_transition_fee;
