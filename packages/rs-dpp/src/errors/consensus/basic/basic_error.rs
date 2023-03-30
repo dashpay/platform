@@ -45,14 +45,15 @@ use crate::consensus::ConsensusError;
 use crate::data_contract::state_transition::errors::MissingDataContractIdError;
 
 use platform_value::Error as ValueError;
+use crate::consensus::basic::serialized_object_parsing_error::SerializedObjectParsingError;
 
 #[derive(Error, Debug)]
 pub enum BasicError {
     #[error(transparent)]
     ProtocolVersionParsingError(ProtocolVersionParsingError),
 
-    #[error("Parsing of serialized object failed due to: {parsing_error}")]
-    SerializedObjectParsingError { parsing_error: anyhow::Error },
+    #[error(transparent)]
+    SerializedObjectParsingError(SerializedObjectParsingError),
 
     #[error(transparent)]
     JsonSchemaError(JsonSchemaError),

@@ -423,8 +423,8 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
             code,
         )
         .into(),
-        SerializedObjectParsingError { parsing_error } => SerializedObjectParsingErrorWasm::new(
-            wasm_bindgen::JsError::new(parsing_error.to_string().as_ref()),
+        SerializedObjectParsingError(e) => SerializedObjectParsingErrorWasm::new(
+            wasm_bindgen::JsError::new(e.parsing_error().to_string().as_ref()),
             code,
         )
         .into(),
