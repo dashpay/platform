@@ -65,9 +65,9 @@ class DocumentRepository {
       undefined,
       [
         new this.dppWasm.PreCalculatedOperation(
-          feeResult.storageFee(),
-          feeResult.processingFee(),
-          feeResult.feeRefunds(),
+          feeResult.storageFee,
+          feeResult.processingFee,
+          feeResult.feeRefunds,
         ),
       ],
     );
@@ -114,9 +114,9 @@ class DocumentRepository {
       undefined,
       [
         new this.dppWasm.PreCalculatedOperation(
-          feeResult.storageFee(),
-          feeResult.processingFee(),
-          feeResult.feeRufunds(),
+          feeResult.storageFee,
+          feeResult.processingFee,
+          feeResult.feeRufunds,
         ),
       ],
     );
@@ -230,9 +230,9 @@ class DocumentRepository {
         undefined,
         [
           new this.dppWasm.PreCalculatedOperation(
-            feeResult.storageFee(),
-            feeResult.processingFee(),
-            feeResult.feeRefunds(),
+            feeResult.storageFee,
+            feeResult.processingFee,
+            feeResult.feeRefunds,
           ),
         ],
       );

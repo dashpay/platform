@@ -41,9 +41,9 @@ class DataContractStoreRepository {
         undefined,
         [
           new this.dppWasm.PreCalculatedOperation(
-            feeResult.storageFee(),
-            feeResult.processingFee(),
-            feeResult.feeRefunds(),
+            feeResult.storageFee,
+            feeResult.processingFee,
+            feeResult.feeRefunds,
           ),
         ],
       );
@@ -86,9 +86,9 @@ class DataContractStoreRepository {
         undefined,
         [
           new this.dppWasm.PreCalculatedOperation(
-            feeResult.storageFee(),
-            feeResult.processingFee(),
-            feeResult.feeRefunds(),
+            feeResult.storageFee,
+            feeResult.processingFee,
+            feeResult.feeRefunds,
           ),
         ],
       );
@@ -135,9 +135,9 @@ class DataContractStoreRepository {
     const operations = [];
     if (feeResult) {
       operations.push(new this.dppWasm.PreCalculatedOperation(
-        feeResult.storageFee(),
-        feeResult.processingFee(),
-        feeResult.feeRefunds(),
+        feeResult.storageFee,
+        feeResult.processingFee,
+        feeResult.feeRefunds,
       ));
     }
 

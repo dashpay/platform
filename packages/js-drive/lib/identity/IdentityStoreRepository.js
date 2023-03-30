@@ -43,9 +43,9 @@ class IdentityStoreRepository {
         identity,
         [
           new this.dppWasm.PreCalculatedOperation(
-            feeResult.storageFee(),
-            feeResult.processingFee(),
-            feeResult.feeRefunds(),
+            feeResult.storageFee,
+            feeResult.processingFee,
+            feeResult.feeRefunds,
           ),
         ],
       );
@@ -179,9 +179,9 @@ class IdentityStoreRepository {
         undefined,
         [
           new this.dppWasm.PreCalculatedOperation(
-            feeResult.storageFee(),
-            feeResult.processingFee(),
-            feeResult.feeRefunds(),
+            feeResult.storageFee,
+            feeResult.processingFee,
+            feeResult.feeRefunds,
           ),
         ],
       );
@@ -227,9 +227,9 @@ class IdentityStoreRepository {
         undefined,
         [
           new this.dppWasm.PreCalculatedOperation(
-            feeResult.storageFee(),
-            feeResult.processingFee(),
-            feeResult.feeRefunds(),
+            feeResult.storageFee,
+            feeResult.processingFee,
+            feeResult.feeRefunds,
           ),
         ],
       );

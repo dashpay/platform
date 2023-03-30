@@ -44,9 +44,9 @@ class IdentityPublicKeyStoreRepository {
         undefined,
         [
           new this.dppWasm.PreCalculatedOperation(
-            feeResult.storageFee(),
-            feeResult.processingFee(),
-            feeResult.feeRefunds(),
+            feeResult.storageFee,
+            feeResult.processingFee,
+            feeResult.feeRefunds,
           ),
         ],
       );
@@ -95,9 +95,9 @@ class IdentityPublicKeyStoreRepository {
         undefined,
         [
           new this.dppWasm.PreCalculatedOperation(
-            feeResult.storageFee(),
-            feeResult.processingFee(),
-            feeResult.feeRefunds(),
+            feeResult.storageFee,
+            feeResult.processingFee,
+            feeResult.feeRefunds,
           ),
         ],
       );
