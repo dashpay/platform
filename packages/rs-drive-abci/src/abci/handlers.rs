@@ -287,13 +287,31 @@ mod tests {
 
         #[test]
         fn test_abci_flow() {
-            let mut platform = TestPlatformBuilder::<MockCoreRPCLike>::new(Some(PlatformConfig {
-                verify_sum_trees: false,
-                ..Default::default()
-            }))
-            .build();
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(PlatformConfig {
+                    verify_sum_trees: false,
+                    ..Default::default()
+                })
+                .build_with_mock_rpc();
 
             let mut core_rpc_mock = MockCoreRPCLike::new();
+
+            core_rpc_mock
+                .expect_get_block_hash()
+                // .times(total_days)
+                .returning(|_| {
+                    Ok(BlockHash::from_hex(
+                        "0000000000000000000000000000000000000000000000000000000000000000",
+                    )
+                    .unwrap())
+                });
+
+            core_rpc_mock
+                .expect_get_block_json()
+                // .times(total_days)
+                .returning(|_| Ok(json!({})));
+
+            platform.core_rpc = core_rpc_mock;
 
             let transaction = platform.drive.grove.start_transaction();
 
@@ -400,23 +418,6 @@ mod tests {
             let block_interval = 86400i64.div(blocks_per_day);
 
             let mut previous_block_time_ms: Option<u64> = None;
-
-            core_rpc_mock
-                .expect_get_block_hash()
-                // .times(total_days)
-                .returning(|_| {
-                    Ok(BlockHash::from_hex(
-                        "0000000000000000000000000000000000000000000000000000000000000000",
-                    )
-                    .unwrap())
-                });
-
-            core_rpc_mock
-                .expect_get_block_json()
-                // .times(total_days)
-                .returning(|_| Ok(json!({})));
-
-            platform.core_rpc = core_rpc_mock;
 
             // process blocks
             for day in 0..total_days {
@@ -572,11 +573,12 @@ mod tests {
         fn test_chain_halt_for_36_days() {
             // TODO refactor to remove code duplication
 
-            let mut platform = TestPlatformBuilder::<MockCoreRPCLike>::new(Some(PlatformConfig {
-                verify_sum_trees: false,
-                ..Default::default()
-            }))
-            .build();
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(PlatformConfig {
+                    verify_sum_trees: false,
+                    ..Default::default()
+                })
+                .build_with_mock_rpc();
 
             let mut core_rpc_mock = MockCoreRPCLike::new();
 

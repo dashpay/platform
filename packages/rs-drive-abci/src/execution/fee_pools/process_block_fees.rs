@@ -386,9 +386,9 @@ mod tests {
 
         #[test]
         fn test_processing_epoch_change_for_epoch_0_1_and_4() {
-            let platform = TestPlatformBuilder::<MockCoreRPCLike>::new(None)
-                .set_initial_state_structure()
-                .build();
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
             let genesis_time_ms = Utc::now()
@@ -562,10 +562,14 @@ mod tests {
         fn test_process_3_block_fees_from_different_epochs() {
             // We are not adding to the overall platform credits so we can't verify
             // the sum trees
-            let platform = TestPlatformBuilder::<MockCoreRPCLike>::new(Some(PlatformConfig {
-                verify_sum_trees: false,
-                ..Default::default()
-            })).set_initial_state_structure().build();
+            let platform = TestPlatformBuilder::new()
+                .with_config(PlatformConfig {
+                    verify_sum_trees: false,
+                    ..Default::default()
+                })
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+
             let transaction = platform.drive.grove.start_transaction();
 
             platform.create_mn_shares_contract(Some(&transaction));

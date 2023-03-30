@@ -570,9 +570,9 @@ mod tests {
 
         #[test]
         fn test_statuses_are_updated() {
-            let mut platform = TestPlatformBuilder::<MockCoreRPCLike>::new(None)
-                .set_initial_state_structure()
-                .build();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
 
             let mut mock_rpc_client = MockCoreRPCLike::new();
 
@@ -621,6 +621,25 @@ mod tests {
                 });
 
             platform.core_rpc = mock_rpc_client;
+
+            platform.block_execution_context = RwLock::new(Some(BlockExecutionContext {
+                block_info: BlockStateInfo {
+                    block_height: 1,
+                    block_time_ms: 1,
+                    previous_block_time_ms: Some(1),
+                    proposer_pro_tx_hash: [
+                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        0, 0, 0, 0, 0, 0, 0,
+                    ],
+                    core_chain_locked_height: 96,
+                },
+                epoch_info: EpochInfo {
+                    current_epoch_index: 1,
+                    previous_epoch_index: None,
+                    is_epoch_change: false,
+                },
+                hpmn_count: 100,
+            }));
 
             let transaction = platform.drive.grove.start_transaction();
 
@@ -691,25 +710,6 @@ mod tests {
                 Some(&transaction),
             );
 
-            platform.block_execution_context = RwLock::new(Some(BlockExecutionContext {
-                block_info: BlockStateInfo {
-                    block_height: 1,
-                    block_time_ms: 1,
-                    previous_block_time_ms: Some(1),
-                    proposer_pro_tx_hash: [
-                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        0, 0, 0, 0, 0, 0, 0,
-                    ],
-                    core_chain_locked_height: 96,
-                },
-                epoch_info: EpochInfo {
-                    current_epoch_index: 1,
-                    previous_epoch_index: None,
-                    is_epoch_change: false,
-                },
-                hpmn_count: 100,
-            }));
-
             platform
                 .update_broadcasted_withdrawal_transaction_statuses(95, Some(&transaction))
                 .expect("to update withdrawal statuses");
@@ -763,9 +763,28 @@ mod tests {
 
         #[test]
         fn test_pooling() {
-            let mut platform = TestPlatformBuilder::<MockCoreRPCLike>::new(None)
-                .set_initial_state_structure()
-                .build();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+
+            platform.block_execution_context = RwLock::new(Some(BlockExecutionContext {
+                block_info: BlockStateInfo {
+                    block_height: 1,
+                    block_time_ms: 1,
+                    previous_block_time_ms: Some(1),
+                    proposer_pro_tx_hash: [
+                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                        0, 0, 0, 0, 0, 0, 0,
+                    ],
+                    core_chain_locked_height: 96,
+                },
+                epoch_info: EpochInfo {
+                    current_epoch_index: 1,
+                    previous_epoch_index: None,
+                    is_epoch_change: false,
+                },
+                hpmn_count: 100,
+            }));
 
             let transaction = platform.drive.grove.start_transaction();
 
@@ -826,25 +845,6 @@ mod tests {
                 Some(&transaction),
             );
 
-            platform.block_execution_context = RwLock::new(Some(BlockExecutionContext {
-                block_info: BlockStateInfo {
-                    block_height: 1,
-                    block_time_ms: 1,
-                    previous_block_time_ms: Some(1),
-                    proposer_pro_tx_hash: [
-                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        0, 0, 0, 0, 0, 0, 0,
-                    ],
-                    core_chain_locked_height: 96,
-                },
-                epoch_info: EpochInfo {
-                    current_epoch_index: 1,
-                    previous_epoch_index: None,
-                    is_epoch_change: false,
-                },
-                hpmn_count: 100,
-            }));
-
             platform
                 .pool_withdrawals_into_transactions_queue(Some(&transaction))
                 .expect("to pool withdrawal documents into transactions");
@@ -884,9 +884,9 @@ mod tests {
 
         #[test]
         fn test_fetches_core_transactions() {
-            let mut platform = TestPlatformBuilder::<MockCoreRPCLike>::new(None)
-                .set_initial_state_structure()
-                .build();
+            let mut platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
 
             let mut mock_rpc_client = MockCoreRPCLike::new();
 
@@ -964,9 +964,9 @@ mod tests {
 
         #[test]
         fn test_build() {
-            let platform = TestPlatformBuilder::<MockCoreRPCLike>::new(None)
-                .set_initial_state_structure()
-                .build();
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
 
             let transaction = platform.drive.grove.start_transaction();
 

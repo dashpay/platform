@@ -50,7 +50,7 @@ use drive::drive::Drive;
 use drive::fee::credits::Credits;
 use drive::fee_pools::epochs::Epoch;
 use drive::query::DriveQuery;
-use drive_abci::config::PlatformConfig;
+use drive_abci::{config::PlatformConfig, test::helpers::setup::TempPlatform};
 use drive_abci::execution::execution_event::ExecutionEvent;
 use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
 use drive_abci::platform::Platform;
@@ -377,7 +377,7 @@ fn create_identities_operations<'a>(
 }
 
 pub struct ChainExecutionOutcome {
-    pub platform: Platform<DefaultCoreRPC>,
+    pub platform: TempPlatform<DefaultCoreRPC>,
     pub masternode_identity_balances: BTreeMap<[u8; 32], Credits>,
     pub identities: Vec<Identity>,
     pub proposers: Vec<[u8; 32]>,
@@ -412,7 +412,9 @@ pub(crate) fn run_chain_for_strategy(
     seed: u64,
 ) -> ChainExecutionOutcome {
     let quorum_size = config.quorum_size;
-    let platform = TestPlatformBuilder::<DefaultCoreRPC>::new(Some(config.clone())).build();
+    let platform = TestPlatformBuilder::new()
+        .with_config(config.clone())
+        .build_with_default_rpc();
     let mut rng = StdRng::seed_from_u64(seed);
     // init chain
     let init_chain_request = static_init_chain_request();
@@ -453,7 +455,7 @@ pub(crate) fn run_chain_for_strategy(
 }
 
 pub(crate) fn continue_chain_for_strategy(
-    platform: Platform<DefaultCoreRPC>,
+    platform: TempPlatform<DefaultCoreRPC>,
     chain_execution_parameters: ChainExecutionParameters,
     strategy: Strategy,
     config: PlatformConfig,

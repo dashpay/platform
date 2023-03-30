@@ -32,40 +32,68 @@
 //! This module defines helper functions related to setting up Platform.
 //!
 
+use std::ops::{Deref, DerefMut};
+
 use crate::platform::Platform;
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::fixture::abci::static_system_identity_public_keys;
 use crate::{config::PlatformConfig, rpc::core::DefaultCoreRPC};
 use tempfile::TempDir;
 
-/// A test for the platform builder
-pub struct TestPlatformBuilder<C> {
+/// A test platform builder.
+pub struct TestPlatformBuilder {
+    config: Option<PlatformConfig>,
+    tempdir: TempDir,
+}
+
+/// Platform wrapper that takes care of temporary directory.
+pub struct TempPlatform<C> {
     platform: Platform<C>,
+    _tempdir: TempDir,
 }
 
-impl TestPlatformBuilder<DefaultCoreRPC> {
-    /// Create a new test platform builder from a default core rpc
-    pub fn new(config: Option<PlatformConfig>) -> Self {
-        let tmp_dir = TempDir::new().unwrap();
-        let platform = Platform::<DefaultCoreRPC>::open(tmp_dir, config)
-            .expect("should open Platform successfully");
+impl TestPlatformBuilder {
+    /// Create a new test platform builder
+    pub fn new() -> Self {
+        let tempdir = TempDir::new().unwrap();
+        TestPlatformBuilder {
+            tempdir,
+            config: None,
+        }
+    }
 
-        TestPlatformBuilder { platform }
+    /// Add platform config
+    pub fn with_config(mut self, config: PlatformConfig) -> Self {
+        self.config = Some(config);
+        self
     }
 }
 
-impl TestPlatformBuilder<MockCoreRPCLike> {
-    /// Create a new test platform builder from a mock core rpc
-    pub fn new(config: Option<PlatformConfig>) -> Self {
-        let tmp_dir = TempDir::new().unwrap();
-        let platform = Platform::<MockCoreRPCLike>::open(tmp_dir, config)
+impl TestPlatformBuilder {
+    /// Create a new temp platform with a mock core rpc
+    pub fn build_with_mock_rpc(self) -> TempPlatform<MockCoreRPCLike> {
+        let platform = Platform::<MockCoreRPCLike>::open(self.tempdir.path(), self.config)
             .expect("should open Platform successfully");
 
-        TestPlatformBuilder { platform }
+        TempPlatform {
+            platform,
+            _tempdir: self.tempdir,
+        }
+    }
+
+    /// Create a new temp platform with a default core rpc
+    pub fn build_with_default_rpc(self) -> TempPlatform<DefaultCoreRPC> {
+        let platform = Platform::<DefaultCoreRPC>::open(self.tempdir.path(), self.config)
+            .expect("should open Platform successfully");
+
+        TempPlatform {
+            platform,
+            _tempdir: self.tempdir,
+        }
     }
 }
 
-impl<C> TestPlatformBuilder<C> {
+impl<C> TempPlatform<C> {
     /// A function which sets initial state structure for Platform.
     pub fn set_initial_state_structure(self) -> Self {
         self.platform
@@ -88,9 +116,18 @@ impl<C> TestPlatformBuilder<C> {
 
         self
     }
+}
 
-    /// Make Platform
-    pub fn build(self) -> Platform<C> {
-        self.platform
+impl<C> Deref for TempPlatform<C> {
+    type Target = Platform<C>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.platform
+    }
+}
+
+impl<C> DerefMut for TempPlatform<C> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.platform
     }
 }

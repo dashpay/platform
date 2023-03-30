@@ -292,14 +292,13 @@ impl<C> Platform<C> {
 #[cfg(test)]
 mod tests {
     mod create_genesis_state {
-        use crate::rpc::core::MockCoreRPCLike;
         use crate::test::helpers::setup::TestPlatformBuilder;
 
         #[test]
         pub fn should_create_genesis_state_deterministically() {
-            let platform = TestPlatformBuilder::<MockCoreRPCLike>::new(None)
-                .set_genesis_state()
-                .build();
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
 
             let root_hash = platform
                 .drive

@@ -118,15 +118,14 @@ mod tests {
         use drive::fee_pools::update_storage_fee_distribution_pool_operation;
 
         use crate::test::helpers::setup::TestPlatformBuilder;
-        use crate::rpc::core::MockCoreRPCLike;
 
         use super::*;
 
         #[test]
         fn should_add_operations_to_distribute_distribution_storage_pool_and_refunds() {
-            let platform = TestPlatformBuilder::<MockCoreRPCLike>::new(None)
-                .set_initial_state_structure()
-                .build();
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
             /*

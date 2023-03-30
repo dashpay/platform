@@ -429,9 +429,9 @@ mod tests {
 
         #[test]
         fn test_nothing_to_distribute_if_there_is_no_epochs_needing_payment() {
-            let platform = TestPlatformBuilder::<MockCoreRPCLike>::new(None)
-                .set_initial_state_structure()
-                .build();
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
             let current_epoch_index = 0;
@@ -452,9 +452,9 @@ mod tests {
 
         #[test]
         fn test_set_proposers_limit_50_for_one_unpaid_epoch() {
-            let platform = TestPlatformBuilder::<MockCoreRPCLike>::new(None)
-                .set_initial_state_structure()
-                .build();
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
 
             let transaction = platform.drive.grove.start_transaction();
 
@@ -528,9 +528,9 @@ mod tests {
 
         #[test]
         fn test_increased_proposers_limit_to_100_for_two_unpaid_epochs() {
-            let platform = TestPlatformBuilder::<MockCoreRPCLike>::new(None)
-                .set_initial_state_structure()
-                .build();
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
             // Create masternode reward shares contract
@@ -619,9 +619,9 @@ mod tests {
 
         #[test]
         fn test_increased_proposers_limit_to_150_for_three_unpaid_epochs() {
-            let platform = TestPlatformBuilder::<MockCoreRPCLike>::new(None)
-                .set_initial_state_structure()
-                .build();
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
             // Create masternode reward shares contract
@@ -726,9 +726,9 @@ mod tests {
 
         #[test]
         fn test_mark_epoch_as_paid_and_update_next_update_epoch_index_if_all_proposers_paid() {
-            let platform = TestPlatformBuilder::<MockCoreRPCLike>::new(None)
-                .set_initial_state_structure()
-                .build();
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
             // Create masternode reward shares contract
@@ -821,9 +821,9 @@ mod tests {
         #[test]
         fn test_mark_epoch_as_paid_and_update_next_update_epoch_index_if_all_50_proposers_were_paid_last_block(
         ) {
-            let platform = TestPlatformBuilder::<MockCoreRPCLike>::new(None)
-                .set_initial_state_structure()
-                .build();
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
             // Create masternode reward shares contract
@@ -953,9 +953,9 @@ mod tests {
 
         #[test]
         fn test_no_epoch_to_pay_on_genesis_epoch() {
-            let platform = TestPlatformBuilder::<MockCoreRPCLike>::new(None)
-                .set_initial_state_structure()
-                .build();
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
             let unpaid_epoch = platform
@@ -967,9 +967,9 @@ mod tests {
 
         #[test]
         fn test_no_epoch_to_pay_if_oldest_unpaid_epoch_is_current_epoch() {
-            let platform = TestPlatformBuilder::<MockCoreRPCLike>::new(None)
-                .set_initial_state_structure()
-                .build();
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
             let epoch_0_tree = Epoch::new(GENESIS_EPOCH_INDEX);
@@ -999,9 +999,9 @@ mod tests {
 
         #[test]
         fn test_use_cached_current_start_block_height_as_end_block_if_unpaid_epoch_is_previous() {
-            let platform = TestPlatformBuilder::<MockCoreRPCLike>::new(None)
-                .set_initial_state_structure()
-                .build();
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
             let epoch_0_tree = Epoch::new(GENESIS_EPOCH_INDEX);
@@ -1047,9 +1047,9 @@ mod tests {
         #[test]
         fn test_use_stored_start_block_height_from_current_epoch_as_end_block_if_unpaid_epoch_is_previous(
         ) {
-            let platform = TestPlatformBuilder::<MockCoreRPCLike>::new(None)
-                .set_initial_state_structure()
-                .build();
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
             let epoch_0_tree = Epoch::new(GENESIS_EPOCH_INDEX);
@@ -1091,9 +1091,9 @@ mod tests {
 
         #[test]
         fn test_find_stored_next_start_block_as_end_block_if_unpaid_epoch_more_than_one_ago() {
-            let platform = TestPlatformBuilder::<MockCoreRPCLike>::new(None)
-                .set_initial_state_structure()
-                .build();
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
             let epoch_0_tree = Epoch::new(GENESIS_EPOCH_INDEX);
@@ -1137,9 +1137,9 @@ mod tests {
 
         #[test]
         fn test_use_cached_start_block_height_if_not_found_in_case_of_epoch_change() {
-            let platform = TestPlatformBuilder::<MockCoreRPCLike>::new(None)
-                .set_initial_state_structure()
-                .build();
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
             let epoch_0_tree = Epoch::new(GENESIS_EPOCH_INDEX);
@@ -1185,9 +1185,9 @@ mod tests {
         #[test]
         fn test_error_if_cached_start_block_height_is_not_present_and_not_found_in_case_of_epoch_change(
         ) {
-            let platform = TestPlatformBuilder::<MockCoreRPCLike>::new(None)
-                .set_initial_state_structure()
-                .build();
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
             let epoch_0_tree = Epoch::new(GENESIS_EPOCH_INDEX);
@@ -1229,9 +1229,9 @@ mod tests {
 
         #[test]
         fn test_payout_to_proposers() {
-            let platform = TestPlatformBuilder::<MockCoreRPCLike>::new(None)
-                .set_initial_state_structure()
-                .build();
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
             // Create masternode reward shares contract
@@ -1365,9 +1365,9 @@ mod tests {
 
         #[test]
         fn test_distribute_block_fees_into_uncommitted_epoch_on_epoch_change() {
-            let platform = TestPlatformBuilder::<MockCoreRPCLike>::new(None)
-                .set_initial_state_structure()
-                .build();
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
             let current_epoch_tree = Epoch::new(1);
@@ -1413,9 +1413,9 @@ mod tests {
 
         #[test]
         fn test_distribute_block_fees_into_pools() {
-            let platform = TestPlatformBuilder::<MockCoreRPCLike>::new(None)
-                .set_initial_state_structure()
-                .build();
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
             let current_epoch_tree = Epoch::new(1);
