@@ -7,6 +7,10 @@ on:
         description: The package name to run tests for
         type: string
         required: true
+      clippy-fail:
+        description: Fail clippy checks if any warnings detected
+        type: bool
+        required: false
 
 jobs:
   lint:
@@ -25,6 +29,13 @@ jobs:
 
       - name: Enable Rust cache
         uses: Swatinem/rust-cache@v2
+
+      - name: Clippy args
+        uses: actions/github-script@v6
+        id: clippy-args
+        with:
+          result-encoding: string
+          script: "return core.getInput('clippy-fail') ? '--all-features -- -Dwarnings' : '--all-features';"
 
       - uses: actions-rs/clippy-check@v1
         with:

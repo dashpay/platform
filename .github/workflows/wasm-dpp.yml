@@ -37,6 +37,7 @@ jobs:
     uses: ./.github/workflows/rs-checks.yml
     with:
       package: 'wasm-dpp'
+      clippy-fail: true
 
   wasm-errors:
     name: WASM compilation

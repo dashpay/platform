@@ -27,3 +27,4 @@ jobs:
     uses: ./.github/workflows/rs-checks.yml
     with:
       package: "dpp"
+      clippy-fail: true
