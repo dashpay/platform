@@ -4,6 +4,7 @@ use thiserror::Error;
 
 use crate::data_contract::document_type::Index;
 
+// TODO not primitive
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("'{property_name}' property is not defined in the '{document_type}' document")]
 pub struct UndefinedIndexPropertyError {

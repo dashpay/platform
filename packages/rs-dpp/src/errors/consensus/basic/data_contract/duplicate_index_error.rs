@@ -1,9 +1,10 @@
 use crate::consensus::basic::BasicError;
 use thiserror::Error;
-
 use crate::consensus::ConsensusError;
+
 use crate::data_contract::document_type::Index;
 
+// TODO not primitive
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Duplicate index definition for '{document_type} document")]
 pub struct DuplicateIndexError {

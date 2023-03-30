@@ -1,6 +1,7 @@
 use thiserror::Error;
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
 
-use crate::data_contract::errors::DataContractError;
 use crate::prelude::Identifier;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
@@ -27,8 +28,8 @@ impl InvalidDocumentTypeError {
     }
 }
 
-impl From<InvalidDocumentTypeError> for DataContractError {
-    fn from(err: InvalidDocumentTypeError) -> Self {
-        Self::InvalidDocumentTypeError(err)
+impl From<InvalidDocumentTypeError> for ConsensusError {
+    fn from(err: InvalidDocumentTypeError) -> Self{
+        Self::BasicError(BasicError::InvalidDocumentTypeError(err))
     }
 }

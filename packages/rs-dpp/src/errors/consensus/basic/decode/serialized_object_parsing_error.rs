@@ -2,6 +2,7 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use thiserror::Error;
 
+// TODO not primitive
 #[derive(Error, Debug)]
 #[error("Parsing of serialized object failed due to: {parsing_error}")]
 pub struct SerializedObjectParsingError {

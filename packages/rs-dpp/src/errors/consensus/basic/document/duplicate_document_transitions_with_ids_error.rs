@@ -1,5 +1,6 @@
 use crate::consensus::basic::BasicError;
 use thiserror::Error;
+use crate::consensus::ConsensusError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Document transitions with duplicate IDs {:?}", references)]
@@ -17,8 +18,8 @@ impl DuplicateDocumentTransitionsWithIdsError {
     }
 }
 
-impl From<DuplicateDocumentTransitionsWithIdsError> for BasicError {
+impl From<DuplicateDocumentTransitionsWithIdsError> for ConsensusError {
     fn from(err: DuplicateDocumentTransitionsWithIdsError) -> Self {
-        Self::DuplicateDocumentTransitionsWithIdsError(err)
+        Self::BasicError(BasicError::DuplicateDocumentTransitionsWithIdsError(err))
     }
 }

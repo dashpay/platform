@@ -1,6 +1,5 @@
 use crate::consensus::basic::BasicError;
 use thiserror::Error;
-
 use crate::consensus::ConsensusError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]

@@ -6,7 +6,7 @@ use thiserror::Error;
 #[error("'{document_type}' document has more than '{index_limit}' unique indexes")]
 pub struct UniqueIndicesLimitReachedError {
     document_type: String,
-    index_limit: usize,
+    index_limit: usize,  // param not in JS
 }
 
 impl UniqueIndicesLimitReachedError {

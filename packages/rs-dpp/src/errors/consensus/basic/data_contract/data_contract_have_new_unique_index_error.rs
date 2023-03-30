@@ -1,5 +1,6 @@
 use crate::consensus::basic::BasicError;
 use thiserror::Error;
+use crate::consensus::ConsensusError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Document with type {document_type} has a new unique index named '{index_name}'. Adding unique indices during Data Contract update is not allowed.")]
@@ -25,8 +26,8 @@ impl DataContractHaveNewUniqueIndexError {
     }
 }
 
-impl From<DataContractHaveNewUniqueIndexError> for BasicError {
+impl From<DataContractHaveNewUniqueIndexError> for ConsensusError {
     fn from(err: DataContractHaveNewUniqueIndexError) -> Self {
-        Self::DataContractHaveNewUniqueIndexError(err)
+        Self::BasicError(BasicError::DataContractHaveNewUniqueIndexError(err))
     }
 }

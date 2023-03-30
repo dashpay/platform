@@ -5,6 +5,7 @@ use jsonschema::paths::{JSONPointer, PathChunk};
 use jsonschema::ValidationError;
 use thiserror::Error;
 
+// TODO not primitive
 #[derive(Error, Debug)]
 #[error("JsonSchemaError: {message:?}, kind: {kind:?}, instance_path: {instance_path:?}, schema_path:{schema_path:?}")]
 pub struct JsonSchemaError {

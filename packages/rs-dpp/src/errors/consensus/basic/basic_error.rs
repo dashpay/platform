@@ -2,22 +2,9 @@ use jsonschema::ValidationError;
 use thiserror::Error;
 
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
-use crate::consensus::basic::data_contract::{
-    DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError,
-    DataContractInvalidIndexDefinitionUpdateError, DataContractNotPresentError,
-    DataContractUniqueIndicesChangedError, DuplicateIndexError, DuplicateIndexNameError,
-    IncompatibleDataContractSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError,
-    InvalidDataContractIdError, InvalidIndexPropertyTypeError,
-    InvalidIndexedPropertyConstraintError, InvalidJsonSchemaRefError,
-    SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
-    UniqueIndicesLimitReachedError,
-};
-use crate::consensus::basic::decode::ProtocolVersionParsingError;
-use crate::consensus::basic::document::{
-    DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
-    InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError,
-    InvalidDocumentTransitionIdError, InvalidDocumentTypeError,
-};
+use crate::consensus::basic::data_contract::{DataContractHaveNewUniqueIndexError, DataContractImmutablePropertiesUpdateError, DataContractInvalidIndexDefinitionUpdateError, DataContractUniqueIndicesChangedError, DuplicateIndexError, DuplicateIndexNameError, IncompatibleDataContractSchemaError, IncompatibleRe2PatternError, InvalidCompoundIndexError, InvalidDataContractIdError, InvalidIndexPropertyTypeError, InvalidIndexedPropertyConstraintError, InvalidJsonSchemaRefError, SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError, UniqueIndicesLimitReachedError, InvalidDataContractVersionError};
+use crate::consensus::basic::decode::{ProtocolVersionParsingError, SerializedObjectParsingError};
+use crate::consensus::basic::document::{DataContractNotPresentError, DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError, InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError, InvalidDocumentTypeError};
 use crate::consensus::basic::identity::{
     DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
     IdentityAssetLockProofLockedTransactionMismatchError,
@@ -32,7 +19,6 @@ use crate::consensus::basic::identity::{
     InvalidInstantAssetLockProofError, InvalidInstantAssetLockProofSignatureError,
     MissingMasterPublicKeyError, NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
 };
-use crate::consensus::basic::invalid_data_contract_version_error::InvalidDataContractVersionError;
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::consensus::basic::state_transition::{
     InvalidStateTransitionTypeError, StateTransitionMaxSizeExceededError,
@@ -42,10 +28,7 @@ use crate::consensus::basic::{
 };
 use crate::consensus::ConsensusError;
 
-use crate::data_contract::state_transition::errors::MissingDataContractIdError;
-
 use platform_value::Error as ValueError;
-use crate::consensus::basic::serialized_object_parsing_error::SerializedObjectParsingError;
 
 #[derive(Error, Debug)]
 pub enum BasicError {
@@ -189,8 +172,8 @@ pub enum BasicError {
     #[error(transparent)]
     DuplicateDocumentTransitionsWithIndicesError(DuplicateDocumentTransitionsWithIndicesError),
 
-    #[error(transparent)]
-    MissingDataContractIdError(MissingDataContractIdError),
+    #[error("$dataContractId is not present")]
+    MissingDataContractIdBasicError,
 
     #[error(transparent)]
     InvalidIdentifierError(InvalidIdentifierError),

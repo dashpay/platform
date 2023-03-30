@@ -16,7 +16,7 @@ use crate::{
     validation::AsyncDataValidator,
     ProtocolError,
 };
-use crate::consensus::state::document::data_contract_already_present_error::DataContractAlreadyPresentError;
+use crate::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
 
 pub struct DataContractCreateTransitionStateValidator<SR>
 where

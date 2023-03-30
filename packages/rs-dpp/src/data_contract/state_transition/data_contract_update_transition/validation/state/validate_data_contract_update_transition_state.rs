@@ -3,8 +3,6 @@ use std::convert::TryInto;
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::consensus::basic::data_contract::DataContractNotPresentError;
-use crate::consensus::basic::invalid_data_contract_version_error::InvalidDataContractVersionError;
 use crate::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransitionAction;
 use crate::validation::{AsyncDataValidator, ValidationResult};
 use crate::{
@@ -17,6 +15,8 @@ use crate::{
     state_transition::StateTransitionLike,
     ProtocolError,
 };
+use crate::consensus::basic::data_contract::InvalidDataContractVersionError;
+use crate::consensus::basic::document::DataContractNotPresentError;
 
 pub struct DataContractUpdateTransitionStateValidator<SR>
 where

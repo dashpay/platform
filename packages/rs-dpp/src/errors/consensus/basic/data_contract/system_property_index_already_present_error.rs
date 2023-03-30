@@ -4,6 +4,7 @@ use thiserror::Error;
 
 use crate::data_contract::document_type::Index;
 
+// TODO not primitive
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("System property '{property_name}' is already indexed and can't be used in other indices for '{document_type}' document")]
 pub struct SystemPropertyIndexAlreadyPresentError {

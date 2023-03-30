@@ -5,6 +5,7 @@ use thiserror::Error;
 
 use crate::PublicKeyValidationError;
 
+// TODO not primitive
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Invalid identity public key {public_key_id:?} data: {message:?}")]
 pub struct InvalidIdentityPublicKeyDataError {

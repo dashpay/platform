@@ -1,6 +1,7 @@
 use crate::consensus::basic::BasicError;
 use crate::prelude::Identifier;
 use thiserror::Error;
+use crate::consensus::ConsensusError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error(
@@ -30,8 +31,8 @@ impl InvalidDocumentTransitionIdError {
     }
 }
 
-impl From<InvalidDocumentTransitionIdError> for BasicError {
+impl From<InvalidDocumentTransitionIdError> for ConsensusError {
     fn from(err: InvalidDocumentTransitionIdError) -> Self {
-        Self::InvalidDocumentTransitionIdError(err)
+        Self::BasicError(BasicError::InvalidDocumentTransitionIdError(err))
     }
 }

@@ -3,7 +3,6 @@ use serde_json::json;
 use std::convert::TryInto;
 
 use crate::contracts::withdrawals_contract;
-use crate::data_trigger::DataTriggerError;
 use crate::data_trigger::DataTriggerExecutionContext;
 use crate::data_trigger::DataTriggerExecutionResult;
 use crate::document::Document;
@@ -13,6 +12,7 @@ use crate::prelude::Identifier;
 use crate::state_repository::StateRepositoryLike;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use crate::consensus::state::data_contract::data_trigger::data_trigger_error::DataTriggerError;
 
 pub async fn delete_withdrawal_data_trigger<'a, SR>(
     document_transition: &DocumentTransition,

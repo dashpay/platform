@@ -1,5 +1,5 @@
-use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 use platform_value::Value;
+use crate::consensus::state::data_contract::data_trigger::data_trigger_error::DataTriggerError;
 
 use crate::errors::consensus::{
     basic::BasicError, fee::fee_error::FeeError, signature::signature_error::SignatureError,
@@ -68,7 +68,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidDocumentTransitionActionError { .. } => 1022,
             Self::InvalidDocumentTransitionIdError { .. } => 1023,
             Self::InvalidDocumentTypeError { .. } => 1024,
-            Self::MissingDataContractIdError { .. } => 1025,
+            Self::MissingDataContractIdBasicError { .. } => 1025,
             Self::MissingDocumentTransitionActionError { .. } => 1026,
             Self::MissingDocumentTransitionTypeError { .. } => 1027,
             Self::MissingDocumentTypeError => 1028,
@@ -131,7 +131,6 @@ impl ErrorWithCode for StateError {
         match self {
             // Data contract
             Self::DataContractAlreadyPresentError { .. } => 4000,
-
             Self::DataTriggerError(ref e) => e.code(),
 
             // Document

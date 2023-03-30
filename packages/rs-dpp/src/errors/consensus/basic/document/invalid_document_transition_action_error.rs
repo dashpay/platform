@@ -1,6 +1,8 @@
 use crate::consensus::basic::BasicError;
 use thiserror::Error;
+use crate::consensus::ConsensusError;
 
+// TODO wrong param - in js action is number
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Document transition action {} is not supported", action)]
 pub struct InvalidDocumentTransitionActionError {
@@ -17,8 +19,8 @@ impl InvalidDocumentTransitionActionError {
     }
 }
 
-impl From<InvalidDocumentTransitionActionError> for BasicError {
+impl From<InvalidDocumentTransitionActionError> for ConsensusError {
     fn from(err: InvalidDocumentTransitionActionError) -> Self {
-        Self::InvalidDocumentTransitionActionError(err)
+        Self::BasicError(BasicError::InvalidDocumentTransitionActionError(err))
     }
 }

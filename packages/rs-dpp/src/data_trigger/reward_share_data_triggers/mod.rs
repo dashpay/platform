@@ -145,7 +145,6 @@ mod test {
 
     use platform_value::Value;
 
-    use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
     use crate::consensus::state::state_error::StateError;
     use crate::document::{Document, ExtendedDocument};
     use crate::identity::Identity;
@@ -164,6 +163,7 @@ mod test {
             utils::generate_random_identifier_struct,
         },
     };
+    use crate::consensus::state::data_contract::data_trigger::data_trigger_error::DataTriggerError;
 
     struct TestData {
         top_level_identifier: Identifier,

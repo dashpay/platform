@@ -1,5 +1,6 @@
 use crate::consensus::basic::BasicError;
 use thiserror::Error;
+use crate::consensus::ConsensusError;
 
 use crate::identity::KeyID;
 
@@ -19,8 +20,8 @@ impl InvalidIdentityKeySignatureError {
     }
 }
 
-impl From<InvalidIdentityKeySignatureError> for BasicError {
+impl From<InvalidIdentityKeySignatureError> for ConsensusError {
     fn from(err: InvalidIdentityKeySignatureError) -> Self {
-        Self::InvalidIdentityKeySignatureError(err)
+        Self::BasicError(BasicError::InvalidIdentityKeySignatureError(err))
     }
 }

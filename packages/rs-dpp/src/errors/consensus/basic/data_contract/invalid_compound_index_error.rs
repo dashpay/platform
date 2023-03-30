@@ -4,6 +4,7 @@ use thiserror::Error;
 use crate::consensus::ConsensusError;
 use crate::data_contract::document_type::Index;
 
+// TODO not primitive
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("All or none of unique compound properties must be set for '{document_type}' document")]
 pub struct InvalidCompoundIndexError {

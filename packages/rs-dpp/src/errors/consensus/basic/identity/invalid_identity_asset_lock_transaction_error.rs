@@ -4,6 +4,7 @@ use dashcore;
 use dashcore::consensus::encode::Error;
 use thiserror::Error;
 
+// TODO not primitive
 #[derive(Error, Debug)]
 #[error("Invalid asset lock transaction: ${message}")]
 pub struct InvalidIdentityAssetLockTransactionError {

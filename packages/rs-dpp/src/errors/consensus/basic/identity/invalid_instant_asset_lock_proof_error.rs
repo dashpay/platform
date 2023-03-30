@@ -2,6 +2,7 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use thiserror::Error;
 
+// TODO wrong params - getValidationError missing
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Invalid instant lock proof: ${message}")]
 pub struct InvalidInstantAssetLockProofError {

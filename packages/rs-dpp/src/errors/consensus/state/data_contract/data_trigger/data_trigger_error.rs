@@ -4,6 +4,7 @@ use crate::prelude::DocumentTransition;
 use platform_value::Identifier;
 use thiserror::Error;
 
+// TODO not primitive
 #[derive(Error, Debug)]
 pub enum DataTriggerError {
     #[error("{message}")]

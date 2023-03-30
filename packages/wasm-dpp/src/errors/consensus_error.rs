@@ -44,10 +44,10 @@ use dpp::consensus::basic::BasicError::{
 };
 use dpp::consensus::fee::fee_error::FeeError;
 use dpp::consensus::signature::signature_error::SignatureError;
-use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::errors::consensus::codes::ErrorWithCode;
 use wasm_bindgen::JsValue;
+use dpp::consensus::state::data_contract::data_trigger::data_trigger_error::DataTriggerError;
 
 use crate::errors::consensus::basic::data_contract::{
     DataContractHaveNewUniqueIndexErrorWasm, DataContractImmutablePropertiesUpdateErrorWasm,
@@ -349,8 +349,8 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         BasicError::DuplicateDocumentTransitionsWithIdsError(err) => {
             DuplicateDocumentTransitionsWithIdsErrorWasm::new(err.references(), code).into()
         }
-        BasicError::MissingDataContractIdError(err) => {
-            MissingDataContractIdErrorWasm::new(err.raw_document_transition(), code).into()
+        BasicError::MissingDataContractIdBasicError => {
+            MissingDataContractIdErrorWasm::new(code).into()
         }
         BasicError::InvalidIdentifierError(err) => {
             InvalidIdentifierErrorWasm::new(err.identifier_name(), err.error(), code).into()

@@ -1,11 +1,11 @@
 use thiserror::Error;
 
-use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 use crate::consensus::state::identity::{
     IdentityAlreadyExistsError, IdentityInsufficientBalanceError,
 };
 use crate::consensus::ConsensusError;
-use crate::consensus::state::document::data_contract_already_present_error::DataContractAlreadyPresentError;
+use crate::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
+use crate::consensus::state::data_contract::data_trigger::data_trigger_error::DataTriggerError;
 use crate::consensus::state::document::document_already_present_error::DocumentAlreadyPresentError;
 use crate::consensus::state::document::document_not_found_error::DocumentNotFoundError;
 use crate::consensus::state::document::document_owner_id_mismatch_error::DocumentOwnerIdMismatchError;

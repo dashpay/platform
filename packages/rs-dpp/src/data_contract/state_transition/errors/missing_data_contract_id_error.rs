@@ -1,6 +1,6 @@
-use crate::consensus::basic::BasicError;
 use platform_value::Value;
 use thiserror::Error;
+use crate::ProtocolError;
 
 #[derive(Error, Debug, Clone)]
 #[error("$dataContractId is not present")]
@@ -20,7 +20,7 @@ impl MissingDataContractIdError {
     }
 }
 
-impl From<MissingDataContractIdError> for BasicError {
+impl From<MissingDataContractIdError> for ProtocolError {
     fn from(err: MissingDataContractIdError) -> Self {
         Self::MissingDataContractIdError(err)
     }

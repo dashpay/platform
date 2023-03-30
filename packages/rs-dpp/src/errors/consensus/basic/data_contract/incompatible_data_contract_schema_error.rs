@@ -12,8 +12,8 @@ pub struct IncompatibleDataContractSchemaError {
     data_contract_id: Identifier,
     operation: String,
     field_path: String,
-    old_schema: JsonValue,
-    new_schema: JsonValue,
+    old_schema: JsonValue, // param not in JS
+    new_schema: JsonValue, // param not in JS
 }
 
 impl IncompatibleDataContractSchemaError {

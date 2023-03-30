@@ -5,13 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::consensus::basic::data_contract::DataContractNotPresentError;
-use crate::consensus::basic::document::{
-    DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
-    InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
-    InvalidDocumentTypeError,
-};
-use crate::data_contract::state_transition::errors::MissingDataContractIdError;
+use crate::consensus::basic::document::{DataContractNotPresentError, DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError, InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError, InvalidDocumentTypeError};
 use crate::document::state_transition::documents_batch_transition::property_names;
 use crate::document::validation::basic::find_duplicates_by_id::find_duplicates_by_id;
 use crate::validation::SimpleValidationResult;
@@ -152,9 +146,7 @@ pub async fn validate_documents_batch_transition_basic(
             .get_optional_identifier(property_names::DATA_CONTRACT_ID)
         {
             Ok(None) => {
-                result.add_error(BasicError::MissingDataContractIdError(
-                    MissingDataContractIdError::new(raw_document_transition.into()),
-                ));
+                result.add_error(BasicError::MissingDataContractIdBasicError);
                 continue;
             }
             Ok(Some(id)) => id,

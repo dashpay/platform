@@ -1,5 +1,6 @@
 use crate::consensus::basic::BasicError;
 use thiserror::Error;
+use crate::consensus::ConsensusError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("JSON Schema depth is greater than {max_depth:?}")]
@@ -19,8 +20,8 @@ impl DataContractMaxDepthExceedError {
     }
 }
 
-impl From<DataContractMaxDepthExceedError> for BasicError {
+impl From<DataContractMaxDepthExceedError> for ConsensusError {
     fn from(err: DataContractMaxDepthExceedError) -> Self {
-        Self::DataContractMaxDepthExceedError(err)
+        Self::BasicError(BasicError::DataContractMaxDepthExceedError(err))
     }
 }

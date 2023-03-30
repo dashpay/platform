@@ -8,7 +8,7 @@ use crate::consensus::basic::BasicError;
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::{errors::consensus::ConsensusError, errors::ProtocolError};
-use crate::consensus::basic::serialized_object_parsing_error::SerializedObjectParsingError;
+use crate::consensus::basic::decode::SerializedObjectParsingError;
 
 #[derive(Default, Clone, Copy)]
 pub struct DecodeProtocolEntity {}

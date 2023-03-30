@@ -32,7 +32,7 @@ use crate::{
     BlsModule, ProtocolError,
 };
 use platform_value::{Value, ValueMapHelper};
-use crate::consensus::basic::serialized_object_parsing_error::SerializedObjectParsingError;
+use crate::consensus::basic::decode::SerializedObjectParsingError;
 
 use super::{
     state_transition_execution_context::StateTransitionExecutionContext,

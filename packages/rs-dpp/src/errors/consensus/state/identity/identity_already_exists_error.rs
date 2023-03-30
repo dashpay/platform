@@ -5,7 +5,7 @@ use thiserror::Error;
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Identity ${identity_id:?} already exists")]
 pub struct IdentityAlreadyExistsError {
-    identity_id: [u8; 32],
+    identity_id: [u8; 32], // TODO Identifier?
 }
 
 impl IdentityAlreadyExistsError {

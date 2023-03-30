@@ -1,6 +1,5 @@
 use thiserror::Error;
-
-use crate::ProtocolError;
+use crate::consensus::basic::BasicError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 #[error("Invalid State Transition type {transition_type}")]
@@ -18,7 +17,7 @@ impl InvalidStateTransitionTypeError {
     }
 }
 
-impl From<InvalidStateTransitionTypeError> for ProtocolError {
+impl From<InvalidStateTransitionTypeError> for BasicError {
     fn from(err: InvalidStateTransitionTypeError) -> Self {
         Self::InvalidStateTransitionTypeError(err)
     }
