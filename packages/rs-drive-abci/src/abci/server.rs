@@ -24,7 +24,7 @@ use tenderdash_abci::proto::{
 pub struct AbciApplication<'a, C> {
     platform: std::sync::Mutex<&'a Platform<'a, C>>,
     transaction: TransactionArg<'a, 'a>,
-    config: AbciConfig,
+    pub(crate) config: AbciConfig,
 }
 
 /// Start ABCI server and process incoming connections.
@@ -70,7 +70,7 @@ impl<'a, C> AbciApplication<'a, C> {
     }
 
     /// Return locked Platform object
-    fn platform(&self) -> MutexGuard<&'a Platform<'a, C>> {
+    pub(crate) fn platform(&self) -> MutexGuard<&'a Platform<'a, C>> {
         self.platform
             .lock()
             .expect("cannot acquire lock on platform")
@@ -78,7 +78,7 @@ impl<'a, C> AbciApplication<'a, C> {
 
     /// Return current transaction.
     /// TODO: implement
-    fn transaction(&self) -> TransactionArg {
+    pub(crate) fn transaction(&self) -> TransactionArg {
         self.transaction
     }
 }
@@ -87,100 +87,4 @@ impl<'a, C> Debug for AbciApplication<'a, C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "<AbciApp>")
     }
-}
-
-impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>
-where
-    C: CoreRPCLike,
-{
-    fn info(&self, request: proto::RequestInfo) -> Result<proto::ResponseInfo, ResponseException> {
-        if !tenderdash_abci::check_version(&request.abci_version) {
-            return Err(ResponseException::from(format!(
-                "tenderdash requires ABCI version {}, our version is {}",
-                request.version,
-                tenderdash_abci::proto::ABCI_VERSION
-            )));
-        }
-
-        let response = proto::ResponseInfo {
-            app_version: 1,
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            ..Default::default()
-        };
-
-        tracing::info!(method = "info", ?request, ?response, "info executed");
-        Ok(response)
-    }
-
-    fn init_chain(
-        &self,
-        request: proto::RequestInitChain,
-    ) -> Result<proto::ResponseInitChain, ResponseException> {
-        let platform = self.platform();
-        let transaction = self.transaction();
-        let genesis_time = request
-            .time
-            .ok_or("genesis time is required in init chain")?
-            .to_milis() as TimestampMillis;
-
-        platform.create_genesis_state(
-            genesis_time,
-            self.config.keys.clone().into(),
-            transaction,
-        )?;
-
-        let response = proto::ResponseInitChain {
-            ..Default::default()
-        };
-
-        tracing::info!(method = "init_chain", "init chain executed");
-        Ok(response)
-    }
-
-    fn prepare_proposal(
-        &self,
-        request: proto::RequestPrepareProposal,
-    ) -> Result<proto::ResponsePrepareProposal, ResponseException> {
-        let platform = self.platform();
-        let transaction = self.transaction();
-        let response = platform.prepare_proposal(&request, transaction)?;
-
-        tracing::info!(
-            method = "prepare_proposal",
-            height = request.height,
-            "prepare proposal executed",
-        );
-        Ok(response)
-    }
-    //
-    // fn process_proposal(
-    //     &self,
-    //     _request: RequestProcessProposal,
-    // ) -> Result<ResponseProcessProposal, ResponseException> {
-    //     let platform = self.platform();
-    //     let transaction = self.transaction();
-    //     let response = platform.prepare_proposal(&request, transaction)?;
-    //
-    //     tracing::info!(
-    //         method = "prepare_proposal",
-    //         height = request.height,
-    //         "prepare proposal executed",
-    //     );
-    //     Ok(response)
-    // }
-    //
-    // fn check_tx(&self, request: RequestCheckTx) -> Result<ResponseCheckTx, ResponseException> {
-    //     let RequestCheckTx { tx, .. } = request;
-    //     let state_transition = StateTransition::from(tx);
-    //
-    //     ResponseCheckTx {
-    //         code: 0,
-    //         data: vec![],
-    //         info: "".to_string(),
-    //         gas_wanted: 0,
-    //         codespace: "".to_string(),
-    //         sender: "".to_string(),
-    //         priority: 0,
-    //     }
-    // }
 }

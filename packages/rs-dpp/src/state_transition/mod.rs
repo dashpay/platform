@@ -1,10 +1,12 @@
+use anyhow::anyhow;
+use bincode::Options;
 use serde::{Deserialize, Serialize};
 
 pub use abstract_state_transition::{
     state_transition_helpers, StateTransitionConvert, StateTransitionLike,
 };
 pub use abstract_state_transition_identity_signed::StateTransitionIdentitySigned;
-use platform_value::{BinaryData, Value};
+use platform_value::{BinaryData, Value, ValueMapHelper};
 pub use state_transition_types::*;
 
 use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
@@ -36,7 +38,11 @@ pub mod state_transition_execution_context;
 
 mod example;
 mod state_transition_action;
+mod serialization;
+
 pub use state_transition_action::StateTransitionAction;
+use crate::consensus::ConsensusError;
+use crate::decode_protocol_entity_factory::DecodeProtocolEntity;
 macro_rules! call_method {
     ($state_transition:expr, $method:ident, $args:tt ) => {
         match $state_transition {

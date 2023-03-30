@@ -8,12 +8,14 @@ use crate::{
     rpc::core::CoreRPCLike,
 };
 
+use dpp::prelude::Identifier;
 use dpp::util::vec::vec_to_array;
 use drive::query::TransactionArg;
 use tenderdash_abci::proto::{
     abci::{self as proto, ExecTxResult, ResponseException},
     serializers::timestamp::ToMilis,
 };
+use dpp::state_transition::StateTransition;
 
 use super::AbciError;
 
@@ -31,12 +33,27 @@ where
 {
     fn prepare_proposal(
         &self,
-        request: &proto::RequestPrepareProposal,
+        request: proto::RequestPrepareProposal,
         transaction: TransactionArg,
     ) -> Result<proto::ResponsePrepareProposal, ResponseException> {
-        let genesis_time_ms = if request.height == self.config.abci.genesis_height {
-            let block_time_ms = request
-                .time
+        let proto::RequestPrepareProposal {
+            max_tx_bytes,
+            txs,
+            local_last_commit,
+            misbehavior,
+            height,
+            time,
+            next_validators_hash,
+            round,
+            core_chain_locked_height,
+            proposer_pro_tx_hash,
+            proposed_app_version,
+            version,
+            quorum_hash,
+        } = request;
+
+        let genesis_time_ms = if height == self.config.abci.genesis_height {
+            let block_time_ms = time
                 .as_ref()
                 .ok_or("missing proposal time")?
                 .to_milis();
@@ -52,13 +69,13 @@ where
                 )))?
         };
 
-        // Update versions
-        let proposed_app_version = request.proposed_app_version;
+        let validator_pro_tx_hash: [u8; 32] = proposer_pro_tx_hash
+            .try_into()
+            .map_err(|e| format!("invalid proposer protxhash: {}", hex::encode(e)))?;
 
         self.drive
             .update_validator_proposed_app_version(
-                vec_to_array(&request.proposer_pro_tx_hash)
-                    .map_err(|e| format!("invalid proposer protxhash: {}", e))?,
+                validator_pro_tx_hash,
                 proposed_app_version as u32,
                 transaction,
             )
@@ -69,7 +86,7 @@ where
 
         let epoch_info = EpochInfo::from_genesis_time_and_block_info(genesis_time_ms, &block_info)?;
 
-        // FIXME: we need to calculate total hpms based on masternode list (or remove hpmn_count if not needed)
+        // FIXME: we need to calculate total hpmns based on masternode list (or remove hpmn_count if not needed)
         let total_hpmns = self.config.quorum_size as u32;
         let block_execution_context = BlockExecutionContext {
             block_info,
@@ -105,10 +122,8 @@ where
         //         transaction,
         //     )?;
 
-        let mut tx_results = ::prost::alloc::vec::Vec::<ExecTxResult>::new();
-        for tx in request.txs.clone() {
-            tx_results.push(mock_exec_tx(tx)) // TODO: execute transactions in a proper way
-        }
+        let tx_results = StateTransition::deserialize_many(&txs)?;
+
         // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
         let response = proto::ResponsePrepareProposal {
             app_hash: vec![0; 32], // TODO: implement
@@ -117,14 +132,5 @@ where
         };
 
         Ok(response)
-    }
-}
-
-/// Return tx result that just copies tx to data field
-fn mock_exec_tx(tx: Vec<u8>) -> ExecTxResult {
-    ExecTxResult {
-        code: 0,
-        data: tx.clone(),
-        ..Default::default()
     }
 }

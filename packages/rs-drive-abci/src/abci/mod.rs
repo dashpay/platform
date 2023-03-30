@@ -10,8 +10,6 @@ pub mod messages;
 #[cfg(feature = "server")]
 pub mod config;
 #[cfg(feature = "server")]
-mod proposal;
-#[cfg(feature = "server")]
 mod server;
 
 pub use error::AbciError;

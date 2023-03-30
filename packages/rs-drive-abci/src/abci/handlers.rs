@@ -32,6 +32,8 @@
 //! This module defines the `TenderdashAbci` trait and implements it for type `Platform`.
 //!
 
+use crate::abci::proposal::Proposal;
+use crate::abci::server::AbciApplication;
 use crate::block::{BlockExecutionContext, BlockStateInfo};
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::{
@@ -41,12 +43,18 @@ use crate::{
     },
     rpc::core::CoreRPCLike,
 };
+use dpp::identity::TimestampMillis;
 use drive::error::drive::DriveError;
 use drive::error::Error::GroveDB;
 use drive::grovedb::{Transaction, TransactionArg};
+use tenderdash_abci::proto::{
+    abci::{self as proto, ResponseException},
+    serializers::timestamp::ToMilis,
+};
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::proposal::Proposal;
 use crate::platform::Platform;
 
 /// A trait for handling the Tenderdash ABCI (Application Blockchain Interface).
@@ -235,6 +243,107 @@ where
 
         Ok(AfterFinalizeBlockResponse {})
     }
+}
+
+impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>
+where
+    C: CoreRPCLike,
+{
+    fn info(&self, request: proto::RequestInfo) -> Result<proto::ResponseInfo, ResponseException> {
+        if !tenderdash_abci::check_version(&request.abci_version) {
+            return Err(ResponseException::from(format!(
+                "tenderdash requires ABCI version {}, our version is {}",
+                request.version,
+                tenderdash_abci::proto::ABCI_VERSION
+            )));
+        }
+
+        let response = proto::ResponseInfo {
+            app_version: 1,
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            ..Default::default()
+        };
+
+        tracing::info!(method = "info", ?request, ?response, "info executed");
+        Ok(response)
+    }
+
+    fn init_chain(
+        &self,
+        request: proto::RequestInitChain,
+    ) -> Result<proto::ResponseInitChain, ResponseException> {
+        let platform = self.platform();
+        let transaction = platform.drive.grove.start_transaction();
+        let genesis_time = request
+            .time
+            .ok_or("genesis time is required in init chain")?
+            .to_milis() as TimestampMillis;
+
+        platform.create_genesis_state(
+            genesis_time,
+            self.config.keys.clone().into(),
+            Some(&transaction),
+        )?;
+
+        transaction
+            .commit()
+            .map_err(|e| Error::Drive(GroveDB(e.into())))?;
+
+        let response = proto::ResponseInitChain {
+            ..Default::default()
+        };
+
+        tracing::info!(method = "init_chain", "init chain executed");
+        Ok(response)
+    }
+
+    fn prepare_proposal(
+        &self,
+        request: proto::RequestPrepareProposal,
+    ) -> Result<proto::ResponsePrepareProposal, ResponseException> {
+        let platform = self.platform();
+        let transaction = self.transaction();
+        let height = request.height;
+        let response = platform.prepare_proposal(request, transaction)?;
+
+        tracing::info!(
+            method = "prepare_proposal",
+            height = height,
+            "prepare proposal executed",
+        );
+        Ok(response)
+    }
+    //
+    // fn process_proposal(
+    //     &self,
+    //     _request: RequestProcessProposal,
+    // ) -> Result<ResponseProcessProposal, ResponseException> {
+    //     let platform = self.platform();
+    //     let transaction = self.transaction();
+    //     let response = platform.prepare_proposal(&request, transaction)?;
+    //
+    //     tracing::info!(
+    //         method = "prepare_proposal",
+    //         height = request.height,
+    //         "prepare proposal executed",
+    //     );
+    //     Ok(response)
+    // }
+    //
+    // fn check_tx(&self, request: RequestCheckTx) -> Result<ResponseCheckTx, ResponseException> {
+    //     let RequestCheckTx { tx, .. } = request;
+    //     let state_transition = StateTransition::from(tx);
+    //
+    //     ResponseCheckTx {
+    //         code: 0,
+    //         data: vec![],
+    //         info: "".to_string(),
+    //         gas_wanted: 0,
+    //         codespace: "".to_string(),
+    //         sender: "".to_string(),
+    //         priority: 0,
+    //     }
+    // }
 }
 
 #[cfg(test)]
