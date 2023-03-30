@@ -4,7 +4,9 @@
 FROM rust as builder
 
 RUN --mount=type=cache,target=/var/cache/apt \
-    apt-get update && apt-get install -y clang
+    apt-get update && apt-get install -y clang && \
+    rustup target add wasm32-unknown-unknown && \
+    cargo install -f wasm-bindgen-cli
 
 WORKDIR /platform
 
@@ -22,11 +24,6 @@ COPY packages/dpns-contract packages/dpns-contract
 COPY packages/data-contracts packages/data-contracts
 COPY packages/rs-dpp packages/rs-dpp
 COPY packages/wasm-dpp packages/wasm-dpp
-
-RUN --mount=type=cache,target=target \
-    --mount=type=cache,target=$CARGO_HOME/git \
-    --mount=type=cache,target=$CARGO_HOME/registry \
-    rustup target add wasm32-unknown-unknown
 
 # Build Rust part of wasm-dpp
 RUN cd packages/wasm-dpp && ./scripts/build.sh
