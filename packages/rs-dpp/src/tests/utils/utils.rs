@@ -183,6 +183,34 @@ macro_rules! assert_basic_consensus_errors {
     }};
 }
 
+/// Assert that all validation error belong to a certain enum variant of state consensus errors
+/// and extracts all the errors from enum to a vector
+#[macro_export]
+macro_rules! assert_state_consensus_errors {
+    ($validation_result: expr, $variant: path, $expected_errors_count: expr) => {{
+        if $validation_result.errors.len() != $expected_errors_count {
+            for error in $validation_result.errors.iter() {
+                println!("{:?}", error);
+            }
+        }
+
+        assert_eq!($validation_result.errors.len(), $expected_errors_count);
+
+        let mut errors = Vec::new();
+
+        for error in &$validation_result.errors {
+            match error {
+                ConsensusError::StateError($variant(err)) => errors.push(err),
+                err => {
+                    panic!("Got error that differs from what was expected: {:?}", err)
+                }
+            }
+        }
+
+        errors
+    }};
+}
+
 pub fn create_empty_block(timestamp_secs: Option<u32>) -> Block {
     Block {
         txdata: vec![],
