@@ -66,7 +66,7 @@ fn should_return_invalid_result_if_there_are_duplicate_keys() {
 
     assert!(matches!(
         state_error,
-        StateError::DuplicatedIdentityPublicKeyError { duplicated_public_key_ids }
+        StateError::DuplicatedIdentityPublicKeyStateError { duplicated_public_key_ids }
         if duplicated_public_key_ids == &vec![1]
     ));
     assert_eq!(4021, result.errors[0].code());

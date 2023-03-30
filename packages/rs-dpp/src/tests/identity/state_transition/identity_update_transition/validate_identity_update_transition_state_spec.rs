@@ -357,7 +357,7 @@ async fn should_validate_purpose_and_security_level() {
 
     assert!(matches!(
         result.errors[0],
-        BasicError::MissingMasterPublicKeyError(_)
+        ConsensusError::BasicError(BasicError::MissingMasterPublicKeyError(_))
     ));
 }
 

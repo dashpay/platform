@@ -295,7 +295,7 @@ mod validate_identity_topup_transition_basic {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 65);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 65);
 
             let error = errors.first().unwrap();
 
