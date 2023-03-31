@@ -153,12 +153,5 @@ fn create_error<SR>(
 where
     SR: StateRepositoryLike,
 {
-    let mut error =
-        DataTriggerConditionError::new(context.data_contract.id, dt_create.base.id, msg);
-
-    error.set_document_transition(DocumentTransition::Create(dt_create.clone()));
-
-    error.set_owner_id(*context.owner_id);
-
-    error.into()
+    DataTriggerConditionError::new(context.data_contract.id, dt_create.base.id, msg).into()
 }

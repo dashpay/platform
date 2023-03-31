@@ -11,12 +11,6 @@ use thiserror::Error;
 pub struct DataTriggerInvalidResultError {
     data_contract_id: Identifier,
     document_transition_id: Identifier,
-
-    #[serde(skip)]
-    document_transition: Option<DocumentTransition>,
-
-    #[serde(skip)]
-    owner_id: Option<Identifier>,
 }
 
 impl DataTriggerInvalidResultError {
@@ -24,8 +18,6 @@ impl DataTriggerInvalidResultError {
         Self {
             data_contract_id,
             document_transition_id,
-            document_transition: None,
-            owner_id: None,
         }
     }
 
@@ -34,18 +26,6 @@ impl DataTriggerInvalidResultError {
     }
     pub fn document_transition_id(&self) -> &Identifier {
         &self.document_transition_id
-    }
-    pub fn document_transition(&self) -> &Option<DocumentTransition> {
-        &self.document_transition
-    }
-    pub fn owner_id(&self) -> &Option<Identifier> {
-        &self.owner_id
-    }
-    pub fn set_document_transition(&mut self, document_transition: DocumentTransition) {
-        self.document_transition = Some(document_transition);
-    }
-    pub fn set_owner_id(&mut self, owner_id: Identifier) {
-        self.owner_id = Some(owner_id);
     }
 }
 

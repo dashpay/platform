@@ -10,9 +10,6 @@ pub struct DataTriggerExecutionErrorWasm {
     data_contract_id: Identifier,
     document_transition_id: Identifier,
     message: String,
-    execution_error: JsError,
-    document_transition: Option<DocumentTransition>,
-    owner_id: Option<Identifier>,
     code: u32,
 }
 
@@ -28,29 +25,14 @@ impl DataTriggerExecutionErrorWasm {
         self.execution_error.clone()
     }
 
-    #[wasm_bindgen(js_name=getDocumentTransitionId)]
-    pub fn document_transition_id(&self) -> Buffer {
-        Buffer::from_bytes(self.document_transition_id.as_bytes())
+    #[wasm_bindgen(js_name=getDocumentId)]
+    pub fn document_id(&self) -> Buffer {
+        Buffer::from_bytes(self.document_id.as_bytes())
     }
 
     #[wasm_bindgen(js_name=getMessage)]
     pub fn message(&self) -> String {
         self.message.clone()
-    }
-
-    #[wasm_bindgen(js_name=getTimestamp)]
-    pub fn document_transition(&self) -> JsValue {
-        if let Some(document_transition) = &self.document_transition {
-            from_document_transition_to_js_value(document_transition.clone())
-        } else {
-            JsValue::undefined()
-        }
-    }
-
-    #[wasm_bindgen(js_name=getOwnerId)]
-    pub fn owner_id(&self) -> Option<Buffer> {
-        let owner_id = self.owner_id.as_ref()?;
-        Some(Buffer::from_bytes(owner_id.as_bytes()))
     }
 
     #[wasm_bindgen(js_name=getCode)]
@@ -64,18 +46,12 @@ impl DataTriggerExecutionErrorWasm {
         data_contract_id: Identifier,
         document_transition_id: Identifier,
         message: String,
-        execution_error: wasm_bindgen::JsError,
-        document_transition: Option<DocumentTransition>,
-        owner_id: Option<Identifier>,
         code: u32,
     ) -> Self {
         Self {
             data_contract_id,
             document_transition_id,
             message,
-            execution_error,
-            document_transition,
-            owner_id,
             code,
         }
     }

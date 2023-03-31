@@ -6,7 +6,7 @@ use crate::IndexDefinitionWasm;
 #[wasm_bindgen(js_name=InvalidIndexedPropertyConstraintError)]
 pub struct InvalidIndexedPropertyConstraintErrorWasm {
     document_type: String,
-    index_definition: Index,
+    index_name: String,
     property_name: String,
     constraint_name: String,
     reason: String,
@@ -16,7 +16,7 @@ pub struct InvalidIndexedPropertyConstraintErrorWasm {
 impl InvalidIndexedPropertyConstraintErrorWasm {
     pub fn new(
         document_type: String,
-        index_definition: Index,
+        index_name: String,
         property_name: String,
         constraint_name: String,
         reason: String,
@@ -24,7 +24,7 @@ impl InvalidIndexedPropertyConstraintErrorWasm {
     ) -> Self {
         InvalidIndexedPropertyConstraintErrorWasm {
             document_type,
-            index_definition,
+            index_name,
             property_name,
             constraint_name,
             reason,
@@ -40,9 +40,9 @@ impl InvalidIndexedPropertyConstraintErrorWasm {
         self.document_type.clone()
     }
 
-    #[wasm_bindgen(js_name=getIndexDefinition)]
-    pub fn get_index_definition(&self) -> JsValue {
-        IndexDefinitionWasm::from(self.index_definition.clone()).into()
+    #[wasm_bindgen(js_name=getIndexName)]
+    pub fn get_index_name(&self) -> JsValue {
+        IndexDefinitionWasm::from(self.index_name.clone()).into()
     }
 
     #[wasm_bindgen(js_name=getPropertyName)]

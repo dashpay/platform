@@ -174,14 +174,6 @@ where
                 DataContractImmutablePropertiesUpdateError::new(
                     operation.to_owned(),
                     property_name.to_owned(),
-                    existing_data_contract_object
-                        .get(property_name.split_at(1).1)?
-                        .cloned()
-                        .unwrap_or(Value::Null),
-                    new_base_data_contract
-                        .get(property_name.split_at(1).1)?
-                        .cloned()
-                        .unwrap_or(Value::Null),
                 ),
             ))
         }

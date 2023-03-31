@@ -6,15 +6,15 @@ use crate::IndexDefinitionWasm;
 #[wasm_bindgen(js_name=InvalidCompoundIndexError)]
 pub struct InvalidCompoundIndexErrorWasm {
     document_type: String,
-    index_definition: Index,
+    index_name: String,
     code: u32,
 }
 
 impl InvalidCompoundIndexErrorWasm {
-    pub fn new(document_type: String, index_definition: Index, code: u32) -> Self {
+    pub fn new(document_type: String, index_name: String, code: u32) -> Self {
         InvalidCompoundIndexErrorWasm {
             document_type,
-            index_definition,
+            index_name,
             code,
         }
     }
@@ -27,9 +27,9 @@ impl InvalidCompoundIndexErrorWasm {
         self.document_type.clone()
     }
 
-    #[wasm_bindgen(js_name=getIndexDefinition)]
-    pub fn get_index_definition(&self) -> JsValue {
-        IndexDefinitionWasm::from(self.index_definition.clone()).into()
+    #[wasm_bindgen(js_name=getIndexName)]
+    pub fn get_index_name(&self) -> JsValue {
+        IndexDefinitionWasm::from(self.index_name.clone()).into()
     }
 
     #[wasm_bindgen(js_name=getCode)]

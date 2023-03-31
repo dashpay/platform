@@ -19,7 +19,7 @@ use crate::identity::TimestampMillis;
 use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
 use crate::{
     data_contract::{errors::DataContractError, DataContract},
-    decode_protocol_entity_factory::DecodeProtocolEntity,
+    encoding::decode_protocol_entity_factory::DecodeProtocolEntity,
     prelude::Identifier,
     state_repository::StateRepositoryLike,
     ProtocolError,

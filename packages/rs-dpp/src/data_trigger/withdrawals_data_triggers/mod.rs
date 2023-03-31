@@ -52,18 +52,11 @@ where
         .collect::<Result<Vec<Document>, ProtocolError>>()?;
 
     let Some(withdrawal) = withdrawals.get(0) else {
-        let mut error =
-            DataTriggerConditionError::new(
-                context.data_contract.id,
-                dt_delete.base.id,
-                "Withdrawal document was not found".to_string(),
-            );
-
-        error.set_document_transition(DocumentTransition::Delete(dt_delete.clone()));
-
-        error.set_owner_id(*context.owner_id);
-
-        result.add_error(error.into());
+        result.add_error(DataTriggerConditionError::new(
+            context.data_contract.id,
+            dt_delete.base.id,
+            "Withdrawal document was not found".to_string(),
+        ).into());
 
         return Ok(result);
     };
@@ -73,17 +66,14 @@ where
     if status != withdrawals_contract::WithdrawalStatus::COMPLETE as u8
         || status != withdrawals_contract::WithdrawalStatus::EXPIRED as u8
     {
-        let mut error = DataTriggerConditionError::new(
-            context.data_contract.id,
-            dt_delete.base.id,
-            "withdrawal deletion is allowed only for COMPLETE and EXPIRED statuses".to_string(),
+        result.add_error(
+            DataTriggerConditionError::new(
+                context.data_contract.id,
+                dt_delete.base.id,
+                "withdrawal deletion is allowed only for COMPLETE and EXPIRED statuses".to_string(),
+            )
+            .into(),
         );
-
-        error.set_document_transition(DocumentTransition::Delete(dt_delete.clone()));
-
-        error.set_owner_id(*context.owner_id);
-
-        result.add_error(error.into());
 
         return Ok(result);
     }

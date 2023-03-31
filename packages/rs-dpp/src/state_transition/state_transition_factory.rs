@@ -20,8 +20,8 @@ use crate::{
         },
         DataContract,
     },
-    decode_protocol_entity_factory::DecodeProtocolEntity,
     document::DocumentsBatchTransition,
+    encoding::decode_protocol_entity_factory::DecodeProtocolEntity,
     identity::state_transition::{
         identity_create_transition::IdentityCreateTransition,
         identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,

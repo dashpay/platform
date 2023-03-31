@@ -26,3 +26,9 @@ impl From<ProtocolVersionParsingError> for ConsensusError {
         Self::BasicError(BasicError::ProtocolVersionParsingError(err))
     }
 }
+
+impl Into<u32> for ProtocolVersionParsingError {
+    fn into(self) -> u32 {
+        0
+    }
+}

@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::convert::TryFrom;
 use thiserror::Error;
 
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
@@ -44,10 +45,14 @@ use crate::consensus::ConsensusError;
 
 use platform_value::Error as ValueError;
 
-// TODO: Remove extra fields form serialization
-
 #[derive(Error, Debug, Serialize, Deserialize)]
 pub enum BasicError {
+    /*
+
+    DO NOT CHANGE ORDER OF VARIANTS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
+    // Decoding
     #[error(transparent)]
     ProtocolVersionParsingError(ProtocolVersionParsingError),
 
@@ -55,94 +60,50 @@ pub enum BasicError {
     SerializedObjectParsingError(SerializedObjectParsingError),
 
     #[error(transparent)]
-    #[serde(skip)] // TODO: Figure this out
-    JsonSchemaError(JsonSchemaError),
-
-    #[error(transparent)]
     UnsupportedProtocolVersionError(UnsupportedProtocolVersionError),
 
     #[error(transparent)]
     IncompatibleProtocolVersionError(IncompatibleProtocolVersionError),
 
-    #[error(transparent)]
-    DataContractNotPresentError(DataContractNotPresentError),
+    // Structure error
+    #[error("{0}")]
+    JsonSchemaCompilationError(String),
 
     #[error(transparent)]
-    MissingMasterPublicKeyError(MissingMasterPublicKeyError),
+    #[serde(skip)] // TODO: Figure this out
+    JsonSchemaError(JsonSchemaError),
 
     #[error(transparent)]
-    IdentityAssetLockTransactionOutPointAlreadyExistsError(
-        IdentityAssetLockTransactionOutPointAlreadyExistsError,
-    ),
+    InvalidIdentifierError(InvalidIdentifierError),
 
     #[error(transparent)]
-    InvalidIdentityAssetLockTransactionOutputError(InvalidIdentityAssetLockTransactionOutputError),
+    #[serde(skip)] // TODO: Figure this out
+    ValueError(ValueError),
+
+    // DataContract
+    #[error(transparent)]
+    DataContractMaxDepthExceedError(DataContractMaxDepthExceedError),
 
     #[error(transparent)]
-    InvalidAssetLockTransactionOutputReturnSizeError(
-        InvalidAssetLockTransactionOutputReturnSizeError,
-    ),
-
-    #[error(transparent)]
-    IdentityAssetLockTransactionOutputNotFoundError(
-        IdentityAssetLockTransactionOutputNotFoundError,
-    ),
-
-    #[error(transparent)]
-    InvalidIdentityAssetLockTransactionError(InvalidIdentityAssetLockTransactionError),
-
-    #[error(transparent)]
-    InvalidInstantAssetLockProofError(InvalidInstantAssetLockProofError),
-
-    #[error(transparent)]
-    InvalidInstantAssetLockProofSignatureError(InvalidInstantAssetLockProofSignatureError),
-
-    #[error(transparent)]
-    IdentityAssetLockProofLockedTransactionMismatchError(
-        IdentityAssetLockProofLockedTransactionMismatchError,
-    ),
-
-    #[error(transparent)]
-    IdentityAssetLockTransactionIsNotFoundError(IdentityAssetLockTransactionIsNotFoundError),
-
-    #[error(transparent)]
-    InvalidAssetLockProofCoreChainHeightError(InvalidAssetLockProofCoreChainHeightError),
-
-    #[error(transparent)]
-    InvalidAssetLockProofTransactionHeightError(InvalidAssetLockProofTransactionHeightError),
+    DuplicateIndexError(DuplicateIndexError),
 
     #[error(transparent)]
     IncompatibleRe2PatternError(IncompatibleRe2PatternError),
 
     #[error(transparent)]
-    DuplicatedIdentityPublicKeyIdBasicError(DuplicatedIdentityPublicKeyIdBasicError),
+    InvalidCompoundIndexError(InvalidCompoundIndexError),
 
     #[error(transparent)]
-    InvalidIdentityPublicKeyDataError(InvalidIdentityPublicKeyDataError),
+    InvalidDataContractIdError(InvalidDataContractIdError),
 
     #[error(transparent)]
-    InvalidIdentityPublicKeySecurityLevelError(InvalidIdentityPublicKeySecurityLevelError),
+    InvalidIndexedPropertyConstraintError(InvalidIndexedPropertyConstraintError),
 
     #[error(transparent)]
-    DuplicatedIdentityPublicKeyBasicError(DuplicatedIdentityPublicKeyBasicError),
-
-    #[error(transparent)]
-    InvalidDataContractVersionError(InvalidDataContractVersionError),
-
-    #[error(transparent)]
-    DataContractMaxDepthExceedError(DataContractMaxDepthExceedError),
-
-    #[error(transparent)]
-    InvalidDocumentTypeError(InvalidDocumentTypeError),
-
-    #[error(transparent)]
-    DuplicateIndexNameError(DuplicateIndexNameError),
+    InvalidIndexPropertyTypeError(InvalidIndexPropertyTypeError),
 
     #[error(transparent)]
     InvalidJsonSchemaRefError(InvalidJsonSchemaRefError),
-
-    #[error(transparent)]
-    UniqueIndicesLimitReachedError(UniqueIndicesLimitReachedError),
 
     #[error(transparent)]
     SystemPropertyIndexAlreadyPresentError(SystemPropertyIndexAlreadyPresentError),
@@ -151,49 +112,19 @@ pub enum BasicError {
     UndefinedIndexPropertyError(UndefinedIndexPropertyError),
 
     #[error(transparent)]
-    InvalidIndexPropertyTypeError(InvalidIndexPropertyTypeError),
+    UniqueIndicesLimitReachedError(UniqueIndicesLimitReachedError),
 
     #[error(transparent)]
-    InvalidIndexedPropertyConstraintError(InvalidIndexedPropertyConstraintError),
+    DuplicateIndexNameError(DuplicateIndexNameError),
 
     #[error(transparent)]
-    InvalidCompoundIndexError(InvalidCompoundIndexError),
+    InvalidDataContractVersionError(InvalidDataContractVersionError),
 
     #[error(transparent)]
-    DuplicateIndexError(DuplicateIndexError),
-
-    #[error("{0}")]
-    JsonSchemaCompilationError(String),
+    IncompatibleDataContractSchemaError(IncompatibleDataContractSchemaError),
 
     #[error(transparent)]
-    InconsistentCompoundIndexDataError(InconsistentCompoundIndexDataError),
-
-    #[error("$type is not present")]
-    MissingDocumentTransitionTypeError,
-
-    #[error("$type is not present")]
-    MissingDocumentTypeError,
-
-    #[error("$action is not present")]
-    MissingDocumentTransitionActionError,
-
-    #[error(transparent)]
-    InvalidDocumentTransitionActionError(InvalidDocumentTransitionActionError),
-
-    #[error(transparent)]
-    InvalidDocumentTransitionIdError(InvalidDocumentTransitionIdError),
-
-    #[error(transparent)]
-    DuplicateDocumentTransitionsWithIdsError(DuplicateDocumentTransitionsWithIdsError),
-
-    #[error(transparent)]
-    DuplicateDocumentTransitionsWithIndicesError(DuplicateDocumentTransitionsWithIndicesError),
-
-    #[error("$dataContractId is not present")]
-    MissingDataContractIdBasicError,
-
-    #[error(transparent)]
-    InvalidIdentifierError(InvalidIdentifierError),
+    DataContractImmutablePropertiesUpdateError(DataContractImmutablePropertiesUpdateError),
 
     #[error(transparent)]
     DataContractUniqueIndicesChangedError(DataContractUniqueIndicesChangedError),
@@ -204,26 +135,99 @@ pub enum BasicError {
     #[error(transparent)]
     DataContractHaveNewUniqueIndexError(DataContractHaveNewUniqueIndexError),
 
-    #[error("State transition type is not present")]
-    MissingStateTransitionTypeError,
+    // Document
+    #[error(transparent)]
+    DataContractNotPresentError(DataContractNotPresentError),
 
     #[error(transparent)]
-    InvalidStateTransitionTypeError(InvalidStateTransitionTypeError),
+    DuplicateDocumentTransitionsWithIdsError(DuplicateDocumentTransitionsWithIdsError),
 
     #[error(transparent)]
-    StateTransitionMaxSizeExceededError(StateTransitionMaxSizeExceededError),
+    DuplicateDocumentTransitionsWithIndicesError(DuplicateDocumentTransitionsWithIndicesError),
 
     #[error(transparent)]
-    DataContractImmutablePropertiesUpdateError(DataContractImmutablePropertiesUpdateError),
+    InconsistentCompoundIndexDataError(InconsistentCompoundIndexDataError),
 
     #[error(transparent)]
-    IncompatibleDataContractSchemaError(IncompatibleDataContractSchemaError),
+    InvalidDocumentTransitionActionError(InvalidDocumentTransitionActionError),
+
+    #[error(transparent)]
+    InvalidDocumentTransitionIdError(InvalidDocumentTransitionIdError),
+
+    #[error(transparent)]
+    InvalidDocumentTypeError(InvalidDocumentTypeError),
+
+    #[error("$dataContractId is not present")]
+    MissingDataContractIdBasicError,
+
+    #[error("$action is not present")]
+    MissingDocumentTransitionActionError,
+
+    #[error("$type is not present")]
+    MissingDocumentTransitionTypeError,
+
+    #[error("$type is not present")]
+    MissingDocumentTypeError,
+
+    // Identity
+    #[error(transparent)]
+    DuplicatedIdentityPublicKeyBasicError(DuplicatedIdentityPublicKeyBasicError),
+
+    #[error(transparent)]
+    DuplicatedIdentityPublicKeyIdBasicError(DuplicatedIdentityPublicKeyIdBasicError),
+
+    #[error(transparent)]
+    IdentityAssetLockProofLockedTransactionMismatchError(
+        IdentityAssetLockProofLockedTransactionMismatchError,
+    ),
+
+    #[error(transparent)]
+    IdentityAssetLockTransactionIsNotFoundError(IdentityAssetLockTransactionIsNotFoundError),
+
+    #[error(transparent)]
+    IdentityAssetLockTransactionOutPointAlreadyExistsError(
+        IdentityAssetLockTransactionOutPointAlreadyExistsError,
+    ),
+
+    #[error(transparent)]
+    IdentityAssetLockTransactionOutputNotFoundError(
+        IdentityAssetLockTransactionOutputNotFoundError,
+    ),
+
+    #[error(transparent)]
+    InvalidAssetLockProofCoreChainHeightError(InvalidAssetLockProofCoreChainHeightError),
+
+    #[error(transparent)]
+    InvalidAssetLockProofTransactionHeightError(InvalidAssetLockProofTransactionHeightError),
+
+    #[error(transparent)]
+    InvalidAssetLockTransactionOutputReturnSizeError(
+        InvalidAssetLockTransactionOutputReturnSizeError,
+    ),
+
+    #[error(transparent)]
+    InvalidIdentityAssetLockTransactionError(InvalidIdentityAssetLockTransactionError),
+
+    #[error(transparent)]
+    InvalidIdentityAssetLockTransactionOutputError(InvalidIdentityAssetLockTransactionOutputError),
+
+    #[error(transparent)]
+    InvalidIdentityPublicKeyDataError(InvalidIdentityPublicKeyDataError),
+
+    #[error(transparent)]
+    InvalidInstantAssetLockProofError(InvalidInstantAssetLockProofError),
+
+    #[error(transparent)]
+    InvalidInstantAssetLockProofSignatureError(InvalidInstantAssetLockProofSignatureError),
+
+    #[error(transparent)]
+    MissingMasterPublicKeyError(MissingMasterPublicKeyError),
+
+    #[error(transparent)]
+    InvalidIdentityPublicKeySecurityLevelError(InvalidIdentityPublicKeySecurityLevelError),
 
     #[error(transparent)]
     InvalidIdentityKeySignatureError(InvalidIdentityKeySignatureError),
-
-    #[error(transparent)]
-    InvalidDataContractIdError(InvalidDataContractIdError),
 
     #[error(transparent)]
     InvalidIdentityCreditWithdrawalTransitionOutputScriptError(
@@ -240,9 +244,15 @@ pub enum BasicError {
         NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
     ),
 
+    // State Transition
     #[error(transparent)]
-    #[serde(skip)] // TODO: Figure this out
-    ValueError(ValueError),
+    InvalidStateTransitionTypeError(InvalidStateTransitionTypeError),
+
+    #[error("State transition type is not present")]
+    MissingStateTransitionTypeError,
+
+    #[error(transparent)]
+    StateTransitionMaxSizeExceededError(StateTransitionMaxSizeExceededError),
 }
 
 impl From<ValueError> for ConsensusError {

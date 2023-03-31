@@ -6,7 +6,7 @@ use crate::IndexDefinitionWasm;
 #[wasm_bindgen(js_name=InvalidIndexPropertyTypeError)]
 pub struct InvalidIndexPropertyTypeErrorWasm {
     document_type: String,
-    index_definition: Index,
+    index_name: String,
     property_name: String,
     property_type: String,
     code: u32,
@@ -15,14 +15,14 @@ pub struct InvalidIndexPropertyTypeErrorWasm {
 impl InvalidIndexPropertyTypeErrorWasm {
     pub fn new(
         document_type: String,
-        index_definition: Index,
+        index_name: String,
         property_name: String,
         property_type: String,
         code: u32,
     ) -> Self {
         InvalidIndexPropertyTypeErrorWasm {
             document_type,
-            index_definition,
+            index_name,
             property_name,
             property_type,
             code,
@@ -37,9 +37,9 @@ impl InvalidIndexPropertyTypeErrorWasm {
         self.document_type.clone()
     }
 
-    #[wasm_bindgen(js_name=getIndexDefinition)]
-    pub fn get_index_definition(&self) -> JsValue {
-        IndexDefinitionWasm::from(self.index_definition.clone()).into()
+    #[wasm_bindgen(js_name=getIndexName)]
+    pub fn get_index_name(&self) -> JsValue {
+        IndexDefinitionWasm::from(self.index_name.clone()).into()
     }
 
     #[wasm_bindgen(js_name=getPropertyName)]
