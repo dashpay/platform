@@ -36,7 +36,7 @@ describe('Document', () => {
 
     const now = new Date().getTime();
     const id = await generateRandomIdentifierAsync();
-    const jsId = new JsIdentifier(Buffer.from(id.toBuffer()));
+    const jsId = new JsIdentifier(id.toBuffer());
 
     const ownerId = await generateRandomIdentifierAsync();
     const jsOwnerId = new JsIdentifier(Buffer.from(ownerId.toBuffer()));
@@ -103,7 +103,7 @@ describe('Document', () => {
     };
 
     document = new ExtendedDocument(rawDocument, dataContract);
-    rawDocumentJs = lodash.cloneDeepWith(rawDocument);
+    rawDocumentJs = { ...rawDocument };
     rawDocumentJs.$id = jsId;
     rawDocumentJs.$ownerId = jsOwnerId;
 

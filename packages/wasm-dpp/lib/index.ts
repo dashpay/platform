@@ -34,7 +34,7 @@ const loadDppModule = async () => {
     dpp_module.initSync(bytes);
   }
 
-  // TODO: fix TS warning
+  // TODO: Add TS types for Identifier and IdentifierError
   // @ts-ignore
   dpp_module.Identifier = Identifier;
   // @ts-ignore
