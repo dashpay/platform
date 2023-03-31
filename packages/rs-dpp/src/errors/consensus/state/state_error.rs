@@ -25,11 +25,17 @@ use crate::consensus::ConsensusError;
 
 #[derive(Error, Debug, Serialize, Deserialize)]
 pub enum StateError {
-    #[error(transparent)]
-    IdentityAlreadyExistsError(IdentityAlreadyExistsError),
+    /*
+
+    DO NOT CHANGE ORDER OF VARIANTS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
 
     #[error(transparent)]
-    IdentityInsufficientBalanceError(IdentityInsufficientBalanceError),
+    DataContractAlreadyPresentError(DataContractAlreadyPresentError),
+
+    #[error(transparent)]
+    DataTriggerError(DataTriggerError),
 
     #[error(transparent)]
     DocumentAlreadyPresentError(DocumentAlreadyPresentError),
@@ -53,16 +59,7 @@ pub enum StateError {
     InvalidDocumentRevisionError(InvalidDocumentRevisionError),
 
     #[error(transparent)]
-    DataContractAlreadyPresentError(DataContractAlreadyPresentError),
-
-    #[error(transparent)]
-    InvalidIdentityRevisionError(InvalidIdentityRevisionError),
-
-    #[error(transparent)]
-    DuplicatedIdentityPublicKeyStateError(DuplicatedIdentityPublicKeyStateError),
-
-    #[error(transparent)]
-    DuplicatedIdentityPublicKeyIdStateError(DuplicatedIdentityPublicKeyIdStateError),
+    IdentityAlreadyExistsError(IdentityAlreadyExistsError),
 
     #[error(transparent)]
     IdentityPublicKeyDisabledAtWindowViolationError(
@@ -76,13 +73,22 @@ pub enum StateError {
     InvalidIdentityPublicKeyIdError(InvalidIdentityPublicKeyIdError),
 
     #[error(transparent)]
+    InvalidIdentityRevisionError(InvalidIdentityRevisionError),
+
+    #[error(transparent)]
     MaxIdentityPublicKeyLimitReachedError(MaxIdentityPublicKeyLimitReachedError),
+
+    #[error(transparent)]
+    DuplicatedIdentityPublicKeyStateError(DuplicatedIdentityPublicKeyStateError),
+
+    #[error(transparent)]
+    DuplicatedIdentityPublicKeyIdStateError(DuplicatedIdentityPublicKeyIdStateError),
 
     #[error(transparent)]
     IdentityPublicKeyIsDisabledError(IdentityPublicKeyIsDisabledError),
 
     #[error(transparent)]
-    DataTriggerError(DataTriggerError),
+    IdentityInsufficientBalanceError(IdentityInsufficientBalanceError),
 }
 
 impl From<StateError> for ConsensusError {

@@ -8,8 +8,13 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum SignatureError {
+    /*
+
+    DO NOT CHANGE ORDER OF VARIANTS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     #[error(transparent)]
-    MissingPublicKeyError(MissingPublicKeyError),
+    IdentityNotFoundError(IdentityNotFoundError),
 
     #[error(transparent)]
     InvalidIdentityPublicKeyTypeError(InvalidIdentityPublicKeyTypeError),
@@ -18,19 +23,19 @@ pub enum SignatureError {
     InvalidStateTransitionSignatureError,
 
     #[error(transparent)]
-    IdentityNotFoundError(IdentityNotFoundError),
+    MissingPublicKeyError(MissingPublicKeyError),
 
     #[error(transparent)]
     InvalidSignaturePublicKeySecurityLevelError(InvalidSignaturePublicKeySecurityLevelError),
+
+    #[error(transparent)]
+    WrongPublicKeyPurposeError(WrongPublicKeyPurposeError),
 
     #[error(transparent)]
     PublicKeyIsDisabledError(PublicKeyIsDisabledError),
 
     #[error(transparent)]
     PublicKeySecurityLevelNotMetError(PublicKeySecurityLevelNotMetError),
-
-    #[error(transparent)]
-    WrongPublicKeyPurposeError(WrongPublicKeyPurposeError),
 }
 
 impl From<SignatureError> for ConsensusError {

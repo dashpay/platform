@@ -4,6 +4,11 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum FeeError {
+    /*
+
+    DO NOT CHANGE ORDER OF VARIANTS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     #[error(transparent)]
     BalanceIsNotEnoughError(BalanceIsNotEnoughError),
 }

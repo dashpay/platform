@@ -8,6 +8,11 @@ use thiserror::Error;
 
 #[derive(Error, Debug, Serialize, Deserialize)]
 pub enum DataTriggerError {
+    /*
+
+    DO NOT CHANGE ORDER OF VARIANTS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     #[error(transparent)]
     DataTriggerConditionError(DataTriggerConditionError),
 
