@@ -1,5 +1,3 @@
-pub mod errors;
-
 use dpp::prelude::Identifier;
 use itertools::Itertools;
 pub use serde::{Deserialize, Serialize};
@@ -9,7 +7,6 @@ use wasm_bindgen::JsCast;
 
 use crate::bail_js;
 use crate::buffer::Buffer;
-use crate::identifier::errors::IdentifierErrorWasm;
 use crate::utils::Inner;
 use crate::utils::ToSerdeJSONExt;
 use crate::utils::WithJsError;
@@ -30,139 +27,73 @@ extern "C" {
     fn log(a: &str);
 }
 
-#[derive(Clone, Debug)]
-#[wasm_bindgen(js_name=Identifier, inspectable)]
-pub struct IdentifierWrapper {
-    wrapped: identifier::Identifier,
+#[wasm_bindgen(raw_module = "/lib/identifier/Identifier.js")]
+extern "C" {
+    #[derive(Debug, Clone)]
+    pub type IdentifierWrapper;
+
+    #[wasm_bindgen(structural, js_name=Identifier)]
+    fn IdentifierJS(buffer: &JsValue) -> IdentifierWrapper;
+
+    #[wasm_bindgen(structural, js_name=IdentifierError)]
+    fn IdentifierError() -> JsValue;
+
+    #[wasm_bindgen(structural, js_name=test)]
+    fn test() -> JsValue;
+
+    // TODO: return Vec<u8>?
+    #[wasm_bindgen(structural, method, js_name=toBuffer)]
+    pub fn to_buffer(this: &IdentifierWrapper) -> JsValue;
 }
 
-impl std::convert::From<identifier::Identifier> for IdentifierWrapper {
+impl From<identifier::Identifier> for IdentifierWrapper {
     fn from(s: identifier::Identifier) -> Self {
-        IdentifierWrapper { wrapped: s }
+        IdentifierWasm(Buffer::from_bytes(s.as_slice()).into())
     }
 }
 
-impl std::convert::From<[u8; 32]> for IdentifierWrapper {
+impl From<[u8; 32]> for IdentifierWrapper {
     fn from(s: [u8; 32]) -> Self {
-        IdentifierWrapper {
-            wrapped: Identifier::new(s),
-        }
+        IdentifierWasm(Buffer::from_bytes(&s).into())
     }
 }
 
-impl std::convert::From<&IdentifierWrapper> for identifier::Identifier {
+impl From<&IdentifierWrapper> for Identifier {
     fn from(s: &IdentifierWrapper) -> Self {
-        s.wrapped
+        let buffer = s.to_buffer();
+        // TODO: do without dyn_into?
+        let vec = buffer.dyn_into::<js_sys::Uint8Array>().unwrap().to_vec();
+        Identifier::from_bytes(&vec).unwrap()
     }
 }
 
-impl std::convert::From<IdentifierWrapper> for Identifier {
+impl From<&mut IdentifierWrapper> for Identifier {
+    fn from(s: &mut IdentifierWrapper) -> Self {
+        let buffer = s.to_buffer();
+        // TODO: do without dyn_into?
+        let vec = buffer.dyn_into::<js_sys::Uint8Array>().unwrap().to_vec();
+        Identifier::from_bytes(&vec).unwrap()
+    }
+}
+
+impl From<IdentifierWrapper> for Identifier {
     fn from(s: IdentifierWrapper) -> Self {
-        s.wrapped
+        let buffer = s.to_buffer();
+        // TODO: do without dyn_into?
+        let vec = buffer.dyn_into::<js_sys::Uint8Array>().unwrap().to_vec();
+        Identifier::from_bytes(&vec).unwrap()
     }
 }
 
-#[wasm_bindgen(js_class=Identifier)]
+// TODO: remove
+pub fn IdentifierWasm(js_value: JsValue) -> IdentifierWrapper {
+    IdentifierJS(&js_value)
+}
+
+// TODO: remove
 impl IdentifierWrapper {
-    #[wasm_bindgen(constructor)]
     pub fn new(js_value: JsValue) -> Result<IdentifierWrapper, JsValue> {
-        // Can be possible reworked with Buffer::is_buffer(&js_value)
-        // but until we use Buffer shim for both Node and Web,
-        // it will return false negative in Node.JS environment
-        if !js_value.has_type::<js_sys::Uint8Array>() {
-            return Err(IdentifierErrorWasm::new("Identifier expects Buffer").into());
-        }
-
-        let vec = js_value.dyn_into::<js_sys::Uint8Array>()?.to_vec();
-
-        let identifier = Identifier::from_bytes(&vec)
-            .map_err(ProtocolError::ValueError)
-            .with_js_error()?;
-
-        Ok(IdentifierWrapper {
-            wrapped: identifier,
-        })
-    }
-
-    pub fn from(value: JsValue, encoding: Option<String>) -> Result<IdentifierWrapper, JsValue> {
-        if value.is_string() {
-            let string = value.as_string().unwrap();
-            Ok(IdentifierWrapper::from_string(string, encoding))
-        } else if value.has_type::<js_sys::Uint8Array>() && encoding.is_none() {
-            IdentifierWrapper::new(value)
-        } else if value.has_type::<js_sys::Uint8Array>() && encoding.is_some() {
-            Err(IdentifierErrorWasm::new("encoding accepted only with type string").into())
-        } else {
-            Err(IdentifierErrorWasm::new("Identifier.from received an unexpected value").into())
-        }
-    }
-
-    #[wasm_bindgen(js_name=fromString)]
-    pub fn from_string(value: String, encoding: Option<String>) -> IdentifierWrapper {
-        // TODO: remove unwrap
-        let identifier = identifier::Identifier::from_string_with_encoding_string(
-            &value[..],
-            encoding.as_deref(),
-        )
-        .unwrap();
-
-        IdentifierWrapper {
-            wrapped: identifier,
-        }
-    }
-
-    #[wasm_bindgen(js_name=toBuffer)]
-    pub fn to_buffer(&self) -> Buffer {
-        Buffer::from_bytes_owned(self.wrapped.to_vec())
-    }
-
-    #[wasm_bindgen(js_name=toJSON)]
-    pub fn to_json(&self) -> String {
-        self.to_string(None)
-    }
-
-    #[wasm_bindgen(js_name=toString)]
-    pub fn to_string(&self, encoding: Option<String>) -> String {
-        // Converting string to a string slice. Rust interfaces work
-        // with immutable string slices more often, while js interop accepts mutable String.
-        // as_deref dereferences value in the Option
-        // dereferencing is accessing the underlying value of the reference, which in
-        // case of the string would be a string slice
-        self.wrapped
-            .to_string_with_encoding_string(encoding.as_deref())
-    }
-
-    #[wasm_bindgen(getter)]
-    pub fn length(&self) -> usize {
-        self.wrapped.to_buffer().len()
-    }
-
-    #[wasm_bindgen(js_name=toBytes)]
-    pub fn to_bytes(&self) -> Vec<u8> {
-        self.wrapped.to_vec()
-    }
-
-    #[wasm_bindgen(js_name=clone)]
-    pub fn deep_clone(&self) -> IdentifierWrapper {
-        IdentifierWrapper {
-            wrapped: self.wrapped,
-        }
-    }
-}
-
-impl Inner for IdentifierWrapper {
-    type InnerItem = Identifier;
-
-    fn into_inner(self) -> Identifier {
-        self.wrapped
-    }
-
-    fn inner(&self) -> &Identifier {
-        &self.wrapped
-    }
-
-    fn inner_mut(&mut self) -> &mut Identifier {
-        &mut self.wrapped
+        Ok(IdentifierWasm(js_value))
     }
 }
 

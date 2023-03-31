@@ -298,7 +298,7 @@ impl IdentityCreateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getModifiedDataIds)]
-    pub fn get_modified_data_ids(&self) -> Vec<JsValue> {
+    pub fn get_modified_data_ids(&self) -> Vec<IdentifierWrapper> {
         let ids = self.0.get_modified_data_ids();
 
         ids.into_iter()

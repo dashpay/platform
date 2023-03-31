@@ -1,4 +1,5 @@
 use dpp::document::validation::state::execute_data_triggers::execute_data_triggers_with_custom_list;
+use dpp::prelude::Identifier;
 use itertools::Itertools;
 use js_sys::Array;
 use wasm_bindgen::prelude::*;
@@ -25,7 +26,8 @@ pub async fn execute_data_triggers_wasm(
 ) -> Result<Array, JsValue> {
     let st_wrapper =
         ExternalStateRepositoryLikeWrapper::new_with_arc(js_context.state_repository());
-    let context = data_trigger_context_from_wasm(&js_context, &st_wrapper);
+    let identifier: Identifier = js_context.get_owner_id().into();
+    let context = data_trigger_context_from_wasm(&js_context, &st_wrapper, &identifier);
     let document_transitions: Vec<_> = js_document_transitions
         .iter()
         .map(|v| {

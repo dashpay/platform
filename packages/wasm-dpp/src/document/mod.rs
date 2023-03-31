@@ -106,12 +106,12 @@ impl DocumentWasm {
 
     #[wasm_bindgen(js_name=setId)]
     pub fn set_id(&mut self, js_id: IdentifierWrapper) {
-        self.0.id = js_id.into_inner();
+        self.0.id = js_id.into();
     }
 
     #[wasm_bindgen(js_name=setOwnerId)]
     pub fn set_owner_id(&mut self, owner_id: IdentifierWrapper) {
-        self.0.owner_id = owner_id.into_inner();
+        self.0.owner_id = owner_id.into();
     }
 
     #[wasm_bindgen(js_name=getOwnerId)]

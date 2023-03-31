@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use dpp::identifier::Identifier;
 use dpp::{data_trigger::DataTriggerExecutionContext, state_repository::StateRepositoryLike};
 use wasm_bindgen::prelude::*;
 
@@ -82,13 +83,14 @@ impl DataTriggerExecutionContextWasm {
 pub(crate) fn data_trigger_context_from_wasm<'a, SR>(
     value: &'a DataTriggerExecutionContextWasm,
     external_state_repository: &'a SR,
+    owner_id: &'a Identifier,
 ) -> DataTriggerExecutionContext<'a, SR>
 where
     SR: StateRepositoryLike,
 {
     DataTriggerExecutionContext {
         data_contract: value.data_contract.inner(),
-        owner_id: value.owner_id.inner(),
+        owner_id: &owner_id,
         state_transition_execution_context: value.state_transition_execution_context.inner(),
         state_repository: external_state_repository,
     }
