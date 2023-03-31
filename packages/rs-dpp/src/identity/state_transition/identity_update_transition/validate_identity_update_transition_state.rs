@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use crate::consensus::signature::{IdentityNotFoundError, SignatureError};
 use crate::identity::state_transition::identity_update_transition::IdentityUpdateTransitionAction;
-use crate::ProtocolError;
 use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
     identity::validation::{RequiredPurposeAndSecurityLevelValidator, TPublicKeysValidator},

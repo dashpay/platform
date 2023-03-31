@@ -1,4 +1,4 @@
-use crate::{prelude::TimestampMillis, NonConsensusError, ProtocolError};
+use crate::{prelude::TimestampMillis, NonConsensusError};
 
 use super::validation_result::TimeWindowValidationResult;
 
