@@ -108,7 +108,7 @@ pub struct PlatformConfig {
     pub quorum_size: u16,
 
     /// How often should quorums change?
-    pub validator_set_quorum_rotation_block_count: u64,
+    pub validator_set_quorum_rotation_block_count: u32,
 
     /// Path to data storage
     pub db_path: PathBuf,

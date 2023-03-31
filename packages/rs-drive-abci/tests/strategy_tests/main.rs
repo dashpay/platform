@@ -467,7 +467,7 @@ pub(crate) fn continue_chain_for_strategy(
         StrategyRandomness::RNGEntropy(rng) => rng,
     };
     let quorum_size = config.quorum_size;
-    let quorum_rotation_block_count = config.validator_set_quorum_rotation_block_count;
+    let quorum_rotation_block_count = config.validator_set_quorum_rotation_block_count as u64;
     let first_block_time = 0;
     let mut current_identities = vec![];
     let mut i = 0;
