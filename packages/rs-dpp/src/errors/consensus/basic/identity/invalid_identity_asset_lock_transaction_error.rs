@@ -1,7 +1,6 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use dashcore;
-use dashcore::consensus::encode::Error;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 

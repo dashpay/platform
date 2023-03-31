@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
-use crate::document::document_transition::document_base_transition::JsonValue;
 use crate::prelude::Identifier;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

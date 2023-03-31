@@ -17,6 +17,7 @@ use crate::{
     util::{hash, serializer},
     BlsModule,
 };
+use crate::consensus::signature::InvalidStateTransitionSignatureError;
 
 use super::{
     state_transition_execution_context::StateTransitionExecutionContext, StateTransition,
@@ -116,7 +117,7 @@ pub trait StateTransitionLike:
         signer::verify_hash_signature(&data_hash, self.get_signature().as_slice(), public_key_hash)
             .map_err(|_| {
                 ProtocolError::from(ConsensusError::SignatureError(
-                    SignatureError::InvalidStateTransitionSignatureError,
+                    SignatureError::InvalidStateTransitionSignatureError(InvalidStateTransitionSignatureError::new()),
                 ))
             })
     }
@@ -133,7 +134,7 @@ pub trait StateTransitionLike:
         signer::verify_data_signature(&data, self.get_signature().as_slice(), public_key).map_err(
             |_| {
                 ProtocolError::from(ConsensusError::SignatureError(
-                    SignatureError::InvalidStateTransitionSignatureError,
+                    SignatureError::InvalidStateTransitionSignatureError(InvalidStateTransitionSignatureError::new()),
                 ))
             },
         )
@@ -157,7 +158,7 @@ pub trait StateTransitionLike:
             .map(|_| ())
             .map_err(|_| {
                 ProtocolError::from(ConsensusError::SignatureError(
-                    SignatureError::InvalidStateTransitionSignatureError,
+                    SignatureError::InvalidStateTransitionSignatureError(InvalidStateTransitionSignatureError::new()),
                 ))
             })
     }

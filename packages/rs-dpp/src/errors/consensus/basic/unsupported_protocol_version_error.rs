@@ -47,10 +47,6 @@ impl TryFrom<Value> for UnsupportedProtocolVersionError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
-    use crate::document::serialize::DocumentForCbor;
-    use integer_encoding::VarIntWriter;
-    use std::convert::TryInto;
 
     #[test]
     fn test_try_from() {

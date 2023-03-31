@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::convert::TryFrom;
 use thiserror::Error;
 
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
@@ -14,12 +13,7 @@ use crate::consensus::basic::data_contract::{
     UniqueIndicesLimitReachedError,
 };
 use crate::consensus::basic::decode::{ProtocolVersionParsingError, SerializedObjectParsingError};
-use crate::consensus::basic::document::{
-    DataContractNotPresentError, DuplicateDocumentTransitionsWithIdsError,
-    DuplicateDocumentTransitionsWithIndicesError, InconsistentCompoundIndexDataError,
-    InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
-    InvalidDocumentTypeError,
-};
+use crate::consensus::basic::document::{DataContractNotPresentError, DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError, InconsistentCompoundIndexDataError, InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError, InvalidDocumentTypeError, MissingDataContractIdBasicError, MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError, MissingDocumentTypeError};
 use crate::consensus::basic::identity::{
     DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
     IdentityAssetLockProofLockedTransactionMismatchError,
@@ -35,15 +29,14 @@ use crate::consensus::basic::identity::{
     MissingMasterPublicKeyError, NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
 };
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
-use crate::consensus::basic::state_transition::{
-    InvalidStateTransitionTypeError, StateTransitionMaxSizeExceededError,
-};
+use crate::consensus::basic::state_transition::{InvalidStateTransitionTypeError, MissingStateTransitionTypeError, StateTransitionMaxSizeExceededError};
 use crate::consensus::basic::{
     IncompatibleProtocolVersionError, JsonSchemaError, UnsupportedProtocolVersionError,
 };
 use crate::consensus::ConsensusError;
 
 use platform_value::Error as ValueError;
+use crate::consensus::basic::json_schema_compilation_error::JsonSchemaCompilationError;
 
 #[derive(Error, Debug, Serialize, Deserialize)]
 pub enum BasicError {
@@ -66,8 +59,8 @@ pub enum BasicError {
     IncompatibleProtocolVersionError(IncompatibleProtocolVersionError),
 
     // Structure error
-    #[error("{0}")]
-    JsonSchemaCompilationError(String),
+    #[error(transparent)]
+    JsonSchemaCompilationError(JsonSchemaCompilationError),
 
     #[error(transparent)]
     #[serde(skip)] // TODO: Figure this out
@@ -157,17 +150,17 @@ pub enum BasicError {
     #[error(transparent)]
     InvalidDocumentTypeError(InvalidDocumentTypeError),
 
-    #[error("$dataContractId is not present")]
-    MissingDataContractIdBasicError,
+    #[error(transparent)]
+    MissingDataContractIdBasicError(MissingDataContractIdBasicError),
 
-    #[error("$action is not present")]
-    MissingDocumentTransitionActionError,
+    #[error(transparent)]
+    MissingDocumentTransitionActionError(MissingDocumentTransitionActionError),
 
-    #[error("$type is not present")]
-    MissingDocumentTransitionTypeError,
+    #[error(transparent)]
+    MissingDocumentTransitionTypeError(MissingDocumentTransitionTypeError),
 
-    #[error("$type is not present")]
-    MissingDocumentTypeError,
+    #[error(transparent)]
+    MissingDocumentTypeError(MissingDocumentTypeError),
 
     // Identity
     #[error(transparent)]
@@ -248,8 +241,8 @@ pub enum BasicError {
     #[error(transparent)]
     InvalidStateTransitionTypeError(InvalidStateTransitionTypeError),
 
-    #[error("State transition type is not present")]
-    MissingStateTransitionTypeError,
+    #[error(transparent)]
+    MissingStateTransitionTypeError(MissingStateTransitionTypeError),
 
     #[error(transparent)]
     StateTransitionMaxSizeExceededError(StateTransitionMaxSizeExceededError),

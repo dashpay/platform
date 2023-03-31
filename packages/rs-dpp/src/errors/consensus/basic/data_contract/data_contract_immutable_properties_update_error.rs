@@ -1,5 +1,4 @@
 use crate::consensus::basic::BasicError;
-use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 

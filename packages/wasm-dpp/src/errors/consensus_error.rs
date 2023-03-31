@@ -321,7 +321,7 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         )
         .into(),
         BasicError::JsonSchemaCompilationError(error) => {
-            JsonSchemaCompilationErrorWasm::new(error.clone(), code).into()
+            JsonSchemaCompilationErrorWasm::new(error.compilation_error().to_string(), code).into()
         }
         BasicError::InconsistentCompoundIndexDataError(err) => {
             InconsistentCompoundIndexDataErrorWasm::new(
@@ -331,11 +331,11 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
             )
             .into()
         }
-        BasicError::MissingDocumentTransitionTypeError => {
+        BasicError::MissingDocumentTransitionTypeError(err) => {
             MissingDocumentTransitionTypeErrorWasm::new(code).into()
         }
-        BasicError::MissingDocumentTypeError => MissingDocumentTypeErrorWasm::new(code).into(),
-        BasicError::MissingDocumentTransitionActionError => {
+        BasicError::MissingDocumentTypeError(err) => MissingDocumentTypeErrorWasm::new(code).into(),
+        BasicError::MissingDocumentTransitionActionError(err) => {
             MissingDocumentTransitionActionErrorWasm::new(code).into()
         }
         BasicError::InvalidDocumentTransitionActionError(err) => {
@@ -353,7 +353,7 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
             DuplicateDocumentTransitionsWithIdsErrorWasm::new(err.references().to_owned(), code)
                 .into()
         }
-        BasicError::MissingDataContractIdBasicError => {
+        BasicError::MissingDataContractIdBasicError(err) => {
             MissingDataContractIdErrorWasm::new(code).into()
         }
         BasicError::InvalidIdentifierError(err) => InvalidIdentifierErrorWasm::new(
@@ -386,7 +386,7 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
             )
             .into()
         }
-        BasicError::MissingStateTransitionTypeError => {
+        BasicError::MissingStateTransitionTypeError(err) => {
             MissingStateTransitionTypeErrorWasm::new(code).into()
         }
         BasicError::InvalidStateTransitionTypeError(err) => {
@@ -507,7 +507,7 @@ fn from_signature_error(signature_error: &SignatureError) -> JsValue {
         SignatureError::InvalidIdentityPublicKeyTypeError(err) => {
             InvalidIdentityPublicKeyTypeErrorWasm::new(err.public_key_type(), code).into()
         }
-        SignatureError::InvalidStateTransitionSignatureError => {
+        SignatureError::InvalidStateTransitionSignatureError(err) => {
             InvalidStateTransitionSignatureErrorWasm::new(code).into()
         }
         SignatureError::IdentityNotFoundError(err) => {
