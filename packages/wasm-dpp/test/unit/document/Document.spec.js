@@ -77,7 +77,7 @@ describe('Document', () => {
       },
     };
 
-    dataContract = dataContractFactory.create(ownerId.clone(), rawDataContract);
+    dataContract = dataContractFactory.create(ownerId, rawDataContract);
     dataContractJs = jsDataContractFactory.create(jsOwnerId, rawDataContract);
 
     rawDocument = {
@@ -307,7 +307,7 @@ describe('Document', () => {
     it('should return ID', async () => {
       const id = await generateRandomIdentifierAsync();
 
-      document.setId(id.clone());
+      document.setId(id);
 
       const actualId = document.getId();
 
