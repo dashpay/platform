@@ -1,3 +1,4 @@
+const { InstantLock } = require('@dashevo/dashcore-lib');
 const BlockInfo = require('../blockExecution/BlockInfo');
 
 /**
@@ -589,13 +590,13 @@ class DriveStateRepository {
   /**
    * Verify instant lock
    *
-   * @param {InstantLock} instantLock
+   * @param {Buffer} rawInstantLock
    * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @return {Promise<boolean>}
    */
   // eslint-disable-next-line no-unused-vars
-  async verifyInstantLock(instantLock, executionContext = undefined) {
+  async verifyInstantLock(rawInstantLock, executionContext = undefined) {
     const coreChainLockedHeight = this.blockExecutionContext.getCoreChainLockedHeight();
 
     if (coreChainLockedHeight === null) {
@@ -613,6 +614,9 @@ class DriveStateRepository {
     }
 
     try {
+      // TODO: Identifier/buffer issue - problem with Buffer shim:
+      //  Without Buffer.from will fail
+      const instantLock = new InstantLock(Buffer.from(rawInstantLock));
       const { result: isVerified } = await this.coreRpcClient.verifyIsLock(
         instantLock.getRequestId().toString('hex'),
         instantLock.txid,
