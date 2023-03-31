@@ -15,6 +15,7 @@ use serde::Deserialize;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
+use crate::errors::protocol_error::from_protocol_error;
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name = StateTransitionFacade)]
@@ -213,6 +214,16 @@ impl StateTransitionFacadeWasm {
             .with_js_error()?;
 
         Ok(validation_result.map(|_| JsValue::undefined()).into())
+    }
+
+    #[wasm_bindgen]
+    pub async fn apply(&self, state_transition_js: JsValue) -> Result<JsValue, JsValue> {
+        let state_transition =
+            super::super::conversion::create_state_transition_from_wasm_instance(
+                &state_transition_js,
+            )?;
+
+        self.0.apply(&state_transition).await.map(|_| JsValue::undefined()).map_err(from_protocol_error)
     }
 }
 
