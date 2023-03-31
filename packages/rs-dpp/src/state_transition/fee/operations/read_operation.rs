@@ -10,9 +10,6 @@ use crate::{
     NonConsensusError,
 };
 
-const ProcessingCostOverflowError: NonConsensusError =
-    NonConsensusError::Overflow("the processing cost is too big");
-
 #[derive(Default, Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ReadOperation {
