@@ -31,6 +31,15 @@
 //!
 
 use crate::DocumentAction::{DocumentActionDelete, DocumentActionInsert};
+use dpp::document::document_transition::document_base_transition::DocumentBaseTransition;
+use dpp::document::document_transition::{
+    document_create_transition, Action, DocumentCreateTransition, DocumentDeleteTransition,
+};
+use dpp::document::DocumentsBatchTransition;
+use dpp::identity::state_transition::identity_create_transition;
+use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransition;
+use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned};
+use dpp::version::LATEST_VERSION;
 use drive::common::helpers::identities::create_test_masternode_identities_with_rng;
 use drive::contract::{Contract, CreateRandomDocument, DocumentType};
 use drive::dpp::document::Document;
@@ -186,38 +195,37 @@ impl Strategy {
                 .expect("expected to be able to add contract");
         }
     }
-    fn identity_operations_for_block(
+    fn identity_state_transitions_for_block(
         &self,
         rng: &mut StdRng,
-    ) -> Vec<(Identity, Vec<DriveOperation>)> {
+    ) -> Vec<(Identity, StateTransition)> {
         let frequency = &self.identities_inserts;
         if frequency.check_hit(rng) {
             let count = frequency.events(rng);
-            create_identities_operations(count, 5, rng)
+            create_identities_state_transitions(count, 5, rng)
         } else {
             vec![]
         }
     }
 
-    fn contract_operations(&self) -> Vec<DriveOperation> {
+    fn contract_state_transitions(&self) -> Vec<StateTransition> {
         self.contracts
             .iter()
             .map(|contract| {
-                DriveOperation::ContractOperation(ContractOperationType::ApplyContract {
-                    contract: Cow::Borrowed(contract),
-                    storage_flags: None,
-                })
+                contract
+                    .try_into()
+                    .expect("expected to create a state transition from a contract")
             })
             .collect()
     }
 
-    fn document_operations_for_block(
+    fn document_state_transitions_for_block(
         &self,
         platform: &Platform<DefaultCoreRPC>,
         block_info: &BlockInfo,
         current_identities: &Vec<Identity>,
         rng: &mut StdRng,
-    ) -> Vec<(PartialIdentity, DriveOperation)> {
+    ) -> Vec<StateTransition> {
         let mut operations = vec![];
         for (op, frequency) in &self.operations {
             if frequency.check_hit(rng) {
@@ -227,7 +235,7 @@ impl Strategy {
                         let documents = op
                             .document_type
                             .random_documents_with_rng(count as u32, rng);
-                        for mut document in documents {
+                        documents.into_iter().for_each(|mut document| {
                             let identity_num = rng.gen_range(0..current_identities.len());
                             let identity = current_identities
                                 .get(identity_num)
@@ -235,30 +243,35 @@ impl Strategy {
                                 .clone()
                                 .into_partial_identity_info();
 
-                            document.owner_id = identity.id;
-                            let storage_flags = StorageFlags::new_single_epoch(
-                                block_info.epoch.index,
-                                Some(identity.id.to_buffer()),
-                            );
-
-                            let insert_op = DriveOperation::DocumentOperation(
-                                DocumentOperationType::AddDocumentForContract {
-                                    document_and_contract_info: DocumentAndContractInfo {
-                                        owned_document_info: OwnedDocumentInfo {
-                                            document_info: DocumentWithoutSerialization((
-                                                document,
-                                                Some(Cow::Owned(storage_flags)),
-                                            )),
-                                            owner_id: None,
-                                        },
-                                        contract: &op.contract,
-                                        document_type: &op.document_type,
-                                    },
-                                    override_document: false,
+                            let document_create_transition = DocumentCreateTransition {
+                                base: DocumentBaseTransition {
+                                    id: document.id,
+                                    document_type_name: op.document_type.name.clone(),
+                                    action: Action::Create,
+                                    data_contract_id: op.contract.id,
+                                    data_contract: op.contract.clone(),
                                 },
-                            );
-                            operations.push((identity, insert_op));
-                        }
+                                entropy: [0; 32],
+                                created_at: document.created_at,
+                                updated_at: document.created_at,
+                                data: document.properties.into(),
+                            };
+
+                            let document_batch_transition = DocumentsBatchTransition {
+                                protocol_version: LATEST_VERSION,
+                                transition_type: Default::default(),
+                                owner_id: identity.id,
+                                transitions: vec![document_create_transition.into()],
+                                signature_public_key_id: None,
+                                signature: None,
+                                execution_context: Default::default(),
+                            };
+
+                            //todo: signing
+                            //document_batch_transition.sign()
+
+                            operations.push(document_batch_transition.into());
+                        });
                     }
                     DocumentActionDelete => {
                         let any_item_query =
@@ -283,15 +296,30 @@ impl Strategy {
                                 .fetch_identity_with_balance(document.owner_id.to_buffer(), None)
                                 .expect("expected to be able to get identity")
                                 .expect("expected to get an identity");
-                            let delete_op = DriveOperation::DocumentOperation(
-                                DocumentOperationType::DeleteDocumentForContract {
-                                    document_id: document.id.to_buffer(),
-                                    contract: &op.contract,
-                                    document_type: &op.document_type,
-                                    owner_id: None,
+                            let document_delete_transition = DocumentDeleteTransition {
+                                base: DocumentBaseTransition {
+                                    id: document.id,
+                                    document_type_name: op.document_type.name.clone(),
+                                    action: Action::Create,
+                                    data_contract_id: op.contract.id,
+                                    data_contract: op.contract.clone(),
                                 },
-                            );
-                            operations.push((identity, delete_op));
+                            };
+
+                            let document_batch_transition = DocumentsBatchTransition {
+                                protocol_version: LATEST_VERSION,
+                                transition_type: Default::default(),
+                                owner_id: identity.id,
+                                transitions: vec![document_delete_transition.into()],
+                                signature_public_key_id: None,
+                                signature: None,
+                                execution_context: Default::default(),
+                            };
+
+                            //todo: signing
+                            //document_batch_transition.sign()
+
+                            operations.push(document_batch_transition.into());
                         }
                     }
                 }
@@ -306,72 +334,40 @@ impl Strategy {
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
         rng: &mut StdRng,
-    ) -> Vec<ExecutionEvent> {
-        let (mut identities, mut execution_events): (Vec<Identity>, Vec<ExecutionEvent>) = self
-            .identity_operations_for_block(rng)
+    ) -> Vec<StateTransition> {
+        let (mut identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) = self
+            .identity_state_transitions_for_block(rng)
             .into_iter()
-            .map(|(identity, operations)| {
-                (
-                    identity.clone(),
-                    ExecutionEvent::new_identity_insertion(
-                        identity.into_partial_identity_info(),
-                        operations,
-                    ),
-                )
-            })
             .unzip();
         current_identities.append(&mut identities);
 
         if block_info.height == 1 {
             // add contracts on block 1
-            let mut contract_execution_events = self
-                .contract_operations()
-                .into_iter()
-                .map(|operation| {
-                    let identity_num = rng.gen_range(0..current_identities.len());
-                    let an_identity = current_identities.get(identity_num).unwrap().clone();
-                    ExecutionEvent::new_contract_operation(
-                        an_identity.into_partial_identity_info(),
-                        operation,
-                    )
-                })
-                .collect();
-            execution_events.append(&mut contract_execution_events);
+            let mut contract_state_transitions = self.contract_state_transitions();
+            state_transitions.append(&mut contract_state_transitions);
         }
 
-        let mut document_execution_events: Vec<ExecutionEvent> = self
-            .document_operations_for_block(platform, block_info, current_identities, rng)
-            .into_iter()
-            .map(|(identity, operation)| {
-                ExecutionEvent::new_document_operation(identity, operation)
-            })
-            .collect();
+        let mut document_state_transitions: Vec<StateTransition> = self
+            .document_state_transitions_for_block(platform, block_info, current_identities, rng);
 
-        execution_events.append(&mut document_execution_events);
-        execution_events
+        state_transitions.append(&mut document_state_transitions);
+        state_transitions
     }
 }
 
-fn create_identities_operations<'a>(
+fn create_identities_state_transitions(
     count: u16,
     key_count: KeyID,
     rng: &mut StdRng,
-) -> Vec<(Identity, Vec<DriveOperation<'a>>)> {
+) -> Vec<(Identity, StateTransition)> {
     let identities = Identity::random_identities_with_rng(count, key_count, rng);
     identities
         .into_iter()
         .map(|identity| {
-            let insert_op =
-                DriveOperation::IdentityOperation(IdentityOperationType::AddNewIdentity {
-                    identity: identity.clone(),
-                });
-            let system_credits_op =
-                DriveOperation::SystemOperation(SystemOperationType::AddToSystemCredits {
-                    amount: identity.balance,
-                });
-            let ops = vec![insert_op, system_credits_op];
-
-            (identity, ops)
+            let identity_create_transition: IdentityCreateTransition = identity
+                .try_into()
+                .expect("expected to transform identity into identity create transition");
+            (identity, identity_create_transition.into())
         })
         .collect()
 }

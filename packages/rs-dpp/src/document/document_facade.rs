@@ -113,7 +113,7 @@ where
             return Ok(result);
         }
 
-        let data_contract = result.data()?;
+        let data_contract = result.data_as_borrowed()?;
         let validation_result = self
             .validator
             .validate_extended(raw_extended_document, data_contract)?;

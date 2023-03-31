@@ -50,135 +50,179 @@ use tenderdash_abci::proto::{
     abci::{self as proto, ResponseException},
     serializers::timestamp::ToMilis,
 };
+use tenderdash_abci::proto::abci::{ExecTxResult, RequestCheckTx, RequestFinalizeBlock, ResponseCheckTx, ResponseFinalizeBlock};
+use dpp::state_transition::StateTransition;
+use dpp::util::vec::vec_to_array;
+use drive::fee::credits::SignedCredits;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::execution_event::ExecutionResult;
 use crate::execution::proposal::Proposal;
 use crate::platform::Platform;
+use crate::validation::state_transition::StateTransitionValidation;
 
-/// A trait for handling the Tenderdash ABCI (Application Blockchain Interface).
-pub trait TenderdashAbci {
-    /// Called with JS drive on init chain
-    #[deprecated = "use abci::server module"]
-    fn init_chain(&self, request: InitChainRequest) -> Result<InitChainResponse, Error>;
-
-    /// Called with JS Drive on block begin
-    #[deprecated = "use abci::server mod, prepare_proposal or process_proposal"]
-    fn block_begin(&self, request: BlockBeginRequest) -> Result<BlockBeginResponse, Error>;
-
-    /// Called with JS Drive on block end
-    #[deprecated = "use abci::server finalize_block"]
-    fn block_end(&self, request: BlockEndRequest) -> Result<BlockEndResponse, Error>;
-
-    /// Called with JS Drive after the current block db transaction is committed
-    #[deprecated = "use abci::server finalize_block"]
-    fn after_finalize_block(
-        &self,
-        request: AfterFinalizeBlockRequest,
-    ) -> Result<AfterFinalizeBlockResponse, Error>;
-}
-
-impl<'a, C> TenderdashAbci for Platform<'a, C>
+impl<'a, C> tenderdash_abci::Application for Platform<C>
 where
     C: CoreRPCLike,
 {
-    /// Creates initial state structure and returns response
-    fn init_chain(&self, request: InitChainRequest) -> Result<InitChainResponse, Error> {
-        let transaction = self.drive.grove.start_transaction();
-        self.create_genesis_state(
-            request.genesis_time_ms,
-            request.system_identity_public_keys,
-            Some(&transaction),
-        )?;
+    fn info(&self, request: proto::RequestInfo) -> Result<proto::ResponseInfo, ResponseException> {
+        if !tenderdash_abci::check_version(&request.abci_version) {
+            return Err(ResponseException::from(format!(
+                "tenderdash requires ABCI version {}, our version is {}",
+                request.version,
+                tenderdash_abci::proto::ABCI_VERSION
+            )));
+        }
 
-        transaction
-            .commit()
-            .map_err(|e| Error::Drive(GroveDB(e.into())))?;
+        let response = proto::ResponseInfo {
+            app_version: 1,
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            ..Default::default()
+        };
 
-        let response = InitChainResponse {};
-
+        tracing::info!(method = "info", ?request, ?response, "info executed");
         Ok(response)
     }
 
-    /// Set genesis time, block info, and epoch info, and returns response
-    fn block_begin(&self, request: BlockBeginRequest) -> Result<BlockBeginResponse, Error> {
+    fn init_chain(
+        &self,
+        request: proto::RequestInitChain,
+    ) -> Result<proto::ResponseInitChain, ResponseException> {
         let transaction = self.drive.grove.start_transaction();
+        let genesis_time = request
+            .time
+            .ok_or("genesis time is required in init chain")?
+            .to_milis() as TimestampMillis;
 
-        // TODO: If genesis time is not set in genesis config then it set on the first block
-        //  which is great but we still need time on init chain. Having two genesis times is not great at all.
-
-        // Set genesis time
-        let genesis_time_ms = if request.block_height == 1 {
-            self.drive.set_genesis_time(request.block_time_ms);
-            request.block_time_ms
-        } else {
-            //todo: lazy load genesis time
-            self.drive
-                .get_genesis_time(Some(&transaction))
-                .map_err(Error::Drive)?
-                .ok_or(Error::Execution(ExecutionError::DriveIncoherence(
-                    "the genesis time must be set",
-                )))?
-        };
-
-        // Update versions
-        let proposed_app_version = request.proposed_app_version;
-
-        self.drive.update_validator_proposed_app_version(
-            request.proposer_pro_tx_hash,
-            proposed_app_version,
+        self.create_genesis_state(
+            genesis_time,
+            self.config.keys.clone().into(),
             Some(&transaction),
         )?;
 
+        self.drive.commit_transaction(transaction)?;
+
+        let response = proto::ResponseInitChain {
+            ..Default::default()
+        };
+
+        tracing::info!(method = "init_chain", "init chain executed");
+        Ok(response)
+    }
+
+    fn prepare_proposal(
+        &self,
+        request: proto::RequestPrepareProposal,
+    ) -> Result<proto::ResponsePrepareProposal, ResponseException> {
+        let proto::RequestPrepareProposal {
+            max_tx_bytes,
+            txs,
+            local_last_commit,
+            misbehavior,
+            height,
+            time,
+            next_validators_hash,
+            round,
+            core_chain_locked_height,
+            proposer_pro_tx_hash,
+            proposed_app_version,
+            version,
+            quorum_hash,
+        } = request;
+
+        let transaction = self.drive.grove.start_transaction();
+        let time = time.as_ref().ok_or("missing proposal time")?.to_milis();
+
+        let genesis_time_ms = self.get_genesis_time_or_set_if_genesis(height as u64, time, &transaction)?;
+
+        let validator_pro_tx_hash: [u8; 32] = proposer_pro_tx_hash
+            .try_into()
+            .map_err(|e| format!("invalid proposer protxhash: {}", hex::encode(e)))?;
+
+        self.drive
+            .update_validator_proposed_app_version(
+                validator_pro_tx_hash,
+                proposed_app_version as u32,
+                Some(&transaction),
+            )
+            .map_err(|e| format!("cannot update proposed app version: {}", e))?;
+
         // Init block execution context
-        let block_info = BlockStateInfo::from_block_begin_request(&request);
+        let block_state_info = BlockStateInfo::from_prepare_proposal_request(&request);
 
-        let epoch_info = EpochInfo::from_genesis_time_and_block_info(genesis_time_ms, &block_info)?;
+        let epoch_info = EpochInfo::from_genesis_time_and_block_info(genesis_time_ms, &block_state_info)?;
 
+        let block_info = block_state_info.to_block_info(epoch_info.current_epoch_index);
+        // FIXME: we need to calculate total hpmns based on masternode list (or remove hpmn_count if not needed)
+        let total_hpmns = self.config.quorum_size as u32;
         let block_execution_context = BlockExecutionContext {
             current_transaction: transaction,
-            block_info,
+            block_info: block_state_info,
             epoch_info: epoch_info.clone(),
-            hpmn_count: request.total_hpmns,
+            hpmn_count: total_hpmns,
         };
 
         // If last synced Core block height is not set instead of scanning
         // number of blocks for asset unlock transactions scan only one
         // on Core chain locked height by setting last_synced_core_height to the same value
-        let _last_synced_core_height = if request.last_synced_core_height == 0 {
-            block_execution_context.block_info.core_chain_locked_height
-        } else {
-            request.last_synced_core_height
-        };
+        // FIXME: re-enable and implement
+        // let last_synced_core_height = if request.last_synced_core_height == 0 {
+        //     block_execution_context.block_info.core_chain_locked_height
+        // } else {
+        //     request.last_synced_core_height
+        // };
+        let last_synced_core_height = block_execution_context.block_info.core_chain_locked_height;
 
         self.block_execution_context
             .write()
             .unwrap()
             .replace(block_execution_context);
 
-        // TODO: This code is not stable and blocking WASM-DPP integration and v0.24 testing
-        //   Must be enabled and accomplished when we come back to withdrawals
-        // self.update_broadcasted_withdrawal_transaction_statuses(
-        //     last_synced_core_height,
-        //     transaction,
-        // )?;
+        self.update_broadcasted_withdrawal_transaction_statuses(
+            last_synced_core_height,
+            &transaction,
+        )?;
+
+        self.update_broadcasted_withdrawal_transaction_statuses(
+            last_synced_core_height,
+            &transaction,
+        )?;
 
         let unsigned_withdrawal_transaction_bytes = self
             .fetch_and_prepare_unsigned_withdrawal_transactions(
-                request.validator_set_quorum_hash,
-                Some(&transaction),
+                vec_to_array(&request.quorum_hash).expect("invalid quorum hash"),
+                &transaction,
             )?;
 
-        let response = BlockBeginResponse {
-            epoch_info,
-            unsigned_withdrawal_transactions: unsigned_withdrawal_transaction_bytes,
+        let state_transitions = StateTransition::deserialize_many(&txs)?;
+
+        let tx_results = state_transitions
+            .into_iter()
+            .map(|state_transition| {
+                let state_transition_execution_event = state_transition.validate_all(self)?;
+                // we map the result to the actual execution
+                let execution_result : ExecutionResult = state_transition_execution_event
+                    .map_result(|execution_event| {
+                        self.execute_event(execution_event, &block_info, &transaction)
+                    })?.into();
+                execution_result.into()
+            })
+            .collect::<Result<Vec<ExecTxResult>, Error>>()?;
+
+        let root_hash = self.drive.grove.root_hash(Some(&transaction)).unwrap()?;
+
+        // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
+        let response = proto::ResponsePrepareProposal {
+            app_hash: root_hash.to_vec(),
+            tx_results,
+            ..Default::default()
         };
 
         Ok(response)
     }
 
-    /// Processes block fees and returns response
-    fn block_end(&self, request: BlockEndRequest) -> Result<BlockEndResponse, Error> {
+    fn finalize_block(&self, request: RequestFinalizeBlock) -> Result<ResponseFinalizeBlock, ResponseException> {
         // Retrieve block execution context
         let mut block_execution_context = self.block_execution_context.write().unwrap();
         let block_execution_context = block_execution_context.take().ok_or(Error::Execution(
@@ -226,92 +270,47 @@ where
             .unwrap()
             .map_err(|e| Error::Drive(GroveDB(e)))?;
 
+        let mut drive_cache = self.drive.cache.write().unwrap();
+
+        drive_cache.cached_contracts.clear_block_cache();
+
+        Ok(AfterFinalizeBlockResponse {})
+
         Ok(BlockEndResponse::from_outcomes(
             &process_block_fees_outcome,
             changed_protocol_version,
         ))
     }
 
-    fn after_finalize_block(
-        &self,
-        _: AfterFinalizeBlockRequest,
-    ) -> Result<AfterFinalizeBlockResponse, Error> {
-        let mut drive_cache = self.drive.cache.write().unwrap();
+    fn check_tx(&self, request: RequestCheckTx) -> Result<ResponseCheckTx, ResponseException> {
+        let proto::RequestCheckTx {
+            tx, r#type
+        } = request;
+        let state_transition = StateTransition::deserialize(tx.as_slice())?;
+        let execution_event = state_transition.validate_all(self)?;
 
-        drive_cache.cached_contracts.clear_block_cache();
+        // We should run the execution event in dry run to see if we would have enough fees for the transaction
 
-        Ok(AfterFinalizeBlockResponse {})
-    }
-}
+        // We do not put the transaction, because this event happens outside of a block
+        let validation_result = execution_event
+            .and_then_validation(|execution_event| {
+                self.validate_fees_of_event(&execution_event, &block_info, None)
+            })?;
 
-impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>
-where
-    C: CoreRPCLike,
-{
-    fn info(&self, request: proto::RequestInfo) -> Result<proto::ResponseInfo, ResponseException> {
-        if !tenderdash_abci::check_version(&request.abci_version) {
-            return Err(ResponseException::from(format!(
-                "tenderdash requires ABCI version {}, our version is {}",
-                request.version,
-                tenderdash_abci::proto::ABCI_VERSION
-            )));
-        }
-
-        let response = proto::ResponseInfo {
-            app_version: 1,
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            ..Default::default()
-        };
-
-        tracing::info!(method = "info", ?request, ?response, "info executed");
-        Ok(response)
+        // If there are no execution errors the code will be 0
+        let code = validation_result.errors.first().map(|error| error.code()).unwrap_or_default();
+        let gas_wanted = validation_result.data.map(|fee_result| fee_result.total_base_fee()).unwrap_or_default();
+        Ok(ResponseCheckTx {
+            code,
+            data: vec![],
+            info: "".to_string(),
+            gas_wanted: gas_wanted as SignedCredits,
+            codespace: "".to_string(),
+            sender: "".to_string(),
+            priority: 0,
+        })
     }
 
-    fn init_chain(
-        &self,
-        request: proto::RequestInitChain,
-    ) -> Result<proto::ResponseInitChain, ResponseException> {
-        let platform = self.platform();
-        let transaction = platform.drive.grove.start_transaction();
-        let genesis_time = request
-            .time
-            .ok_or("genesis time is required in init chain")?
-            .to_milis() as TimestampMillis;
-
-        platform.create_genesis_state(
-            genesis_time,
-            self.config.keys.clone().into(),
-            Some(&transaction),
-        )?;
-
-        transaction
-            .commit()
-            .map_err(|e| Error::Drive(GroveDB(e.into())))?;
-
-        let response = proto::ResponseInitChain {
-            ..Default::default()
-        };
-
-        tracing::info!(method = "init_chain", "init chain executed");
-        Ok(response)
-    }
-
-    fn prepare_proposal(
-        &self,
-        request: proto::RequestPrepareProposal,
-    ) -> Result<proto::ResponsePrepareProposal, ResponseException> {
-        let platform = self.platform();
-        let transaction = self.transaction();
-        let height = request.height;
-        let response = platform.prepare_proposal(request, transaction)?;
-
-        tracing::info!(
-            method = "prepare_proposal",
-            height = height,
-            "prepare proposal executed",
-        );
-        Ok(response)
-    }
     //
     // fn process_proposal(
     //     &self,

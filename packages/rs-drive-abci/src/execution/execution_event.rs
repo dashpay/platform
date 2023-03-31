@@ -1,13 +1,53 @@
+use tenderdash_abci::proto::abci::ExecTxResult;
 use dpp::identity::PartialIdentity;
 use dpp::validation::{SimpleValidationResult, ValidationResult};
 use drive::drive::batch::DriveOperation;
+use drive::fee::credits::SignedCredits;
 use drive::fee::result::FeeResult;
+use crate::execution::execution_event::ExecutionResult::ConsensusExecutionError;
+
+pub type DryRunFeeResult = FeeResult;
 
 /// An execution result
 pub enum ExecutionResult {
-    SuccessfulPaidExecution(FeeResult),
+    SuccessfulPaidExecution(DryRunFeeResult, FeeResult),
     SuccessfulFreeExecution,
     ConsensusExecutionError(SimpleValidationResult)
+}
+
+// State transitions are never free, so we should filter out SuccessfulFreeExecution
+// So we use an option
+impl From<ExecutionResult> for Option<ExecTxResult> {
+    fn from(value: ExecutionResult) -> Self {
+        match value {
+            ExecutionResult::SuccessfulPaidExecution(dry_run_fee_result, fee_result) => {
+                Some(ExecTxResult {
+                    code: 0,
+                    data: vec![],
+                    log: "".to_string(),
+                    info: "".to_string(),
+                    gas_wanted: dry_run_fee_result.total_base_fee() as SignedCredits,
+                    gas_used: fee_result.total_base_fee() as SignedCredits,
+                    events: vec![],
+                    codespace: "".to_string(),
+                })
+            }
+            ExecutionResult::SuccessfulFreeExecution => None,
+            ExecutionResult::ConsensusExecutionError(validation_result) => {
+                let code = validation_result.errors.first().map(|error| error.code()).unwrap_or(1);
+                Some(ExecTxResult {
+                    code,
+                    data: vec![],
+                    log: "".to_string(),
+                    info: "".to_string(),
+                    gas_wanted: 0,
+                    gas_used: 0,
+                    events: vec![],
+                    codespace: "".to_string(),
+                })
+            }
+        }
+    }
 }
 
 impl From<ValidationResult<ExecutionResult>> for ExecutionResult {
@@ -16,7 +56,13 @@ impl From<ValidationResult<ExecutionResult>> for ExecutionResult {
             errors, data
         } = value;
         if let Some(result) = data {
-
+            if !errors.is_empty() {
+                ConsensusExecutionError(SimpleValidationResult::new_with_errors(errors))
+            } else {
+                result
+            }
+        } else {
+            ConsensusExecutionError(SimpleValidationResult::new_with_errors(errors))
         }
     }
 }
@@ -27,8 +73,6 @@ pub enum ExecutionEvent<'a> {
     PaidDriveEvent {
         /// The identity requesting the event
         identity: PartialIdentity,
-        /// Verify with dry run
-        verify_balance_with_dry_run: bool,
         /// the operations that the identity is requesting to perform
         operations: Vec<DriveOperation<'a>>,
     },
@@ -47,7 +91,6 @@ impl<'a> ExecutionEvent<'a> {
     ) -> Self {
         Self::PaidDriveEvent {
             identity,
-            verify_balance_with_dry_run: true,
             operations: vec![operation],
         }
     }
@@ -58,7 +101,6 @@ impl<'a> ExecutionEvent<'a> {
     ) -> Self {
         Self::PaidDriveEvent {
             identity,
-            verify_balance_with_dry_run: true,
             operations: vec![operation],
         }
     }
@@ -69,7 +111,6 @@ impl<'a> ExecutionEvent<'a> {
     ) -> Self {
         Self::PaidDriveEvent {
             identity,
-            verify_balance_with_dry_run: true,
             operations,
         }
     }

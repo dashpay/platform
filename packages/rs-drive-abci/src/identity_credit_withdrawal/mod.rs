@@ -177,7 +177,7 @@ where
     pub fn fetch_and_prepare_unsigned_withdrawal_transactions(
         &self,
         validator_set_quorum_hash: [u8; 32],
-        transaction: TransactionArg,
+        transaction: &Transaction,
     ) -> Result<Vec<Vec<u8>>, Error> {
         // Retrieve block execution context
         let block_execution_context = self.block_execution_context.read().unwrap();
@@ -198,7 +198,7 @@ where
         let (_, Some(contract_fetch_info)) = self.drive.get_contract_with_fetch_info(
             data_contract_id.to_buffer(),
             None,
-            transaction,
+            Some(transaction),
         )? else {
             return Err(Error::Execution(
                 ExecutionError::CorruptedCodeExecution("can't fetch withdrawal data contract"),
@@ -210,7 +210,7 @@ where
         // Get 16 latest withdrawal transactions from the queue
         let untied_withdrawal_transactions = self.drive.dequeue_withdrawal_transactions(
             WITHDRAWAL_TRANSACTIONS_QUERY_LIMIT,
-            transaction,
+            Some(transaction),
             &mut drive_operations,
         )?;
 
@@ -247,7 +247,7 @@ where
 
                     let mut document = self.drive.find_withdrawal_document_by_transaction_id(
                         &original_transaction_id,
-                        transaction,
+                        Some(transaction),
                     )?;
 
                     document.set_bytes(
@@ -291,7 +291,7 @@ where
         );
 
         self.drive
-            .apply_drive_operations(drive_operations, true, &block_info, transaction)?;
+            .apply_drive_operations(drive_operations, true, &block_info, Some(transaction))?;
 
         Ok(unsigned_withdrawal_transactions)
     }

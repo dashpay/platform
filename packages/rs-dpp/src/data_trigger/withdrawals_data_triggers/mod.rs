@@ -1,5 +1,4 @@
 use anyhow::bail;
-use serde_json::json;
 use std::convert::TryInto;
 
 use crate::contracts::withdrawals_contract;

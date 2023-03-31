@@ -5,7 +5,6 @@ use async_trait::async_trait;
 use dashcore::InstantLock;
 #[cfg(feature = "fixtures-and-mocks")]
 use mockall::{automock, predicate::*};
-use serde_json::Value as JsonValue;
 use platform_value::Value;
 
 use crate::document::Document;

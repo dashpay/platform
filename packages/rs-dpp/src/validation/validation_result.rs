@@ -6,7 +6,7 @@ pub type SimpleValidationResult = ValidationResult<()>;
 #[derive(Default, Debug)]
 pub struct ValidationResult<TData: Clone> {
     pub errors: Vec<ConsensusError>,
-    data: Option<TData>,
+    pub data: Option<TData>,
 }
 
 impl<TData: Clone> ValidationResult<TData> {
@@ -16,6 +16,14 @@ impl<TData: Clone> ValidationResult<TData> {
             data: Some(data),
         }
     }
+
+    pub fn new_with_data_and_errors(data: TData, errors: Vec<ConsensusError>) -> Self {
+        Self {
+            errors,
+            data: Some(data),
+        }
+    }
+
     pub fn new_with_errors(errors: Vec<ConsensusError>) -> Self {
         Self { errors, data: None }
     }
@@ -53,6 +61,19 @@ impl<TData: Clone> ValidationResult<TData> {
             result.add_errors(new_errors.errors)
         }
         Ok(result)
+    }
+
+    pub fn and_then_validation<F, U: Clone, E>(self, f: F) -> Result<ValidationResult<U>, E>
+        where
+            F: FnOnce(&TData) -> Result<ValidationResult<U>, E>,
+    {
+        if let Some(data) = self.data.as_ref() {
+            let mut new_validation_result = f(data)?;
+            new_validation_result.add_errors(self.errors);
+            Ok(new_validation_result)
+        } else {
+            Ok(ValidationResult::<U>::new_with_errors(self.errors))
+        }
     }
 
     pub fn add_error<T>(&mut self, error: T)
@@ -105,7 +126,7 @@ impl<TData: Clone> ValidationResult<TData> {
             )))
     }
 
-    pub fn data(&self) -> Result<&TData, ProtocolError> {
+    pub fn data_as_borrowed(&self) -> Result<&TData, ProtocolError> {
         self.data
             .as_ref()
             .ok_or(ProtocolError::CorruptedCodeExecution(format!(
@@ -120,6 +141,7 @@ impl<TData: Clone> From<TData> for ValidationResult<TData> {
         ValidationResult::new_with_data(value)
     }
 }
+
 
 impl<TData: Clone> From<Result<TData, ConsensusError>> for ValidationResult<TData> {
     fn from(value: Result<TData, ConsensusError>) -> Self {

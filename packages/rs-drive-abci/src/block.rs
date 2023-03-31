@@ -31,6 +31,9 @@ use dpp::util::vec::vec_to_array;
 use drive::grovedb::{Transaction, TransactionArg};
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
+use drive::drive::block_info::BlockInfo;
+use drive::fee::epoch::EpochIndex;
+use drive::fee_pools::epochs::Epoch;
 
 use crate::abci::messages::BlockBeginRequest;
 use crate::execution::fee_pools::epoch::EpochInfo;
@@ -50,6 +53,14 @@ pub struct BlockStateInfo {
 }
 
 impl BlockStateInfo {
+    /// Gets a block info from the block state info
+    pub fn to_block_info(&self, epoch_index : EpochIndex) -> BlockInfo {
+        BlockInfo {
+            time_ms: self.block_time_ms,
+            height: self.block_height,
+            epoch: Epoch::new(epoch_index),
+        }
+    }
     /// Given a `BlockBeginRequest` return `BlockInfo`
     #[deprecated = "use from_prepare_proposal_request and from_process_proposal_request"]
     pub fn from_block_begin_request(block_begin_request: &BlockBeginRequest) -> BlockStateInfo {

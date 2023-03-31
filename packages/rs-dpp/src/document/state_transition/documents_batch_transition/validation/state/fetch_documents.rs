@@ -6,7 +6,6 @@ use std::{
 use futures::future::join_all;
 use itertools::Itertools;
 use platform_value::string_encoding::Encoding;
-use serde_json::json;
 use platform_value::platform_value;
 
 use crate::document::{Document, ExtendedDocument};

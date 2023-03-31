@@ -5,7 +5,6 @@ use std::collections::BTreeMap;
 use std::convert::TryInto;
 
 use platform_value::{Bytes32, platform_value, Value};
-use serde_json::json;
 
 use crate::contracts::withdrawals_contract::property_names;
 use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;

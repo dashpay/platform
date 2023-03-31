@@ -14,6 +14,7 @@ use crate::state_transition::{
 };
 use crate::{NonConsensusError, ProtocolError};
 use platform_value::btreemap_extensions::BTreeValueRemoveInnerValueFromMapHelper;
+use crate::identity::Identity;
 
 pub const IDENTIFIER_FIELDS: [&str; 1] = [property_names::IDENTITY_ID];
 pub const BINARY_FIELDS: [&str; 3] = [
@@ -75,6 +76,32 @@ impl Default for IdentityCreateTransition {
 impl From<IdentityCreateTransition> for StateTransition {
     fn from(d: IdentityCreateTransition) -> Self {
         Self::IdentityCreate(d)
+    }
+}
+
+impl TryFrom<Identity> for IdentityCreateTransition {
+    type Error = ProtocolError;
+
+    fn try_from(identity: Identity) -> Result<Self, Self::Error> {
+        let mut identity_create_transition = IdentityCreateTransition::default();
+        identity_create_transition.set_protocol_version(identity.protocol_version);
+
+        let public_keys = identity
+            .get_public_keys()
+            .iter()
+            .map(|(_, public_key)| public_key.into())
+            .collect::<Vec<IdentityPublicKeyWithWitness>>();
+        identity_create_transition.set_public_keys(public_keys);
+
+        let asset_lock_proof = identity.get_asset_lock_proof().ok_or_else(|| {
+            ProtocolError::Generic(String::from("Asset lock proof is not present"))
+        })?;
+
+        identity_create_transition
+            .set_asset_lock_proof(asset_lock_proof.to_owned())
+            .map_err(ProtocolError::from)?;
+
+        Ok(identity_create_transition)
     }
 }
 

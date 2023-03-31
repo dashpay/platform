@@ -4,7 +4,6 @@ use anyhow::{anyhow, bail};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 
 use platform_value::string_encoding::Encoding;
-use serde_json::json;
 use platform_value::platform_value;
 
 use crate::document::Document;
