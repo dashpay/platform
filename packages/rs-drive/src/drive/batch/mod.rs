@@ -35,7 +35,7 @@
 /// Operation module
 pub mod drive_op_batch;
 mod grovedb_op_batch;
-mod transitions;
+pub mod transitions;
 
 pub use drive_op_batch::ContractOperationType;
 pub use drive_op_batch::DocumentOperationType;

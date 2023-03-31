@@ -30,6 +30,31 @@ impl<TData: Clone> ValidationResult<TData> {
         }
     }
 
+    pub fn map_result<F, U: Clone, E>(self, f: F) -> Result<ValidationResult<U>, E>
+        where
+            F: FnOnce(TData) -> Result<U, E>,
+    {
+        Ok(ValidationResult {
+            errors: self.errors,
+            data: self.data.map(f).transpose()?,
+        })
+    }
+
+    pub fn and_then_simple_validation<F>(self, f: F) -> Result<ValidationResult<TData>, ProtocolError>
+        where
+            F: FnOnce(&TData) -> Result<SimpleValidationResult, ProtocolError>,
+    {
+        let new_errors = self.data.as_ref().map(f).transpose()?;
+        let mut result = ValidationResult {
+            errors: self.errors,
+            data: self.data,
+        };
+        if let Some(new_errors) = new_errors {
+            result.add_errors(new_errors.errors)
+        }
+        Ok(result)
+    }
+
     pub fn add_error<T>(&mut self, error: T)
     where
         T: Into<ConsensusError>,

@@ -8,14 +8,19 @@ use crate::{
     rpc::core::CoreRPCLike,
 };
 
-use dpp::prelude::Identifier;
+use crate::validation::state_transition::StateTransitionValidation;
+use crate::validation::state_transition_action::StateTransitionActionValidation;
+use dpp::prelude::{Identifier, ValidationResult};
+use dpp::state_transition::StateTransition;
 use dpp::util::vec::vec_to_array;
+use drive::drive::batch::transitions::DriveHighLevelOperationConverter;
+use drive::drive::batch::DriveOperation;
+use drive::fee_pools::epochs::Epoch;
 use drive::query::TransactionArg;
 use tenderdash_abci::proto::{
     abci::{self as proto, ExecTxResult, ResponseException},
     serializers::timestamp::ToMilis,
 };
-use dpp::state_transition::StateTransition;
 
 use super::AbciError;
 
@@ -53,10 +58,7 @@ where
         } = request;
 
         let genesis_time_ms = if height == self.config.abci.genesis_height {
-            let block_time_ms = time
-                .as_ref()
-                .ok_or("missing proposal time")?
-                .to_milis();
+            let block_time_ms = time.as_ref().ok_or("missing proposal time")?.to_milis();
             self.drive.set_genesis_time(block_time_ms);
             block_time_ms
         } else {
@@ -122,7 +124,26 @@ where
         //         transaction,
         //     )?;
 
-        let tx_results = StateTransition::deserialize_many(&txs)?;
+        let state_transitions = StateTransition::deserialize_many(&txs)?;
+
+        let validation_outcomes = state_transitions
+            .into_iter()
+            .map(|state_transition| {
+                let state_transition_action_result = state_transition.validate_all(self)?;
+                state_transition_action_result
+                    .and_then_simple_validation(|action| action.validate_fee(&self.drive))?
+                    .map_result(|state_transition| {
+                        state_transition.into_high_level_drive_operations(&Epoch::new(
+                            epoch_info.current_epoch_index,
+                        ))
+                    })?
+                    .map_result(|state_transition| {
+                        state_transition.into_high_level_drive_operations(&Epoch::new(
+                            epoch_info.current_epoch_index,
+                        ))
+                    })
+            })
+            .collect::<Result<Vec<ValidationResult<Vec<DriveOperation>>>, Error>>()?;
 
         // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
         let response = proto::ResponsePrepareProposal {

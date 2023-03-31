@@ -1,11 +1,11 @@
-use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
-use dpp::prelude::ValidationResult;
-use dpp::ProtocolError;
-use dpp::state_transition::StateTransitionAction;
-use dpp::validation::SimpleValidationResult;
-use drive::drive::Drive;
 use crate::platform::Platform;
 use crate::validation::state_transition::StateTransitionValidation;
+use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use dpp::prelude::ValidationResult;
+use dpp::state_transition::StateTransitionAction;
+use dpp::validation::SimpleValidationResult;
+use dpp::ProtocolError;
+use drive::drive::Drive;
 
 impl<C> StateTransitionValidation<C> for DataContractCreateTransition {
     fn validate_type(&self) -> Result<SimpleValidationResult, ProtocolError> {
@@ -24,7 +24,10 @@ impl<C> StateTransitionValidation<C> for DataContractCreateTransition {
         todo!()
     }
 
-    fn validate_state(&self, drive: &Drive) -> Result<ValidationResult<StateTransitionAction>, ProtocolError> {
+    fn validate_state(
+        &self,
+        drive: &Drive,
+    ) -> Result<ValidationResult<StateTransitionAction>, ProtocolError> {
         todo!()
     }
 }
