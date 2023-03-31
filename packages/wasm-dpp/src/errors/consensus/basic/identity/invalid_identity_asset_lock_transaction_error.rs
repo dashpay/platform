@@ -4,58 +4,28 @@ use dpp::consensus::basic::BasicError;
 use dpp::consensus::codes::ErrorWithCode;
 use wasm_bindgen::prelude::*;
 
-#[wasm_bindgen]
-#[derive(Debug, Default, Clone)]
-pub struct TransactionDecodeError {
-    message: Option<String>,
-}
-
-impl TransactionDecodeError {
-    pub fn get_message(&self) -> &Option<String> {
-        &self.message
-    }
-}
-
 #[wasm_bindgen(js_name=InvalidIdentityAssetLockTransactionError)]
 pub struct InvalidIdentityAssetLockTransactionErrorWasm {
-    validation_error: TransactionDecodeError,
-    message: String,
-}
-
-// TODO: since the validation error can not be cloned,
-//  this error is only partially implemented
-impl From<&InvalidIdentityAssetLockTransactionError>
-    for InvalidIdentityAssetLockTransactionErrorWasm
-{
-    fn from(e: &InvalidIdentityAssetLockTransactionError) -> Self {
-        Self {
-            validation_error: TransactionDecodeError {
-                message: e.validation_error().map(|e| e.to_string()),
-            },
-            message: e.to_string(),
-        }
-    }
+    error_message: String,
+    code: u32,
 }
 
 #[wasm_bindgen(js_class=InvalidIdentityAssetLockTransactionError)]
 impl InvalidIdentityAssetLockTransactionErrorWasm {
-    #[wasm_bindgen(js_name=getValidationError)]
-    pub fn validation_error(&self) -> JsValue {
-        let kek = self.validation_error.clone();
-        kek.into()
+    pub fn new(error_message: String, code: u32) -> Self {
+        Self {
+            error_message,
+            code,
+        }
     }
 
-    #[wasm_bindgen(js_name=getMessage)]
-    pub fn get_message(&self) -> String {
-        self.message.clone()
+    #[wasm_bindgen(js_name=getErrorMessage)]
+    pub fn get_error_message(&self) -> String {
+        self.error_message.clone()
     }
 
-    // TODO: finish implementing getCode
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {
-        BasicError::InvalidIdentityAssetLockTransactionError(
-            InvalidIdentityAssetLockTransactionError::new(""),
-        )
-        .code()
+        self.code
     }
 }

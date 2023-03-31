@@ -8,7 +8,7 @@ use wasm_bindgen::prelude::*;
 #[wasm_bindgen(js_name=DataTriggerExecutionError)]
 pub struct DataTriggerExecutionErrorWasm {
     data_contract_id: Identifier,
-    document_transition_id: Identifier,
+    document_id: Identifier,
     message: String,
     code: u32,
 }
@@ -18,11 +18,6 @@ impl DataTriggerExecutionErrorWasm {
     #[wasm_bindgen(js_name=getDataContractId)]
     pub fn data_contract_id(&self) -> Buffer {
         Buffer::from_bytes(self.data_contract_id.as_bytes())
-    }
-
-    #[wasm_bindgen(js_name=getExecutionError)]
-    pub fn data_execution_error(&self) -> JsError {
-        self.execution_error.clone()
     }
 
     #[wasm_bindgen(js_name=getDocumentId)]
@@ -44,13 +39,13 @@ impl DataTriggerExecutionErrorWasm {
 impl DataTriggerExecutionErrorWasm {
     pub fn new(
         data_contract_id: Identifier,
-        document_transition_id: Identifier,
+        document_id: Identifier,
         message: String,
         code: u32,
     ) -> Self {
         Self {
             data_contract_id,
-            document_transition_id,
+            document_id,
             message,
             code,
         }

@@ -35,8 +35,8 @@ impl UndefinedIndexPropertyErrorWasm {
     }
 
     #[wasm_bindgen(js_name=getIndexName)]
-    pub fn get_index_definition(&self) -> JsValue {
-        IndexDefinitionWasm::from(self.index_name.clone()).into()
+    pub fn get_index_name(&self) -> String {
+        self.index_name.clone()
     }
 
     #[wasm_bindgen(js_name=getPropertyName)]

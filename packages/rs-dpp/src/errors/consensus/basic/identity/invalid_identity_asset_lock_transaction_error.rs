@@ -5,18 +5,21 @@ use dashcore::consensus::encode::Error;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-// TODO not primitive
 #[derive(Error, Debug, Serialize, Deserialize)]
-#[error("Invalid asset lock transaction: ${message}")]
+#[error("Invalid asset lock transaction: ${error_message}")]
 pub struct InvalidIdentityAssetLockTransactionError {
-    message: String,
+    error_message: String,
 }
 
 impl InvalidIdentityAssetLockTransactionError {
     pub fn new(message: impl Into<String>) -> Self {
         Self {
-            message: message.into(),
+            error_message: message.into(),
         }
+    }
+
+    pub fn error_message(&self) -> &str {
+        &self.error_message
     }
 }
 

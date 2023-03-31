@@ -2,12 +2,12 @@ use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=ProtocolVersionParsingError)]
 pub struct ProtocolVersionParsingErrorWasm {
-    parsing_error: JsError,
+    parsing_error: String,
     code: u32,
 }
 
 impl ProtocolVersionParsingErrorWasm {
-    pub fn new(parsing_error: JsError, code: u32) -> Self {
+    pub fn new(parsing_error: String, code: u32) -> Self {
         ProtocolVersionParsingErrorWasm {
             parsing_error,
             code,
@@ -18,7 +18,7 @@ impl ProtocolVersionParsingErrorWasm {
 #[wasm_bindgen(js_class=ProtocolVersionParsingError)]
 impl ProtocolVersionParsingErrorWasm {
     #[wasm_bindgen(js_name=getParsingError)]
-    pub fn get_parsing_error(&self) -> JsError {
+    pub fn get_parsing_error(&self) -> String {
         self.parsing_error.clone()
     }
 

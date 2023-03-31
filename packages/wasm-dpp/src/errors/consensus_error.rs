@@ -402,8 +402,8 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::DataContractImmutablePropertiesUpdateError(err) => {
             DataContractImmutablePropertiesUpdateErrorWasm::new(
-                err.operation(),
-                err.field_path(),
+                err.operation().to_string(),
+                err.field_path().to_string(),
                 code,
             )
             .into()
@@ -413,8 +413,6 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
                 err.data_contract_id(),
                 err.operation(),
                 err.field_path(),
-                err.old_schema(),
-                err.new_schema(),
                 code,
             )
             .into()
@@ -425,11 +423,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         BasicError::InvalidDataContractIdError(err) => {
             InvalidDataContractIdErrorWasm::new(err.expected_id(), err.invalid_id(), code).into()
         }
-        ProtocolVersionParsingError(e) => ProtocolVersionParsingErrorWasm::new(
-            wasm_bindgen::JsError::new(e.parsing_error.to_string().as_ref()),
-            code,
-        )
-        .into(),
+        ProtocolVersionParsingError(e) => {
+            ProtocolVersionParsingErrorWasm::new(e.parsing_error().to_string(), code).into()
+        }
         SerializedObjectParsingError(e) => SerializedObjectParsingErrorWasm::new(
             wasm_bindgen::JsError::new(e.parsing_error().to_string().as_ref()),
             code,
@@ -464,7 +460,8 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
             IdentityAssetLockTransactionOutputNotFoundErrorWasm::from(e).into()
         }
         InvalidIdentityAssetLockTransactionError(e) => {
-            InvalidIdentityAssetLockTransactionErrorWasm::from(e).into()
+            InvalidIdentityAssetLockTransactionErrorWasm::new(e.error_message().to_string(), code)
+                .into()
         }
         InvalidInstantAssetLockProofError(e) => {
             InvalidInstantAssetLockProofErrorWasm::from(e).into()
