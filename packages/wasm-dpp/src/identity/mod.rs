@@ -24,6 +24,7 @@ pub use state_transition::*;
 
 pub mod errors;
 pub mod state_transition;
+pub mod credits_converter;
 
 #[wasm_bindgen(js_name=Identity)]
 #[derive(Clone)]

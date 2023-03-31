@@ -140,6 +140,7 @@ where
                 balance
             }
             StateTransition::IdentityCreditWithdrawal(_) => {
+                // TODO: make it as a top-up, but in reverse
                 return Err(ProtocolError::InvalidStateTransitionTypeError(
                     InvalidStateTransitionTypeError::new(
                         StateTransitionType::IdentityCreditWithdrawal as u8,
