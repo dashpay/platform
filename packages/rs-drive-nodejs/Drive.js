@@ -315,8 +315,6 @@ class Drive {
   ) {
     const encodedQuery = await cbor.encodeAsync(query);
 
-    console.log('encoded query', encodedQuery.toString('hex'));
-    console.log('dc id', dataContract.getId().toBuffer());
     const [encodedDocuments, , processingFee] = await driveQueryDocumentsAsync.call(
       this.drive,
       encodedQuery,
