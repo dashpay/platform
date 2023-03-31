@@ -2,7 +2,7 @@ const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataCo
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 
 const { expectJsonSchemaError, expectValidationError } = require('../../../../lib/test/expect/expectError');
-const { default: loadWasmDpp } = require('../../../../dist');
+const { default: loadWasmDpp } = require('../../../..');
 
 let DocumentValidator;
 let ProtocolVersionValidator;

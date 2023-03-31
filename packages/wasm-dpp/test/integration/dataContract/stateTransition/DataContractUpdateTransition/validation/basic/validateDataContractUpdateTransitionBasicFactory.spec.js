@@ -3,7 +3,7 @@ const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createSta
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const { expectJsonSchemaError, expectValidationError, expectPlatformValueError } = require('../../../../../../../lib/test/expect/expectError');
 
-const { default: loadWasmDpp } = require('../../../../../../../dist');
+const { default: loadWasmDpp } = require('../../../../../../..');
 
 describe('validateDataContractUpdateTransitionBasicFactory', () => {
   let DataContractUpdateTransition;

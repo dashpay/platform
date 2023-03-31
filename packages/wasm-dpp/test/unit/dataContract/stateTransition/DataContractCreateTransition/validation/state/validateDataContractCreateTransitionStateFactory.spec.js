@@ -1,7 +1,7 @@
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
-const { default: loadWasmDpp } = require('../../../../../../../dist');
+const { default: loadWasmDpp } = require('../../../../../../..');
 
 describe('validateDataContractCreateTransitionStateFactory', () => {
   let validateDataContractCreateTransitionState;

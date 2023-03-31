@@ -5,7 +5,7 @@ const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataCo
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const getDocumentTransitionsFixture = require('../../../lib/test/fixtures/getDocumentTransitionsFixture');
 
-const { default: loadWasmDpp } = require('../../../dist');
+const { default: loadWasmDpp } = require('../../..');
 const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
 
 let ExtendedDocument;

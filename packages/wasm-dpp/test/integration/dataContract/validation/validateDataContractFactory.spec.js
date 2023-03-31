@@ -2,7 +2,7 @@ const lodashCloneDeep = require('lodash/cloneDeep');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const { expectJsonSchemaError, expectValidationError } = require('../../../../lib/test/expect/expectError');
 
-const { default: loadWasmDpp } = require('../../../../dist');
+const { default: loadWasmDpp } = require('../../../..');
 
 describe('validateDataContractFactory', () => {
   let dataContract;

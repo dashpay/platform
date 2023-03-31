@@ -5,7 +5,7 @@ const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtur
 const getIdentityTopUpTransitionFixture = require('../../../../lib/test/fixtures/getIdentityTopUpTransitionFixture');
 const { expectValidationError } = require('../../../../lib/test/expect/expectError');
 
-const { default: loadWasmDpp } = require('../../../../dist');
+const { default: loadWasmDpp } = require('../../../..');
 
 describe('validateStateTransitionKeySignatureFactory', () => {
   let stateTransition;

@@ -2,7 +2,7 @@ const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataCo
 
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
-const { default: loadWasmDpp } = require('../../../dist');
+const { default: loadWasmDpp } = require('../../..');
 
 describe('DataContractFactory', () => {
   let DataContractFactory;

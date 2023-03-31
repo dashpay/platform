@@ -6,7 +6,7 @@ const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createSta
 
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
-const { default: loadWasmDpp } = require('../../../../../dist');
+const { default: loadWasmDpp } = require('../../../../..');
 
 describe('applyIdentityCreateTransitionFactory', () => {
   let stateTransition;

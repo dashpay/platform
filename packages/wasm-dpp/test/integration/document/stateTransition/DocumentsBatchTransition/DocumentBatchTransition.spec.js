@@ -4,7 +4,7 @@ const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createSta
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 
-const { default: loadWasmDpp } = require('../../../../../dist');
+const { default: loadWasmDpp } = require('../../../../..');
 
 let ExtendedDocument;
 let DataContract;

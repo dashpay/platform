@@ -10,7 +10,7 @@ const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRa
 const lodash = require('lodash');
 
 const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
-const { default: loadWasmDpp } = require('../../../dist');
+const { default: loadWasmDpp } = require('../../..');
 
 let DataContractFactory;
 let DataContractValidator;

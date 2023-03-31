@@ -3,7 +3,7 @@ const { Script } = require('@dashevo/dashcore-lib');
 const getInstantAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
 
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
-const { default: loadWasmpDpp } = require('../../../../../dist');
+const { default: loadWasmpDpp } = require('../../../../..');
 
 describe('fetchAssetLockPublicKeyHashFactory', () => {
   let fetchAssetLockPublicKeyHash;

@@ -6,7 +6,7 @@ const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createSta
 const generateRandomIdentifierJs = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
 const sinon = require('sinon');
-const { default: loadWasmDpp } = require('../../../../../../../dist');
+const { default: loadWasmDpp } = require('../../../../../../..');
 
 let Identifier;
 let DataContract;

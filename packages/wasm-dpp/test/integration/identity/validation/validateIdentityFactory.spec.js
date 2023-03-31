@@ -1,7 +1,7 @@
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const { expectValidationError, expectJsonSchemaError } = require('../../../../lib/test/expect/expectError');
 
-const { default: loadWasmDpp } = require('../../../../dist');
+const { default: loadWasmDpp } = require('../../../..');
 const getBlsAdapterMock = require('../../../../lib/test/mocks/getBlsAdapterMock');
 const generateRandomIdentifierAsync = require('../../../../lib/test/utils/generateRandomIdentifierAsync');
 

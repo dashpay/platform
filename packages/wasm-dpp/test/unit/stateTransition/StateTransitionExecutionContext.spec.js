@@ -1,5 +1,5 @@
 const { expect } = require('chai');
-const { default: loadWasmDpp } = require('../../../dist');
+const { default: loadWasmDpp } = require('../../..');
 
 describe('StateTransitionExecutionContext', () => {
   let ReadOperation;

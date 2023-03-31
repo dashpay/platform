@@ -9,7 +9,7 @@ const { expect } = require('chai');
 const { expectValidationError } = require('../../../../lib/test/expect/expectError');
 const getBlsAdapterMock = require('../../../../lib/test/mocks/getBlsAdapterMock');
 
-const { default: loadWasmDpp } = require('../../../../dist');
+const { default: loadWasmDpp } = require('../../../..');
 
 describe('validatePublicKeySignaturesFactory', () => {
   let identityCreateTransition;

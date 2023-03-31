@@ -4,7 +4,7 @@ const { convertSatoshiToCredits } = require('@dashevo/dpp/lib/identity/creditsCo
 
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
-const { default: loadWasmDpp } = require('../../../../../dist');
+const { default: loadWasmDpp } = require('../../../../..');
 
 describe('applyIdentityTopUpTransitionFactory', () => {
   let stateTransition;

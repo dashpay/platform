@@ -4,7 +4,7 @@ const getDataContractFixture = require('../../../lib/test/fixtures/getDataContra
 
 const { expectValidationError } = require('../../../lib/test/expect/expectError');
 
-const { default: loadWasmDpp } = require('../../../dist');
+const { default: loadWasmDpp } = require('../../..');
 
 let ValidationResult;
 let MissingDataContractIdError;

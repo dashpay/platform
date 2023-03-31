@@ -9,7 +9,7 @@ const {
   expectJsonSchemaError,
 } = require('../../../../lib/test/expect/expectError');
 
-const { default: loadWasmDpp } = require('../../../../dist');
+const { default: loadWasmDpp } = require('../../../..');
 
 describe('validatePublicKeysFactory', function main() {
   this.timeout(10000);

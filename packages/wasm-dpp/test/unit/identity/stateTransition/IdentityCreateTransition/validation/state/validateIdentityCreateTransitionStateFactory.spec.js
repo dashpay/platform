@@ -2,7 +2,7 @@ const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtur
 
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
-const { default: loadWasmDpp } = require('../../../../../../../dist');
+const { default: loadWasmDpp } = require('../../../../../../..');
 const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
 
 describe('validateIdentityCreateTransitionStateFactory', () => {

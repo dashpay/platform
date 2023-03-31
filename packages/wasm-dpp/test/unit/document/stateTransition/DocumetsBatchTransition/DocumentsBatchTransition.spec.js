@@ -4,7 +4,7 @@ const stateTransitionTypes = require('@dashevo/dpp/lib/stateTransition/stateTran
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 const DocumentFactoryJs = require('@dashevo/dpp/lib/document/DocumentFactory');
-const { default: loadWasmDpp } = require('../../../../../dist');
+const { default: loadWasmDpp } = require('../../../../..');
 
 let DocumentFactory;
 let DataContract;

@@ -2,7 +2,7 @@ const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey')
 const getInstantAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const getChainAssetLockProofFixture = require('../../../lib/test/fixtures/getChainAssetLockProofFixture');
-const { default: loadWasmDpp } = require('../../../dist');
+const { default: loadWasmDpp } = require('../../..');
 const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
 
 describe('IdentityFactory', () => {
