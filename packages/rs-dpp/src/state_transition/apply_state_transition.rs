@@ -25,7 +25,10 @@ impl<SR> ApplyStateTransition<SR>
 where
     SR: StateRepositoryLike,
 {
-    pub fn new(state_repository: Arc<SR>, asset_lock_transaction_output_fetcher: Arc<AssetLockTransactionOutputFetcher<SR>>) -> Self {
+    pub fn new(
+        state_repository: Arc<SR>,
+        asset_lock_transaction_output_fetcher: Arc<AssetLockTransactionOutputFetcher<SR>>,
+    ) -> Self {
         Self {
             apply_data_contract_create_transition: ApplyDataContractCreateTransition::new(
                 state_repository.clone(),
@@ -41,7 +44,7 @@ where
             ),
             apply_identity_top_up_transition: ApplyIdentityTopUpTransition::new(
                 state_repository.clone(),
-                asset_lock_transaction_output_fetcher
+                asset_lock_transaction_output_fetcher,
             ),
             apply_identity_update_transition: ApplyIdentityUpdateTransition::new(
                 state_repository.clone(),

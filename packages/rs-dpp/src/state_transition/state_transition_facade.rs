@@ -164,8 +164,9 @@ where
             state_transition_basic_validator.clone(),
         );
 
-        let asset_lock_transaction_output_fetcher =
-            Arc::new(AssetLockTransactionOutputFetcher::new(wrapped_state_repository.clone()));
+        let asset_lock_transaction_output_fetcher = Arc::new(
+            AssetLockTransactionOutputFetcher::new(wrapped_state_repository.clone()),
+        );
 
         let state_transition_key_signature_validator = {
             let asset_public_key_hash_fetcher = AssetLockPublicKeyHashFetcher::new(
@@ -192,7 +193,10 @@ where
             fee_validator: Arc::new(state_transition_fee_validator),
             state_validator: Arc::new(state_transition_state_validator),
             bls: adapter,
-            apply_state_transition: ApplyStateTransition::new(wrapped_state_repository, asset_lock_transaction_output_fetcher),
+            apply_state_transition: ApplyStateTransition::new(
+                wrapped_state_repository,
+                asset_lock_transaction_output_fetcher,
+            ),
         })
     }
 

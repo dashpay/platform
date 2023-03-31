@@ -35,8 +35,10 @@ impl StateTransitionKeySignatureValidatorWasm {
         let tx_output_fetcher =
             AssetLockTransactionOutputFetcher::new(state_repository_wrapper.clone());
 
-        let public_key_hash_fetcher =
-            AssetLockPublicKeyHashFetcher::new(state_repository_wrapper.clone(), Arc::new(tx_output_fetcher));
+        let public_key_hash_fetcher = AssetLockPublicKeyHashFetcher::new(
+            state_repository_wrapper.clone(),
+            Arc::new(tx_output_fetcher),
+        );
 
         StateTransitionKeySignatureValidator::new(state_repository_wrapper, public_key_hash_fetcher)
             .into()
