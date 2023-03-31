@@ -34,6 +34,7 @@ pub mod errors;
 pub mod fee;
 pub mod state_transition_execution_context;
 
+pub mod apply_state_transition;
 mod example;
 mod serialization;
 mod state_transition_action;
