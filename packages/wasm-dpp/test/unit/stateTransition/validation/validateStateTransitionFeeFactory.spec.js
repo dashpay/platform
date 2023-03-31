@@ -71,7 +71,6 @@ describe('validateStateTransitionFeeFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.getCode()).to.equal(3000);
-      //
       expect(error.getBalance()).to.equal(1);
 
       expect(stateRepositoryMock.fetchIdentityBalance).to.be.calledOnce();
@@ -89,7 +88,6 @@ describe('validateStateTransitionFeeFactory', () => {
       const result = await validateStateTransitionFee(dataContractCreateTransition);
 
       expect(result.isValid()).to.be.true();
-      console.log(result.getErrors()[0]);
 
       expect(stateRepositoryMock.fetchIdentityBalance).to.be.calledOnce();
       expect(
