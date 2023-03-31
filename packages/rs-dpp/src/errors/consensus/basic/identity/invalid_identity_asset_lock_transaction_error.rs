@@ -1,9 +1,9 @@
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
-use dashcore;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+// TODO missing setValidationError
 #[derive(Error, Debug, Serialize, Deserialize)]
 #[error("Invalid asset lock transaction: ${error_message}")]
 pub struct InvalidIdentityAssetLockTransactionError {

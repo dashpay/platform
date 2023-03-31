@@ -3,6 +3,7 @@ use crate::consensus::ConsensusError;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+// TODO in js constructor does not have any params
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("JSON Schema depth is greater than {max_depth:?}")]
 pub struct DataContractMaxDepthExceedError {

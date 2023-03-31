@@ -5,6 +5,7 @@ use thiserror::Error;
 use crate::consensus::ConsensusError;
 use crate::prelude::Identifier;
 
+// TODO missed setOldSchema setNewSchema setValidationError
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Data Contract updated schema is not backward compatible with one defined in Data Contract wid id {data_contract_id}. Field: '{field_path}', Operation: '{operation}'"
 )]

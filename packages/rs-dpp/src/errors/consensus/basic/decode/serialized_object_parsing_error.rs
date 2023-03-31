@@ -3,6 +3,7 @@ use crate::consensus::ConsensusError;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+// TODO missed setParsingError
 #[derive(Error, Debug, Serialize, Deserialize)]
 #[error("Parsing of serialized object failed due to: {parsing_error}")]
 pub struct SerializedObjectParsingError {

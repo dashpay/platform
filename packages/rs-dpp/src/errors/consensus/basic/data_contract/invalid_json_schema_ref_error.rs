@@ -5,7 +5,7 @@ use thiserror::Error;
 use crate::consensus::ConsensusError;
 
 // TODO rename message and error
-
+// TODO missed setRefError
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Invalid JSON Schema $ref: {error_message}")]
 pub struct InvalidJsonSchemaRefError {
