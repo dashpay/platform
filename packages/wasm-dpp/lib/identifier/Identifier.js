@@ -1,18 +1,6 @@
 // TODO: fix
 const bs58 = require('bs58');
-
-class IdentifierError extends Error {
-  constructor(message) {
-    super();
-
-    this.name = this.constructor.name;
-    this.message = message;
-
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, this.constructor);
-    }
-  }
-}
+const IdentifierError = require('./errors/IdentifierError');
 
 // Buffer extending is not a trivial thing:
 // * https://github.com/nodejs/node/commit/651a5b51eb838e8e23a5b94ba34e8e06630a004a

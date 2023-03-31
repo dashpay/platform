@@ -102,8 +102,7 @@ describe('Identifier', () => {
       }
     });
 
-    // TODO: fix
-    it.skip('should create an instance with a base58 string', () => {
+    it('should create an instance with a base58 string', () => {
       const string = bs58.encode(buffer);
 
       const identifier = Identifier.from(string);

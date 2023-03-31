@@ -27,7 +27,7 @@ extern "C" {
     fn log(a: &str);
 }
 
-#[wasm_bindgen(raw_module = "/lib/identifier/Identifier.js")]
+#[wasm_bindgen(raw_module = "../lib/identifier/Identifier.js")]
 extern "C" {
     #[derive(Debug, Clone)]
     pub type IdentifierWrapper;
