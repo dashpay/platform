@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
 const createStateRepositoryMock = require('../../lib/test/mocks/createStateRepositoryMock');
@@ -16,6 +17,7 @@ describe('DashPlatformProtocol', () => {
     dpp = new DashPlatformProtocol(
       getBlsAdapterMock(),
       stateRepositoryMock,
+      { generate: () => crypto.randomBytes(32) },
       protocolVersion.latestVersion,
     );
   });

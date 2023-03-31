@@ -9,11 +9,9 @@ pub mod state_transition_factory;
 
 pub mod fee;
 pub mod validation;
-use crate::fee::{
-    PreCalculatedOperationWasm, ReadOperationWasm, SignatureVerificationOperationWasm,
-};
 use crate::state_transition::conversion::create_operation_from_wasm_instance;
 use crate::utils::Inner;
+pub use fee::*;
 pub use validation::*;
 
 pub(crate) mod conversion;

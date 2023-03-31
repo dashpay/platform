@@ -6,7 +6,8 @@ use crate::utils::generic_of_js_val;
 use crate::{
     DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm,
     DocumentsBatchTransitionWasm, IdentityCreateTransitionWasm, IdentityTopUpTransitionWasm,
-    IdentityUpdateTransitionWasm,
+    IdentityUpdateTransitionWasm, PreCalculatedOperationWasm, ReadOperationWasm,
+    SignatureVerificationOperationWasm,
 };
 use dpp::consensus::basic::state_transition::InvalidStateTransitionTypeError;
 use dpp::consensus::basic::BasicError;

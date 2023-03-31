@@ -11,6 +11,8 @@ mod fee_result;
 mod operations;
 mod refunds;
 
+pub use operations::*;
+
 #[wasm_bindgen(js_name=Operation)]
 #[derive(Clone)]
 pub struct OperationWasm(Operation);
