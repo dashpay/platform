@@ -10,7 +10,6 @@ use js_sys::Array;
 use wasm_bindgen::prelude::*;
 
 use crate::identifier::IdentifierWrapper;
-use crate::utils::Inner;
 use crate::{
     document_batch_transition::document_transition::to_object,
     utils::{ToSerdeJSONExt, WithJsError},

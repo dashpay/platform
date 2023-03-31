@@ -26,7 +26,6 @@ use crate::utils::{generic_of_js_val, ToSerdeJSONExt, WithJsError};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{string_encoding, BinaryData};
 use dpp::{
-    identifier::Identifier,
     identity::state_transition::{
         asset_lock_proof::AssetLockProof, identity_create_transition::IdentityCreateTransition,
         identity_public_key_transitions::IdentityPublicKeyWithWitness,
@@ -301,9 +300,7 @@ impl IdentityCreateTransitionWasm {
     pub fn get_modified_data_ids(&self) -> Vec<IdentifierWrapper> {
         let ids = self.0.get_modified_data_ids();
 
-        ids.into_iter()
-            .map(|id| <IdentifierWrapper as std::convert::From<Identifier>>::from(id).into())
-            .collect()
+        ids.into_iter().map(IdentifierWrapper::from).collect()
     }
 
     #[wasm_bindgen(js_name=isDataContractStateTransition)]

@@ -90,7 +90,7 @@ where
 {
     DataTriggerExecutionContext {
         data_contract: value.data_contract.inner(),
-        owner_id: &owner_id,
+        owner_id,
         state_transition_execution_context: value.state_transition_execution_context.inner(),
         state_repository: external_state_repository,
     }

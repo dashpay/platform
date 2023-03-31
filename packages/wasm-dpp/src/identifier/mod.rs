@@ -3,97 +3,42 @@ use itertools::Itertools;
 pub use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use wasm_bindgen::prelude::*;
-use wasm_bindgen::JsCast;
 
 use crate::bail_js;
 use crate::buffer::Buffer;
-use crate::utils::Inner;
 use crate::utils::ToSerdeJSONExt;
 use crate::utils::WithJsError;
 use dpp::platform_value::string_encoding::Encoding;
-use dpp::{identifier, ProtocolError};
-
-#[derive(Serialize, Deserialize, PartialEq, Eq)]
-enum IdentifierSource {
-    String(String),
-    Buffer(Vec<u8>),
-}
-
-#[wasm_bindgen]
-extern "C" {
-    fn alert(s: &str);
-
-    #[wasm_bindgen(js_namespace = console, js_name=log)]
-    fn log(a: &str);
-}
+use dpp::ProtocolError;
 
 #[wasm_bindgen(raw_module = "../lib/identifier/Identifier.js")]
 extern "C" {
     #[derive(Debug, Clone)]
-    pub type IdentifierWrapper;
+    #[wasm_bindgen(js_name = default)]
+    pub type IdentifierWrapper; // Rename to IdentifierJS?
 
-    #[wasm_bindgen(structural, js_name=Identifier)]
-    fn IdentifierJS(buffer: &JsValue) -> IdentifierWrapper;
+    #[wasm_bindgen(constructor, js_class=default)]
+    pub fn new(buffer: JsValue) -> IdentifierWrapper;
 
-    #[wasm_bindgen(structural, js_name=IdentifierError)]
-    fn IdentifierError() -> JsValue;
-
-    #[wasm_bindgen(structural, js_name=test)]
-    fn test() -> JsValue;
-
-    // TODO: return Vec<u8>?
-    #[wasm_bindgen(structural, method, js_name=toBuffer)]
-    pub fn to_buffer(this: &IdentifierWrapper) -> JsValue;
+    #[wasm_bindgen(method, js_name=toBuffer)]
+    pub fn to_buffer(this: &IdentifierWrapper) -> Vec<u8>;
 }
 
-impl From<identifier::Identifier> for IdentifierWrapper {
-    fn from(s: identifier::Identifier) -> Self {
-        IdentifierWasm(Buffer::from_bytes(s.as_slice()).into())
-    }
-}
-
-impl From<[u8; 32]> for IdentifierWrapper {
-    fn from(s: [u8; 32]) -> Self {
-        IdentifierWasm(Buffer::from_bytes(&s).into())
-    }
-}
-
-impl From<&IdentifierWrapper> for Identifier {
-    fn from(s: &IdentifierWrapper) -> Self {
-        let buffer = s.to_buffer();
-        // TODO: do without dyn_into?
-        let vec = buffer.dyn_into::<js_sys::Uint8Array>().unwrap().to_vec();
-        Identifier::from_bytes(&vec).unwrap()
-    }
-}
-
-impl From<&mut IdentifierWrapper> for Identifier {
-    fn from(s: &mut IdentifierWrapper) -> Self {
-        let buffer = s.to_buffer();
-        // TODO: do without dyn_into?
-        let vec = buffer.dyn_into::<js_sys::Uint8Array>().unwrap().to_vec();
-        Identifier::from_bytes(&vec).unwrap()
+impl From<Identifier> for IdentifierWrapper {
+    fn from(s: Identifier) -> Self {
+        IdentifierWrapper::new(Buffer::from_bytes(s.as_slice()).into())
     }
 }
 
 impl From<IdentifierWrapper> for Identifier {
     fn from(s: IdentifierWrapper) -> Self {
-        let buffer = s.to_buffer();
-        // TODO: do without dyn_into?
-        let vec = buffer.dyn_into::<js_sys::Uint8Array>().unwrap().to_vec();
-        Identifier::from_bytes(&vec).unwrap()
+        Identifier::from_bytes(&s.to_buffer()).unwrap()
     }
 }
 
-// TODO: remove
-pub fn IdentifierWasm(js_value: JsValue) -> IdentifierWrapper {
-    IdentifierJS(&js_value)
-}
-
-// TODO: remove
-impl IdentifierWrapper {
-    pub fn new(js_value: JsValue) -> Result<IdentifierWrapper, JsValue> {
-        Ok(IdentifierWasm(js_value))
+impl From<&IdentifierWrapper> for Identifier {
+    fn from(s: &IdentifierWrapper) -> Self {
+        Identifier::from_bytes(&s.to_buffer()).unwrap()
     }
 }
 

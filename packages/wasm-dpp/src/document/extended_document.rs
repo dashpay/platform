@@ -17,7 +17,7 @@ use crate::document::BinaryType;
 use crate::errors::RustConversionError;
 use crate::identifier::{identifier_from_js_value, IdentifierWrapper};
 use crate::lodash::lodash_set;
-use crate::utils::{with_serde_to_platform_value, Inner, ToSerdeJSONExt, WithJsError};
+use crate::utils::{with_serde_to_platform_value, ToSerdeJSONExt, WithJsError};
 use crate::{with_js_error, ConversionOptions, DocumentWasm};
 use crate::{DataContractWasm, MetadataWasm};
 
@@ -270,7 +270,7 @@ impl ExtendedDocumentWasm {
                 if !options.skip_identifiers_conversion {
                     lodash_set(&js_value, path, buffer.into());
                 } else {
-                    let id = IdentifierWrapper::new(buffer.into())?;
+                    let id = IdentifierWrapper::new(buffer.into());
                     lodash_set(&js_value, path, id.into());
                 }
             }

@@ -12,7 +12,7 @@ use crate::buffer::Buffer;
 use crate::identifier::IdentifierWrapper;
 use crate::lodash::lodash_set;
 use crate::utils::{try_to_u64, WithJsError};
-use crate::utils::{with_serde_to_json_value, Inner, ToSerdeJSONExt};
+use crate::utils::{with_serde_to_json_value, ToSerdeJSONExt};
 use crate::with_js_error;
 use crate::DataContractWasm;
 
@@ -251,7 +251,7 @@ impl DocumentWasm {
                 if !options.skip_identifiers_conversion {
                     lodash_set(&js_value, path, buffer.into());
                 } else {
-                    let id = IdentifierWrapper::new(buffer.into())?;
+                    let id = IdentifierWrapper::new(buffer.into());
                     lodash_set(&js_value, path, id.into());
                 }
             }
