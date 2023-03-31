@@ -7,13 +7,21 @@ const IdentifierError = require('./errors/IdentifierError');
 // * https://github.com/nodejs/help/issues/1300
 // * https://github.com/nodejs/node/issues/2882
 
+type Encoder = {
+    pushAny: (buffer: Buffer) => void;
+}
+
+type IdentifierEncoding = BufferEncoding | 'base58';
+
 /**
  * @param {Buffer} buffer
  * @returns {Identifier}
  * @constructor
  */
 export class Identifier {
-  constructor(buffer) {
+  static MEDIA_TYPE = 'application/x.dash.dpp.identifier';
+
+  constructor(buffer: Buffer) {
     if (!Buffer.isBuffer(buffer)) {
       throw new IdentifierError('Identifier expects Buffer');
     }
@@ -27,6 +35,7 @@ export class Identifier {
     Object.setPrototypeOf(patchedBuffer, Identifier.prototype);
 
     // noinspection JSValidateTypes
+    // @ts-ignore
     return patchedBuffer;
   }
 
@@ -36,6 +45,7 @@ export class Identifier {
    * @return {Buffer}
    */
   toBuffer() {
+    // @ts-ignore
     return Buffer.from(this);
   }
 
@@ -45,7 +55,7 @@ export class Identifier {
    * @param {Encoder} encoder
    * @return {boolean}
    */
-  encodeCBOR(encoder) {
+  encodeCBOR(encoder: Encoder) {
     encoder.pushAny(this.toBuffer());
 
     return true;
@@ -66,7 +76,7 @@ export class Identifier {
    * @param {string} [encoding=base58]
    * @return {string}
    */
-  toString(encoding = 'base58') {
+  toString(encoding: IdentifierEncoding = 'base58') {
     if (encoding === 'base58') {
       return bs58.encode(this);
     }
@@ -81,7 +91,7 @@ export class Identifier {
    * @param {string} encoding
    * @return {Identifier}
    */
-  static from(value, encoding = undefined) {
+  static from(value: string | Buffer, encoding: string = undefined) {
     let buffer;
 
     if (typeof value === 'string') {
@@ -108,7 +118,5 @@ export class Identifier {
 }
 
 Object.setPrototypeOf(Identifier.prototype, Buffer.prototype);
-
-Identifier.MEDIA_TYPE = 'application/x.dash.dpp.identifier';
 
 export default Identifier;

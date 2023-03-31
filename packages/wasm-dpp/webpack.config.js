@@ -3,7 +3,7 @@ const webpack = require('webpack');
 const TerserPlugin = require('terser-webpack-plugin');
 
 module.exports = {
-  entry: './lib/index.ts',
+  entry: './build/lib/index.js',
   output: {
     path: path.resolve(__dirname, 'dist'),
     filename: 'index.js',
@@ -25,17 +25,17 @@ module.exports = {
       },
     })],
   },
-  module: {
-    rules: [
-      {
-        test: /\.tsx?$/,
-        use: 'ts-loader',
-        exclude: /node_modules/,
-      },
-    ],
-  },
+  // module: {
+  //   rules: [
+  //     {
+  //       test: /\.tsx?$/,
+  //       use: 'ts-loader',
+  //       exclude: /node_modules/,
+  //     },
+  //   ],
+  // },
   resolve: {
-    extensions: ['.tsx', '.ts', '.js'],
+    extensions: ['.js'],
     fallback: {
       fs: false,
       ws: false,
@@ -58,5 +58,4 @@ module.exports = {
       process: require.resolve('process/browser'),
     }),
   ],
-  // target: 'node'
 };
