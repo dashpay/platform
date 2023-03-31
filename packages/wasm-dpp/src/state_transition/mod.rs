@@ -1,7 +1,7 @@
 use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 
-use wasm_bindgen::prelude::*;
 use dpp::state_transition::fee::operations::Operation;
+use wasm_bindgen::prelude::*;
 
 pub mod errors;
 pub mod state_transition_facade;
@@ -9,10 +9,12 @@ pub mod state_transition_factory;
 
 pub mod fee;
 pub mod validation;
+use crate::fee::{
+    PreCalculatedOperationWasm, ReadOperationWasm, SignatureVerificationOperationWasm,
+};
+use crate::state_transition::conversion::create_operation_from_wasm_instance;
 use crate::utils::Inner;
 pub use validation::*;
-use crate::fee::{PreCalculatedOperationWasm, ReadOperationWasm, SignatureVerificationOperationWasm};
-use crate::state_transition::conversion::create_operation_from_wasm_instance;
 
 pub(crate) mod conversion;
 

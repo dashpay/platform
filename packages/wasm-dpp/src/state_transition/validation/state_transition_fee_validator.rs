@@ -1,8 +1,8 @@
 use crate::state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper};
 use dpp::state_transition::validation::validate_state_transition_fee::StateTransitionFeeValidator;
 use std::sync::Arc;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::JsValue;
 
 use crate::state_transition::conversion::create_state_transition_from_wasm_instance;
 use crate::utils::WithJsError;
@@ -23,8 +23,17 @@ impl StateTransitionFeeValidatorWasm {
     }
 
     #[wasm_bindgen]
-    pub async fn validate(&self, state_transition: &JsValue) -> Result<ValidationResultWasm, JsValue> {
+    pub async fn validate(
+        &self,
+        state_transition: &JsValue,
+    ) -> Result<ValidationResultWasm, JsValue> {
         let st = create_state_transition_from_wasm_instance(state_transition)?;
-        Ok(self.0.validate(&st).await.map(|v| v.map(|_| JsValue::undefined())).with_js_error()?.into())
+        Ok(self
+            .0
+            .validate(&st)
+            .await
+            .map(|v| v.map(|_| JsValue::undefined()))
+            .with_js_error()?
+            .into())
     }
 }

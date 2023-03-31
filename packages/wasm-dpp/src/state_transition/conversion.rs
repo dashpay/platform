@@ -1,4 +1,7 @@
 use crate::errors::consensus_error::from_consensus_error;
+use crate::fee::{
+    PreCalculatedOperationWasm, ReadOperationWasm, SignatureVerificationOperationWasm,
+};
 use crate::utils::generic_of_js_val;
 use crate::{
     DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm,
@@ -8,12 +11,11 @@ use crate::{
 use dpp::consensus::basic::state_transition::InvalidStateTransitionTypeError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
+use dpp::state_transition::fee::operations::Operation;
 use dpp::state_transition::{StateTransition, StateTransitionType};
 use std::convert::TryInto;
 use wasm_bindgen::__rt::Ref;
 use wasm_bindgen::{JsCast, JsError, JsValue};
-use dpp::state_transition::fee::operations::Operation;
-use crate::fee::{PreCalculatedOperationWasm, ReadOperationWasm, SignatureVerificationOperationWasm};
 
 pub fn create_operation_from_wasm_instance(js_value: &JsValue) -> Result<Operation, JsValue> {
     let maybe_signature_verification_operation: Result<
