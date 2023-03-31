@@ -2,8 +2,6 @@ import init from '../wasm/wasm_dpp';
 import * as dpp_module from './dpp';
 // @ts-ignore
 import wasmBase from '../wasm/wasm_dpp_bg.js';
-import Identifier from "./identifier/Identifier";
-import IdentifierError from "./identifier/errors/IdentifierError";
 
 let isInitialized = false;
 let loadingPromise: Promise<void> | null = null;
@@ -34,11 +32,5 @@ const loadDppModule = async () => {
   } else {
     dpp_module.initSync(bytes);
   }
-
-  // TODO: Add TS types for Identifier and IdentifierError
-  // @ts-ignore
-  dpp_module.Identifier = Identifier;
-  // @ts-ignore
-  dpp_module.IdentifierError = IdentifierError;
 }
 

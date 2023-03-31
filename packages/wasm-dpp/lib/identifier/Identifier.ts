@@ -44,7 +44,7 @@ export class Identifier {
    *
    * @return {Buffer}
    */
-  toBuffer() {
+  toBuffer(): Buffer {
     // @ts-ignore
     return Buffer.from(this);
   }
@@ -55,7 +55,7 @@ export class Identifier {
    * @param {CborEncoder} encoder
    * @return {boolean}
    */
-  encodeCBOR(encoder: CborEncoder) {
+  encodeCBOR(encoder: CborEncoder): boolean {
     encoder.pushAny(this.toBuffer());
 
     return true;
@@ -66,7 +66,7 @@ export class Identifier {
    *
    * @return {string}
    */
-  toJSON() {
+  toJSON(): string {
     return this.toString();
   }
 
@@ -76,7 +76,7 @@ export class Identifier {
    * @param {string} [encoding=base58]
    * @return {string}
    */
-  toString(encoding: IdentifierEncoding = 'base58') {
+  toString(encoding: IdentifierEncoding = 'base58'): string {
     if (encoding === 'base58') {
       return bs58.encode(this.toBuffer());
     }
@@ -91,7 +91,7 @@ export class Identifier {
    * @param {string} encoding
    * @return {Identifier}
    */
-  static from(value: string | Buffer, encoding: string = undefined) {
+  static from(value: string | Buffer, encoding: string = undefined): Identifier {
     let buffer;
 
     if (typeof value === 'string') {
