@@ -254,8 +254,8 @@ mod test {
 
         identity.balance = 1;
         state_repository_mock
-            .expect_fetch_identity()
-            .returning(move |_, _| Ok(Some(identity.clone())));
+            .expect_fetch_identity_balance()
+            .returning(move |_, _| Ok(Some(identity.get_balance())));
 
         let data_contract = get_data_contract_fixture(None);
         let data_contract_create_transition = DataContractCreateTransition {
@@ -286,8 +286,8 @@ mod test {
 
         identity.balance = 52;
         state_repository_mock
-            .expect_fetch_identity()
-            .returning(move |_, _| Ok(Some(identity.clone())));
+            .expect_fetch_identity_balance()
+            .returning(move |_, _| Ok(Some(identity.get_balance())));
 
         let data_contract = get_data_contract_fixture(None);
         let data_contract_create_transition = DataContractCreateTransition {
@@ -312,8 +312,8 @@ mod test {
 
         identity.balance = 1;
         state_repository_mock
-            .expect_fetch_identity()
-            .returning(move |_, _| Ok(Some(identity.clone())));
+            .expect_fetch_identity_balance()
+            .returning(move |_, _| Ok(Some(identity.get_balance())));
 
         let data_contract = get_data_contract_fixture(None);
         let documents =
@@ -347,8 +347,8 @@ mod test {
 
         identity.balance = 90;
         state_repository_mock
-            .expect_fetch_identity()
-            .returning(move |_, _| Ok(Some(identity.clone())));
+            .expect_fetch_identity_balance()
+            .returning(move |_, _| Ok(Some(identity.get_balance())));
 
         let data_contract = get_data_contract_fixture(None);
         let documents =
@@ -376,8 +376,8 @@ mod test {
 
         identity.balance = 1;
         state_repository_mock
-            .expect_fetch_identity()
-            .returning(move |_, _| Ok(Some(identity.clone())));
+            .expect_fetch_identity_balance()
+            .returning(move |_, _| Ok(Some(identity.get_balance())));
 
         let data_contract = get_data_contract_fixture(None);
         let documents =
