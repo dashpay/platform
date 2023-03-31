@@ -14,6 +14,7 @@ use dpp::{
     version::ProtocolVersionValidator,
 };
 use wasm_bindgen::prelude::*;
+use dpp::consensus::basic::value_error::ValueError;
 
 use crate::utils::WithJsError;
 use crate::validation::ValidationResultWasm;
@@ -49,7 +50,7 @@ pub async fn validate_data_contract_create_transition_basic(
     let mut value = platform_value::to_value(&parameters)?;
     let mut validation_result = SimpleValidationResult::default();
     if let Some(err) = DataContractCreateTransition::clean_value(&mut value).err() {
-        validation_result.add_error(err);
+        validation_result.add_error(ValueError::new(err));
         return Ok(validation_result.map(|_| JsValue::undefined()).into());
     }
 

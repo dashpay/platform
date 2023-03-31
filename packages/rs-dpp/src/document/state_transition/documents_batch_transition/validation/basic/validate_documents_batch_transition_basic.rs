@@ -31,6 +31,7 @@ use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::converter::serde_json::BTreeValueRefJsonConverter;
 use platform_value::Value;
 use serde_json::Value as JsonValue;
+use crate::consensus::basic::value_error::ValueError;
 
 use super::{
     find_duplicates_by_indices::find_duplicates_by_indices,
@@ -151,7 +152,7 @@ pub async fn validate_documents_batch_transition_basic(
             }
             Ok(Some(id)) => id,
             Err(err) => {
-                result.add_error(BasicError::ValueError(err));
+                result.add_error(BasicError::ValueError(ValueError::new(err)));
                 continue;
             }
         };

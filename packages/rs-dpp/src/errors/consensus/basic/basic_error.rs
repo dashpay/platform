@@ -35,8 +35,8 @@ use crate::consensus::basic::{
 };
 use crate::consensus::ConsensusError;
 
-use platform_value::Error as ValueError;
 use crate::consensus::basic::json_schema_compilation_error::JsonSchemaCompilationError;
+use crate::consensus::basic::value_error::ValueError;
 
 #[derive(Error, Debug, Serialize, Deserialize)]
 pub enum BasicError {
@@ -246,12 +246,6 @@ pub enum BasicError {
 
     #[error(transparent)]
     StateTransitionMaxSizeExceededError(StateTransitionMaxSizeExceededError),
-}
-
-impl From<ValueError> for ConsensusError {
-    fn from(err: ValueError) -> Self {
-        Self::BasicError(BasicError::ValueError(err))
-    }
 }
 
 impl From<BasicError> for ConsensusError {

@@ -15,3 +15,4 @@ pub mod basic_error;
 pub mod invalid_identifier_error;
 pub mod state_transition;
 pub mod json_schema_compilation_error;
+pub mod value_error;
