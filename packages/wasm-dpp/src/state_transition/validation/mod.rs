@@ -1,2 +1,3 @@
+pub mod validate_state_transition_identity_signature;
 pub mod state_transition_fee_validator;
 pub mod validate_state_transition_key_signature;
