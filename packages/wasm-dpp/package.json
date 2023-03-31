@@ -6,7 +6,7 @@
   "browser": "dist/index.js",
   "types": "build/lib/index.d.ts",
   "scripts": {
-    "build": "yarn exec scripts/build.sh && webpack",
+    "build": "yarn run build:ts && webpack",
     "build:ts": "yarn exec scripts/build.sh && tsc",
     "test": "yarn run test:node && yarn run test:browsers",
     "test:browsers": "karma start ./karma.conf.js --single-run",
