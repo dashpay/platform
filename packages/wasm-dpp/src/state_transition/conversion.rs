@@ -1,7 +1,4 @@
 use crate::errors::consensus_error::from_consensus_error;
-use crate::fee::{
-    PreCalculatedOperationWasm, ReadOperationWasm, SignatureVerificationOperationWasm,
-};
 use crate::utils::generic_of_js_val;
 use crate::{
     DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm,
