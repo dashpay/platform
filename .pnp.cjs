@@ -3000,6 +3000,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/wasm-re2", "npm:1.0.2"],\
+            ["@types/bs58", "npm:4.0.1"],\
             ["@types/node", "npm:14.17.34"],\
             ["ajv", "npm:8.8.1"],\
             ["assert", "npm:2.0.0"],\
@@ -4091,6 +4092,16 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/@tsconfig-node16-npm-1.0.2-1f43ab567a-ca94d36397.zip/node_modules/@tsconfig/node16/",\
           "packageDependencies": [\
             ["@tsconfig/node16", "npm:1.0.2"]\
+          ],\
+          "linkType": "HARD"\
+        }]\
+      ]],\
+      ["@types/bs58", [\
+        ["npm:4.0.1", {\
+          "packageLocation": "./.yarn/cache/@types-bs58-npm-4.0.1-179273a650-5063fed6bb.zip/node_modules/@types/bs58/",\
+          "packageDependencies": [\
+            ["@types/bs58", "npm:4.0.1"],\
+            ["base-x", "npm:3.0.9"]\
           ],\
           "linkType": "HARD"\
         }]\

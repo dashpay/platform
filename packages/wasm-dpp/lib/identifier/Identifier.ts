@@ -1,5 +1,5 @@
-const bs58 = require('bs58');
-const IdentifierError = require('./errors/IdentifierError');
+import bs58 from 'bs58';
+import IdentifierError from './errors/IdentifierError';
 
 // Buffer extending is not a trivial thing:
 // * https://github.com/nodejs/node/commit/651a5b51eb838e8e23a5b94ba34e8e06630a004a
@@ -7,7 +7,7 @@ const IdentifierError = require('./errors/IdentifierError');
 // * https://github.com/nodejs/help/issues/1300
 // * https://github.com/nodejs/node/issues/2882
 
-type Encoder = {
+type CborEncoder = {
     pushAny: (buffer: Buffer) => void;
 }
 
@@ -52,10 +52,10 @@ export class Identifier {
   /**
    * Encode to CBOR
    *
-   * @param {Encoder} encoder
+   * @param {CborEncoder} encoder
    * @return {boolean}
    */
-  encodeCBOR(encoder: Encoder) {
+  encodeCBOR(encoder: CborEncoder) {
     encoder.pushAny(this.toBuffer());
 
     return true;
@@ -78,7 +78,7 @@ export class Identifier {
    */
   toString(encoding: IdentifierEncoding = 'base58') {
     if (encoding === 'base58') {
-      return bs58.encode(this);
+      return bs58.encode(this.toBuffer());
     }
 
     return this.toBuffer().toString(encoding);
