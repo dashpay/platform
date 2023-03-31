@@ -21,19 +21,9 @@ module.exports = {
     minimizer: [new TerserPlugin({
       terserOptions: {
         keep_classnames: true,
-        keep_fnames: true,
       },
     })],
   },
-  // module: {
-  //   rules: [
-  //     {
-  //       test: /\.tsx?$/,
-  //       use: 'ts-loader',
-  //       exclude: /node_modules/,
-  //     },
-  //   ],
-  // },
   resolve: {
     extensions: ['.js'],
     fallback: {
