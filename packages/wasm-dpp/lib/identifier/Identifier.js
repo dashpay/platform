@@ -1,4 +1,3 @@
-// TODO: fix
 const bs58 = require('bs58');
 const IdentifierError = require('./errors/IdentifierError');
 
