@@ -90,11 +90,11 @@ fn validate_data_contract_create_transition_basic(
     {
         Ok(v) => v,
         Err(parsing_error) => {
-            return Ok(SimpleValidationResult::new(Some(vec![
+            return Ok(SimpleValidationResult::new_with_errors(vec![
                 ConsensusError::ProtocolVersionParsingError(ProtocolVersionParsingError::new(
                     parsing_error,
                 )),
-            ])))
+            ]))
         }
     };
 

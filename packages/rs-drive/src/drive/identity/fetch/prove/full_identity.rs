@@ -1,6 +1,6 @@
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee::op::DriveOperation;
+use crate::fee::op::LowLevelDriveOperation;
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -10,7 +10,7 @@ impl Drive {
         identity_id: [u8; 32],
         transaction: TransactionArg,
     ) -> Result<Vec<u8>, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let query = Self::full_identity_query(&identity_id)?;
         self.grove_get_proved_path_query(&query, false, transaction, &mut drive_operations)
     }
@@ -21,7 +21,7 @@ impl Drive {
         identity_ids: &[[u8; 32]],
         transaction: TransactionArg,
     ) -> Result<Vec<u8>, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let query = Self::full_identities_query(identity_ids)?;
         self.grove_get_proved_path_query(&query, false, transaction, &mut drive_operations)
     }

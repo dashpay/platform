@@ -49,7 +49,7 @@ use crate::fee::default_costs::KnownCostItem::{
     StorageDiskUsageCreditPerByte, StorageLoadCreditPerByte, StorageProcessingCreditPerByte,
     StorageSeekCost,
 };
-use crate::fee::op::DriveOperation::{
+use crate::fee::op::LowLevelDriveOperation::{
     CalculatedCostOperation, FunctionOperation, GroveOperation, PreCalculatedFeeResult,
 };
 use crate::fee::result::refunds::FeeRefunds;
@@ -208,7 +208,7 @@ impl FunctionOp {
 
 /// Drive operation
 #[derive(Debug, Eq, PartialEq)]
-pub enum DriveOperation {
+pub enum LowLevelDriveOperation {
     /// Grove operation
     GroveOperation(GroveDbOp),
     /// A drive operation
@@ -219,10 +219,10 @@ pub enum DriveOperation {
     PreCalculatedFeeResult(FeeResult),
 }
 
-impl DriveOperation {
+impl LowLevelDriveOperation {
     /// Returns a list of the costs of the Drive operations.
     pub fn consume_to_fees(
-        drive_operation: Vec<DriveOperation>,
+        drive_operation: Vec<LowLevelDriveOperation>,
         epoch: &Epoch,
     ) -> Result<Vec<FeeResult>, Error> {
         drive_operation
@@ -286,7 +286,7 @@ impl DriveOperation {
     }
 
     /// Filters the groveDB ops from a list of operations and puts them in a `GroveDbOpBatch`.
-    pub fn combine_cost_operations(operations: &[DriveOperation]) -> OperationCost {
+    pub fn combine_cost_operations(operations: &[LowLevelDriveOperation]) -> OperationCost {
         let mut cost = OperationCost::default();
         operations.iter().for_each(|op| {
             if let CalculatedCostOperation(operation_cost) = op {
@@ -297,7 +297,9 @@ impl DriveOperation {
     }
 
     /// Filters the groveDB ops from a list of operations and puts them in a `GroveDbOpBatch`.
-    pub fn grovedb_operations_batch(insert_operations: &[DriveOperation]) -> GroveDbOpBatch {
+    pub fn grovedb_operations_batch(
+        insert_operations: &[LowLevelDriveOperation],
+    ) -> GroveDbOpBatch {
         let operations = insert_operations
             .iter()
             .filter_map(|op| match op {
@@ -309,7 +311,9 @@ impl DriveOperation {
     }
 
     /// Filters the groveDB ops from a list of operations and collects them in a `Vec<GroveDbOp>`.
-    pub fn grovedb_operations_consume(insert_operations: Vec<DriveOperation>) -> Vec<GroveDbOp> {
+    pub fn grovedb_operations_consume(
+        insert_operations: Vec<LowLevelDriveOperation>,
+    ) -> Vec<GroveDbOp> {
         insert_operations
             .into_iter()
             .filter_map(|op| match op {
@@ -332,7 +336,7 @@ impl DriveOperation {
             None => Element::empty_tree(),
         };
 
-        DriveOperation::insert_for_known_path_key_element(path, key, tree)
+        LowLevelDriveOperation::insert_for_known_path_key_element(path, key, tree)
     }
 
     /// Sets `GroveOperation` for inserting an empty tree at the given path and key
@@ -348,7 +352,7 @@ impl DriveOperation {
             None => Element::empty_tree(),
         };
 
-        DriveOperation::insert_for_estimated_path_key_element(path, key, tree)
+        LowLevelDriveOperation::insert_for_estimated_path_key_element(path, key, tree)
     }
 
     /// Sets `GroveOperation` for inserting an element at the given path and key

@@ -7,7 +7,7 @@ use crate::error::Error;
 use crate::platform::Platform;
 use drive::dpp::identity::PartialIdentity;
 use drive::dpp::util::deserializer::ProtocolVersion;
-use drive::drive::batch::DriveOperationType;
+use drive::drive::batch::DriveOperation;
 use drive::drive::block_info::BlockInfo;
 use drive::error::Error::GroveDB;
 use drive::fee::result::FeeResult;
@@ -22,12 +22,12 @@ pub enum ExecutionEvent<'a> {
         /// Verify with dry run
         verify_balance_with_dry_run: bool,
         /// the operations that the identity is requesting to perform
-        operations: Vec<DriveOperationType<'a>>,
+        operations: Vec<DriveOperation<'a>>,
     },
     /// A drive event that is free
     FreeDriveEvent {
         /// the operations that should be performed
-        operations: Vec<DriveOperationType<'a>>,
+        operations: Vec<DriveOperation<'a>>,
     },
 }
 
@@ -35,7 +35,7 @@ impl<'a> ExecutionEvent<'a> {
     /// Creates a new identity Insertion Event
     pub fn new_document_operation(
         identity: PartialIdentity,
-        operation: DriveOperationType<'a>,
+        operation: DriveOperation<'a>,
     ) -> Self {
         Self::PaidDriveEvent {
             identity,
@@ -46,7 +46,7 @@ impl<'a> ExecutionEvent<'a> {
     /// Creates a new identity Insertion Event
     pub fn new_contract_operation(
         identity: PartialIdentity,
-        operation: DriveOperationType<'a>,
+        operation: DriveOperation<'a>,
     ) -> Self {
         Self::PaidDriveEvent {
             identity,
@@ -57,7 +57,7 @@ impl<'a> ExecutionEvent<'a> {
     /// Creates a new identity Insertion Event
     pub fn new_identity_insertion(
         identity: PartialIdentity,
-        operations: Vec<DriveOperationType<'a>>,
+        operations: Vec<DriveOperation<'a>>,
     ) -> Self {
         Self::PaidDriveEvent {
             identity,

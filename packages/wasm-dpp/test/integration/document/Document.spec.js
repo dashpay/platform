@@ -53,8 +53,6 @@ describe('ExtendedDocument', () => {
     it('should return raw document - Rust', () => {
       const result = document.toObject();
 
-      console.log(document.get('byteArrayField'));
-
       expect(result).to.deep.equal({
         $protocolVersion: document.getProtocolVersion(),
         $dataContractId: dataContract.getId().toBuffer(),

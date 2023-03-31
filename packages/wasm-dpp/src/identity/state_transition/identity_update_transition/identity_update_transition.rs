@@ -1,6 +1,7 @@
 use std::convert::TryInto;
 use std::default::Default;
 
+use dpp::consensus::signature::SignatureError;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::__rt::Ref;
 use wasm_bindgen::prelude::*;
@@ -9,7 +10,7 @@ use crate::identifier::IdentifierWrapper;
 
 use crate::{
     buffer::Buffer, errors::RustConversionError,
-    identity::state_transition::identity_public_key_transitions::IdentityPublicKeyCreateTransitionWasm,
+    identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitnessWasm,
     identity::IdentityPublicKeyWasm, state_transition::StateTransitionExecutionContextWasm,
     with_js_error,
 };
@@ -18,6 +19,9 @@ use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 
 use crate::errors::from_dpp_err;
 use crate::utils::{generic_of_js_val, WithJsError};
+
+use dpp::consensus::ConsensusError::SignatureError as ConsensusSignatureErrorVariant;
+
 use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
 use dpp::identity::{KeyID, TimestampMillis};
 use dpp::platform_value::string_encoding::Encoding;
@@ -94,10 +98,10 @@ impl IdentityUpdateTransitionWasm {
             keys_to_add = keys
                 .iter()
                 .map(|value| {
-                    let public_key: Ref<IdentityPublicKeyCreateTransitionWasm> =
-                        generic_of_js_val::<IdentityPublicKeyCreateTransitionWasm>(
+                    let public_key: Ref<IdentityPublicKeyWithWitnessWasm> =
+                        generic_of_js_val::<IdentityPublicKeyWithWitnessWasm>(
                             value,
-                            "IdentityPublicKeyCreateTransition",
+                            "IdentityPublicKeyWithWitness",
                         )?;
                     Ok(public_key.clone().into())
                 })
@@ -114,7 +118,7 @@ impl IdentityUpdateTransitionWasm {
         self.0
             .get_public_keys_to_add()
             .iter()
-            .map(|key| IdentityPublicKeyCreateTransitionWasm::from(key.to_owned()).into())
+            .map(|key| IdentityPublicKeyWithWitnessWasm::from(key.to_owned()).into())
             .collect()
     }
 
@@ -251,9 +255,7 @@ impl IdentityUpdateTransitionWasm {
         if let Some(public_keys_to_add) = object.public_keys_to_add {
             let keys_objects = public_keys_to_add
                 .into_iter()
-                .map(|key| {
-                    IdentityPublicKeyCreateTransitionWasm::from(key).to_object(options.clone())
-                })
+                .map(|key| IdentityPublicKeyWithWitnessWasm::from(key).to_object(options.clone()))
                 .collect::<Result<js_sys::Array, _>>()?;
 
             js_sys::Reflect::set(
@@ -359,7 +361,7 @@ impl IdentityUpdateTransitionWasm {
         if let Some(public_keys_to_add) = object.public_keys_to_add {
             let keys_objects = public_keys_to_add
                 .into_iter()
-                .map(|key| IdentityPublicKeyCreateTransitionWasm::from(key).to_json())
+                .map(|key| IdentityPublicKeyWithWitnessWasm::from(key).to_json())
                 .collect::<Result<js_sys::Array, _>>()?;
 
             js_sys::Reflect::set(
@@ -484,5 +486,32 @@ impl IdentityUpdateTransitionWasm {
                 &bls_adapter,
             )
             .with_js_error()
+    }
+
+    #[wasm_bindgen(js_name=verifySignature)]
+    pub fn verify_signature(
+        &self,
+        identity_public_key: &IdentityPublicKeyWasm,
+        bls: JsBlsAdapter,
+    ) -> Result<bool, JsValue> {
+        let bls_adapter = BlsAdapter(bls);
+
+        let verification_result = self
+            .0
+            .verify_signature(&identity_public_key.to_owned().into(), &bls_adapter);
+
+        match verification_result {
+            Ok(()) => Ok(true),
+            Err(protocol_error) => match &protocol_error {
+                ProtocolError::AbstractConsensusError(err) => match err.as_ref() {
+                    ConsensusSignatureErrorVariant(
+                        SignatureError::InvalidStateTransitionSignatureError,
+                    ) => Ok(false),
+                    _ => Err(protocol_error),
+                },
+                _ => Err(protocol_error),
+            },
+        }
+        .with_js_error()
     }
 }

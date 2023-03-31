@@ -18,7 +18,7 @@ use crate::errors::RustConversionError;
 use crate::identifier::{identifier_from_js_value, IdentifierWrapper};
 use crate::lodash::lodash_set;
 use crate::utils::{with_serde_to_platform_value, Inner, ToSerdeJSONExt, WithJsError};
-use crate::{with_js_error, ConversionOptions};
+use crate::{with_js_error, ConversionOptions, DocumentWasm};
 use crate::{DataContractWasm, MetadataWasm};
 
 #[wasm_bindgen(js_name=ExtendedDocument)]
@@ -100,6 +100,11 @@ impl ExtendedDocumentWasm {
         let identifier = identifier_from_js_value(js_data_contract_id)?;
         self.0.data_contract_id = identifier;
         Ok(())
+    }
+
+    #[wasm_bindgen(js_name=getDocument)]
+    pub fn get_document(&self) -> DocumentWasm {
+        self.0.document.clone().into()
     }
 
     #[wasm_bindgen(js_name=setOwnerId)]

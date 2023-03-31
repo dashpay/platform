@@ -1,6 +1,8 @@
+use crate::Serialize;
 use dpp::identity::SecurityLevel;
 use wasm_bindgen::prelude::*;
 
+#[derive(Serialize)]
 #[wasm_bindgen(js_name=PublicKeySecurityLevelNotMetError)]
 pub struct PublicKeySecurityLevelNotMetErrorWasm {
     public_key_security_level: SecurityLevel,
@@ -29,13 +31,23 @@ impl PublicKeySecurityLevelNotMetErrorWasm {
         self.public_key_security_level as u8
     }
 
-    #[wasm_bindgen(js_name=getRequiredSecurityLevel)]
-    pub fn get_required_security_level(&self) -> u8 {
+    #[wasm_bindgen(js_name=getKeySecurityLevelRequirement)]
+    pub fn get_key_security_level_requirement(&self) -> u8 {
         self.required_security_level as u8
     }
 
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {
         self.code
+    }
+
+    #[wasm_bindgen(js_name=toString)]
+    pub fn to_string(&self) -> Result<JsValue, JsValue> {
+        let json_string =
+            serde_json::ser::to_string(self).map_err(|e| JsValue::from(e.to_string()))?;
+        Ok(JsValue::from(format!(
+            "PublicKeySecurityLevelNotMetError: {}",
+            json_string
+        )))
     }
 }

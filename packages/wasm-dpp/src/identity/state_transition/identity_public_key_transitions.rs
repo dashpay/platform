@@ -18,20 +18,20 @@ struct ToObjectOptions {
     pub skip_signature: Option<bool>,
 }
 
-#[wasm_bindgen(js_name=IdentityPublicKeyCreateTransition)]
+#[wasm_bindgen(js_name=IdentityPublicKeyWithWitness)]
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct IdentityPublicKeyCreateTransitionWasm(IdentityPublicKeyWithWitness);
+pub struct IdentityPublicKeyWithWitnessWasm(IdentityPublicKeyWithWitness);
 
-#[wasm_bindgen(js_class = IdentityPublicKeyCreateTransition)]
-impl IdentityPublicKeyCreateTransitionWasm {
+#[wasm_bindgen(js_class = IdentityPublicKeyWithWitness)]
+impl IdentityPublicKeyWithWitnessWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(raw_public_key: JsValue) -> Result<IdentityPublicKeyCreateTransitionWasm, JsValue> {
+    pub fn new(raw_public_key: JsValue) -> Result<IdentityPublicKeyWithWitnessWasm, JsValue> {
         let data_string = utils::stringify(&raw_public_key)?;
         let value: JsonValue = serde_json::from_str(&data_string).map_err(|e| e.to_string())?;
 
         let pk = IdentityPublicKeyWithWitness::from_json_object(value).with_js_error()?;
 
-        Ok(IdentityPublicKeyCreateTransitionWasm(pk))
+        Ok(IdentityPublicKeyWithWitnessWasm(pk))
     }
 
     #[wasm_bindgen(js_name=getId)]
@@ -173,7 +173,7 @@ impl IdentityPublicKeyCreateTransitionWasm {
     }
 }
 
-impl IdentityPublicKeyCreateTransitionWasm {
+impl IdentityPublicKeyWithWitnessWasm {
     pub fn into_inner(self) -> IdentityPublicKeyWithWitness {
         self.0
     }
@@ -187,13 +187,13 @@ impl IdentityPublicKeyCreateTransitionWasm {
     }
 }
 
-impl From<IdentityPublicKeyWithWitness> for IdentityPublicKeyCreateTransitionWasm {
+impl From<IdentityPublicKeyWithWitness> for IdentityPublicKeyWithWitnessWasm {
     fn from(v: IdentityPublicKeyWithWitness) -> Self {
-        IdentityPublicKeyCreateTransitionWasm(v)
+        IdentityPublicKeyWithWitnessWasm(v)
     }
 }
 
-impl TryFrom<JsValue> for IdentityPublicKeyCreateTransitionWasm {
+impl TryFrom<JsValue> for IdentityPublicKeyWithWitnessWasm {
     type Error = JsValue;
 
     fn try_from(value: JsValue) -> Result<Self, Self::Error> {
@@ -205,8 +205,8 @@ impl TryFrom<JsValue> for IdentityPublicKeyCreateTransitionWasm {
     }
 }
 
-impl From<IdentityPublicKeyCreateTransitionWasm> for IdentityPublicKeyWithWitness {
-    fn from(pk: IdentityPublicKeyCreateTransitionWasm) -> Self {
+impl From<IdentityPublicKeyWithWitnessWasm> for IdentityPublicKeyWithWitness {
+    fn from(pk: IdentityPublicKeyWithWitnessWasm) -> Self {
         pk.0
     }
 }

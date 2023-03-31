@@ -2,7 +2,9 @@ use crate::data_contract::contract_config::ContractConfig;
 use crate::data_contract::validation::data_contract_validator::DataContractValidator;
 use crate::data_contract::{DataContract, DataContractFactory};
 
-use crate::prelude::{Identifier, ValidationResult};
+use crate::prelude::Identifier;
+use crate::util::entropy_generator::EntropyGenerator;
+use crate::validation::SimpleValidationResult;
 use crate::version::ProtocolVersionValidator;
 use crate::ProtocolError;
 use platform_value::Value;
@@ -24,6 +26,22 @@ impl DataContractFacade {
         let validator = Arc::new(DataContractValidator::new(protocol_version_validator));
         Self {
             factory: DataContractFactory::new(protocol_version, validator.clone()),
+            data_contract_validator: validator,
+        }
+    }
+
+    pub fn new_with_entropy_generator(
+        protocol_version: u32,
+        protocol_version_validator: Arc<ProtocolVersionValidator>,
+        entropy_generator: Box<dyn EntropyGenerator>,
+    ) -> Self {
+        let validator = Arc::new(DataContractValidator::new(protocol_version_validator));
+        Self {
+            factory: DataContractFactory::new_with_entropy_generator(
+                protocol_version,
+                validator.clone(),
+                entropy_generator,
+            ),
             data_contract_validator: validator,
         }
     }
@@ -87,7 +105,7 @@ impl DataContractFacade {
     pub async fn validate(
         &self,
         data_contract: Value,
-    ) -> Result<ValidationResult<()>, ProtocolError> {
+    ) -> Result<SimpleValidationResult, ProtocolError> {
         self.data_contract_validator.validate(&data_contract)
     }
 }

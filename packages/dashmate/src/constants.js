@@ -43,7 +43,7 @@ const OUTPUT_FORMATS = {
 const SSL_PROVIDERS = {
   ZEROSSL: 'zerossl',
   FILE: 'file',
-  SELF_SIGNED: 'selfSigned',
+  SELF_SIGNED: 'self-signed',
 };
 
 module.exports = {

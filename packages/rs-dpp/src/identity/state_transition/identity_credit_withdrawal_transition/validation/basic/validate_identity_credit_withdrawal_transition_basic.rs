@@ -4,6 +4,7 @@ use lazy_static::lazy_static;
 use platform_value::Value;
 use serde_json::Value as JsonValue;
 
+use crate::validation::SimpleValidationResult;
 use crate::{
     consensus::basic::identity::{
         InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
@@ -13,7 +14,7 @@ use crate::{
     contracts::withdrawals_contract,
     identity::core_script::CoreScript,
     util::is_fibonacci_number::is_fibonacci_number,
-    validation::{JsonSchemaValidator, ValidationResult},
+    validation::JsonSchemaValidator,
     version::ProtocolVersionValidator,
     DashPlatformProtocolInitError, NonConsensusError,
 };
@@ -49,7 +50,7 @@ impl IdentityCreditWithdrawalTransitionBasicValidator {
     pub async fn validate(
         &self,
         transition_object: &Value,
-    ) -> Result<ValidationResult<()>, NonConsensusError> {
+    ) -> Result<SimpleValidationResult, NonConsensusError> {
         let mut result = self.json_schema_validator.validate(
             &transition_object
                 .try_to_validating_json()

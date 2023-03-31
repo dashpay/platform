@@ -32,9 +32,12 @@ use self::document_transition::{
     document_base_transition, document_create_transition, DocumentTransitionExt,
 };
 
+mod action;
 pub mod apply_documents_batch_transition_factory;
 pub mod document_transition;
 pub mod validation;
+
+pub use action::{DocumentsBatchTransitionAction, DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION};
 
 pub mod property_names {
     pub const TRANSITION_TYPE: &str = "type";
@@ -255,6 +258,10 @@ impl DocumentsBatchTransition {
 
     pub fn get_transitions(&self) -> &Vec<DocumentTransition> {
         &self.transitions
+    }
+
+    pub fn get_transitions_slice(&self) -> &[DocumentTransition] {
+        self.transitions.as_slice()
     }
 
     pub fn clean_value(value: &mut Value) -> Result<(), platform_value::Error> {

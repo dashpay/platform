@@ -44,7 +44,7 @@ function getOverviewScopeFactory(getCoreScope,
     };
 
     const platform = {
-      enabled: config.isPlatformEnabled(),
+      enabled: config.get('platform.enable'),
       tenderdash: null,
     };
 
@@ -59,7 +59,7 @@ function getOverviewScopeFactory(getCoreScope,
       masternode.nodeState = nodeState;
     }
 
-    if (config.isPlatformEnabled()) {
+    if (config.get('platform.enable')) {
       const { tenderdash } = await getPlatformScope(config);
 
       platform.tenderdash = tenderdash;
