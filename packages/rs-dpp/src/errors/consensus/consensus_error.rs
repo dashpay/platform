@@ -29,16 +29,13 @@ pub enum ConsensusError {
     StateError(StateError),
 
     #[error(transparent)]
-    #[serde(skip)] // TODO: Figure this out
     SignatureError(SignatureError),
 
     #[error(transparent)]
-    #[serde(skip)] // TODO: Figure this out
     FeeError(FeeError),
 
     #[cfg(test)]
     #[cfg_attr(test, error(transparent))]
-    #[serde(skip)] // TODO: Figure this out
     TestConsensusError(TestConsensusError),
 }
 

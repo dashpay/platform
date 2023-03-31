@@ -4,7 +4,9 @@ use crate::consensus::signature::signature_error::SignatureError;
 use crate::consensus::ConsensusError;
 use crate::identity::KeyID;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Public key {public_key_id} doesn't exist")]
 pub struct MissingPublicKeyError {
     public_key_id: KeyID,

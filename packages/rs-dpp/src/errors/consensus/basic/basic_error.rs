@@ -70,7 +70,6 @@ pub enum BasicError {
     InvalidIdentifierError(InvalidIdentifierError),
 
     #[error(transparent)]
-    #[serde(skip)] // TODO: Figure this out
     ValueError(ValueError),
 
     // DataContract

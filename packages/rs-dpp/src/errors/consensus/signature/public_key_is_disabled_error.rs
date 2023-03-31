@@ -3,8 +3,9 @@ use thiserror::Error;
 use crate::consensus::signature::signature_error::SignatureError;
 use crate::consensus::ConsensusError;
 use crate::identity::KeyID;
+use serde::{Deserialize, Serialize};
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Identity key {public_key_id} is disabled")]
 pub struct PublicKeyIsDisabledError {
     public_key_id: KeyID,

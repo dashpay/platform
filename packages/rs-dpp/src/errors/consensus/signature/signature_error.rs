@@ -2,7 +2,9 @@ use crate::consensus::signature::{IdentityNotFoundError, InvalidIdentityPublicKe
 use crate::consensus::ConsensusError;
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Error, Debug, Serialize, Deserialize)]
 pub enum SignatureError {
     /*
 

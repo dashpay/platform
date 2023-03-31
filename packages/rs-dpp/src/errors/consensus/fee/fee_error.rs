@@ -2,7 +2,9 @@ use crate::errors::consensus::fee::balance_is_not_enough_error::BalanceIsNotEnou
 use crate::errors::consensus::ConsensusError;
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Error, Debug, Serialize, Deserialize)]
 pub enum FeeError {
     /*
 
