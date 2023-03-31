@@ -2,7 +2,7 @@
 //!
 use super::config::AbciConfig;
 use crate::{
-    abci::proposal::Proposal, config::PlatformConfig, error::Error, platform::Platform,
+    config::PlatformConfig, error::Error, platform::Platform,
     rpc::core::CoreRPCLike,
 };
 use dpp::identity::TimestampMillis;

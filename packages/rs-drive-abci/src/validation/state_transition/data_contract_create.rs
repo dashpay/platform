@@ -6,28 +6,26 @@ use dpp::state_transition::StateTransitionAction;
 use dpp::validation::SimpleValidationResult;
 use dpp::ProtocolError;
 use drive::drive::Drive;
+use crate::error::Error;
+use crate::validation::state_transition::key_validation::validate_state_transition_identity_signature;
 
 impl<C> StateTransitionValidation<C> for DataContractCreateTransition {
-    fn validate_type(&self) -> Result<SimpleValidationResult, ProtocolError> {
+    fn validate_type(&self) -> Result<SimpleValidationResult, Error> {
         todo!()
     }
 
-    fn validate_signature(&self) -> Result<SimpleValidationResult, ProtocolError> {
+    fn validate_signature(&self) -> Result<SimpleValidationResult, Error> {
         todo!()
     }
 
-    fn validate_key_signature(&self) -> Result<SimpleValidationResult, ProtocolError> {
-        todo!()
-    }
-
-    fn validate_fee(&self) -> Result<SimpleValidationResult, ProtocolError> {
-        todo!()
+    fn validate_key_signature(&self, drive: &Drive) -> Result<SimpleValidationResult, Error> {
+        validate_state_transition_identity_signature()
     }
 
     fn validate_state(
         &self,
         drive: &Drive,
-    ) -> Result<ValidationResult<StateTransitionAction>, ProtocolError> {
+    ) -> Result<ValidationResult<StateTransitionAction>, Error> {
         todo!()
     }
 }

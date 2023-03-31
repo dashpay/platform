@@ -1,5 +1,25 @@
 use dpp::identity::PartialIdentity;
+use dpp::validation::{SimpleValidationResult, ValidationResult};
 use drive::drive::batch::DriveOperation;
+use drive::fee::result::FeeResult;
+
+/// An execution result
+pub enum ExecutionResult {
+    SuccessfulPaidExecution(FeeResult),
+    SuccessfulFreeExecution,
+    ConsensusExecutionError(SimpleValidationResult)
+}
+
+impl From<ValidationResult<ExecutionResult>> for ExecutionResult {
+    fn from(value: ValidationResult<ExecutionResult>) -> Self {
+        let ValidationResult {
+            errors, data
+        } = value;
+        if let Some(result) = data {
+
+        }
+    }
+}
 
 /// An execution event
 pub enum ExecutionEvent<'a> {

@@ -57,7 +57,9 @@ use std::collections::BTreeMap;
 /// Or just the current one?
 #[derive(Clone, Copy)]
 pub enum KeyKindRequestType {
+    /// Get only the last key of a certain kind
     CurrentKeyOfKindRequest,
+    /// Get all keys of a certain kind
     AllKeysOfKindRequest,
 }
 
@@ -65,8 +67,11 @@ pub enum KeyKindRequestType {
 /// The type of key request
 #[derive(Clone)]
 pub enum KeyRequestType {
+    /// Get all keys of an identity
     AllKeys,
+    /// Get specific keys for an identity
     SpecificKeys(Vec<KeyID>),
+    /// Search for keys on an identity
     SearchKey(BTreeMap<PurposeU8, BTreeMap<SecurityLevelU8, KeyKindRequestType>>),
 }
 
@@ -74,6 +79,14 @@ pub enum KeyRequestType {
 type PurposeU8 = u8;
 #[cfg(any(feature = "full", feature = "verify"))]
 type SecurityLevelU8 = u8;
+
+#[cfg(feature = "full")]
+/// Type alias for a single IdentityPublicKey as the outcome of the query.
+pub type SingleIdentityPublicKeyOutcome = IdentityPublicKey;
+
+#[cfg(feature = "full")]
+/// Type alias for an optional single IdentityPublicKey as the outcome of the query.
+pub type OptionalSingleIdentityPublicKeyOutcome = Option<IdentityPublicKey>;
 
 #[cfg(feature = "full")]
 /// Type alias for a Vector for key id to identity public key pair common pattern.
@@ -101,10 +114,13 @@ pub type QueryKeyPathOptionalIdentityPublicKeyTrioBTreeMap =
     BTreeMap<(Path, Key), Option<IdentityPublicKey>>;
 
 #[cfg(feature = "full")]
+/// A trait to get typed results from raw results from Drive
 pub trait IdentityPublicKeyResult {
+    /// Get a typed result from a trio of path key elements
     fn try_from_path_key_optional(value: Vec<PathKeyOptionalElementTrio>) -> Result<Self, Error>
     where
         Self: Sized;
+    /// Get a typed result from query results
     fn try_from_query_results(value: QueryResultElements) -> Result<Self, Error>
     where
         Self: Sized;
@@ -147,19 +163,108 @@ fn key_and_optional_element_to_identity_public_key_id_and_object_pair(
 }
 
 #[cfg(feature = "full")]
+fn supported_query_result_element_to_identity_public_key(
+    query_result_element: QueryResultElement,
+) -> Result<IdentityPublicKey, Error> {
+    match query_result_element {
+        QueryResultElement::ElementResultItem(element)
+        | QueryResultElement::KeyElementPairResultItem((_, element))
+        | QueryResultElement::PathKeyElementTrioResultItem((_, _, element)) => {
+            element_to_identity_public_key(element)
+        }
+    }
+}
+
+#[cfg(feature = "full")]
 fn supported_query_result_element_to_identity_public_key_id_and_object_pair(
     query_result_element: QueryResultElement,
 ) -> Result<(KeyID, IdentityPublicKey), Error> {
     match query_result_element {
-        QueryResultElement::ElementResultItem(_) => Err(Error::Identity(
-            IdentityError::IdentityKeyIncorrectQueryMissingInformation(
-                "no key present in return information",
-            ),
-        )),
-        QueryResultElement::KeyElementPairResultItem((_key, element))
-        | QueryResultElement::PathKeyElementTrioResultItem((_, _key, element)) => {
+        QueryResultElement::ElementResultItem(element)
+        | QueryResultElement::KeyElementPairResultItem((_, element))
+        | QueryResultElement::PathKeyElementTrioResultItem((_, _, element)) => {
             element_to_identity_public_key_id_and_object_pair(element)
         }
+    }
+}
+
+#[cfg(feature = "full")]
+impl IdentityPublicKeyResult for SingleIdentityPublicKeyOutcome {
+    fn try_from_path_key_optional(value: Vec<PathKeyOptionalElementTrio>) -> Result<Self, Error> {
+        // We do not care about non existence
+        let mut keys = value
+            .into_iter()
+            .filter_map(|(_, _, maybe_element)| maybe_element)
+            .map(element_to_identity_public_key)
+            .collect::<Result<Vec<_>, Error>>()?;
+
+        if keys.len() < 1 {
+            return Err(Error::Identity(IdentityError::IdentityPublicKeyNotFound("no result found".to_string())));
+        }
+
+        if keys.len() > 1 {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution("more than one key was returned when expecting only one result")));
+        }
+
+        Ok(keys.remove(0))
+    }
+
+    fn try_from_query_results(value: QueryResultElements) -> Result<Self, Error> {
+        let mut keys = value
+            .elements
+            .into_iter()
+            .map(supported_query_result_element_to_identity_public_key)
+            .collect::<Result<Vec<_>, Error>>()?;
+
+        if keys.len() < 1 {
+            return Err(Error::Identity(IdentityError::IdentityPublicKeyNotFound("no result found".to_string())));
+        }
+
+        if keys.len() > 1 {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution("more than one key was returned when expecting only one result")));
+        }
+
+        Ok(keys.remove(0))
+    }
+}
+
+#[cfg(feature = "full")]
+impl IdentityPublicKeyResult for OptionalSingleIdentityPublicKeyOutcome {
+    fn try_from_path_key_optional(value: Vec<PathKeyOptionalElementTrio>) -> Result<Self, Error> {
+        // We do not care about non existence
+        let mut keys = value
+            .into_iter()
+            .filter_map(|(_, _, maybe_element)| maybe_element)
+            .map(element_to_identity_public_key)
+            .collect::<Result<Vec<_>, Error>>()?;
+
+        if keys.len() < 1 {
+            return Ok(None)
+        }
+
+        if keys.len() > 1 {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution("more than one key was returned when expecting only one result")));
+        }
+
+        Ok(Some(keys.remove(0)))
+    }
+
+    fn try_from_query_results(value: QueryResultElements) -> Result<Self, Error> {
+        let mut keys = value
+            .elements
+            .into_iter()
+            .map(supported_query_result_element_to_identity_public_key)
+            .collect::<Result<Vec<_>, Error>>()?;
+
+        if keys.len() < 1 {
+            return Ok(None);
+        }
+
+        if keys.len() > 1 {
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution("more than one key was returned when expecting only one result")));
+        }
+
+        Ok(Some(keys.remove(0)))
     }
 }
 
@@ -336,6 +441,28 @@ impl IdentityKeysRequest {
         IdentityKeysRequest {
             identity_id: *identity_id,
             request_type: AllKeys,
+            limit: None,
+            offset: None,
+        }
+    }
+
+    #[cfg(any(feature = "full", feature = "verify"))]
+    /// Make a request for specific keys for the identity
+    pub fn new_specific_keys_query(identity_id: &[u8; 32], key_ids: Vec<KeyID>) -> Self {
+        IdentityKeysRequest {
+            identity_id: *identity_id,
+            request_type: SpecificKeys(key_ids),
+            limit: None,
+            offset: None,
+        }
+    }
+
+    #[cfg(any(feature = "full", feature = "verify"))]
+    /// Make a request for a specific key for the identity
+    pub fn new_specific_key_query(identity_id: &[u8; 32], key_id: KeyID) -> Self {
+        IdentityKeysRequest {
+            identity_id: *identity_id,
+            request_type: SpecificKeys(vec![key_id]),
             limit: None,
             offset: None,
         }

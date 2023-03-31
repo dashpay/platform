@@ -60,7 +60,8 @@ mod fetch;
 #[cfg(feature = "full")]
 mod insert;
 #[cfg(any(feature = "full", feature = "verify"))]
-mod key;
+/// Module related to Identity Keys
+pub mod key;
 #[cfg(feature = "full")]
 mod update;
 

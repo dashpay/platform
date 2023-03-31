@@ -43,7 +43,7 @@ where
     pub fn update_broadcasted_withdrawal_transaction_statuses(
         &self,
         last_synced_core_height: u32,
-        transaction: TransactionArg,
+        transaction: &Transaction,
     ) -> Result<(), Error> {
         // Retrieve block execution context
         let block_execution_context = self.block_execution_context.read().unwrap();
@@ -64,7 +64,7 @@ where
         let (_, Some(contract_fetch_info)) = self.drive.get_contract_with_fetch_info(
             data_contract_id.to_buffer(),
             None,
-            transaction,
+            Some(transaction),
         )? else {
             return Err(Error::Execution(
                 ExecutionError::CorruptedCodeExecution("can't fetch withdrawal data contract"),
@@ -78,7 +78,7 @@ where
 
         let broadcasted_withdrawal_documents = self.drive.fetch_withdrawal_documents_by_status(
             withdrawals_contract::WithdrawalStatus::BROADCASTED.into(),
-            transaction,
+            Some(transaction),
         )?;
 
         let mut drive_operations: Vec<DriveOperation> = vec![];
@@ -168,7 +168,7 @@ where
         );
 
         self.drive
-            .apply_drive_operations(drive_operations, true, &block_info, transaction)?;
+            .apply_drive_operations(drive_operations, true, &block_info, Some(transaction))?;
 
         Ok(())
     }

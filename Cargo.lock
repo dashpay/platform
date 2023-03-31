@@ -1150,6 +1150,7 @@ dependencies = [
  "flex-error",
  "hex",
  "itertools",
+ "lazy_static",
  "mockall",
  "prost",
  "rand",

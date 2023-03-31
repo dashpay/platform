@@ -4,6 +4,7 @@ mod documents_batch;
 mod identity_create;
 mod identity_credit_withdrawal;
 mod identity_update;
+mod key_validation;
 
 use crate::platform::Platform;
 use dpp::consensus::ConsensusError;
@@ -11,31 +12,33 @@ use dpp::state_transition::StateTransitionAction::{
     DataContractCreateAction, DataContractUpdateAction, DocumentsBatchAction, IdentityCreateAction,
     IdentityCreditWithdrawalAction, IdentityTopUpAction, IdentityUpdateAction,
 };
-use dpp::state_transition::{StateTransition, StateTransitionAction};
+use dpp::state_transition::{StateTransition, StateTransitionAction, StateTransitionIdentitySigned, StateTransitionLike};
 use dpp::validation::{SimpleValidationResult, ValidationResult};
 use dpp::ProtocolError;
 use drive::drive::Drive;
+use crate::error::Error;
+use crate::execution::execution_event::ExecutionEvent;
 
-pub trait StateTransitionValidation<C> {
+pub trait StateTransitionValidation<C> : StateTransitionLike {
     fn validate_all(
         &self,
         platform: &Platform<C>,
-    ) -> Result<ValidationResult<StateTransitionAction>, ProtocolError> {
+    ) -> Result<ValidationResult<ExecutionEvent>, Error> {
         let result = self.validate_type()?;
         if !result.is_valid() {
-            return Ok(ValidationResult::<StateTransitionAction>::new_with_errors(
+            return Ok(ValidationResult::<ExecutionEvent>::new_with_errors(
                 result.errors,
             ));
         }
         let result = self.validate_signature()?;
         if !result.is_valid() {
-            return Ok(ValidationResult::<StateTransitionAction>::new_with_errors(
+            return Ok(ValidationResult::<ExecutionEvent>::new_with_errors(
                 result.errors,
             ));
         }
         let result = self.validate_key_signature()?;
         if !result.is_valid() {
-            return Ok(ValidationResult::<StateTransitionAction>::new_with_errors(
+            return Ok(ValidationResult::<ExecutionEvent>::new_with_errors(
                 result.errors,
             ));
         }
@@ -47,18 +50,18 @@ pub trait StateTransitionValidation<C> {
             action.validate_fee()
         }
     }
-    fn validate_type(&self) -> Result<SimpleValidationResult, ProtocolError>;
-    fn validate_signature(&self) -> Result<SimpleValidationResult, ProtocolError>;
-    fn validate_key_signature(&self) -> Result<SimpleValidationResult, ProtocolError>;
+    fn validate_type(&self) -> Result<SimpleValidationResult, Error>;
+    fn validate_signature(&self, drive: &Drive, bls: C) -> Result<SimpleValidationResult, Error>;
+    fn validate_key_signature(&self, bls: C) -> Result<SimpleValidationResult, Error>;
     fn validate_state(
         &self,
         drive: &Drive,
-    ) -> Result<ValidationResult<StateTransitionAction>, ProtocolError>;
+    ) -> Result<ValidationResult<StateTransitionAction>, Error>;
 }
 
 impl<C> StateTransitionValidation<C> for StateTransition {
-    fn validate_type(&self) -> Result<SimpleValidationResult, ProtocolError> {
-        match state_transition {
+    fn validate_type(&self) -> Result<SimpleValidationResult, Error> {
+        match self {
             StateTransition::DataContractCreate(st) => st.validate_type(drive),
             StateTransition::DataContractUpdate(st) => st.validate_type(drive),
             StateTransition::IdentityCreate(st) => st.validate_type(drive),
@@ -69,8 +72,8 @@ impl<C> StateTransitionValidation<C> for StateTransition {
         }
     }
 
-    fn validate_signature(&self) -> Result<SimpleValidationResult, ProtocolError> {
-        match state_transition {
+    fn validate_signature(&self) -> Result<SimpleValidationResult, Error> {
+        match self {
             StateTransition::DataContractCreate(st) => st.validate_signature(drive),
             StateTransition::DataContractUpdate(st) => st.validate_signature(drive),
             StateTransition::IdentityCreate(st) => st.validate_signature(drive),
@@ -81,8 +84,8 @@ impl<C> StateTransitionValidation<C> for StateTransition {
         }
     }
 
-    fn validate_key_signature(&self) -> Result<SimpleValidationResult, ProtocolError> {
-        match state_transition {
+    fn validate_key_signature(&self) -> Result<SimpleValidationResult, Error> {
+        match self {
             StateTransition::DataContractCreate(st) => st.validate_key_signature(drive),
             StateTransition::DataContractUpdate(st) => st.validate_key_signature(drive),
             StateTransition::IdentityCreate(st) => st.validate_key_signature(drive),
@@ -96,8 +99,8 @@ impl<C> StateTransitionValidation<C> for StateTransition {
     fn validate_state(
         &self,
         drive: &Drive,
-    ) -> Result<ValidationResult<StateTransitionAction>, ProtocolError> {
-        match state_transition {
+    ) -> Result<ValidationResult<StateTransitionAction>, Error> {
+        match self {
             StateTransition::DataContractCreate(st) => st.validate_state(drive),
             StateTransition::DataContractUpdate(st) => st.validate_state(drive),
             StateTransition::IdentityCreate(st) => st.validate_state(drive),

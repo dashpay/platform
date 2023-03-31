@@ -32,7 +32,6 @@
 //! This module defines the `TenderdashAbci` trait and implements it for type `Platform`.
 //!
 
-use crate::abci::proposal::Proposal;
 use crate::abci::server::AbciApplication;
 use crate::block::{BlockExecutionContext, BlockStateInfo};
 use crate::execution::fee_pools::epoch::EpochInfo;

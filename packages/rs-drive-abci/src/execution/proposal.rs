@@ -21,14 +21,14 @@ use tenderdash_abci::proto::{
     abci::{self as proto, ExecTxResult, ResponseException},
     serializers::timestamp::ToMilis,
 };
-
-use super::AbciError;
+use drive::grovedb::Transaction;
+use crate::execution::execution_event::{ExecutionEvent, ExecutionResult};
 
 pub trait Proposal {
     fn prepare_proposal(
         &self,
         request: &proto::RequestPrepareProposal,
-        transaction: TransactionArg,
+        transaction: &Transaction,
     ) -> Result<proto::ResponsePrepareProposal, ResponseException>;
 }
 
@@ -39,7 +39,7 @@ where
     fn prepare_proposal(
         &self,
         request: proto::RequestPrepareProposal,
-        transaction: TransactionArg,
+        transaction: &Transaction,
     ) -> Result<proto::ResponsePrepareProposal, ResponseException> {
         let proto::RequestPrepareProposal {
             max_tx_bytes,
@@ -64,7 +64,7 @@ where
         } else {
             //todo: lazy load genesis time
             self.drive
-                .get_genesis_time(transaction)
+                .get_genesis_time(Some(transaction))
                 .map_err(Error::Drive)?
                 .ok_or(Error::Execution(ExecutionError::DriveIncoherence(
                     "the genesis time must be set",
@@ -79,7 +79,7 @@ where
             .update_validator_proposed_app_version(
                 validator_pro_tx_hash,
                 proposed_app_version as u32,
-                transaction,
+                Some(transaction),
             )
             .map_err(|e| format!("cannot update proposed app version: {}", e))?;
 
@@ -129,21 +129,14 @@ where
         let validation_outcomes = state_transitions
             .into_iter()
             .map(|state_transition| {
-                let state_transition_action_result = state_transition.validate_all(self)?;
-                state_transition_action_result
-                    .and_then_simple_validation(|action| action.validate_fee(&self.drive))?
-                    .map_result(|state_transition| {
-                        state_transition.into_high_level_drive_operations(&Epoch::new(
-                            epoch_info.current_epoch_index,
-                        ))
-                    })?
-                    .map_result(|state_transition| {
-                        state_transition.into_high_level_drive_operations(&Epoch::new(
-                            epoch_info.current_epoch_index,
-                        ))
-                    })
+                let state_transition_execution_event = state_transition.validate_all(self)?;
+                // we map the result to the actual execution
+                state_transition_execution_event
+                    .map_result(|execution_event| {
+                        self.execute_event(execution_event, block_info, transaction)
+                    }).into()
             })
-            .collect::<Result<Vec<ValidationResult<Vec<DriveOperation>>>, Error>>()?;
+            .collect::<Result<Vec<ExecutionResult>, Error>>()?;
 
         // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
         let response = proto::ResponsePrepareProposal {

@@ -1,3 +1,4 @@
+use dpp::validation::SimpleValidationResult;
 use crate::abci::handlers::TenderdashAbci;
 use crate::abci::messages::{
     AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFees,
@@ -5,7 +6,7 @@ use crate::abci::messages::{
 use crate::block::BlockExecutionContext;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::execution_event::ExecutionEvent;
+use crate::execution::execution_event::{ExecutionEvent, ExecutionResult};
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformState;
@@ -17,11 +18,85 @@ use drive::drive::Drive;
 use drive::error::Error::GroveDB;
 use drive::fee::result::FeeResult;
 use drive::grovedb::Transaction;
+use crate::execution::execution_event::ExecutionResult::{ConsensusExecutionError, SuccessfulFreeExecution, SuccessfulPaidExecution};
+
 
 impl<'a, C> Platform<'a, C>
 where
     C: CoreRPCLike,
 {
+    pub(crate) fn execute_event(
+        &self,
+        event: ExecutionEvent,
+        block_info: &BlockInfo,
+        transaction: &Transaction,
+    ) -> Result<ExecutionResult, Error> {
+        //todo: we need to split out errors
+        //  between failed execution and internal errors
+        match event {
+            ExecutionEvent::PaidDriveEvent {
+                identity,
+                verify_balance_with_dry_run,
+                operations,
+            } => {
+                let balance = identity.balance.ok_or(Error::Execution(
+                    ExecutionError::CorruptedCodeExecution(
+                        "partial identity info with no balance",
+                    ),
+                ))?;
+                let enough_balance = if verify_balance_with_dry_run {
+                    let estimated_fee_result = self
+                        .drive
+                        .apply_drive_operations(
+                            operations.clone(),
+                            false,
+                            block_info,
+                            Some(transaction),
+                        )
+                        .map_err(Error::Drive)?;
+
+                    // TODO: Should take into account refunds as well
+                    balance >= estimated_fee_result.total_base_fee()
+                } else {
+                    true
+                };
+
+                if enough_balance {
+                    let individual_fee_result = self
+                        .drive
+                        .apply_drive_operations(operations, true, block_info, Some(transaction))
+                        .map_err(Error::Drive)?;
+
+                    let balance_change =
+                        individual_fee_result.into_balance_change(identity.id.to_buffer());
+
+                    let outcome = self.drive.apply_balance_change_from_fee_to_identity(
+                        balance_change.clone(),
+                        Some(transaction),
+                    )?;
+
+                    // println!("State transition fees {:#?}", outcome.actual_fee_paid);
+                    //
+                    // println!(
+                    //     "Identity balance {:?} changed {:#?}",
+                    //     identity.balance,
+                    //     balance_change.change()
+                    // );
+
+                    Ok(SuccessfulPaidExecution(outcome.actual_fee_paid))
+                } else {
+                    Ok(ConsensusExecutionError(SimpleValidationResult::new_with_errors()))
+                }
+            }
+            ExecutionEvent::FreeDriveEvent { operations } => {
+                self.drive
+                    .apply_drive_operations(operations, true, block_info, Some(transaction))
+                    .map_err(Error::Drive)?;
+                Ok(SuccessfulFreeExecution)
+            }
+        }
+    }
+
     fn run_events(
         &self,
         events: Vec<ExecutionEvent>,

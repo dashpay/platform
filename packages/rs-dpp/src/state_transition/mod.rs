@@ -43,6 +43,7 @@ mod serialization;
 pub use state_transition_action::StateTransitionAction;
 use crate::consensus::ConsensusError;
 use crate::decode_protocol_entity_factory::DecodeProtocolEntity;
+use crate::identity::KeyID;
 macro_rules! call_method {
     ($state_transition:expr, $method:ident, $args:tt ) => {
         match $state_transition {
@@ -108,7 +109,7 @@ impl StateTransition {
         call_static_method!(self, binary_property_paths)
     }
 
-    fn get_owner_id(&self) -> &Identifier {
+    pub fn get_owner_id(&self) -> &Identifier {
         call_method!(self, get_owner_id)
     }
 }
