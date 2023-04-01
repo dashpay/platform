@@ -1,6 +1,7 @@
 // @ts-ignore
 import DashPlatformProtocol from '@dashevo/dpp';
 import loadWasmDpp from '@dashevo/wasm-dpp';
+import crypto from 'crypto';
 
 import * as BlsSignatures from '@dashevo/dpp/lib/bls/bls';
 
@@ -224,6 +225,9 @@ export class Platform {
       this.wasmDpp = new DashPlatformProtocolWasm(
         bls,
         stateRepository,
+        {
+          generate: () => crypto.randomBytes(32),
+        },
         protocolVersion,
       );
     }
