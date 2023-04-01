@@ -633,10 +633,10 @@ function createDIContainer(blsSignatures, dppWasm, options) {
 
     decodeProtocolEntity: asFunction(decodeProtocolEntityFactory),
 
-    calculateOperationFees: asValue(calculateOperationFees),
+    calculateOperationFees: asValue(dppWasm.calculateOperationFees),
 
     calculateStateTransitionFeeFromOperations:
-      asFunction(calculateStateTransitionFeeFromOperationsFactory),
+    asValue(dppWasm.calculateStateTransitionFeeFromOperations),
 
     calculateStateTransitionFee: asFunction(calculateStateTransitionFeeFactory),
 
