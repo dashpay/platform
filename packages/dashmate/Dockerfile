@@ -79,7 +79,7 @@ RUN yarn config set enableInlineBuilds true
 RUN --mount=type=cache,target=/tmp/unplugged \
     cp -R /tmp/unplugged /platform/.yarn/ && \
     yarn workspaces focus @dashevo/wasm-dpp && \
-    yarn workspace @dashevo/wasm-dpp webpack && \
+    yarn workspace @dashevo/wasm-dpp tsc && \
     yarn workspaces focus --production dashmate && \
     cp -R /platform/.yarn/unplugged /tmp/
 
