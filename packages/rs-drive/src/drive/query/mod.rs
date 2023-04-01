@@ -84,6 +84,22 @@ pub struct QueryDocumentIdsOutcome {
 impl Drive {
     /// Performs and returns the result of the specified query along with skipped items
     /// and the cost.
+    pub fn query_serialized(
+        &self,
+        serialized_query : Vec<u8>,
+        path: String,
+        prove: bool) -> Result<Vec<u8>, Error> {
+        todo!()
+        // match path.as_str() {
+        //     "documents" => {
+        //         self.query_proof_of_documents_using_cbor_encoded_query()
+        //     }
+        //     _ => {}
+        // }
+    }
+
+    /// Performs and returns the result of the specified query along with skipped items
+    /// and the cost.
     pub fn query_documents(
         &self,
         query: DriveQuery,

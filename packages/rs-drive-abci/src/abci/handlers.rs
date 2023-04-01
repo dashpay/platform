@@ -39,11 +39,7 @@ use dpp::identity::TimestampMillis;
 use dpp::state_transition::StateTransition;
 use drive::error::Error::GroveDB;
 use drive::fee::credits::SignedCredits;
-use tenderdash_abci::proto::abci::{
-    RequestCheckTx, RequestFinalizeBlock, RequestInitChain, RequestPrepareProposal,
-    RequestProcessProposal, ResponseCheckTx, ResponseFinalizeBlock, ResponseInitChain,
-    ResponsePrepareProposal, ResponseProcessProposal,
-};
+use tenderdash_abci::proto::abci::{RequestCheckTx, RequestFinalizeBlock, RequestInitChain, RequestPrepareProposal, RequestProcessProposal, RequestQuery, ResponseCheckTx, ResponseFinalizeBlock, ResponseInitChain, ResponsePrepareProposal, ResponseProcessProposal, ResponseQuery};
 use tenderdash_abci::proto::{
     abci::{self as proto, ResponseException},
     serializers::timestamp::ToMilis,
@@ -328,24 +324,26 @@ where
             priority: 0,
         })
     }
-    //
-    // fn query(&self, request: RequestQuery) -> Result<ResponseQuery, ResponseException> {
-    //     let RequestQuery {
-    //         data, path, height, prove
-    //     } = request;
-    //
-    //     ResponseQuery {
-    //         code: 0,
-    //         log: "".to_string(),
-    //         info: "".to_string(),
-    //         index: 0,
-    //         key: vec![],
-    //         value: vec![],
-    //         proof_ops: None,
-    //         height,
-    //         codespace: "".to_string(),
-    //     }
-    // }
+
+    fn query(&self, request: RequestQuery) -> Result<ResponseQuery, ResponseException> {
+        let RequestQuery {
+            data, path, height, prove
+        } = request;
+
+        let data = self.drive.query_serialized(data, path, prove)?;
+
+        Ok(ResponseQuery {
+            code: 0,
+            log: "".to_string(),
+            info: "".to_string(),
+            index: 0,
+            key: vec![],
+            value: data,
+            proof_ops: None,
+            height,
+            codespace: "".to_string(),
+        })
+    }
 }
 //
 // #[cfg(test)]
