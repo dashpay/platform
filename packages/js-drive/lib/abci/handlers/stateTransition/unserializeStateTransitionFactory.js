@@ -1,4 +1,3 @@
-const InvalidStateTransitionError = require('@dashevo/dpp/lib/stateTransition/errors/InvalidStateTransitionError');
 const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
 
 const DPPValidationAbciError = require('../../errors/DPPValidationAbciError');
@@ -10,7 +9,7 @@ const TIMERS = require('../timers');
  * @param {Object} noopLogger
  * @return {unserializeStateTransition}
  */
-function unserializeStateTransitionFactory(dpp, noopLogger) {
+function unserializeStateTransitionFactory(dpp, noopLogger, dppWasm) {
   /**
    * @typedef unserializeStateTransition
    * @param {Uint8Array} stateTransitionByteArray
@@ -45,7 +44,7 @@ function unserializeStateTransitionFactory(dpp, noopLogger) {
         .stateTransition
         .createFromBuffer(stateTransitionSerialized);
     } catch (e) {
-      if (e instanceof InvalidStateTransitionError) {
+      if (e instanceof dppWasm.InvalidStateTransitionError) {
         const consensusError = e.getErrors()[0];
         const message = 'Invalid state transition';
 
