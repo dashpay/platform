@@ -1,15 +1,20 @@
 use std::sync::Arc;
 
 use dpp::{
-    data_contract::state_transition::data_contract_create_transition::{
-        validation::state::validate_data_contract_create_transition_basic::DATA_CONTRACT_CREATE_SCHEMA,
-        DataContractCreateTransition,
-    },
-    validation::JsonSchemaValidator,
-};
-use dpp::{
+    consensus::basic::{data_contract::InvalidDataContractIdError, BasicError},
     data_contract::validation::data_contract_validator::DataContractValidator,
     validation::SimpleValidationResult,
+};
+use dpp::{
+    data_contract::{
+        generate_data_contract_id,
+        state_transition::data_contract_create_transition::{
+            validation::state::validate_data_contract_create_transition_basic::DATA_CONTRACT_CREATE_SCHEMA,
+            DataContractCreateTransition,
+        },
+    },
+    validation::JsonSchemaValidator,
+    Convertible,
 };
 use dpp::{prelude::ValidationResult, state_transition::StateTransitionConvert};
 use dpp::{state_transition::StateTransitionAction, version::ProtocolVersionValidator};
@@ -48,8 +53,26 @@ impl StateTransitionValidation for DataContractCreateTransition {
         // Validate data contract separately
         let data_contract_validator =
             DataContractValidator::new(Arc::new(protocol_version_validator)); // ffs
+        let result =
+            data_contract_validator.validate(&self.data_contract.into_object().expect("TODO"))?;
+        if !result.is_valid() {
+            return Ok(result);
+        }
 
-        todo!()
+        // Validate data contract id
+        let generated_id =
+            generate_data_contract_id(self.data_contract.owner_id, self.data_contract.entropy);
+        let mut validation_result = SimpleValidationResult::default();
+        if generated_id != self.data_contract.id.as_ref() {
+            validation_result.add_error(BasicError::InvalidDataContractIdError(
+                InvalidDataContractIdError::new(
+                    generated_id,
+                    self.data_contract.id.as_ref().to_owned(),
+                ), // TODO
+            ))
+        }
+
+        Ok(validation_result)
     }
 
     fn validate_signature(

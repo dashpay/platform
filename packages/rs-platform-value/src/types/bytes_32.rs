@@ -8,6 +8,12 @@ use std::fmt;
 #[derive(Default, Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Copy)]
 pub struct Bytes32(pub [u8; 32]);
 
+impl AsRef<[u8]> for Bytes32 {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
 impl Bytes32 {
     pub fn new(buffer: [u8; 32]) -> Self {
         Bytes32(buffer)
