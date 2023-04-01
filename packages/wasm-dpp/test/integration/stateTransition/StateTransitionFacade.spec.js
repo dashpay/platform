@@ -9,7 +9,7 @@ const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFi
 const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 
-const { default: loadWasmDpp } = require('../../..');
+const { default: loadWasmDpp } = require('../../../dist');
 const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
 const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
 

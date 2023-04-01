@@ -6,7 +6,7 @@ const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
 const getIdentityUpdateTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityUpdateTransitionFixture');
 
-const { default: loadWasmDpp } = require('../../../../..');
+const { default: loadWasmDpp } = require('../../../../../dist');
 const generateRandomIdentifierAsync = require('../../../../../lib/test/utils/generateRandomIdentifierAsync');
 
 describe('IdentityUpdateTransition', () => {

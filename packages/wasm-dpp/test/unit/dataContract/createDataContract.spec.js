@@ -1,6 +1,6 @@
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
-const { default: loadWasmDpp } = require('../../..');
+const { default: loadWasmDpp } = require('../../../dist');
 
 describe('createDataContract', () => {
   let rawDataContract;

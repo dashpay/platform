@@ -1,5 +1,5 @@
 const crypto = require('crypto');
-const { default: loadWasmDpp } = require('../../..');
+const { default: loadWasmDpp } = require('../../../dist');
 
 /**
  * Generate random identity ID

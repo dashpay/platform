@@ -3,7 +3,7 @@ const bs58 = require('bs58');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 const JsDataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
 
-const { default: loadWasmDpp } = require('../../..');
+const { default: loadWasmDpp } = require('../../../dist');
 
 describe('DataContract', () => {
   let documentType;

@@ -1,5 +1,5 @@
 const getDocumentTransitionsFixture = require('../../../../../../../lib/test/fixtures/getDocumentTransitionsFixture');
-const { default: loadWasmDpp } = require('../../../../../../..');
+const { default: loadWasmDpp } = require('../../../../../../../dist');
 
 let findDuplicatesById;
 

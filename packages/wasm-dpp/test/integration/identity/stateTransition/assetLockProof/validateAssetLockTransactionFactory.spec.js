@@ -3,7 +3,7 @@ const { Transaction, PrivateKey, Script } = require('@dashevo/dashcore-lib');
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
 const { expect } = require('chai');
-const { default: loadWasmDpp } = require('../../../../..');
+const { default: loadWasmDpp } = require('../../../../../dist');
 const { expectValidationError } = require('../../../../../lib/test/expect/expectError');
 
 describe('validateAssetLockTransactionFactory', () => {

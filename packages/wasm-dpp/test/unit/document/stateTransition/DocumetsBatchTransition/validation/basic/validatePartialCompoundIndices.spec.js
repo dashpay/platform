@@ -2,7 +2,7 @@ const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocuments
 const getContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
 
-const { default: loadWasmDpp } = require('../../../../../../..');
+const { default: loadWasmDpp } = require('../../../../../../../dist');
 
 let DataContract;
 let validatePartialCompoundIndices;

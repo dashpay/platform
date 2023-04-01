@@ -1,7 +1,7 @@
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const getIdentityUpdateTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityUpdateTransitionFixture');
 
-const { default: loadWasmDpp } = require('../../../../..');
+const { default: loadWasmDpp } = require('../../../../../dist');
 
 describe('applyIdentityUpdateTransition', () => {
   let applyIdentityUpdateTransition;

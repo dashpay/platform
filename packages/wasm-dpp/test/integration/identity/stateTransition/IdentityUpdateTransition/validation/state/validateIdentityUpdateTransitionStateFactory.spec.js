@@ -5,7 +5,7 @@ const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult')
 const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
 const getIdentityUpdateTransitionFixture = require('../../../../../../../lib/test/fixtures/getIdentityUpdateTransitionFixture');
 
-const { default: loadWasmDpp } = require('../../../../../../..');
+const { default: loadWasmDpp } = require('../../../../../../../dist');
 const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
 const generateRandomIdentifierAsync = require('../../../../../../../lib/test/utils/generateRandomIdentifierAsync');
 const getBlsAdapterMock = require('../../../../../../../lib/test/mocks/getBlsAdapterMock');

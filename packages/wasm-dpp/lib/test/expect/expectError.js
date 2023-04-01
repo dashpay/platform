@@ -1,6 +1,6 @@
 const { expect } = require('chai');
 
-const { default: loadWasmDpp } = require('../../..');
+const { default: loadWasmDpp } = require('../../../dist');
 
 const expectError = {
   /**

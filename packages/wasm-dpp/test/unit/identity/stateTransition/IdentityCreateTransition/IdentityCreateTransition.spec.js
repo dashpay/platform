@@ -3,7 +3,7 @@ const getChainAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/ge
 
 const stateTransitionTypes = require('@dashevo/dpp/lib/stateTransition/stateTransitionTypes');
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
-const { default: loadWasmDpp } = require('../../../../..');
+const { default: loadWasmDpp } = require('../../../../../dist');
 
 describe('IdentityCreateTransition', () => {
   let rawStateTransition;

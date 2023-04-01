@@ -9,7 +9,7 @@ const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
 const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
-const { default: loadWasmDpp } = require('../../..');
+const { default: loadWasmDpp } = require('../../../dist');
 
 let DataContractFactory;
 let DataContractValidator;

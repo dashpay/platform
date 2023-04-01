@@ -1,7 +1,7 @@
 const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
 const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
 
-const { default: loadWasmDpp } = require('../../../../../../..');
+const { default: loadWasmDpp } = require('../../../../../../../dist');
 
 describe('validatePublicKeysState', () => {
   let IdentityUpdatePublicKeysValidator;

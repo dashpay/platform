@@ -5,7 +5,7 @@ const {
   expectJsonSchemaError,
   expectValidationError,
 } = require('../../../../../../../lib/test/expect/expectError');
-const { default: loadWasmDpp } = require('../../../../../../..');
+const { default: loadWasmDpp } = require('../../../../../../../dist');
 
 describe('validateIdentityTopUpTransitionBasicFactory', () => {
   let rawStateTransition;

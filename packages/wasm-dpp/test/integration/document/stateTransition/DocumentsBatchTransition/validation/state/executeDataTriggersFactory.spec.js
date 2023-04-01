@@ -8,7 +8,7 @@ const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataCo
 
 const IdentifierJs = require('@dashevo/dpp/lib/identifier/Identifier');
 
-const { default: loadWasmDpp } = require('../../../../../../..');
+const { default: loadWasmDpp } = require('../../../../../../../dist');
 
 let DataContract;
 let DocumentTransition;

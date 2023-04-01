@@ -2,7 +2,7 @@ const { PrivateKey } = require('@dashevo/dashcore-lib');
 const getIdentityUpdateTransitionFixture = require('../../../../../../../lib/test/fixtures/getIdentityUpdateTransitionFixture');
 
 const { expectJsonSchemaError, expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
-const { default: loadWasmDpp } = require('../../../../../../..');
+const { default: loadWasmDpp } = require('../../../../../../../dist');
 const getBlsAdapterMock = require('../../../../../../../lib/test/mocks/getBlsAdapterMock');
 
 describe('validateIdentityUpdateTransitionBasicFactory', () => {

@@ -6,7 +6,7 @@ const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createSta
 const { expect } = require('chai');
 const { expectJsonSchemaError, expectValidationError } = require('../../../../../../lib/test/expect/expectError');
 
-const { default: loadWasmDpp } = require('../../../../../..');
+const { default: loadWasmDpp } = require('../../../../../../dist');
 
 describe('validateInstantAssetLockProofStructureFactory', () => {
   let rawProof;

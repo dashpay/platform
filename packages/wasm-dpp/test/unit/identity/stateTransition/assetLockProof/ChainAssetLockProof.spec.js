@@ -1,6 +1,6 @@
 const getChainAssetLockFixture = require('@dashevo/dpp/lib/test/fixtures/getChainAssetLockProofFixture');
 
-const { default: loadWasmDpp } = require('../../../../..');
+const { default: loadWasmDpp } = require('../../../../../dist');
 
 describe('ChainAssetLockProof', () => {
   let ChainAssetLockProof;

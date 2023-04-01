@@ -1,6 +1,6 @@
 const getInstantAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
 
-const { default: loadWasmDpp } = require('../../../../..');
+const { default: loadWasmDpp } = require('../../../../../dist');
 
 describe('InstantAssetLockProof', () => {
   let InstantAssetLockProof;

@@ -1,6 +1,6 @@
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
-const { default: loadWasmDpp } = require('../../../../../../..');
+const { default: loadWasmDpp } = require('../../../../../../../dist');
 
 describe('validateIndicesAreBackwardCompatible', () => {
   let oldDocumentsSchema;

@@ -4,7 +4,7 @@ const stateTransitionTypes = require('@dashevo/dpp/lib/stateTransition/stateTran
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 const JsDataContractUpdateTransition = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractUpdateTransition/DataContractUpdateTransition');
 
-const { default: loadWasmDpp } = require('../../../../..');
+const { default: loadWasmDpp } = require('../../../../../dist');
 
 describe('DataContractUpdateTransition', () => {
   let stateTransition;

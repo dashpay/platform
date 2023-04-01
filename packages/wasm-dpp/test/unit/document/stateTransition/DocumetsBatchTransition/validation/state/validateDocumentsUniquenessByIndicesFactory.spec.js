@@ -6,7 +6,7 @@ const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createSta
 
 const sinon = require('sinon');
 const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
-const { default: loadWasmDpp } = require('../../../../../../..');
+const { default: loadWasmDpp } = require('../../../../../../../dist');
 
 let DataContract;
 let Document;

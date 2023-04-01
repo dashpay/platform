@@ -1,6 +1,6 @@
 const bs58 = require('bs58');
 
-const { default: loadWasmDpp } = require('../../..');
+const { default: loadWasmDpp } = require('../../../dist');
 
 describe('generateDataContractId', () => {
   let ownerId;
