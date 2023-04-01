@@ -1,11 +1,14 @@
 use crate::error::Error;
-use dpp::{consensus::signature::{
-    InvalidIdentityPublicKeyTypeError, MissingPublicKeyError, PublicKeyIsDisabledError,
-    SignatureError,
-}, state_transition::validation::validate_state_transition_identity_signature::convert_to_consensus_signature_error};
 use dpp::state_transition::fee::operations::{Operation, SignatureVerificationOperation};
 use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionLike};
 use dpp::validation::SimpleValidationResult;
+use dpp::{
+    consensus::signature::{
+        InvalidIdentityPublicKeyTypeError, MissingPublicKeyError, PublicKeyIsDisabledError,
+        SignatureError,
+    },
+    state_transition::validation::validate_state_transition_identity_signature::convert_to_consensus_signature_error,
+};
 use dpp::{BlsModule, ProtocolError};
 use drive::dpp::identity::{IdentityPublicKey, KeyType};
 use drive::drive::identity::key::fetch::{

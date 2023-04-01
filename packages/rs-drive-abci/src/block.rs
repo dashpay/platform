@@ -27,6 +27,7 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
+use crate::abci::AbciError;
 use dpp::util::vec::vec_to_array;
 use drive::drive::block_info::BlockInfo;
 use drive::fee::epoch::EpochIndex;
@@ -34,10 +35,10 @@ use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::{Transaction, TransactionArg};
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
-use crate::abci::AbciError;
 
 use crate::abci::messages::BlockBeginRequest;
 use crate::error::Error;
+use crate::execution::block_proposal::BlockProposal;
 use crate::execution::fee_pools::epoch::EpochInfo;
 
 /// Block info
@@ -68,22 +69,27 @@ impl BlockStateInfo {
         }
     }
     /// Generate block state info based on Prepare Proposal request
-    pub fn from_prepare_proposal_request(
-        request: &proto::RequestPrepareProposal,
+    pub fn from_block_proposal(
+        proposal: &BlockProposal,
+        previous_block_time_ms: Option<u64>,
     ) -> BlockStateInfo {
         BlockStateInfo {
-            height: request.height as u64,
-            round: request.round as u32,
-            block_time_ms: request.time.clone().unwrap().to_milis(),
-            previous_block_time_ms: None, // TODO: implement properly
-            //<dyn Into<[u8; 32]>>::into()
-            proposer_pro_tx_hash: vec_to_array(&request.proposer_pro_tx_hash)
-                .expect("invalid proposer protxhash"),
-            core_chain_locked_height: request.core_chain_locked_height,
+            height: proposal.height,
+            round: proposal.round,
+            block_time_ms: proposal.block_time_ms,
+            previous_block_time_ms,
+            proposer_pro_tx_hash: proposal.proposer_pro_tx_hash,
+            core_chain_locked_height: proposal.core_chain_locked_height,
+            commit_hash: None,
         }
     }
     /// Does this match a height and round?
-    pub fn matches<I: TryInto<[u8;32]>>(&self, height: u64, round: u32, hash: I) -> Result<bool, Error> {
+    pub fn matches<I: TryInto<[u8; 32]>>(
+        &self,
+        height: u64,
+        round: u32,
+        hash: I,
+    ) -> Result<bool, Error> {
         let received_hash = hash.try_into()?;
         // the order is important here, don't verify commit hash before height and round
         Ok(self.height == height && self.round == round && self.commit_hash.ok_or(Error::Abci(AbciError::FinalizeBlockReceivedBeforeProcessing(format!("we received a block with hash {}, but don't have a current block being processed", hex::encode(received_hash)))))? == received_hash)

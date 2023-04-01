@@ -43,6 +43,7 @@ use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::fee::epoch::CreditsPerEpoch;
 use drive::fee::result::FeeResult;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use tenderdash_abci::proto::abci::ExecTxResult;
 
 /// A struct for handling chain initialization requests
 #[derive(Serialize, Deserialize)]
@@ -151,12 +152,14 @@ impl BlockFees {
             ..Default::default()
         }
     }
-    /// Get block fees from fee results
-    pub fn from_fee_result(fee_result: FeeResult) -> Self {
+}
+
+impl From<FeeResult> for BlockFees {
+    fn from(value: FeeResult) -> Self {
         Self {
-            storage_fee: fee_result.storage_fee,
-            processing_fee: fee_result.processing_fee,
-            refunds_per_epoch: fee_result.fee_refunds.sum_per_epoch(),
+            storage_fee: value.storage_fee,
+            processing_fee: value.processing_fee,
+            refunds_per_epoch: value.fee_refunds.sum_per_epoch(),
         }
     }
 }

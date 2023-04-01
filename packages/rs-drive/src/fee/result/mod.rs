@@ -51,6 +51,8 @@ use costs::storage_cost::removal::Identifier;
 use std::cmp::Ordering;
 #[cfg(feature = "full")]
 use std::collections::BTreeMap;
+use std::iter::Sum;
+use std::ops::Add;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod refunds;
@@ -67,6 +69,32 @@ pub struct FeeResult {
     pub fee_refunds: FeeRefunds,
     /// Removed bytes not needing to be refunded to identities
     pub removed_bytes_from_system: u32,
+}
+
+impl TryFrom<Vec<FeeResult>> for FeeResult {
+    type Error = Error;
+    fn try_from(value: Vec<FeeResult>) -> Result<Self, Self::Error> {
+        let mut aggregate_fee_result = FeeResult::default();
+        value.into_iter().try_for_each(|fee_result| {
+            aggregate_fee_result.checked_add_assign(fee_result)
+        })?;
+        Ok(aggregate_fee_result)
+    }
+}
+
+impl TryFrom<Vec<Option<FeeResult>>> for FeeResult {
+    type Error = Error;
+    fn try_from(value: Vec<Option<FeeResult>>) -> Result<Self, Self::Error> {
+        let mut aggregate_fee_result = FeeResult::default();
+        value.into_iter().try_for_each(|fee_result| {
+            if let Some(fee_result) = fee_result{
+                aggregate_fee_result.checked_add_assign(fee_result)
+            } else {
+                Ok(())
+            }
+        })?;
+        Ok(aggregate_fee_result)
+    }
 }
 
 #[cfg(feature = "full")]
