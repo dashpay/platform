@@ -307,9 +307,10 @@ where
             .unwrap_or_default();
         //
         // We do not put the transaction, because this event happens outside of a block
-        let validation_result = execution_event.and_then_validation(|execution_event| {
-            self.validate_fees_of_event(&execution_event, &block_info, None)
-        })?;
+        let validation_result =
+            execution_event.and_then_borrowed_validation(|execution_event| {
+                self.validate_fees_of_event(&execution_event, &block_info, None)
+            })?;
 
         // If there are no execution errors the code will be 0
         let code = validation_result

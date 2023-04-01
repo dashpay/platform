@@ -65,6 +65,20 @@ impl<TData: Clone> ValidationResult<TData> {
 
     pub fn and_then_validation<F, U: Clone, E>(self, f: F) -> Result<ValidationResult<U>, E>
         where
+            F: FnOnce(TData) -> Result<ValidationResult<U>, E>,
+    {
+        if let Some(data) = self.data {
+            let mut new_validation_result = f(data)?;
+            new_validation_result.add_errors(self.errors);
+            Ok(new_validation_result)
+        } else {
+            Ok(ValidationResult::<U>::new_with_errors(self.errors))
+        }
+    }
+
+
+    pub fn and_then_borrowed_validation<F, U: Clone, E>(self, f: F) -> Result<ValidationResult<U>, E>
+        where
             F: FnOnce(&TData) -> Result<ValidationResult<U>, E>,
     {
         if let Some(data) = self.data.as_ref() {

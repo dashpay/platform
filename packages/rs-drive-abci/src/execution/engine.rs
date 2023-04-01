@@ -227,12 +227,15 @@ where
             .map(|state_transition| {
                 let state_transition_execution_event =
                     validate_state_transition(self, &DriveBls {}, state_transition)?;
-                // we map the result to the actual execution
-                let execution_result: ExecutionResult = state_transition_execution_event
-                    .map_result(|execution_event| {
-                        self.execute_event(execution_event, block_info, transaction)
-                    })?
-                    .into();
+
+                let execution_result = if state_transition_execution_event.is_valid() {
+                    let execution_event = state_transition_execution_event.into_data()?;
+                    self.execute_event(execution_event, block_info, transaction)?
+                } else {
+                    ConsensusExecutionError(SimpleValidationResult::new_with_errors(
+                        state_transition_execution_event.errors,
+                    ))
+                };
                 if let SuccessfulPaidExecution(_, fee_result) = execution_result {
                     aggregate_fee_result.checked_add_assign(fee_result)?;
                 }
