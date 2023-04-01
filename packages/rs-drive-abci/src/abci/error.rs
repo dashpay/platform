@@ -5,6 +5,9 @@ pub enum AbciError {
     #[error("invalid state: {0}")]
     InvalidState(String),
     /// Wrong finalize block received
+    #[error("finalize block received before processing from Tenderdash: {0}")]
+    FinalizeBlockReceivedBeforeProcessing(String),
+    /// Wrong finalize block received
     #[error("wrong finalize block from Tenderdash: {0}")]
     WrongFinalizeBlockReceived(String),
     /// Bad request received from Tenderdash

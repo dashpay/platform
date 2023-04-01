@@ -34,8 +34,10 @@ use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::{Transaction, TransactionArg};
 use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
+use crate::abci::AbciError;
 
 use crate::abci::messages::BlockBeginRequest;
+use crate::error::Error;
 use crate::execution::fee_pools::epoch::EpochInfo;
 
 /// Block info
@@ -52,6 +54,8 @@ pub struct BlockStateInfo {
     pub proposer_pro_tx_hash: [u8; 32],
     /// Core chain locked height
     pub core_chain_locked_height: u32,
+    /// Block commit hash after processing
+    pub commit_hash: Option<[u8; 32]>,
 }
 
 impl BlockStateInfo {
@@ -79,8 +83,10 @@ impl BlockStateInfo {
         }
     }
     /// Does this match a height and round?
-    pub fn matches(&self, height: u64, round: u32) -> bool {
-        self.height == height && self.round == round
+    pub fn matches<I: TryInto<[u8;32]>>(&self, height: u64, round: u32, hash: I) -> Result<bool, Error> {
+        let received_hash = hash.try_into()?;
+        // the order is important here, don't verify commit hash before height and round
+        Ok(self.height == height && self.round == round && self.commit_hash.ok_or(Error::Abci(AbciError::FinalizeBlockReceivedBeforeProcessing(format!("we received a block with hash {}, but don't have a current block being processed", hex::encode(received_hash)))))? == received_hash)
     }
 }
 /// Block execution context

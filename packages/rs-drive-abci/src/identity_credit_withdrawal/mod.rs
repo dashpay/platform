@@ -43,16 +43,9 @@ where
     pub fn update_broadcasted_withdrawal_transaction_statuses(
         &self,
         last_synced_core_height: u32,
+        block_execution_context: &BlockExecutionContext,
         transaction: &Transaction,
     ) -> Result<(), Error> {
-        // Retrieve block execution context
-        let block_execution_context = self.block_execution_context.read().unwrap();
-        let block_execution_context = block_execution_context.as_ref().ok_or(Error::Execution(
-            ExecutionError::CorruptedCodeExecution(
-                "block execution context must be set in block begin handler",
-            ),
-        ))?;
-
         let block_info = BlockInfo {
             time_ms: block_execution_context.block_info.block_time_ms,
             height: block_execution_context.block_info.height,
@@ -181,16 +174,9 @@ where
     pub fn fetch_and_prepare_unsigned_withdrawal_transactions(
         &self,
         validator_set_quorum_hash: [u8; 32],
+        block_execution_context: &BlockExecutionContext,
         transaction: &Transaction,
     ) -> Result<Vec<Vec<u8>>, Error> {
-        // Retrieve block execution context
-        let block_execution_context = self.block_execution_context.read().unwrap();
-        let block_execution_context = block_execution_context.as_ref().ok_or(Error::Execution(
-            ExecutionError::CorruptedCodeExecution(
-                "block execution context must be set in block begin handler",
-            ),
-        ))?;
-
         let block_info = BlockInfo {
             time_ms: block_execution_context.block_info.block_time_ms,
             height: block_execution_context.block_info.height,

@@ -24,8 +24,15 @@ use drive::drive::Drive;
 use drive::error::Error::GroveDB;
 use drive::fee::result::FeeResult;
 use drive::grovedb::{Transaction, TransactionArg};
-use tenderdash_abci::proto::abci::ExecTxResult;
+use tenderdash_abci::proto::abci::{ExecTxResult, RequestPrepareProposal, ResponsePrepareProposal};
+use tenderdash_abci::proto::serializers::timestamp::ToMilis;
+use crate::execution::block_proposal::BlockProposal;
 use crate::execution::fee_pools::epoch::EpochInfo;
+
+pub struct BlockExecutionOutcome<'a> {
+    block_execution_context: BlockExecutionContext<'a>,
+    tx_results: Vec<ExecTxResult>,
+}
 
 impl<'a, C> Platform<'a, C>
 where
@@ -236,13 +243,12 @@ where
 
     pub fn run_proposal(
         &self,
-        proposed_app_version: u64,
-        proposer_pro_tx_hash: [u8; 32],
-        block_height: u64,
-        block_time_ms: u64,
-        raw_state_transitions: &Vec<Vec<u8>>,
+        proposal_info: BlockProposal,
         transaction: &Transaction,
-    ) -> Result<Vec<ExecTxResult>, Error> {
+    ) -> Result<BlockExecutionOutcome, Error> {
+        let BlockProposal {
+            proposed_app_version, proposer_pro_tx_hash, validator_set_quorum_hash, block_height, block_time_ms, raw_state_transitions
+        } = proposal_info;
         // We start by getting the epoch we are in
         let genesis_time_ms =
             self.get_genesis_time(block_height, block_time_ms, &transaction)?;
@@ -265,7 +271,7 @@ where
         let block_info = block_state_info.to_block_info(epoch_info.current_epoch_index);
         // FIXME: we need to calculate total hpmns based on masternode list (or remove hpmn_count if not needed)
         let total_hpmns = self.config.quorum_size as u32;
-        let block_execution_context = BlockExecutionContext {
+        let mut block_execution_context = BlockExecutionContext {
             current_transaction: transaction,
             block_info: block_state_info,
             epoch_info: epoch_info.clone(),
@@ -283,22 +289,33 @@ where
         // };
         let last_synced_core_height = block_execution_context.block_info.core_chain_locked_height;
 
-        self.block_execution_context
-            .write()
-            .unwrap()
-            .replace(block_execution_context);
-
         self.update_broadcasted_withdrawal_transaction_statuses(
             last_synced_core_height,
+            &block_execution_context,
             &transaction,
         )?;
 
         let unsigned_withdrawal_transaction_bytes = self
             .fetch_and_prepare_unsigned_withdrawal_transactions(
-                vec_to_array(&request.quorum_hash).expect("invalid quorum hash"),
+                validator_set_quorum_hash,
+                &block_execution_context,
                 &transaction,
             )?;
 
         let tx_results = self.process_raw_state_transitions(&raw_state_transitions)?;
+
+        self.pool_withdrawals_into_transactions_queue(&block_execution_context)?;
+        // Process fees
+        let process_block_fees_outcome =
+            self.process_block_fees(&block_info, &epoch_info, request.fees, &current_transaction)?;
+
+        let root_hash = self.drive.grove.root_hash(Some(&transaction)).unwrap()?;
+
+        block_execution_context.block_info.commit_hash = Some(root_hash);
+
+        Ok(BlockExecutionOutcome {
+            block_execution_context,
+            tx_results,
+        })
     }
 }

@@ -8,3 +8,5 @@ pub mod fee_pools;
 pub mod helpers;
 /// Protocol upgrade
 pub mod protocol_upgrade;
+/// The block proposal
+pub mod block_proposal;
