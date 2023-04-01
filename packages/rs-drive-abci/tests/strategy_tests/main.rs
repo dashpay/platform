@@ -561,7 +561,7 @@ pub(crate) fn continue_chain_for_strategy(
         .expect("expected to get balances");
 
     let end_epoch_index = platform
-        .block_execution_context
+        .block_execution_context_with_tx
         .read()
         .expect("lock is poisoned")
         .as_ref()

@@ -30,7 +30,7 @@
 //! Platform Init
 //!
 
-use crate::block::BlockExecutionContext;
+use crate::block::{BlockExecutionContext, BlockExecutionContextWithTransaction};
 use crate::config::PlatformConfig;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -59,7 +59,7 @@ pub struct Platform<'a, C> {
     /// Configuration
     pub config: PlatformConfig,
     /// Block execution context
-    pub block_execution_context: RwLock<Option<BlockExecutionContext<'a>>>,
+    pub block_execution_context_with_tx: RwLock<Option<BlockExecutionContextWithTransaction<'a>>>,
     /// Core RPC Client
     pub core_rpc: C,
 }
@@ -146,7 +146,7 @@ impl<'a, C> Platform<'a, C> {
             drive,
             state: RwLock::new(state),
             config,
-            block_execution_context: RwLock::new(None),
+            block_execution_context_with_tx: RwLock::new(None),
             core_rpc,
         })
     }

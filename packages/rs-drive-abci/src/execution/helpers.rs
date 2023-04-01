@@ -10,7 +10,7 @@ impl<'a, C> Platform<'a, C> {
         block_time_ms: u64,
         transaction: &Transaction,
     ) -> Result<u64, Error> {
-        if block_height == self.config.abci.genesis_height {
+        if block_height == self.config.abci.genesis_height as u64 {
             // we do not set the genesis time to the cache here,
             // instead that must be done after finalizing the block
             Ok(block_time_ms)

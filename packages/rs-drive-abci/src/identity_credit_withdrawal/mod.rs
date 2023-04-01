@@ -294,8 +294,8 @@ where
     pub fn pool_withdrawals_into_transactions_queue(
         &self,
         block_execution_context: &BlockExecutionContext,
+        transaction: &Transaction,
     ) -> Result<(), Error> {
-        let transaction = &block_execution_context.current_transaction;
         let block_info = BlockInfo {
             time_ms: block_execution_context.block_info.block_time_ms,
             height: block_execution_context.block_info.height,
@@ -549,6 +549,7 @@ mod tests {
     mod update_withdrawal_statuses {
         use std::sync::RwLock;
 
+        use crate::block::BlockExecutionContextWithTransaction;
         use crate::{block::BlockStateInfo, test::helpers::setup::TestPlatformBuilder};
         use dpp::identity::core_script::CoreScript;
         use dpp::platform_value::platform_value;
@@ -617,10 +618,10 @@ mod tests {
 
             let transaction = platform.drive.grove.start_transaction();
 
-            platform.block_execution_context = RwLock::new(Some(BlockExecutionContext {
-                current_transaction: transaction,
+            let block_execution_context = BlockExecutionContext {
                 block_info: BlockStateInfo {
                     height: 1,
+                    round: 0,
                     block_time_ms: 1,
                     previous_block_time_ms: Some(1),
                     proposer_pro_tx_hash: [
@@ -628,6 +629,7 @@ mod tests {
                         0, 0, 0, 0, 0, 0, 0,
                     ],
                     core_chain_locked_height: 96,
+                    commit_hash: None,
                 },
                 epoch_info: EpochInfo {
                     current_epoch_index: 1,
@@ -635,7 +637,7 @@ mod tests {
                     is_epoch_change: false,
                 },
                 hpmn_count: 100,
-            }));
+            };
 
             let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
                 .expect("to load system data contract");
@@ -705,7 +707,11 @@ mod tests {
             );
 
             platform
-                .update_broadcasted_withdrawal_transaction_statuses(95, Some(&transaction))
+                .update_broadcasted_withdrawal_transaction_statuses(
+                    95,
+                    &block_execution_context,
+                    &transaction,
+                )
                 .expect("to update withdrawal statuses");
 
             let documents = platform
@@ -751,6 +757,7 @@ mod tests {
         use drive::dpp::contracts::withdrawals_contract;
         use drive::tests::helpers::setup::setup_system_data_contract;
 
+        use crate::block::BlockExecutionContextWithTransaction;
         use crate::{block::BlockStateInfo, test::helpers::setup::TestPlatformBuilder};
 
         use super::*;
@@ -763,25 +770,30 @@ mod tests {
 
             let transaction = platform.drive.grove.start_transaction();
 
-            platform.block_execution_context = RwLock::new(Some(BlockExecutionContext {
-                current_transaction: transaction,
-                block_info: BlockStateInfo {
-                    height: 1,
-                    block_time_ms: 1,
-                    previous_block_time_ms: Some(1),
-                    proposer_pro_tx_hash: [
-                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                        0, 0, 0, 0, 0, 0, 0,
-                    ],
-                    core_chain_locked_height: 96,
-                },
-                epoch_info: EpochInfo {
-                    current_epoch_index: 1,
-                    previous_epoch_index: None,
-                    is_epoch_change: false,
-                },
-                hpmn_count: 100,
-            }));
+            platform.block_execution_context_with_tx =
+                RwLock::new(Some(BlockExecutionContextWithTransaction {
+                    current_transaction: transaction,
+                    block_execution_context: BlockExecutionContext {
+                        block_info: BlockStateInfo {
+                            height: 1,
+                            round: 0,
+                            block_time_ms: 1,
+                            previous_block_time_ms: Some(1),
+                            proposer_pro_tx_hash: [
+                                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            ],
+                            core_chain_locked_height: 96,
+                            commit_hash: None,
+                        },
+                        epoch_info: EpochInfo {
+                            current_epoch_index: 1,
+                            previous_epoch_index: None,
+                            is_epoch_change: false,
+                        },
+                        hpmn_count: 100,
+                    },
+                }));
 
             let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
                 .expect("to load system data contract");
@@ -840,10 +852,14 @@ mod tests {
                 Some(&transaction),
             );
 
-            let block_execution_context = platform.block_execution_context.write().unwrap();
-
+            let guarded_block_execution_context =
+                platform.block_execution_context_with_tx.write().unwrap();
+            let block_execution_context = guarded_block_execution_context.as_ref().unwrap();
             platform
-                .pool_withdrawals_into_transactions_queue(block_execution_context.as_ref().unwrap())
+                .pool_withdrawals_into_transactions_queue(
+                    &block_execution_context.block_execution_context,
+                    &block_execution_context.current_transaction,
+                )
                 .expect("to pool withdrawal documents into transactions");
 
             let updated_documents = platform

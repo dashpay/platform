@@ -34,7 +34,7 @@
 
 use crate::abci::server::AbciApplication;
 use crate::abci::AbciError;
-use crate::block::{BlockExecutionContext, BlockStateInfo};
+use crate::block::{BlockExecutionContext, BlockExecutionContextWithTransaction, BlockStateInfo};
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::{
     abci::messages::{
@@ -130,8 +130,6 @@ where
             tx_results,
         } = self.run_block_proposal((&request).try_into()?, &transaction)?;
 
-        block_execution_context.current_transaction = transaction;
-
         let app_hash = block_execution_context
             .block_info
             .commit_hash
@@ -139,10 +137,15 @@ where
                 "expected a commit hash in prepare proposal",
             )))?;
 
-        self.block_execution_context
+        let block_execution_context_with_tx = BlockExecutionContextWithTransaction {
+            block_execution_context,
+            current_transaction: transaction,
+        };
+
+        self.block_execution_context_with_tx
             .write()
             .unwrap()
-            .replace(block_execution_context);
+            .replace(block_execution_context_with_tx);
 
         // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
         let response = ResponsePrepareProposal {
@@ -166,8 +169,6 @@ where
             tx_results,
         } = self.run_block_proposal((&request).try_into()?, &transaction)?;
 
-        block_execution_context.current_transaction = transaction;
-
         let app_hash = block_execution_context
             .block_info
             .commit_hash
@@ -175,10 +176,15 @@ where
                 "expected a commit hash in prepare proposal",
             )))?;
 
-        self.block_execution_context
+        let block_execution_context_with_tx = BlockExecutionContextWithTransaction {
+            block_execution_context,
+            current_transaction: transaction,
+        };
+
+        self.block_execution_context_with_tx
             .write()
             .unwrap()
-            .replace(block_execution_context);
+            .replace(block_execution_context_with_tx);
 
         // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
         let response = ResponseProcessProposal {
@@ -205,7 +211,8 @@ where
         } = request;
 
         // Retrieve block execution context before we do anything else
-        let mut guarded_block_execution_context = self.block_execution_context.write().unwrap();
+        let mut guarded_block_execution_context =
+            self.block_execution_context_with_tx.write().unwrap();
         let block_execution_context =
             guarded_block_execution_context
                 .as_ref()
@@ -214,11 +221,12 @@ where
                 )))?;
 
         let BlockExecutionContext {
-            current_transaction,
             block_info,
             epoch_info,
             hpmn_count,
-        } = block_execution_context;
+        } = &block_execution_context.block_execution_context;
+
+        let current_transaction = &block_execution_context.current_transaction;
 
         //// Verification that commit is for our current executed block
         // When receiving the finalized block, we need to make sure that info matches our current block
@@ -228,10 +236,7 @@ where
             // we are on the wrong height or round
             return Err(Error::Abci(AbciError::WrongFinalizeBlockReceived(format!(
                 "received a block for h: {} r: {}, expected h: {} r: {}",
-                height,
-                round,
-                block_execution_context.block_info.height,
-                block_execution_context.block_info.round
+                height, round, block_info.height, block_info.round
             )))
             .into());
         }

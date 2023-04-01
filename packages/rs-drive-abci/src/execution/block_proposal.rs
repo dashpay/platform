@@ -102,13 +102,14 @@ impl<'a> TryFrom<&'a RequestProcessProposal> for BlockProposal<'a> {
                 "missing proposal time".to_string(),
             )))?
             .to_milis();
-        let proposer_pro_tx_hash: [u8; 32] = proposer_pro_tx_hash.try_into().map_err(|e| {
-            Error::Abci(AbciError::BadRequestDataSize(format!(
-                "invalid proposer protxhash: {}",
-                hex::encode(e)
-            )))
-        })?;
-        let validator_set_quorum_hash: [u8; 32] = quorum_hash.try_into().map_err(|e| {
+        let proposer_pro_tx_hash: [u8; 32] =
+            proposer_pro_tx_hash.clone().try_into().map_err(|e| {
+                Error::Abci(AbciError::BadRequestDataSize(format!(
+                    "invalid proposer protxhash: {}",
+                    hex::encode(e)
+                )))
+            })?;
+        let validator_set_quorum_hash: [u8; 32] = quorum_hash.clone().try_into().map_err(|e| {
             Error::Abci(AbciError::BadRequestDataSize(format!(
                 "invalid proposer protxhash: {}",
                 hex::encode(e)

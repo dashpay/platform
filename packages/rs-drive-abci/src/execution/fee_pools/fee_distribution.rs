@@ -233,7 +233,7 @@ impl<'a, CoreRPCLike> Platform<'a, CoreRPCLike> {
         &self,
         unpaid_epoch: &UnpaidEpoch,
         proposers_limit: u16,
-        transaction: TransactionArg,
+        transaction: &Transaction,
         batch: &mut GroveDbOpBatch,
     ) -> Result<u16, Error> {
         let mut drive_operations = vec![];
@@ -241,7 +241,7 @@ impl<'a, CoreRPCLike> Platform<'a, CoreRPCLike> {
 
         let total_fees = self
             .drive
-            .get_epoch_total_credits_for_distribution(&unpaid_epoch_tree, transaction)
+            .get_epoch_total_credits_for_distribution(&unpaid_epoch_tree, Some(transaction))
             .map_err(Error::Drive)?;
 
         let mut remaining_fees = total_fees;
@@ -251,7 +251,7 @@ impl<'a, CoreRPCLike> Platform<'a, CoreRPCLike> {
 
         let proposers = self
             .drive
-            .get_epoch_proposers(&unpaid_epoch_tree, proposers_limit, transaction)
+            .get_epoch_proposers(&unpaid_epoch_tree, proposers_limit, Some(transaction))
             .map_err(Error::Drive)?;
 
         let proposers_len = proposers.len() as u16;
@@ -271,7 +271,7 @@ impl<'a, CoreRPCLike> Platform<'a, CoreRPCLike> {
             let mut masternode_reward_leftover = total_masternode_reward;
 
             let documents =
-                self.get_reward_shares_list_for_masternode(&proposer_tx_hash, transaction)?;
+                self.get_reward_shares_list_for_masternode(&proposer_tx_hash, Some(transaction))?;
 
             for document in documents {
                 let pay_to_id: [u8; 32] = document
@@ -356,7 +356,7 @@ impl<'a, CoreRPCLike> Platform<'a, CoreRPCLike> {
         let mut operations = self.drive.convert_drive_operations_to_grove_operations(
             drive_operations,
             &BlockInfo::default(),
-            transaction,
+            Some(transaction),
         )?;
 
         batch.append(&mut operations);
@@ -1303,7 +1303,7 @@ mod tests {
                 .add_epoch_pool_to_proposers_payout_operations(
                     &unpaid_epoch,
                     proposers_count,
-                    Some(&transaction),
+                    &transaction,
                     &mut batch,
                 )
                 .expect("should distribute fees");

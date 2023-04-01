@@ -311,10 +311,12 @@ mod tests {
 
                 let block_info = BlockStateInfo {
                     height: block_height,
+                    round: 0,
                     block_time_ms,
                     previous_block_time_ms,
                     proposer_pro_tx_hash,
                     core_chain_locked_height: 1,
+                    commit_hash: None,
                 };
 
                 let epoch_info =
@@ -486,10 +488,12 @@ mod tests {
 
                 let block_info = BlockStateInfo {
                     height: block_height,
+                    round: 0,
                     block_time_ms,
                     previous_block_time_ms,
                     proposer_pro_tx_hash,
                     core_chain_locked_height: 1,
+                    commit_hash: None,
                 };
 
                 let epoch_info =

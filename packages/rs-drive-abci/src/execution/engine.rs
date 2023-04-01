@@ -29,8 +29,8 @@ use drive::grovedb::{Transaction, TransactionArg};
 use tenderdash_abci::proto::abci::{ExecTxResult, RequestPrepareProposal, ResponsePrepareProposal};
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 
-pub struct BlockExecutionOutcome<'a> {
-    block_execution_context: BlockExecutionContext<'a>,
+pub struct BlockExecutionOutcome {
+    block_execution_context: BlockExecutionContext,
     tx_results: Vec<ExecTxResult>,
 }
 
@@ -270,7 +270,7 @@ where
             .update_validator_proposed_app_version(
                 proposer_pro_tx_hash,
                 proposed_app_version as u32,
-                Some(&transaction),
+                Some(transaction),
             )
             .map_err(|e| {
                 Error::Execution(ExecutionError::UpdateValidatorProposedAppVersionError(e))
@@ -280,7 +280,6 @@ where
         // FIXME: we need to calculate total hpmns based on masternode list (or remove hpmn_count if not needed)
         let total_hpmns = self.config.quorum_size as u32;
         let mut block_execution_context = BlockExecutionContext {
-            current_transaction: transaction,
             block_info: block_state_info,
             epoch_info: epoch_info.clone(),
             hpmn_count: total_hpmns,
@@ -313,7 +312,7 @@ where
         let (block_fees, tx_results) =
             self.process_raw_state_transitions(&raw_state_transitions, &block_info, transaction)?;
 
-        self.pool_withdrawals_into_transactions_queue(&block_execution_context)?;
+        self.pool_withdrawals_into_transactions_queue(&block_execution_context, transaction)?;
 
         // while we have the state transitions executed, we now need to process the block fees
 
@@ -328,7 +327,7 @@ where
         let root_hash = self
             .drive
             .grove
-            .root_hash(Some(&transaction))
+            .root_hash(Some(transaction))
             .unwrap()
             .map_err(|e| Error::Drive(GroveDB(e)))?;
 

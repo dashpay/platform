@@ -9,7 +9,6 @@ use tenderdash_abci::proto::abci::ExecTxResult;
 pub type DryRunFeeResult = FeeResult;
 
 /// An execution result
-#[derive(Clone)]
 pub enum ExecutionResult {
     SuccessfulPaidExecution(DryRunFeeResult, FeeResult),
     SuccessfulFreeExecution,
@@ -64,20 +63,20 @@ impl From<ExecutionResult> for ExecTxResult {
     }
 }
 
-impl From<ValidationResult<ExecutionResult>> for ExecutionResult {
-    fn from(value: ValidationResult<ExecutionResult>) -> Self {
-        let ValidationResult { errors, data } = value;
-        if let Some(result) = data {
-            if !errors.is_empty() {
-                ConsensusExecutionError(SimpleValidationResult::new_with_errors(errors))
-            } else {
-                result
-            }
-        } else {
-            ConsensusExecutionError(SimpleValidationResult::new_with_errors(errors))
-        }
-    }
-}
+// impl From<ValidationResult<ExecutionResult>> for ExecutionResult {
+//     fn from(value: ValidationResult<ExecutionResult>) -> Self {
+//         let ValidationResult { errors, data } = value;
+//         if let Some(result) = data {
+//             if !errors.is_empty() {
+//                 ConsensusExecutionError(SimpleValidationResult::new_with_errors(errors))
+//             } else {
+//                 result
+//             }
+//         } else {
+//             ConsensusExecutionError(SimpleValidationResult::new_with_errors(errors))
+//         }
+//     }
+// }
 
 /// An execution event
 #[derive(Clone)]
