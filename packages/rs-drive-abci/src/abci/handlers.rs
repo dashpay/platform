@@ -337,7 +337,10 @@ where
             prove,
         } = request;
 
-        let data = self.drive.query_serialized(data, path, prove)?;
+        let data = self
+            .drive
+            .query_serialized(data, path, prove)
+            .map_err(Error::Drive)?;
 
         Ok(ResponseQuery {
             code: 0,
