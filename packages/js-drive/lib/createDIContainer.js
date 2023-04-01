@@ -29,7 +29,6 @@ const createABCIServer = require('@dashevo/abci');
 
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
-const calculateOperationFees = require('@dashevo/dpp/lib/stateTransition/fee/calculateOperationFees');
 const calculateStateTransitionFeeFactory = require('@dashevo/dpp/lib/stateTransition/fee/calculateStateTransitionFeeFactory');
 
 const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
@@ -48,7 +47,6 @@ const dashpayDocuments = require('@dashevo/dashpay-contract/schema/dashpay.schem
 
 const withdrawalsSystemIds = require('@dashevo/withdrawals-contract/lib/systemIds');
 const withdrawalsDocuments = require('@dashevo/withdrawals-contract/schema/withdrawals-documents.json');
-const calculateStateTransitionFeeFromOperationsFactory = require('@dashevo/dpp/lib/stateTransition/fee/calculateStateTransitionFeeFromOperationsFactory');
 
 const packageJSON = require('../package.json');
 
