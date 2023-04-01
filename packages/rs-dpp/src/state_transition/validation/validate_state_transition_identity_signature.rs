@@ -112,7 +112,7 @@ pub async fn validate_state_transition_identity_signature(
     Ok(validation_result)
 }
 
-fn convert_to_consensus_signature_error(
+pub fn convert_to_consensus_signature_error(
     error: ProtocolError,
 ) -> Result<ConsensusError, ProtocolError> {
     match error {

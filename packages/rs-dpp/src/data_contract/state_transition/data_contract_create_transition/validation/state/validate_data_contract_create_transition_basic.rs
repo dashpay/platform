@@ -23,7 +23,7 @@ use crate::{
 };
 
 lazy_static! {
-    static ref DATA_CONTRACT_CREATE_SCHEMA: JsonValue = serde_json::from_str(include_str!(
+    pub static ref DATA_CONTRACT_CREATE_SCHEMA: JsonValue = serde_json::from_str(include_str!(
         "../../../../../schema/data_contract/stateTransition/dataContractCreate.json"
     ))
     .unwrap();

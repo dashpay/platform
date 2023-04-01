@@ -257,7 +257,7 @@ where
     fn check_tx(&self, request: RequestCheckTx) -> Result<ResponseCheckTx, ResponseException> {
         let proto::RequestCheckTx { tx, r#type } = request;
         let state_transition = StateTransition::deserialize(tx.as_slice())?;
-        let execution_event = state_transition.validate_all(self)?;
+        let execution_event = state_transition.validate_state_transition(self)?;
 
         // We should run the execution event in dry run to see if we would have enough fees for the transaction
 
