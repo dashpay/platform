@@ -73,7 +73,7 @@ async fn should_add_and_disable_public_keys() {
         .with(eq(identity_id), eq(keys_to_add), always())
         .returning(|_, _, _| Ok(()));
 
-    let result = apply_identity_update_transition(&state_repository_mock, state_transition).await;
+    let result = apply_identity_update_transition(&state_repository_mock, &state_transition).await;
 
     assert!(result.is_ok());
 }
@@ -126,7 +126,7 @@ async fn should_add_and_disable_public_keys_on_dry_run() {
 
     state_transition.get_execution_context().enable_dry_run();
 
-    let result = apply_identity_update_transition(&state_repository_mock, state_transition).await;
+    let result = apply_identity_update_transition(&state_repository_mock, &state_transition).await;
 
     assert!(result.is_ok());
 }
