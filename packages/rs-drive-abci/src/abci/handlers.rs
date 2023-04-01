@@ -102,11 +102,13 @@ where
 
         self.create_genesis_state(
             genesis_time,
-            self.config.keys.clone().into(),
+            self.config.abci.keys.clone().into(),
             Some(&transaction),
         )?;
 
-        self.drive.commit_transaction(transaction)?;
+        self.drive
+            .commit_transaction(transaction)
+            .map_err(Error::Drive)?;
 
         let response = proto::ResponseInitChain {
             ..Default::default()
@@ -126,7 +128,7 @@ where
         let BlockExecutionOutcome {
             mut block_execution_context,
             tx_results,
-        } = self.run_block_proposal((&request).into(), &transaction)?;
+        } = self.run_block_proposal((&request).try_into()?, &transaction)?;
 
         block_execution_context.current_transaction = transaction;
 
@@ -162,7 +164,7 @@ where
         let BlockExecutionOutcome {
             mut block_execution_context,
             tx_results,
-        } = self.run_block_proposal((&request).into(), &transaction)?;
+        } = self.run_block_proposal((&request).try_into()?, &transaction)?;
 
         block_execution_context.current_transaction = transaction;
 
@@ -222,7 +224,7 @@ where
         // When receiving the finalized block, we need to make sure that info matches our current block
 
         // First let's check the basics, height, round and hash
-        if !block_info.matches(height as u64, round as u32, hash) {
+        if !block_info.matches(height as u64, round as u32, hash)? {
             // we are on the wrong height or round
             return Err(Error::Abci(AbciError::WrongFinalizeBlockReceived(format!(
                 "received a block for h: {} r: {}, expected h: {} r: {}",
@@ -288,8 +290,9 @@ where
     }
 
     fn check_tx(&self, request: RequestCheckTx) -> Result<ResponseCheckTx, ResponseException> {
-        let proto::RequestCheckTx { tx, r#type } = request;
-        let state_transition = StateTransition::deserialize(tx.as_slice())?;
+        let RequestCheckTx { tx, r#type } = request;
+        let state_transition =
+            StateTransition::deserialize(tx.as_slice()).map_err(Error::Protocol)?;
         let execution_event = state_transition.validate_state_transition(self)?;
 
         // We should run the execution event in dry run to see if we would have enough fees for the transaction

@@ -1,3 +1,5 @@
+use drive::error::Error as DriveError;
+
 /// Execution errors
 #[derive(Debug, thiserror::Error)]
 pub enum ExecutionError {
@@ -32,4 +34,8 @@ pub enum ExecutionError {
     /// Error
     #[error("corrupted credits not balanced error: {0}")]
     CorruptedCreditsNotBalanced(String),
+
+    /// Error
+    #[error("cannot update proposed app version: {0}")]
+    UpdateValidatorProposedAppVersionError(#[from] DriveError),
 }

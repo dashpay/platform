@@ -5,6 +5,7 @@ use crate::{config::PlatformConfig, error::Error, platform::Platform, rpc::core:
 use dpp::identity::TimestampMillis;
 use dpp::state_transition::StateTransition;
 use drive::query::TransactionArg;
+use std::panic::RefUnwindSafe;
 use std::{fmt::Debug, sync::MutexGuard};
 use tenderdash_abci::proto::abci::{
     RequestCheckTx, RequestProcessProposal, ResponseCheckTx, ResponseProcessProposal,
@@ -27,16 +28,16 @@ pub struct AbciApplication<'a, C> {
 /// Start ABCI server and process incoming connections.
 ///
 /// Should never return.
-pub fn start<C: CoreRPCLike>(config: &PlatformConfig, core_rpc: C) -> Result<(), Error> {
+pub fn start<C: CoreRPCLike + RefUnwindSafe>(
+    config: &PlatformConfig,
+    core_rpc: C,
+) -> Result<(), Error> {
     let bind_address = config.abci.bind_address.clone();
-    let abci_config = config.abci.clone();
 
     let platform: Platform<C> =
         Platform::open_with_client(&config.db_path, Some(config.clone()), core_rpc)?;
 
-    let abci = AbciApplication::new(abci_config, &platform)?;
-
-    let server = tenderdash_abci::start_server(&bind_address, abci)
+    let server = tenderdash_abci::start_server(&bind_address, platform)
         .map_err(|e| super::AbciError::from(e))?;
 
     loop {

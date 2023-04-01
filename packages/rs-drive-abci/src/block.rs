@@ -37,6 +37,7 @@ use tenderdash_abci::proto::abci as proto;
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 
 use crate::abci::messages::BlockBeginRequest;
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::block_proposal::BlockProposal;
 use crate::execution::fee_pools::epoch::EpochInfo;
@@ -90,7 +91,11 @@ impl BlockStateInfo {
         round: u32,
         hash: I,
     ) -> Result<bool, Error> {
-        let received_hash = hash.try_into()?;
+        let received_hash = hash.try_into().map_err(|_| {
+            Error::Abci(AbciError::BadRequestDataSize(
+                "can't convert hash as vec to [u8;32]".to_string(),
+            ))
+        })?;
         // the order is important here, don't verify commit hash before height and round
         Ok(self.height == height && self.round == round && self.commit_hash.ok_or(Error::Abci(AbciError::FinalizeBlockReceivedBeforeProcessing(format!("we received a block with hash {}, but don't have a current block being processed", hex::encode(received_hash)))))? == received_hash)
     }

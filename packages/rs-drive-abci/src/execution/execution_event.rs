@@ -18,11 +18,11 @@ pub enum ExecutionResult {
 
 // State transitions are never free, so we should filter out SuccessfulFreeExecution
 // So we use an option
-impl From<ExecutionResult> for Option<ExecTxResult> {
+impl From<ExecutionResult> for ExecTxResult {
     fn from(value: ExecutionResult) -> Self {
         match value {
             ExecutionResult::SuccessfulPaidExecution(dry_run_fee_result, fee_result) => {
-                Some(ExecTxResult {
+                ExecTxResult {
                     code: 0,
                     data: vec![],
                     log: "".to_string(),
@@ -31,16 +31,25 @@ impl From<ExecutionResult> for Option<ExecTxResult> {
                     gas_used: fee_result.total_base_fee() as SignedCredits,
                     events: vec![],
                     codespace: "".to_string(),
-                })
+                }
             }
-            ExecutionResult::SuccessfulFreeExecution => None,
+            ExecutionResult::SuccessfulFreeExecution => ExecTxResult {
+                code: 0,
+                data: vec![],
+                log: "".to_string(),
+                info: "".to_string(),
+                gas_wanted: 0,
+                gas_used: 0,
+                events: vec![],
+                codespace: "".to_string(),
+            },
             ExecutionResult::ConsensusExecutionError(validation_result) => {
                 let code = validation_result
                     .errors
                     .first()
                     .map(|error| error.code())
                     .unwrap_or(1);
-                Some(ExecTxResult {
+                ExecTxResult {
                     code,
                     data: vec![],
                     log: "".to_string(),
@@ -49,7 +58,7 @@ impl From<ExecutionResult> for Option<ExecTxResult> {
                     gas_used: 0,
                     events: vec![],
                     codespace: "".to_string(),
-                })
+                }
             }
         }
     }

@@ -134,19 +134,6 @@ where
         }
     }
 
-    fn execute_events(
-        &self,
-        events: Vec<ExecutionEvent>,
-        block_info: &BlockInfo,
-        transaction: &Transaction,
-    ) -> Result<FeeResult, Error> {
-        let mut total_fees = FeeResult::default();
-        for event in events {
-            self.execute_event(event, block_info, transaction)
-        }
-        Ok(total_fees)
-    }
-
     // /// Execute a block with various state transitions
     // pub fn execute_block(
     //     &self,
@@ -228,7 +215,8 @@ where
     ) -> Result<(FeeResult, Vec<ExecTxResult>), Error> {
         let state_transitions = StateTransition::deserialize_many(raw_state_transitions)?;
 
-        state_transitions
+        let mut aggregate_fee_result = FeeResult::default();
+        let exec_tx_results = state_transitions
             .into_iter()
             .map(|state_transition| {
                 let state_transition_execution_event =
@@ -239,16 +227,14 @@ where
                         self.execute_event(execution_event, block_info, transaction)
                     })?
                     .into();
-                let fee_result = if let SuccessfulPaidExecution(_, fee_result) = execution_result {
-                    Some(fee_result)
-                } else {
-                    None
-                };
+                if let SuccessfulPaidExecution(_, fee_result) = execution_result {
+                    aggregate_fee_result.checked_add_assign(fee_result)?;
+                }
 
-                (fee_result, execution_result.into())
+                Ok(execution_result.into())
             })
-            .unzip()
-            .collect::<Result<(FeeResult, Vec<ExecTxResult>), Error>>()
+            .collect::<Result<Vec<ExecTxResult>, Error>>()?;
+        Ok((aggregate_fee_result, exec_tx_results))
     }
 
     pub fn run_block_proposal(
@@ -268,8 +254,13 @@ where
         } = block_proposal;
         // We start by getting the epoch we are in
         let genesis_time_ms = self.get_genesis_time(height, block_time_ms, &transaction)?;
+
+        let state = self.state.read().unwrap();
+        let previous_block_time_ms = state.last_block_info.map(|block_info| block_info.time_ms);
+        drop(state);
         // Init block execution context
-        let block_state_info = BlockStateInfo::from_block_proposal(&block_proposal);
+        let block_state_info =
+            BlockStateInfo::from_block_proposal(&block_proposal, previous_block_time_ms);
 
         let epoch_info =
             EpochInfo::from_genesis_time_and_block_info(genesis_time_ms, &block_state_info)?;
@@ -281,7 +272,9 @@ where
                 proposed_app_version as u32,
                 Some(&transaction),
             )
-            .map_err(|e| format!("cannot update proposed app version: {}", e))?;
+            .map_err(|e| {
+                Error::Execution(ExecutionError::UpdateValidatorProposedAppVersionError(e))
+            })?;
 
         let block_info = block_state_info.to_block_info(epoch_info.current_epoch_index);
         // FIXME: we need to calculate total hpmns based on masternode list (or remove hpmn_count if not needed)
@@ -332,7 +325,12 @@ where
             transaction,
         )?;
 
-        let root_hash = self.drive.grove.root_hash(Some(&transaction)).unwrap()?;
+        let root_hash = self
+            .drive
+            .grove
+            .root_hash(Some(&transaction))
+            .unwrap()
+            .map_err(|e| Error::Drive(GroveDB(e)))?;
 
         block_execution_context.block_info.commit_hash = Some(root_hash);
 

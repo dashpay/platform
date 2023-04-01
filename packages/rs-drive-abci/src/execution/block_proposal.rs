@@ -49,11 +49,15 @@ impl<'a> TryFrom<&'a RequestPrepareProposal> for BlockProposal<'a> {
                 "request is missing block time".to_string(),
             ))?
             .to_milis();
-        let proposer_pro_tx_hash: [u8; 32] = proposer_pro_tx_hash.try_into().map_err(|e| {
-            AbciError::BadRequest(format!("invalid proposer proTxHash: {}", hex::encode(e)))
-        })?;
-        let validator_set_quorum_hash: [u8; 32] = quorum_hash.try_into().map_err(|e| {
-            AbciError::BadRequest(format!(
+        let proposer_pro_tx_hash: [u8; 32] =
+            proposer_pro_tx_hash.clone().try_into().map_err(|e| {
+                AbciError::BadRequestDataSize(format!(
+                    "invalid proposer proTxHash: {}",
+                    hex::encode(e)
+                ))
+            })?;
+        let validator_set_quorum_hash: [u8; 32] = quorum_hash.clone().try_into().map_err(|e| {
+            AbciError::BadRequestDataSize(format!(
                 "invalid validator set quorumHash: {}",
                 hex::encode(e)
             ))
@@ -92,13 +96,24 @@ impl<'a> TryFrom<&'a RequestProcessProposal> for BlockProposal<'a> {
             version,
             quorum_hash,
         } = value;
-        let block_time_ms = time.as_ref().ok_or("missing proposal time")?.to_milis();
-        let proposer_pro_tx_hash: [u8; 32] = proposer_pro_tx_hash
-            .try_into()
-            .map_err(|e| format!("invalid proposer protxhash: {}", hex::encode(e)))?;
-        let validator_set_quorum_hash: [u8; 32] = quorum_hash
-            .try_into()
-            .map_err(|e| format!("invalid proposer protxhash: {}", hex::encode(e)))?;
+        let block_time_ms = time
+            .as_ref()
+            .ok_or(Error::Abci(AbciError::BadRequest(
+                "missing proposal time".to_string(),
+            )))?
+            .to_milis();
+        let proposer_pro_tx_hash: [u8; 32] = proposer_pro_tx_hash.try_into().map_err(|e| {
+            Error::Abci(AbciError::BadRequestDataSize(format!(
+                "invalid proposer protxhash: {}",
+                hex::encode(e)
+            )))
+        })?;
+        let validator_set_quorum_hash: [u8; 32] = quorum_hash.try_into().map_err(|e| {
+            Error::Abci(AbciError::BadRequestDataSize(format!(
+                "invalid proposer protxhash: {}",
+                hex::encode(e)
+            )))
+        })?;
         Ok(Self {
             height: *height as u64,
             round: *round as u32,
