@@ -1,5 +1,3 @@
-const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
-
 const {
   tendermint: {
     abci: {
@@ -14,8 +12,9 @@ const {
 const Long = require('long');
 
 class BlockExecutionContext {
-  constructor() {
+  constructor(dppWasm) {
     this.reset();
+    this.dppWasm = dppWasm;
   }
 
   /**
@@ -316,7 +315,7 @@ class BlockExecutionContext {
    */
   fromObject(object) {
     this.dataContracts = object.dataContracts
-      .map((rawDataContract) => new DataContract(rawDataContract));
+      .map((rawDataContract) => new this.dppWasm.DataContract(rawDataContract));
     this.lastCommitInfo = CommitInfo.fromObject(object.lastCommitInfo);
     this.contextLogger = object.contextLogger;
     this.epochInfo = object.epochInfo;
