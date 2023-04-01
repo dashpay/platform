@@ -9,12 +9,13 @@ class DPPValidationAbciError extends AbstractAbciError {
    * @param {AbstractConsensusError} consensusError
    */
   constructor(message, consensusError) {
-    const args = consensusError.getConstructorArguments();
+    // TODO(wasm-dpp): port?
+    // const args = consensusError.getConstructorArguments();
 
     const data = { };
-    if (args.length > 0) {
-      data.arguments = args;
-    }
+    // if (args.length > 0) {
+    //   data.arguments = args;
+    // }
 
     super(consensusError.getCode(), message, data);
   }

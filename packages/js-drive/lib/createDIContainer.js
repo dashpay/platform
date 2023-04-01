@@ -633,7 +633,7 @@ function createDIContainer(blsSignatures, dppWasm, options) {
     calculateStateTransitionFeeFromOperations:
     asValue(dppWasm.calculateStateTransitionFeeFromOperations),
 
-    calculateStateTransitionFee: asFunction(calculateStateTransitionFee),
+    calculateStateTransitionFee: asValue(dppWasm.calculateStateTransitionFee),
 
     stateRepository: asFunction((
       identityRepository,
@@ -718,12 +718,12 @@ function createDIContainer(blsSignatures, dppWasm, options) {
     unserializeStateTransition: asFunction((
       dpp,
       noopLogger,
-    ) => unserializeStateTransitionFactory(dpp, noopLogger)).singleton(),
+    ) => unserializeStateTransitionFactory(dpp, noopLogger, dppWasm)).singleton(),
 
     transactionalUnserializeStateTransition: asFunction((
       transactionalDpp,
       noopLogger,
-    ) => unserializeStateTransitionFactory(transactionalDpp, noopLogger)).singleton(),
+    ) => unserializeStateTransitionFactory(transactionalDpp, noopLogger, dppWasm)).singleton(),
 
     dpp: asFunction((DashPlatformProtocol, stateRepository, dppOptions, blsSignatures) => (
       new DashPlatformProtocol(blsSignatures, stateRepository, { generate: () => Buffer.alloc(32) })
