@@ -17,13 +17,15 @@ let Identifier;
 export async function get(this: Platform, id: typeof Identifier | string): Promise<any> {
   await this.initialize();
 
+  const identifier = Identifier.from(id);
+
   // TODO(wasm): expose Metadata from dedicated module that handles all WASM-DPP types
   const { Metadata } = await loadWasmDpp();
 
   let identityResponse;
   try {
     identityResponse = await this.client.getDAPIClient().platform
-      .getIdentity(id);
+      .getIdentity(identifier);
   } catch (e) {
     if (e instanceof NotFoundError) {
       return null;
