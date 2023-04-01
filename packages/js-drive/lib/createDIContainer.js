@@ -29,9 +29,6 @@ const createABCIServer = require('@dashevo/abci');
 
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
-const calculateStateTransitionFeeFactory = require('@dashevo/dpp/lib/stateTransition/fee/calculateStateTransitionFeeFactory');
-
-const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
 const featureFlagsSystemIds = require('@dashevo/feature-flags-contract/lib/systemIds');
 
 const featureFlagsDocuments = require('@dashevo/feature-flags-contract/schema/feature-flags-documents.json');
@@ -629,14 +626,14 @@ function createDIContainer(blsSignatures, dppWasm, options) {
 
     DashPlatformProtocol: asFunction((dppWasm) => dppWasm.DashPlatformProtocol),
 
-    decodeProtocolEntity: asFunction(decodeProtocolEntityFactory),
+    decodeProtocolEntity: asValue(dppWasm.decodeProtocolEntity),
 
     calculateOperationFees: asValue(dppWasm.calculateOperationFees),
 
     calculateStateTransitionFeeFromOperations:
     asValue(dppWasm.calculateStateTransitionFeeFromOperations),
 
-    calculateStateTransitionFee: asFunction(calculateStateTransitionFeeFactory),
+    calculateStateTransitionFee: asFunction(calculateStateTransitionFee),
 
     stateRepository: asFunction((
       identityRepository,
