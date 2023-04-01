@@ -52,8 +52,8 @@ use drive::fee::credits::SignedCredits;
 use drive::grovedb::{Transaction, TransactionArg};
 use tenderdash_abci::proto::abci::{
     ExecTxResult, RequestCheckTx, RequestFinalizeBlock, RequestInitChain, RequestPrepareProposal,
-    RequestProcessProposal, ResponseCheckTx, ResponseFinalizeBlock, ResponseInitChain,
-    ResponsePrepareProposal, ResponseProcessProposal,
+    RequestProcessProposal, RequestQuery, ResponseCheckTx, ResponseFinalizeBlock,
+    ResponseInitChain, ResponsePrepareProposal, ResponseProcessProposal, ResponseQuery,
 };
 use tenderdash_abci::proto::{
     abci::{self as proto, ResponseException},
@@ -335,36 +335,22 @@ where
             priority: 0,
         })
     }
-
     //
-    // fn process_proposal(
-    //     &self,
-    //     _request: RequestProcessProposal,
-    // ) -> Result<ResponseProcessProposal, ResponseException> {
-    //     let platform = self.platform();
-    //     let transaction = self.transaction();
-    //     let response = platform.prepare_proposal(&request, transaction)?;
+    // fn query(&self, request: RequestQuery) -> Result<ResponseQuery, ResponseException> {
+    //     let RequestQuery {
+    //         data, path, height, prove
+    //     } = request;
     //
-    //     tracing::info!(
-    //         method = "prepare_proposal",
-    //         height = request.height,
-    //         "prepare proposal executed",
-    //     );
-    //     Ok(response)
-    // }
-    //
-    // fn check_tx(&self, request: RequestCheckTx) -> Result<ResponseCheckTx, ResponseException> {
-    //     let RequestCheckTx { tx, .. } = request;
-    //     let state_transition = StateTransition::from(tx);
-    //
-    //     ResponseCheckTx {
+    //     ResponseQuery {
     //         code: 0,
-    //         data: vec![],
+    //         log: "".to_string(),
     //         info: "".to_string(),
-    //         gas_wanted: 0,
+    //         index: 0,
+    //         key: vec![],
+    //         value: vec![],
+    //         proof_ops: None,
+    //         height,
     //         codespace: "".to_string(),
-    //         sender: "".to_string(),
-    //         priority: 0,
     //     }
     // }
 }
