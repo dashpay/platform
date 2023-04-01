@@ -21,6 +21,8 @@ export async function topUp(
 
   const { client } = this;
 
+  identityId = Identifier.from(identityId);
+
   const account = await client.getWalletAccount();
 
   const {

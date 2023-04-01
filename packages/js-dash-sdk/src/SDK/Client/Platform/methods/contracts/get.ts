@@ -22,18 +22,13 @@ export async function get(this: Platform, identifier: ContractIdentifier): Promi
   // TODO(wasm): expose Metadata from dedicated module that handles all WASM-DPP types
   ({ Metadata, Identifier } = await loadWasmDpp());
 
-  // TODO: Identifier/buffer issue - hidden Identifier bug.
-  //  Without Buffer.from(identifier.toBuffer()) will throw an error
-
-  const contractId : typeof Identifier = Identifier.from(identifier.toBuffer());
+  const contractId : typeof Identifier = Identifier.from(identifier);
 
   // Try to get contract from the cache
   // eslint-disable-next-line
   for (const appName of this.client.getApps().getNames()) {
     const appDefinition = this.client.getApps().get(appName);
-    // TODO: Identifier/buffer issue - hidden Identifier bug.
-    //  Without Buffer.from(contractId.toBuffer()) will throw an error
-    if (appDefinition.contractId.equals(contractId.toBuffer()) && appDefinition.contract) {
+    if (appDefinition.contractId.equals(contractId) && appDefinition.contract) {
       return appDefinition.contract;
     }
   }
@@ -41,10 +36,8 @@ export async function get(this: Platform, identifier: ContractIdentifier): Promi
   // Fetch contract otherwise
   let dataContractResponse;
   try {
-    // TODO: Identifier/buffer issue - hidden Identifier bug.
-    //  Without .toBuffer() will throw an error
     dataContractResponse = await this.client.getDAPIClient()
-      .platform.getDataContract(contractId.toBuffer());
+      .platform.getDataContract(contractId);
   } catch (e) {
     if (e instanceof NotFoundError) {
       return null;
@@ -72,9 +65,7 @@ export async function get(this: Platform, identifier: ContractIdentifier): Promi
   // eslint-disable-next-line
   for (const appName of this.client.getApps().getNames()) {
     const appDefinition = this.client.getApps().get(appName);
-    // TODO: Identifier/buffer issue - hidden Identifier bug.
-    //  Without Buffer.from(contractId.toBuffer()) will throw an error
-    if (appDefinition.contractId.equals(contractId.toBuffer())) {
+    if (appDefinition.contractId.equals(contractId)) {
       appDefinition.contract = contract;
     }
   }
