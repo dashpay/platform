@@ -39,7 +39,11 @@ use dpp::identity::TimestampMillis;
 use dpp::state_transition::StateTransition;
 use drive::error::Error::GroveDB;
 use drive::fee::credits::SignedCredits;
-use tenderdash_abci::proto::abci::{RequestCheckTx, RequestFinalizeBlock, RequestInitChain, RequestPrepareProposal, RequestProcessProposal, RequestQuery, ResponseCheckTx, ResponseFinalizeBlock, ResponseInitChain, ResponsePrepareProposal, ResponseProcessProposal, ResponseQuery};
+use tenderdash_abci::proto::abci::{
+    RequestCheckTx, RequestFinalizeBlock, RequestInitChain, RequestPrepareProposal,
+    RequestProcessProposal, RequestQuery, ResponseCheckTx, ResponseFinalizeBlock,
+    ResponseInitChain, ResponsePrepareProposal, ResponseProcessProposal, ResponseQuery,
+};
 use tenderdash_abci::proto::{
     abci::{self as proto, ResponseException},
     serializers::timestamp::ToMilis,
@@ -327,7 +331,10 @@ where
 
     fn query(&self, request: RequestQuery) -> Result<ResponseQuery, ResponseException> {
         let RequestQuery {
-            data, path, height, prove
+            data,
+            path,
+            height,
+            prove,
         } = request;
 
         let data = self.drive.query_serialized(data, path, prove)?;
