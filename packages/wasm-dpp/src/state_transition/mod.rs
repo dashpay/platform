@@ -101,6 +101,11 @@ impl StateTransitionExecutionContextWasm {
             })
             .collect()
     }
+
+    #[wasm_bindgen(js_name=clearDryOperations)]
+    pub fn clear_dry_run_operations(&self) {
+        self.0.clear_dry_run_operations();
+    }
 }
 
 impl Inner for StateTransitionExecutionContextWasm {

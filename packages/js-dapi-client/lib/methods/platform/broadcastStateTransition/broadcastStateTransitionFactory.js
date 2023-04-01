@@ -22,9 +22,7 @@ function broadcastStateTransitionFactory(grpcTransport) {
    */
   async function broadcastStateTransition(stateTransition, options = {}) {
     const broadcastStateTransitionRequest = new BroadcastStateTransitionRequest();
-    // TODO: Identifier/buffer issue - problem with Buffer shim:
-    //  Without Buffer.from it throws AssertionError: Failure: Type not convertible to Uint8Array.
-    broadcastStateTransitionRequest.setStateTransition(Buffer.from(stateTransition));
+    broadcastStateTransitionRequest.setStateTransition(stateTransition);
 
     let lastError;
 

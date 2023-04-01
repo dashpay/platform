@@ -22,11 +22,8 @@ export async function get(this: Platform, id: typeof Identifier | string): Promi
 
   let identityResponse;
   try {
-    // TODO: Identifier/buffer issue - hidden Identifier bug.
-    //  Without toBuffer() it most probably wont
-    //  be recognized on DAPI client side
     identityResponse = await this.client.getDAPIClient().platform
-      .getIdentity(id.toBuffer());
+      .getIdentity(id);
   } catch (e) {
     if (e instanceof NotFoundError) {
       return null;
