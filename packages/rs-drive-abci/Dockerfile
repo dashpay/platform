@@ -7,47 +7,49 @@
 # - build - actual build process
 # - release - final image
 #
-# We use Debian as base, because Alpine causes segmentation fault in git2 rust crate.
+# The following build arguments can be provided using --build-arg:
+# - CARGO_BUILD_PROFILE - set to `release` to build final binary, without debugging information
+# - SCCACHE_GHA_ENABLED, ACTIONS_CACHE_URL, ACTIONS_RUNTIME_TOKEN - store sccache caches inside github actions
+#   cache instead of Docker cache mounts (not tested yet)
+# - PROTOC_ARCH - select architecture of protobuf compiler; one of: `x86_64` (default), `aarch_64`
+# - ALPINE_VERSION - use different version of Alpine base image; requires also rust:apline... 
+#   image to be available
+# - USERNAME, USER_UID, USER_GID - specification of user used to run the binary
+#
+ARG ALPINE_VERSION=3.17
 
 #
 # DEPS: INSTALL AND CACHE DEPENDENCIES
 #
-FROM rust:bullseye as deps
-
-LABEL maintainer="Dash Developers <dev@dash.org>"
-LABEL description="Drive ABCI Rust"
-
-RUN --mount=type=cache,sharing=locked,target=/var/lib/apt/lists \
-    --mount=type=cache,sharing=locked,target=/var/cache/apt \
-    rm -f /etc/apt/apt.conf.d/docker-clean \
-    && apt-get update \
-    && apt-get install --yes \
-        build-essential \
-        libclang-dev \
-        libssl-dev \
-        protobuf-compiler \
-        git \
-        wget \
-        unzip \
-        bash
-
-SHELL ["/bin/bash", "-c"]
-
-#
-# Install sccache - build cache for Rust
-#
-ARG SCCACHE_URL="https://github.com/mozilla/sccache/releases/download/v0.4.0/sccache-v0.4.0-x86_64-unknown-linux-musl.tar.gz"
-RUN wget -q -O /tmp/sccache.tar.gz ${SCCACHE_URL} \
-    && mkdir -p /tmp/sccache \
-    && tar -z -C /tmp/sccache -xf /tmp/sccache.tar.gz \
-    && cp /tmp/sccache/sccache*/sccache /usr/bin/sccache \
-    && rm -r /tmp/sccache.tar.gz /tmp/sccache
+FROM rust:alpine${ALPINE_VERSION} as deps
 
 #
 # Update Rust runtime
 #
 ARG CARGO_BUILD_PROFILE=debug
 RUN rustup install stable
+
+RUN apk add --no-cache \
+        alpine-sdk \
+        bash \
+        clang-dev \
+        git \
+        linux-headers \
+        openssl-dev \
+        perl \
+        sccache \
+        unzip \
+        wget
+
+SHELL ["/bin/bash", "-c"]
+
+# Install protoc - protobuf compiler
+# The one shipped with Alpine does not work
+ARG PROTOC_ARCH=x86_64
+RUN wget -q -O /tmp/protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v22.2/protoc-22.2-linux-${PROTOC_ARCH}.zip && \
+    unzip -qd /opt/protoc /tmp/protoc.zip && \
+    rm /tmp/protoc.zip && \
+    ln -s /opt/protoc/bin/protoc /usr/bin/
 
 #
 # EXECUTE BUILD
@@ -61,32 +63,41 @@ COPY . .
 #
 # Configure sccache
 #
-
-# Set RUSTC_WRAPPER=/usr/bin/sccache to enable `sccache` caching.
-ARG RUSTC_WRAPPER=/usr/bin/sccache
 # Set args below to use Github Actions cache; see https://github.com/mozilla/sccache/blob/main/docs/GHA.md
 ARG SCCACHE_GHA_ENABLED
 ARG ACTIONS_CACHE_URL
 ARG ACTIONS_RUNTIME_TOKEN
+
+# Activate sccache for Rust code
+ENV RUSTC_WRAPPER=/usr/bin/sccache
 # Disable incremental buildings, not supported by sccache
-ARG CARGO_INCREMENTAL=false
+ENV CARGO_INCREMENTAL=false
 
 # Run the build, with extensive caching.
+# 
+# Note:
+# 1. All these --mount... are to cache reusable info between runs.
 # See https://doc.rust-lang.org/cargo/guide/cargo-home.html#caching-the-cargo-home-in-ci
-#    --mount=type=cache,sharing=private,target=/usr/src/platform/target \
+# 2. We add `--config net.git-fetch-with-cli=true` to address ARM build issue,
+# see https://github.com/rust-lang/cargo/issues/10781#issuecomment-1441071052
+# 3. To preserve space on github cache, we call `cargo clean`.
 RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/.crates.toml \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/.crates2.json \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
-    cargo build -p drive-abci \
-    && cp /usr/src/platform/target/${CARGO_BUILD_PROFILE}/drive-abci /usr/src/platform/drive-abci
+    cargo build \
+        --package drive-abci \
+        --config net.git-fetch-with-cli=true && \
+    cp /usr/src/platform/target/${CARGO_BUILD_PROFILE}/drive-abci /usr/src/platform/drive-abci && \
+    cargo clean
 
 #
 # FINAL IMAGE
 #
-FROM debian:bullseye-slim AS release
+FROM alpine:${ALPINE_VERSION} AS release
+
+LABEL maintainer="Dash Developers <dev@dash.org>"
+LABEL description="Drive ABCI Rust"
 
 VOLUME /var/lib/platform
 
@@ -106,9 +117,9 @@ COPY --from=build /usr/src/platform/packages/rs-drive-abci/.env.example /var/lib
 ARG USERNAME=platform
 ARG USER_UID=1000
 ARG USER_GID=$USER_UID
-RUN groupadd --gid $USER_GID $USERNAME \
-    && useradd --uid $USER_UID --gid $USER_GID --home /var/lib/platform/rs-drive-abci --create-home $USERNAME \
-    && chown -R $USER_UID:$USER_GID /var/lib/platform/rs-drive-abci 
+RUN addgroup -g $USER_GID $USERNAME && \
+    adduser -D -u $USER_UID -G $USERNAME -h /var/lib/platform/rs-drive-abci $USERNAME && \
+    chown -R $USER_UID:$USER_GID /var/lib/platform/rs-drive-abci 
 
 USER $USERNAME
 
