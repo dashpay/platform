@@ -21,6 +21,12 @@ pub struct IdentifierBytes32(pub [u8; 32]);
 )]
 pub struct Identifier(pub IdentifierBytes32);
 
+impl AsRef<[u8]> for Identifier {
+    fn as_ref(&self) -> &[u8] {
+        &(self.0.0)
+    }
+}
+
 impl Serialize for IdentifierBytes32 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where

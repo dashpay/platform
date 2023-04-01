@@ -9,6 +9,7 @@ use tenderdash_abci::proto::abci::ExecTxResult;
 pub type DryRunFeeResult = FeeResult;
 
 /// An execution result
+#[derive(Clone)]
 pub enum ExecutionResult {
     SuccessfulPaidExecution(DryRunFeeResult, FeeResult),
     SuccessfulFreeExecution,
@@ -70,6 +71,7 @@ impl From<ValidationResult<ExecutionResult>> for ExecutionResult {
 }
 
 /// An execution event
+#[derive(Clone)]
 pub enum ExecutionEvent<'a> {
     /// A drive event that is paid by an identity
     PaidDriveEvent {

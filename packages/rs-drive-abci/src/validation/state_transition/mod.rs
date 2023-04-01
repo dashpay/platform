@@ -3,66 +3,76 @@ mod data_contract_update;
 mod documents_batch;
 mod identity_create;
 mod identity_credit_withdrawal;
+mod identity_top_up;
 mod identity_update;
 mod key_validation;
 
+use dpp::state_transition::{
+    StateTransition, StateTransitionAction, StateTransitionIdentitySigned,
+};
+use dpp::validation::{SimpleValidationResult, ValidationResult};
+use drive::drive::Drive;
+
+use self::key_validation::validate_state_transition_identity_signature;
+
+use super::bls::DriveBls;
 use crate::error::Error;
 use crate::execution::execution_event::ExecutionEvent;
 use crate::platform::Platform;
-use dpp::consensus::ConsensusError;
-use dpp::state_transition::StateTransitionAction::{
-    DataContractCreateAction, DataContractUpdateAction, DocumentsBatchAction, IdentityCreateAction,
-    IdentityCreditWithdrawalAction, IdentityTopUpAction, IdentityUpdateAction,
-};
-use dpp::state_transition::{
-    StateTransition, StateTransitionAction, StateTransitionIdentitySigned, StateTransitionLike,
-};
-use dpp::validation::{SimpleValidationResult, ValidationResult};
-use dpp::ProtocolError;
-use drive::drive::Drive;
 
-pub trait StateTransitionValidation<C>: StateTransitionLike {
-    fn validate_all(
-        &self,
-        platform: &Platform<C>,
-    ) -> Result<ValidationResult<ExecutionEvent>, Error> {
-        let result = self.validate_type()?;
-        if !result.is_valid() {
-            return Ok(ValidationResult::<ExecutionEvent>::new_with_errors(
-                result.errors,
-            ));
-        }
-        let result = self.validate_signature()?;
-        if !result.is_valid() {
-            return Ok(ValidationResult::<ExecutionEvent>::new_with_errors(
-                result.errors,
-            ));
-        }
-        let result = self.validate_key_signature()?;
-        if !result.is_valid() {
-            return Ok(ValidationResult::<ExecutionEvent>::new_with_errors(
-                result.errors,
-            ));
-        }
-        let result = self.validate_state()?;
-        if !result.is_valid() {
-            return Ok(result);
-        } else {
-            let action = result.into_data()?;
-            action.validate_fee()
-        }
+pub fn validate_state_transition<'a, C>(
+    platform: &Platform<C>,
+    bls: &DriveBls,
+    state_transition: StateTransition,
+) -> Result<ValidationResult<ExecutionEvent<'a>>, Error> {
+    let result = state_transition.validate_type(&platform.drive)?;
+    if !result.is_valid() {
+        return Ok(ValidationResult::<ExecutionEvent>::new_with_errors(
+            result.errors,
+        ));
     }
-    fn validate_type(&self) -> Result<SimpleValidationResult, Error>;
-    fn validate_signature(&self, drive: &Drive, bls: C) -> Result<SimpleValidationResult, Error>;
-    fn validate_key_signature(&self, bls: C) -> Result<SimpleValidationResult, Error>;
+    let result = state_transition.validate_signature(&platform.drive, &bls)?;
+    if !result.is_valid() {
+        return Ok(ValidationResult::<ExecutionEvent>::new_with_errors(
+            result.errors,
+        ));
+    }
+    let result = state_transition.validate_key_signature(&bls)?;
+    if !result.is_valid() {
+        return Ok(ValidationResult::<ExecutionEvent>::new_with_errors(
+            result.errors,
+        ));
+    }
+    let result = state_transition.validate_state(&platform.drive)?;
+
+    todo!()
+    // if !result.is_valid() {
+    //     return Ok(result);
+    // } else {
+    //     let action = result.into_data()?;
+    //     action.validate_fee()
+    // }
+}
+
+pub trait StateTransitionValidation {
+    fn validate_type(&self, drive: &Drive) -> Result<SimpleValidationResult, Error>;
+
+    fn validate_signature(
+        &self,
+        drive: &Drive,
+        bls: &DriveBls,
+    ) -> Result<SimpleValidationResult, Error>;
+
+    fn validate_key_signature(&self, bls: &DriveBls) -> Result<SimpleValidationResult, Error>;
+
     fn validate_state(
         &self,
         drive: &Drive,
     ) -> Result<ValidationResult<StateTransitionAction>, Error>;
 }
 
-impl<C> StateTransitionValidation<C> for StateTransition {
-    fn validate_type(&self) -> Result<SimpleValidationResult, Error> {
+impl StateTransitionValidation for StateTransition {
+    fn validate_type(&self, drive: &Drive) -> Result<SimpleValidationResult, Error> {
         match self {
             StateTransition::DataContractCreate(st) => st.validate_type(drive),
             StateTransition::DataContractUpdate(st) => st.validate_type(drive),
@@ -74,27 +84,31 @@ impl<C> StateTransitionValidation<C> for StateTransition {
         }
     }
 
-    fn validate_signature(&self) -> Result<SimpleValidationResult, Error> {
+    fn validate_signature(
+        &self,
+        drive: &Drive,
+        bls: &DriveBls,
+    ) -> Result<SimpleValidationResult, Error> {
         match self {
-            StateTransition::DataContractCreate(st) => st.validate_signature(drive),
-            StateTransition::DataContractUpdate(st) => st.validate_signature(drive),
-            StateTransition::IdentityCreate(st) => st.validate_signature(drive),
-            StateTransition::IdentityUpdate(st) => st.validate_signature(drive),
-            StateTransition::IdentityTopUp(st) => st.validate_signature(drive),
-            StateTransition::IdentityCreditWithdrawal(st) => st.validate_signature(drive),
-            StateTransition::DocumentsBatch(st) => st.validate_signature(drive),
+            StateTransition::DataContractCreate(st) => st.validate_signature(drive, bls),
+            StateTransition::DataContractUpdate(st) => st.validate_signature(drive, bls),
+            StateTransition::IdentityCreate(st) => st.validate_signature(drive, bls),
+            StateTransition::IdentityUpdate(st) => st.validate_signature(drive, bls),
+            StateTransition::IdentityTopUp(st) => st.validate_signature(drive, bls),
+            StateTransition::IdentityCreditWithdrawal(st) => st.validate_signature(drive, bls),
+            StateTransition::DocumentsBatch(st) => st.validate_signature(drive, bls),
         }
     }
 
-    fn validate_key_signature(&self) -> Result<SimpleValidationResult, Error> {
+    fn validate_key_signature(&self, bls: &DriveBls) -> Result<SimpleValidationResult, Error> {
         match self {
-            StateTransition::DataContractCreate(st) => st.validate_key_signature(drive),
-            StateTransition::DataContractUpdate(st) => st.validate_key_signature(drive),
-            StateTransition::IdentityCreate(st) => st.validate_key_signature(drive),
-            StateTransition::IdentityUpdate(st) => st.validate_key_signature(drive),
-            StateTransition::IdentityTopUp(st) => st.validate_key_signature(drive),
-            StateTransition::IdentityCreditWithdrawal(st) => st.validate_key_signature(drive),
-            StateTransition::DocumentsBatch(st) => st.validate_key_signature(drive),
+            StateTransition::DataContractCreate(st) => st.validate_key_signature(bls),
+            StateTransition::DataContractUpdate(st) => st.validate_key_signature(bls),
+            StateTransition::IdentityCreate(st) => st.validate_key_signature(bls),
+            StateTransition::IdentityUpdate(st) => st.validate_key_signature(bls),
+            StateTransition::IdentityTopUp(st) => st.validate_key_signature(bls),
+            StateTransition::IdentityCreditWithdrawal(st) => st.validate_key_signature(bls),
+            StateTransition::DocumentsBatch(st) => st.validate_key_signature(bls),
         }
     }
 

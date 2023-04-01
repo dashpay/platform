@@ -1,8 +1,8 @@
 use crate::error::Error;
-use dpp::consensus::signature::{
+use dpp::{consensus::signature::{
     InvalidIdentityPublicKeyTypeError, MissingPublicKeyError, PublicKeyIsDisabledError,
     SignatureError,
-};
+}, state_transition::validation::validate_state_transition_identity_signature::convert_to_consensus_signature_error};
 use dpp::state_transition::fee::operations::{Operation, SignatureVerificationOperation};
 use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionLike};
 use dpp::validation::SimpleValidationResult;
@@ -28,7 +28,7 @@ lazy_static! {
 
 pub fn validate_state_transition_identity_signature(
     drive: &Drive,
-    state_transition: &mut impl StateTransitionIdentitySigned,
+    state_transition: &impl StateTransitionIdentitySigned,
     transaction: &Transaction,
     bls: &impl BlsModule,
 ) -> Result<SimpleValidationResult, Error> {
@@ -82,7 +82,7 @@ pub fn validate_state_transition_identity_signature(
         return Ok(validation_result);
     }
 
-    let signature_is_valid = state_transition.verify_signature(public_key, bls);
+    let signature_is_valid = state_transition.verify_signature(&public_key, bls);
 
     if let Err(err) = signature_is_valid {
         let consensus_error = convert_to_consensus_signature_error(err)?;

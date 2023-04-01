@@ -229,7 +229,7 @@ where
         state_transitions
             .into_iter()
             .map(|state_transition| {
-                let state_transition_execution_event = state_transition.validate_all(self)?;
+                let state_transition_execution_event = state_transition.validate_state_transition(self)?;
                 // we map the result to the actual execution
                 let execution_result: ExecutionResult = state_transition_execution_event
                     .map_result(|execution_event| {
