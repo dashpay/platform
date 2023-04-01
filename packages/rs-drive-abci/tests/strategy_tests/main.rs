@@ -74,6 +74,7 @@ use rand::{Rng, SeedableRng};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
+use tenderdash_abci::Application;
 
 mod upgrade_fork_tests;
 
@@ -372,8 +373,8 @@ fn create_identities_state_transitions(
         .collect()
 }
 
-pub struct ChainExecutionOutcome {
-    pub platform: TempPlatform<DefaultCoreRPC>,
+pub struct ChainExecutionOutcome<'a> {
+    pub platform: TempPlatform<'a, DefaultCoreRPC>,
     pub masternode_identity_balances: BTreeMap<[u8; 32], Credits>,
     pub identities: Vec<Identity>,
     pub proposers: Vec<[u8; 32]>,

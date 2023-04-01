@@ -49,7 +49,7 @@ use drive::error::drive::DriveError;
 use drive::error::Error::GroveDB;
 use drive::fee::credits::SignedCredits;
 use drive::grovedb::{Transaction, TransactionArg};
-use tenderdash_abci::proto::abci::{ExecTxResult, RequestCheckTx, RequestFinalizeBlock, RequestPrepareProposal, RequestProcessProposal, ResponseCheckTx, ResponseFinalizeBlock, ResponsePrepareProposal, ResponseProcessProposal};
+use tenderdash_abci::proto::abci::{ExecTxResult, RequestCheckTx, RequestFinalizeBlock, RequestInitChain, RequestPrepareProposal, RequestProcessProposal, ResponseCheckTx, ResponseFinalizeBlock, ResponseInitChain, ResponsePrepareProposal, ResponseProcessProposal};
 use tenderdash_abci::proto::{
     abci::{self as proto, ResponseException},
     serializers::timestamp::ToMilis,
@@ -88,8 +88,8 @@ where
 
     fn init_chain(
         &self,
-        request: proto::RequestInitChain,
-    ) -> Result<proto::ResponseInitChain, ResponseException> {
+        request: RequestInitChain,
+    ) -> Result<ResponseInitChain, ResponseException> {
         let transaction = self.drive.grove.start_transaction();
         let genesis_time = request
             .time
@@ -331,7 +331,6 @@ where
 #[cfg(test)]
 mod tests {
     mod handlers {
-        use crate::abci::handlers::TenderdashAbci;
         use crate::config::PlatformConfig;
         use crate::rpc::core::MockCoreRPCLike;
         use chrono::{Duration, Utc};
@@ -357,18 +356,83 @@ mod tests {
         use std::cmp::Ordering;
         use std::ops::Div;
         use tenderdash_abci::Application;
+        use tenderdash_abci::proto::abci::{RequestPrepareProposal, RequestProcessProposal};
+        use tenderdash_abci::proto::google::protobuf::Timestamp;
 
         use crate::abci::messages::{
             AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFees,
         };
+        use crate::platform::Platform;
         use crate::test::fixture::abci::static_init_chain_request;
         use crate::test::helpers::fee_pools::create_test_masternode_share_identities_and_documents;
-        use crate::test::helpers::setup::TestPlatformBuilder;
+        use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
 
-        // TODO: Should we remove this test in favor of strategy tests?
+
+        fn prepare_withdrawal_test<'a>(platform: &TempPlatform<'a, MockCoreRPCLike>) {
+            //this should happen after
+            let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
+                .expect("to load system data contract");
+
+            // Init withdrawal requests
+            let withdrawals: Vec<WithdrawalTransactionIdAndBytes> = (0..16)
+                .map(|index: u64| (index.to_be_bytes().to_vec(), vec![index as u8; 32]))
+                .collect();
+
+            let owner_id = Identifier::new([1u8; 32]);
+
+            for (_, tx_bytes) in withdrawals.iter() {
+                let tx_id = hash::hash(tx_bytes);
+
+                let document = get_withdrawal_document_fixture(
+                    &data_contract,
+                    owner_id,
+                    platform_value!({
+                        "amount": 1000u64,
+                        "coreFeePerByte": 1u32,
+                        "pooling": Pooling::Never as u8,
+                        "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
+                        "status": withdrawals_contract::WithdrawalStatus::POOLED as u8,
+                        "transactionIndex": 1u64,
+                        "transactionSignHeight": 93u64,
+                        "transactionId": BinaryData::new(tx_id),
+                    }),
+                    None,
+                )
+                    .expect("expected withdrawal document");
+
+                let document_type = data_contract
+                    .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
+                    .expect("expected to get document type");
+
+                setup_document(
+                    &platform.drive,
+                    &document,
+                    &data_contract,
+                    document_type,
+                    Some(&transaction),
+                );
+            }
+
+            let block_info = BlockInfo {
+                time_ms: 1,
+                height: 1,
+                epoch: Epoch::new(1),
+            };
+
+            let mut drive_operations = vec![];
+
+            platform
+                .drive
+                .add_enqueue_withdrawal_transaction_operations(&withdrawals, &mut drive_operations);
+
+            platform
+                .drive
+                .apply_drive_operations(drive_operations, true, &block_info, Some(&transaction))
+                .expect("to apply drive operations");
+        }
 
         #[test]
-        fn test_abci_flow() {
+        fn test_abci_flow_with_withdrawals() {
             let mut platform = TestPlatformBuilder::new()
                 .with_config(PlatformConfig {
                     verify_sum_trees: false,
@@ -401,66 +465,6 @@ mod tests {
             platform
                 .init_chain(init_chain_request)
                 .expect("should init chain");
-
-            let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
-                .expect("to load system data contract");
-
-            // Init withdrawal requests
-            let withdrawals: Vec<WithdrawalTransactionIdAndBytes> = (0..16)
-                .map(|index: u64| (index.to_be_bytes().to_vec(), vec![index as u8; 32]))
-                .collect();
-
-            let owner_id = Identifier::new([1u8; 32]);
-
-            for (_, tx_bytes) in withdrawals.iter() {
-                let tx_id = hash::hash(tx_bytes);
-
-                let document = get_withdrawal_document_fixture(
-                    &data_contract,
-                    owner_id,
-                    platform_value!({
-                        "amount": 1000u64,
-                        "coreFeePerByte": 1u32,
-                        "pooling": Pooling::Never as u8,
-                        "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
-                        "status": withdrawals_contract::WithdrawalStatus::POOLED as u8,
-                        "transactionIndex": 1u64,
-                        "transactionSignHeight": 93u64,
-                        "transactionId": BinaryData::new(tx_id),
-                    }),
-                    None,
-                )
-                .expect("expected withdrawal document");
-
-                let document_type = data_contract
-                    .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
-                    .expect("expected to get document type");
-
-                setup_document(
-                    &platform.drive,
-                    &document,
-                    &data_contract,
-                    document_type,
-                    Some(&transaction),
-                );
-            }
-
-            let block_info = BlockInfo {
-                time_ms: 1,
-                height: 1,
-                epoch: Epoch::new(1),
-            };
-
-            let mut drive_operations = vec![];
-
-            platform
-                .drive
-                .add_enqueue_withdrawal_transaction_operations(&withdrawals, &mut drive_operations);
-
-            platform
-                .drive
-                .apply_drive_operations(drive_operations, true, &block_info, Some(&transaction))
-                .expect("to apply drive operations");
 
             // setup the contract
             let contract = platform.create_mn_shares_contract(Some(&transaction));
@@ -517,23 +521,30 @@ mod tests {
                         .to_u64()
                         .expect("block time can not be before 1970");
 
-                    // Processing block
-                    let block_begin_request = BlockBeginRequest {
-                        block_height,
-                        block_time_ms,
-                        previous_block_time_ms,
-                        proposer_pro_tx_hash: *proposers
-                            .get(block_height as usize % (proposers_count as usize))
-                            .unwrap(),
-                        proposed_app_version: 1,
-                        validator_set_quorum_hash: Default::default(),
-                        last_synced_core_height: 1,
+                    //todo: before we had total_hpmns, where should we put it
+                    let request_process_proposal = RequestPrepareProposal {
+                        max_tx_bytes: 0,
+                        txs: vec![],
+                        local_last_commit: None,
+                        misbehavior: vec![],
+                        height: block_height as i64,
+                        round: 0,
+                        time: Some(Timestamp {
+                            seconds: (block_time_ms / 1000) as i64,
+                            nanos: ((block_time_ms % 1000) * 1000) as i32,
+                        }),
+                        next_validators_hash: [0u8;32].to_vec(),
                         core_chain_locked_height: 1,
-                        total_hpmns: proposers_count as u32,
+                        proposer_pro_tx_hash: proposers
+                            .get(block_height as usize % (proposers_count as usize))
+                            .unwrap().to_vec(),
+                        proposed_app_version: 1,
+                        version: None,
+                        quorum_hash: [0u8;32].to_vec(),
                     };
 
                     let block_begin_response = platform
-                        .block_begin(block_begin_request)
+                        .process_proposal(block_begin_request)
                         .unwrap_or_else(|e| {
                             panic!(
                                 "should begin process block #{} for day #{} : {}",
