@@ -115,7 +115,7 @@ where
 
         // Running the proposal executes all the state transitions for the block
         let BlockExecutionOutcome {
-            mut block_execution_context,
+            block_execution_context,
             tx_results,
         } = self.run_block_proposal((&request).try_into()?, &transaction)?;
 
@@ -155,7 +155,7 @@ where
 
         // Running the proposal executes all the state transitions for the block
         let BlockExecutionOutcome {
-            mut block_execution_context,
+            block_execution_context,
             tx_results,
         } = self.run_block_proposal((&request).try_into()?, &transaction)?;
 
