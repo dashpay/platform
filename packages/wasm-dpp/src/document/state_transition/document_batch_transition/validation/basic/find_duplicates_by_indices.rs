@@ -3,13 +3,13 @@ use dpp::document::{
     validation::basic::find_duplicates_by_indices::find_duplicates_by_indices,
 };
 use dpp::platform_value::{ReplacementType, Value};
+use dpp::prelude::Identifier;
 use dpp::ProtocolError;
 use itertools::Itertools;
 use js_sys::Array;
 use wasm_bindgen::prelude::*;
 
 use crate::identifier::IdentifierWrapper;
-use crate::utils::Inner;
 use crate::{
     document_batch_transition::document_transition::to_object,
     utils::{ToSerdeJSONExt, WithJsError},
@@ -22,7 +22,8 @@ pub fn find_duplicates_by_indices_wasm(
     data_contract: &DataContractWasm,
     owner_id: &IdentifierWrapper,
 ) -> Result<Vec<JsValue>, JsValue> {
-    let owner_id_value: Value = Value::Identifier(owner_id.inner().to_buffer());
+    let identifier: Identifier = owner_id.into();
+    let owner_id_value: Value = Value::Identifier(identifier.to_buffer());
     let raw_transitions: Vec<Value> = js_raw_transitions
         .iter()
         .map(|transition| {

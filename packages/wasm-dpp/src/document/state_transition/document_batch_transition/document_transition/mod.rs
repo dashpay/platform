@@ -310,7 +310,7 @@ pub(crate) fn to_object<'a>(
             if !options.skip_identifiers_conversion {
                 lodash_set(&js_value, path, buffer.into());
             } else {
-                let id = IdentifierWrapper::new(buffer.into())?;
+                let id = IdentifierWrapper::new(buffer.into());
                 lodash_set(&js_value, path, id.into());
             }
         }
