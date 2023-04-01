@@ -29,5 +29,6 @@ export declare class IdentityPublicKey extends dpp_module.IdentityPublicKey {
     static SECURITY_LEVELS: typeof dpp_module.KeySecurityLevel;
 }
 
+// TypeScript voodoo to ensure Identifier and IdentifierError are exported
 export declare class Identifier extends _Identifier {}
 export declare class IdentifierError extends _IdentifierError {}
