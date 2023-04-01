@@ -47,8 +47,8 @@ where
         transaction: &Transaction,
     ) -> Result<(), Error> {
         let block_info = BlockInfo {
-            time_ms: block_execution_context.block_info.block_time_ms,
-            height: block_execution_context.block_info.height,
+            time_ms: block_execution_context.block_state_info.block_time_ms,
+            height: block_execution_context.block_state_info.height,
             epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
         };
 
@@ -66,7 +66,9 @@ where
 
         let core_transactions = self.fetch_core_block_transactions(
             last_synced_core_height,
-            block_execution_context.block_info.core_chain_locked_height,
+            block_execution_context
+                .block_state_info
+                .core_chain_locked_height,
         )?;
 
         let broadcasted_withdrawal_documents = self.drive.fetch_withdrawal_documents_by_status(
@@ -109,9 +111,10 @@ where
 
                 let transaction_id = hex::encode(transaction_id_bytes);
 
-                let block_height_difference =
-                    block_execution_context.block_info.core_chain_locked_height
-                        - transaction_sign_height;
+                let block_height_difference = block_execution_context
+                    .block_state_info
+                    .core_chain_locked_height
+                    - transaction_sign_height;
 
                 let status;
 
@@ -178,8 +181,8 @@ where
         transaction: &Transaction,
     ) -> Result<Vec<Vec<u8>>, Error> {
         let block_info = BlockInfo {
-            time_ms: block_execution_context.block_info.block_time_ms,
-            height: block_execution_context.block_info.height,
+            time_ms: block_execution_context.block_state_info.block_time_ms,
+            height: block_execution_context.block_state_info.height,
             epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
         };
 
@@ -215,7 +218,9 @@ where
                 .into_iter()
                 .map(|(_, untied_transaction_bytes)| {
                     let request_info = AssetUnlockRequestInfo {
-                        request_height: block_execution_context.block_info.core_chain_locked_height,
+                        request_height: block_execution_context
+                            .block_state_info
+                            .core_chain_locked_height,
                         quorum_hash: QuorumHash::hash(&validator_set_quorum_hash),
                     };
 
@@ -297,8 +302,8 @@ where
         transaction: &Transaction,
     ) -> Result<(), Error> {
         let block_info = BlockInfo {
-            time_ms: block_execution_context.block_info.block_time_ms,
-            height: block_execution_context.block_info.height,
+            time_ms: block_execution_context.block_state_info.block_time_ms,
+            height: block_execution_context.block_state_info.height,
             epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
         };
 
@@ -619,7 +624,7 @@ mod tests {
             let transaction = platform.drive.grove.start_transaction();
 
             let block_execution_context = BlockExecutionContext {
-                block_info: BlockStateInfo {
+                block_state_info: BlockStateInfo {
                     height: 1,
                     round: 0,
                     block_time_ms: 1,
@@ -774,7 +779,7 @@ mod tests {
                 RwLock::new(Some(BlockExecutionContextWithTransaction {
                     current_transaction: transaction,
                     block_execution_context: BlockExecutionContext {
-                        block_info: BlockStateInfo {
+                        block_state_info: BlockStateInfo {
                             height: 1,
                             round: 0,
                             block_time_ms: 1,

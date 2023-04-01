@@ -98,7 +98,7 @@ impl BlockStateInfo {
 /// Block execution context
 pub struct BlockExecutionContext {
     /// Block info
-    pub block_info: BlockStateInfo,
+    pub block_state_info: BlockStateInfo,
     /// Epoch info
     pub epoch_info: EpochInfo,
     /// Total hpmn count

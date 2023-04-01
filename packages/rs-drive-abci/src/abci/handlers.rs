@@ -117,12 +117,13 @@ where
             tx_results,
         } = self.run_block_proposal((&request).try_into()?, &transaction)?;
 
-        let app_hash = block_execution_context
-            .block_info
-            .commit_hash
-            .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "expected a commit hash in prepare proposal",
-            )))?;
+        let app_hash =
+            block_execution_context
+                .block_state_info
+                .commit_hash
+                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "expected a commit hash in prepare proposal",
+                )))?;
 
         let block_execution_context_with_tx = BlockExecutionContextWithTransaction {
             block_execution_context,
@@ -156,12 +157,13 @@ where
             tx_results,
         } = self.run_block_proposal((&request).try_into()?, &transaction)?;
 
-        let app_hash = block_execution_context
-            .block_info
-            .commit_hash
-            .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                "expected a commit hash in prepare proposal",
-            )))?;
+        let app_hash =
+            block_execution_context
+                .block_state_info
+                .commit_hash
+                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "expected a commit hash in prepare proposal",
+                )))?;
 
         let block_execution_context_with_tx = BlockExecutionContextWithTransaction {
             block_execution_context,
@@ -208,7 +210,7 @@ where
                 )))?;
 
         let BlockExecutionContext {
-            block_info,
+            block_state_info,
             epoch_info,
             hpmn_count,
         } = &block_execution_context.block_execution_context;
@@ -219,11 +221,11 @@ where
         // When receiving the finalized block, we need to make sure that info matches our current block
 
         // First let's check the basics, height, round and hash
-        if !block_info.matches(height as u64, round as u32, hash)? {
+        if !block_state_info.matches(height as u64, round as u32, hash)? {
             // we are on the wrong height or round
             return Err(Error::Abci(AbciError::WrongFinalizeBlockReceived(format!(
                 "received a block for h: {} r: {}, expected h: {} r: {}",
-                height, round, block_info.height, block_info.round
+                height, round, block_state_info.height, block_state_info.round
             )))
             .into());
         }
@@ -235,7 +237,7 @@ where
         // Next let's check that the hash received is the same as the hash we expect
 
         if height == self.config.abci.genesis_height {
-            self.drive.set_genesis_time(block_info.block_time_ms);
+            self.drive.set_genesis_time(block_state_info.block_time_ms);
         }
 
         // Determine a new protocol version if enough proposers voted
@@ -270,6 +272,10 @@ where
             .commit_transaction(block_execution_context.current_transaction)
             .unwrap()
             .map_err(|e| Error::Drive(GroveDB(e)))?;
+
+        let block_info = block_state_info.to_block_info(epoch_info.current_epoch_index);
+
+        self.state.write().unwrap().last_block_info = Some(block_info.clone());
 
         let mut drive_cache = self.drive.cache.write().unwrap();
 

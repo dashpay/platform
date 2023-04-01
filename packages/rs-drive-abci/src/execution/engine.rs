@@ -12,12 +12,17 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::consensus::basic::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::ConsensusError;
 use dpp::state_transition::StateTransition;
+use dpp::util::deserializer::ProtocolVersion;
 use dpp::validation::{SimpleValidationResult, ValidationResult};
 use drive::drive::block_info::BlockInfo;
 use drive::error::Error::GroveDB;
 use drive::fee::result::FeeResult;
 use drive::grovedb::{Transaction, TransactionArg};
-use tenderdash_abci::proto::abci::ExecTxResult;
+use tenderdash_abci::proto::abci::{
+    CommitInfo, ExecTxResult, RequestFinalizeBlock, RequestPrepareProposal, ResponsePrepareProposal,
+};
+use tenderdash_abci::proto::google::protobuf::Timestamp;
+use tenderdash_abci::Application;
 
 pub struct BlockExecutionOutcome {
     block_execution_context: BlockExecutionContext,
@@ -124,78 +129,87 @@ where
         }
     }
 
-    // /// Execute a block with various state transitions
-    // pub fn execute_block(
-    //     &self,
-    //     proposer: [u8; 32],
-    //     proposed_version: ProtocolVersion,
-    //     total_hpmns: u32,
-    //     block_info: BlockInfo,
-    //     state_transitions: Vec<ExecutionEvent>,
-    // ) -> Result<(), Error> {
-    //     let transaction = self.drive.grove.start_transaction();
-    //     // Processing block
-    //     let block_begin_request = BlockBeginRequest {
-    //         block_height: block_info.height,
-    //         block_time_ms: block_info.time_ms,
-    //         previous_block_time_ms: self
-    //             .state
-    //             .read()
-    //             .unwrap()
-    //             .last_block_info
-    //             .as_ref()
-    //             .map(|block_info| block_info.time_ms),
-    //         proposer_pro_tx_hash: proposer,
-    //         proposed_app_version: proposed_version,
-    //         validator_set_quorum_hash: Default::default(),
-    //         last_synced_core_height: 1,
-    //         core_chain_locked_height: 1,
-    //         total_hpmns,
-    //     };
-    //
-    //     // println!("Block #{}", block_info.height);
-    //
-    //     let _block_begin_response = self.block_begin(block_begin_request).unwrap_or_else(|e| {
-    //         panic!(
-    //             "should begin process block #{} at time #{} : {e}",
-    //             block_info.height, block_info.time_ms
-    //         )
-    //     });
-    //
-    //     // println!("{:#?}", block_begin_response);
-    //
-    //     let total_fees = self.execute_events(state_transitions, &block_info, &transaction)?;
-    //
-    //     let fees = BlockFees::from_fee_result(total_fees);
-    //
-    //     let block_end_request = BlockEndRequest { fees };
-    //
-    //     let _block_end_response = self.block_end(block_end_request).unwrap_or_else(|e| {
-    //         panic!(
-    //             "engine should end process block #{} at time #{} : {}",
-    //             block_info.height, block_info.time_ms, e
-    //         )
-    //     });
-    //
-    //     // println!("{:#?}", block_end_response);
-    //
-    //     let after_finalize_block_request = AfterFinalizeBlockRequest {
-    //         updated_data_contract_ids: Vec::new(),
-    //     };
-    //
-    //     self.after_finalize_block(after_finalize_block_request)
-    //         .unwrap_or_else(|_| {
-    //             panic!(
-    //                 "should begin process block #{} at time #{}",
-    //                 block_info.height, block_info.time_ms
-    //             )
-    //         });
-    //
-    //     // TODO: Move to `after_finalize_block` so it will be called by JS Drive too
-    //     self.state.write().unwrap().last_block_info = Some(block_info.clone());
-    //
-    //     Ok(())
-    // }
+    /// Execute a block with various state transitions
+    pub fn mimic_execute_block(
+        &self,
+        proposer_pro_tx_hash: [u8; 32],
+        proposed_version: ProtocolVersion,
+        total_hpmns: u32,
+        block_info: BlockInfo,
+        state_transitions: Vec<StateTransition>,
+    ) -> Result<(), Error> {
+        let serialized_state_transitions = state_transitions
+            .into_iter()
+            .map(|st| st.serialize().map_err(Error::Protocol))
+            .collect::<Result<Vec<Vec<u8>>, Error>>()?;
+
+        let BlockInfo {
+            time_ms,
+            height,
+            epoch,
+        } = block_info;
+
+        let request_prepare_proposal = RequestPrepareProposal {
+            max_tx_bytes: 0,
+            txs: serialized_state_transitions,
+            local_last_commit: None,
+            misbehavior: vec![],
+            height: height as i64,
+            time: Some(Timestamp {
+                seconds: (time_ms / 1000) as i64,
+                nanos: ((time_ms % 1000) * 1000) as i32,
+            }),
+            next_validators_hash: vec![],
+            round: 0,
+            core_chain_locked_height: 0,
+            proposer_pro_tx_hash: proposer_pro_tx_hash.to_vec(),
+            proposed_app_version: proposed_version as u64,
+            version: None,
+            quorum_hash: vec![],
+        };
+
+        let response_prepare_proposal = self
+            .prepare_proposal(request_prepare_proposal)
+            .unwrap_or_else(|e| {
+                panic!(
+                    "should prepare and process block #{} at time #{} : {:?}",
+                    block_info.height, block_info.time_ms, e
+                )
+            });
+        let ResponsePrepareProposal {
+            tx_records,
+            app_hash,
+            tx_results,
+            consensus_param_updates,
+            core_chain_lock_update,
+            validator_set_update,
+        } = response_prepare_proposal;
+
+        let request_finalize_block = RequestFinalizeBlock {
+            commit: Some(CommitInfo {
+                round: 0,
+                quorum_hash: vec![],
+                block_signature: vec![],
+                threshold_vote_extensions: vec![],
+            }),
+            misbehavior: vec![],
+            hash: app_hash,
+            height: height as i64,
+            round: 0,
+            block: None,
+            block_id: None,
+        };
+
+        self.finalize_block(request_finalize_block)
+            .unwrap_or_else(|e| {
+                panic!(
+                    "should finalize block #{} at time #{} : {:?}",
+                    block_info.height, block_info.time_ms, e
+                )
+            });
+
+        Ok(())
+    }
 
     pub(crate) fn process_raw_state_transitions(
         &self,
@@ -270,7 +284,7 @@ where
         // FIXME: we need to calculate total hpmns based on masternode list (or remove hpmn_count if not needed)
         let total_hpmns = self.config.quorum_size as u32;
         let mut block_execution_context = BlockExecutionContext {
-            block_info: block_state_info,
+            block_state_info: block_state_info,
             epoch_info: epoch_info.clone(),
             hpmn_count: total_hpmns,
         };
@@ -284,7 +298,9 @@ where
         // } else {
         //     request.last_synced_core_height
         // };
-        let last_synced_core_height = block_execution_context.block_info.core_chain_locked_height;
+        let last_synced_core_height = block_execution_context
+            .block_state_info
+            .core_chain_locked_height;
 
         self.update_broadcasted_withdrawal_transaction_statuses(
             last_synced_core_height,
@@ -321,7 +337,7 @@ where
             .unwrap()
             .map_err(|e| Error::Drive(GroveDB(e)))?;
 
-        block_execution_context.block_info.commit_hash = Some(root_hash);
+        block_execution_context.block_state_info.commit_hash = Some(root_hash);
 
         Ok(BlockExecutionOutcome {
             block_execution_context,

@@ -534,7 +534,7 @@ pub(crate) fn continue_chain_for_strategy(
             .unwrap_or(1);
 
         platform
-            .execute_block(
+            .mimic_execute_block(
                 *proposer,
                 proposed_version,
                 proposer_count,
