@@ -43,26 +43,26 @@ use crate::{
     rpc::core::CoreRPCLike,
 };
 use dpp::identity::TimestampMillis;
+use dpp::state_transition::StateTransition;
+use dpp::util::vec::vec_to_array;
 use drive::error::drive::DriveError;
 use drive::error::Error::GroveDB;
+use drive::fee::credits::SignedCredits;
 use drive::grovedb::{Transaction, TransactionArg};
+use tenderdash_abci::proto::abci::{ExecTxResult, RequestCheckTx, RequestFinalizeBlock, RequestPrepareProposal, RequestProcessProposal, ResponseCheckTx, ResponseFinalizeBlock, ResponsePrepareProposal, ResponseProcessProposal};
 use tenderdash_abci::proto::{
     abci::{self as proto, ResponseException},
     serializers::timestamp::ToMilis,
 };
-use tenderdash_abci::proto::abci::{ExecTxResult, RequestCheckTx, RequestFinalizeBlock, ResponseCheckTx, ResponseFinalizeBlock};
-use dpp::state_transition::StateTransition;
-use dpp::util::vec::vec_to_array;
-use drive::fee::credits::SignedCredits;
+use crate::abci::AbciError;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::execution_event::ExecutionResult;
-use crate::execution::proposal::Proposal;
 use crate::platform::Platform;
 use crate::validation::state_transition::StateTransitionValidation;
 
-impl<'a, C> tenderdash_abci::Application for Platform<C>
+impl<'a, C> tenderdash_abci::Application for Platform<'a, C>
 where
     C: CoreRPCLike,
 {
@@ -113,9 +113,9 @@ where
 
     fn prepare_proposal(
         &self,
-        request: proto::RequestPrepareProposal,
-    ) -> Result<proto::ResponsePrepareProposal, ResponseException> {
-        let proto::RequestPrepareProposal {
+        request: RequestPrepareProposal,
+    ) -> Result<ResponsePrepareProposal, ResponseException> {
+        let RequestPrepareProposal {
             max_tx_bytes,
             txs,
             local_last_commit,
@@ -132,88 +132,18 @@ where
         } = request;
 
         let transaction = self.drive.grove.start_transaction();
-        let time = time.as_ref().ok_or("missing proposal time")?.to_milis();
-
-        let genesis_time_ms = self.get_genesis_time_or_set_if_genesis(height as u64, time, &transaction)?;
-
-        let validator_pro_tx_hash: [u8; 32] = proposer_pro_tx_hash
+        let block_time_ms = time.as_ref().ok_or("missing proposal time")?.to_milis();
+        let proposer_pro_tx_hash: [u8; 32] = proposer_pro_tx_hash
             .try_into()
             .map_err(|e| format!("invalid proposer protxhash: {}", hex::encode(e)))?;
 
-        self.drive
-            .update_validator_proposed_app_version(
-                validator_pro_tx_hash,
-                proposed_app_version as u32,
-                Some(&transaction),
-            )
-            .map_err(|e| format!("cannot update proposed app version: {}", e))?;
-
-        // Init block execution context
-        let block_state_info = BlockStateInfo::from_prepare_proposal_request(&request);
-
-        let epoch_info = EpochInfo::from_genesis_time_and_block_info(genesis_time_ms, &block_state_info)?;
-
-        let block_info = block_state_info.to_block_info(epoch_info.current_epoch_index);
-        // FIXME: we need to calculate total hpmns based on masternode list (or remove hpmn_count if not needed)
-        let total_hpmns = self.config.quorum_size as u32;
-        let block_execution_context = BlockExecutionContext {
-            current_transaction: transaction,
-            block_info: block_state_info,
-            epoch_info: epoch_info.clone(),
-            hpmn_count: total_hpmns,
-        };
-
-        // If last synced Core block height is not set instead of scanning
-        // number of blocks for asset unlock transactions scan only one
-        // on Core chain locked height by setting last_synced_core_height to the same value
-        // FIXME: re-enable and implement
-        // let last_synced_core_height = if request.last_synced_core_height == 0 {
-        //     block_execution_context.block_info.core_chain_locked_height
-        // } else {
-        //     request.last_synced_core_height
-        // };
-        let last_synced_core_height = block_execution_context.block_info.core_chain_locked_height;
-
-        self.block_execution_context
-            .write()
-            .unwrap()
-            .replace(block_execution_context);
-
-        self.update_broadcasted_withdrawal_transaction_statuses(
-            last_synced_core_height,
-            &transaction,
-        )?;
-
-        self.update_broadcasted_withdrawal_transaction_statuses(
-            last_synced_core_height,
-            &transaction,
-        )?;
-
-        let unsigned_withdrawal_transaction_bytes = self
-            .fetch_and_prepare_unsigned_withdrawal_transactions(
-                vec_to_array(&request.quorum_hash).expect("invalid quorum hash"),
-                &transaction,
-            )?;
-
-        let state_transitions = StateTransition::deserialize_many(&txs)?;
-
-        let tx_results = state_transitions
-            .into_iter()
-            .map(|state_transition| {
-                let state_transition_execution_event = state_transition.validate_all(self)?;
-                // we map the result to the actual execution
-                let execution_result : ExecutionResult = state_transition_execution_event
-                    .map_result(|execution_event| {
-                        self.execute_event(execution_event, &block_info, &transaction)
-                    })?.into();
-                execution_result.into()
-            })
-            .collect::<Result<Vec<ExecTxResult>, Error>>()?;
+        // Running the proposal executes all the state transitions for the block
+        self.run_proposal(proposed_app_version, proposer_pro_tx_hash, height as u64, block_time_ms, &txs, &transaction)?;
 
         let root_hash = self.drive.grove.root_hash(Some(&transaction)).unwrap()?;
 
         // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
-        let response = proto::ResponsePrepareProposal {
+        let response = ResponsePrepareProposal {
             app_hash: root_hash.to_vec(),
             tx_results,
             ..Default::default()
@@ -222,7 +152,59 @@ where
         Ok(response)
     }
 
-    fn finalize_block(&self, request: RequestFinalizeBlock) -> Result<ResponseFinalizeBlock, ResponseException> {
+    fn process_proposal(
+        &self,
+        request: RequestProcessProposal,
+    ) -> Result<ResponseProcessProposal, ResponseException> {
+        let RequestProcessProposal {
+            txs,
+            proposed_last_commit,
+            misbehavior,
+            hash,
+            height,
+            round,
+            time,
+            next_validators_hash,
+            core_chain_locked_height,
+            core_chain_lock_update,
+            proposer_pro_tx_hash,
+            proposed_app_version,
+            version,
+            quorum_hash,
+        } = request;
+
+        let transaction = self.drive.grove.start_transaction();
+        let block_time_ms = time.as_ref().ok_or("missing proposal time")?.to_milis();
+        let proposer_pro_tx_hash: [u8; 32] = proposer_pro_tx_hash
+            .try_into()
+            .map_err(|e| format!("invalid proposer protxhash: {}", hex::encode(e)))?;
+
+        // Running the proposal executes all the state transitions for the block
+        self.run_proposal(proposed_app_version, proposer_pro_tx_hash, height as u64, block_time_ms, &txs, &transaction)?;
+
+        let root_hash = self.drive.grove.root_hash(Some(&transaction)).unwrap()?;
+
+        // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
+        let response = proto::ResponseProcessProposal {
+            app_hash: root_hash.to_vec(),
+            tx_results,
+            ..Default::default()
+        };
+
+        Ok(response)
+    }
+
+    fn finalize_block(
+        &self,
+        request: RequestFinalizeBlock,
+    ) -> Result<ResponseFinalizeBlock, ResponseException> {
+        let RequestFinalizeBlock {
+            commit, misbehavior, hash, height, round, block, block_id
+        } = request;
+
+        //// Verification that commit is for our current executed block
+        // When receiving the finalized block, we need to make sure that info matches our current block
+
         // Retrieve block execution context
         let mut block_execution_context = self.block_execution_context.write().unwrap();
         let block_execution_context = block_execution_context.take().ok_or(Error::Execution(
@@ -230,6 +212,19 @@ where
                 "block execution context must be set in block begin handler",
             ),
         ))?;
+
+        if !block_execution_context.block_info.matches(height as u64, round as u32) {
+            // we are on the wrong height or round
+            return Err(Error::Abci(AbciError::WrongFinalizeBlockReceived()))
+        }
+
+
+
+
+        if height == self.config.abci.genesis_height {
+            self.drive.set_genesis_time(block_time_ms);
+        }
+
 
         self.pool_withdrawals_into_transactions_queue(&block_execution_context)?;
 
@@ -274,32 +269,42 @@ where
 
         drive_cache.cached_contracts.clear_block_cache();
 
-        Ok(AfterFinalizeBlockResponse {})
-
-        Ok(BlockEndResponse::from_outcomes(
-            &process_block_fees_outcome,
-            changed_protocol_version,
-        ))
+        Ok(ResponseFinalizeBlock {
+            events: vec![],
+            retain_height: 0,
+        })
     }
 
     fn check_tx(&self, request: RequestCheckTx) -> Result<ResponseCheckTx, ResponseException> {
-        let proto::RequestCheckTx {
-            tx, r#type
-        } = request;
+        let proto::RequestCheckTx { tx, r#type } = request;
         let state_transition = StateTransition::deserialize(tx.as_slice())?;
         let execution_event = state_transition.validate_all(self)?;
 
         // We should run the execution event in dry run to see if we would have enough fees for the transaction
 
+        // We need the approximate block info
+        let block_info = self
+            .state
+            .read()
+            .unwrap()
+            .last_block_info
+            .unwrap_or_default();
+        //
         // We do not put the transaction, because this event happens outside of a block
-        let validation_result = execution_event
-            .and_then_validation(|execution_event| {
-                self.validate_fees_of_event(&execution_event, &block_info, None)
-            })?;
+        let validation_result = execution_event.and_then_validation(|execution_event| {
+            self.validate_fees_of_event(&execution_event, &block_info, None)
+        })?;
 
         // If there are no execution errors the code will be 0
-        let code = validation_result.errors.first().map(|error| error.code()).unwrap_or_default();
-        let gas_wanted = validation_result.data.map(|fee_result| fee_result.total_base_fee()).unwrap_or_default();
+        let code = validation_result
+            .errors
+            .first()
+            .map(|error| error.code())
+            .unwrap_or_default();
+        let gas_wanted = validation_result
+            .data
+            .map(|fee_result| fee_result.total_base_fee())
+            .unwrap_or_default();
         Ok(ResponseCheckTx {
             code,
             data: vec![],
@@ -372,6 +377,7 @@ mod tests {
         use serde_json::json;
         use std::cmp::Ordering;
         use std::ops::Div;
+        use tenderdash_abci::Application;
 
         use crate::abci::messages::{
             AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFees,

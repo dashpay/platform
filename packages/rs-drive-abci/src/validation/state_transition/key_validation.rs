@@ -1,16 +1,21 @@
-use std::collections::HashSet;
+use crate::error::Error;
+use dpp::consensus::signature::{
+    InvalidIdentityPublicKeyTypeError, MissingPublicKeyError, PublicKeyIsDisabledError,
+    SignatureError,
+};
+use dpp::state_transition::fee::operations::{Operation, SignatureVerificationOperation};
+use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionLike};
+use dpp::validation::SimpleValidationResult;
+use dpp::{BlsModule, ProtocolError};
+use drive::dpp::identity::{IdentityPublicKey, KeyType};
+use drive::drive::identity::key::fetch::{
+    IdentityKeysRequest, OptionalSingleIdentityPublicKeyOutcome, SingleIdentityPublicKeyOutcome,
+};
+use drive::drive::Drive;
+use drive::grovedb::Transaction;
 use lazy_static::lazy_static;
 use mockall::Any;
-use dpp::{BlsModule, ProtocolError};
-use dpp::consensus::signature::{InvalidIdentityPublicKeyTypeError, MissingPublicKeyError, PublicKeyIsDisabledError, SignatureError};
-use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionLike};
-use dpp::state_transition::fee::operations::{Operation, SignatureVerificationOperation};
-use dpp::validation::SimpleValidationResult;
-use drive::drive::Drive;
-use drive::drive::identity::key::fetch::{IdentityKeysRequest, OptionalSingleIdentityPublicKeyOutcome, SingleIdentityPublicKeyOutcome};
-use crate::error::Error;
-use drive::dpp::identity::{ IdentityPublicKey, KeyType};
-use drive::grovedb::Transaction;
+use std::collections::HashSet;
 lazy_static! {
     static ref SUPPORTED_KEY_TYPES: HashSet<KeyType> = {
         let mut keys = HashSet::new();
@@ -29,12 +34,20 @@ pub fn validate_state_transition_identity_signature(
 ) -> Result<SimpleValidationResult, Error> {
     let mut validation_result = SimpleValidationResult::default();
 
-    let key_id = state_transition.get_signature_public_key_id().ok_or(ProtocolError::CorruptedCodeExecution(format!("state_transition {} does not have a public key Id to verify", state_transition.type_name())))?;
+    let key_id = state_transition.get_signature_public_key_id().ok_or(
+        ProtocolError::CorruptedCodeExecution(format!(
+            "state_transition {} does not have a public key Id to verify",
+            state_transition.type_name()
+        )),
+    )?;
 
-    let key_request = IdentityKeysRequest::new_specific_key_query(state_transition.get_owner_id().as_bytes(), key_id);
+    let key_request = IdentityKeysRequest::new_specific_key_query(
+        state_transition.get_owner_id().as_bytes(),
+        key_id,
+    );
 
-    let maybe_public_key: OptionalSingleIdentityPublicKeyOutcome = drive
-        .fetch_identity_keys(key_request, Some(transaction))?;
+    let maybe_public_key: OptionalSingleIdentityPublicKeyOutcome =
+        drive.fetch_identity_keys(key_request, Some(transaction))?;
 
     let public_key = match maybe_public_key {
         None => {

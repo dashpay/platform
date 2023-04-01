@@ -55,7 +55,7 @@ where
 
         let block_info = BlockInfo {
             time_ms: block_execution_context.block_info.block_time_ms,
-            height: block_execution_context.block_info.block_height,
+            height: block_execution_context.block_info.height,
             epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
         };
 
@@ -167,8 +167,12 @@ where
             &mut drive_operations,
         );
 
-        self.drive
-            .apply_drive_operations(drive_operations, true, &block_info, Some(transaction))?;
+        self.drive.apply_drive_operations(
+            drive_operations,
+            true,
+            &block_info,
+            Some(transaction),
+        )?;
 
         Ok(())
     }
@@ -189,7 +193,7 @@ where
 
         let block_info = BlockInfo {
             time_ms: block_execution_context.block_info.block_time_ms,
-            height: block_execution_context.block_info.block_height,
+            height: block_execution_context.block_info.height,
             epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
         };
 
@@ -290,8 +294,12 @@ where
             &mut drive_operations,
         );
 
-        self.drive
-            .apply_drive_operations(drive_operations, true, &block_info, Some(transaction))?;
+        self.drive.apply_drive_operations(
+            drive_operations,
+            true,
+            &block_info,
+            Some(transaction),
+        )?;
 
         Ok(unsigned_withdrawal_transactions)
     }
@@ -304,7 +312,7 @@ where
         let transaction = &block_execution_context.current_transaction;
         let block_info = BlockInfo {
             time_ms: block_execution_context.block_info.block_time_ms,
-            height: block_execution_context.block_info.block_height,
+            height: block_execution_context.block_info.height,
             epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
         };
 
@@ -626,7 +634,7 @@ mod tests {
             platform.block_execution_context = RwLock::new(Some(BlockExecutionContext {
                 current_transaction: transaction,
                 block_info: BlockStateInfo {
-                    block_height: 1,
+                    height: 1,
                     block_time_ms: 1,
                     previous_block_time_ms: Some(1),
                     proposer_pro_tx_hash: [
@@ -772,7 +780,7 @@ mod tests {
             platform.block_execution_context = RwLock::new(Some(BlockExecutionContext {
                 current_transaction: transaction,
                 block_info: BlockStateInfo {
-                    block_height: 1,
+                    height: 1,
                     block_time_ms: 1,
                     previous_block_time_ms: Some(1),
                     proposer_pro_tx_hash: [

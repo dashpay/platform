@@ -1,10 +1,10 @@
-use tenderdash_abci::proto::abci::ExecTxResult;
+use crate::execution::execution_event::ExecutionResult::ConsensusExecutionError;
 use dpp::identity::PartialIdentity;
 use dpp::validation::{SimpleValidationResult, ValidationResult};
 use drive::drive::batch::DriveOperation;
 use drive::fee::credits::SignedCredits;
 use drive::fee::result::FeeResult;
-use crate::execution::execution_event::ExecutionResult::ConsensusExecutionError;
+use tenderdash_abci::proto::abci::ExecTxResult;
 
 pub type DryRunFeeResult = FeeResult;
 
@@ -12,7 +12,7 @@ pub type DryRunFeeResult = FeeResult;
 pub enum ExecutionResult {
     SuccessfulPaidExecution(DryRunFeeResult, FeeResult),
     SuccessfulFreeExecution,
-    ConsensusExecutionError(SimpleValidationResult)
+    ConsensusExecutionError(SimpleValidationResult),
 }
 
 // State transitions are never free, so we should filter out SuccessfulFreeExecution
@@ -34,7 +34,11 @@ impl From<ExecutionResult> for Option<ExecTxResult> {
             }
             ExecutionResult::SuccessfulFreeExecution => None,
             ExecutionResult::ConsensusExecutionError(validation_result) => {
-                let code = validation_result.errors.first().map(|error| error.code()).unwrap_or(1);
+                let code = validation_result
+                    .errors
+                    .first()
+                    .map(|error| error.code())
+                    .unwrap_or(1);
                 Some(ExecTxResult {
                     code,
                     data: vec![],
@@ -52,9 +56,7 @@ impl From<ExecutionResult> for Option<ExecTxResult> {
 
 impl From<ValidationResult<ExecutionResult>> for ExecutionResult {
     fn from(value: ValidationResult<ExecutionResult>) -> Self {
-        let ValidationResult {
-            errors, data
-        } = value;
+        let ValidationResult { errors, data } = value;
         if let Some(result) = data {
             if !errors.is_empty() {
                 ConsensusExecutionError(SimpleValidationResult::new_with_errors(errors))

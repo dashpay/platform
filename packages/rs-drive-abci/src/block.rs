@@ -28,12 +28,12 @@
 //
 
 use dpp::util::vec::vec_to_array;
-use drive::grovedb::{Transaction, TransactionArg};
-use tenderdash_abci::proto::abci as proto;
-use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 use drive::drive::block_info::BlockInfo;
 use drive::fee::epoch::EpochIndex;
 use drive::fee_pools::epochs::Epoch;
+use drive::grovedb::{Transaction, TransactionArg};
+use tenderdash_abci::proto::abci as proto;
+use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 
 use crate::abci::messages::BlockBeginRequest;
 use crate::execution::fee_pools::epoch::EpochInfo;
@@ -41,7 +41,9 @@ use crate::execution::fee_pools::epoch::EpochInfo;
 /// Block info
 pub struct BlockStateInfo {
     /// Block height
-    pub block_height: u64,
+    pub height: u64,
+    /// Block round
+    pub round: u32,
     /// Block time in ms
     pub block_time_ms: u64,
     /// Previous block time in ms
@@ -54,22 +56,11 @@ pub struct BlockStateInfo {
 
 impl BlockStateInfo {
     /// Gets a block info from the block state info
-    pub fn to_block_info(&self, epoch_index : EpochIndex) -> BlockInfo {
+    pub fn to_block_info(&self, epoch_index: EpochIndex) -> BlockInfo {
         BlockInfo {
             time_ms: self.block_time_ms,
-            height: self.block_height,
+            height: self.height,
             epoch: Epoch::new(epoch_index),
-        }
-    }
-    /// Given a `BlockBeginRequest` return `BlockInfo`
-    #[deprecated = "use from_prepare_proposal_request and from_process_proposal_request"]
-    pub fn from_block_begin_request(block_begin_request: &BlockBeginRequest) -> BlockStateInfo {
-        BlockStateInfo {
-            block_height: block_begin_request.block_height,
-            block_time_ms: block_begin_request.block_time_ms,
-            previous_block_time_ms: block_begin_request.previous_block_time_ms,
-            proposer_pro_tx_hash: block_begin_request.proposer_pro_tx_hash,
-            core_chain_locked_height: block_begin_request.core_chain_locked_height,
         }
     }
     /// Generate block state info based on Prepare Proposal request
@@ -77,7 +68,8 @@ impl BlockStateInfo {
         request: &proto::RequestPrepareProposal,
     ) -> BlockStateInfo {
         BlockStateInfo {
-            block_height: request.height as u64,
+            height: request.height as u64,
+            round: request.round as u32,
             block_time_ms: request.time.clone().unwrap().to_milis(),
             previous_block_time_ms: None, // TODO: implement properly
             //<dyn Into<[u8; 32]>>::into()
@@ -85,6 +77,10 @@ impl BlockStateInfo {
                 .expect("invalid proposer protxhash"),
             core_chain_locked_height: request.core_chain_locked_height,
         }
+    }
+    /// Does this match a height and round?
+    pub fn matches(&self, height: u64, round: u32) -> bool {
+        self.height == height && self.round == round
     }
 }
 /// Block execution context

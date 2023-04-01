@@ -6,20 +6,22 @@ mod identity_credit_withdrawal;
 mod identity_update;
 mod key_validation;
 
+use crate::error::Error;
+use crate::execution::execution_event::ExecutionEvent;
 use crate::platform::Platform;
 use dpp::consensus::ConsensusError;
 use dpp::state_transition::StateTransitionAction::{
     DataContractCreateAction, DataContractUpdateAction, DocumentsBatchAction, IdentityCreateAction,
     IdentityCreditWithdrawalAction, IdentityTopUpAction, IdentityUpdateAction,
 };
-use dpp::state_transition::{StateTransition, StateTransitionAction, StateTransitionIdentitySigned, StateTransitionLike};
+use dpp::state_transition::{
+    StateTransition, StateTransitionAction, StateTransitionIdentitySigned, StateTransitionLike,
+};
 use dpp::validation::{SimpleValidationResult, ValidationResult};
 use dpp::ProtocolError;
 use drive::drive::Drive;
-use crate::error::Error;
-use crate::execution::execution_event::ExecutionEvent;
 
-pub trait StateTransitionValidation<C> : StateTransitionLike {
+pub trait StateTransitionValidation<C>: StateTransitionLike {
     fn validate_all(
         &self,
         platform: &Platform<C>,

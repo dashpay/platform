@@ -1,10 +1,7 @@
 //! This module implements ABCI application server.
 //!
 use super::config::AbciConfig;
-use crate::{
-    config::PlatformConfig, error::Error, platform::Platform,
-    rpc::core::CoreRPCLike,
-};
+use crate::{config::PlatformConfig, error::Error, platform::Platform, rpc::core::CoreRPCLike};
 use dpp::identity::TimestampMillis;
 use dpp::state_transition::StateTransition;
 use drive::query::TransactionArg;

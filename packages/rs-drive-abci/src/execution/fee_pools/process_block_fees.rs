@@ -103,7 +103,7 @@ impl<'a, CoreRPCLike> Platform<'a, CoreRPCLike> {
 
         current_epoch.add_init_current_operations(
             DEFAULT_ORIGINAL_FEE_MULTIPLIER, // TODO use a data contract to choose the fee multiplier
-            block_info.block_height,
+            block_info.height,
             block_info.block_time_ms,
             batch,
         );
@@ -178,7 +178,7 @@ impl<'a, CoreRPCLike> Platform<'a, CoreRPCLike> {
         // Since start_block_height for current epoch is batched and not committed yet
         // we pass it explicitly
         let cached_current_epoch_start_block_height = if epoch_info.is_epoch_change {
-            Some(block_info.block_height)
+            Some(block_info.height)
         } else {
             None
         };
@@ -310,7 +310,7 @@ mod tests {
                 let block_time_ms = genesis_time_ms + epoch_index as u64 * EPOCH_CHANGE_TIME_MS;
 
                 let block_info = BlockStateInfo {
-                    block_height,
+                    height: block_height,
                     block_time_ms,
                     previous_block_time_ms,
                     proposer_pro_tx_hash,
@@ -485,7 +485,7 @@ mod tests {
                     genesis_time_ms + epoch_index as u64 * EPOCH_CHANGE_TIME_MS + block_height;
 
                 let block_info = BlockStateInfo {
-                    block_height,
+                    height: block_height,
                     block_time_ms,
                     previous_block_time_ms,
                     proposer_pro_tx_hash,

@@ -1,17 +1,21 @@
-use dpp::consensus::basic::identity::IdentityInsufficientBalanceError;
-use dpp::consensus::ConsensusError;
-use dpp::validation::{SimpleValidationResult, ValidationResult};
-use crate::abci::handlers::TenderdashAbci;
 use crate::abci::messages::{
     AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFees,
 };
-use crate::block::BlockExecutionContext;
+use crate::block::{BlockExecutionContext, BlockStateInfo};
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::execution_event::ExecutionResult::{
+    ConsensusExecutionError, SuccessfulFreeExecution, SuccessfulPaidExecution,
+};
 use crate::execution::execution_event::{ExecutionEvent, ExecutionResult};
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformState;
+use crate::validation::state_transition::StateTransitionValidation;
+use dpp::consensus::basic::identity::IdentityInsufficientBalanceError;
+use dpp::consensus::ConsensusError;
+use dpp::state_transition::StateTransition;
+use dpp::validation::{SimpleValidationResult, ValidationResult};
 use drive::dpp::identity::PartialIdentity;
 use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::drive::batch::DriveOperation;
@@ -20,8 +24,8 @@ use drive::drive::Drive;
 use drive::error::Error::GroveDB;
 use drive::fee::result::FeeResult;
 use drive::grovedb::{Transaction, TransactionArg};
-use crate::execution::execution_event::ExecutionResult::{ConsensusExecutionError, SuccessfulFreeExecution, SuccessfulPaidExecution};
-
+use tenderdash_abci::proto::abci::ExecTxResult;
+use crate::execution::fee_pools::epoch::EpochInfo;
 
 impl<'a, C> Platform<'a, C>
 where
@@ -39,25 +43,26 @@ where
                 operations,
             } => {
                 let balance = identity.balance.ok_or(Error::Execution(
-                    ExecutionError::CorruptedCodeExecution(
-                        "partial identity info with no balance",
-                    ),
+                    ExecutionError::CorruptedCodeExecution("partial identity info with no balance"),
                 ))?;
                 let estimated_fee_result = self
                     .drive
-                    .apply_drive_operations(
-                        operations.clone(),
-                        false,
-                        block_info,
-                        transaction,
-                    )
+                    .apply_drive_operations(operations.clone(), false, block_info, transaction)
                     .map_err(Error::Drive)?;
 
                 // TODO: Should take into account refunds as well
                 if balance >= estimated_fee_result.total_base_fee() {
                     Ok(ValidationResult::new_with_data(estimated_fee_result))
                 } else {
-                    Ok(ValidationResult::new_with_data_and_errors(estimated_fee_result, vec![ConsensusError::IdentityInsufficientBalanceError(IdentityInsufficientBalanceError { identity_id: identity.id, balance })]))
+                    Ok(ValidationResult::new_with_data_and_errors(
+                        estimated_fee_result,
+                        vec![ConsensusError::IdentityInsufficientBalanceError(
+                            IdentityInsufficientBalanceError {
+                                identity_id: identity.id,
+                                balance,
+                            },
+                        )],
+                    ))
                 }
             }
             ExecutionEvent::FreeDriveEvent { operations } => {
@@ -79,7 +84,8 @@ where
                 identity,
                 operations,
             } => {
-                let validation_result = self.validate_fees_of_event(&event, block_info, Some(&transaction))?;
+                let validation_result =
+                    self.validate_fees_of_event(&event, block_info, Some(&transaction))?;
                 if validation_result.is_valid_with_data() {
                     let individual_fee_result = self
                         .drive
@@ -102,9 +108,14 @@ where
                     //     balance_change.change()
                     // );
 
-                    Ok(SuccessfulPaidExecution(validation_result.into_data()?,outcome.actual_fee_paid))
+                    Ok(SuccessfulPaidExecution(
+                        validation_result.into_data()?,
+                        outcome.actual_fee_paid,
+                    ))
                 } else {
-                    Ok(ConsensusExecutionError(SimpleValidationResult::new_with_errors(validation_result.errors)))
+                    Ok(ConsensusExecutionError(
+                        SimpleValidationResult::new_with_errors(validation_result.errors),
+                    ))
                 }
             }
             ExecutionEvent::FreeDriveEvent { operations } => {
@@ -200,5 +211,94 @@ where
         self.state.write().unwrap().last_block_info = Some(block_info.clone());
 
         Ok(())
+    }
+
+    pub fn process_raw_state_transitions(
+        &self,
+        raw_state_transitions: &Vec<Vec<u8>>,
+    ) -> Result<Vec<ExecTxResult>, Error> {
+        let state_transitions = StateTransition::deserialize_many(raw_state_transitions)?;
+
+        state_transitions
+            .into_iter()
+            .map(|state_transition| {
+                let state_transition_execution_event = state_transition.validate_all(self)?;
+                // we map the result to the actual execution
+                let execution_result: ExecutionResult = state_transition_execution_event
+                    .map_result(|execution_event| {
+                        self.execute_event(execution_event, &block_info, &transaction)
+                    })?
+                    .into();
+                execution_result.into()
+            })
+            .collect::<Result<Vec<ExecTxResult>, Error>>()
+    }
+
+    pub fn run_proposal(
+        &self,
+        proposed_app_version: u64,
+        proposer_pro_tx_hash: [u8; 32],
+        block_height: u64,
+        block_time_ms: u64,
+        raw_state_transitions: &Vec<Vec<u8>>,
+        transaction: &Transaction,
+    ) -> Result<Vec<ExecTxResult>, Error> {
+        // We start by getting the epoch we are in
+        let genesis_time_ms =
+            self.get_genesis_time(block_height, block_time_ms, &transaction)?;
+        let epoch_info =
+            EpochInfo::from_genesis_time_and_block_info(genesis_time_ms, &block_state_info)?;
+
+        //
+        self.drive
+            .update_validator_proposed_app_version(
+                proposer_pro_tx_hash,
+                proposed_app_version as u32,
+                Some(&transaction),
+            )
+            .map_err(|e| format!("cannot update proposed app version: {}", e))?;
+
+        // Init block execution context
+        let block_state_info = BlockStateInfo::from_prepare_proposal_request(&request);
+
+
+        let block_info = block_state_info.to_block_info(epoch_info.current_epoch_index);
+        // FIXME: we need to calculate total hpmns based on masternode list (or remove hpmn_count if not needed)
+        let total_hpmns = self.config.quorum_size as u32;
+        let block_execution_context = BlockExecutionContext {
+            current_transaction: transaction,
+            block_info: block_state_info,
+            epoch_info: epoch_info.clone(),
+            hpmn_count: total_hpmns,
+        };
+
+        // If last synced Core block height is not set instead of scanning
+        // number of blocks for asset unlock transactions scan only one
+        // on Core chain locked height by setting last_synced_core_height to the same value
+        // FIXME: re-enable and implement
+        // let last_synced_core_height = if request.last_synced_core_height == 0 {
+        //     block_execution_context.block_info.core_chain_locked_height
+        // } else {
+        //     request.last_synced_core_height
+        // };
+        let last_synced_core_height = block_execution_context.block_info.core_chain_locked_height;
+
+        self.block_execution_context
+            .write()
+            .unwrap()
+            .replace(block_execution_context);
+
+        self.update_broadcasted_withdrawal_transaction_statuses(
+            last_synced_core_height,
+            &transaction,
+        )?;
+
+        let unsigned_withdrawal_transaction_bytes = self
+            .fetch_and_prepare_unsigned_withdrawal_transactions(
+                vec_to_array(&request.quorum_hash).expect("invalid quorum hash"),
+                &transaction,
+            )?;
+
+        let tx_results = self.process_raw_state_transitions(&raw_state_transitions)?;
     }
 }
