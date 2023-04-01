@@ -1,6 +1,3 @@
-use crate::abci::messages::{
-    AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFees,
-};
 use crate::block::{BlockExecutionContext, BlockStateInfo};
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -12,22 +9,15 @@ use crate::execution::execution_event::{ExecutionEvent, ExecutionResult};
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
-use crate::state::PlatformState;
-use crate::validation::state_transition::StateTransitionValidation;
 use dpp::consensus::basic::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::ConsensusError;
 use dpp::state_transition::StateTransition;
 use dpp::validation::{SimpleValidationResult, ValidationResult};
-use drive::dpp::identity::PartialIdentity;
-use drive::dpp::util::deserializer::ProtocolVersion;
-use drive::drive::batch::DriveOperation;
 use drive::drive::block_info::BlockInfo;
-use drive::drive::Drive;
 use drive::error::Error::GroveDB;
 use drive::fee::result::FeeResult;
 use drive::grovedb::{Transaction, TransactionArg};
-use tenderdash_abci::proto::abci::{ExecTxResult, RequestPrepareProposal, ResponsePrepareProposal};
-use tenderdash_abci::proto::serializers::timestamp::ToMilis;
+use tenderdash_abci::proto::abci::ExecTxResult;
 
 pub struct BlockExecutionOutcome {
     block_execution_context: BlockExecutionContext,

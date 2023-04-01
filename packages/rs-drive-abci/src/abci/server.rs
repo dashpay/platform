@@ -2,18 +2,9 @@
 //!
 use super::config::AbciConfig;
 use crate::{config::PlatformConfig, error::Error, platform::Platform, rpc::core::CoreRPCLike};
-use dpp::identity::TimestampMillis;
-use dpp::state_transition::StateTransition;
 use drive::query::TransactionArg;
 use std::panic::RefUnwindSafe;
 use std::{fmt::Debug, sync::MutexGuard};
-use tenderdash_abci::proto::abci::{
-    RequestCheckTx, RequestProcessProposal, ResponseCheckTx, ResponseProcessProposal,
-};
-use tenderdash_abci::proto::{
-    abci::{self as proto, ResponseException},
-    serializers::timestamp::ToMilis,
-};
 
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
 ///

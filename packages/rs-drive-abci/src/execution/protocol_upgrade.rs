@@ -4,7 +4,7 @@ use crate::error::Error;
 use crate::platform::Platform;
 use crate::state::PlatformState;
 use drive::dpp::util::deserializer::ProtocolVersion;
-use drive::grovedb::{Transaction, TransactionArg};
+use drive::grovedb::Transaction;
 
 impl<'a, CoreRPCLike> Platform<'a, CoreRPCLike> {
     /// checks for a network upgrade and resets activation window

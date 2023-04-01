@@ -30,16 +30,15 @@
 //! Platform Init
 //!
 
-use crate::block::{BlockExecutionContext, BlockExecutionContextWithTransaction};
+use crate::block::BlockExecutionContextWithTransaction;
 use crate::config::PlatformConfig;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
+use crate::rpc::core::DefaultCoreRPC;
 use crate::state::PlatformState;
 use drive::drive::Drive;
 
 use drive::drive::defaults::PROTOCOL_VERSION;
-use std::cell::RefCell;
 use std::path::Path;
 use std::sync::RwLock;
 

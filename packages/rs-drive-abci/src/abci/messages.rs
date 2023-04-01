@@ -43,7 +43,6 @@ use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::fee::epoch::CreditsPerEpoch;
 use drive::fee::result::FeeResult;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use tenderdash_abci::proto::abci::ExecTxResult;
 
 /// A struct for handling chain initialization requests
 #[derive(Serialize, Deserialize)]

@@ -28,16 +28,11 @@
 //
 
 use crate::abci::AbciError;
-use dpp::util::vec::vec_to_array;
 use drive::drive::block_info::BlockInfo;
 use drive::fee::epoch::EpochIndex;
 use drive::fee_pools::epochs::Epoch;
-use drive::grovedb::{Transaction, TransactionArg};
-use tenderdash_abci::proto::abci as proto;
-use tenderdash_abci::proto::serializers::timestamp::ToMilis;
+use drive::grovedb::Transaction;
 
-use crate::abci::messages::BlockBeginRequest;
-use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::block_proposal::BlockProposal;
 use crate::execution::fee_pools::epoch::EpochInfo;

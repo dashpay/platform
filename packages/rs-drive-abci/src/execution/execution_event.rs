@@ -1,6 +1,5 @@
-use crate::execution::execution_event::ExecutionResult::ConsensusExecutionError;
 use dpp::identity::PartialIdentity;
-use dpp::validation::{SimpleValidationResult, ValidationResult};
+use dpp::validation::SimpleValidationResult;
 use drive::drive::batch::DriveOperation;
 use drive::fee::credits::SignedCredits;
 use drive::fee::result::FeeResult;

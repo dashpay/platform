@@ -38,7 +38,7 @@ use std::option::Option::None;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::fee_pools::pending_epoch_refunds::add_update_pending_epoch_refunds_operations;
 use drive::fee_pools::epochs::Epoch;
-use drive::grovedb::{Transaction, TransactionArg};
+use drive::grovedb::Transaction;
 
 use crate::abci::messages::BlockFees;
 use crate::block::BlockStateInfo;

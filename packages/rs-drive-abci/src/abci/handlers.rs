@@ -32,28 +32,17 @@
 //! This module defines the `TenderdashAbci` trait and implements it for type `Platform`.
 //!
 
-use crate::abci::server::AbciApplication;
 use crate::abci::AbciError;
-use crate::block::{BlockExecutionContext, BlockExecutionContextWithTransaction, BlockStateInfo};
-use crate::execution::fee_pools::epoch::EpochInfo;
-use crate::{
-    abci::messages::{
-        AfterFinalizeBlockRequest, AfterFinalizeBlockResponse, BlockBeginRequest,
-        BlockBeginResponse, BlockEndRequest, BlockEndResponse, InitChainRequest, InitChainResponse,
-    },
-    rpc::core::CoreRPCLike,
-};
+use crate::block::{BlockExecutionContext, BlockExecutionContextWithTransaction};
+use crate::rpc::core::CoreRPCLike;
 use dpp::identity::TimestampMillis;
 use dpp::state_transition::StateTransition;
-use dpp::util::vec::vec_to_array;
-use drive::error::drive::DriveError;
 use drive::error::Error::GroveDB;
 use drive::fee::credits::SignedCredits;
-use drive::grovedb::{Transaction, TransactionArg};
 use tenderdash_abci::proto::abci::{
-    ExecTxResult, RequestCheckTx, RequestFinalizeBlock, RequestInitChain, RequestPrepareProposal,
-    RequestProcessProposal, RequestQuery, ResponseCheckTx, ResponseFinalizeBlock,
-    ResponseInitChain, ResponsePrepareProposal, ResponseProcessProposal, ResponseQuery,
+    RequestCheckTx, RequestFinalizeBlock, RequestInitChain, RequestPrepareProposal,
+    RequestProcessProposal, ResponseCheckTx, ResponseFinalizeBlock, ResponseInitChain,
+    ResponsePrepareProposal, ResponseProcessProposal,
 };
 use tenderdash_abci::proto::{
     abci::{self as proto, ResponseException},
@@ -63,9 +52,7 @@ use tenderdash_abci::proto::{
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::engine::BlockExecutionOutcome;
-use crate::execution::execution_event::ExecutionResult;
 use crate::platform::Platform;
-use crate::validation::state_transition::StateTransitionValidation;
 
 impl<'a, C> tenderdash_abci::Application for Platform<'a, C>
 where

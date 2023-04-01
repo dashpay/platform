@@ -7,13 +7,9 @@ mod identity_top_up;
 mod identity_update;
 mod key_validation;
 
-use dpp::state_transition::{
-    StateTransition, StateTransitionAction, StateTransitionIdentitySigned,
-};
+use dpp::state_transition::{StateTransition, StateTransitionAction};
 use dpp::validation::{SimpleValidationResult, ValidationResult};
 use drive::drive::Drive;
-
-use self::key_validation::validate_state_transition_identity_signature;
 
 use super::bls::DriveBls;
 use crate::error::Error;
