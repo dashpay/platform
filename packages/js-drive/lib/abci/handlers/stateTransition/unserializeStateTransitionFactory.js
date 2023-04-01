@@ -87,13 +87,20 @@ function unserializeStateTransitionFactory(dpp, noopLogger, dppWasm) {
     // Pre-calculate fee for validateState and state transition apply
     // with worst case costs to validate the whole state transition execution cost
     executionContext.enableDryRun();
+    // TODO(wasm-dpp): revisit - check again if we need to set update Execution Context to ST
+    stateTransition.setExecutionContext(executionContext);
 
     await dpp.stateTransition.validateState(stateTransition);
+    console.log('Validated st state');
     await dpp.stateTransition.apply(stateTransition);
+    console.log('Applied st');
 
     executionContext.disableDryRun();
+    // TODO(wasm-dpp): revisit - check again if we need to set update Execution Context to ST
+    stateTransition.setExecutionContext(executionContext);
 
     result = await dpp.stateTransition.validateFee(stateTransition);
+    console.log('Validated fee', result.isValid());
 
     if (!result.isValid()) {
       const consensusError = result.getFirstError();
@@ -109,7 +116,7 @@ function unserializeStateTransitionFactory(dpp, noopLogger, dppWasm) {
     }
 
     executionTimer.stopTimer(TIMERS.DELIVER_TX.VALIDATE_FEE, true);
-
+    console.log('Unserialized ST factory!');
     return stateTransition;
   }
 

@@ -188,7 +188,7 @@ class IdentityStoreRepository {
     } finally {
       if (this.logger) {
         this.logger.trace({
-          identity_id: identity.id.toString(),
+          identity_id: identity.getId().toString(),
           useTransaction: Boolean(options.useTransaction),
           appHash: (await this.storage.getRootHash(options)).toString('hex'),
         }, 'create');

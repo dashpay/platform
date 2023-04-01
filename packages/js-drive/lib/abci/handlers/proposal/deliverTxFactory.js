@@ -173,6 +173,8 @@ function deliverTxFactory(
     );
 
     stateTransitionExecutionContext.clearDryOperations();
+    // TODO(wasm-dpp): revisit - check again if we need to set update Execution Context to ST
+    stateTransition.setExecutionContext(stateTransitionExecutionContext);
 
     // Validate against state
 
