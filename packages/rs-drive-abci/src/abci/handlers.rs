@@ -53,6 +53,8 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::engine::BlockExecutionOutcome;
 use crate::platform::Platform;
+use crate::validation::bls::DriveBls;
+use crate::validation::state_transition::validate_state_transition;
 
 impl<'a, C> tenderdash_abci::Application for Platform<'a, C>
 where
@@ -291,7 +293,8 @@ where
         let RequestCheckTx { tx, r#type } = request;
         let state_transition =
             StateTransition::deserialize(tx.as_slice()).map_err(Error::Protocol)?;
-        let execution_event = state_transition.validate_state_transition(self)?;
+        let drive_bls = DriveBls {};
+        let execution_event = validate_state_transition(self, &drive_bls, state_transition)?;
 
         // We should run the execution event in dry run to see if we would have enough fees for the transaction
 
