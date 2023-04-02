@@ -2,8 +2,12 @@ use std::sync::Arc;
 
 use dpp::{
     consensus::basic::{data_contract::InvalidDataContractIdError, BasicError},
-    data_contract::validation::data_contract_validator::DataContractValidator,
+    data_contract::{
+        state_transition::data_contract_create_transition::DataContractCreateTransitionAction,
+        validation::data_contract_validator::DataContractValidator, DataContract,
+    },
     validation::SimpleConsensusValidationResult,
+    StateError,
 };
 use dpp::{
     data_contract::{
@@ -92,6 +96,22 @@ impl StateTransitionValidation for DataContractCreateTransition {
         drive: &Drive,
         tx: &Transaction,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        todo!()
+        // Data contract shouldn't exist
+        if drive
+            .get_contract_with_fetch_info(self.data_contract.id.0 .0, None, Some(tx))?
+            .1
+            .is_some()
+        {
+            Ok(ConsensusValidationResult::new_with_errors(vec![
+                StateError::DataContractAlreadyPresentError {
+                    data_contract_id: self.data_contract.id.to_owned(),
+                }
+                .into(),
+            ]))
+        } else {
+            let action: StateTransitionAction =
+                Into::<DataContractCreateTransitionAction>::into(self).into();
+            Ok(action.into())
+        }
     }
 }

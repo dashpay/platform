@@ -15,7 +15,7 @@ use crate::version::ProtocolVersionValidator;
 use crate::{BlsModule, DashPlatformProtocolInitError, NonConsensusError};
 
 lazy_static! {
-    static ref INDENTITY_CREATE_TRANSITION_SCHEMA: JsonValue = serde_json::from_str(include_str!(
+    pub static ref INDENTITY_CREATE_TRANSITION_SCHEMA: JsonValue = serde_json::from_str(include_str!(
         "../../../../../schema/identity/stateTransition/identityCreate.json"
     ))
     .unwrap();

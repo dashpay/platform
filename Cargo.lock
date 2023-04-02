@@ -1066,6 +1066,7 @@ dependencies = [
  "ciborium",
  "dashcore",
  "data-contracts",
+ "derive_more",
  "env_logger",
  "futures",
  "getrandom",
