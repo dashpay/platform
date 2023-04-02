@@ -5,11 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::consensus::basic::document::{
-    DataContractNotPresentError, DuplicateDocumentTransitionsWithIdsError,
-    DuplicateDocumentTransitionsWithIndicesError, InvalidDocumentTransitionActionError,
-    InvalidDocumentTransitionIdError, InvalidDocumentTypeError,
-};
+use crate::consensus::basic::document::{DataContractNotPresentError, DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError, InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError, InvalidDocumentTypeError, MissingDataContractIdBasicError, MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError};
 use crate::document::state_transition::documents_batch_transition::property_names;
 use crate::document::validation::basic::find_duplicates_by_id::find_duplicates_by_id;
 use crate::validation::SimpleValidationResult;
@@ -35,6 +31,7 @@ use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::converter::serde_json::BTreeValueRefJsonConverter;
 use platform_value::Value;
 use serde_json::Value as JsonValue;
+use crate::consensus::basic::value_error::ValueError;
 
 use super::{
     find_duplicates_by_indices::find_duplicates_by_indices,
@@ -150,12 +147,12 @@ pub async fn validate_documents_batch_transition_basic(
             .get_optional_identifier(property_names::DATA_CONTRACT_ID)
         {
             Ok(None) => {
-                result.add_error(BasicError::MissingDataContractIdBasicError);
+                result.add_error(BasicError::MissingDataContractIdBasicError(MissingDataContractIdBasicError::new()));
                 continue;
             }
             Ok(Some(id)) => id,
             Err(err) => {
-                result.add_error(BasicError::ValueError(err));
+                result.add_error(BasicError::ValueError(ValueError::new(err)));
                 continue;
             }
         };
@@ -256,7 +253,7 @@ fn validate_raw_transitions<'a>(
     let owner_id_value: Value = owner_id.into();
     for mut raw_document_transition in raw_document_transitions {
         let Some(document_type) = raw_document_transition.get_optional_str("$type").map_err(ProtocolError::ValueError)? else {
-                result.add_error(BasicError::MissingDocumentTransitionTypeError);
+                result.add_error(BasicError::MissingDocumentTransitionTypeError(MissingDocumentTransitionTypeError::new()));
                 return Ok(result);
         };
 
@@ -268,7 +265,7 @@ fn validate_raw_transitions<'a>(
         }
 
         let Some(document_action) = raw_document_transition.get_optional_integer::<u8>("$action").map_err(ProtocolError::ValueError)? else {
-            result.add_error(BasicError::MissingDocumentTransitionActionError);
+            result.add_error(BasicError::MissingDocumentTransitionActionError(MissingDocumentTransitionActionError::new()));
             return Ok(result);
         };
 

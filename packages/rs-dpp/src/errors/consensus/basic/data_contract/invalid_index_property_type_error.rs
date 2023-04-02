@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
-use crate::data_contract::document_type::Index;
 
 // TODO not primitive
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

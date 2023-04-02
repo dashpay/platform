@@ -3,7 +3,6 @@ use serde_json::json;
 use std::convert::TryInto;
 
 use crate::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
-use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 use crate::contracts::withdrawals_contract;
 use crate::data_trigger::DataTriggerExecutionContext;
 use crate::data_trigger::DataTriggerExecutionResult;

@@ -3,7 +3,7 @@ use crate::consensus::ConsensusError;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-// TODO wrong params - getValidationError missing
+// TODO wrong params - setValidationError missing
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Invalid instant lock proof: ${message}")]
 pub struct InvalidInstantAssetLockProofError {

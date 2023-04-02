@@ -1,4 +1,3 @@
-use anyhow::anyhow;
 use ciborium::value::Value as CborValue;
 use std::convert::TryInto;
 

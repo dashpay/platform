@@ -16,6 +16,7 @@ use crate::{
     tests::fixtures::get_data_contract_fixture,
     version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
 };
+use crate::consensus::basic::value_error::ValueError;
 
 struct TestData {
     data_contract_validator: DataContractValidator,
@@ -62,7 +63,7 @@ fn get_schema_error<TData: Clone>(
 fn get_value_error<TData: Clone>(
     result: &ValidationResult<TData>,
     number: usize,
-) -> &platform_value::Error {
+) -> &ValueError {
     value_error(
         result
             .errors

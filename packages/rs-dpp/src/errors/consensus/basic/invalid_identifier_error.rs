@@ -3,6 +3,7 @@ use crate::consensus::ConsensusError;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+// TODO missing setIdentifierError
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Invalid {}: {}", identifier_name, error_message)]
 pub struct InvalidIdentifierError {

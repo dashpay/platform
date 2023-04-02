@@ -5,7 +5,7 @@ use lazy_static::lazy_static;
 use platform_value::Value;
 use serde_json::Value as JsonValue;
 
-use crate::consensus::basic::document::InvalidDocumentTypeError;
+use crate::consensus::basic::document::{InvalidDocumentTypeError, MissingDocumentTypeError};
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::DriveContractExt;
 use crate::validation::SimpleValidationResult;
@@ -91,7 +91,7 @@ impl DocumentValidator {
         let mut result = SimpleValidationResult::default();
 
         let Some(document_type_name) = raw_document.get_optional_str(PROPERTY_DOCUMENT_TYPE).map_err(ProtocolError::ValueError)? else {
-            result.add_error(BasicError::MissingDocumentTypeError);
+            result.add_error(BasicError::MissingDocumentTypeError(MissingDocumentTypeError::new()));
             return Ok(result);
         };
 

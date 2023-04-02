@@ -1,14 +1,17 @@
 use crate::consensus::basic::json_schema_error::JsonSchemaError;
+use crate::consensus::basic::value_error::ValueError;
 use crate::consensus::fee::fee_error::FeeError;
 use crate::consensus::signature::signature_error::SignatureError;
 use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 use crate::consensus::state::state_error::StateError;
 use crate::validation::{SimpleValidationResult, ValidationResult};
 use crate::{
-    consensus::{basic::BasicError, ConsensusError},
+    consensus::{
+        basic::{BasicError, JsonSchemaError},
+        ConsensusError,
+    },
     data_trigger::DataTriggerExecutionResult,
 };
-use platform_value::Error as ValueError;
 
 pub fn get_schema_error(result: &SimpleValidationResult, number: usize) -> &JsonSchemaError {
     json_schema_error(

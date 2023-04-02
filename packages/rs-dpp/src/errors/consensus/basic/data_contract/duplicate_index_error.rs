@@ -3,8 +3,6 @@ use crate::consensus::ConsensusError;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::data_contract::document_type::Index;
-
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Duplicate '{index_name}' index definition for '{document_type}' document")]
 pub struct DuplicateIndexError {

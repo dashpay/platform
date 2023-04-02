@@ -1,5 +1,5 @@
-use dpp::platform_value::Error as PlatformValueError;
 use wasm_bindgen::prelude::*;
+use dpp::consensus::basic::value_error::ValueError;
 
 #[wasm_bindgen(js_name=PlatformValueError, inspectable)]
 #[derive(Debug)]
@@ -7,16 +7,16 @@ pub struct PlatformValueErrorWasm {
     message: String,
 }
 
-impl From<PlatformValueError> for PlatformValueErrorWasm {
-    fn from(e: PlatformValueError) -> Self {
+impl From<ValueError> for PlatformValueErrorWasm {
+    fn from(e: ValueError) -> Self {
         Self {
             message: e.to_string(),
         }
     }
 }
 
-impl From<&PlatformValueError> for PlatformValueErrorWasm {
-    fn from(e: &PlatformValueError) -> Self {
+impl From<&ValueError> for PlatformValueErrorWasm {
+    fn from(e: &ValueError) -> Self {
         Self {
             message: e.to_string(),
         }
@@ -24,7 +24,7 @@ impl From<&PlatformValueError> for PlatformValueErrorWasm {
 }
 
 impl PlatformValueErrorWasm {
-    pub fn new(e: PlatformValueError) -> Self {
+    pub fn new(e: ValueError) -> Self {
         PlatformValueErrorWasm {
             message: e.to_string(),
         }

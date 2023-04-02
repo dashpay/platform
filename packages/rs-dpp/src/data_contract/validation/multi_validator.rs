@@ -3,6 +3,8 @@ use regex::Regex;
 
 use crate::consensus::basic::data_contract::IncompatibleRe2PatternError;
 use crate::consensus::{basic::BasicError, ConsensusError};
+use crate::consensus::basic::json_schema_compilation_error::JsonSchemaCompilationError;
+use crate::consensus::basic::value_error::ValueError;
 use crate::validation::SimpleValidationResult;
 
 pub type SubValidator =
@@ -21,7 +23,7 @@ pub fn validate(raw_data_contract: &Value, validators: &[SubValidator]) -> Simpl
                             format!("{}/{}", path, key.non_qualified_string_representation());
                         values_queue.push((current_value, new_path))
                     }
-                    match key.to_str().map_err(BasicError::ValueError) {
+                    match key.to_str().map_err(|err| BasicError::ValueError(ValueError::new(err))) {
                         Ok(key) => {
                             for validator in validators {
                                 validator(&path, key, value, current_value, &mut result);
@@ -96,22 +98,24 @@ pub fn byte_array_has_no_items_as_parent_validator(
         && (unwrap_error_to_result(
             parent
                 .get("items")
-                .map_err(|e| ConsensusError::BasicError(BasicError::ValueError(e))),
+                .map_err(|e| ConsensusError::BasicError(BasicError::ValueError(ValueError::new(e)))),
             result,
         )
         .is_some()
             || unwrap_error_to_result(
                 parent
                     .get("prefixItems")
-                    .map_err(|e| ConsensusError::BasicError(BasicError::ValueError(e))),
+                    .map_err(|e| ConsensusError::BasicError(BasicError::ValueError(ValueError::new(e)))),
                 result,
             )
             .is_some())
     {
-        result.add_error(BasicError::JsonSchemaCompilationError(format!(
+        let compilation_error = format!(
             "invalid path: '{}': byteArray cannot be used with 'items' or 'prefixItems",
             path
-        )));
+        );
+        result.add_error(BasicError::JsonSchemaCompilationError(
+            JsonSchemaCompilationError::new(compilation_error)));
     }
 }
 
@@ -153,11 +157,11 @@ mod test {
 
         assert!(matches!(
             first_error,
-            BasicError::JsonSchemaCompilationError(msg) if msg.starts_with("invalid path: '/properties/bar': byteArray cannot"),
+            BasicError::JsonSchemaCompilationError(msg) if msg.compilation_error().starts_with("invalid path: '/properties/bar': byteArray cannot"),
         ));
         assert!(matches!(
             second_error,
-            BasicError::JsonSchemaCompilationError(msg) if msg.starts_with("invalid path: '/properties': byteArray cannot"),
+            BasicError::JsonSchemaCompilationError(msg) if msg.compilation_error().starts_with("invalid path: '/properties': byteArray cannot"),
         ));
     }
 

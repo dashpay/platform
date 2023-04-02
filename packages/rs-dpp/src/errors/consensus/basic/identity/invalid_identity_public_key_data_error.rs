@@ -4,6 +4,7 @@ use crate::identity::KeyID;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+// TODO missing setValidationError
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Invalid identity public key {public_key_id:?} data: {validation_error:?}")]
 pub struct InvalidIdentityPublicKeyDataError {

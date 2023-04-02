@@ -3,6 +3,7 @@ use dpp::document::DocumentsBatchTransition;
 use dpp::validation::SimpleValidationResult;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
+use dpp::consensus::basic::value_error::ValueError;
 
 use crate::{
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
@@ -24,7 +25,7 @@ pub async fn validate_documents_batch_transition_basic_wasm(
 
     let mut validation_result = SimpleValidationResult::default();
     if let Some(err) = DocumentsBatchTransition::clean_value(&mut value).err() {
-        validation_result.add_error(err);
+        validation_result.add_error(ValueError::new(err));
         return Ok(validation_result.map(|_| JsValue::undefined()).into());
     }
 

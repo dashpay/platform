@@ -70,7 +70,7 @@ impl ErrorWithCode for BasicError {
             Self::MissingDataContractIdBasicError { .. } => 1025,
             Self::MissingDocumentTransitionActionError { .. } => 1026,
             Self::MissingDocumentTransitionTypeError { .. } => 1027,
-            Self::MissingDocumentTypeError => 1028,
+            Self::MissingDocumentTypeError { .. } => 1028,
 
             // Identity
             Self::DuplicatedIdentityPublicKeyBasicError(_) => 1029,
@@ -96,7 +96,7 @@ impl ErrorWithCode for BasicError {
 
             // State Transition
             Self::InvalidStateTransitionTypeError { .. } => 1043,
-            Self::MissingStateTransitionTypeError => 1044,
+            Self::MissingStateTransitionTypeError { .. } => 1044,
             Self::StateTransitionMaxSizeExceededError { .. } => 1045,
         }
     }
@@ -107,7 +107,7 @@ impl ErrorWithCode for SignatureError {
         match self {
             Self::IdentityNotFoundError { .. } => 2000,
             Self::InvalidIdentityPublicKeyTypeError { .. } => 2001,
-            Self::InvalidStateTransitionSignatureError => 2002,
+            Self::InvalidStateTransitionSignatureError { .. } => 2002,
             Self::MissingPublicKeyError { .. } => 2003,
             Self::InvalidSignaturePublicKeySecurityLevelError { .. } => 2004,
             Self::WrongPublicKeyPurposeError { .. } => 2005,

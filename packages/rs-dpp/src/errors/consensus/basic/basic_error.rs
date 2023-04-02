@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::convert::TryFrom;
 use thiserror::Error;
 
 use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
@@ -18,7 +17,9 @@ use crate::consensus::basic::document::{
     DataContractNotPresentError, DuplicateDocumentTransitionsWithIdsError,
     DuplicateDocumentTransitionsWithIndicesError, InconsistentCompoundIndexDataError,
     InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
-    InvalidDocumentTypeError,
+    InvalidDocumentTypeError, MissingDataContractIdBasicError,
+    MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError,
+    MissingDocumentTypeError,
 };
 use crate::consensus::basic::identity::{
     DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
@@ -36,13 +37,15 @@ use crate::consensus::basic::identity::{
 };
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::consensus::basic::state_transition::{
-    InvalidStateTransitionTypeError, StateTransitionMaxSizeExceededError,
+    InvalidStateTransitionTypeError, MissingStateTransitionTypeError,
+    StateTransitionMaxSizeExceededError,
 };
 use crate::consensus::basic::{IncompatibleProtocolVersionError, UnsupportedProtocolVersionError};
 use crate::consensus::ConsensusError;
 
+use crate::consensus::basic::json_schema_compilation_error::JsonSchemaCompilationError;
 use crate::consensus::basic::json_schema_error::JsonSchemaError;
-use platform_value::Error as ValueError;
+use crate::consensus::basic::value_error::ValueError;
 
 #[derive(Error, Debug, Serialize, Deserialize)]
 pub enum BasicError {
@@ -65,8 +68,8 @@ pub enum BasicError {
     IncompatibleProtocolVersionError(IncompatibleProtocolVersionError),
 
     // Structure error
-    #[error("{0}")]
-    JsonSchemaCompilationError(String),
+    #[error(transparent)]
+    JsonSchemaCompilationError(JsonSchemaCompilationError),
 
     #[error(transparent)]
     JsonSchemaError(JsonSchemaError),
@@ -75,7 +78,6 @@ pub enum BasicError {
     InvalidIdentifierError(InvalidIdentifierError),
 
     #[error(transparent)]
-    #[serde(skip)] // TODO: Figure this out
     ValueError(ValueError),
 
     // DataContract
@@ -155,17 +157,17 @@ pub enum BasicError {
     #[error(transparent)]
     InvalidDocumentTypeError(InvalidDocumentTypeError),
 
-    #[error("$dataContractId is not present")]
-    MissingDataContractIdBasicError,
+    #[error(transparent)]
+    MissingDataContractIdBasicError(MissingDataContractIdBasicError),
 
-    #[error("$action is not present")]
-    MissingDocumentTransitionActionError,
+    #[error(transparent)]
+    MissingDocumentTransitionActionError(MissingDocumentTransitionActionError),
 
-    #[error("$type is not present")]
-    MissingDocumentTransitionTypeError,
+    #[error(transparent)]
+    MissingDocumentTransitionTypeError(MissingDocumentTransitionTypeError),
 
-    #[error("$type is not present")]
-    MissingDocumentTypeError,
+    #[error(transparent)]
+    MissingDocumentTypeError(MissingDocumentTypeError),
 
     // Identity
     #[error(transparent)]
@@ -246,17 +248,11 @@ pub enum BasicError {
     #[error(transparent)]
     InvalidStateTransitionTypeError(InvalidStateTransitionTypeError),
 
-    #[error("State transition type is not present")]
-    MissingStateTransitionTypeError,
+    #[error(transparent)]
+    MissingStateTransitionTypeError(MissingStateTransitionTypeError),
 
     #[error(transparent)]
     StateTransitionMaxSizeExceededError(StateTransitionMaxSizeExceededError),
-}
-
-impl From<ValueError> for ConsensusError {
-    fn from(err: ValueError) -> Self {
-        Self::BasicError(BasicError::ValueError(err))
-    }
 }
 
 impl From<BasicError> for ConsensusError {

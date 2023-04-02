@@ -1,10 +1,9 @@
-use anyhow::anyhow;
 use std::{
     convert::{TryFrom, TryInto},
     sync::Arc,
 };
 
-use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
+use crate::consensus::basic::state_transition::{InvalidStateTransitionTypeError, MissingStateTransitionTypeError};
 
 use crate::consensus::basic::decode::SerializedObjectParsingError;
 use crate::data_contract::errors::DataContractNotPresentError;
@@ -235,7 +234,7 @@ pub fn try_get_transition_type(
 
 fn missing_state_transition_error() -> ProtocolError {
     ProtocolError::ConsensusError(Box::new(ConsensusError::BasicError(
-        BasicError::MissingStateTransitionTypeError,
+        BasicError::MissingStateTransitionTypeError(MissingStateTransitionTypeError::new()),
     )))
 }
 

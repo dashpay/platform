@@ -1,7 +1,6 @@
 use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
-use crate::prelude::DocumentTransition;
 use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;

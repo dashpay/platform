@@ -1,12 +1,10 @@
-use crate::consensus::signature::{
-    IdentityNotFoundError, InvalidIdentityPublicKeyTypeError,
-    InvalidSignaturePublicKeySecurityLevelError, MissingPublicKeyError, PublicKeyIsDisabledError,
-    PublicKeySecurityLevelNotMetError, WrongPublicKeyPurposeError,
-};
+use crate::consensus::signature::{IdentityNotFoundError, InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeySecurityLevelError, InvalidStateTransitionSignatureError, MissingPublicKeyError, PublicKeyIsDisabledError, PublicKeySecurityLevelNotMetError, WrongPublicKeyPurposeError};
 use crate::consensus::ConsensusError;
 use thiserror::Error;
 
-#[derive(Error, Debug)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Error, Debug, Serialize, Deserialize)]
 pub enum SignatureError {
     /*
 
@@ -19,8 +17,8 @@ pub enum SignatureError {
     #[error(transparent)]
     InvalidIdentityPublicKeyTypeError(InvalidIdentityPublicKeyTypeError),
 
-    #[error("Invalid State Transition signature")]
-    InvalidStateTransitionSignatureError,
+    #[error(transparent)]
+    InvalidStateTransitionSignatureError(InvalidStateTransitionSignatureError),
 
     #[error(transparent)]
     MissingPublicKeyError(MissingPublicKeyError),
