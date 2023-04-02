@@ -116,7 +116,7 @@ class DocumentRepository {
         new this.dppWasm.PreCalculatedOperation(
           feeResult.storageFee,
           feeResult.processingFee,
-          feeResult.feeRufunds,
+          feeResult.feeRefunds,
         ),
       ],
     );
