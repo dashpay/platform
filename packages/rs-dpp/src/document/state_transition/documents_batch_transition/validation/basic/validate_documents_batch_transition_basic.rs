@@ -56,9 +56,9 @@ lazy_static! {
         "../../../../../schema/document/stateTransition/documentTransition/replace.json"
     ))
     .unwrap();
-    pub static ref DOCUMENTS_BATCH_TRANSITIONS_SCHEMA: JsonValue = serde_json::from_str(include_str!(
-        "../../../../../schema/document/stateTransition/documentsBatch.json"
-    ))
+    pub static ref DOCUMENTS_BATCH_TRANSITIONS_SCHEMA: JsonValue = serde_json::from_str(
+        include_str!("../../../../../schema/document/stateTransition/documentsBatch.json")
+    )
     .unwrap();
 }
 

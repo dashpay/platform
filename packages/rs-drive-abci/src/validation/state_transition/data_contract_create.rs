@@ -89,7 +89,7 @@ impl StateTransitionValidation for DataContractCreateTransition {
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         // Data contract shouldn't exist
         if drive
-            .get_contract_with_fetch_info(self.data_contract.id.0 .0, None, Some(tx))?
+            .get_contract_with_fetch_info(self.data_contract.id.0 .0, None, false, Some(tx))?
             .1
             .is_some()
         {

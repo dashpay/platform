@@ -10,7 +10,10 @@ use dpp::{
 };
 use drive::{drive::Drive, grovedb::Transaction};
 
-use crate::{error::Error, validation::state_transition::common::{validate_protocol_version, validate_schema}};
+use crate::{
+    error::Error,
+    validation::state_transition::common::{validate_protocol_version, validate_schema},
+};
 
 use super::StateTransitionValidation;
 

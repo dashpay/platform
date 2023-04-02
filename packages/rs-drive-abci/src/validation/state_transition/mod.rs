@@ -1,3 +1,4 @@
+mod common;
 mod data_contract_create;
 mod data_contract_update;
 mod documents_batch;
@@ -6,7 +7,6 @@ mod identity_credit_withdrawal;
 mod identity_top_up;
 mod identity_update;
 mod key_validation;
-mod common;
 
 use dpp::state_transition::{StateTransition, StateTransitionAction};
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};

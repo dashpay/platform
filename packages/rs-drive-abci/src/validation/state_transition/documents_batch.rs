@@ -58,9 +58,11 @@ impl StateTransitionValidation for DocumentsBatchTransition {
         let mut result = ValidationResult::default();
 
         for (data_contract_id, transitions) in document_transitions_by_contracts {
+            // We will be adding to block cache, contracts that are pulled
+            // This block cache only gets merged to the main cache if the block is finalized
             let Some(contract_fetch_info) =
                 drive
-                .get_contract_with_fetch_info(data_contract_id.0.0, None, Some(tx))?
+                .get_contract_with_fetch_info(data_contract_id.0.0, None, true, Some(tx))?
                 .1
             else {
                 result.add_error(BasicError::DataContractNotPresent {
