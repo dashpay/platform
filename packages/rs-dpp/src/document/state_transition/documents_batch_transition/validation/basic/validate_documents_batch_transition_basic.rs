@@ -44,19 +44,19 @@ use super::{
 };
 
 lazy_static! {
-    static ref BASE_TRANSITION_SCHEMA: JsonValue = serde_json::from_str(include_str!(
+    pub static ref BASE_TRANSITION_SCHEMA: JsonValue = serde_json::from_str(include_str!(
         "../../../../../schema/document/stateTransition/documentTransition/base.json"
     ))
     .unwrap();
-    static ref CREATE_TRANSITION_SCHEMA: JsonValue = serde_json::from_str(include_str!(
+    pub static ref CREATE_TRANSITION_SCHEMA: JsonValue = serde_json::from_str(include_str!(
         "../../../../../schema/document/stateTransition/documentTransition/create.json"
     ))
     .unwrap();
-    static ref REPLACE_TRANSITION_SCHEMA: JsonValue = serde_json::from_str(include_str!(
+    pub static ref REPLACE_TRANSITION_SCHEMA: JsonValue = serde_json::from_str(include_str!(
         "../../../../../schema/document/stateTransition/documentTransition/replace.json"
     ))
     .unwrap();
-    static ref DOCUMENTS_BATCH_TRANSITIONS_SCHEMA: JsonValue = serde_json::from_str(include_str!(
+    pub static ref DOCUMENTS_BATCH_TRANSITIONS_SCHEMA: JsonValue = serde_json::from_str(include_str!(
         "../../../../../schema/document/stateTransition/documentsBatch.json"
     ))
     .unwrap();
@@ -202,7 +202,7 @@ pub async fn validate_documents_batch_transition_basic(
     Ok(result)
 }
 
-fn validate_document_transitions<'a>(
+pub fn validate_document_transitions<'a>(
     data_contract: &DataContract,
     owner_id: Identifier,
     raw_document_transitions: impl IntoIterator<Item = BTreeMap<String, &'a Value>>,

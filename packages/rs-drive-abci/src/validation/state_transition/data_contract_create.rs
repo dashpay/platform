@@ -2,8 +2,12 @@ use std::sync::Arc;
 
 use dpp::{
     consensus::basic::{data_contract::InvalidDataContractIdError, BasicError},
-    data_contract::validation::data_contract_validator::DataContractValidator,
+    data_contract::{
+        state_transition::data_contract_create_transition::DataContractCreateTransitionAction,
+        validation::data_contract_validator::DataContractValidator, DataContract,
+    },
     validation::SimpleConsensusValidationResult,
+    StateError,
 };
 use dpp::{
     data_contract::{
@@ -23,24 +27,15 @@ use drive::{drive::Drive, grovedb::Transaction};
 use crate::error::Error;
 use crate::validation::state_transition::StateTransitionValidation;
 
+use super::common::validate_schema;
+
 impl StateTransitionValidation for DataContractCreateTransition {
     fn validate_type(
         &self,
         drive: &Drive,
         tx: &Transaction,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        // Reuse jsonschema validation on a whole state transition
-        let json_schema_validator = JsonSchemaValidator::new(DATA_CONTRACT_CREATE_SCHEMA.clone())
-            .expect("unable to compile jsonschema");
-        let result = json_schema_validator
-            .validate(
-                &(self
-                    .to_object(true)
-                    .expect("data contract is serializable")
-                    .try_into_validating_json()
-                    .expect("TODO")),
-            )
-            .expect("TODO: how jsonschema validation will ever fail?");
+        let result = validate_schema(DATA_CONTRACT_CREATE_SCHEMA.clone(), self);
         if !result.is_valid() {
             return Ok(result);
         }
@@ -92,6 +87,22 @@ impl StateTransitionValidation for DataContractCreateTransition {
         drive: &Drive,
         tx: &Transaction,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        todo!()
+        // Data contract shouldn't exist
+        if drive
+            .get_contract_with_fetch_info(self.data_contract.id.0 .0, None, Some(tx))?
+            .1
+            .is_some()
+        {
+            Ok(ConsensusValidationResult::new_with_errors(vec![
+                StateError::DataContractAlreadyPresentError {
+                    data_contract_id: self.data_contract.id.to_owned(),
+                }
+                .into(),
+            ]))
+        } else {
+            let action: StateTransitionAction =
+                Into::<DataContractCreateTransitionAction>::into(self).into();
+            Ok(action.into())
+        }
     }
 }

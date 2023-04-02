@@ -8,10 +8,19 @@ pub type SimpleValidationResult<E> = ValidationResult<(), E>;
 
 pub type ConsensusValidationResult<TData: Clone> = ValidationResult<TData, ConsensusError>;
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct ValidationResult<TData: Clone, E: Debug> {
     pub errors: Vec<E>,
     pub data: Option<TData>,
+}
+
+impl<T: Clone, E: Debug> Default for ValidationResult<T, E> {
+    fn default() -> Self {
+        ValidationResult {
+            errors: Vec::new(),
+            data: None,
+        }
+    }
 }
 
 impl<TData: Clone, E: Debug> ValidationResult<TData, E> {

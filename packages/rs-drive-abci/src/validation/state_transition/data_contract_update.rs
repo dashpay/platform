@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::{
     consensus::basic::{
         data_contract::{
@@ -29,10 +28,14 @@ use dpp::{
     version::ProtocolVersionValidator,
     Convertible, ProtocolError,
 };
+use dpp::{
+    data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransitionAction,
+    validation::{ConsensusValidationResult, SimpleConsensusValidationResult},
+};
 use drive::{drive::Drive, grovedb::Transaction};
 use serde_json::Value as JsonValue;
 
-use crate::error::Error;
+use crate::{error::Error, validation::state_transition::common::validate_schema};
 
 use super::StateTransitionValidation;
 
@@ -42,18 +45,7 @@ impl StateTransitionValidation for DataContractUpdateTransition {
         drive: &Drive,
         tx: &Transaction,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        // Reuse jsonschema validation on a whole state transition
-        let json_schema_validator = JsonSchemaValidator::new(DATA_CONTRACT_UPDATE_SCHEMA.clone())
-            .expect("unable to compile jsonschema");
-        let result = json_schema_validator
-            .validate(
-                &(self
-                    .to_object(true)
-                    .expect("data contract is serializable")
-                    .try_into_validating_json()
-                    .expect("TODO")),
-            )
-            .expect("TODO: how jsonschema validation will ever fail?");
+        let result = validate_schema(DATA_CONTRACT_UPDATE_SCHEMA.clone(), self);
         if !result.is_valid() {
             return Ok(result);
         }
@@ -222,6 +214,36 @@ impl StateTransitionValidation for DataContractUpdateTransition {
         drive: &Drive,
         tx: &Transaction,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        todo!()
+        let mut validation_result = ConsensusValidationResult::default();
+
+        // Data contract should exist
+        let Some(contract_fetch_info) =
+            drive
+            .get_contract_with_fetch_info(self.data_contract.id.0 .0, None, Some(tx))?
+            .1
+        else {
+            validation_result
+                .add_error(BasicError::DataContractNotPresent {
+                    data_contract_id: self.data_contract.id.0.0.into()
+                });
+            return Ok(validation_result);
+        };
+
+        let existing_data_contract = &contract_fetch_info.contract;
+
+        let old_version = existing_data_contract.version;
+        let new_version = self.data_contract.version;
+
+        if new_version < old_version || new_version - old_version != 1 {
+            let err = BasicError::InvalidDataContractVersionError(
+                InvalidDataContractVersionError::new(old_version + 1, new_version),
+            );
+            validation_result.add_error(err);
+            Ok(validation_result)
+        } else {
+            let action: StateTransitionAction =
+                Into::<DataContractUpdateTransitionAction>::into(self).into();
+            Ok(action.into())
+        }
     }
 }
