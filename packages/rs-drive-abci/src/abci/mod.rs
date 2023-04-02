@@ -9,10 +9,10 @@ pub mod messages;
 // new code - config,
 #[cfg(feature = "server")]
 pub mod config;
-#[cfg(feature = "server")]
-mod server;
 #[cfg(test)]
 mod mimic;
+#[cfg(feature = "server")]
+mod server;
 
 pub use error::AbciError;
 #[cfg(feature = "server")]

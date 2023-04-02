@@ -857,8 +857,7 @@ mod tests {
                 Some(&transaction),
             );
 
-            let guarded_block_execution_context =
-                platform.block_execution_context.write().unwrap();
+            let guarded_block_execution_context = platform.block_execution_context.write().unwrap();
             let block_execution_context = guarded_block_execution_context.as_ref().unwrap();
             platform
                 .pool_withdrawals_into_transactions_queue(

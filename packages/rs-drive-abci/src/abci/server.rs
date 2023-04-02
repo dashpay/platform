@@ -1,13 +1,13 @@
 //! This module implements ABCI application server.
 //!
 use super::config::AbciConfig;
+use crate::error::execution::ExecutionError;
 use crate::{config::PlatformConfig, error::Error, platform::Platform, rpc::core::CoreRPCLike};
+use drive::grovedb::Transaction;
 use drive::query::TransactionArg;
 use std::panic::RefUnwindSafe;
-use std::{fmt::Debug, sync::MutexGuard};
 use std::sync::{RwLock, RwLockReadGuard};
-use drive::grovedb::Transaction;
-use crate::error::execution::ExecutionError;
+use std::{fmt::Debug, sync::MutexGuard};
 
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
 ///
@@ -35,8 +35,6 @@ pub fn start<C: CoreRPCLike + RefUnwindSafe>(
     let server = tenderdash_abci::start_server(&bind_address, abci)
         .map_err(|e| super::AbciError::from(e))?;
 
-
-
     loop {
         tracing::info!("waiting for new connection");
         let result = std::panic::catch_unwind(|| match server.handle_connection() {
@@ -51,9 +49,7 @@ pub fn start<C: CoreRPCLike + RefUnwindSafe>(
 
 impl<'a, C> AbciApplication<'a, C> {
     /// Create new ABCI app
-    pub fn new(
-        platform: Platform<C>,
-    ) -> Result<AbciApplication<'a, C>, Error> {
+    pub fn new(platform: Platform<C>) -> Result<AbciApplication<'a, C>, Error> {
         let app = AbciApplication {
             platform,
             transaction: RwLock::new(None),
@@ -69,8 +65,18 @@ impl<'a, C> AbciApplication<'a, C> {
     }
 
     pub(crate) fn commit_transaction(&self) -> Result<(), Error> {
-        let transaction = self.transaction.write().unwrap().take().ok_or(Error::Execution(ExecutionError::NotInTransaction("trying to commit a transaction, but we are not in one")))?;
-        self.platform.drive.commit_transaction(transaction).map_err(Error::Drive)
+        let transaction = self
+            .transaction
+            .write()
+            .unwrap()
+            .take()
+            .ok_or(Error::Execution(ExecutionError::NotInTransaction(
+                "trying to commit a transaction, but we are not in one",
+            )))?;
+        self.platform
+            .drive
+            .commit_transaction(transaction)
+            .map_err(Error::Drive)
     }
 
     pub(crate) fn transaction(&self) -> TransactionArg {

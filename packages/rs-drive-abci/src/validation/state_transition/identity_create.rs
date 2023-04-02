@@ -1,34 +1,36 @@
+use dpp::validation::ConsensusValidationResult;
 use dpp::{
     identity::state_transition::identity_create_transition::IdentityCreateTransition,
     state_transition::StateTransitionAction, validation::SimpleConsensusValidationResult,
 };
-use drive::drive::Drive;
+use drive::{drive::Drive, grovedb::Transaction};
 
-use crate::{error::Error, validation::bls::DriveBls};
+use crate::error::Error;
 
 use super::StateTransitionValidation;
 
 impl StateTransitionValidation for IdentityCreateTransition {
-    fn validate_type(&self, drive: &Drive) -> Result<SimpleConsensusValidationResult, Error> {
-        todo!()
-    }
-
-    fn validate_signature(
+    fn validate_type(
         &self,
         drive: &Drive,
-        bls: &DriveBls,
+        tx: &Transaction,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         todo!()
     }
 
-    fn validate_key_signature(&self, bls: &DriveBls) -> Result<SimpleConsensusValidationResult, Error> {
+    fn validate_signature(&self, drive: &Drive) -> Result<SimpleConsensusValidationResult, Error> {
+        todo!()
+    }
+
+    fn validate_key_signature(&self) -> Result<SimpleConsensusValidationResult, Error> {
         todo!()
     }
 
     fn validate_state(
         &self,
         drive: &Drive,
-    ) -> Result<dpp::validation::ConsensusValidationResult<StateTransitionAction>, Error> {
+        tx: &Transaction,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         todo!()
     }
 }

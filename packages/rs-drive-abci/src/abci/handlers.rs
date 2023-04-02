@@ -32,8 +32,9 @@
 //! This module defines the `TenderdashAbci` trait and implements it for type `Platform`.
 //!
 
+use crate::abci::server::AbciApplication;
 use crate::abci::AbciError;
-use crate::block::{BlockExecutionContext};
+use crate::block::BlockExecutionContext;
 use crate::rpc::core::CoreRPCLike;
 use dpp::identity::TimestampMillis;
 use dpp::state_transition::StateTransition;
@@ -48,13 +49,11 @@ use tenderdash_abci::proto::{
     abci::{self as proto, ResponseException},
     serializers::timestamp::ToMilis,
 };
-use crate::abci::server::AbciApplication;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::engine::BlockExecutionOutcome;
 use crate::platform::Platform;
-use crate::validation::bls::DriveBls;
 use crate::validation::state_transition::validate_state_transition;
 
 impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>
@@ -96,7 +95,8 @@ where
             Some(&transaction),
         )?;
 
-        self.platform.drive
+        self.platform
+            .drive
             .commit_transaction(transaction)
             .map_err(Error::Drive)?;
 
@@ -118,7 +118,9 @@ where
         let BlockExecutionOutcome {
             app_hash,
             tx_results,
-        } = self.platform.run_block_proposal((&request).try_into()?, transaction)?;
+        } = self
+            .platform
+            .run_block_proposal((&request).try_into()?, transaction)?;
 
         // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
         let response = ResponsePrepareProposal {
@@ -141,7 +143,9 @@ where
         let BlockExecutionOutcome {
             app_hash,
             tx_results,
-        } = self.platform.run_block_proposal((&request).try_into()?, transaction)?;
+        } = self
+            .platform
+            .run_block_proposal((&request).try_into()?, transaction)?;
 
         // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
         let response = ResponseProcessProposal {
@@ -157,8 +161,13 @@ where
         &self,
         request: RequestFinalizeBlock,
     ) -> Result<ResponseFinalizeBlock, ResponseException> {
-        let transaction = self.transaction().ok_or(Error::Execution(ExecutionError::NotInTransaction("trying to finalize block without a current transaction")))?;
-        self.platform.finalize_block_proposal(request, transaction)?;
+        let transaction =
+            self.transaction()
+                .ok_or(Error::Execution(ExecutionError::NotInTransaction(
+                    "trying to finalize block without a current transaction",
+                )))?;
+        self.platform
+            .finalize_block_proposal(request, transaction)?;
 
         self.commit_transaction()?;
 
@@ -170,7 +179,6 @@ where
 
     fn check_tx(&self, request: RequestCheckTx) -> Result<ResponseCheckTx, ResponseException> {
         let RequestCheckTx { tx, r#type } = request;
-
         let validation_result = self.platform.check_tx(tx)?;
 
         // If there are no execution errors the code will be 0
@@ -203,7 +211,8 @@ where
         } = request;
 
         let data = self
-            .platform.drive
+            .platform
+            .drive
             .query_serialized(data, path, prove)
             .map_err(Error::Drive)?;
 

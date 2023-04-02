@@ -104,5 +104,3 @@ pub struct BlockExecutionContext {
     /// Total hpmn count
     pub hpmn_count: u32,
 }
-
-

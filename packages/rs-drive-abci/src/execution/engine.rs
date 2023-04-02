@@ -1,3 +1,4 @@
+use crate::abci::AbciError;
 use crate::block::{BlockExecutionContext, BlockStateInfo};
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -9,13 +10,15 @@ use crate::execution::execution_event::{ExecutionEvent, ExecutionResult};
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
-use crate::validation::bls::DriveBls;
 use crate::validation::state_transition::validate_state_transition;
 use dpp::consensus::basic::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::ConsensusError;
 use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;
-use dpp::validation::{SimpleConsensusValidationResult, ConsensusValidationResult, SimpleValidationResult, ValidationResult};
+use dpp::validation::{
+    ConsensusValidationResult, SimpleConsensusValidationResult, SimpleValidationResult,
+    ValidationResult,
+};
 use drive::drive::block_info::BlockInfo;
 use drive::error::Error::GroveDB;
 use drive::fee::result::FeeResult;
@@ -25,22 +28,19 @@ use tenderdash_abci::proto::abci::{
 };
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::Application;
-use crate::abci::AbciError;
 
 pub struct BlockExecutionOutcome {
-    app_hash: [u8;32],
+    app_hash: [u8; 32],
     tx_results: Vec<ExecTxResult>,
 }
 
 pub struct BlockFinalizationOutcome {
-    validation_result: SimpleValidationResult<AbciError>
+    validation_result: SimpleValidationResult<AbciError>,
 }
 
 impl From<SimpleValidationResult<AbciError>> for BlockFinalizationOutcome {
     fn from(validation_result: SimpleValidationResult<AbciError>) -> Self {
-        BlockFinalizationOutcome {
-            validation_result,
-        }
+        BlockFinalizationOutcome { validation_result }
     }
 }
 
@@ -69,7 +69,9 @@ where
 
                 // TODO: Should take into account refunds as well
                 if balance >= estimated_fee_result.total_base_fee() {
-                    Ok(ConsensusValidationResult::new_with_data(estimated_fee_result))
+                    Ok(ConsensusValidationResult::new_with_data(
+                        estimated_fee_result,
+                    ))
                 } else {
                     Ok(ConsensusValidationResult::new_with_data_and_errors(
                         estimated_fee_result,
@@ -82,9 +84,9 @@ where
                     ))
                 }
             }
-            ExecutionEvent::FreeDriveEvent { operations } => {
-                Ok(ConsensusValidationResult::new_with_data(FeeResult::default()))
-            }
+            ExecutionEvent::FreeDriveEvent { operations } => Ok(
+                ConsensusValidationResult::new_with_data(FeeResult::default()),
+            ),
         }
     }
 
@@ -157,7 +159,7 @@ where
             .into_iter()
             .map(|state_transition| {
                 let state_transition_execution_event =
-                    validate_state_transition(self, &DriveBls {}, state_transition)?;
+                    validate_state_transition(self, state_transition)?;
 
                 let execution_result = if state_transition_execution_event.is_valid() {
                     let execution_event = state_transition_execution_event.into_data()?;
@@ -275,7 +277,10 @@ where
 
         block_execution_context.block_state_info.commit_hash = Some(root_hash);
 
-        self.block_execution_context.write().unwrap().replace(block_execution_context);
+        self.block_execution_context
+            .write()
+            .unwrap()
+            .replace(block_execution_context);
 
         Ok(BlockExecutionOutcome {
             app_hash: root_hash,
@@ -299,8 +304,7 @@ where
         } = request_finalize_block;
 
         // Retrieve block execution context before we do anything else
-        let mut guarded_block_execution_context =
-            self.block_execution_context.write().unwrap();
+        let mut guarded_block_execution_context = self.block_execution_context.write().unwrap();
         let block_execution_context =
             guarded_block_execution_context
                 .as_ref()
@@ -370,11 +374,13 @@ where
         Ok(validation_result.into())
     }
 
-    pub fn check_tx(&self, raw_tx: Vec<u8>) -> Result<ValidationResult<FeeResult, ConsensusError>, Error> {
+    pub fn check_tx(
+        &self,
+        raw_tx: Vec<u8>,
+    ) -> Result<ValidationResult<FeeResult, ConsensusError>, Error> {
         let state_transition =
             StateTransition::deserialize(raw_tx.as_slice()).map_err(Error::Protocol)?;
-        let drive_bls = DriveBls {};
-        let execution_event = validate_state_transition(&self, &drive_bls, state_transition)?;
+        let execution_event = validate_state_transition(&self, state_transition)?;
 
         // We should run the execution event in dry run to see if we would have enough fees for the transaction
 

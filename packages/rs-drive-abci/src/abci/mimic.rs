@@ -1,11 +1,13 @@
-use tenderdash_abci::Application;
-use tenderdash_abci::proto::abci::{CommitInfo, RequestFinalizeBlock, RequestPrepareProposal, ResponsePrepareProposal};
-use tenderdash_abci::proto::google::protobuf::Timestamp;
+use crate::abci::server::AbciApplication;
+use crate::error::Error;
 use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;
 use drive::drive::block_info::BlockInfo;
-use crate::abci::server::AbciApplication;
-use crate::error::Error;
+use tenderdash_abci::proto::abci::{
+    CommitInfo, RequestFinalizeBlock, RequestPrepareProposal, ResponsePrepareProposal,
+};
+use tenderdash_abci::proto::google::protobuf::Timestamp;
+use tenderdash_abci::Application;
 
 impl<'a, C> AbciApplication<'a, C> {
     /// Execute a block with various state transitions

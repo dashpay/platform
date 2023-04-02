@@ -30,7 +30,7 @@
 //! Platform Init
 //!
 
-use crate::block::{BlockExecutionContext};
+use crate::block::BlockExecutionContext;
 use crate::config::PlatformConfig;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
