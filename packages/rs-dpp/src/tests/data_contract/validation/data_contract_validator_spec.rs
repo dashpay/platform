@@ -47,7 +47,7 @@ fn init() {
 }
 
 fn get_schema_error<TData: Clone>(
-    result: &ValidationResult<TData>,
+    result: &ConsensusValidationResult<TData>,
     number: usize,
 ) -> &JsonSchemaError {
     result
@@ -59,7 +59,7 @@ fn get_schema_error<TData: Clone>(
 }
 
 fn get_value_error<TData: Clone>(
-    result: &ValidationResult<TData>,
+    result: &ConsensusValidationResult<TData>,
     number: usize,
 ) -> &platform_value::Error {
     result
@@ -87,7 +87,7 @@ fn get_index_error(consensus_error: &ConsensusError) -> &IndexError {
     }
 }
 
-fn print_json_schema_errors<TData: Clone>(result: &ValidationResult<TData>) {
+fn print_json_schema_errors<TData: Clone>(result: &ConsensusValidationResult<TData>) {
     for (i, e) in result.errors.iter().enumerate() {
         let schema_error = e.json_schema_error().unwrap();
         println!(

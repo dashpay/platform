@@ -1,17 +1,17 @@
 use crate::errors::consensus_error::from_consensus_error_ref;
-use dpp::{consensus::ConsensusError, validation::ValidationResult};
+use dpp::{consensus::ConsensusError, validation::ConsensusValidationResult};
 use js_sys::JsString;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=ValidationResult)]
 #[derive(Debug)]
-pub struct ValidationResultWasm(ValidationResult<JsValue>);
+pub struct ValidationResultWasm(ConsensusValidationResult<JsValue>);
 
-impl<T> From<ValidationResult<T>> for ValidationResultWasm
+impl<T> From<ConsensusValidationResult<T>> for ValidationResultWasm
 where
     T: Into<JsValue> + Clone,
 {
-    fn from(validation_result: ValidationResult<T>) -> Self {
+    fn from(validation_result: ConsensusValidationResult<T>) -> Self {
         ValidationResultWasm(validation_result.map(Into::into))
     }
 }

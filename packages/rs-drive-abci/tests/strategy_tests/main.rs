@@ -373,8 +373,8 @@ fn create_identities_state_transitions(
         .collect()
 }
 
-pub struct ChainExecutionOutcome<'a> {
-    pub platform: TempPlatform<'a, DefaultCoreRPC>,
+pub struct ChainExecutionOutcome {
+    pub platform: TempPlatform<DefaultCoreRPC>,
     pub masternode_identity_balances: BTreeMap<[u8; 32], Credits>,
     pub identities: Vec<Identity>,
     pub proposers: Vec<[u8; 32]>,
@@ -561,7 +561,7 @@ pub(crate) fn continue_chain_for_strategy(
         .expect("expected to get balances");
 
     let end_epoch_index = platform
-        .block_execution_context_with_tx
+        .block_execution_context
         .read()
         .expect("lock is poisoned")
         .as_ref()

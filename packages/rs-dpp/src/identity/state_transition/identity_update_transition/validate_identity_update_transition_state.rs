@@ -10,7 +10,7 @@ use crate::{
     identity::validation::{RequiredPurposeAndSecurityLevelValidator, TPublicKeysValidator},
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike,
-    validation::ValidationResult,
+    validation::ConsensusValidationResult,
     NonConsensusError, StateError,
 };
 
@@ -36,8 +36,8 @@ where
     pub async fn validate(
         &self,
         state_transition: &IdentityUpdateTransition,
-    ) -> Result<ValidationResult<IdentityUpdateTransitionAction>, NonConsensusError> {
-        let mut validation_result = ValidationResult::default();
+    ) -> Result<ConsensusValidationResult<IdentityUpdateTransitionAction>, NonConsensusError> {
+        let mut validation_result = ConsensusValidationResult::default();
 
         let maybe_stored_identity = self
             .state_repository

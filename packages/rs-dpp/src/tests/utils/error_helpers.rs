@@ -1,4 +1,4 @@
-use crate::validation::{SimpleValidationResult, ValidationResult};
+use crate::validation::{SimpleConsensusValidationResult, ConsensusValidationResult};
 use crate::{
     consensus::{
         basic::{BasicError, IndexError, JsonSchemaError},
@@ -10,7 +10,7 @@ use crate::{
     DataTriggerError, StateError,
 };
 
-pub fn get_schema_error(result: &SimpleValidationResult, number: usize) -> &JsonSchemaError {
+pub fn get_schema_error(result: &SimpleConsensusValidationResult, number: usize) -> &JsonSchemaError {
     result
         .errors
         .get(number)
@@ -37,7 +37,7 @@ pub fn get_index_error(consensus_error: &ConsensusError) -> &IndexError {
 }
 
 pub fn get_state_error_from_result<TData: Clone>(
-    result: &ValidationResult<TData>,
+    result: &ConsensusValidationResult<TData>,
     error_number: usize,
 ) -> &StateError {
     match result
@@ -54,7 +54,7 @@ pub fn get_state_error_from_result<TData: Clone>(
 }
 
 pub fn get_basic_error_from_result(
-    result: &SimpleValidationResult,
+    result: &SimpleConsensusValidationResult,
     error_number: usize,
 ) -> &BasicError {
     match result
@@ -71,7 +71,7 @@ pub fn get_basic_error_from_result(
 }
 
 pub fn get_signature_error_from_result<K: Clone>(
-    result: &ValidationResult<K>,
+    result: &ConsensusValidationResult<K>,
     error_number: usize,
 ) -> &SignatureError {
     match result
@@ -88,7 +88,7 @@ pub fn get_signature_error_from_result<K: Clone>(
 }
 
 pub fn get_fee_error_from_result<K: Clone>(
-    result: &ValidationResult<K>,
+    result: &ConsensusValidationResult<K>,
     error_number: usize,
 ) -> &FeeError {
     match result

@@ -4,7 +4,7 @@ use lazy_static::lazy_static;
 use platform_value::Value;
 use serde_json::Value as JsonValue;
 
-use crate::validation::SimpleValidationResult;
+use crate::validation::SimpleConsensusValidationResult;
 use crate::{
     consensus::basic::identity::{
         InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
@@ -50,7 +50,7 @@ impl IdentityCreditWithdrawalTransitionBasicValidator {
     pub async fn validate(
         &self,
         transition_object: &Value,
-    ) -> Result<SimpleValidationResult, NonConsensusError> {
+    ) -> Result<SimpleConsensusValidationResult, NonConsensusError> {
         let mut result = self.json_schema_validator.validate(
             &transition_object
                 .try_to_validating_json()

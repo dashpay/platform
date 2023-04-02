@@ -9,7 +9,7 @@ use crate::{
     state_transition::{
         try_get_transition_type, StateTransition, StateTransitionLike, StateTransitionType,
     },
-    validation::SimpleValidationResult,
+    validation::SimpleConsensusValidationResult,
     BlsModule, NonConsensusError, ProtocolError,
 };
 
@@ -23,7 +23,7 @@ pub trait TPublicKeysSignaturesValidator {
         &self,
         raw_state_transition: &Value,
         raw_public_keys: impl IntoIterator<Item = &'a Value>,
-    ) -> Result<SimpleValidationResult, NonConsensusError>;
+    ) -> Result<SimpleConsensusValidationResult, NonConsensusError>;
 }
 
 pub struct PublicKeysSignaturesValidator<T: BlsModule> {
@@ -41,7 +41,7 @@ impl<T: BlsModule> TPublicKeysSignaturesValidator for PublicKeysSignaturesValida
         &self,
         raw_state_transition: &Value,
         raw_public_keys: impl IntoIterator<Item = &'a Value>,
-    ) -> Result<SimpleValidationResult, NonConsensusError> {
+    ) -> Result<SimpleConsensusValidationResult, NonConsensusError> {
         validate_public_key_signatures(raw_state_transition, raw_public_keys, &self.bls)
     }
 }
@@ -50,8 +50,8 @@ pub fn validate_public_key_signatures<'a, T: BlsModule>(
     raw_state_transition: &Value,
     raw_public_keys: impl IntoIterator<Item = &'a Value>,
     bls: &T,
-) -> Result<SimpleValidationResult, NonConsensusError> {
-    let mut validation_result = SimpleValidationResult::default();
+) -> Result<SimpleConsensusValidationResult, NonConsensusError> {
+    let mut validation_result = SimpleConsensusValidationResult::default();
 
     let transition_type = try_get_transition_type(raw_state_transition)
         .map_err(|e| NonConsensusError::InvalidDataProcessedError(format!("{e:#}")))?;

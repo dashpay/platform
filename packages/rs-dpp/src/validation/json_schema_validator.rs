@@ -6,7 +6,7 @@ use serde_json::{json, Value as JsonValue};
 
 use crate::consensus::ConsensusError;
 use crate::util::json_value::JsonValueExt;
-use crate::validation::{DataValidator, SimpleValidationResult};
+use crate::validation::{DataValidator, SimpleConsensusValidationResult};
 use crate::{DashPlatformProtocolInitError, NonConsensusError, SerdeParsingError};
 
 use super::meta_validators;
@@ -21,7 +21,7 @@ impl DataValidator for JsonSchemaValidator {
     fn validate(
         &self,
         data: &Self::Item,
-    ) -> Result<super::SimpleValidationResult, crate::ProtocolError> {
+    ) -> Result<super::SimpleConsensusValidationResult, crate::ProtocolError> {
         let result = self
             .validate(data)
             .context("error during validating json schema")?;
@@ -71,7 +71,7 @@ impl JsonSchemaValidator {
     pub fn validate(
         &self,
         object: &JsonValue,
-    ) -> Result<SimpleValidationResult, NonConsensusError> {
+    ) -> Result<SimpleConsensusValidationResult, NonConsensusError> {
         // TODO: create better error messages
         let res = self
             .schema
@@ -79,7 +79,7 @@ impl JsonSchemaValidator {
             .ok_or_else(|| SerdeParsingError::new("Expected identity schema to be initialized"))?
             .validate(object);
 
-        let mut validation_result = SimpleValidationResult::default();
+        let mut validation_result = SimpleConsensusValidationResult::default();
 
         match res {
             Ok(_) => Ok(validation_result),
@@ -93,8 +93,8 @@ impl JsonSchemaValidator {
     }
 
     /// validates schema through compilation
-    pub fn validate_schema(schema: &JsonValue) -> SimpleValidationResult {
-        let mut validation_result = SimpleValidationResult::default();
+    pub fn validate_schema(schema: &JsonValue) -> SimpleConsensusValidationResult {
+        let mut validation_result = SimpleConsensusValidationResult::default();
 
         let res = JSONSchema::options()
             .should_ignore_unknown_formats(false)
@@ -112,8 +112,8 @@ impl JsonSchemaValidator {
     /// Uses predefined meta-schemas to validate data contract schema
     pub fn validate_data_contract_schema(
         data_contract_schema: &JsonValue,
-    ) -> SimpleValidationResult {
-        let mut validation_result = SimpleValidationResult::default();
+    ) -> SimpleConsensusValidationResult {
+        let mut validation_result = SimpleConsensusValidationResult::default();
         let res = meta_validators::DATA_CONTRACT_META_SCHEMA.validate(data_contract_schema);
 
         match res {

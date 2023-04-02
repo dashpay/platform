@@ -1,5 +1,5 @@
 use dpp::identity::PartialIdentity;
-use dpp::validation::SimpleValidationResult;
+use dpp::validation::SimpleConsensusValidationResult;
 use drive::drive::batch::DriveOperation;
 use drive::fee::credits::SignedCredits;
 use drive::fee::result::FeeResult;
@@ -11,7 +11,7 @@ pub type DryRunFeeResult = FeeResult;
 pub enum ExecutionResult {
     SuccessfulPaidExecution(DryRunFeeResult, FeeResult),
     SuccessfulFreeExecution,
-    ConsensusExecutionError(SimpleValidationResult),
+    ConsensusExecutionError(SimpleConsensusValidationResult),
 }
 
 // State transitions are never free, so we should filter out SuccessfulFreeExecution

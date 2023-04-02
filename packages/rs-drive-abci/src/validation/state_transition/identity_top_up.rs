@@ -1,7 +1,7 @@
 use dpp::{
     identity::state_transition::identity_topup_transition::IdentityTopUpTransition,
     state_transition::StateTransitionAction,
-    validation::{SimpleValidationResult, ValidationResult},
+    validation::{SimpleConsensusValidationResult, ConsensusValidationResult},
 };
 use drive::drive::Drive;
 
@@ -10,7 +10,7 @@ use crate::{error::Error, validation::bls::DriveBls};
 use super::StateTransitionValidation;
 
 impl StateTransitionValidation for IdentityTopUpTransition {
-    fn validate_type(&self, drive: &Drive) -> Result<SimpleValidationResult, Error> {
+    fn validate_type(&self, drive: &Drive) -> Result<SimpleConsensusValidationResult, Error> {
         todo!()
     }
 
@@ -18,18 +18,18 @@ impl StateTransitionValidation for IdentityTopUpTransition {
         &self,
         drive: &Drive,
         bls: &DriveBls,
-    ) -> Result<SimpleValidationResult, Error> {
+    ) -> Result<SimpleConsensusValidationResult, Error> {
         todo!()
     }
 
-    fn validate_key_signature(&self, bls: &DriveBls) -> Result<SimpleValidationResult, Error> {
+    fn validate_key_signature(&self, bls: &DriveBls) -> Result<SimpleConsensusValidationResult, Error> {
         todo!()
     }
 
     fn validate_state(
         &self,
         drive: &Drive,
-    ) -> Result<ValidationResult<StateTransitionAction>, Error> {
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         todo!()
     }
 }

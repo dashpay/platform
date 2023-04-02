@@ -35,7 +35,7 @@ use crate::{
 const WITHDRAWAL_TRANSACTIONS_QUERY_LIMIT: u16 = 16;
 const NUMBER_OF_BLOCKS_BEFORE_EXPIRED: u32 = 48;
 
-impl<'a, C> Platform<'a, C>
+impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
@@ -775,7 +775,7 @@ mod tests {
 
             let transaction = platform.drive.grove.start_transaction();
 
-            platform.block_execution_context_with_tx =
+            platform.block_execution_context =
                 RwLock::new(Some(BlockExecutionContextWithTransaction {
                     current_transaction: transaction,
                     block_execution_context: BlockExecutionContext {
@@ -858,7 +858,7 @@ mod tests {
             );
 
             let guarded_block_execution_context =
-                platform.block_execution_context_with_tx.write().unwrap();
+                platform.block_execution_context.write().unwrap();
             let block_execution_context = guarded_block_execution_context.as_ref().unwrap();
             platform
                 .pool_withdrawals_into_transactions_queue(

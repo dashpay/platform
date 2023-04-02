@@ -9,7 +9,7 @@ use crate::{
         state_transition::validate_public_key_signatures::TPublicKeysSignaturesValidator,
         validation::TPublicKeysValidator,
     },
-    validation::{JsonSchemaValidator, SimpleValidationResult},
+    validation::{JsonSchemaValidator, SimpleConsensusValidationResult},
     version::ProtocolVersionValidator,
     NonConsensusError, ProtocolError,
 };
@@ -58,7 +58,7 @@ where
     pub fn validate(
         &self,
         raw_state_transition: &Value,
-    ) -> Result<SimpleValidationResult, NonConsensusError> {
+    ) -> Result<SimpleConsensusValidationResult, NonConsensusError> {
         let result = self.json_schema_validator.validate(
             &raw_state_transition
                 .try_to_validating_json()

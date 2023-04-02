@@ -7,7 +7,7 @@ use serde_json::Value as JsonValue;
 use crate::identity::state_transition::asset_lock_proof::AssetLockProofValidator;
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::validation::{JsonSchemaValidator, SimpleValidationResult};
+use crate::validation::{JsonSchemaValidator, SimpleConsensusValidationResult};
 use crate::version::ProtocolVersionValidator;
 use crate::{DashPlatformProtocolInitError, NonConsensusError};
 
@@ -47,7 +47,7 @@ impl<SR: StateRepositoryLike> IdentityTopUpTransitionBasicValidator<SR> {
         &self,
         identity_topup_transition_object: &Value,
         execution_context: &StateTransitionExecutionContext,
-    ) -> Result<SimpleValidationResult, NonConsensusError> {
+    ) -> Result<SimpleConsensusValidationResult, NonConsensusError> {
         let mut result = self.json_schema_validator.validate(
             &identity_topup_transition_object
                 .try_to_validating_json()

@@ -20,7 +20,7 @@ use crate::{
         },
         utils::get_schema_error,
     },
-    validation::SimpleValidationResult,
+    validation::SimpleConsensusValidationResult,
     version::ProtocolVersionValidator,
     NativeBlsModule, NonConsensusError,
 };
@@ -50,8 +50,8 @@ impl TPublicKeysSignaturesValidator for SignaturesValidatorMock {
         &self,
         _raw_state_transition: &Value,
         _raw_public_keys: impl IntoIterator<Item = &'a Value>,
-    ) -> Result<SimpleValidationResult, NonConsensusError> {
-        Ok(SimpleValidationResult::default())
+    ) -> Result<SimpleConsensusValidationResult, NonConsensusError> {
+        Ok(SimpleConsensusValidationResult::default())
     }
 }
 
@@ -529,7 +529,7 @@ fn add_public_keys_should_be_valid() {
     validate_public_keys_mock
         .expect_validate_keys()
         .return_once(|_| {
-            Ok(SimpleValidationResult::new_with_errors(vec![
+            Ok(SimpleConsensusValidationResult::new_with_errors(vec![
                 ConsensusError::TestConsensusError(TestConsensusError::new("test")),
             ]))
         });

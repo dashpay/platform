@@ -2,13 +2,13 @@ use platform_value::Value;
 use std::collections::BTreeSet;
 
 use crate::consensus::basic::data_contract::InvalidJsonSchemaRefError;
-use crate::validation::SimpleValidationResult;
+use crate::validation::SimpleConsensusValidationResult;
 use crate::{consensus::basic::BasicError, ProtocolError};
 
 const MAX_DEPTH: usize = 500;
 
-pub fn validate_data_contract_max_depth(data_contract_object: &Value) -> SimpleValidationResult {
-    let mut result = SimpleValidationResult::default();
+pub fn validate_data_contract_max_depth(data_contract_object: &Value) -> SimpleConsensusValidationResult {
+    let mut result = SimpleConsensusValidationResult::default();
     let schema_depth = match calc_max_depth(data_contract_object) {
         Ok(depth) => depth,
         Err(err) => {

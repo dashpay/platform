@@ -5,7 +5,7 @@ use async_trait::async_trait;
 
 use crate::consensus::basic::invalid_data_contract_version_error::InvalidDataContractVersionError;
 use crate::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransitionAction;
-use crate::validation::{AsyncDataValidator, ValidationResult};
+use crate::validation::{AsyncDataValidator, ConsensusValidationResult};
 use crate::{
     data_contract::{
         state_transition::data_contract_update_transition::DataContractUpdateTransition,
@@ -34,7 +34,7 @@ where
     async fn validate(
         &self,
         state_transition: &DataContractUpdateTransition,
-    ) -> Result<ValidationResult<Self::ResultItem>, ProtocolError> {
+    ) -> Result<ConsensusValidationResult<Self::ResultItem>, ProtocolError> {
         validate_data_contract_update_transition_state(&self.state_repository, state_transition)
             .await
     }
@@ -52,8 +52,8 @@ where
 pub async fn validate_data_contract_update_transition_state(
     state_repository: &impl StateRepositoryLike,
     state_transition: &DataContractUpdateTransition,
-) -> Result<ValidationResult<DataContractUpdateTransitionAction>, ProtocolError> {
-    let mut result = ValidationResult::<DataContractUpdateTransitionAction>::default();
+) -> Result<ConsensusValidationResult<DataContractUpdateTransitionAction>, ProtocolError> {
+    let mut result = ConsensusValidationResult::<DataContractUpdateTransitionAction>::default();
 
     // Data contract should exist
     let maybe_existing_data_contract: Option<DataContract> = state_repository

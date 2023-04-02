@@ -27,7 +27,7 @@ use crate::{
 use crate::document::{Document, ExtendedDocument};
 use crate::identity::TimestampMillis;
 use crate::tests::fixtures::get_extended_documents_fixture;
-use crate::validation::ValidationResult;
+use crate::validation::ConsensusValidationResult;
 
 struct TestData {
     owner_id: Identifier,
@@ -88,7 +88,7 @@ fn setup_test() -> TestData {
 }
 
 fn get_state_error<TData: Clone>(
-    result: &ValidationResult<TData>,
+    result: &ConsensusValidationResult<TData>,
     error_number: usize,
 ) -> &StateError {
     match result

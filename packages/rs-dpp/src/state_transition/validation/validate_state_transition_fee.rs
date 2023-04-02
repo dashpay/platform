@@ -14,7 +14,7 @@ use crate::{
     },
     state_repository::StateRepositoryLike,
     state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionLike},
-    validation::SimpleValidationResult,
+    validation::SimpleConsensusValidationResult,
     ProtocolError,
 };
 use std::sync::Arc;
@@ -40,7 +40,7 @@ where
     pub async fn validate(
         &self,
         state_transition: &StateTransition,
-    ) -> Result<SimpleValidationResult, ProtocolError> {
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         self.validate_with_custom_calculator(state_transition, calculate_state_transition_fee)
             .await
     }
@@ -49,8 +49,8 @@ where
         &self,
         state_transition: &StateTransition,
         calculate_state_transition_fee_fn: impl Fn(&StateTransition) -> FeeResult,
-    ) -> Result<SimpleValidationResult, ProtocolError> {
-        let mut result = SimpleValidationResult::default();
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        let mut result = SimpleConsensusValidationResult::default();
 
         let execution_context = state_transition.get_execution_context();
         let required_fee = calculate_state_transition_fee_fn(state_transition);

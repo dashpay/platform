@@ -1,7 +1,7 @@
 use crate::error::Error;
 use dpp::state_transition::fee::operations::{Operation, SignatureVerificationOperation};
 use dpp::state_transition::StateTransitionIdentitySigned;
-use dpp::validation::SimpleValidationResult;
+use dpp::validation::SimpleConsensusValidationResult;
 use dpp::{
     consensus::signature::{
         InvalidIdentityPublicKeyTypeError, MissingPublicKeyError, PublicKeyIsDisabledError,
@@ -34,8 +34,8 @@ pub fn validate_state_transition_identity_signature(
     state_transition: &impl StateTransitionIdentitySigned,
     transaction: &Transaction,
     bls: &impl BlsModule,
-) -> Result<SimpleValidationResult, Error> {
-    let mut validation_result = SimpleValidationResult::default();
+) -> Result<SimpleConsensusValidationResult, Error> {
+    let mut validation_result = SimpleConsensusValidationResult::default();
 
     let key_id = state_transition.get_signature_public_key_id().ok_or(
         ProtocolError::CorruptedCodeExecution(format!(

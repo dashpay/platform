@@ -11,6 +11,8 @@ pub mod messages;
 pub mod config;
 #[cfg(feature = "server")]
 mod server;
+#[cfg(test)]
+mod mimic;
 
 pub use error::AbciError;
 #[cfg(feature = "server")]

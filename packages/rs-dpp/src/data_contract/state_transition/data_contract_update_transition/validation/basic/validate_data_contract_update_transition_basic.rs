@@ -16,7 +16,7 @@ use crate::{
     },
     state_repository::StateRepositoryLike,
     util::json_value::JsonValueExt,
-    validation::{JsonSchemaValidator, SimpleValidationResult},
+    validation::{JsonSchemaValidator, SimpleConsensusValidationResult},
     version::ProtocolVersionValidator,
     Convertible, DashPlatformProtocolInitError, ProtocolError,
 };
@@ -80,8 +80,8 @@ where
         &self,
         raw_state_transition: &Value,
         execution_context: &StateTransitionExecutionContext,
-    ) -> Result<SimpleValidationResult, ProtocolError> {
-        let mut validation_result = SimpleValidationResult::default();
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        let mut validation_result = SimpleConsensusValidationResult::default();
 
         let result = self.json_schema_validator.validate(
             &raw_state_transition
@@ -96,7 +96,7 @@ where
             match raw_state_transition.get_integer(property_names::PROTOCOL_VERSION) {
                 Ok(v) => v,
                 Err(parsing_error) => {
-                    return Ok(SimpleValidationResult::new_with_errors(vec![
+                    return Ok(SimpleConsensusValidationResult::new_with_errors(vec![
                         ConsensusError::ProtocolVersionParsingError(
                             ProtocolVersionParsingError::new(parsing_error.into()),
                         ),

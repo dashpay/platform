@@ -7,7 +7,7 @@ use crate::errors::consensus::basic::{
     IncompatibleProtocolVersionError, UnsupportedProtocolVersionError,
 };
 use crate::errors::CompatibleProtocolVersionIsNotDefinedError;
-use crate::validation::{DataValidator, SimpleValidationResult};
+use crate::validation::{DataValidator, SimpleConsensusValidationResult};
 use crate::version::{COMPATIBILITY_MAP, LATEST_VERSION};
 
 #[derive(Clone)]
@@ -33,7 +33,7 @@ impl DataValidator for ProtocolVersionValidator {
     fn validate(
         &self,
         data: &Self::Item,
-    ) -> Result<crate::validation::SimpleValidationResult, crate::ProtocolError> {
+    ) -> Result<crate::validation::SimpleConsensusValidationResult, crate::ProtocolError> {
         let result = self
             .validate(*data)
             .context("error during during protocol version validation")?;
@@ -57,8 +57,8 @@ impl ProtocolVersionValidator {
     pub fn validate(
         &self,
         protocol_version: u32,
-    ) -> Result<SimpleValidationResult, CompatibleProtocolVersionIsNotDefinedError> {
-        let mut result = SimpleValidationResult::default();
+    ) -> Result<SimpleConsensusValidationResult, CompatibleProtocolVersionIsNotDefinedError> {
+        let mut result = SimpleConsensusValidationResult::default();
 
         // Parsed protocol version must be equal or lower than latest protocol version
         if protocol_version > self.latest_protocol_version {

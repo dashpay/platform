@@ -36,6 +36,8 @@ use super::signature::SignatureError;
 #[derive(Error, Debug)]
 //#[cfg_attr(test, derive(Clone))]
 pub enum ConsensusError {
+    #[error("default error")]
+    DefaultError,
     #[error(transparent)]
     JsonSchemaError(JsonSchemaError),
     #[error(transparent)]
@@ -191,7 +193,14 @@ impl ConsensusError {
             #[cfg(test)]
             ConsensusError::TestConsensusError(_) => 1000,
             ConsensusError::ValueError(_) => 5000,
+            ConsensusError::DefaultError => 1, // we should never get the default error anyways
         }
+    }
+}
+
+impl Default for ConsensusError {
+    fn default() -> Self {
+        ConsensusError::DefaultError
     }
 }
 

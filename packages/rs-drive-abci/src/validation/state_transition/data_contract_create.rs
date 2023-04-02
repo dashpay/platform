@@ -3,7 +3,7 @@ use std::sync::Arc;
 use dpp::{
     consensus::basic::{data_contract::InvalidDataContractIdError, BasicError},
     data_contract::validation::data_contract_validator::DataContractValidator,
-    validation::SimpleValidationResult,
+    validation::SimpleConsensusValidationResult,
 };
 use dpp::{
     data_contract::{
@@ -16,7 +16,7 @@ use dpp::{
     validation::JsonSchemaValidator,
     Convertible,
 };
-use dpp::{prelude::ValidationResult, state_transition::StateTransitionConvert};
+use dpp::{prelude::ConsensusValidationResult, state_transition::StateTransitionConvert};
 use dpp::{state_transition::StateTransitionAction, version::ProtocolVersionValidator};
 use drive::drive::Drive;
 
@@ -24,7 +24,7 @@ use crate::validation::state_transition::StateTransitionValidation;
 use crate::{error::Error, validation::bls::DriveBls};
 
 impl StateTransitionValidation for DataContractCreateTransition {
-    fn validate_type(&self, drive: &Drive) -> Result<SimpleValidationResult, Error> {
+    fn validate_type(&self, drive: &Drive) -> Result<SimpleConsensusValidationResult, Error> {
         // Reuse jsonschema validation on a whole state transition
         let json_schema_validator = JsonSchemaValidator::new(DATA_CONTRACT_CREATE_SCHEMA.clone())
             .expect("unable to compile jsonschema");
@@ -62,7 +62,7 @@ impl StateTransitionValidation for DataContractCreateTransition {
         // Validate data contract id
         let generated_id =
             generate_data_contract_id(self.data_contract.owner_id, self.data_contract.entropy);
-        let mut validation_result = SimpleValidationResult::default();
+        let mut validation_result = SimpleConsensusValidationResult::default();
         if generated_id != self.data_contract.id.as_ref() {
             validation_result.add_error(BasicError::InvalidDataContractIdError(
                 InvalidDataContractIdError::new(
@@ -79,18 +79,18 @@ impl StateTransitionValidation for DataContractCreateTransition {
         &self,
         drive: &Drive,
         bls: &DriveBls,
-    ) -> Result<SimpleValidationResult, Error> {
+    ) -> Result<SimpleConsensusValidationResult, Error> {
         todo!()
     }
 
-    fn validate_key_signature(&self, bls: &DriveBls) -> Result<SimpleValidationResult, Error> {
+    fn validate_key_signature(&self, bls: &DriveBls) -> Result<SimpleConsensusValidationResult, Error> {
         todo!()
     }
 
     fn validate_state(
         &self,
         drive: &Drive,
-    ) -> Result<ValidationResult<StateTransitionAction>, Error> {
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         todo!()
     }
 }

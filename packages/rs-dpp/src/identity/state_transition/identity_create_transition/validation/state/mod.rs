@@ -4,7 +4,7 @@ use crate::identity::state_transition::identity_create_transition::{
 };
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::StateTransitionLike;
-use crate::validation::{AsyncDataValidator, ValidationResult};
+use crate::validation::{AsyncDataValidator, ConsensusValidationResult};
 use crate::{NonConsensusError, ProtocolError};
 use async_trait::async_trait;
 
@@ -26,7 +26,7 @@ where
     async fn validate(
         &self,
         data: &IdentityCreateTransition,
-    ) -> Result<ValidationResult<Self::ResultItem>, ProtocolError> {
+    ) -> Result<ConsensusValidationResult<Self::ResultItem>, ProtocolError> {
         validate_identity_create_transition_state(&self.state_repository, data)
             .await
             .map_err(|err| err.into())
@@ -55,8 +55,8 @@ where
 pub async fn validate_identity_create_transition_state(
     state_repository: &impl StateRepositoryLike,
     state_transition: &IdentityCreateTransition,
-) -> Result<ValidationResult<IdentityCreateTransitionAction>, ProtocolError> {
-    let mut result = ValidationResult::default();
+) -> Result<ConsensusValidationResult<IdentityCreateTransitionAction>, ProtocolError> {
+    let mut result = ConsensusValidationResult::default();
 
     let identity_id = state_transition.get_identity_id();
     let balance = state_repository

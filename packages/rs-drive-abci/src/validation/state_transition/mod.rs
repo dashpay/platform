@@ -8,7 +8,7 @@ mod identity_update;
 mod key_validation;
 
 use dpp::state_transition::{StateTransition, StateTransitionAction};
-use dpp::validation::{SimpleValidationResult, ValidationResult};
+use dpp::validation::{SimpleConsensusValidationResult, ConsensusValidationResult};
 use drive::drive::Drive;
 
 use super::bls::DriveBls;
@@ -20,22 +20,22 @@ pub fn validate_state_transition<'a, C>(
     platform: &Platform<C>,
     bls: &DriveBls,
     state_transition: StateTransition,
-) -> Result<ValidationResult<ExecutionEvent<'a>>, Error> {
+) -> Result<ConsensusValidationResult<ExecutionEvent<'a>>, Error> {
     let result = state_transition.validate_type(&platform.drive)?;
     if !result.is_valid() {
-        return Ok(ValidationResult::<ExecutionEvent>::new_with_errors(
+        return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(
             result.errors,
         ));
     }
     let result = state_transition.validate_signature(&platform.drive, &bls)?;
     if !result.is_valid() {
-        return Ok(ValidationResult::<ExecutionEvent>::new_with_errors(
+        return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(
             result.errors,
         ));
     }
     let result = state_transition.validate_key_signature(&bls)?;
     if !result.is_valid() {
-        return Ok(ValidationResult::<ExecutionEvent>::new_with_errors(
+        return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(
             result.errors,
         ));
     }
@@ -51,24 +51,24 @@ pub fn validate_state_transition<'a, C>(
 }
 
 pub trait StateTransitionValidation {
-    fn validate_type(&self, drive: &Drive) -> Result<SimpleValidationResult, Error>;
+    fn validate_type(&self, drive: &Drive) -> Result<SimpleConsensusValidationResult, Error>;
 
     fn validate_signature(
         &self,
         drive: &Drive,
         bls: &DriveBls,
-    ) -> Result<SimpleValidationResult, Error>;
+    ) -> Result<SimpleConsensusValidationResult, Error>;
 
-    fn validate_key_signature(&self, bls: &DriveBls) -> Result<SimpleValidationResult, Error>;
+    fn validate_key_signature(&self, bls: &DriveBls) -> Result<SimpleConsensusValidationResult, Error>;
 
     fn validate_state(
         &self,
         drive: &Drive,
-    ) -> Result<ValidationResult<StateTransitionAction>, Error>;
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
 impl StateTransitionValidation for StateTransition {
-    fn validate_type(&self, drive: &Drive) -> Result<SimpleValidationResult, Error> {
+    fn validate_type(&self, drive: &Drive) -> Result<SimpleConsensusValidationResult, Error> {
         match self {
             StateTransition::DataContractCreate(st) => st.validate_type(drive),
             StateTransition::DataContractUpdate(st) => st.validate_type(drive),
@@ -84,7 +84,7 @@ impl StateTransitionValidation for StateTransition {
         &self,
         drive: &Drive,
         bls: &DriveBls,
-    ) -> Result<SimpleValidationResult, Error> {
+    ) -> Result<SimpleConsensusValidationResult, Error> {
         match self {
             StateTransition::DataContractCreate(st) => st.validate_signature(drive, bls),
             StateTransition::DataContractUpdate(st) => st.validate_signature(drive, bls),
@@ -96,7 +96,7 @@ impl StateTransitionValidation for StateTransition {
         }
     }
 
-    fn validate_key_signature(&self, bls: &DriveBls) -> Result<SimpleValidationResult, Error> {
+    fn validate_key_signature(&self, bls: &DriveBls) -> Result<SimpleConsensusValidationResult, Error> {
         match self {
             StateTransition::DataContractCreate(st) => st.validate_key_signature(bls),
             StateTransition::DataContractUpdate(st) => st.validate_key_signature(bls),
@@ -111,7 +111,7 @@ impl StateTransitionValidation for StateTransition {
     fn validate_state(
         &self,
         drive: &Drive,
-    ) -> Result<ValidationResult<StateTransitionAction>, Error> {
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         match self {
             StateTransition::DataContractCreate(st) => st.validate_state(drive),
             StateTransition::DataContractUpdate(st) => st.validate_state(drive),

@@ -8,7 +8,7 @@ use crate::errors::consensus::basic::identity::{
     InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError,
 };
 use crate::identity::{IdentityPublicKey, KeyID, KeyType};
-use crate::validation::{JsonSchemaValidator, SimpleValidationResult};
+use crate::validation::{JsonSchemaValidator, SimpleConsensusValidationResult};
 use crate::{
     BlsModule, DashPlatformProtocolInitError, NonConsensusError, PublicKeyValidationError,
 };
@@ -33,7 +33,7 @@ pub trait TPublicKeysValidator {
     fn validate_keys(
         &self,
         raw_public_keys: &[Value],
-    ) -> Result<SimpleValidationResult, NonConsensusError>;
+    ) -> Result<SimpleConsensusValidationResult, NonConsensusError>;
 }
 
 pub struct PublicKeysValidator<T: BlsModule> {
@@ -45,8 +45,8 @@ impl<T: BlsModule> TPublicKeysValidator for PublicKeysValidator<T> {
     fn validate_keys(
         &self,
         raw_public_keys: &[Value],
-    ) -> Result<SimpleValidationResult, NonConsensusError> {
-        let mut result = SimpleValidationResult::default();
+    ) -> Result<SimpleConsensusValidationResult, NonConsensusError> {
+        let mut result = SimpleConsensusValidationResult::default();
 
         // TODO: convert buffers to arrays?
         // Validate public key structure
@@ -175,7 +175,7 @@ impl<T: BlsModule> PublicKeysValidator<T> {
     pub fn validate_public_key_structure(
         &self,
         public_key: &Value,
-    ) -> Result<SimpleValidationResult, NonConsensusError> {
+    ) -> Result<SimpleConsensusValidationResult, NonConsensusError> {
         self.public_key_schema_validator.validate(
             &public_key
                 .try_to_validating_json()

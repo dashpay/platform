@@ -15,7 +15,7 @@ use dpp::consensus::basic::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::ConsensusError;
 use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;
-use dpp::validation::{SimpleValidationResult, ValidationResult};
+use dpp::validation::{SimpleConsensusValidationResult, ConsensusValidationResult, SimpleValidationResult};
 use drive::drive::block_info::BlockInfo;
 use drive::error::Error::GroveDB;
 use drive::fee::result::FeeResult;
@@ -25,13 +25,26 @@ use tenderdash_abci::proto::abci::{
 };
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::Application;
+use crate::abci::AbciError;
 
 pub struct BlockExecutionOutcome {
-    block_execution_context: BlockExecutionContext,
+    app_hash: [u8;32],
     tx_results: Vec<ExecTxResult>,
 }
 
-impl<'a, C> Platform<'a, C>
+pub struct BlockFinalizationOutcome {
+    validation_result: SimpleValidationResult<AbciError>
+}
+
+impl From<SimpleValidationResult<AbciError>> for BlockFinalizationOutcome {
+    fn from(validation_result: SimpleValidationResult<AbciError>) -> Self {
+        BlockFinalizationOutcome {
+            validation_result,
+        }
+    }
+}
+
+impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
@@ -40,7 +53,7 @@ where
         event: &ExecutionEvent,
         block_info: &BlockInfo,
         transaction: TransactionArg,
-    ) -> Result<ValidationResult<FeeResult>, Error> {
+    ) -> Result<ConsensusValidationResult<FeeResult>, Error> {
         match event {
             ExecutionEvent::PaidDriveEvent {
                 identity,
@@ -56,9 +69,9 @@ where
 
                 // TODO: Should take into account refunds as well
                 if balance >= estimated_fee_result.total_base_fee() {
-                    Ok(ValidationResult::new_with_data(estimated_fee_result))
+                    Ok(ConsensusValidationResult::new_with_data(estimated_fee_result))
                 } else {
-                    Ok(ValidationResult::new_with_data_and_errors(
+                    Ok(ConsensusValidationResult::new_with_data_and_errors(
                         estimated_fee_result,
                         vec![ConsensusError::IdentityInsufficientBalanceError(
                             IdentityInsufficientBalanceError {
@@ -70,7 +83,7 @@ where
                 }
             }
             ExecutionEvent::FreeDriveEvent { operations } => {
-                Ok(ValidationResult::new_with_data(FeeResult::default()))
+                Ok(ConsensusValidationResult::new_with_data(FeeResult::default()))
             }
         }
     }
@@ -118,7 +131,7 @@ where
                     ))
                 } else {
                     Ok(ConsensusExecutionError(
-                        SimpleValidationResult::new_with_errors(validation_result.errors),
+                        SimpleConsensusValidationResult::new_with_errors(validation_result.errors),
                     ))
                 }
             }
@@ -129,88 +142,6 @@ where
                 Ok(SuccessfulFreeExecution)
             }
         }
-    }
-
-    /// Execute a block with various state transitions
-    pub fn mimic_execute_block(
-        &self,
-        proposer_pro_tx_hash: [u8; 32],
-        proposed_version: ProtocolVersion,
-        total_hpmns: u32,
-        block_info: BlockInfo,
-        state_transitions: Vec<StateTransition>,
-    ) -> Result<(), Error> {
-        let serialized_state_transitions = state_transitions
-            .into_iter()
-            .map(|st| st.serialize().map_err(Error::Protocol))
-            .collect::<Result<Vec<Vec<u8>>, Error>>()?;
-
-        let BlockInfo {
-            time_ms,
-            height,
-            epoch,
-        } = block_info;
-
-        let request_prepare_proposal = RequestPrepareProposal {
-            max_tx_bytes: 0,
-            txs: serialized_state_transitions,
-            local_last_commit: None,
-            misbehavior: vec![],
-            height: height as i64,
-            time: Some(Timestamp {
-                seconds: (time_ms / 1000) as i64,
-                nanos: ((time_ms % 1000) * 1000) as i32,
-            }),
-            next_validators_hash: vec![],
-            round: 0,
-            core_chain_locked_height: 0,
-            proposer_pro_tx_hash: proposer_pro_tx_hash.to_vec(),
-            proposed_app_version: proposed_version as u64,
-            version: None,
-            quorum_hash: vec![],
-        };
-
-        let response_prepare_proposal = self
-            .prepare_proposal(request_prepare_proposal)
-            .unwrap_or_else(|e| {
-                panic!(
-                    "should prepare and process block #{} at time #{} : {:?}",
-                    block_info.height, block_info.time_ms, e
-                )
-            });
-        let ResponsePrepareProposal {
-            tx_records,
-            app_hash,
-            tx_results,
-            consensus_param_updates,
-            core_chain_lock_update,
-            validator_set_update,
-        } = response_prepare_proposal;
-
-        let request_finalize_block = RequestFinalizeBlock {
-            commit: Some(CommitInfo {
-                round: 0,
-                quorum_hash: vec![],
-                block_signature: vec![],
-                threshold_vote_extensions: vec![],
-            }),
-            misbehavior: vec![],
-            hash: app_hash,
-            height: height as i64,
-            round: 0,
-            block: None,
-            block_id: None,
-        };
-
-        self.finalize_block(request_finalize_block)
-            .unwrap_or_else(|e| {
-                panic!(
-                    "should finalize block #{} at time #{} : {:?}",
-                    block_info.height, block_info.time_ms, e
-                )
-            });
-
-        Ok(())
     }
 
     pub(crate) fn process_raw_state_transitions(
@@ -232,7 +163,7 @@ where
                     let execution_event = state_transition_execution_event.into_data()?;
                     self.execute_event(execution_event, block_info, transaction)?
                 } else {
-                    ConsensusExecutionError(SimpleValidationResult::new_with_errors(
+                    ConsensusExecutionError(SimpleConsensusValidationResult::new_with_errors(
                         state_transition_execution_event.errors,
                     ))
                 };
@@ -289,7 +220,7 @@ where
         // FIXME: we need to calculate total hpmns based on masternode list (or remove hpmn_count if not needed)
         let total_hpmns = self.config.quorum_size as u32;
         let mut block_execution_context = BlockExecutionContext {
-            block_state_info: block_state_info,
+            block_state_info,
             epoch_info: epoch_info.clone(),
             hpmn_count: total_hpmns,
         };
@@ -344,9 +275,98 @@ where
 
         block_execution_context.block_state_info.commit_hash = Some(root_hash);
 
+        self.block_execution_context.write().unwrap().replace(block_execution_context);
+
         Ok(BlockExecutionOutcome {
-            block_execution_context,
+            app_hash: root_hash,
             tx_results,
         })
+    }
+
+    pub fn finalize_block_proposal(
+        &self,
+        request_finalize_block: RequestFinalizeBlock,
+        transaction: &Transaction,
+    ) -> Result<BlockFinalizationOutcome, Error> {
+        let RequestFinalizeBlock {
+            commit,
+            misbehavior,
+            hash,
+            height,
+            round,
+            block,
+            block_id,
+        } = request_finalize_block;
+
+        // Retrieve block execution context before we do anything else
+        let mut guarded_block_execution_context =
+            self.block_execution_context.write().unwrap();
+        let block_execution_context =
+            guarded_block_execution_context
+                .as_ref()
+                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "block execution context must be set in block begin handler",
+                )))?;
+
+        let BlockExecutionContext {
+            block_state_info,
+            epoch_info,
+            hpmn_count,
+        } = &block_execution_context;
+
+        let mut validation_result = SimpleValidationResult::<AbciError>::new_with_errors(vec![]);
+
+        //// Verification that commit is for our current executed block
+        // When receiving the finalized block, we need to make sure that info matches our current block
+
+        // First let's check the basics, height, round and hash
+        if !block_state_info.matches(height as u64, round as u32, hash)? {
+            // we are on the wrong height or round
+            validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
+                "received a block for h: {} r: {}, expected h: {} r: {}",
+                height, round, block_state_info.height, block_state_info.round
+            )));
+            return Ok(validation_result.into());
+        }
+
+        // Next we need to verify that the signature returned from the quorum is valid
+
+        // todo: verify commit
+
+        // Next let's check that the hash received is the same as the hash we expect
+
+        if height == self.config.abci.genesis_height {
+            self.drive.set_genesis_time(block_state_info.block_time_ms);
+        }
+
+        // Determine a new protocol version if enough proposers voted
+        let changed_protocol_version = if epoch_info.is_epoch_change_but_not_genesis() {
+            let mut state = self.state.write().unwrap();
+            // Set current protocol version to the version from upcoming epoch
+            state.current_protocol_version_in_consensus = state.next_epoch_protocol_version;
+
+            // Determine new protocol version based on votes for the next epoch
+            let maybe_new_protocol_version =
+                self.check_for_desired_protocol_upgrade(*hpmn_count, &state, transaction)?;
+            if let Some(new_protocol_version) = maybe_new_protocol_version {
+                state.next_epoch_protocol_version = new_protocol_version;
+            } else {
+                state.next_epoch_protocol_version = state.current_protocol_version_in_consensus;
+            }
+
+            Some(state.current_protocol_version_in_consensus)
+        } else {
+            None
+        };
+
+        let block_info = block_state_info.to_block_info(epoch_info.current_epoch_index);
+
+        self.state.write().unwrap().last_block_info = Some(block_info.clone());
+
+        let mut drive_cache = self.drive.cache.write().unwrap();
+
+        drive_cache.cached_contracts.clear_block_cache();
+
+        Ok(validation_result.into())
     }
 }

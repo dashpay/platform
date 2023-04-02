@@ -12,7 +12,7 @@ use crate::document::{generate_document_id, Document};
 use crate::identity::state_transition::identity_credit_withdrawal_transition::{
     IdentityCreditWithdrawalTransitionAction, Pooling,
 };
-use crate::validation::ValidationResult;
+use crate::validation::ConsensusValidationResult;
 use crate::{
     consensus::basic::identity::IdentityInsufficientBalanceError,
     identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
@@ -38,8 +38,8 @@ where
     pub async fn validate_identity_credit_withdrawal_transition_state(
         &self,
         state_transition: &IdentityCreditWithdrawalTransition,
-    ) -> Result<ValidationResult<IdentityCreditWithdrawalTransitionAction>, ProtocolError> {
-        let mut result = ValidationResult::default();
+    ) -> Result<ConsensusValidationResult<IdentityCreditWithdrawalTransitionAction>, ProtocolError> {
+        let mut result = ConsensusValidationResult::default();
 
         // TODO: Use fetchIdentityBalance
         let maybe_existing_identity = self

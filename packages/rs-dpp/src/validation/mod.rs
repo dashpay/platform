@@ -7,7 +7,7 @@ use mockall::automock;
 use serde_json::Value as JsonValue;
 
 pub use json_schema_validator::JsonSchemaValidator;
-pub use validation_result::{SimpleValidationResult, ValidationResult};
+pub use validation_result::{SimpleConsensusValidationResult, ConsensusValidationResult, ValidationResult, SimpleValidationResult};
 
 use crate::{
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
@@ -23,7 +23,7 @@ mod validation_result;
 pub trait DataValidator {
     // TODO, when GAT is available remove the reference in method and use: `type Item<'a>`
     type Item;
-    fn validate(&self, data: &Self::Item) -> Result<SimpleValidationResult, ProtocolError>;
+    fn validate(&self, data: &Self::Item) -> Result<SimpleConsensusValidationResult, ProtocolError>;
 }
 
 /// Async validator validates data of given type
@@ -34,7 +34,7 @@ pub trait AsyncDataValidator {
     async fn validate(
         &self,
         data: &Self::Item,
-    ) -> Result<ValidationResult<Self::ResultItem>, ProtocolError>;
+    ) -> Result<ConsensusValidationResult<Self::ResultItem>, ProtocolError>;
 }
 
 /// Validator takes additionally an execution context and generates fee
@@ -45,7 +45,7 @@ pub trait DataValidatorWithContext {
         &self,
         data: &Self::Item,
         execution_context: &StateTransitionExecutionContext,
-    ) -> Result<SimpleValidationResult, ProtocolError>;
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError>;
 }
 
 /// Async validator takes additionally an execution context and generates fee
@@ -58,5 +58,5 @@ pub trait AsyncDataValidatorWithContext {
         &self,
         data: &Self::Item,
         execution_context: &StateTransitionExecutionContext,
-    ) -> Result<SimpleValidationResult, ProtocolError>;
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError>;
 }

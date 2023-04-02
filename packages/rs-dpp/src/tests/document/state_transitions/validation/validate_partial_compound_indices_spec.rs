@@ -13,7 +13,7 @@ use crate::{
 };
 use crate::document::ExtendedDocument;
 use crate::tests::fixtures::get_extended_documents_fixture;
-use crate::validation::ValidationResult;
+use crate::validation::ConsensusValidationResult;
 
 struct TestData {
     data_contract: DataContract,
@@ -126,7 +126,7 @@ fn should_return_valid_result_if_compound_index_contains_all_fields() {
 }
 
 fn get_basic_error<TData: Clone>(
-    result: &ValidationResult<TData>,
+    result: &ConsensusValidationResult<TData>,
     error_number: usize,
 ) -> &BasicError {
     match result

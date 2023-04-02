@@ -8,10 +8,10 @@ use crate::{
     state_transition::{
         state_transition_execution_context::StateTransitionExecutionContext, StateTransitionType,
     },
-    validation::{AsyncDataValidatorWithContext, DataValidatorWithContext, SimpleValidationResult},
+    validation::{AsyncDataValidatorWithContext, DataValidatorWithContext, SimpleConsensusValidationResult},
     ProtocolError, BlsModule, state_repository::StateRepositoryLike, data_contract::state_transition::{data_contract_update_transition::validation::basic::DataContractUpdateTransitionBasicValidator, data_contract_create_transition::validation::state::validate_data_contract_create_transition_basic::DataContractCreateTransitionBasicValidator}, identity::{state_transition::{identity_create_transition::validation::basic::IdentityCreateTransitionBasicValidator, validate_public_key_signatures::PublicKeysSignaturesValidator, identity_update_transition::validate_identity_update_transition_basic::ValidateIdentityUpdateTransitionBasic, identity_topup_transition::validation::basic::IdentityTopUpTransitionBasicValidator, identity_credit_withdrawal_transition::validation::basic::validate_identity_credit_withdrawal_transition_basic::IdentityCreditWithdrawalTransitionBasicValidator}, validation::PublicKeysValidator}, document::validation::basic::validate_documents_batch_transition_basic::DocumentBatchTransitionBasicValidator,
 };
-use crate::validation::ValidationResult;
+use crate::validation::ConsensusValidationResult;
 
 #[cfg_attr(test, automock)]
 #[async_trait(?Send)]
@@ -21,7 +21,7 @@ pub trait ValidatorByStateTransitionType {
         raw_state_transition: &Value,
         state_transition_type: StateTransitionType,
         execution_context: &StateTransitionExecutionContext,
-    ) -> Result<SimpleValidationResult, ProtocolError>;
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError>;
 }
 
 pub struct StateTransitionByTypeValidator<SR, BLS>
@@ -93,8 +93,8 @@ where
         raw_state_transition: &Value,
         state_transition_type: StateTransitionType,
         execution_context: &StateTransitionExecutionContext,
-    ) -> Result<SimpleValidationResult, ProtocolError> {
-        let mut result = ValidationResult::default();
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        let mut result = ConsensusValidationResult::default();
 
         let validation_result = match state_transition_type {
             StateTransitionType::DataContractCreate => self

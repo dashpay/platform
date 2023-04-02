@@ -8,7 +8,7 @@ use crate::consensus::signature::{
     IdentityNotFoundError, InvalidIdentityPublicKeyTypeError, MissingPublicKeyError,
     PublicKeyIsDisabledError, PublicKeySecurityLevelNotMetError,
 };
-use crate::validation::SimpleValidationResult;
+use crate::validation::SimpleConsensusValidationResult;
 use crate::{
     consensus::{signature::SignatureError, ConsensusError},
     identity::KeyType,
@@ -35,8 +35,8 @@ pub async fn validate_state_transition_identity_signature(
     state_repository: Arc<impl StateRepositoryLike>,
     state_transition: &mut impl StateTransitionIdentitySigned,
     bls: &impl BlsModule,
-) -> Result<SimpleValidationResult, ProtocolError> {
-    let mut validation_result = SimpleValidationResult::default();
+) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+    let mut validation_result = SimpleConsensusValidationResult::default();
 
     // We use temporary execution context without dry run,
     // because despite the dryRun, we need to get the

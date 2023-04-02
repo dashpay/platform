@@ -3,7 +3,7 @@ use crate::error::Error;
 use crate::platform::Platform;
 use drive::grovedb::Transaction;
 
-impl<'a, C> Platform<'a, C> {
+impl<C> Platform<C> {
     pub(crate) fn get_genesis_time(
         &self,
         block_height: u64,

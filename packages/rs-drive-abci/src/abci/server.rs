@@ -5,15 +5,17 @@ use crate::{config::PlatformConfig, error::Error, platform::Platform, rpc::core:
 use drive::query::TransactionArg;
 use std::panic::RefUnwindSafe;
 use std::{fmt::Debug, sync::MutexGuard};
+use std::sync::RwLock;
+use drive::grovedb::Transaction;
+use crate::error::execution::ExecutionError;
 
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
 ///
 /// AbciApp implements logic that should be triggered when Tenderdash performs various operations, like
 /// creating new proposal or finalizing new block.
 pub struct AbciApplication<'a, C> {
-    platform: std::sync::Mutex<&'a Platform<'a, C>>,
-    transaction: TransactionArg<'a, 'a>,
-    pub(crate) config: AbciConfig,
+    pub(crate) platform: Platform<C>,
+    transaction: RwLock<Option<Transaction<'a>>>,
 }
 
 /// Start ABCI server and process incoming connections.
@@ -28,8 +30,12 @@ pub fn start<C: CoreRPCLike + RefUnwindSafe>(
     let platform: Platform<C> =
         Platform::open_with_client(&config.db_path, Some(config.clone()), core_rpc)?;
 
-    let server = tenderdash_abci::start_server(&bind_address, platform)
+    let abci = AbciApplication::new(platform)?;
+
+    let server = tenderdash_abci::start_server(&bind_address, abci)
         .map_err(|e| super::AbciError::from(e))?;
+
+
 
     loop {
         tracing::info!("waiting for new connection");
@@ -46,29 +52,30 @@ pub fn start<C: CoreRPCLike + RefUnwindSafe>(
 impl<'a, C> AbciApplication<'a, C> {
     /// Create new ABCI app
     pub fn new(
-        config: AbciConfig,
-        platform: &'a Platform<'a, C>,
+        platform: Platform<C>,
     ) -> Result<AbciApplication<'a, C>, Error> {
         let app = AbciApplication {
-            platform: std::sync::Mutex::new(platform),
-            transaction: None,
-            config,
+            platform,
+            transaction: RwLock::new(None),
         };
 
         Ok(app)
     }
 
-    /// Return locked Platform object
-    pub(crate) fn platform(&self) -> MutexGuard<&'a Platform<'a, C>> {
-        self.platform
-            .lock()
-            .expect("cannot acquire lock on platform")
+    /// create and store a new transaction
+    pub(crate) fn start_transaction(&self) -> &Transaction {
+        let transaction = self.platform.drive.grove.start_transaction();
+        self.transaction.write().unwrap().replace(transaction);
+        &transaction
     }
 
-    /// Return current transaction.
-    /// TODO: implement
+    pub(crate) fn commit_transaction(&self) -> Result<(), Error> {
+        let transaction = self.transaction.write().unwrap().ok_or(Error::Execution(ExecutionError::NotInTransaction("trying to commit a transaction, but we are not in one")))?;
+        self.platform.drive.commit_transaction(transaction).map_err(Error::Drive)
+    }
+
     pub(crate) fn transaction(&self) -> TransactionArg {
-        self.transaction
+        self.transaction.read().unwrap().as_ref().clone()
     }
 }
 

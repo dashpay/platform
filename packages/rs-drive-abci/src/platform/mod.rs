@@ -30,7 +30,7 @@
 //! Platform Init
 //!
 
-use crate::block::BlockExecutionContextWithTransaction;
+use crate::block::{BlockExecutionContext};
 use crate::config::PlatformConfig;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -50,7 +50,7 @@ use serde_json::json;
 mod state_repository;
 
 /// Platform
-pub struct Platform<'a, C> {
+pub struct Platform<C> {
     /// Drive
     pub drive: Drive,
     /// State
@@ -58,23 +58,23 @@ pub struct Platform<'a, C> {
     /// Configuration
     pub config: PlatformConfig,
     /// Block execution context
-    pub block_execution_context_with_tx: RwLock<Option<BlockExecutionContextWithTransaction<'a>>>,
+    pub block_execution_context: RwLock<Option<BlockExecutionContext>>,
     /// Core RPC Client
     pub core_rpc: C,
 }
 
-impl<'a, C> std::fmt::Debug for Platform<'a, C> {
+impl<C> std::fmt::Debug for Platform<C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Platform").finish()
     }
 }
 
-impl<'a> Platform<'a, DefaultCoreRPC> {
+impl Platform<DefaultCoreRPC> {
     /// Open Platform with Drive and block execution context and default core rpc.
     pub fn open<P: AsRef<Path>>(
         path: P,
         config: Option<PlatformConfig>,
-    ) -> Result<Platform<'a, DefaultCoreRPC>, Error> {
+    ) -> Result<Platform<DefaultCoreRPC>, Error> {
         let config = config.unwrap_or_default();
         let core_rpc = DefaultCoreRPC::open(
             config.core.rpc.url().as_str(),
@@ -90,12 +90,12 @@ impl<'a> Platform<'a, DefaultCoreRPC> {
     }
 }
 
-impl<'a> Platform<'a, MockCoreRPCLike> {
+impl Platform<MockCoreRPCLike> {
     /// Open Platform with Drive and block execution context and mock core rpc.
     pub fn open<P: AsRef<Path>>(
         path: P,
         config: Option<PlatformConfig>,
-    ) -> Result<Platform<'a, MockCoreRPCLike>, Error> {
+    ) -> Result<Platform<MockCoreRPCLike>, Error> {
         let mut core_rpc_mock = MockCoreRPCLike::new();
 
         core_rpc_mock.expect_get_block_hash().returning(|_| {
@@ -114,13 +114,13 @@ impl<'a> Platform<'a, MockCoreRPCLike> {
     }
 }
 
-impl<'a, C> Platform<'a, C> {
+impl<C> Platform<C> {
     /// Open Platform with Drive and block execution context.
     pub fn open_with_client<P: AsRef<Path>>(
         path: P,
         config: Option<PlatformConfig>,
         core_rpc: C,
-    ) -> Result<Platform<'a, C>, Error> {
+    ) -> Result<Platform<C>, Error> {
         let config = config.unwrap_or_default();
         let drive = Drive::open(path, config.drive.clone()).map_err(Error::Drive)?;
 
@@ -145,7 +145,7 @@ impl<'a, C> Platform<'a, C> {
             drive,
             state: RwLock::new(state),
             config,
-            block_execution_context_with_tx: RwLock::new(None),
+            block_execution_context: RwLock::new(None),
             core_rpc,
         })
     }

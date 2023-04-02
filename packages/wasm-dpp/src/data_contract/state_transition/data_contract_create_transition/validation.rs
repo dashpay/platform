@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 
-use dpp::validation::SimpleValidationResult;
+use dpp::validation::SimpleConsensusValidationResult;
 use dpp::{
     data_contract::state_transition::data_contract_create_transition::validation::state::{
         validate_data_contract_create_transition_basic::DataContractCreateTransitionBasicValidator,
@@ -47,7 +47,7 @@ pub async fn validate_data_contract_create_transition_basic(
         serde_wasm_bindgen::from_value(raw_parameters)?;
 
     let mut value = platform_value::to_value(&parameters)?;
-    let mut validation_result = SimpleValidationResult::default();
+    let mut validation_result = SimpleConsensusValidationResult::default();
     if let Some(err) = DataContractCreateTransition::clean_value(&mut value).err() {
         validation_result.add_error(err);
         return Ok(validation_result.map(|_| JsValue::undefined()).into());

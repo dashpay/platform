@@ -28,7 +28,7 @@ use crate::state_transition::validation::validate_state_transition_identity_sign
 use crate::state_transition::validation::validate_state_transition_key_signature::StateTransitionKeySignatureValidator;
 use crate::state_transition::validation::validate_state_transition_state::StateTransitionStateValidator;
 use crate::validation::{
-    AsyncDataValidator, AsyncDataValidatorWithContext, SimpleValidationResult, ValidationResult,
+    AsyncDataValidator, AsyncDataValidatorWithContext, SimpleConsensusValidationResult, ConsensusValidationResult,
 };
 use crate::version::ProtocolVersionValidator;
 
@@ -224,8 +224,8 @@ where
         state_transition: &StateTransition,
         execution_context: &StateTransitionExecutionContext,
         options: ValidateOptions,
-    ) -> Result<ValidationResult<Option<StateTransitionAction>>, ProtocolError> {
-        let mut result = ValidationResult::<Option<StateTransitionAction>>::new_with_data(None);
+    ) -> Result<ConsensusValidationResult<Option<StateTransitionAction>>, ProtocolError> {
+        let mut result = ConsensusValidationResult::<Option<StateTransitionAction>>::new_with_data(None);
         if options.basic {
             let state_transition_cleaned = state_transition.to_cleaned_object(false)?;
             result.merge(
@@ -265,7 +265,7 @@ where
         &self,
         state_transition: &Value,
         execution_context: &StateTransitionExecutionContext,
-    ) -> Result<SimpleValidationResult, ProtocolError> {
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         self.basic_validator
             .validate(state_transition, execution_context)
             .await
@@ -274,7 +274,7 @@ where
     pub async fn validate_signature(
         &self,
         mut state_transition: StateTransition,
-    ) -> Result<SimpleValidationResult, ProtocolError> {
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         // TODO: can we avoid duplicated code here?
         return match state_transition {
             StateTransition::DataContractCreate(ref mut st) => {
@@ -328,14 +328,14 @@ where
     pub async fn validate_fee(
         &self,
         state_transition: &StateTransition,
-    ) -> Result<SimpleValidationResult, ProtocolError> {
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         self.fee_validator.validate(state_transition).await
     }
 
     pub async fn validate_state(
         &self,
         state_transition: &StateTransition,
-    ) -> Result<ValidationResult<StateTransitionAction>, ProtocolError> {
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, ProtocolError> {
         self.state_validator.validate(state_transition).await
     }
 }

@@ -20,7 +20,7 @@ use crate::{
         fixtures::{get_identity_update_transition_fixture, identity_fixture},
         utils::get_state_error_from_result,
     },
-    validation::SimpleValidationResult,
+    validation::SimpleConsensusValidationResult,
     NativeBlsModule, StateError,
 };
 
@@ -367,7 +367,7 @@ async fn should_validate_pubic_keys_to_add() {
     } = setup_test();
     let mut validate_public_keys_mock = MockTPublicKeysValidator::new();
     let some_consensus_error = ConsensusError::TestConsensusError(TestConsensusError::new("test"));
-    let validation_result = SimpleValidationResult::new_with_errors(vec![some_consensus_error]);
+    let validation_result = SimpleConsensusValidationResult::new_with_errors(vec![some_consensus_error]);
     validate_public_keys_mock
         .expect_validate_keys()
         .return_once(|_| Ok(validation_result));

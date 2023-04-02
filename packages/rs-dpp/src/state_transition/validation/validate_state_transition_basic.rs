@@ -14,7 +14,7 @@ use crate::{
         state_transition_execution_context::StateTransitionExecutionContext,
         StateTransitionConvert, StateTransitionType,
     },
-    validation::{AsyncDataValidatorWithContext, SimpleValidationResult},
+    validation::{AsyncDataValidatorWithContext, SimpleConsensusValidationResult},
     ProtocolError,
 };
 
@@ -54,8 +54,8 @@ where
         &self,
         raw_state_transition: &Value,
         execution_context: &StateTransitionExecutionContext,
-    ) -> Result<SimpleValidationResult, ProtocolError> {
-        let mut result = SimpleValidationResult::default();
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        let mut result = SimpleConsensusValidationResult::default();
 
         let Ok(state_transition_type) = raw_state_transition.get_integer("type") else {
             result.add_error(
@@ -125,7 +125,7 @@ mod test {
 
     use super::StateTransitionBasicValidator;
 
-    use crate::validation::SimpleValidationResult;
+    use crate::validation::SimpleConsensusValidationResult;
     use crate::{
         consensus::basic::BasicError,
         data_contract::{
@@ -307,7 +307,7 @@ mod test {
         let mut validate_by_type_mock = MockValidatorByStateTransitionType::new();
         validate_by_type_mock
             .expect_validate()
-            .returning(|_, _, _| Ok(SimpleValidationResult::default()));
+            .returning(|_, _, _| Ok(SimpleConsensusValidationResult::default()));
 
         for i in 0..500 {
             let document_type_name = format!("anotherDocument{}", i);
@@ -352,7 +352,7 @@ mod test {
         let mut validate_by_type_mock = MockValidatorByStateTransitionType::new();
         validate_by_type_mock
             .expect_validate()
-            .returning(|_, _, _| Ok(SimpleValidationResult::default()));
+            .returning(|_, _, _| Ok(SimpleConsensusValidationResult::default()));
 
         let validator = StateTransitionBasicValidator::new(
             Arc::new(state_repository_mock),

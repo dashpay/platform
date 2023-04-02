@@ -4,7 +4,7 @@ use crate::identity::state_transition::asset_lock_proof::{
 };
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::validation::ValidationResult;
+use crate::validation::ConsensusValidationResult;
 use crate::NonConsensusError;
 use platform_value::Value;
 
@@ -28,7 +28,7 @@ impl<SR: StateRepositoryLike> AssetLockProofValidator<SR> {
         &self,
         asset_lock_proof_object: &Value,
         execution_context: &StateTransitionExecutionContext,
-    ) -> Result<ValidationResult<PublicKeyHash>, NonConsensusError> {
+    ) -> Result<ConsensusValidationResult<PublicKeyHash>, NonConsensusError> {
         let asset_lock_type = AssetLockProof::type_from_raw_value(asset_lock_proof_object);
 
         if let Some(proof_type) = asset_lock_type {

@@ -19,7 +19,7 @@ use crate::{
         state_transition_execution_context::StateTransitionExecutionContext,
         StateTransition, StateTransitionConvert, StateTransitionLike,
     },
-    validation::SimpleValidationResult,
+    validation::SimpleConsensusValidationResult,
     ProtocolError,
 };
 
@@ -36,7 +36,7 @@ where
     type Item = StateTransition;
     type ResultItem = ();
 
-    async fn validate(&self, data: &Self::Item) -> Result<SimpleValidationResult, ProtocolError> {
+    async fn validate(&self, data: &Self::Item) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         validate_state_transition_key_signature(
             self.state_repository.as_ref(),
             &self.asset_lock_public_key_hash_fetcher,
@@ -65,8 +65,8 @@ pub async fn validate_state_transition_key_signature<SR: StateRepositoryLike>(
     state_repository: &impl StateRepositoryLike,
     asset_lock_public_key_hash_fetcher: &AssetLockPublicKeyHashFetcher<SR>,
     state_transition: &StateTransition,
-) -> Result<SimpleValidationResult, ProtocolError> {
-    let mut result = SimpleValidationResult::default();
+) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+    let mut result = SimpleConsensusValidationResult::default();
 
     let execution_context = state_transition.get_execution_context();
     // Validate target identity existence for top up

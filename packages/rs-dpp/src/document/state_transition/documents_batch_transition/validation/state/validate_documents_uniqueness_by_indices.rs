@@ -7,7 +7,7 @@ use serde_json::{json, Value as JsonValue};
 use platform_value::platform_value;
 
 use crate::document::Document;
-use crate::validation::SimpleValidationResult;
+use crate::validation::SimpleConsensusValidationResult;
 use crate::{
     document::document_transition::{Action, DocumentTransition, DocumentTransitionExt},
     prelude::{DataContract, Identifier},
@@ -30,11 +30,11 @@ pub async fn validate_documents_uniqueness_by_indices<SR>(
     document_transitions: impl Iterator<Item = &DocumentTransition>,
     data_contract: &DataContract,
     execution_context: &StateTransitionExecutionContext,
-) -> Result<SimpleValidationResult, ProtocolError>
+) -> Result<SimpleConsensusValidationResult, ProtocolError>
 where
     SR: StateRepositoryLike,
 {
-    let mut validation_result = SimpleValidationResult::default();
+    let mut validation_result = SimpleConsensusValidationResult::default();
 
     if execution_context.is_dry_run() {
         return Ok(validation_result);
@@ -143,8 +143,8 @@ fn validate_uniqueness<'a>(
     results: Vec<
         Result<Vec<impl TryInto<Document, Error = impl Into<ProtocolError>>>, anyhow::Error>,
     >,
-) -> Result<SimpleValidationResult, ProtocolError> {
-    let mut validation_result = SimpleValidationResult::default();
+) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+    let mut validation_result = SimpleConsensusValidationResult::default();
     for (i, result) in results.into_iter().enumerate() {
         let documents: Vec<Document> = result?
             .into_iter()

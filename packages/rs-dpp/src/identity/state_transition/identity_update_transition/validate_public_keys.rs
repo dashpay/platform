@@ -7,7 +7,7 @@ use crate::{
     identity::validation::{duplicated_key_ids, duplicated_keys, TPublicKeysValidator},
     prelude::IdentityPublicKey,
     util::json_value::JsonValueExt,
-    validation::SimpleValidationResult,
+    validation::SimpleConsensusValidationResult,
     ProtocolError, StateError,
 };
 
@@ -22,7 +22,7 @@ impl TPublicKeysValidator for IdentityUpdatePublicKeysValidator {
     fn validate_keys(
         &self,
         raw_public_keys: &[Value],
-    ) -> Result<SimpleValidationResult, crate::NonConsensusError> {
+    ) -> Result<SimpleConsensusValidationResult, crate::NonConsensusError> {
         validate_public_keys(raw_public_keys)
             .map_err(|e| crate::NonConsensusError::SerdeJsonError(e.to_string()))
     }
@@ -30,8 +30,8 @@ impl TPublicKeysValidator for IdentityUpdatePublicKeysValidator {
 
 pub fn validate_public_keys(
     raw_public_keys: &[Value],
-) -> Result<SimpleValidationResult, ProtocolError> {
-    let mut validation_result = SimpleValidationResult::default();
+) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+    let mut validation_result = SimpleConsensusValidationResult::default();
 
     let maybe_max_items = IDENTITY_JSON_SCHEMA.get_value("properties.publicKeys.maxItems")?;
     let max_items = maybe_max_items

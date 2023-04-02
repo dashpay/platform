@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use crate::consensus::basic::identity::MissingMasterPublicKeyError;
 use crate::identity::validation::TPublicKeysValidator;
 use crate::identity::{IdentityPublicKey, Purpose, SecurityLevel};
-use crate::validation::SimpleValidationResult;
+use crate::validation::SimpleConsensusValidationResult;
 use crate::{DashPlatformProtocolInitError, NonConsensusError};
 
 #[derive(Eq, Hash, PartialEq)]
@@ -20,8 +20,8 @@ impl TPublicKeysValidator for RequiredPurposeAndSecurityLevelValidator {
     fn validate_keys(
         &self,
         raw_public_keys: &[Value],
-    ) -> Result<SimpleValidationResult, NonConsensusError> {
-        let mut result = SimpleValidationResult::default();
+    ) -> Result<SimpleConsensusValidationResult, NonConsensusError> {
+        let mut result = SimpleConsensusValidationResult::default();
 
         let mut key_purposes_and_levels_count: HashMap<PurposeKey, usize> = HashMap::new();
 

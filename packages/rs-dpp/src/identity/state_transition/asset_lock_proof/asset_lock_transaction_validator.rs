@@ -12,7 +12,7 @@ use crate::consensus::basic::identity::{
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::util::vec::vec_to_array;
-use crate::validation::ValidationResult;
+use crate::validation::ConsensusValidationResult;
 use crate::NonConsensusError;
 
 #[derive(Clone, Debug)]
@@ -57,8 +57,8 @@ where
         raw_tx: &[u8],
         output_index: usize,
         execution_context: &StateTransitionExecutionContext,
-    ) -> Result<ValidationResult<AssetLockTransactionResultData>, NonConsensusError> {
-        let mut result = ValidationResult::default();
+    ) -> Result<ConsensusValidationResult<AssetLockTransactionResultData>, NonConsensusError> {
+        let mut result = ConsensusValidationResult::default();
 
         match consensus::deserialize::<Transaction>(raw_tx) {
             Ok(transaction) => {

@@ -11,7 +11,7 @@ use crate::identity::state_transition::identity_update_transition::validate_publ
 use crate::ProtocolError;
 use crate::state_transition::{StateTransition, StateTransitionAction};
 use crate::state_transition::StateTransitionAction::{DataContractCreateAction, DataContractUpdateAction, DocumentsBatchAction, IdentityCreateAction, IdentityCreditWithdrawalAction, IdentityTopUpAction, IdentityUpdateAction};
-use crate::validation::{AsyncDataValidator, ValidationResult};
+use crate::validation::{AsyncDataValidator, ConsensusValidationResult};
 
 pub struct StateTransitionStateValidator<SR>
 where
@@ -67,7 +67,7 @@ where
     pub async fn validate(
         &self,
         state_transition: &StateTransition,
-    ) -> Result<ValidationResult<StateTransitionAction>, ProtocolError> {
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, ProtocolError> {
         match state_transition {
             StateTransition::DataContractCreate(st) => Ok(self
                 .data_contract_create_validator

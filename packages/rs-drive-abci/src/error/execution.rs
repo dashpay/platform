@@ -36,6 +36,10 @@ pub enum ExecutionError {
     CorruptedCreditsNotBalanced(String),
 
     /// Error
+    #[error("transaction not present error: {0}")]
+    NotInTransaction(&'static str),
+
+    /// Error
     #[error("cannot update proposed app version: {0}")]
     UpdateValidatorProposedAppVersionError(#[from] DriveError),
 }

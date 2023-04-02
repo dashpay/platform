@@ -105,10 +105,4 @@ pub struct BlockExecutionContext {
     pub hpmn_count: u32,
 }
 
-/// Block execution context with a transaction
-pub struct BlockExecutionContextWithTransaction<'a> {
-    /// The block execution context
-    pub block_execution_context: BlockExecutionContext,
-    /// The current transaction for the block
-    pub current_transaction: Transaction<'a>,
-}
+

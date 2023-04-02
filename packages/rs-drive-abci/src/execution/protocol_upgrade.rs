@@ -6,7 +6,7 @@ use crate::state::PlatformState;
 use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::grovedb::Transaction;
 
-impl<'a, CoreRPCLike> Platform<'a, CoreRPCLike> {
+impl<CoreRPCLike> Platform<CoreRPCLike> {
     /// checks for a network upgrade and resets activation window
     /// this should only be called on epoch change
     /// this will change backing state, but does not change drive cache

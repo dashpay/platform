@@ -56,6 +56,7 @@ impl ErrorWithCode for ConsensusError {
             #[cfg(test)]
             ConsensusError::TestConsensusError(_) => 1000,
             ConsensusError::ValueError(_) => 5000,
+            ConsensusError::DefaultError => 1, // this should never happen
         }
     }
 }

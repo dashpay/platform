@@ -74,7 +74,7 @@ pub struct ProcessedBlockFeesOutcome {
     pub refunded_epochs_count: Option<u16>,
 }
 
-impl<'a, CoreRPCLike> Platform<'a, CoreRPCLike> {
+impl<CoreRPCLike> Platform<CoreRPCLike> {
     /// Adds operations to the GroveDB batch which initialize the current epoch
     /// as well as the current+1000 epoch, then distributes storage fees accumulated
     /// during the previous epoch.

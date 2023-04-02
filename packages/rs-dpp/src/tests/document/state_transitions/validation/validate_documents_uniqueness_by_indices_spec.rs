@@ -14,7 +14,7 @@ use crate::{consensus::ConsensusError, data_contract::DataContract, document::{
 }};
 use crate::document::{Document, ExtendedDocument};
 use crate::tests::fixtures::get_extended_documents_fixture;
-use crate::validation::ValidationResult;
+use crate::validation::ConsensusValidationResult;
 
 struct TestData {
     owner_id: Identifier,
@@ -435,7 +435,7 @@ async fn should_return_valid_result_if_document_being_created_and_has_created_at
 }
 
 fn get_state_error<TData: Clone>(
-    result: &ValidationResult<TData>,
+    result: &ConsensusValidationResult<TData>,
     error_number: usize,
 ) -> &StateError {
     match result

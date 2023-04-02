@@ -4,7 +4,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransitionAction;
-use crate::validation::ValidationResult;
+use crate::validation::ConsensusValidationResult;
 use crate::{
     data_contract::{
         state_transition::data_contract_create_transition::DataContractCreateTransition,
@@ -35,7 +35,7 @@ where
     async fn validate(
         &self,
         data: &DataContractCreateTransition,
-    ) -> Result<ValidationResult<Self::ResultItem>, ProtocolError> {
+    ) -> Result<ConsensusValidationResult<Self::ResultItem>, ProtocolError> {
         validate_data_contract_create_transition_state(&self.state_repository, data).await
     }
 }
@@ -55,7 +55,7 @@ where
 pub async fn validate_data_contract_create_transition_state(
     state_repository: &impl StateRepositoryLike,
     state_transition: &DataContractCreateTransition,
-) -> Result<ValidationResult<DataContractCreateTransitionAction>, ProtocolError> {
+) -> Result<ConsensusValidationResult<DataContractCreateTransitionAction>, ProtocolError> {
     // Data contract shouldn't exist
     let maybe_existing_data_contract: Option<DataContract> = state_repository
         .fetch_data_contract(
@@ -73,7 +73,7 @@ pub async fn validate_data_contract_create_transition_state(
         let action: DataContractCreateTransitionAction = state_transition.into();
         Ok(action.into())
     } else {
-        Ok(ValidationResult::new_with_errors(vec![
+        Ok(ConsensusValidationResult::new_with_errors(vec![
             StateError::DataContractAlreadyPresentError {
                 data_contract_id: state_transition.data_contract.id.to_owned(),
             }

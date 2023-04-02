@@ -64,7 +64,7 @@ const DPNS_DASH_TLD_PREORDER_SALT: [u8; 32] = [
     227, 199, 153, 234, 158, 115, 123, 79, 154, 162, 38,
 ];
 
-impl<'a, C> Platform<'a, C> {
+impl<C> Platform<C> {
     /// Creates trees and populates them with necessary identities, contracts and documents
     pub fn create_genesis_state(
         &self,
@@ -197,8 +197,8 @@ impl<'a, C> Platform<'a, C> {
 
     fn register_dpns_top_level_domain_operations(
         &self,
-        contract: &'a DataContract,
-        operations: &mut Vec<DriveOperation<'a>>,
+        contract: &DataContract,
+        operations: &mut Vec<DriveOperation>,
     ) -> Result<(), Error> {
         let domain = "dash";
 

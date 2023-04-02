@@ -33,7 +33,7 @@
 //!
 
 use crate::abci::AbciError;
-use crate::block::{BlockExecutionContext, BlockExecutionContextWithTransaction};
+use crate::block::{BlockExecutionContext};
 use crate::rpc::core::CoreRPCLike;
 use dpp::identity::TimestampMillis;
 use dpp::state_transition::StateTransition;
@@ -48,6 +48,7 @@ use tenderdash_abci::proto::{
     abci::{self as proto, ResponseException},
     serializers::timestamp::ToMilis,
 };
+use crate::abci::server::AbciApplication;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -56,7 +57,7 @@ use crate::platform::Platform;
 use crate::validation::bls::DriveBls;
 use crate::validation::state_transition::validate_state_transition;
 
-impl<'a, C> tenderdash_abci::Application for Platform<'a, C>
+impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>
 where
     C: CoreRPCLike,
 {
@@ -83,23 +84,23 @@ where
         &self,
         request: RequestInitChain,
     ) -> Result<ResponseInitChain, ResponseException> {
-        let transaction = self.drive.grove.start_transaction();
+        let transaction = self.platform.drive.grove.start_transaction();
         let genesis_time = request
             .time
             .ok_or("genesis time is required in init chain")?
             .to_milis() as TimestampMillis;
 
-        self.create_genesis_state(
+        self.platform.create_genesis_state(
             genesis_time,
-            self.config.abci.keys.clone().into(),
+            self.platform.config.abci.keys.clone().into(),
             Some(&transaction),
         )?;
 
-        self.drive
+        self.platform.drive
             .commit_transaction(transaction)
             .map_err(Error::Drive)?;
 
-        let response = proto::ResponseInitChain {
+        let response = ResponseInitChain {
             ..Default::default()
         };
 
@@ -111,31 +112,13 @@ where
         &self,
         request: RequestPrepareProposal,
     ) -> Result<ResponsePrepareProposal, ResponseException> {
-        let transaction = self.drive.grove.start_transaction();
+        let transaction = self.start_transaction();
 
         // Running the proposal executes all the state transitions for the block
         let BlockExecutionOutcome {
-            block_execution_context,
+            app_hash,
             tx_results,
-        } = self.run_block_proposal((&request).try_into()?, &transaction)?;
-
-        let app_hash =
-            block_execution_context
-                .block_state_info
-                .commit_hash
-                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "expected a commit hash in prepare proposal",
-                )))?;
-
-        let block_execution_context_with_tx = BlockExecutionContextWithTransaction {
-            block_execution_context,
-            current_transaction: transaction,
-        };
-
-        self.block_execution_context_with_tx
-            .write()
-            .unwrap()
-            .replace(block_execution_context_with_tx);
+        } = self.platform.run_block_proposal((&request).try_into()?, transaction)?;
 
         // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
         let response = ResponsePrepareProposal {
@@ -151,31 +134,13 @@ where
         &self,
         request: RequestProcessProposal,
     ) -> Result<ResponseProcessProposal, ResponseException> {
-        let transaction = self.drive.grove.start_transaction();
+        let transaction = self.start_transaction();
 
         // Running the proposal executes all the state transitions for the block
         let BlockExecutionOutcome {
-            block_execution_context,
+            app_hash,
             tx_results,
-        } = self.run_block_proposal((&request).try_into()?, &transaction)?;
-
-        let app_hash =
-            block_execution_context
-                .block_state_info
-                .commit_hash
-                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "expected a commit hash in prepare proposal",
-                )))?;
-
-        let block_execution_context_with_tx = BlockExecutionContextWithTransaction {
-            block_execution_context,
-            current_transaction: transaction,
-        };
-
-        self.block_execution_context_with_tx
-            .write()
-            .unwrap()
-            .replace(block_execution_context_with_tx);
+        } = self.platform.run_block_proposal((&request).try_into()?, transaction)?;
 
         // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
         let response = ResponseProcessProposal {
@@ -191,97 +156,10 @@ where
         &self,
         request: RequestFinalizeBlock,
     ) -> Result<ResponseFinalizeBlock, ResponseException> {
-        let RequestFinalizeBlock {
-            commit,
-            misbehavior,
-            hash,
-            height,
-            round,
-            block,
-            block_id,
-        } = request;
+        let transaction = self.transaction().ok_or(Error::Execution(ExecutionError::NotInTransaction("trying to finalize block without a current transaction")))?;
+        self.platform.finalize_block_proposal(request, transaction)?;
 
-        // Retrieve block execution context before we do anything else
-        let mut guarded_block_execution_context =
-            self.block_execution_context_with_tx.write().unwrap();
-        let block_execution_context =
-            guarded_block_execution_context
-                .as_ref()
-                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "block execution context must be set in block begin handler",
-                )))?;
-
-        let BlockExecutionContext {
-            block_state_info,
-            epoch_info,
-            hpmn_count,
-        } = &block_execution_context.block_execution_context;
-
-        let current_transaction = &block_execution_context.current_transaction;
-
-        //// Verification that commit is for our current executed block
-        // When receiving the finalized block, we need to make sure that info matches our current block
-
-        // First let's check the basics, height, round and hash
-        if !block_state_info.matches(height as u64, round as u32, hash)? {
-            // we are on the wrong height or round
-            return Err(Error::Abci(AbciError::WrongFinalizeBlockReceived(format!(
-                "received a block for h: {} r: {}, expected h: {} r: {}",
-                height, round, block_state_info.height, block_state_info.round
-            )))
-            .into());
-        }
-
-        // Next we need to verify that the signature returned from the quorum is valid
-
-        // todo: verify commit
-
-        // Next let's check that the hash received is the same as the hash we expect
-
-        if height == self.config.abci.genesis_height {
-            self.drive.set_genesis_time(block_state_info.block_time_ms);
-        }
-
-        // Determine a new protocol version if enough proposers voted
-        let changed_protocol_version = if epoch_info.is_epoch_change_but_not_genesis() {
-            let mut state = self.state.write().unwrap();
-            // Set current protocol version to the version from upcoming epoch
-            state.current_protocol_version_in_consensus = state.next_epoch_protocol_version;
-
-            // Determine new protocol version based on votes for the next epoch
-            let maybe_new_protocol_version =
-                self.check_for_desired_protocol_upgrade(*hpmn_count, &state, current_transaction)?;
-            if let Some(new_protocol_version) = maybe_new_protocol_version {
-                state.next_epoch_protocol_version = new_protocol_version;
-            } else {
-                state.next_epoch_protocol_version = state.current_protocol_version_in_consensus;
-            }
-
-            Some(state.current_protocol_version_in_consensus)
-        } else {
-            None
-        };
-
-        let block_execution_context =
-            guarded_block_execution_context
-                .take()
-                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "block execution context was already decided to exist",
-                )))?;
-
-        self.drive
-            .grove
-            .commit_transaction(block_execution_context.current_transaction)
-            .unwrap()
-            .map_err(|e| Error::Drive(GroveDB(e)))?;
-
-        let block_info = block_state_info.to_block_info(epoch_info.current_epoch_index);
-
-        self.state.write().unwrap().last_block_info = Some(block_info.clone());
-
-        let mut drive_cache = self.drive.cache.write().unwrap();
-
-        drive_cache.cached_contracts.clear_block_cache();
+        self.commit_transaction()?;
 
         Ok(ResponseFinalizeBlock {
             events: vec![],
@@ -294,12 +172,12 @@ where
         let state_transition =
             StateTransition::deserialize(tx.as_slice()).map_err(Error::Protocol)?;
         let drive_bls = DriveBls {};
-        let execution_event = validate_state_transition(self, &drive_bls, state_transition)?;
+        let execution_event = validate_state_transition(&self.platform, &drive_bls, state_transition)?;
 
         // We should run the execution event in dry run to see if we would have enough fees for the transaction
 
         // We need the approximate block info
-        let block_info = self
+        let block_info = self.platform
             .state
             .read()
             .unwrap()
@@ -309,7 +187,7 @@ where
         // We do not put the transaction, because this event happens outside of a block
         let validation_result =
             execution_event.and_then_borrowed_validation(|execution_event| {
-                self.validate_fees_of_event(&execution_event, &block_info, None)
+                self.platform.validate_fees_of_event(&execution_event, &block_info, None)
             })?;
 
         // If there are no execution errors the code will be 0
@@ -342,7 +220,7 @@ where
         } = request;
 
         let data = self
-            .drive
+            .platform.drive
             .query_serialized(data, path, prove)
             .map_err(Error::Drive)?;
 
