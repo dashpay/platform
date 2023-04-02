@@ -274,7 +274,7 @@ describe('Dash - Client', function suite() {
       // Updating the identity
       await client.platform.identities.update(identity, {
         add: publicKeysToAdd,
-        // TODO(wasm): enable when the bug with treating publicKeyIds
+        // TODO(wasm-dpp): enable when the bug with treating publicKeyIds
         //  as bytes instead of array is fixed
         // disable: publicKeysToDisable,
       }, {

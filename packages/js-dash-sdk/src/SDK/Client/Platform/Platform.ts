@@ -104,6 +104,9 @@ interface DataContracts {
  * @param contracts - contracts
  */
 export class Platform {
+  // TODO(wasm-dpp): provide type definitions from wasm-dpp
+  dppModule: unknown;
+
   dpp: DashPlatformProtocol;
 
   wasmDpp: DashPlatformProtocol;
@@ -214,7 +217,9 @@ export class Platform {
   async initialize() {
     await this.dpp.initialize();
 
-    const { DashPlatformProtocol: DashPlatformProtocolWasm } = await loadWasmDpp();
+    const dppModule = await loadWasmDpp();
+    const { DashPlatformProtocol: DashPlatformProtocolWasm } = dppModule;
+    this.dppModule = dppModule;
 
     if (!this.wasmDpp) {
       const bls = await BlsSignatures.getInstance();
