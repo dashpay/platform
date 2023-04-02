@@ -9,7 +9,6 @@ use crate::execution::execution_event::{ExecutionEvent, ExecutionResult};
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
-use crate::validation::bls::DriveBls;
 use crate::validation::state_transition::validate_state_transition;
 use dpp::consensus::basic::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::ConsensusError;
@@ -226,7 +225,7 @@ where
             .into_iter()
             .map(|state_transition| {
                 let state_transition_execution_event =
-                    validate_state_transition(self, &DriveBls {}, state_transition)?;
+                    validate_state_transition(self, state_transition)?;
 
                 let execution_result = if state_transition_execution_event.is_valid() {
                     let execution_event = state_transition_execution_event.into_data()?;

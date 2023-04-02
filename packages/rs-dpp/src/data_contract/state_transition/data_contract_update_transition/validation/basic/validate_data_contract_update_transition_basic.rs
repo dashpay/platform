@@ -34,11 +34,11 @@ use super::schema_compatibility_validator::DiffVAlidatorError;
 use super::validate_indices_are_backward_compatible;
 
 lazy_static! {
-    static ref DATA_CONTRACT_UPDATE_SCHEMA: JsonValue = serde_json::from_str(include_str!(
+    pub static ref DATA_CONTRACT_UPDATE_SCHEMA: JsonValue = serde_json::from_str(include_str!(
         "./../../../../../schema/data_contract/stateTransition/dataContractUpdate.json"
     ))
     .expect("schema for Data Contract Update should be a valid json");
-    static ref EMPTY_JSON: JsonValue = json!({});
+    pub static ref EMPTY_JSON: JsonValue = json!({});
 }
 
 pub struct DataContractUpdateTransitionBasicValidator<SR> {
@@ -262,7 +262,7 @@ fn replace_bytes_with_hex_string(
     Ok(())
 }
 
-fn get_operation_and_property_name(p: &PatchOperation) -> (&'static str, &str) {
+pub fn get_operation_and_property_name(p: &PatchOperation) -> (&'static str, &str) {
     match &p {
         PatchOperation::Add(ref o) => ("add", o.path.as_str()),
         PatchOperation::Copy(ref o) => ("copy", o.path.as_str()),
@@ -273,7 +273,7 @@ fn get_operation_and_property_name(p: &PatchOperation) -> (&'static str, &str) {
     }
 }
 
-fn get_operation_and_property_name_json(p: &json_patch::PatchOperation) -> (&'static str, &str) {
+pub fn get_operation_and_property_name_json(p: &json_patch::PatchOperation) -> (&'static str, &str) {
     match &p {
         json_patch::PatchOperation::Add(ref o) => ("add json", o.path.as_str()),
         json_patch::PatchOperation::Copy(ref o) => ("copy json", o.path.as_str()),
