@@ -16,7 +16,7 @@ const {
 } = require('@dashevo/grpc-common');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const AlreadyExistsGrpcError = require('@dashevo/grpc-common/lib/server/error/AlreadyExistsGrpcError');
-const createConsensusError = require('@dashevo/dpp/lib/errors/consensus/createConsensusError');
+// const createConsensusError = require('@dashevo/dpp/lib/errors/consensus/createConsensusError');
 
 /**
  * @param {Object} data
@@ -101,7 +101,11 @@ function createGrpcErrorFromDriveResponse(code, info) {
 
   // DPP errors
   if (code >= 1000 && code < 5000) {
-    const consensusError = createConsensusError(code, data.arguments || []);
+    // TODO(wasm-dpp): port `createConsensusError` to wasm-dpp
+    // const consensusError = createConsensusError(code, data.arguments || []);
+    const consensusError = {
+      message: `DPP Consensus Error with code "${code}" has been thrown`,
+    };
 
     // Basic
     if (code >= 1000 && code < 2000) {

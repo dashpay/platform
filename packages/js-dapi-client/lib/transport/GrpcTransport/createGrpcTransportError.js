@@ -1,6 +1,6 @@
 const cbor = require('cbor');
 
-const createConsensusError = require('@dashevo/dpp/lib/errors/consensus/createConsensusError');
+// const createConsensusError = require('@dashevo/dpp/lib/errors/consensus/createConsensusError');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const { parseMetadata } = require('@dashevo/dapi-grpc');
 
@@ -114,7 +114,12 @@ function createGrpcTransportError(grpcError, dapiAddress) {
 
   // DPP consensus errors
   if (code >= 1000 && code < 5000) {
-    const consensusError = createConsensusError(code, data.arguments || []);
+    // TODO(wasm-dpp): port `createConsensusError` to wasm-dpp
+    // const consensusError = createConsensusError(code, data.arguments || []);
+    const consensusError = {
+      message: `DPP consensus error with code "${code}" has been thrown`,
+      getCode: () => code,
+    };
 
     delete data.arguments;
 
