@@ -89,12 +89,19 @@ export async function createAssetLockProof(
         .then(() => {
           clearTimeout(rejectTimer);
           cancelInstantLock();
-          // TODO(wasm): test if identity can be registered with chain asset lock proof
+
+          // Change endianness of raw txId bytes in outPoint to match expectations of dashcore-rust
+          let outPointBuffer = assetLockTransaction.getOutPointBuffer(outputIndex);
+          const txIdBuffer = outPointBuffer.slice(0, 32);
+          const outputIndexBuffer = outPointBuffer.slice(32);
+          txIdBuffer.reverse();
+          outPointBuffer = Buffer.concat([txIdBuffer, outputIndexBuffer]);
+
           // @ts-ignore
           return wasmDpp.identity.createChainAssetLockProof(
             // @ts-ignore
             assetLockMetadata.height,
-            assetLockTransaction.getOutPointBuffer(outputIndex),
+            outPointBuffer,
           );
         }))
       .catch((error) => {
