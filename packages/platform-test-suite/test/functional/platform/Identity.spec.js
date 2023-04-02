@@ -19,13 +19,12 @@ const {
     StateTransitionBroadcastError,
   },
   PlatformProtocol: {
-    Identifier,
     IdentityPublicKey,
     ConsensusErrors: {
-      InvalidInstantAssetLockProofSignatureError,
+      // InvalidInstantAssetLockProofSignatureError,
       IdentityAssetLockTransactionOutPointAlreadyExistsError,
       BalanceIsNotEnoughError,
-      InvalidIdentityKeySignatureError,
+      // InvalidIdentityKeySignatureError,
     },
   },
 } = Dash;
@@ -91,9 +90,11 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
-      expect(broadcastError.getCause()).to.be.an.instanceOf(
-        InvalidInstantAssetLockProofSignatureError,
-      );
+      expect(broadcastError.getCause().getCode()).to.equal(1042);
+      // TODO(wasm-dpp): fix this after createConsensusError is ported to wasm-dpp
+      // expect(broadcastError.getCause()).to.be.an.instanceOf(
+      //   InvalidInstantAssetLockProofSignatureError,
+      // );
     });
 
     it('should fail to create an identity with already used asset lock output', async () => {
@@ -492,11 +493,7 @@ describe('Platform', () => {
       });
     });
 
-    describe.only('Update', () => {
-      before(async () => {
-        identity = await client.platform.identities.register(400000);
-      });
-
+    describe('Update', () => {
       it('should be able to add public key to the identity', async () => {
         const { Identity } = client.platform.dppModule;
         const identityBeforeUpdate = new Identity(identity.toObject());
@@ -601,6 +598,8 @@ describe('Platform', () => {
       });
 
       it('should receive masternode identities', async () => {
+        await client.platform.initialize();
+
         const bestBlockHash = await dapiClient.core.getBestBlockHash();
         const baseBlockHash = await dapiClient.core.getBlockHash(1);
 
@@ -610,6 +609,7 @@ describe('Platform', () => {
         );
 
         for (const masternodeEntry of mnList) {
+          const { Identifier } = client.platform.dppModule;
           const masternodeIdentityId = Identifier.from(
             Buffer.from(masternodeEntry.proRegTxHash, 'hex'),
           );

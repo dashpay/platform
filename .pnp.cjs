@@ -7944,6 +7944,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/js-dash-sdk/",\
           "packageDependencies": [\
             ["dash", "workspace:packages/js-dash-sdk"],\
+            ["@dashevo/bls", "npm:1.2.9"],\
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
             ["@dashevo/dashcore-lib", "npm:0.20.0"],\
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\

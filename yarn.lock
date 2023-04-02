@@ -5901,6 +5901,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "dash@workspace:packages/js-dash-sdk"
   dependencies:
+    "@dashevo/bls": ~1.2.9
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dashcore-lib": ~0.20.0
     "@dashevo/dashpay-contract": "workspace:*"

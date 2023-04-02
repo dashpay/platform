@@ -3,9 +3,9 @@ import DashPlatformProtocol from '@dashevo/dpp';
 import loadWasmDpp from '@dashevo/wasm-dpp';
 import crypto from 'crypto';
 
-import * as BlsSignatures from '@dashevo/dpp/lib/bls/bls';
-
 import { latestVersion as latestProtocolVersion } from '@dashevo/dpp/lib/version/protocolVersion';
+import getBlsAdapter from '../../../bls/getBlsAdapter';
+
 import Client from '../Client';
 import { IStateTransitionResult } from './IStateTransitionResult';
 
@@ -222,7 +222,7 @@ export class Platform {
     this.dppModule = dppModule;
 
     if (!this.wasmDpp) {
-      const bls = await BlsSignatures.getInstance();
+      const bls = await getBlsAdapter();
 
       const protocolVersion = this.dpp.getProtocolVersion();
       const stateRepository = this.dpp.getStateRepository();
