@@ -7,6 +7,7 @@ use serde_json::Value as JsonValue;
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
+use crate::identity::Identity;
 use crate::prelude::Identifier;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::state_transition::{
@@ -14,7 +15,6 @@ use crate::state_transition::{
 };
 use crate::{NonConsensusError, ProtocolError};
 use platform_value::btreemap_extensions::BTreeValueRemoveInnerValueFromMapHelper;
-use crate::identity::Identity;
 
 pub const IDENTIFIER_FIELDS: [&str; 1] = [property_names::IDENTITY_ID];
 pub const BINARY_FIELDS: [&str; 3] = [

@@ -61,6 +61,8 @@ use grovedb::reference_path::ReferencePathType::SiblingReference;
 
 #[cfg(feature = "full")]
 use dpp::data_contract::DriveContractExt;
+use dpp::platform_value::{platform_value, Value};
+use dpp::Convertible;
 #[cfg(feature = "full")]
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
@@ -106,6 +108,7 @@ use crate::fee::op::LowLevelDriveOperation::{CalculatedCostOperation, PreCalcula
 use crate::fee::result::FeeResult;
 #[cfg(feature = "full")]
 use crate::fee_pools::epochs::Epoch;
+use crate::query::QueryResultEncoding;
 
 #[cfg(feature = "full")]
 /// Adds operations to the op batch relevant to initializing the contract's structure.
@@ -436,6 +439,7 @@ impl Drive {
             .get_contract_with_fetch_info_and_add_to_operations(
                 contract_id,
                 Some(&block_info.epoch),
+                true,
                 transaction,
                 &mut drive_operations,
             )?
@@ -718,10 +722,41 @@ impl Drive {
     }
 
     /// Returns the contract with fetch info and operations with the given ID.
+    pub fn query_contract_as_serialized(
+        &self,
+        contract_id: [u8; 32],
+        encoding: QueryResultEncoding,
+        transaction: TransactionArg,
+    ) -> Result<Vec<u8>, Error> {
+        let mut drive_operations: Vec<LowLevelDriveOperation> = Vec::new();
+
+        let contract_fetch_info = self.get_contract_with_fetch_info_and_add_to_operations(
+            contract_id,
+            None,
+            false, //querying the contract should not lead to it being added to the cache
+            transaction,
+            &mut drive_operations,
+        )?;
+
+        let contract_value = match contract_fetch_info {
+            None => Value::Null,
+            Some(contract_fetch_info) => {
+                let contract = &contract_fetch_info.contract;
+                contract.to_object()?
+            }
+        };
+
+        let value = platform_value!({ "contract": contract_value });
+
+        encoding.encode_value(&value)
+    }
+
+    /// Returns the contract with fetch info and operations with the given ID.
     pub fn get_contract_with_fetch_info(
         &self,
         contract_id: [u8; 32],
         epoch: Option<&Epoch>,
+        add_to_cache_if_pulled: bool,
         transaction: TransactionArg,
     ) -> Result<(Option<FeeResult>, Option<Arc<ContractFetchInfo>>), Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = Vec::new();
@@ -729,6 +764,7 @@ impl Drive {
         let contract_fetch_info = self.get_contract_with_fetch_info_and_add_to_operations(
             contract_id,
             epoch,
+            add_to_cache_if_pulled,
             transaction,
             &mut drive_operations,
         )?;
@@ -743,6 +779,7 @@ impl Drive {
         &self,
         contract_id: [u8; 32],
         epoch: Option<&Epoch>,
+        add_to_cache_if_pulled: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<Option<Arc<ContractFetchInfo>>, Error> {
@@ -760,15 +797,16 @@ impl Drive {
                     drive_operations,
                 )?;
 
-                // Store a contract in cache if present
-                if let Some(contract_fetch_info) = &maybe_contract_fetch_info {
-                    drop(cache);
-                    let mut cache = self.cache.write().unwrap();
-                    cache
-                        .cached_contracts
-                        .insert(Arc::clone(contract_fetch_info), transaction.is_some());
-                };
-
+                if add_to_cache_if_pulled {
+                    // Store a contract in cache if present
+                    if let Some(contract_fetch_info) = &maybe_contract_fetch_info {
+                        drop(cache);
+                        let mut cache = self.cache.write().unwrap();
+                        cache
+                            .cached_contracts
+                            .insert(Arc::clone(contract_fetch_info), transaction.is_some());
+                    };
+                }
                 Ok(maybe_contract_fetch_info)
             }
             Some(contract_fetch_info) => {
@@ -1412,7 +1450,7 @@ mod tests {
                 .expect("should update contract");
 
             let fetch_info_from_database = drive
-                .get_contract_with_fetch_info(contract.id.to_buffer(), None, None)
+                .get_contract_with_fetch_info(contract.id.to_buffer(), None, true, None)
                 .expect("should get contract")
                 .1
                 .expect("should be present");
@@ -1420,7 +1458,12 @@ mod tests {
             assert_eq!(fetch_info_from_database.contract.version, 1);
 
             let fetch_info_from_cache = drive
-                .get_contract_with_fetch_info(contract.id.to_buffer(), None, Some(&transaction))
+                .get_contract_with_fetch_info(
+                    contract.id.to_buffer(),
+                    None,
+                    true,
+                    Some(&transaction),
+                )
                 .expect("should get contract")
                 .1
                 .expect("should be present");
@@ -1433,7 +1476,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
 
             let result = drive
-                .get_contract_with_fetch_info([0; 32], None, None)
+                .get_contract_with_fetch_info([0; 32], None, true, None)
                 .expect("should get contract");
 
             assert!(result.0.is_none());
@@ -1445,7 +1488,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
 
             let result = drive
-                .get_contract_with_fetch_info([0; 32], Some(&Epoch::new(0)), None)
+                .get_contract_with_fetch_info([0; 32], Some(&Epoch::new(0)), true, None)
                 .expect("should get contract");
 
             assert_eq!(
@@ -1513,6 +1556,7 @@ mod tests {
                 .get_contract_with_fetch_info(
                     ref_contract_id_buffer,
                     Some(&Epoch::new(0)),
+                    true,
                     Some(&transaction),
                 )
                 .expect("got contract")
@@ -1523,6 +1567,7 @@ mod tests {
                 .get_contract_with_fetch_info(
                     deep_contract.id.to_buffer(),
                     Some(&Epoch::new(0)),
+                    true,
                     Some(&transaction),
                 )
                 .expect("got contract")
@@ -1545,13 +1590,13 @@ mod tests {
              */
 
             let deep_contract_fetch_info = drive
-                .get_contract_with_fetch_info(deep_contract.id.to_buffer(), None, None)
+                .get_contract_with_fetch_info(deep_contract.id.to_buffer(), None, true, None)
                 .expect("got contract")
                 .1
                 .expect("got contract fetch info");
 
             let ref_contract_fetch_info = drive
-                .get_contract_with_fetch_info(ref_contract_id_buffer, None, None)
+                .get_contract_with_fetch_info(ref_contract_id_buffer, None, true, None)
                 .expect("got contract")
                 .1
                 .expect("got contract fetch info");
@@ -1580,13 +1625,13 @@ mod tests {
              */
 
             let deep_contract_fetch_info_without_cache = drive
-                .get_contract_with_fetch_info(deep_contract.id.to_buffer(), None, None)
+                .get_contract_with_fetch_info(deep_contract.id.to_buffer(), None, true, None)
                 .expect("got contract")
                 .1
                 .expect("got contract fetch info");
 
             let ref_contract_fetch_info_without_cache = drive
-                .get_contract_with_fetch_info(ref_contract_id_buffer, None, None)
+                .get_contract_with_fetch_info(ref_contract_id_buffer, None, true, None)
                 .expect("got contract")
                 .1
                 .expect("got contract fetch info");
@@ -1649,6 +1694,7 @@ mod tests {
                 .get_contract_with_fetch_info(
                     deep_contract.id.to_buffer(),
                     Some(&Epoch::new(0)),
+                    true,
                     Some(&transaction),
                 )
                 .expect("got contract")
@@ -1659,6 +1705,7 @@ mod tests {
                 .get_contract_with_fetch_info(
                     ref_contract_id_buffer,
                     Some(&Epoch::new(0)),
+                    true,
                     Some(&transaction),
                 )
                 .expect("got contract")

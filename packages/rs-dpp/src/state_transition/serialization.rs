@@ -1,6 +1,6 @@
-use bincode::Options;
-use crate::ProtocolError;
 use crate::state_transition::StateTransition;
+use crate::ProtocolError;
+use bincode::Options;
 
 impl StateTransition {
     pub fn serialize(&self) -> Result<Vec<u8>, ProtocolError> {
@@ -34,9 +34,12 @@ impl StateTransition {
             .map_err(|e| ProtocolError::EncodingError(format!("unable to deserialize key {}", e)))
     }
 
-    pub fn deserialize_many(raw_state_transitions: &Vec<Vec<u8>>) -> Result<Vec<Self>, ProtocolError> {
-        raw_state_transitions.iter().map(|raw_state_transition| {
-            Self::deserialize(raw_state_transition)
-        }).collect()
+    pub fn deserialize_many(
+        raw_state_transitions: &Vec<Vec<u8>>,
+    ) -> Result<Vec<Self>, ProtocolError> {
+        raw_state_transitions
+            .iter()
+            .map(|raw_state_transition| Self::deserialize(raw_state_transition))
+            .collect()
     }
 }

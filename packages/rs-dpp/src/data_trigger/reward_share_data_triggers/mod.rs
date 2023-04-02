@@ -3,8 +3,8 @@ use std::convert::TryInto;
 use anyhow::{anyhow, bail};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 
-use platform_value::string_encoding::Encoding;
 use platform_value::platform_value;
+use platform_value::string_encoding::Encoding;
 
 use crate::document::Document;
 use crate::{

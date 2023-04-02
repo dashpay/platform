@@ -13,7 +13,7 @@ use crate::consensus::basic::identity::{
 use crate::identity::state_transition::asset_lock_proof::AssetLockTransactionValidator;
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::validation::{JsonSchemaValidator, ConsensusValidationResult};
+use crate::validation::{ConsensusValidationResult, JsonSchemaValidator};
 use crate::{DashPlatformProtocolInitError, NonConsensusError};
 
 lazy_static! {

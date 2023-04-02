@@ -7,7 +7,9 @@ use crate::{consensus::basic::BasicError, ProtocolError};
 
 const MAX_DEPTH: usize = 500;
 
-pub fn validate_data_contract_max_depth(data_contract_object: &Value) -> SimpleConsensusValidationResult {
+pub fn validate_data_contract_max_depth(
+    data_contract_object: &Value,
+) -> SimpleConsensusValidationResult {
     let mut result = SimpleConsensusValidationResult::default();
     let schema_depth = match calc_max_depth(data_contract_object) {
         Ok(depth) => depth,

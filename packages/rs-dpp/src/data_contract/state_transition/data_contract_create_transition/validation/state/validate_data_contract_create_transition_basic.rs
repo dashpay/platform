@@ -16,7 +16,8 @@ use crate::{
     },
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
     validation::{
-        DataValidator, DataValidatorWithContext, JsonSchemaValidator, SimpleConsensusValidationResult,
+        DataValidator, DataValidatorWithContext, JsonSchemaValidator,
+        SimpleConsensusValidationResult,
     },
     version::ProtocolVersionValidator,
     ProtocolError,

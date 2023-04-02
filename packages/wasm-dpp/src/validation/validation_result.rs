@@ -37,7 +37,10 @@ impl ValidationResultWasm {
 
     #[wasm_bindgen(js_name=getData)]
     pub fn get_data(&self) -> JsValue {
-        self.0.data_as_borrowed().unwrap_or(&JsValue::undefined()).to_owned()
+        self.0
+            .data_as_borrowed()
+            .unwrap_or(&JsValue::undefined())
+            .to_owned()
     }
 
     #[wasm_bindgen(js_name=getFirstError)]

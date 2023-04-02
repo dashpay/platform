@@ -173,7 +173,7 @@ where
         &self,
         identity: Identity,
     ) -> Result<IdentityCreateTransition, ProtocolError> {
-        let mut identity_create_transition : IdentityCreateTransition = identity.try_into()?;
+        let mut identity_create_transition: IdentityCreateTransition = identity.try_into()?;
         identity_create_transition.set_protocol_version(self.protocol_version);
         Ok(identity_create_transition)
     }

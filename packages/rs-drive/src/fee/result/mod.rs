@@ -51,8 +51,6 @@ use costs::storage_cost::removal::Identifier;
 use std::cmp::Ordering;
 #[cfg(feature = "full")]
 use std::collections::BTreeMap;
-use std::iter::Sum;
-use std::ops::Add;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod refunds;
@@ -75,9 +73,9 @@ impl TryFrom<Vec<FeeResult>> for FeeResult {
     type Error = Error;
     fn try_from(value: Vec<FeeResult>) -> Result<Self, Self::Error> {
         let mut aggregate_fee_result = FeeResult::default();
-        value.into_iter().try_for_each(|fee_result| {
-            aggregate_fee_result.checked_add_assign(fee_result)
-        })?;
+        value
+            .into_iter()
+            .try_for_each(|fee_result| aggregate_fee_result.checked_add_assign(fee_result))?;
         Ok(aggregate_fee_result)
     }
 }
@@ -87,7 +85,7 @@ impl TryFrom<Vec<Option<FeeResult>>> for FeeResult {
     fn try_from(value: Vec<Option<FeeResult>>) -> Result<Self, Self::Error> {
         let mut aggregate_fee_result = FeeResult::default();
         value.into_iter().try_for_each(|fee_result| {
-            if let Some(fee_result) = fee_result{
+            if let Some(fee_result) = fee_result {
                 aggregate_fee_result.checked_add_assign(fee_result)
             } else {
                 Ok(())

@@ -9,9 +9,16 @@ use async_trait::async_trait;
 use dpp::dashcore::consensus;
 use dpp::identity::{IdentityPublicKey, KeyID};
 use dpp::prelude::{Revision, TimestampMillis};
-use dpp::{dashcore::InstantLock, data_contract::DataContract, platform_value, prelude::{Identifier, Identity}, state_repository::{
-    FetchTransactionResponse as FetchTransactionResponseDPP, StateRepositoryLike,
-}, state_transition::state_transition_execution_context::StateTransitionExecutionContext};
+use dpp::{
+    dashcore::InstantLock,
+    data_contract::DataContract,
+    platform_value,
+    prelude::{Identifier, Identity},
+    state_repository::{
+        FetchTransactionResponse as FetchTransactionResponseDPP, StateRepositoryLike,
+    },
+    state_transition::state_transition_execution_context::StateTransitionExecutionContext,
+};
 use js_sys::Uint8Array;
 use js_sys::{Array, Number};
 

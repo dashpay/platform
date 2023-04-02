@@ -43,8 +43,8 @@ mod bls;
 pub mod tests;
 
 pub mod system_data_contracts;
-pub use bls::*;
 pub use async_trait;
+pub use bls::*;
 
 pub mod prelude {
     pub use crate::data_contract::DataContract;

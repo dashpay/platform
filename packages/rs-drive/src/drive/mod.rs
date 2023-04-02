@@ -27,13 +27,12 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
-#[cfg(any(feature = "full", feature = "verify"))]
-use std::cell::RefCell;
 #[cfg(feature = "full")]
 use std::collections::HashMap;
 #[cfg(feature = "full")]
 use std::path::Path;
-use std::sync::{Arc, RwLock};
+#[cfg(any(feature = "full", feature = "verify"))]
+use std::sync::RwLock;
 
 #[cfg(feature = "full")]
 use dpp::data_contract::DriveContractExt;
@@ -44,7 +43,6 @@ use grovedb::batch::KeyInfoPath;
 use grovedb::GroveDb;
 #[cfg(feature = "full")]
 use grovedb::{EstimatedLayerInformation, Transaction, TransactionArg};
-use moka::sync::Cache;
 
 #[cfg(feature = "full")]
 use object_size_info::DocumentAndContractInfo;
@@ -125,7 +123,6 @@ use crate::drive::block_info::BlockInfo;
 use crate::drive::cache::DataContractCache;
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::cache::DriveCache;
-use crate::drive::contract::ContractFetchInfo;
 #[cfg(feature = "full")]
 use crate::drive::object_size_info::OwnedDocumentInfo;
 #[cfg(feature = "full")]

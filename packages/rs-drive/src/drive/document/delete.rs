@@ -156,6 +156,7 @@ impl Drive {
             .get_contract_with_fetch_info_and_add_to_operations(
                 contract_id,
                 Some(&block_info.epoch),
+                true,
                 transaction,
                 &mut drive_operations,
             )?
@@ -644,7 +645,7 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut operations = vec![];
-        let Some(contract_fetch_info) = self.get_contract_with_fetch_info_and_add_to_operations(contract_id, Some(epoch), transaction, &mut operations)? else {
+        let Some(contract_fetch_info) = self.get_contract_with_fetch_info_and_add_to_operations(contract_id, Some(epoch), true, transaction, &mut operations)? else {
             return Err(Error::Document(DocumentError::ContractNotFound))
         };
 
@@ -888,13 +889,13 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_serialized_no_proof(&drive, None, None)
+            .execute_raw_results_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
 
         let (results_on_transaction, _, _) = query
-            .execute_serialized_no_proof(&drive, None, None)
+            .execute_raw_results_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 1);
@@ -918,7 +919,7 @@ mod tests {
             .expect("expected to be able to delete the document");
 
         let (results_on_transaction, _, _) = query
-            .execute_serialized_no_proof(&drive, None, None)
+            .execute_raw_results_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 0);
@@ -992,7 +993,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_serialized_no_proof(&drive, None, None)
+            .execute_raw_results_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
@@ -1000,7 +1001,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         let (results_on_transaction, _, _) = query
-            .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
+            .execute_raw_results_no_proof(&drive, None, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 1);
@@ -1032,7 +1033,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         let (results_on_transaction, _, _) = query
-            .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
+            .execute_raw_results_no_proof(&drive, None, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 0);
@@ -1145,7 +1146,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_serialized_no_proof(&drive, None, None)
+            .execute_raw_results_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 2);
@@ -1182,7 +1183,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_serialized_no_proof(&drive, None, None)
+            .execute_raw_results_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
@@ -1219,7 +1220,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_serialized_no_proof(&drive, None, None)
+            .execute_raw_results_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 0);
@@ -1332,7 +1333,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_serialized_no_proof(&drive, None, None)
+            .execute_raw_results_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 2);
@@ -1447,7 +1448,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_serialized_no_proof(&drive, None, None)
+            .execute_raw_results_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 0);

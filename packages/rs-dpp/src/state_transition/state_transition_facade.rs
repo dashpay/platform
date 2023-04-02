@@ -28,7 +28,8 @@ use crate::state_transition::validation::validate_state_transition_identity_sign
 use crate::state_transition::validation::validate_state_transition_key_signature::StateTransitionKeySignatureValidator;
 use crate::state_transition::validation::validate_state_transition_state::StateTransitionStateValidator;
 use crate::validation::{
-    AsyncDataValidator, AsyncDataValidatorWithContext, SimpleConsensusValidationResult, ConsensusValidationResult,
+    AsyncDataValidator, AsyncDataValidatorWithContext, ConsensusValidationResult,
+    SimpleConsensusValidationResult,
 };
 use crate::version::ProtocolVersionValidator;
 
@@ -225,7 +226,8 @@ where
         execution_context: &StateTransitionExecutionContext,
         options: ValidateOptions,
     ) -> Result<ConsensusValidationResult<Option<StateTransitionAction>>, ProtocolError> {
-        let mut result = ConsensusValidationResult::<Option<StateTransitionAction>>::new_with_data(None);
+        let mut result =
+            ConsensusValidationResult::<Option<StateTransitionAction>>::new_with_data(None);
         if options.basic {
             let state_transition_cleaned = state_transition.to_cleaned_object(false)?;
             result.merge(

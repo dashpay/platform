@@ -1011,7 +1011,7 @@ impl<'a> WhereClause {
             } => {
                 if *negated {
                     return Err(Error::Query(QueryError::Unsupported(
-                        "Invalid query: negated in clause not supported",
+                        "Invalid query: negated in clause not supported".to_string(),
                     )));
                 }
 
@@ -1052,8 +1052,9 @@ impl<'a> WhereClause {
                     Self::build_where_clauses_from_operations(left, where_clauses)?;
                     Self::build_where_clauses_from_operations(right, where_clauses)?;
                 } else {
-                    let mut where_operator = WhereOperator::from_sql_operator(op.clone())
-                        .ok_or(Error::Query(QueryError::Unsupported("Unknown operator")))?;
+                    let mut where_operator = WhereOperator::from_sql_operator(op.clone()).ok_or(
+                        Error::Query(QueryError::Unsupported("Unknown operator".to_string())),
+                    )?;
 
                     let identifier;
                     let value_expr;
@@ -1101,7 +1102,8 @@ impl<'a> WhereClause {
                                 Value::Text(String::from(&inner_text[..(inner_text.len() - 1)]))
                             } else {
                                 return Err(Error::Query(QueryError::Unsupported(
-                                    "Invalid query: like can only be used to represent startswith",
+                                    "Invalid query: like can only be used to represent startswith"
+                                        .to_string(),
                                 )));
                             }
                         } else {

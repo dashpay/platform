@@ -36,7 +36,10 @@ where
     type Item = StateTransition;
     type ResultItem = ();
 
-    async fn validate(&self, data: &Self::Item) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+    async fn validate(
+        &self,
+        data: &Self::Item,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         validate_state_transition_key_signature(
             self.state_repository.as_ref(),
             &self.asset_lock_public_key_hash_fetcher,

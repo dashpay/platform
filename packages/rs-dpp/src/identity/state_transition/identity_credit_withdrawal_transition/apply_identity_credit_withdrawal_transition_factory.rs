@@ -4,7 +4,7 @@ use lazy_static::__Deref;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 
-use platform_value::{Bytes32, platform_value, Value};
+use platform_value::{platform_value, Bytes32, Value};
 
 use crate::contracts::withdrawals_contract::property_names;
 use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;

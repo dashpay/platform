@@ -333,7 +333,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
+        .execute_raw_results_no_proof(&drive, None, Some(&db_transaction))
         .expect("proof should be executed");
     let names: Vec<String> = results
         .into_iter()
@@ -572,7 +572,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_serialized_no_proof(&drive, None, None)
+        .execute_raw_results_no_proof(&drive, None, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .into_iter()
@@ -618,7 +618,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_serialized_no_proof(&drive, None, None)
+        .execute_raw_results_no_proof(&drive, None, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .into_iter()
@@ -660,7 +660,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_serialized_no_proof(&drive, None, None)
+        .execute_raw_results_no_proof(&drive, None, None)
         .expect("proof should be executed");
     assert_eq!(results.len(), 5);
 
@@ -736,7 +736,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_serialized_no_proof(&drive, None, None)
+        .execute_raw_results_no_proof(&drive, None, None)
         .expect("proof should be executed");
     assert_eq!(results.len(), 3);
 
@@ -786,7 +786,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_serialized_no_proof(&drive, None, None)
+        .execute_raw_results_no_proof(&drive, None, None)
         .expect("proof should be executed");
     assert_eq!(results.len(), 2);
 
@@ -830,7 +830,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_serialized_no_proof(&drive, None, None)
+        .execute_raw_results_no_proof(&drive, None, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .into_iter()
@@ -868,7 +868,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_serialized_no_proof(&drive, None, None)
+        .execute_raw_results_no_proof(&drive, None, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .clone()
@@ -939,7 +939,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_serialized_no_proof(&drive, None, None)
+        .execute_raw_results_no_proof(&drive, None, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()
@@ -989,7 +989,7 @@ fn test_query_historical() {
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
         .expect("query should be built");
     let (results, _, _) = query
-        .execute_serialized_no_proof(&drive, None, None)
+        .execute_raw_results_no_proof(&drive, None, None)
         .expect("proof should be executed");
     let names: Vec<String> = results
         .iter()

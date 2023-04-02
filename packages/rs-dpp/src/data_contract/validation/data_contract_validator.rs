@@ -11,7 +11,7 @@ use crate::consensus::basic::data_contract::{
     SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
     UniqueIndicesLimitReachedError,
 };
-use crate::validation::{SimpleConsensusValidationResult, ConsensusValidationResult};
+use crate::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use crate::{
     consensus::basic::{BasicError, IndexError},
     data_contract::{
@@ -415,7 +415,10 @@ fn validate_index_naming_duplicates(
 }
 
 /// checks the limit of unique indexes defined in the data contract
-fn validate_max_unique_indices(indices: &[Index], document_type: &str) -> SimpleConsensusValidationResult {
+fn validate_max_unique_indices(
+    indices: &[Index],
+    document_type: &str,
+) -> SimpleConsensusValidationResult {
     let mut result = SimpleConsensusValidationResult::default();
     if indices.iter().filter(|i| i.unique).count() > UNIQUE_INDEX_LIMIT {
         result.add_error(BasicError::IndexError(

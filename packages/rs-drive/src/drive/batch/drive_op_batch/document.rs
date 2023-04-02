@@ -290,6 +290,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     .get_contract_with_fetch_info_and_add_to_operations(
                         contract_id.into_buffer(),
                         Some(&block_info.epoch),
+                        true,
                         transaction,
                         &mut drive_operations,
                     )?
@@ -580,6 +581,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     .get_contract_with_fetch_info_and_add_to_operations(
                         contract_id.into_buffer(),
                         Some(&block_info.epoch),
+                        true,
                         transaction,
                         &mut drive_operations,
                     )?

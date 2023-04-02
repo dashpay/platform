@@ -221,6 +221,8 @@ where
             .map_err(Error::Drive)?;
 
         Ok(ResponseQuery {
+            //todo: right now just put GRPC error codes,
+            //  later we will use own error codes
             code: 0,
             log: "".to_string(),
             info: "".to_string(),

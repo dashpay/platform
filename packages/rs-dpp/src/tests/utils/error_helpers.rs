@@ -1,4 +1,4 @@
-use crate::validation::{SimpleConsensusValidationResult, ConsensusValidationResult};
+use crate::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use crate::{
     consensus::{
         basic::{BasicError, IndexError, JsonSchemaError},
@@ -10,7 +10,10 @@ use crate::{
     DataTriggerError, StateError,
 };
 
-pub fn get_schema_error(result: &SimpleConsensusValidationResult, number: usize) -> &JsonSchemaError {
+pub fn get_schema_error(
+    result: &SimpleConsensusValidationResult,
+    number: usize,
+) -> &JsonSchemaError {
     result
         .errors
         .get(number)

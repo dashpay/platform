@@ -117,7 +117,12 @@ impl ExtendedDocument {
         self.document.updated_at.as_ref()
     }
 
-    pub fn from_document_with_additional_info(document: Document, data_contract: DataContract, document_type_name: String, protocol_version: ProtocolVersion) -> Self {
+    pub fn from_document_with_additional_info(
+        document: Document,
+        data_contract: DataContract,
+        document_type_name: String,
+        protocol_version: ProtocolVersion,
+    ) -> Self {
         Self {
             protocol_version,
             document_type_name,

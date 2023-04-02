@@ -117,7 +117,9 @@ pub async fn validate_document_batch_transition_state(
             owner_id,
             transitions: state_transition_actions,
         };
-        Ok(ConsensusValidationResult::new_with_data(batch_transition_action))
+        Ok(ConsensusValidationResult::new_with_data(
+            batch_transition_action,
+        ))
     } else {
         Ok(result)
     }

@@ -273,7 +273,9 @@ pub fn get_operation_and_property_name(p: &PatchOperation) -> (&'static str, &st
     }
 }
 
-pub fn get_operation_and_property_name_json(p: &json_patch::PatchOperation) -> (&'static str, &str) {
+pub fn get_operation_and_property_name_json(
+    p: &json_patch::PatchOperation,
+) -> (&'static str, &str) {
     match &p {
         json_patch::PatchOperation::Add(ref o) => ("add json", o.path.as_str()),
         json_patch::PatchOperation::Copy(ref o) => ("copy json", o.path.as_str()),

@@ -7,8 +7,6 @@ use crate::data_contract::state_transition::data_contract_create_transition::Dat
 use crate::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransitionAction;
 use crate::identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransitionAction;
 
-
-
 #[derive(Debug, Clone)]
 pub enum StateTransitionAction {
     DataContractCreateAction(DataContractCreateTransitionAction),

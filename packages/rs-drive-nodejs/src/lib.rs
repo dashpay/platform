@@ -446,6 +446,7 @@ impl PlatformWrapper {
                         .get_contract_with_fetch_info(
                             contract_id,
                             maybe_epoch.as_ref(),
+                            true,
                             transaction_arg,
                         )
                         .map_err(|err| err.to_string())

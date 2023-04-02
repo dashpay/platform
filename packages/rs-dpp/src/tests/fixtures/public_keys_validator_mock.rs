@@ -8,8 +8,11 @@ use crate::NonConsensusError;
 #[cfg(feature = "fixtures-and-mocks")]
 pub struct PublicKeysValidatorMock {
     returns: Mutex<Result<SimpleConsensusValidationResult, NonConsensusError>>,
-    returns_fn:
-        Mutex<Option<Box<dyn Fn() -> Result<SimpleConsensusValidationResult, NonConsensusError> + 'static>>>,
+    returns_fn: Mutex<
+        Option<
+            Box<dyn Fn() -> Result<SimpleConsensusValidationResult, NonConsensusError> + 'static>,
+        >,
+    >,
     called_with: Mutex<Vec<Value>>,
 }
 

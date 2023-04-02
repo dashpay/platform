@@ -199,11 +199,15 @@ impl IdentityPublicKeyResult for SingleIdentityPublicKeyOutcome {
             .collect::<Result<Vec<_>, Error>>()?;
 
         if keys.len() < 1 {
-            return Err(Error::Identity(IdentityError::IdentityPublicKeyNotFound("no result found".to_string())));
+            return Err(Error::Identity(IdentityError::IdentityPublicKeyNotFound(
+                "no result found".to_string(),
+            )));
         }
 
         if keys.len() > 1 {
-            return Err(Error::Drive(DriveError::CorruptedCodeExecution("more than one key was returned when expecting only one result")));
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "more than one key was returned when expecting only one result",
+            )));
         }
 
         Ok(keys.remove(0))
@@ -217,11 +221,15 @@ impl IdentityPublicKeyResult for SingleIdentityPublicKeyOutcome {
             .collect::<Result<Vec<_>, Error>>()?;
 
         if keys.len() < 1 {
-            return Err(Error::Identity(IdentityError::IdentityPublicKeyNotFound("no result found".to_string())));
+            return Err(Error::Identity(IdentityError::IdentityPublicKeyNotFound(
+                "no result found".to_string(),
+            )));
         }
 
         if keys.len() > 1 {
-            return Err(Error::Drive(DriveError::CorruptedCodeExecution("more than one key was returned when expecting only one result")));
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "more than one key was returned when expecting only one result",
+            )));
         }
 
         Ok(keys.remove(0))
@@ -239,11 +247,13 @@ impl IdentityPublicKeyResult for OptionalSingleIdentityPublicKeyOutcome {
             .collect::<Result<Vec<_>, Error>>()?;
 
         if keys.len() < 1 {
-            return Ok(None)
+            return Ok(None);
         }
 
         if keys.len() > 1 {
-            return Err(Error::Drive(DriveError::CorruptedCodeExecution("more than one key was returned when expecting only one result")));
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "more than one key was returned when expecting only one result",
+            )));
         }
 
         Ok(Some(keys.remove(0)))
@@ -261,7 +271,9 @@ impl IdentityPublicKeyResult for OptionalSingleIdentityPublicKeyOutcome {
         }
 
         if keys.len() > 1 {
-            return Err(Error::Drive(DriveError::CorruptedCodeExecution("more than one key was returned when expecting only one result")));
+            return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                "more than one key was returned when expecting only one result",
+            )));
         }
 
         Ok(Some(keys.remove(0)))

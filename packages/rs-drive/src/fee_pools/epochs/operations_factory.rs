@@ -43,7 +43,7 @@ use crate::fee_pools::epochs::epoch_key_constants::{
 };
 use crate::fee_pools::epochs::Epoch;
 use grovedb::batch::GroveDbOp;
-use grovedb::{Element, Transaction, TransactionArg};
+use grovedb::{Element, TransactionArg};
 
 impl Epoch {
     /// Updates the given proposer's block count to the current + 1

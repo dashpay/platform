@@ -57,6 +57,7 @@ where
         let (_, Some(contract_fetch_info)) = self.drive.get_contract_with_fetch_info(
             data_contract_id.to_buffer(),
             None,
+            true,
             Some(transaction),
         )? else {
             return Err(Error::Execution(
@@ -191,6 +192,7 @@ where
         let (_, Some(contract_fetch_info)) = self.drive.get_contract_with_fetch_info(
             data_contract_id.to_buffer(),
             None,
+            true,
             Some(transaction),
         )? else {
             return Err(Error::Execution(
@@ -312,6 +314,7 @@ where
         let (_, Some(contract_fetch_info)) = self.drive.get_contract_with_fetch_info(
             data_contract_id.to_buffer(),
             None,
+            true,
             Some(&transaction),
         )? else {
             return Err(Error::Execution(

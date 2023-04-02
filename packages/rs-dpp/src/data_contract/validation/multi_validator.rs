@@ -5,10 +5,18 @@ use crate::consensus::basic::data_contract::IncompatibleRe2PatternError;
 use crate::consensus::{basic::BasicError, ConsensusError};
 use crate::validation::SimpleConsensusValidationResult;
 
-pub type SubValidator =
-    fn(path: &str, key: &str, parent: &Value, value: &Value, result: &mut SimpleConsensusValidationResult);
+pub type SubValidator = fn(
+    path: &str,
+    key: &str,
+    parent: &Value,
+    value: &Value,
+    result: &mut SimpleConsensusValidationResult,
+);
 
-pub fn validate(raw_data_contract: &Value, validators: &[SubValidator]) -> SimpleConsensusValidationResult {
+pub fn validate(
+    raw_data_contract: &Value,
+    validators: &[SubValidator],
+) -> SimpleConsensusValidationResult {
     let mut result = SimpleConsensusValidationResult::default();
     let mut values_queue: Vec<(&Value, String)> = vec![(raw_data_contract, String::from(""))];
 

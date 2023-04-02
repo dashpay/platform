@@ -7,7 +7,10 @@ use mockall::automock;
 use serde_json::Value as JsonValue;
 
 pub use json_schema_validator::JsonSchemaValidator;
-pub use validation_result::{SimpleConsensusValidationResult, ConsensusValidationResult, ValidationResult, SimpleValidationResult};
+pub use validation_result::{
+    ConsensusValidationResult, SimpleConsensusValidationResult, SimpleValidationResult,
+    ValidationResult,
+};
 
 use crate::{
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
@@ -23,7 +26,8 @@ mod validation_result;
 pub trait DataValidator {
     // TODO, when GAT is available remove the reference in method and use: `type Item<'a>`
     type Item;
-    fn validate(&self, data: &Self::Item) -> Result<SimpleConsensusValidationResult, ProtocolError>;
+    fn validate(&self, data: &Self::Item)
+        -> Result<SimpleConsensusValidationResult, ProtocolError>;
 }
 
 /// Async validator validates data of given type

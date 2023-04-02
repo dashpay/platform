@@ -38,7 +38,8 @@ where
     pub async fn validate_identity_credit_withdrawal_transition_state(
         &self,
         state_transition: &IdentityCreditWithdrawalTransition,
-    ) -> Result<ConsensusValidationResult<IdentityCreditWithdrawalTransitionAction>, ProtocolError> {
+    ) -> Result<ConsensusValidationResult<IdentityCreditWithdrawalTransitionAction>, ProtocolError>
+    {
         let mut result = ConsensusValidationResult::default();
 
         // TODO: Use fetchIdentityBalance

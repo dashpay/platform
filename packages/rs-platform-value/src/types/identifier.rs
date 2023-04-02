@@ -23,7 +23,7 @@ pub struct Identifier(pub IdentifierBytes32);
 
 impl AsRef<[u8]> for Identifier {
     fn as_ref(&self) -> &[u8] {
-        &(self.0.0)
+        &(self.0 .0)
     }
 }
 
