@@ -54,6 +54,25 @@ impl ReadOperationWasm {
             None
         }
     }
+
+    #[wasm_bindgen(js_name = toJSON)]
+    pub fn to_json(&self) -> Result<JsValue, JsValue> {
+        let json = js_sys::Object::new();
+
+        js_sys::Reflect::set(
+            &json,
+            &JsValue::from_str("type"),
+            &JsValue::from_str("read"),
+        )?;
+
+        js_sys::Reflect::set(
+            &json,
+            &JsValue::from_str("valueSize"),
+            &JsValue::from(self.0.value_size),
+        )?;
+
+        Ok(json.into())
+    }
 }
 
 impl Inner for ReadOperationWasm {

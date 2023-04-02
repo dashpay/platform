@@ -79,6 +79,37 @@ impl PreCalculatedOperationWasm {
             None
         }
     }
+
+    #[wasm_bindgen(js_name = toJSON)]
+    pub fn to_json(&self) -> Result<JsValue, JsValue> {
+        let json = js_sys::Object::new();
+
+        js_sys::Reflect::set(
+            &json,
+            &JsValue::from_str("type"),
+            &JsValue::from_str("preCalculated"),
+        )?;
+
+        js_sys::Reflect::set(
+            &json,
+            &JsValue::from_str("storageCost"),
+            &JsValue::from(self.storage_cost()),
+        )?;
+
+        js_sys::Reflect::set(
+            &json,
+            &JsValue::from_str("processingCost"),
+            &JsValue::from(self.processing_cost()),
+        )?;
+
+        js_sys::Reflect::set(
+            &json,
+            &JsValue::from_str("feeRefunds"),
+            &JsValue::from(self.refunds().unwrap_or(Array::new())),
+        )?;
+
+        Ok(json.into())
+    }
 }
 
 impl Inner for PreCalculatedOperationWasm {
