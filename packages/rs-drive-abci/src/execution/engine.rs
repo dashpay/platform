@@ -169,8 +169,8 @@ where
                         state_transition_execution_event.errors,
                     ))
                 };
-                if let SuccessfulPaidExecution(_, fee_result) = execution_result {
-                    aggregate_fee_result.checked_add_assign(fee_result)?;
+                if let SuccessfulPaidExecution(_, fee_result) = &execution_result {
+                    aggregate_fee_result.checked_add_assign(fee_result.clone())?;
                 }
 
                 Ok(execution_result.into())
@@ -198,7 +198,10 @@ where
         let genesis_time_ms = self.get_genesis_time(height, block_time_ms, &transaction)?;
 
         let state = self.state.read().unwrap();
-        let previous_block_time_ms = state.last_block_info.map(|block_info| block_info.time_ms);
+        let previous_block_time_ms = state
+            .last_block_info
+            .as_ref()
+            .map(|block_info| block_info.time_ms);
         drop(state);
         // Init block execution context
         let block_state_info =
@@ -262,7 +265,7 @@ where
 
         // Process fees
         let process_block_fees_outcome = self.process_block_fees(
-            &block_state_info,
+            &block_execution_context.block_state_info,
             &epoch_info,
             block_fees.into(),
             transaction,
@@ -385,16 +388,16 @@ where
         // We should run the execution event in dry run to see if we would have enough fees for the transaction
 
         // We need the approximate block info
-        let block_info = self
-            .state
-            .read()
-            .unwrap()
-            .last_block_info
-            .unwrap_or_default();
-        //
-        // We do not put the transaction, because this event happens outside of a block
-        execution_event.and_then_borrowed_validation(|execution_event| {
-            self.validate_fees_of_event(&execution_event, &block_info, None)
-        })
+        let block_info_guard = self.state.read().unwrap();
+        if let Some(block_info) = block_info_guard.last_block_info.as_ref() {
+            // We do not put the transaction, because this event happens outside of a block
+            execution_event.and_then_borrowed_validation(|execution_event| {
+                self.validate_fees_of_event(&execution_event, block_info, None)
+            })
+        } else {
+            execution_event.and_then_borrowed_validation(|execution_event| {
+                self.validate_fees_of_event(&execution_event, &BlockInfo::default(), None)
+            })
+        }
     }
 }

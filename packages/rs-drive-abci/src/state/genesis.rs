@@ -195,48 +195,12 @@ impl<C> Platform<C> {
         ))
     }
 
-    fn register_dpns_top_level_domain_operations(
-        &self,
-        contract: &DataContract,
-        operations: &mut Vec<DriveOperation>,
+    fn register_dpns_top_level_domain_operations<'a>(
+        &'a self,
+        contract: &'a DataContract,
+        operations: &mut Vec<DriveOperation<'a>>,
     ) -> Result<(), Error> {
         let domain = "dash";
-
-        let preorder_salt_string = encode(&DPNS_DASH_TLD_PREORDER_SALT, Encoding::Base64);
-        let alias_identity_id = encode(&contract.owner_id.to_buffer(), Encoding::Base58);
-
-        // TODO: Add created and updated at to DPNS contract
-
-        let properties_json = json!({
-                "label": domain,
-                "normalizedLabel": domain,
-                "normalizedParentDomainName": "",
-                "preorderSalt": preorder_salt_string,
-                "records": {
-                    "dashAliasIdentityId": alias_identity_id,
-                },
-                "subdomainRules": {
-                    "allowSubdomains": true,
-                }
-        });
-
-        let document = ExtendedDocument {
-            protocol_version: PROTOCOL_VERSION,
-            document_type_name: "domain".to_string(),
-            data_contract_id: contract.id,
-            data_contract: contract.clone(),
-            metadata: None,
-            entropy: Bytes32::new([0; 32]),
-            document: Document {
-                id: DPNS_DASH_TLD_DOCUMENT_ID.into(),
-                revision: None,
-                owner_id: contract.owner_id,
-                created_at: None,
-                updated_at: None,
-                properties: BTreeMap::from_json_value(properties_json)
-                    .map_err(ProtocolError::ValueError)?,
-            },
-        };
 
         let document_stub_properties_value = platform_value!({
             "label" : domain,
@@ -246,13 +210,14 @@ impl<C> Platform<C> {
             "records" : {
                 "dashAliasIdentityId" : contract.owner_id,
             },
+            "subdomainRules": {
+                "allowSubdomains": true,
+            }
         });
 
         let document_stub_properties = document_stub_properties_value
             .into_btree_string_map()
             .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
-
-        let document_cbor = document.to_buffer()?;
 
         let document = Document {
             id: DPNS_DASH_TLD_DOCUMENT_ID.into(),
@@ -269,12 +234,7 @@ impl<C> Platform<C> {
             DriveOperation::DocumentOperation(DocumentOperationType::AddDocumentForContract {
                 document_and_contract_info: DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        //todo: remove cbor and use DocumentInfo::DocumentWithoutSerialization((document, None))
-                        document_info: DocumentInfo::DocumentAndSerialization((
-                            document,
-                            document_cbor,
-                            None,
-                        )),
+                        document_info: DocumentInfo::DocumentWithoutSerialization((document, None)),
                         owner_id: None,
                     },
                     contract,
