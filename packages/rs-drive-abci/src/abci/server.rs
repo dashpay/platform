@@ -5,7 +5,7 @@ use crate::{config::PlatformConfig, error::Error, platform::Platform, rpc::core:
 use drive::query::TransactionArg;
 use std::panic::RefUnwindSafe;
 use std::{fmt::Debug, sync::MutexGuard};
-use std::sync::RwLock;
+use std::sync::{RwLock, RwLockReadGuard};
 use drive::grovedb::Transaction;
 use crate::error::execution::ExecutionError;
 
@@ -63,19 +63,18 @@ impl<'a, C> AbciApplication<'a, C> {
     }
 
     /// create and store a new transaction
-    pub(crate) fn start_transaction(&self) -> &Transaction {
+    pub(crate) fn start_transaction(&self) {
         let transaction = self.platform.drive.grove.start_transaction();
         self.transaction.write().unwrap().replace(transaction);
-        &transaction
     }
 
     pub(crate) fn commit_transaction(&self) -> Result<(), Error> {
-        let transaction = self.transaction.write().unwrap().ok_or(Error::Execution(ExecutionError::NotInTransaction("trying to commit a transaction, but we are not in one")))?;
+        let transaction = self.transaction.write().unwrap().take().ok_or(Error::Execution(ExecutionError::NotInTransaction("trying to commit a transaction, but we are not in one")))?;
         self.platform.drive.commit_transaction(transaction).map_err(Error::Drive)
     }
 
     pub(crate) fn transaction(&self) -> TransactionArg {
-        self.transaction.read().unwrap().as_ref().clone()
+        self.transaction.read().unwrap().as_ref()
     }
 }
 

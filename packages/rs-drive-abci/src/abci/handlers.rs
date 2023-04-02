@@ -112,8 +112,8 @@ where
         &self,
         request: RequestPrepareProposal,
     ) -> Result<ResponsePrepareProposal, ResponseException> {
-        let transaction = self.start_transaction();
-
+        self.start_transaction();
+        let transaction = self.transaction().unwrap();
         // Running the proposal executes all the state transitions for the block
         let BlockExecutionOutcome {
             app_hash,
@@ -134,7 +134,8 @@ where
         &self,
         request: RequestProcessProposal,
     ) -> Result<ResponseProcessProposal, ResponseException> {
-        let transaction = self.start_transaction();
+        self.start_transaction();
+        let transaction = self.transaction().unwrap();
 
         // Running the proposal executes all the state transitions for the block
         let BlockExecutionOutcome {
@@ -169,26 +170,8 @@ where
 
     fn check_tx(&self, request: RequestCheckTx) -> Result<ResponseCheckTx, ResponseException> {
         let RequestCheckTx { tx, r#type } = request;
-        let state_transition =
-            StateTransition::deserialize(tx.as_slice()).map_err(Error::Protocol)?;
-        let drive_bls = DriveBls {};
-        let execution_event = validate_state_transition(&self.platform, &drive_bls, state_transition)?;
 
-        // We should run the execution event in dry run to see if we would have enough fees for the transaction
-
-        // We need the approximate block info
-        let block_info = self.platform
-            .state
-            .read()
-            .unwrap()
-            .last_block_info
-            .unwrap_or_default();
-        //
-        // We do not put the transaction, because this event happens outside of a block
-        let validation_result =
-            execution_event.and_then_borrowed_validation(|execution_event| {
-                self.platform.validate_fees_of_event(&execution_event, &block_info, None)
-            })?;
+        let validation_result = self.platform.check_tx(tx)?;
 
         // If there are no execution errors the code will be 0
         let code = validation_result

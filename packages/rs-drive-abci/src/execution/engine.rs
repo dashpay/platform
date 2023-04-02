@@ -15,7 +15,7 @@ use dpp::consensus::basic::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::ConsensusError;
 use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;
-use dpp::validation::{SimpleConsensusValidationResult, ConsensusValidationResult, SimpleValidationResult};
+use dpp::validation::{SimpleConsensusValidationResult, ConsensusValidationResult, SimpleValidationResult, ValidationResult};
 use drive::drive::block_info::BlockInfo;
 use drive::error::Error::GroveDB;
 use drive::fee::result::FeeResult;
@@ -96,13 +96,13 @@ where
     ) -> Result<ExecutionResult, Error> {
         //todo: we need to split out errors
         //  between failed execution and internal errors
+        let validation_result =
+            self.validate_fees_of_event(&event, block_info, Some(&transaction))?;
         match event {
             ExecutionEvent::PaidDriveEvent {
                 identity,
                 operations,
             } => {
-                let validation_result =
-                    self.validate_fees_of_event(&event, block_info, Some(&transaction))?;
                 if validation_result.is_valid_with_data() {
                     let individual_fee_result = self
                         .drive
@@ -368,5 +368,27 @@ where
         drive_cache.cached_contracts.clear_block_cache();
 
         Ok(validation_result.into())
+    }
+
+    pub fn check_tx(&self, raw_tx: Vec<u8>) -> Result<ValidationResult<FeeResult, ConsensusError>, Error> {
+        let state_transition =
+            StateTransition::deserialize(raw_tx.as_slice()).map_err(Error::Protocol)?;
+        let drive_bls = DriveBls {};
+        let execution_event = validate_state_transition(&self, &drive_bls, state_transition)?;
+
+        // We should run the execution event in dry run to see if we would have enough fees for the transaction
+
+        // We need the approximate block info
+        let block_info = self
+            .state
+            .read()
+            .unwrap()
+            .last_block_info
+            .unwrap_or_default();
+        //
+        // We do not put the transaction, because this event happens outside of a block
+        execution_event.and_then_borrowed_validation(|execution_event| {
+            self.validate_fees_of_event(&execution_event, &block_info, None)
+        })
     }
 }
