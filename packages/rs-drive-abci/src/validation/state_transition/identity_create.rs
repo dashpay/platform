@@ -10,7 +10,7 @@ use dpp::{
 };
 use drive::{drive::Drive, grovedb::Transaction};
 
-use crate::error::Error;
+use crate::{error::Error, validation::state_transition::common::{validate_protocol_version, validate_schema}};
 
 use super::StateTransitionValidation;
 
@@ -20,28 +20,12 @@ impl StateTransitionValidation for IdentityCreateTransition {
         drive: &Drive,
         tx: &Transaction,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        // Reuse jsonschema validation on a whole state transition
-        let json_schema_validator =
-            JsonSchemaValidator::new(INDENTITY_CREATE_TRANSITION_SCHEMA.clone())
-                .expect("unable to compile jsonschema");
-        let result = json_schema_validator
-            .validate(
-                &(self
-                    .to_object(true)
-                    .expect("data contract is serializable")
-                    .try_into_validating_json()
-                    .expect("TODO")),
-            )
-            .expect("TODO: how jsonschema validation will ever fail?");
+        let result = validate_schema(INDENTITY_CREATE_TRANSITION_SCHEMA.clone(), self);
         if !result.is_valid() {
             return Ok(result);
         }
 
-        // Validate protocol version
-        let protocol_version_validator = ProtocolVersionValidator::default();
-        let result = protocol_version_validator
-            .validate(self.protocol_version)
-            .expect("TODO: again, how this will ever fail, why do we even need a validator trait");
+        let result = validate_protocol_version(self.protocol_version);
         if !result.is_valid() {
             return Ok(result);
         }

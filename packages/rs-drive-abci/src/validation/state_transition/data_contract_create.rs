@@ -27,24 +27,15 @@ use drive::{drive::Drive, grovedb::Transaction};
 use crate::error::Error;
 use crate::validation::state_transition::StateTransitionValidation;
 
+use super::common::validate_schema;
+
 impl StateTransitionValidation for DataContractCreateTransition {
     fn validate_type(
         &self,
         drive: &Drive,
         tx: &Transaction,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        // Reuse jsonschema validation on a whole state transition
-        let json_schema_validator = JsonSchemaValidator::new(DATA_CONTRACT_CREATE_SCHEMA.clone())
-            .expect("unable to compile jsonschema");
-        let result = json_schema_validator
-            .validate(
-                &(self
-                    .to_object(true)
-                    .expect("data contract is serializable")
-                    .try_into_validating_json()
-                    .expect("TODO")),
-            )
-            .expect("TODO: how jsonschema validation will ever fail?");
+        let result = validate_schema(DATA_CONTRACT_CREATE_SCHEMA.clone(), self);
         if !result.is_valid() {
             return Ok(result);
         }

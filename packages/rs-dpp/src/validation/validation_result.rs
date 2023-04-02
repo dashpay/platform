@@ -1,6 +1,6 @@
-use std::fmt::Debug;
 use crate::errors::consensus::ConsensusError;
 use crate::ProtocolError;
+use std::fmt::Debug;
 
 pub type SimpleConsensusValidationResult = ConsensusValidationResult<()>;
 
@@ -8,10 +8,19 @@ pub type SimpleValidationResult<E> = ValidationResult<(), E>;
 
 pub type ConsensusValidationResult<TData: Clone> = ValidationResult<TData, ConsensusError>;
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct ValidationResult<TData: Clone, E: Debug> {
     pub errors: Vec<E>,
     pub data: Option<TData>,
+}
+
+impl<T: Clone, E: Debug> Default for ValidationResult<T, E> {
+    fn default() -> Self {
+        ValidationResult {
+            errors: Vec::new(),
+            data: None,
+        }
+    }
 }
 
 impl<TData: Clone, E: Debug> ValidationResult<TData, E> {
@@ -44,8 +53,8 @@ impl<TData: Clone, E: Debug> ValidationResult<TData, E> {
     }
 
     pub fn map_result<F, U: Clone, G>(self, f: F) -> Result<ValidationResult<U, E>, G>
-        where
-            F: FnOnce(TData) -> Result<U, G>,
+    where
+        F: FnOnce(TData) -> Result<U, G>,
     {
         Ok(ValidationResult {
             errors: self.errors,
@@ -53,9 +62,12 @@ impl<TData: Clone, E: Debug> ValidationResult<TData, E> {
         })
     }
 
-    pub fn and_then_simple_validation<F>(self, f: F) -> Result<ValidationResult<TData, E>, ProtocolError>
-        where
-            F: FnOnce(&TData) -> Result<SimpleValidationResult<E>, ProtocolError>,
+    pub fn and_then_simple_validation<F>(
+        self,
+        f: F,
+    ) -> Result<ValidationResult<TData, E>, ProtocolError>
+    where
+        F: FnOnce(&TData) -> Result<SimpleValidationResult<E>, ProtocolError>,
     {
         let new_errors = self.data.as_ref().map(f).transpose()?;
         let mut result = ValidationResult {
@@ -69,8 +81,8 @@ impl<TData: Clone, E: Debug> ValidationResult<TData, E> {
     }
 
     pub fn and_then_validation<F, U: Clone, G>(self, f: F) -> Result<ValidationResult<U, E>, G>
-        where
-            F: FnOnce(TData) -> Result<ValidationResult<U, E>, G>,
+    where
+        F: FnOnce(TData) -> Result<ValidationResult<U, E>, G>,
     {
         if let Some(data) = self.data {
             let mut new_validation_result = f(data)?;
@@ -81,10 +93,12 @@ impl<TData: Clone, E: Debug> ValidationResult<TData, E> {
         }
     }
 
-
-    pub fn and_then_borrowed_validation<F, U: Clone, G>(self, f: F) -> Result<ValidationResult<U, E>, G>
-        where
-            F: FnOnce(&TData) -> Result<ValidationResult<U, E>, G>,
+    pub fn and_then_borrowed_validation<F, U: Clone, G>(
+        self,
+        f: F,
+    ) -> Result<ValidationResult<U, E>, G>
+    where
+        F: FnOnce(&TData) -> Result<ValidationResult<U, E>, G>,
     {
         if let Some(data) = self.data.as_ref() {
             let mut new_validation_result = f(data)?;
@@ -160,7 +174,6 @@ impl<TData: Clone, E: Debug> From<TData> for ValidationResult<TData, E> {
         ValidationResult::new_with_data(value)
     }
 }
-
 
 impl<TData: Clone, E: Debug> From<Result<TData, E>> for ValidationResult<TData, E> {
     fn from(value: Result<TData, E>) -> Self {
