@@ -10,7 +10,7 @@ use crate::consensus::basic::BasicError;
 use crate::errors::consensus::codes::ErrorWithCode;
 use crate::tests::utils::{json_schema_error, value_error};
 use crate::{
-    consensus::{basic::JsonSchemaError, ConsensusError},
+    consensus::{basic::json_schema_error::JsonSchemaError, ConsensusError},
     data_contract::validation::data_contract_validator::DataContractValidator,
     prelude::*,
     tests::fixtures::get_data_contract_fixture,
@@ -82,11 +82,12 @@ fn print_json_schema_errors<TData: Clone>(result: &ValidationResult<TData>) {
     for (i, e) in result.errors.iter().enumerate() {
         let schema_error = json_schema_error(e);
         println!(
-            "error_{}:  {:>30} -({:>20?}-{:>20?}) -  {}",
+            "error_{}:  {:>30} {:>20} {:>30} -({:>30? }) -  {}",
             i,
             schema_error.schema_path(),
             schema_error.keyword(),
-            schema_error.kind(),
+            schema_error.property_name(),
+            schema_error.params(),
             schema_error.instance_path()
         )
     }
@@ -113,13 +114,11 @@ fn property_should_be_present(property: &str) {
         .expect("validation result should be returned");
 
     let schema_error = get_schema_error(&result, 0);
-    assert!(matches!(
-        schema_error.kind(),
-        ValidationErrorKind::Required {
-            property: JsonValue::String(missing_property)
-        } if missing_property == property
-    ));
+
+    assert_eq!(schema_error.keyword(), "required");
+    assert_eq!(schema_error.property_name(), property);
 }
+
 mod protocol {
     use super::*;
 
@@ -141,7 +140,7 @@ mod protocol {
 
         let schema_error = get_schema_error(&result, 0);
         assert_eq!("/protocolVersion", schema_error.instance_path().to_string());
-        assert_eq!(Some("type"), schema_error.keyword(),);
+        assert_eq!("type", schema_error.keyword());
     }
 
     #[test]
@@ -163,7 +162,7 @@ mod protocol {
 
         let schema_error = get_schema_error(&result, 0);
         assert_eq!("/protocolVersion", schema_error.instance_path().to_string());
-        assert_eq!(Some("minimum"), schema_error.keyword(),);
+        assert_eq!("minimum", schema_error.keyword());
     }
 }
 
@@ -186,7 +185,7 @@ fn defs_should_be_object() {
 
     let schema_error = get_schema_error(&result, 0);
     assert_eq!("/$defs", schema_error.instance_path().to_string());
-    assert_eq!(Some("type"), schema_error.keyword(),);
+    assert_eq!("type", schema_error.keyword());
 }
 
 mod defs {
@@ -211,7 +210,7 @@ mod defs {
 
         let schema_error = get_schema_error(&result, 0);
         assert_eq!("/$defs", schema_error.instance_path().to_string());
-        assert_eq!(Some("minProperties"), schema_error.keyword(),);
+        assert_eq!("minProperties", schema_error.keyword());
     }
 
     #[test]
@@ -238,7 +237,7 @@ mod defs {
 
         let schema_error = get_schema_error(&result, 0);
         assert_eq!("/$defs", schema_error.instance_path().to_string());
-        assert_eq!(Some("pattern"), schema_error.keyword(),);
+        assert_eq!("pattern", schema_error.keyword());
     }
 
     #[test]
@@ -316,7 +315,7 @@ mod defs {
         let schema_error = get_schema_error(&result, 0);
 
         assert_eq!("/$defs", schema_error.instance_path().to_string());
-        assert_eq!(Some("pattern"), schema_error.keyword(),);
+        assert_eq!("pattern", schema_error.keyword());
     }
 
     #[test]
@@ -343,7 +342,7 @@ mod defs {
         let schema_error = get_schema_error(&result, 0);
 
         assert_eq!("/$defs", schema_error.instance_path().to_string());
-        assert_eq!(Some("maxProperties"), schema_error.keyword(),);
+        assert_eq!("maxProperties", schema_error.keyword());
     }
 }
 
@@ -368,7 +367,7 @@ mod schema {
 
         let schema_error = get_schema_error(&result, 0);
         assert_eq!("/$schema", schema_error.instance_path().to_string());
-        assert_eq!(Some("type"), schema_error.keyword(),);
+        assert_eq!("type", schema_error.keyword());
     }
 
     #[test]
@@ -390,7 +389,7 @@ mod schema {
 
         let schema_error = get_schema_error(&result, 0);
         assert_eq!("/$schema", schema_error.instance_path().to_string());
-        assert_eq!(Some("const"), schema_error.keyword(),);
+        assert_eq!("const", schema_error.keyword());
     }
 }
 
@@ -419,7 +418,7 @@ fn owner_id_should_be_byte_array(property_name: &str) {
         format!("/{}/0", property_name),
         schema_error.instance_path().to_string()
     );
-    assert_eq!(Some("type"), schema_error.keyword(),);
+    assert_eq!("type", schema_error.keyword());
     assert_eq!(
         format!("/properties/{}/byteArray/items/type", property_name),
         byte_array_schema_error.schema_path().to_string()
@@ -449,7 +448,7 @@ fn owner_id_should_be_no_less_32_bytes(property_name: &str) {
         format!("/{}", property_name),
         schema_error.instance_path().to_string()
     );
-    assert_eq!(Some("minItems"), schema_error.keyword(),);
+    assert_eq!("minItems", schema_error.keyword());
 }
 
 #[test_case("ownerId")]
@@ -476,7 +475,7 @@ fn owner_id_should_be_no_longer_32_bytes(property_name: &str) {
         format!("/{}", property_name),
         schema_error.instance_path().to_string()
     );
-    assert_eq!(Some("maxItems"), schema_error.keyword(),);
+    assert_eq!("maxItems", schema_error.keyword());
 }
 
 mod documents {
@@ -501,7 +500,7 @@ mod documents {
 
         let schema_error = get_schema_error(&result, 0);
         assert_eq!("/documents", schema_error.instance_path().to_string());
-        assert_eq!(Some("type"), schema_error.keyword(),);
+        assert_eq!("type", schema_error.keyword());
     }
 
     #[test]
@@ -524,7 +523,7 @@ mod documents {
 
         let schema_error = get_schema_error(&result, 0);
         assert_eq!("/documents", schema_error.instance_path().to_string());
-        assert_eq!(Some("minProperties"), schema_error.keyword(),);
+        assert_eq!("minProperties", schema_error.keyword());
     }
 
     #[test]
@@ -592,7 +591,7 @@ mod documents {
         let schema_error = get_schema_error(&result, 0);
 
         assert_eq!("/documents", schema_error.instance_path().to_string());
-        assert_eq!(Some("pattern"), schema_error.keyword(),);
+        assert_eq!("pattern", schema_error.keyword());
     }
 
     #[test]
@@ -616,7 +615,7 @@ mod documents {
         let schema_error = get_schema_error(&result, 0);
 
         assert_eq!("/documents", schema_error.instance_path().to_string());
-        assert_eq!(Some("maxProperties"), schema_error.keyword(),);
+        assert_eq!("maxProperties", schema_error.keyword());
     }
 
     #[test]
@@ -638,7 +637,7 @@ mod documents {
             "/documents/niceDocument/properties",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("minProperties"), schema_error.keyword(),);
+        assert_eq!("minProperties", schema_error.keyword());
     }
 
     #[test]
@@ -660,7 +659,7 @@ mod documents {
             "/documents/niceDocument/type",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("const"), schema_error.keyword(),);
+        assert_eq!("const", schema_error.keyword());
     }
 
     #[test]
@@ -684,13 +683,8 @@ mod documents {
             "/documents/niceDocument",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("required"), schema_error.keyword(),);
-        assert!(matches!(
-            schema_error.kind(),
-            ValidationErrorKind::Required {
-                property: JsonValue::String(missing_property)
-            } if missing_property == "properties"
-        ));
+        assert_eq!(schema_error.keyword(), "required");
+        assert_eq!(schema_error.property_name(), "properties");
     }
 
     #[test]
@@ -726,13 +720,9 @@ mod documents {
             "/documents/niceDocument/properties/object/prefixItems/0/properties/something",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("required"), schema_error.keyword(),);
-        assert!(matches!(
-            schema_error.kind(),
-            ValidationErrorKind::Required {
-                property: JsonValue::String(missing_property)
-            } if missing_property == "properties"
-        ));
+
+        assert_eq!(schema_error.keyword(), "required");
+        assert_eq!(schema_error.property_name(), "properties");
     }
 
     #[test]
@@ -827,7 +817,7 @@ mod documents {
             "/documents/niceDocument/properties",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("pattern"), schema_error.keyword(),);
+        assert_eq!("pattern", schema_error.keyword());
     }
 
     #[test]
@@ -860,7 +850,7 @@ mod documents {
                 "/documents/niceDocument/properties/something/properties",
                 schema_error.instance_path().to_string()
             );
-            assert_eq!(Some("pattern"), schema_error.keyword());
+            assert_eq!("pattern", schema_error.keyword());
 
             raw_data_contract["documents"]["niceDocument"]["properties"]["something"]["properties"]
                 .remove(property_name)
@@ -890,13 +880,9 @@ mod documents {
             "/documents/niceDocument",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("required"), schema_error.keyword());
-        assert!(matches!(
-            schema_error.kind(),
-            ValidationErrorKind::Required {
-                property: JsonValue::String(missing_property)
-            } if missing_property == "additionalProperties"
-        ));
+
+        assert_eq!(schema_error.keyword(), "required");
+        assert_eq!(schema_error.property_name(), "additionalProperties");
     }
 
     #[test]
@@ -920,7 +906,7 @@ mod documents {
             "/documents/niceDocument/additionalProperties",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("const"), schema_error.keyword());
+        assert_eq!("const", schema_error.keyword());
     }
 
     #[test]
@@ -939,7 +925,7 @@ mod documents {
 
         let schema_error = get_schema_error(&result, 0);
         assert_eq!("", schema_error.instance_path().to_string());
-        assert_eq!(Some("additionalProperties"), schema_error.keyword());
+        assert_eq!("additionalProperties", schema_error.keyword());
     }
 
     #[test]
@@ -972,7 +958,7 @@ mod documents {
             "/documents/niceDocument/properties",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("maxProperties"), schema_error.keyword());
+        assert_eq!("maxProperties", schema_error.keyword());
     }
 
     #[test]
@@ -1009,7 +995,7 @@ mod documents {
             "/documents/new/properties/something/items",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("type"), schema_error.keyword());
+        assert_eq!("type", schema_error.keyword());
     }
 
     #[test]
@@ -1048,13 +1034,10 @@ mod documents {
             "/documents/new/properties/something",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("required"), schema_error.keyword());
-        assert!(matches!(
-            schema_error.kind(),
-            ValidationErrorKind::Required {
-                property: JsonValue::String(missing_property)
-            } if missing_property == "items"
-        ));
+        assert_eq!("required", schema_error.keyword());
+
+        assert_eq!(schema_error.keyword(), "required");
+        assert_eq!(schema_error.property_name(), "items");
     }
 
     #[test]
@@ -1092,7 +1075,7 @@ mod documents {
             "/documents/new/properties/something/items",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("const"), schema_error.keyword());
+        assert_eq!("const", schema_error.keyword());
     }
 
     #[test]
@@ -1117,7 +1100,7 @@ mod documents {
             "/documents/indexedDocument/properties/firstName/default",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("unevaluatedProperties"), schema_error.keyword());
+        assert_eq!("unevaluatedProperties", schema_error.keyword());
     }
 
     #[test]
@@ -1140,7 +1123,7 @@ mod documents {
             "/documents/indexedDocument/$ref",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("pattern"), schema_error.keyword());
+        assert_eq!("pattern", schema_error.keyword());
     }
 
     #[test]
@@ -1174,7 +1157,7 @@ mod documents {
             "/documents/indexedDocument/propertyNames",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("unevaluatedProperties"), schema_error.keyword());
+        assert_eq!("unevaluatedProperties", schema_error.keyword());
     }
 
     #[test]
@@ -1205,13 +1188,9 @@ mod documents {
             "/documents/indexedDocument/properties/something",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("required"), schema_error.keyword());
-        assert!(matches!(
-            schema_error.kind(),
-            ValidationErrorKind::Required {
-                property: JsonValue::String(missing_property)
-            } if missing_property == "maxItems"
-        ));
+
+        assert_eq!(schema_error.keyword(), "required");
+        assert_eq!(schema_error.property_name(), "maxItems");
     }
 
     #[test]
@@ -1254,7 +1233,7 @@ mod documents {
             "/documents/indexedDocument/properties/something/maxItems",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("maximum"), schema_error.keyword());
+        assert_eq!("maximum", schema_error.keyword());
     }
 
     #[test]
@@ -1288,10 +1267,14 @@ mod documents {
             "/properties/something",
             schema_error.instance_path().to_string()
         );
-        assert!(matches!(
-            schema_error.kind(),
-            ValidationErrorKind::Format {format}  if format == &"unknown format"
-        ));
+
+        let param_type = schema_error
+            .params()
+            .get_str("format")
+            .expect("should get type");
+
+        assert_eq!(schema_error.keyword(), "format");
+        assert_eq!(param_type, "unknown format");
     }
 
     #[test]
@@ -1323,13 +1306,9 @@ mod documents {
             "/documents/indexedDocument/properties/something",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("required"), schema_error.keyword());
-        assert!(matches!(
-            schema_error.kind(),
-            ValidationErrorKind::Required {
-                property: JsonValue::String(missing_property)
-            } if missing_property == "maxLength"
-        ));
+
+        assert_eq!(schema_error.keyword(), "required");
+        assert_eq!(schema_error.property_name(), "maxLength");
     }
 
     #[test]
@@ -1362,7 +1341,7 @@ mod documents {
             "/documents/indexedDocument/properties/something/maxLength",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("maximum"), schema_error.keyword());
+        assert_eq!("maximum", schema_error.keyword());
     }
 
     #[test]
@@ -1437,7 +1416,7 @@ mod byte_array {
             "/documents/withByteArrays/properties/byteArrayField/byteArray",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("type"), schema_error.keyword());
+        assert_eq!("type", schema_error.keyword());
     }
 
     #[test]
@@ -1460,7 +1439,7 @@ mod byte_array {
             "/documents/withByteArrays/properties/byteArrayField/byteArray",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("const"), schema_error.keyword());
+        assert_eq!("const", schema_error.keyword());
     }
 
     #[test]
@@ -1483,7 +1462,7 @@ mod byte_array {
             "/documents/withByteArrays/properties/byteArrayField/type",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("const"), schema_error.keyword());
+        assert_eq!("const", schema_error.keyword());
     }
 
     #[test]
@@ -1530,7 +1509,7 @@ mod identifier {
             "/documents/withByteArrays/properties/identifierField",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("required"), schema_error.keyword());
+        assert_eq!("required", schema_error.keyword());
     }
 
     #[test]
@@ -1553,7 +1532,7 @@ mod identifier {
             "/documents/withByteArrays/properties/identifierField/minItems",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("const"), schema_error.keyword());
+        assert_eq!("const", schema_error.keyword());
     }
 
     #[test]
@@ -1576,7 +1555,7 @@ mod identifier {
             "/documents/withByteArrays/properties/identifierField/maxItems",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("const"), schema_error.keyword());
+        assert_eq!("const", schema_error.keyword());
     }
 }
 
@@ -1603,7 +1582,7 @@ mod indices {
             "/documents/indexedDocument/indices",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("type"), schema_error.keyword(),);
+        assert_eq!("type", schema_error.keyword());
     }
 
     #[test]
@@ -1625,7 +1604,7 @@ mod indices {
             "/documents/indexedDocument/indices",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("minItems"), schema_error.keyword(),);
+        assert_eq!("minItems", schema_error.keyword());
     }
 
     #[test]
@@ -1726,7 +1705,7 @@ mod indices {
             "/documents/indexedDocument/indices/0",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("type"), schema_error.keyword(),);
+        assert_eq!("type", schema_error.keyword());
     }
 
     #[test]
@@ -1748,13 +1727,9 @@ mod indices {
             "/documents/indexedDocument/indices/0",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("required"), schema_error.keyword(),);
-        assert!(matches!(
-            schema_error.kind(),
-            ValidationErrorKind::Required {
-                property: JsonValue::String(missing_property)
-            } if missing_property == "properties"
-        ));
+
+        assert_eq!(schema_error.keyword(), "required");
+        assert_eq!(schema_error.property_name(), "properties");
     }
 
     #[test]
@@ -1777,7 +1752,7 @@ mod indices {
             "/documents/indexedDocument/indices/0/properties",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("type"), schema_error.keyword(),);
+        assert_eq!("type", schema_error.keyword());
     }
 
     #[test]
@@ -1800,7 +1775,7 @@ mod indices {
             "/documents/indexedDocument/indices/0/properties",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("minItems"), schema_error.keyword(),);
+        assert_eq!("minItems", schema_error.keyword());
     }
 
     #[test]
@@ -1833,7 +1808,7 @@ mod indices {
             "/documents/indexedDocument/indices/0/properties",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("maxItems"), schema_error.keyword(),);
+        assert_eq!("maxItems", schema_error.keyword());
     }
 
     #[test]
@@ -1856,7 +1831,7 @@ mod indices {
             "/documents/indexedDocument/indices/0/properties/0",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("type"), schema_error.keyword(),);
+        assert_eq!("type", schema_error.keyword());
     }
 
     #[test]
@@ -1879,7 +1854,7 @@ mod indices {
             "/documents/indexedDocument/indices/0/properties",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("minItems"), schema_error.keyword(),);
+        assert_eq!("minItems", schema_error.keyword());
     }
 
     #[test]
@@ -1903,7 +1878,7 @@ mod indices {
             "/documents/indexedDocument/indices/0/properties/0",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("maxProperties"), schema_error.keyword(),);
+        assert_eq!("maxProperties", schema_error.keyword());
     }
 
     #[test]
@@ -1926,7 +1901,7 @@ mod indices {
             "/documents/indexedDocument/indices/0/properties/0/$ownerId",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("enum"), schema_error.keyword(),);
+        assert_eq!("enum", schema_error.keyword());
     }
 
     #[test]
@@ -1949,7 +1924,7 @@ mod indices {
             "/documents/indexedDocument/indices/0/unique",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("type"), schema_error.keyword(),);
+        assert_eq!("type", schema_error.keyword());
     }
 
     #[test]
@@ -1987,7 +1962,7 @@ mod indices {
             "/documents/indexedDocument/indices",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("maxItems"), schema_error.keyword(),);
+        assert_eq!("maxItems", schema_error.keyword());
     }
 
     #[test]
@@ -2608,7 +2583,7 @@ mod indices {
             "/documents/indexedDocument/indices/6/properties/0/$id",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("enum"), schema_error.keyword(),);
+        assert_eq!("enum", schema_error.keyword());
     }
 }
 
@@ -2635,7 +2610,7 @@ mod signature_level {
             "/documents/indexedDocument/signatureSecurityLevelRequirement",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("type"), schema_error.keyword(),);
+        assert_eq!("type", schema_error.keyword());
     }
 
     #[test]
@@ -2658,7 +2633,7 @@ mod signature_level {
             "/documents/indexedDocument/signatureSecurityLevelRequirement",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("enum"), schema_error.keyword(),);
+        assert_eq!("enum", schema_error.keyword());
     }
 }
 
@@ -2693,7 +2668,7 @@ mod dependent_schemas {
             "/documents/indexedDocument/dependentSchemas",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("type"), schema_error.keyword(),);
+        assert_eq!("type", schema_error.keyword());
     }
 
     #[test]
@@ -2724,7 +2699,7 @@ mod dependent_schemas {
             "/documents/indexedDocument/dependentRequired",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("type"), schema_error.keyword(),);
+        assert_eq!("type", schema_error.keyword());
     }
 
     #[test]
@@ -2758,7 +2733,7 @@ mod dependent_schemas {
             "/documents/indexedDocument/dependentRequired/zxy",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("type"), schema_error.keyword(),);
+        assert_eq!("type", schema_error.keyword());
     }
 
     #[test]
@@ -2791,7 +2766,7 @@ mod dependent_schemas {
             "/documents/indexedDocument/dependentRequired/zxy/0",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("type"), schema_error.keyword(),);
+        assert_eq!("type", schema_error.keyword());
     }
 
     #[test]
@@ -2824,7 +2799,7 @@ mod dependent_schemas {
             "/documents/indexedDocument/dependentRequired/zxy",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("uniqueItems"), schema_error.keyword(),);
+        assert_eq!("uniqueItems", schema_error.keyword());
     }
 }
 

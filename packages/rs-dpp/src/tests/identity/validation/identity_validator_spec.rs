@@ -28,12 +28,10 @@ fn setup_test() -> (
 pub mod protocol_version {
     use super::*;
 
-    use jsonschema::error::ValidationErrorKind;
-
+    use crate::assert_basic_consensus_errors;
     use crate::consensus::basic::BasicError;
     use crate::consensus::ConsensusError;
     use crate::tests::identity::validation::identity_validator_spec::setup_test;
-    use crate::{assert_basic_consensus_errors};
 
     #[test]
     pub fn should_be_present() {
@@ -49,15 +47,9 @@ pub mod protocol_version {
         let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
-        assert_eq!(error.keyword().unwrap(), "required");
+        assert_eq!(error.keyword(), "required");
         assert_eq!(error.instance_path().to_string(), "");
-
-        match error.kind() {
-            ValidationErrorKind::Required { property } => {
-                assert_eq!(property.to_string(), "\"protocolVersion\"");
-            }
-            _ => panic!("Expected to be missing property"),
-        }
+        assert_eq!(error.property_name(), "protocolVersion");
     }
 
     #[test]
@@ -72,7 +64,7 @@ pub mod protocol_version {
         let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
-        assert_eq!(error.keyword().unwrap(), "type");
+        assert_eq!(error.keyword(), "type");
         assert_eq!(error.instance_path().to_string(), "/protocolVersion");
     }
 
@@ -88,7 +80,7 @@ pub mod protocol_version {
         let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
-        assert_eq!(error.keyword().unwrap(), "minimum");
+        assert_eq!(error.keyword(), "minimum");
         assert_eq!(error.instance_path().to_string(), "/protocolVersion");
     }
 }
@@ -96,7 +88,6 @@ pub mod protocol_version {
 pub mod id {
     use super::*;
 
-    use jsonschema::error::ValidationErrorKind;
     use platform_value::Value;
 
     use crate::consensus::ConsensusError;
@@ -114,15 +105,9 @@ pub mod id {
         let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
-        assert_eq!(error.keyword().unwrap(), "required");
+        assert_eq!(error.keyword(), "required");
         assert_eq!(error.instance_path().to_string(), "");
-
-        match error.kind() {
-            ValidationErrorKind::Required { property } => {
-                assert_eq!(property.to_string(), "\"id\"");
-            }
-            _ => panic!("Expected to be missing property"),
-        }
+        assert_eq!(error.property_name(), "id");
     }
 
     #[test]
@@ -139,7 +124,7 @@ pub mod id {
 
         for (i, err) in errors.iter().enumerate() {
             assert_eq!(err.instance_path().to_string(), format!("/id/{}", i));
-            assert_eq!(err.keyword().unwrap(), "type");
+            assert_eq!(err.keyword(), "type");
         }
     }
 
@@ -157,7 +142,7 @@ pub mod id {
         let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
-        assert_eq!(error.keyword().unwrap(), "minItems");
+        assert_eq!(error.keyword(), "minItems");
         assert_eq!(error.instance_path().to_string(), "/id");
     }
 
@@ -175,15 +160,13 @@ pub mod id {
         let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
-        assert_eq!(error.keyword().unwrap(), "maxItems");
+        assert_eq!(error.keyword(), "maxItems");
         assert_eq!(error.instance_path().to_string(), "/id");
     }
 }
 
 pub mod balance {
     use super::*;
-
-    use jsonschema::error::ValidationErrorKind;
 
     use crate::errors::consensus::ConsensusError;
     use crate::tests::identity::validation::identity_validator_spec::setup_test;
@@ -202,15 +185,9 @@ pub mod balance {
         let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
-        assert_eq!(error.keyword().unwrap(), "required");
+        assert_eq!(error.keyword(), "required");
         assert_eq!(error.instance_path().to_string(), "");
-
-        match error.kind() {
-            ValidationErrorKind::Required { property } => {
-                assert_eq!(property.to_string(), "\"balance\"");
-            }
-            _ => panic!("Expected to be missing property"),
-        }
+        assert_eq!(error.property_name(), "balance");
     }
 
     #[test]
@@ -225,7 +202,7 @@ pub mod balance {
         let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
-        assert_eq!(error.keyword().unwrap(), "type");
+        assert_eq!(error.keyword(), "type");
         assert_eq!(error.instance_path().to_string(), "/balance");
     }
 
@@ -241,7 +218,7 @@ pub mod balance {
         let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
-        assert_eq!(error.keyword().unwrap(), "minimum");
+        assert_eq!(error.keyword(), "minimum");
         assert_eq!(error.instance_path().to_string(), "/balance");
 
         identity.set_into_value("balance", 0u64).unwrap();
@@ -258,7 +235,6 @@ pub mod public_keys {
 
     use crate::errors::consensus::ConsensusError;
     use crate::tests::identity::validation::identity_validator_spec::setup_test;
-    use jsonschema::error::ValidationErrorKind;
     use platform_value::Value;
 
     #[test]
@@ -275,15 +251,9 @@ pub mod public_keys {
         let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
-        assert_eq!(error.keyword().unwrap(), "required");
+        assert_eq!(error.keyword(), "required");
         assert_eq!(error.instance_path().to_string(), "");
-
-        match error.kind() {
-            ValidationErrorKind::Required { property } => {
-                assert_eq!(property.to_string(), "\"publicKeys\"");
-            }
-            _ => panic!("Expected to be missing property"),
-        }
+        assert_eq!(error.property_name(), "publicKeys");
     }
 
     #[test]
@@ -298,7 +268,7 @@ pub mod public_keys {
         let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
-        assert_eq!(error.keyword().unwrap(), "type");
+        assert_eq!(error.keyword(), "type");
         assert_eq!(error.instance_path().to_string(), "/publicKeys");
     }
 
@@ -316,7 +286,7 @@ pub mod public_keys {
         let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
-        assert_eq!(error.keyword().unwrap(), "minItems");
+        assert_eq!(error.keyword(), "minItems");
         assert_eq!(error.instance_path().to_string(), "/publicKeys");
     }
 
@@ -345,7 +315,7 @@ pub mod public_keys {
         let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
-        assert_eq!(error.keyword().unwrap(), "uniqueItems");
+        assert_eq!(error.keyword(), "uniqueItems");
         assert_eq!(error.instance_path().to_string(), "/publicKeys");
     }
 
@@ -371,7 +341,7 @@ pub mod public_keys {
         let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 2);
         let error = errors.first().unwrap();
 
-        assert_eq!(error.keyword().unwrap(), "maxItems");
+        assert_eq!(error.keyword(), "maxItems");
         assert_eq!(error.instance_path().to_string(), "/publicKeys");
     }
 }
@@ -381,9 +351,9 @@ pub mod revision {
 
     use jsonschema::error::ValidationErrorKind;
 
+    use crate::assert_basic_consensus_errors;
     use crate::errors::consensus::ConsensusError;
     use crate::tests::identity::validation::identity_validator_spec::setup_test;
-    use crate::{assert_basic_consensus_errors};
 
     // revision tests
     #[test]
@@ -400,15 +370,9 @@ pub mod revision {
         let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
         let error = errors.first().unwrap();
 
-        assert_eq!(error.keyword().unwrap(), "required");
+        assert_eq!(error.keyword(), "required");
         assert_eq!(error.instance_path().to_string(), "");
-
-        match error.kind() {
-            ValidationErrorKind::Required { property } => {
-                assert_eq!(property.to_string(), "\"protocolVersion\"");
-            }
-            _ => panic!("Expected to be missing property"),
-        }
+        assert_eq!(error.property_name(), "protocolVersion");
     }
 
     #[test]
@@ -426,7 +390,7 @@ pub mod revision {
             .first()
             .expect("Expected to be at least one validation error");
 
-        assert_eq!(error.keyword().unwrap(), "type");
+        assert_eq!(error.keyword(), "type");
         assert_eq!(error.instance_path().to_string(), "/revision");
     }
 
@@ -445,7 +409,7 @@ pub mod revision {
             .first()
             .expect("Expected to be at least one validation error");
 
-        assert_eq!(error.keyword().unwrap(), "minimum");
+        assert_eq!(error.keyword(), "minimum");
         assert_eq!(error.instance_path().to_string(), "/revision");
 
         identity.set_into_value("revision", 0).unwrap();

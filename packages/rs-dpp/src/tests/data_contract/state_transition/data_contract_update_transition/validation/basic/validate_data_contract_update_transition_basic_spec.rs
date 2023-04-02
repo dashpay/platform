@@ -24,6 +24,7 @@ use crate::{
     version::{ProtocolVersionValidator, LATEST_VERSION},
 };
 
+use crate::consensus::basic::json_schema_error::JsonSchemaError;
 use jsonschema::error::ValidationErrorKind;
 use platform_value::{platform_value, BinaryData, Value};
 use serde_json::Value as JsonValue;
@@ -89,12 +90,8 @@ async fn should_be_present(property: &str) {
 
     let schema_error = get_schema_error(&result, 0);
 
-    assert!(matches!(
-        schema_error.kind(),
-        ValidationErrorKind::Required {
-            property: JsonValue::String(missing_property)
-        } if missing_property == property
-    ));
+    assert_eq!(schema_error.keyword(), "required");
+    assert_eq!(schema_error.property_name(), property);
 }
 
 #[test_case(property_names::PROTOCOL_VERSION)]
@@ -121,11 +118,9 @@ async fn should_be_integer(property: &str) {
         .expect("validation result should be returned");
 
     let schema_error = get_schema_error(&result, 0);
-    assert_eq!(
-        format!("/{}", property),
-        schema_error.instance_path().to_string()
-    );
-    assert_eq!(Some("type"), schema_error.keyword(),);
+
+    assert_eq!(format!("/{}", property), schema_error.instance_path());
+    assert_eq!(schema_error.keyword(), "type");
 }
 
 #[tokio::test]
@@ -183,7 +178,7 @@ async fn type_should_be_equal_4() {
         format!("/{}", property_names::TRANSITION_TYPE),
         schema_error.instance_path().to_string()
     );
-    assert_eq!(Some("const"), schema_error.keyword());
+    assert_eq!("const", schema_error.keyword());
 }
 
 #[test_case(property_names::SIGNATURE)]
@@ -213,9 +208,9 @@ async fn property_should_be_byte_array(property_name: &str) {
     let byte_array_schema_error = get_schema_error(&result, 1);
     assert_eq!(
         format!("/{}/0", property_name),
-        schema_error.instance_path().to_string()
+        schema_error.instance_path()
     );
-    assert_eq!(Some("type"), schema_error.keyword(),);
+    assert_eq!(schema_error.keyword(), "type");
     assert_eq!(
         format!("/properties/{}/byteArray/items/type", property_name),
         byte_array_schema_error.schema_path().to_string()
@@ -246,11 +241,9 @@ async fn should_be_not_less_than_n_bytes(property_name: &str, n_bytes: usize) {
         .expect("validation result should be returned");
 
     let schema_error = get_schema_error(&result, 0);
-    assert_eq!(
-        format!("/{}", property_name),
-        schema_error.instance_path().to_string()
-    );
-    assert_eq!(Some("minItems"), schema_error.keyword(),);
+
+    assert_eq!(format!("/{}", property_name), schema_error.instance_path());
+    assert_eq!("minItems", schema_error.keyword());
 }
 
 #[test_case(property_names::SIGNATURE, 96)]
@@ -281,7 +274,7 @@ async fn should_be_not_longer_than_n_bytes(property_name: &str, n_bytes: usize) 
         format!("/{}", property_name),
         schema_error.instance_path().to_string()
     );
-    assert_eq!(Some("maxItems"), schema_error.keyword(),);
+    assert_eq!("maxItems", schema_error.keyword());
 }
 
 #[tokio::test]

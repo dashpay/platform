@@ -41,14 +41,9 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"protocolVersion\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.instance_path(), "");
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "protocolVersion");
         }
 
         #[tokio::test]
@@ -66,7 +61,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/protocolVersion");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -112,14 +107,8 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"type\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "type");
         }
 
         #[tokio::test]
@@ -135,7 +124,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/type");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -151,7 +140,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/type");
-            assert_eq!(error.keyword().unwrap(), "const");
+            assert_eq!(error.keyword(), "const");
         }
     }
 
@@ -171,15 +160,9 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"identityId\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.instance_path(), "");
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "identityId");
         }
 
         #[tokio::test]
@@ -197,7 +180,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/identityId/0");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -215,7 +198,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/identityId");
-            assert_eq!(error.keyword().unwrap(), "minItems");
+            assert_eq!(error.keyword(), "minItems");
         }
 
         #[tokio::test]
@@ -233,7 +216,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/identityId");
-            assert_eq!(error.keyword().unwrap(), "maxItems");
+            assert_eq!(error.keyword(), "maxItems");
         }
     }
 
@@ -254,14 +237,8 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"amount\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "amount");
         }
 
         #[tokio::test]
@@ -277,7 +254,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/amount");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -293,7 +270,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/amount");
-            assert_eq!(error.keyword().unwrap(), "minimum");
+            assert_eq!(error.keyword(), "minimum");
         }
     }
 
@@ -313,14 +290,8 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"coreFeePerByte\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "coreFeePerByte");
         }
 
         #[tokio::test]
@@ -338,7 +309,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/coreFeePerByte");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -356,7 +327,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/coreFeePerByte");
-            assert_eq!(error.keyword().unwrap(), "minimum");
+            assert_eq!(error.keyword(), "minimum");
         }
 
         #[tokio::test]
@@ -374,7 +345,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/coreFeePerByte");
-            assert_eq!(error.keyword().unwrap(), "maximum");
+            assert_eq!(error.keyword(), "maximum");
         }
 
         #[tokio::test]
@@ -415,14 +386,8 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"pooling\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "pooling");
         }
 
         #[tokio::test]
@@ -438,7 +403,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/pooling");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -454,7 +419,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/pooling");
-            assert_eq!(error.keyword().unwrap(), "enum");
+            assert_eq!(error.keyword(), "enum");
         }
 
         #[tokio::test]
@@ -496,14 +461,8 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"outputScript\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "outputScript");
         }
 
         #[tokio::test]
@@ -521,7 +480,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/outputScript/0");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -539,7 +498,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/outputScript");
-            assert_eq!(error.keyword().unwrap(), "minItems");
+            assert_eq!(error.keyword(), "minItems");
         }
 
         #[tokio::test]
@@ -557,7 +516,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/outputScript");
-            assert_eq!(error.keyword().unwrap(), "maxItems");
+            assert_eq!(error.keyword(), "maxItems");
         }
 
         #[tokio::test]
@@ -598,14 +557,8 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"signature\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "signature");
         }
 
         #[tokio::test]
@@ -623,7 +576,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/signature/0");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -641,7 +594,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/signature");
-            assert_eq!(error.keyword().unwrap(), "minItems");
+            assert_eq!(error.keyword(), "minItems");
         }
 
         #[tokio::test]
@@ -659,7 +612,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/signature");
-            assert_eq!(error.keyword().unwrap(), "maxItems");
+            assert_eq!(error.keyword(), "maxItems");
         }
     }
 
@@ -679,14 +632,8 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"signaturePublicKeyId\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "signaturePublicKeyId");
         }
 
         #[tokio::test]
@@ -704,7 +651,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/signaturePublicKeyId");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -722,7 +669,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/signaturePublicKeyId");
-            assert_eq!(error.keyword().unwrap(), "minimum");
+            assert_eq!(error.keyword(), "minimum");
         }
     }
 

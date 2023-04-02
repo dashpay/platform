@@ -431,7 +431,7 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
             code,
         )
         .into(),
-        JsonSchemaError(e) => JsonSchemaErrorWasm::new(e, code).into(),
+        JsonSchemaError(e) => JsonSchemaErrorWasm::new(e).into(),
         UnsupportedProtocolVersionError(e) => UnsupportedProtocolVersionErrorWasm::from(e).into(),
         IncompatibleProtocolVersionError(e) => IncompatibleProtocolVersionErrorWasm::from(e).into(),
         DuplicatedIdentityPublicKeyIdBasicError(e) => {

@@ -38,11 +38,10 @@ use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::consensus::basic::state_transition::{
     InvalidStateTransitionTypeError, StateTransitionMaxSizeExceededError,
 };
-use crate::consensus::basic::{
-    IncompatibleProtocolVersionError, JsonSchemaError, UnsupportedProtocolVersionError,
-};
+use crate::consensus::basic::{IncompatibleProtocolVersionError, UnsupportedProtocolVersionError};
 use crate::consensus::ConsensusError;
 
+use crate::consensus::basic::json_schema_error::JsonSchemaError;
 use platform_value::Error as ValueError;
 
 #[derive(Error, Debug, Serialize, Deserialize)]
@@ -70,7 +69,6 @@ pub enum BasicError {
     JsonSchemaCompilationError(String),
 
     #[error(transparent)]
-    #[serde(skip)] // TODO: Figure this out
     JsonSchemaError(JsonSchemaError),
 
     #[error(transparent)]

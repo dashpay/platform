@@ -135,12 +135,8 @@ fn property_should_be_present(property: &str) {
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
-    assert!(matches!(
-        schema_error.kind(),
-        ValidationErrorKind::Required {
-            property: JsonValue::String(missing_property)
-        } if missing_property == property
-    ));
+    assert_eq!(schema_error.keyword(), "required");
+    assert_eq!(schema_error.property_name(), property);
 }
 
 #[test_case(property_names::IDENTITY_ID)]
@@ -174,7 +170,7 @@ fn property_should_be_byte_array(property_name: &str) {
         format!("/{}/0", property_name),
         schema_error.instance_path().to_string()
     );
-    assert_eq!(Some("type"), schema_error.keyword(),);
+    assert_eq!("type", schema_error.keyword());
     assert_eq!(
         format!("/properties/{}/byteArray/items/type", property_name),
         byte_array_schema_error.schema_path().to_string()
@@ -211,7 +207,7 @@ fn property_should_be_integer(property_name: &str) {
         format!("/{}", property_name),
         schema_error.instance_path().to_string()
     );
-    assert_eq!(Some("type"), schema_error.keyword(),);
+    assert_eq!("type", schema_error.keyword(),);
 }
 
 #[test_case(property_names::IDENTITY_ID, 32)]
@@ -244,7 +240,7 @@ fn signature_should_be_not_less_than_n_bytes(property_name: &str, n_bytes: usize
         format!("/{}", property_name),
         schema_error.instance_path().to_string()
     );
-    assert_eq!(Some("minItems"), schema_error.keyword(),);
+    assert_eq!("minItems", schema_error.keyword(),);
 }
 
 #[test_case(property_names::IDENTITY_ID, 32)]
@@ -277,7 +273,7 @@ fn signature_should_be_not_longer_than_n_bytes(property_name: &str, n_bytes: usi
         format!("/{}", property_name),
         schema_error.instance_path().to_string()
     );
-    assert_eq!(Some("maxItems"), schema_error.keyword(),);
+    assert_eq!("maxItems", schema_error.keyword(),);
 }
 
 #[test]
@@ -334,7 +330,7 @@ fn raw_state_transition_type_should_be_valid() {
         format!("/{}", property_names::TYPE),
         schema_error.instance_path().to_string()
     );
-    assert_eq!(Some("const"), schema_error.keyword());
+    assert_eq!("const", schema_error.keyword());
 }
 
 #[test]
@@ -365,7 +361,7 @@ fn revision_should_be_greater_or_equal_0() {
         format!("/{}", property_names::REVISION),
         schema_error.instance_path().to_string()
     );
-    assert_eq!(Some("minimum"), schema_error.keyword());
+    assert_eq!("minimum", schema_error.keyword());
 }
 
 #[test]
@@ -436,7 +432,7 @@ fn add_public_keys_should_not_be_empty() {
         format!("/{}", property_names::ADD_PUBLIC_KEYS),
         schema_error.instance_path().to_string()
     );
-    assert_eq!(Some("minItems"), schema_error.keyword(),);
+    assert_eq!("minItems", schema_error.keyword(),);
 }
 
 #[test]
@@ -475,7 +471,7 @@ fn add_public_keys_should_not_have_more_than_10_items() {
         format!("/{}", property_names::ADD_PUBLIC_KEYS),
         schema_error.instance_path().to_string()
     );
-    assert_eq!(Some("maxItems"), schema_error.keyword(),);
+    assert_eq!("maxItems", schema_error.keyword(),);
 }
 
 #[test]
@@ -514,7 +510,7 @@ fn add_public_keys_should_be_unique() {
         format!("/{}", property_names::ADD_PUBLIC_KEYS),
         schema_error.instance_path().to_string()
     );
-    assert_eq!(Some("uniqueItems"), schema_error.keyword(),);
+    assert_eq!("uniqueItems", schema_error.keyword(),);
 }
 
 #[test]
@@ -587,13 +583,12 @@ fn disable_public_keys_should_be_used_only_with_public_keys_disabled_at() {
         .expect("validation result should be returned");
 
     let schema_error = get_schema_error(&result, 0);
-    assert!(matches!(
-        schema_error.kind(),
-        ValidationErrorKind::Required {
-            property: JsonValue::String(missing_property)
-        } if missing_property == property_names::PUBLIC_KEYS_DISABLED_AT
-    ));
-    assert_eq!(Some("dependentRequired"), schema_error.keyword(),);
+
+    assert_eq!(schema_error.keyword(), "required");
+    assert_eq!(
+        schema_error.keyword(),
+        property_names::PUBLIC_KEYS_DISABLED_AT
+    );
 }
 
 #[test]
@@ -661,7 +656,7 @@ fn disable_public_keys_should_contain_number_greater_or_equal_0() {
         format!("/{}/0", property_names::DISABLE_PUBLIC_KEYS),
         schema_error.instance_path().to_string()
     );
-    assert_eq!(Some("minimum"), schema_error.keyword(),);
+    assert_eq!("minimum", schema_error.keyword(),);
 }
 
 #[test]
@@ -698,7 +693,7 @@ fn disable_public_keys_should_contain_integers() {
         format!("/{}/0", property_names::DISABLE_PUBLIC_KEYS),
         schema_error.instance_path().to_string()
     );
-    assert_eq!(Some("type"), schema_error.keyword(),);
+    assert_eq!("type", schema_error.keyword(),);
 }
 
 #[test]
@@ -735,7 +730,7 @@ fn disable_public_keys_should_not_have_more_than_10_items() {
         format!("/{}", property_names::DISABLE_PUBLIC_KEYS),
         schema_error.instance_path().to_string()
     );
-    assert_eq!(Some("maxItems"), schema_error.keyword(),);
+    assert_eq!("maxItems", schema_error.keyword(),);
 }
 
 #[test]
@@ -772,7 +767,7 @@ fn disable_public_keys_should_be_unique() {
         format!("/{}", property_names::DISABLE_PUBLIC_KEYS),
         schema_error.instance_path().to_string()
     );
-    assert_eq!(Some("uniqueItems"), schema_error.keyword(),);
+    assert_eq!("uniqueItems", schema_error.keyword(),);
 }
 
 #[test]
@@ -804,13 +799,13 @@ fn public_keys_disabled_at_should_be_used_only_with_disable_public_keys() {
         .expect("validation result should be returned");
 
     let schema_error = get_schema_error(&result, 0);
-    assert!(matches!(
-        schema_error.kind(),
-        ValidationErrorKind::Required {
-            property: JsonValue::String(missing_property)
-        } if missing_property == property_names::DISABLE_PUBLIC_KEYS
-    ));
-    assert_eq!(Some("dependentRequired"), schema_error.keyword(),);
+
+    assert_eq!(
+        schema_error.property_name(),
+        property_names::DISABLE_PUBLIC_KEYS
+    );
+
+    assert_eq!("dependentRequired", schema_error.keyword());
 }
 
 #[test]
@@ -847,7 +842,7 @@ fn public_keys_disabled_at_should_be_greater_or_equal_0() {
         format!("/{}", property_names::PUBLIC_KEYS_DISABLED_AT),
         schema_error.instance_path().to_string()
     );
-    assert_eq!(Some("minimum"), schema_error.keyword(),);
+    assert_eq!("minimum", schema_error.keyword(),);
 }
 
 #[test]
@@ -938,5 +933,5 @@ fn should_have_either_add_public_keys_or_disable_public_keys() {
 
     let schema_error = get_schema_error(&result, 0);
     assert_eq!("", schema_error.instance_path().to_string());
-    assert_eq!(Some("anyOf"), schema_error.keyword(),);
+    assert_eq!("anyOf", schema_error.keyword(),);
 }

@@ -123,13 +123,8 @@ mod validate_identity_create_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"protocolVersion\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "protocolVersion");
         }
 
         #[tokio::test]
@@ -153,7 +148,7 @@ mod validate_identity_create_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/protocolVersion");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -219,14 +214,8 @@ mod validate_identity_create_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"type\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "type");
         }
 
         #[tokio::test]
@@ -247,15 +236,15 @@ mod validate_identity_create_transition_basic_factory {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/type");
-            assert_eq!(error.keyword().unwrap(), "const");
+            let allowed_value: u32 = error
+                .params()
+                .get_integer("allowedValue")
+                .expect("should get allowedValue");
 
-            match error.kind() {
-                ValidationErrorKind::Constant { expected_value } => {
-                    assert_eq!(expected_value.as_u64().unwrap(), 2u64);
-                }
-                _ => panic!("Expected to have a constant value"),
-            }
+            assert_eq!(allowed_value, 32);
+            assert_eq!(error.instance_path().to_string(), "/type");
+            assert_eq!(error.keyword(), "const");
+            assert_eq!(allowed_value, 2);
         }
     }
 
@@ -293,14 +282,8 @@ mod validate_identity_create_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"assetLockProof\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "assetLockProof");
         }
 
         #[tokio::test]
@@ -324,7 +307,7 @@ mod validate_identity_create_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/assetLockProof");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -393,14 +376,8 @@ mod validate_identity_create_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"publicKeys\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "publicKeys");
         }
 
         #[tokio::test]
@@ -423,7 +400,7 @@ mod validate_identity_create_transition_basic_factory {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.keyword().unwrap(), "minItems");
+            assert_eq!(error.keyword(), "minItems");
             assert_eq!(error.instance_path().to_string(), "/publicKeys");
         }
 
@@ -453,7 +430,7 @@ mod validate_identity_create_transition_basic_factory {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.keyword().unwrap(), "maxItems");
+            assert_eq!(error.keyword(), "maxItems");
             assert_eq!(error.instance_path().to_string(), "/publicKeys");
         }
 
@@ -480,7 +457,7 @@ mod validate_identity_create_transition_basic_factory {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.keyword().unwrap(), "uniqueItems");
+            assert_eq!(error.keyword(), "uniqueItems");
             assert_eq!(error.instance_path().to_string(), "/publicKeys");
         }
 
@@ -584,14 +561,8 @@ mod validate_identity_create_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"signature\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "signature");
         }
 
         #[tokio::test]
@@ -615,7 +586,7 @@ mod validate_identity_create_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/signature/0");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -639,7 +610,7 @@ mod validate_identity_create_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/signature");
-            assert_eq!(error.keyword().unwrap(), "minItems");
+            assert_eq!(error.keyword(), "minItems");
         }
 
         #[tokio::test]
@@ -663,7 +634,7 @@ mod validate_identity_create_transition_basic_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/signature");
-            assert_eq!(error.keyword().unwrap(), "maxItems");
+            assert_eq!(error.keyword(), "maxItems");
         }
     }
 

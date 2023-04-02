@@ -44,14 +44,8 @@ pub mod id {
         let error = errors.get(0).unwrap();
 
         assert_eq!(error.instance_path().to_string(), "");
-        assert_eq!(error.keyword().unwrap(), "required");
-
-        match error.kind() {
-            ValidationErrorKind::Required { property } => {
-                assert_eq!(property.to_string(), "\"id\"");
-            }
-            _ => panic!("Expected to be missing property"),
-        }
+        assert_eq!(error.keyword(), "required");
+        assert_eq!(error.property_name(), "id");
     }
 
     #[test]
@@ -68,7 +62,7 @@ pub mod id {
         let error = errors.get(0).unwrap();
 
         assert_eq!(error.instance_path().to_string(), "/id");
-        assert_eq!(error.keyword().unwrap(), "type");
+        assert_eq!(error.keyword(), "type");
     }
 
     #[test]
@@ -81,7 +75,7 @@ pub mod id {
         let error = errors.get(0).unwrap();
 
         assert_eq!(error.instance_path().to_string(), "/id");
-        assert_eq!(error.keyword().unwrap(), "type");
+        assert_eq!(error.keyword(), "type");
     }
 
     #[test]
@@ -94,7 +88,7 @@ pub mod id {
         let error = errors.get(0).unwrap();
 
         assert_eq!(error.instance_path().to_string(), "/id");
-        assert_eq!(error.keyword().unwrap(), "minimum");
+        assert_eq!(error.keyword(), "minimum");
     }
 }
 
@@ -117,7 +111,7 @@ pub mod key_type {
         let error = errors.get(0).unwrap();
 
         assert_eq!(error.instance_path().to_string(), "/data");
-        assert_eq!(error.keyword().unwrap(), "minItems");
+        assert_eq!(error.keyword(), "minItems");
     }
 
     #[test]
@@ -131,7 +125,7 @@ pub mod key_type {
         let error = errors.first().unwrap();
 
         assert_eq!(error.instance_path().to_string(), "/type");
-        assert_eq!(error.keyword().unwrap(), "type");
+        assert_eq!(error.keyword(), "type");
     }
 }
 
@@ -154,14 +148,8 @@ pub mod data {
         let error = errors.get(0).unwrap();
 
         assert_eq!(error.instance_path().to_string(), "");
-        assert_eq!(error.keyword().unwrap(), "required");
-
-        match error.kind() {
-            ValidationErrorKind::Required { property } => {
-                assert_eq!(property.to_string(), "\"data\"");
-            }
-            _ => panic!("Expected to be missing property"),
-        }
+        assert_eq!(error.keyword(), "required");
+        assert_eq!(error.property_name(), "data");
     }
 
     #[test]
@@ -181,11 +169,11 @@ pub mod data {
 
         for (i, err) in errors.iter().enumerate() {
             assert_eq!(err.instance_path().to_string(), format!("/data/{}", i));
-            assert_eq!(err.keyword().unwrap(), "type");
+            assert_eq!(err.keyword(), "type");
         }
 
         // TODO: do we need to bring that back?
-        //assert_eq!(byte_array_error.keyword().unwrap(), "byteArray");
+        //assert_eq!(byte_array_error.keyword(), "byteArray");
     }
 
     pub mod ecdsa_secp256k1 {
@@ -206,7 +194,7 @@ pub mod data {
             let error = errors.get(0).unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/data");
-            assert_eq!(error.keyword().unwrap(), "minItems");
+            assert_eq!(error.keyword(), "minItems");
         }
 
         #[test]
@@ -219,7 +207,7 @@ pub mod data {
             let error = errors.get(0).unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/data");
-            assert_eq!(error.keyword().unwrap(), "maxItems");
+            assert_eq!(error.keyword(), "maxItems");
         }
     }
 
@@ -242,7 +230,7 @@ pub mod data {
             let error = errors.get(0).unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/data");
-            assert_eq!(error.keyword().unwrap(), "minItems");
+            assert_eq!(error.keyword(), "minItems");
         }
 
         #[test]
@@ -256,7 +244,7 @@ pub mod data {
             let error = errors.get(0).unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/data");
-            assert_eq!(error.keyword().unwrap(), "maxItems");
+            assert_eq!(error.keyword(), "maxItems");
         }
     }
 
@@ -279,7 +267,7 @@ pub mod data {
             let error = errors.get(0).unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/data");
-            assert_eq!(error.keyword().unwrap(), "minItems");
+            assert_eq!(error.keyword(), "minItems");
         }
 
         #[test]
@@ -293,7 +281,7 @@ pub mod data {
             let error = errors.get(0).unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/data");
-            assert_eq!(error.keyword().unwrap(), "maxItems");
+            assert_eq!(error.keyword(), "maxItems");
         }
     }
 
@@ -316,7 +304,7 @@ pub mod data {
             let error = errors.get(0).unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/data");
-            assert_eq!(error.keyword().unwrap(), "minItems");
+            assert_eq!(error.keyword(), "minItems");
         }
 
         #[test]
@@ -330,7 +318,7 @@ pub mod data {
             let error = errors.get(0).unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/data");
-            assert_eq!(error.keyword().unwrap(), "maxItems");
+            assert_eq!(error.keyword(), "maxItems");
         }
     }
 }
@@ -542,5 +530,5 @@ pub fn should_return_invalid_result_if_bls12_381_public_key_is_invalid() {
     );
     // TODO
     //assert_eq!(error.validation_error(), TypeError);
-    assert_eq!(error.validation_error(), "Group decode error");
+    assert_eq!(error.validation_error().to_string(), "Group decode error");
 }

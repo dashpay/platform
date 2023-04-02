@@ -159,7 +159,7 @@ mod test {
     use crate::tests::utils::json_schema_error;
     use crate::validation::SimpleValidationResult;
     use crate::{
-        consensus::{basic::JsonSchemaError, ConsensusError},
+        consensus::{basic::json_schema_error::JsonSchemaError, ConsensusError},
         data_contract::DataContract,
         tests::fixtures::get_data_contract_fixture,
         version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
@@ -217,12 +217,8 @@ mod test {
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
-        assert!(matches!(
-            schema_error.kind(),
-            ValidationErrorKind::Required {
-                property: JsonValue::String(protocol_version)
-            } if protocol_version == property_name
-        ));
+        assert_eq!(schema_error.keyword(), "required");
+        assert_eq!(schema_error.property_name(), property_name);
     }
 
     #[test_case("$id")]
@@ -247,20 +243,18 @@ mod test {
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
-        assert!(matches!(
-            schema_error.kind(),
-            ValidationErrorKind::Type {
-                kind: TypeKind::Single(primitive_type)
-            } if matches!(primitive_type, PrimitiveType::Array)
-        ));
+        let param_type = schema_error
+            .params()
+            .get_str("type")
+            .expect("should has type param");
 
-        assert_eq!(
-            format!("/{}", property_name),
-            schema_error.instance_path().to_string()
-        );
+        assert_eq!(schema_error.keyword(), "type");
+        assert_eq!(param_type, "array");
+
+        assert_eq!(format!("/{}", property_name), schema_error.instance_path());
         assert_eq!(
             format!("/properties/{}/type", property_name),
-            schema_error.schema_path().to_string()
+            schema_error.schema_path()
         );
     }
 
@@ -287,9 +281,12 @@ mod test {
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
-        assert!(matches!(
-            schema_error.kind(),
-            ValidationErrorKind::MinItems {limit} if limit == &32));
+        let limit: u32 = schema_error
+            .params()
+            .get_integer("limit")
+            .expect("should get limit");
+
+        assert_eq!(limit, 32);
 
         assert_eq!(
             format!("/{}", property_name),
@@ -325,9 +322,12 @@ mod test {
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
-        assert!(matches!(
-            schema_error.kind(),
-            ValidationErrorKind::MaxItems {limit} if limit == &32));
+        let limit: u32 = schema_error
+            .params()
+            .get_integer("limit")
+            .expect("should get limit");
+
+        assert_eq!(limit, 32);
 
         assert_eq!(
             format!("/{}", property_name),
@@ -359,12 +359,12 @@ mod test {
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
-        assert!(matches!(
-            schema_error.kind(),
-            ValidationErrorKind::Type {
-                kind: TypeKind::Single(primitive_type)
-            } if matches!(primitive_type, PrimitiveType::Integer)
-        ));
+        let param_type = schema_error
+            .params()
+            .get_str("type")
+            .expect("should get type");
+
+        assert_eq!(param_type, "integer");
 
         assert_eq!(
             "/$protocolVersion",
@@ -432,12 +432,13 @@ mod test {
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
-        assert!(matches!(
-            schema_error.kind(),
-            ValidationErrorKind::Type {
-                kind: TypeKind::Single(primitive_type)
-            } if matches!(primitive_type, PrimitiveType::Integer)
-        ));
+        let param_type = schema_error
+            .params()
+            .get_str("type")
+            .expect("should get type");
+
+        assert_eq!(param_type, "integer");
+
         assert_eq!("/$revision", schema_error.instance_path().to_string());
     }
 
@@ -458,12 +459,13 @@ mod test {
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
-        assert!(matches!(
-            schema_error.kind(),
-            ValidationErrorKind::Type {
-                kind: TypeKind::Single(primitive_type)
-            } if matches!(primitive_type, PrimitiveType::Integer)
-        ));
+        let param_type = schema_error
+            .params()
+            .get_str("type")
+            .expect("should get type");
+
+        assert_eq!(param_type, "integer");
+
         assert_eq!("/$revision", schema_error.instance_path().to_string());
         assert_eq!(
             "/properties/$revision/type",
@@ -487,12 +489,13 @@ mod test {
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
-        assert!(matches!(
-            schema_error.kind(),
-            ValidationErrorKind::Type {
-                kind: TypeKind::Single(primitive_type)
-            } if matches!(primitive_type, PrimitiveType::String)
-        ));
+        let param_type = schema_error
+            .params()
+            .get_str("type")
+            .expect("should get type");
+
+        assert_eq!(param_type, "integer");
+
         assert_eq!(
             "/properties/name/type",
             schema_error.schema_path().to_string()
@@ -516,11 +519,13 @@ mod test {
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
-        assert!(matches!(
-            schema_error.kind(),
-            ValidationErrorKind::AdditionalProperties {
-                unexpected,
-            } if unexpected == &["undefined"]));
+        let param_type = schema_error
+            .params()
+            .get_str("additionalProperties")
+            .expect("should get type");
+
+        assert_eq!(param_type, "undefined");
+
         assert_eq!(
             "/additionalProperties",
             schema_error.schema_path().to_string()
@@ -549,9 +554,12 @@ mod test {
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
-        assert!(matches!(
-            schema_error.kind(),
-            ValidationErrorKind::MaxItems {limit} if limit == &16));
+        let limit: u32 = schema_error
+            .params()
+            .get_integer("limit")
+            .expect("should get limit");
+
+        assert_eq!(limit, 16);
 
         assert_eq!("/byteArrayField", schema_error.instance_path().to_string());
         assert_eq!(

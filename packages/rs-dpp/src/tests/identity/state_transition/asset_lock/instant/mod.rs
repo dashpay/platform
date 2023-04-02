@@ -4,15 +4,14 @@ mod validate_instant_asset_lock_proof_structure_factory {
     use std::sync::Arc;
 
     use crate::consensus::basic::BasicError;
+    use crate::consensus::consensus_error::ConsensusError;
 
     use dashcore::hashes::sha256d::Hash as Sha256;
     use dashcore::hashes::Hash;
     use dashcore::Txid;
     use dashcore::{PrivateKey, Transaction};
-    use jsonschema::error::ValidationErrorKind;
     use platform_value::Value;
 
-    use crate::consensus::ConsensusError;
     use crate::identity::state_transition::asset_lock_proof::{
         AssetLockProof, InstantAssetLockProof,
     };
@@ -80,7 +79,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
 
     mod asset_lock_type {
         use super::*;
-        use crate::{assert_basic_consensus_errors};
+        use crate::assert_basic_consensus_errors;
 
         #[tokio::test]
         async fn should_be_present() {
@@ -97,13 +96,8 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"type\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "type");
         }
 
         #[tokio::test]
@@ -122,7 +116,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/type");
-            assert_eq!(error.keyword().unwrap(), "const");
+            assert_eq!(error.keyword(), "const");
         }
     }
 
@@ -147,13 +141,8 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"instantLock\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "instantLock");
         }
 
         #[tokio::test]
@@ -174,7 +163,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/instantLock/0");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -195,7 +184,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/instantLock");
-            assert_eq!(error.keyword().unwrap(), "minItems");
+            assert_eq!(error.keyword(), "minItems");
         }
 
         #[tokio::test]
@@ -216,7 +205,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/instantLock");
-            assert_eq!(error.keyword().unwrap(), "maxItems");
+            assert_eq!(error.keyword(), "maxItems");
         }
 
         #[tokio::test]
@@ -327,13 +316,8 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"transaction\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "transaction");
         }
 
         #[tokio::test]
@@ -354,7 +338,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/instantLock/0");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -375,7 +359,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/instantLock");
-            assert_eq!(error.keyword().unwrap(), "minItems");
+            assert_eq!(error.keyword(), "minItems");
         }
 
         #[tokio::test]
@@ -396,7 +380,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/instantLock");
-            assert_eq!(error.keyword().unwrap(), "maxItems");
+            assert_eq!(error.keyword(), "maxItems");
         }
 
         #[tokio::test]
@@ -443,13 +427,8 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"outputIndex\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "outputIndex");
         }
 
         #[tokio::test]
@@ -470,7 +449,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/outputIndex");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -491,7 +470,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/outputIndex");
-            assert_eq!(error.keyword().unwrap(), "minimum");
+            assert_eq!(error.keyword(), "minimum");
         }
     }
 
