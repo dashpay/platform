@@ -136,7 +136,7 @@ class DriveStateRepository {
 
     const result = await this.identityPublicKeyRepository.add(
       identityId,
-      keys,
+      keys.map((key) => key.toObject()),
       blockInfo,
       this.#createRepositoryOptions(executionContext),
     );
