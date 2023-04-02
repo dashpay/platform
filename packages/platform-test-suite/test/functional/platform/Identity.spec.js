@@ -60,6 +60,8 @@ describe('Platform', () => {
     });
 
     it('should fail to create an identity if instantLock is not valid', async () => {
+      await client.platform.initialize();
+
       const {
         transaction,
         privateKey,
@@ -67,9 +69,9 @@ describe('Platform', () => {
       } = await client.platform.identities.utils.createAssetLockTransaction(1);
 
       const invalidInstantLock = createFakeInstantLock(transaction.hash);
-      const assetLockProof = await dpp.identity.createInstantAssetLockProof(
-        invalidInstantLock,
-        transaction,
+      const assetLockProof = await client.platform.wasmDpp.identity.createInstantAssetLockProof(
+        invalidInstantLock.toBuffer(),
+        transaction.toBuffer(),
         outputIndex,
       );
 
@@ -104,7 +106,10 @@ describe('Platform', () => {
 
       const account = await client.getWalletAccount();
 
-      await account.broadcastTransaction(transaction);
+      // TODO(wasm-dpp): fix or add task to research this problem.
+      // For some reason when we `await` for this call, it does not propagate instant locks
+      // and createAsstLockProof falls back to chain lock instead which is not what we want
+      account.broadcastTransaction(transaction);
 
       // Creating normal transition
       const assetLockProof = await client.platform.identities.utils
@@ -148,9 +153,11 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
-      expect(broadcastError.getCause()).to.be.an.instanceOf(
-        IdentityAssetLockTransactionOutPointAlreadyExistsError,
-      );
+      expect(broadcastError.getCause().getCode()).to.equal(1033);
+      // TODO(wasm-dpp): fix this after createConsensusError is ported to wasm-dpp
+      // expect(broadcastError.getCause()).to.be.an.instanceOf(
+      //   IdentityAssetLockTransactionOutPointAlreadyExistsError,
+      // );
     });
 
     it('should not be able to create an identity without key proof', async () => {
@@ -162,7 +169,10 @@ describe('Platform', () => {
 
       const account = await client.getWalletAccount();
 
-      await account.broadcastTransaction(transaction);
+      // TODO(wasm-dpp): fix or add task to research this problem.
+      // For some reason when we `await` for this call, it does not propagate instant locks
+      // and createAsstLockProof falls back to chain lock instead which is not what we want
+      account.broadcastTransaction(transaction);
 
       // Creating normal transition
       const assetLockProof = await client.platform.identities.utils.createAssetLockProof(
@@ -178,8 +188,10 @@ describe('Platform', () => {
 
       // Remove signature
 
-      const [masterKey] = identityCreateTransition.getPublicKeys();
+      const keys = identityCreateTransition.getPublicKeys();
+      const [masterKey] = keys;
       masterKey.setSignature(Buffer.alloc(65));
+      identityCreateTransition.setPublicKeys(keys);
 
       // Broadcast
 
@@ -195,9 +207,11 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
-      expect(broadcastError.getCause()).to.be.an.instanceOf(
-        InvalidIdentityKeySignatureError,
-      );
+      expect(broadcastError.getCause().getCode()).to.equal(1056);
+      // TODO(wasm-dpp): fix this after createConsensusError is ported to wasm-dpp
+      // expect(broadcastError.getCause()).to.be.an.instanceOf(
+      //   InvalidIdentityKeySignatureError,
+      // );
     });
 
     it('should be able to get newly created identity', async () => {
@@ -235,6 +249,8 @@ describe('Platform', () => {
       this.timeout(850000);
 
       it('should create identity using chainLock', async () => {
+        await client.platform.initialize();
+
         // Broadcast Asset Lock transaction
         const {
           transaction,
@@ -251,10 +267,16 @@ describe('Platform', () => {
 
         const { height: transactionHeight } = await metadataPromise;
 
-        const outPoint = transaction.getOutPointBuffer(outputIndex);
-        const assetLockProof = await dpp.identity.createChainAssetLockProof(
+        // Change endianness of raw txId bytes in outPoint to match expectations of dashcore-rust
+        let outPointBuffer = transaction.getOutPointBuffer(outputIndex);
+        const txIdBuffer = outPointBuffer.slice(0, 32);
+        const outputIndexBuffer = outPointBuffer.slice(32);
+        txIdBuffer.reverse();
+        outPointBuffer = Buffer.concat([txIdBuffer, outputIndexBuffer]);
+
+        const assetLockProof = await client.platform.wasmDpp.identity.createChainAssetLockProof(
           transactionHeight,
-          outPoint,
+          outPointBuffer,
         );
 
         // Wait for platform chain to sync core height up to transaction height
