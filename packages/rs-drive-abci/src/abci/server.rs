@@ -14,8 +14,8 @@ use std::{fmt::Debug, sync::MutexGuard};
 /// AbciApp implements logic that should be triggered when Tenderdash performs various operations, like
 /// creating new proposal or finalizing new block.
 pub struct AbciApplication<'a, C> {
-    pub(crate) platform: Platform<C>,
-    transaction: RwLock<Option<Transaction<'a>>>,
+    pub(crate) platform: &'a Platform<C>,
+    pub(crate) transaction: RwLock<Option<Transaction<'a>>>,
 }
 
 /// Start ABCI server and process incoming connections.
@@ -30,7 +30,7 @@ pub fn start<C: CoreRPCLike + RefUnwindSafe>(
     let platform: Platform<C> =
         Platform::open_with_client(&config.db_path, Some(config.clone()), core_rpc)?;
 
-    let abci = AbciApplication::new(platform)?;
+    let abci = AbciApplication::new(&platform)?;
 
     let server = tenderdash_abci::start_server(&bind_address, abci)
         .map_err(|e| super::AbciError::from(e))?;
@@ -49,7 +49,7 @@ pub fn start<C: CoreRPCLike + RefUnwindSafe>(
 
 impl<'a, C> AbciApplication<'a, C> {
     /// Create new ABCI app
-    pub fn new(platform: Platform<C>) -> Result<AbciApplication<'a, C>, Error> {
+    pub fn new(platform: &'a Platform<C>) -> Result<AbciApplication<'a, C>, Error> {
         let app = AbciApplication {
             platform,
             transaction: RwLock::new(None),
@@ -77,10 +77,6 @@ impl<'a, C> AbciApplication<'a, C> {
             .drive
             .commit_transaction(transaction)
             .map_err(Error::Drive)
-    }
-
-    pub(crate) fn transaction(&self) -> TransactionArg {
-        self.transaction.read().unwrap().as_ref()
     }
 }
 

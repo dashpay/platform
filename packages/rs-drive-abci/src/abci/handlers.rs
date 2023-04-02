@@ -113,14 +113,15 @@ where
         request: RequestPrepareProposal,
     ) -> Result<ResponsePrepareProposal, ResponseException> {
         self.start_transaction();
-        let transaction = self.transaction().unwrap();
+        let transaction_guard = self.transaction.read().unwrap();
+        let transaction = transaction_guard.as_ref().unwrap();
         // Running the proposal executes all the state transitions for the block
         let BlockExecutionOutcome {
             app_hash,
             tx_results,
         } = self
             .platform
-            .run_block_proposal((&request).try_into()?, transaction)?;
+            .run_block_proposal((&request).try_into()?, &transaction)?;
 
         // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
         let response = ResponsePrepareProposal {
@@ -137,7 +138,8 @@ where
         request: RequestProcessProposal,
     ) -> Result<ResponseProcessProposal, ResponseException> {
         self.start_transaction();
-        let transaction = self.transaction().unwrap();
+        let transaction_guard = self.transaction.read().unwrap();
+        let transaction = transaction_guard.as_ref().unwrap();
 
         // Running the proposal executes all the state transitions for the block
         let BlockExecutionOutcome {
@@ -161,11 +163,13 @@ where
         &self,
         request: RequestFinalizeBlock,
     ) -> Result<ResponseFinalizeBlock, ResponseException> {
-        let transaction =
-            self.transaction()
-                .ok_or(Error::Execution(ExecutionError::NotInTransaction(
-                    "trying to finalize block without a current transaction",
-                )))?;
+        let transaction_guard = self.transaction.read().unwrap();
+
+        let transaction = transaction_guard.as_ref().ok_or(Error::Execution(
+            ExecutionError::NotInTransaction(
+                "trying to finalize block without a current transaction",
+            ),
+        ))?;
         self.platform
             .finalize_block_proposal(request, transaction)?;
 
