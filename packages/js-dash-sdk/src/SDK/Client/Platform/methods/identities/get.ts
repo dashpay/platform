@@ -6,6 +6,7 @@ const NotFoundError = require('@dashevo/dapi-client/lib/transport/GrpcTransport/
 
 // TODO(wasm): import Identifier from wasm-dpp to use as a type
 let Identifier;
+let Metadata;
 
 /**
  * Get an identity from the platform
@@ -17,10 +18,10 @@ let Identifier;
 export async function get(this: Platform, id: typeof Identifier | string): Promise<any> {
   await this.initialize();
 
-  const identifier = Identifier.from(id);
-
   // TODO(wasm): expose Metadata from dedicated module that handles all WASM-DPP types
-  const { Metadata } = await loadWasmDpp();
+  ({ Metadata, Identifier } = await loadWasmDpp());
+
+  const identifier = Identifier.from(id);
 
   let identityResponse;
   try {
