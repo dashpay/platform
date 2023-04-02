@@ -29,13 +29,21 @@ use tenderdash_abci::proto::abci::{
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::Application;
 
+/// The outcome of the block execution, either by prepare proposal, or process proposal
 pub struct BlockExecutionOutcome {
-    app_hash: [u8; 32],
-    tx_results: Vec<ExecTxResult>,
+    /// The app hash, also known as the commit hash, this is the root hash of grovedb
+    /// after the block has been executed
+    pub app_hash: [u8; 32],
+    /// The results of the execution of each transaction
+    pub tx_results: Vec<ExecTxResult>,
 }
 
+/// The outcome of the finalization of the block
 pub struct BlockFinalizationOutcome {
-    validation_result: SimpleValidationResult<AbciError>,
+    /// The validation result of the finalization of the block.
+    /// Errors here can happen if the block that we receive to be finalized isn't actually
+    /// the one we expect, this could be a replay attack or some other kind of attack.
+    pub validation_result: SimpleValidationResult<AbciError>,
 }
 
 impl From<SimpleValidationResult<AbciError>> for BlockFinalizationOutcome {
@@ -179,6 +187,7 @@ where
         Ok((aggregate_fee_result, exec_tx_results))
     }
 
+    /// Run a block proposal, either from process proposal, or prepare proposal
     pub fn run_block_proposal(
         &self,
         block_proposal: BlockProposal,
@@ -291,6 +300,8 @@ where
         })
     }
 
+    /// Finalize the block, this first involves validating it, then if valid
+    /// it is committed to the state
     pub fn finalize_block_proposal(
         &self,
         request_finalize_block: RequestFinalizeBlock,
@@ -377,6 +388,11 @@ where
         Ok(validation_result.into())
     }
 
+    /// Check a state transition to see if it should be added to mempool,
+    /// This executes a few checks.
+    /// It does validation on the state transition, and checks that the user is able to pay
+    /// for the it. It can be wrong is rare cases, so the proposer needs to check transactions
+    /// again before proposing his block.
     pub fn check_tx(
         &self,
         raw_tx: Vec<u8>,

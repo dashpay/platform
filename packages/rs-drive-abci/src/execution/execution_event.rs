@@ -5,12 +5,16 @@ use drive::fee::credits::SignedCredits;
 use drive::fee::result::FeeResult;
 use tenderdash_abci::proto::abci::ExecTxResult;
 
+/// The Fee Result for a Dry Run (without state)
 pub type DryRunFeeResult = FeeResult;
 
 /// An execution result
 pub enum ExecutionResult {
+    /// Successfully executed a paid event
     SuccessfulPaidExecution(DryRunFeeResult, FeeResult),
+    /// Successfully executed a free event
     SuccessfulFreeExecution,
+    /// There were consensus errors when trying to execute an event
     ConsensusExecutionError(SimpleConsensusValidationResult),
 }
 

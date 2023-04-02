@@ -39,8 +39,7 @@ pub fn validate_state_transition_identity_signature(
 
     let key_id = state_transition.get_signature_public_key_id().ok_or(
         ProtocolError::CorruptedCodeExecution(format!(
-            "state_transition {} does not have a public key Id to verify",
-            state_transition.type_name()
+            "state_transition does not have a public key Id to verify"
         )),
     )?;
 
