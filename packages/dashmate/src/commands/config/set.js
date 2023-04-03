@@ -20,7 +20,11 @@ class ConfigSetCommand extends ConfigBaseCommand {
       optionValue = null;
     }
 
-    config.set(optionPath, optionValue);
+    if (typeof config.get(optionPath) === 'object') {
+      config.set(optionPath, JSON.parse(optionValue));
+    } else {
+      config.set(optionPath, optionValue);
+    }
 
     // eslint-disable-next-line no-console
     console.log(`${optionPath} set to ${config.get(optionPath)}`);
