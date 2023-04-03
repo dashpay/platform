@@ -6,7 +6,7 @@ const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataCo
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
 const { default: loadWasmDpp } = require('../../../../../../../dist');
-const { expectJsonSchemaError, expectValidationError, expectPlatformValueError } = require('../../../../../../../lib/test/expect/expectError');
+const { expectJsonSchemaError, expectValidationError, expectValueError } = require('../../../../../../../lib/test/expect/expectError');
 
 let DataContract;
 let DocumentsBatchTransition;
@@ -24,7 +24,7 @@ let DuplicateDocumentTransitionsWithIndicesError;
 let DuplicateDocumentTransitionsWithIdsError;
 let ValidationResult;
 let ProtocolVersionValidator;
-let PlatformValueError;
+let ValueError;
 
 describe('validateDocumentsBatchTransitionBasicFactory', () => {
   let dataContract;
@@ -55,7 +55,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
       InvalidDocumentTransitionIdError,
       DuplicateDocumentTransitionsWithIndicesError,
       DuplicateDocumentTransitionsWithIdsError,
-      PlatformValueError,
+      ValueError,
     } = await loadWasmDpp());
 
     const dataContractJs = getDataContractFixture();
@@ -117,11 +117,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
         executionContext,
       );
 
-      await expectPlatformValueError(result, 1);
+      await expectValueError(result, 1);
 
       const [error] = result.getErrors();
 
-      expect(error).to.be.an.instanceOf(PlatformValueError);
+      expect(error).to.be.an.instanceOf(ValueError);
     });
 
     it('should be valid - Rust', async () => {
@@ -133,11 +133,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
         executionContext,
       );
 
-      await expectPlatformValueError(result, 1);
+      await expectValueError(result, 1);
 
       const [error] = result.getErrors();
 
-      expect(error).to.be.an.instanceOf(PlatformValueError);
+      expect(error).to.be.an.instanceOf(ValueError);
       expect(error.getMessage()).equal('integer out of bounds');
     });
   });
@@ -212,11 +212,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
         executionContext,
       );
 
-      await expectPlatformValueError(result, 1);
+      await expectValueError(result, 1);
 
       const [error] = result.getErrors();
 
-      expect(error).to.be.an.instanceOf(PlatformValueError);
+      expect(error).to.be.an.instanceOf(ValueError);
     });
 
     it('should be no less than 32 bytes - Rust', async () => {
@@ -229,11 +229,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
         executionContext,
       );
 
-      await expectPlatformValueError(result, 1);
+      await expectValueError(result, 1);
 
       const [error] = result.getErrors();
 
-      expect(error).to.be.an.instanceOf(PlatformValueError);
+      expect(error).to.be.an.instanceOf(ValueError);
     });
 
     it('should be no longer than 32 bytes - Rust', async () => {
@@ -246,11 +246,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
         executionContext,
       );
 
-      await expectPlatformValueError(result, 1);
+      await expectValueError(result, 1);
 
       const [error] = result.getErrors();
 
-      expect(error).to.be.an.instanceOf(PlatformValueError);
+      expect(error).to.be.an.instanceOf(ValueError);
     });
   });
 
@@ -264,11 +264,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
         rawStateTransition,
         executionContext,
       );
-      await expectPlatformValueError(result, 1);
+      await expectValueError(result, 1);
 
       const [error] = result.getErrors();
 
-      expect(error).to.be.an.instanceOf(PlatformValueError);
+      expect(error).to.be.an.instanceOf(ValueError);
     });
 
     it('should be an array - Rust', async () => {
@@ -281,11 +281,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
         executionContext,
       );
 
-      await expectPlatformValueError(result, 1);
+      await expectValueError(result, 1);
 
       const [error] = result.getErrors();
 
-      expect(error).to.be.an.instanceOf(PlatformValueError);
+      expect(error).to.be.an.instanceOf(ValueError);
     });
 
     it('should have at least one element - Rust', async () => {
@@ -336,11 +336,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
         executionContext,
       );
 
-      await expectPlatformValueError(result, 1);
+      await expectValueError(result, 1);
 
       const [error] = result.getErrors();
 
-      expect(error).to.be.an.instanceOf(PlatformValueError);
+      expect(error).to.be.an.instanceOf(ValueError);
     });
 
     describe('document transition', () => {
@@ -377,11 +377,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
             executionContext,
           );
 
-          await expectPlatformValueError(result, 1);
+          await expectValueError(result, 1);
 
           const [error] = result.getErrors();
 
-          expect(error).to.be.an.instanceOf(PlatformValueError);
+          expect(error).to.be.an.instanceOf(ValueError);
         });
 
         it('should be no less than 32 bytes - Rust', async () => {
@@ -396,11 +396,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
             executionContext,
           );
 
-          await expectPlatformValueError(result, 1);
+          await expectValueError(result, 1);
 
           const [error] = result.getErrors();
 
-          expect(error).to.be.an.instanceOf(PlatformValueError);
+          expect(error).to.be.an.instanceOf(ValueError);
         });
 
         it('should be no longer than 32 bytes - Rust', async () => {
@@ -414,11 +414,11 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
             rawStateTransition,
             executionContext,
           );
-          await expectPlatformValueError(result, 1);
+          await expectValueError(result, 1);
 
           const [error] = result.getErrors();
 
-          expect(error).to.be.an.instanceOf(PlatformValueError);
+          expect(error).to.be.an.instanceOf(ValueError);
         });
 
         it('should no have duplicate IDs in the state transition - Rust', async () => {
@@ -489,7 +489,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
             executionContext,
           );
 
-          await expectPlatformValueError(result);
+          await expectValueError(result);
 
           const [error] = result.getErrors();
 
