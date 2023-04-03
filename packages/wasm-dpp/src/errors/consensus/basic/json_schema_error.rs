@@ -61,7 +61,12 @@ impl JsonSchemaErrorWasm {
         format!("{:#?}", self)
     }
 
-    #[wasm_bindgen(js_name=serialize)]
+    #[wasm_bindgen(getter)]
+pub fn message(&self) -> String {
+  self.inner.to_string()
+}
+
+#[wasm_bindgen(js_name=serialize)]
     pub fn serialize(&self) -> Result<Buffer, JsError> {
         let bytes = ConsensusError::from(self.inner.clone())
             .serialize()

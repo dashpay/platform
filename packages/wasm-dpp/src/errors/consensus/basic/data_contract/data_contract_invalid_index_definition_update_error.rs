@@ -1,18 +1,20 @@
-use wasm_bindgen::prelude::*;
+use crate::buffer::Buffer;
 use dpp::consensus::basic::data_contract::DataContractInvalidIndexDefinitionUpdateError;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
-use crate::buffer::Buffer;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=DataContractInvalidIndexDefinitionUpdateError)]
 pub struct DataContractInvalidIndexDefinitionUpdateErrorWasm {
-  inner: DataContractInvalidIndexDefinitionUpdateError,
+    inner: DataContractInvalidIndexDefinitionUpdateError,
 }
 
-impl From<&DataContractInvalidIndexDefinitionUpdateError> for DataContractInvalidIndexDefinitionUpdateErrorWasm {
-  fn from(e: &DataContractInvalidIndexDefinitionUpdateError) -> Self {
-    Self { inner: e.clone() }
-  }
+impl From<&DataContractInvalidIndexDefinitionUpdateError>
+    for DataContractInvalidIndexDefinitionUpdateErrorWasm
+{
+    fn from(e: &DataContractInvalidIndexDefinitionUpdateError) -> Self {
+        Self { inner: e.clone() }
+    }
 }
 
 #[wasm_bindgen(js_class=DataContractInvalidIndexDefinitionUpdateError)]
@@ -27,17 +29,22 @@ impl DataContractInvalidIndexDefinitionUpdateErrorWasm {
         self.inner.index_name().to_string()
     }
 
-  #[wasm_bindgen(js_name=getCode)]
-  pub fn get_code(&self) -> u32 {
-    ConsensusError::from(self.inner.clone()).code()
-  }
+    #[wasm_bindgen(js_name=getCode)]
+    pub fn get_code(&self) -> u32 {
+        ConsensusError::from(self.inner.clone()).code()
+    }
 
-  #[wasm_bindgen(js_name=serialize)]
-  pub fn serialize(&self) -> Result<Buffer, JsError> {
-    let bytes = ConsensusError::from(self.inner.clone())
-      .serialize()
-      .map_err(|e| JsError::from(e))?;
+    #[wasm_bindgen(getter)]
+    pub fn message(&self) -> String {
+        self.inner.to_string()
+    }
 
-    Ok(Buffer::from_bytes(bytes.as_slice()))
-  }
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+        let bytes = ConsensusError::from(self.inner.clone())
+            .serialize()
+            .map_err(|e| JsError::from(e))?;
+
+        Ok(Buffer::from_bytes(bytes.as_slice()))
+    }
 }
