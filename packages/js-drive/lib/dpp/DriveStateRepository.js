@@ -424,8 +424,6 @@ class DriveStateRepository {
       },
     );
 
-    // TODO(wasm-dpp): not sure if it will be reflected in
-    //  wasm-dpp because executionContext might be a copy
     if (executionContext) {
       for (const operation of result.getOperations()) {
         executionContext.addOperation(operation);
@@ -449,8 +447,8 @@ class DriveStateRepository {
    *
    * @returns {Promise<void>}
    */
-  async createDataContract(dataContract, executionContext = undefined) {
-    console.log('DriveStateRepository.createDataContract() start', {
+  async storeDataContract(dataContract, executionContext = undefined) {
+    console.log('DriveStateRepository.storeDataContract() start', {
       dataContract, executionContext,
     });
     const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
@@ -467,7 +465,7 @@ class DriveStateRepository {
       }
     }
 
-    console.log('DriveStateRepository.createDataContract() end', {});
+    console.log('DriveStateRepository.storeDataContract() end', {});
   }
 
   /**
