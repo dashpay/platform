@@ -87,4 +87,13 @@ export function patchConsensusErrors() {
     extend(dpp_module.WrongPublicKeyPurposeError, AbstractConsensusError);
     extend(dpp_module.IdentityPublicKeyIsDisabledError, AbstractConsensusError);
     extend(dpp_module.ValueError, AbstractConsensusError);
+    extend(dpp_module.MissingDataContractIdError, AbstractConsensusError);
+    extend(dpp_module.DuplicatedIdentityPublicKeyError, AbstractConsensusError);
+    extend(dpp_module.DuplicatedIdentityPublicKeyIdError, AbstractConsensusError);
+    extend(dpp_module.IdentityInsufficientBalanceError, AbstractConsensusError);
+    extend(dpp_module.InvalidIdentityCreditWithdrawalTransitionCoreFeeError, AbstractConsensusError);
+    extend(dpp_module.InvalidIdentityCreditWithdrawalTransitionOutputScriptError, AbstractConsensusError);
+    extend(dpp_module.NotImplementedIdentityCreditWithdrawalTransitionPoolingError, AbstractConsensusError);
+    extend(dpp_module.DuplicatedIdentityPublicKeyIdStateError, AbstractConsensusError);
+    extend(dpp_module.DuplicatedIdentityPublicKeyStateError, AbstractConsensusError);
 }
