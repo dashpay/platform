@@ -1,7 +1,8 @@
-use crate::converter::{js_buffer_to_identifier, js_object_to_fee_refunds};
+use crate::converter::{js_buffer_to_identifier, js_object_to_fee_refunds, js_buffer_to_vec_u8, js_buffer_to_u64};
 use drive::fee::result::refunds::{CreditsPerEpochByIdentifier, FeeRefunds};
 use drive::fee::result::FeeResult;
 use neon::prelude::*;
+use neon::types::buffer::TypedArray;
 use std::ops::Deref;
 
 pub struct FeeResultWrapper(FeeResult);
@@ -12,8 +13,12 @@ impl FeeResultWrapper {
     }
 
     pub fn create(mut cx: FunctionContext) -> JsResult<JsBox<FeeResultWrapper>> {
-        let storage_fee = cx.argument::<JsNumber>(0)?.value(&mut cx) as u64;
-        let processing_fee = cx.argument::<JsNumber>(1)?.value(&mut cx) as u64;
+        let storage_fee_buffer: Handle<JsBuffer> = cx.argument::<JsBuffer>(0)?;
+        let processing_fee_buffer: Handle<JsBuffer> = cx.argument::<JsBuffer>(1)?;
+
+        let storage_fee = js_buffer_to_u64(&mut cx, storage_fee_buffer)?;
+        let processing_fee = js_buffer_to_u64(&mut cx, processing_fee_buffer)?;
+
         let js_fee_refunds = cx.argument::<JsArray>(2)?.to_vec(&mut cx)?;
 
         let mut credits_per_epoch_by_identifier = CreditsPerEpochByIdentifier::new();

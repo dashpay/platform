@@ -263,6 +263,15 @@ pub fn js_buffer_to_vec_u8<'a, C: Context<'a>>(cx: &mut C, js_buffer: Handle<JsB
     key_slice.to_vec()
 }
 
+pub fn js_buffer_to_u64<'a, C: Context<'a>>(cx: &mut C, js_buffer: Handle<JsBuffer>) -> NeonResult<u64> {
+    let key_memory_view = js_buffer.borrow();
+
+    let key_slice: &[u8] = key_memory_view.as_slice(cx);
+    let u64_bytes: [u8; 8] = <[u8; 8]>::try_from(key_slice).or_else(|_| cx.throw_type_error("u64 bytes buffer must be 8 bytes long"))?;
+
+    Ok(u64::from_be_bytes(u64_bytes))
+}
+
 pub fn js_array_of_buffers_to_vec<'a, C: Context<'a>>(
     cx: &mut C,
     js_array: Handle<JsArray>,
@@ -523,8 +532,8 @@ pub fn js_object_to_fee_refunds<'a, C: Context<'a>>(
             .parse()
             .or_else(|e: ParseIntError| cx.throw_error(e.to_string()))?;
 
-        let js_credits: Handle<JsNumber> = js_object.get(cx, js_epoch_index)?;
-        let credits = js_credits.value(cx) as Credits;
+        let js_credits: Handle<JsBuffer> = js_object.get(cx, js_epoch_index)?;
+        let credits = js_buffer_to_u64(cx, js_credits)?;
 
         fee_refunds.insert(epoch_index, credits);
     }
