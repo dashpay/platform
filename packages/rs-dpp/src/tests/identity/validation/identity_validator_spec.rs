@@ -48,7 +48,7 @@ pub mod protocol_version {
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword(), "required");
-        assert_eq!(error.instance_path().to_string(), "");
+        assert_eq!(error.instance_path(), "");
         assert_eq!(error.property_name(), "protocolVersion");
     }
 
@@ -65,7 +65,7 @@ pub mod protocol_version {
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword(), "type");
-        assert_eq!(error.instance_path().to_string(), "/protocolVersion");
+        assert_eq!(error.instance_path(), "/protocolVersion");
     }
 
     #[test]
@@ -81,7 +81,7 @@ pub mod protocol_version {
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword(), "minimum");
-        assert_eq!(error.instance_path().to_string(), "/protocolVersion");
+        assert_eq!(error.instance_path(), "/protocolVersion");
     }
 }
 
@@ -106,7 +106,7 @@ pub mod id {
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword(), "required");
-        assert_eq!(error.instance_path().to_string(), "");
+        assert_eq!(error.instance_path(), "");
         assert_eq!(error.property_name(), "id");
     }
 
@@ -123,7 +123,7 @@ pub mod id {
         let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 32);
 
         for (i, err) in errors.iter().enumerate() {
-            assert_eq!(err.instance_path().to_string(), format!("/id/{}", i));
+            assert_eq!(err.instance_path(), format!("/id/{}", i));
             assert_eq!(err.keyword(), "type");
         }
     }
@@ -143,7 +143,7 @@ pub mod id {
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword(), "minItems");
-        assert_eq!(error.instance_path().to_string(), "/id");
+        assert_eq!(error.instance_path(), "/id");
     }
 
     #[test]
@@ -161,7 +161,7 @@ pub mod id {
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword(), "maxItems");
-        assert_eq!(error.instance_path().to_string(), "/id");
+        assert_eq!(error.instance_path(), "/id");
     }
 }
 
@@ -186,7 +186,7 @@ pub mod balance {
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword(), "required");
-        assert_eq!(error.instance_path().to_string(), "");
+        assert_eq!(error.instance_path(), "");
         assert_eq!(error.property_name(), "balance");
     }
 
@@ -203,7 +203,7 @@ pub mod balance {
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword(), "type");
-        assert_eq!(error.instance_path().to_string(), "/balance");
+        assert_eq!(error.instance_path(), "/balance");
     }
 
     #[test]
@@ -219,7 +219,7 @@ pub mod balance {
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword(), "minimum");
-        assert_eq!(error.instance_path().to_string(), "/balance");
+        assert_eq!(error.instance_path(), "/balance");
 
         identity.set_into_value("balance", 0u64).unwrap();
         let result = identity_validator
@@ -252,7 +252,7 @@ pub mod public_keys {
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword(), "required");
-        assert_eq!(error.instance_path().to_string(), "");
+        assert_eq!(error.instance_path(), "");
         assert_eq!(error.property_name(), "publicKeys");
     }
 
@@ -269,7 +269,7 @@ pub mod public_keys {
         let error = errors.first().unwrap();
 
         assert_eq!(error.keyword(), "type");
-        assert_eq!(error.instance_path().to_string(), "/publicKeys");
+        assert_eq!(error.instance_path(), "/publicKeys");
     }
 
     #[test]

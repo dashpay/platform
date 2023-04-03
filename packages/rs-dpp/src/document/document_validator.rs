@@ -281,12 +281,12 @@ mod test {
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
-        let limit: u32 = schema_error
+        let min_items: u32 = schema_error
             .params()
-            .get_integer("limit")
+            .get_integer("minItems")
             .expect("should get limit");
 
-        assert_eq!(limit, 32);
+        assert_eq!(min_items, 32);
 
         assert_eq!(
             format!("/{}", property_name),
@@ -322,12 +322,12 @@ mod test {
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
-        let limit: u32 = schema_error
+        let max_items: u32 = schema_error
             .params()
-            .get_integer("limit")
+            .get_integer("maxItems")
             .expect("should get limit");
 
-        assert_eq!(limit, 32);
+        assert_eq!(max_items, 32);
 
         assert_eq!(
             format!("/{}", property_name),
@@ -494,7 +494,7 @@ mod test {
             .get_str("type")
             .expect("should get type");
 
-        assert_eq!(param_type, "integer");
+        assert_eq!(param_type, "string");
 
         assert_eq!(
             "/properties/name/type",
@@ -519,12 +519,18 @@ mod test {
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
-        let param_type = schema_error
+        let additional_properties = schema_error
             .params()
-            .get_str("additionalProperties")
-            .expect("should get type");
+            .get_array("additionalProperties")
+            .expect("should get additionalProperties");
 
-        assert_eq!(param_type, "undefined");
+        let additional_property = additional_properties
+            .get(0)
+            .expect("should have 0 item")
+            .as_str()
+            .expect("should be a string");
+
+        assert_eq!(additional_property, "undefined");
 
         assert_eq!(
             "/additionalProperties",
@@ -554,12 +560,12 @@ mod test {
             .expect("the validator should return the validation result");
         let schema_error = get_first_schema_error(&result);
 
-        let limit: u32 = schema_error
+        let max_items: u32 = schema_error
             .params()
-            .get_integer("limit")
+            .get_integer("maxItems")
             .expect("should get limit");
 
-        assert_eq!(limit, 16);
+        assert_eq!(max_items, 16);
 
         assert_eq!("/byteArrayField", schema_error.instance_path().to_string());
         assert_eq!(

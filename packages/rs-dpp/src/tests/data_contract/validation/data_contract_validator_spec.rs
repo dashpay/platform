@@ -6,6 +6,7 @@ use platform_value::{platform_value, Value};
 use serde_json::Value as JsonValue;
 use test_case::test_case;
 
+use crate::consensus::basic::value_error::ValueError;
 use crate::consensus::basic::BasicError;
 use crate::errors::consensus::codes::ErrorWithCode;
 use crate::tests::utils::{json_schema_error, value_error};
@@ -16,7 +17,6 @@ use crate::{
     tests::fixtures::get_data_contract_fixture,
     version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
 };
-use crate::consensus::basic::value_error::ValueError;
 
 struct TestData {
     data_contract_validator: DataContractValidator,
@@ -60,10 +60,7 @@ fn get_schema_error<TData: Clone>(
     )
 }
 
-fn get_value_error<TData: Clone>(
-    result: &ValidationResult<TData>,
-    number: usize,
-) -> &ValueError {
+fn get_value_error<TData: Clone>(result: &ValidationResult<TData>, number: usize) -> &ValueError {
     value_error(
         result
             .errors
@@ -140,7 +137,7 @@ mod protocol {
             .expect("validation result should be returned");
 
         let schema_error = get_schema_error(&result, 0);
-        assert_eq!("/protocolVersion", schema_error.instance_path().to_string());
+        assert_eq!("/protocolVersion", schema_error.instance_path());
         assert_eq!("type", schema_error.keyword());
     }
 
@@ -162,7 +159,7 @@ mod protocol {
         trace!("The validation result is: {:#?}", result);
 
         let schema_error = get_schema_error(&result, 0);
-        assert_eq!("/protocolVersion", schema_error.instance_path().to_string());
+        assert_eq!("/protocolVersion", schema_error.instance_path());
         assert_eq!("minimum", schema_error.keyword());
     }
 }
@@ -185,7 +182,7 @@ fn defs_should_be_object() {
     trace!("The validation result is: {:#?}", result);
 
     let schema_error = get_schema_error(&result, 0);
-    assert_eq!("/$defs", schema_error.instance_path().to_string());
+    assert_eq!("/$defs", schema_error.instance_path());
     assert_eq!("type", schema_error.keyword());
 }
 
@@ -210,7 +207,7 @@ mod defs {
         trace!("The validation result is: {:#?}", result);
 
         let schema_error = get_schema_error(&result, 0);
-        assert_eq!("/$defs", schema_error.instance_path().to_string());
+        assert_eq!("/$defs", schema_error.instance_path());
         assert_eq!("minProperties", schema_error.keyword());
     }
 
@@ -237,8 +234,8 @@ mod defs {
         trace!("The validation result is: {:#?}", result);
 
         let schema_error = get_schema_error(&result, 0);
-        assert_eq!("/$defs", schema_error.instance_path().to_string());
-        assert_eq!("pattern", schema_error.keyword());
+        assert_eq!("/$defs", schema_error.instance_path());
+        assert_eq!("propertyNames", schema_error.keyword());
     }
 
     #[test]
@@ -315,8 +312,8 @@ mod defs {
             .expect("validation result should be returned");
         let schema_error = get_schema_error(&result, 0);
 
-        assert_eq!("/$defs", schema_error.instance_path().to_string());
-        assert_eq!("pattern", schema_error.keyword());
+        assert_eq!("/$defs", schema_error.instance_path());
+        assert_eq!("propertyNames", schema_error.keyword());
     }
 
     #[test]
@@ -592,7 +589,7 @@ mod documents {
         let schema_error = get_schema_error(&result, 0);
 
         assert_eq!("/documents", schema_error.instance_path().to_string());
-        assert_eq!("pattern", schema_error.keyword());
+        assert_eq!("propertyNames", schema_error.keyword());
     }
 
     #[test]
@@ -818,7 +815,7 @@ mod documents {
             "/documents/niceDocument/properties",
             schema_error.instance_path().to_string()
         );
-        assert_eq!("pattern", schema_error.keyword());
+        assert_eq!("propertyNames", schema_error.keyword());
     }
 
     #[test]
@@ -834,7 +831,6 @@ mod documents {
         raw_data_contract["documents"]["niceDocument"]["properties"]["something"] = platform_value!({
             "properties" :   platform_value!({}),
             "additionalProperties" :  false,
-
         });
 
         for property_name in invalid_names {
@@ -851,7 +847,7 @@ mod documents {
                 "/documents/niceDocument/properties/something/properties",
                 schema_error.instance_path().to_string()
             );
-            assert_eq!("pattern", schema_error.keyword());
+            assert_eq!("propertyNames", schema_error.keyword());
 
             raw_data_contract["documents"]["niceDocument"]["properties"]["something"]["properties"]
                 .remove(property_name)

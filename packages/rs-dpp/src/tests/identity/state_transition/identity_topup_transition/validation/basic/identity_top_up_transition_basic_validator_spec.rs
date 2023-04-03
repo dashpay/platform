@@ -72,7 +72,7 @@ mod validate_identity_topup_transition_basic {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "");
+            assert_eq!(error.instance_path(), "");
             assert_eq!(error.keyword(), "required");
             assert_eq!(error.property_name(), "protocolVersion");
         }
@@ -93,7 +93,7 @@ mod validate_identity_topup_transition_basic {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/protocolVersion");
+            assert_eq!(error.instance_path(), "/protocolVersion");
             assert_eq!(error.keyword(), "type");
         }
 
@@ -140,7 +140,7 @@ mod validate_identity_topup_transition_basic {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "");
+            assert_eq!(error.instance_path(), "");
             assert_eq!(error.keyword(), "required");
             assert_eq!(error.property_name(), "type");
         }
@@ -164,7 +164,7 @@ mod validate_identity_topup_transition_basic {
                 .get_integer("allowedValue")
                 .expect("should get allowedValue");
 
-            assert_eq!(error.instance_path().to_string(), "/type");
+            assert_eq!(error.instance_path(), "/type");
             assert_eq!(error.keyword(), "const");
             assert_eq!(allowed_value, 3);
         }
@@ -187,7 +187,7 @@ mod validate_identity_topup_transition_basic {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "");
+            assert_eq!(error.instance_path(), "");
             assert_eq!(error.keyword(), "required");
             assert_eq!(error.property_name(), "assetLockProof");
         }
@@ -208,7 +208,7 @@ mod validate_identity_topup_transition_basic {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/assetLockProof");
+            assert_eq!(error.instance_path(), "/assetLockProof");
             assert_eq!(error.keyword(), "type");
         }
 
@@ -232,7 +232,7 @@ mod validate_identity_topup_transition_basic {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/transaction");
+            assert_eq!(error.instance_path(), "/transaction");
         }
     }
 
@@ -254,7 +254,7 @@ mod validate_identity_topup_transition_basic {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "");
+            assert_eq!(error.instance_path(), "");
             assert_eq!(error.keyword(), "required");
             assert_eq!(error.property_name(), "signature");
         }
@@ -275,7 +275,7 @@ mod validate_identity_topup_transition_basic {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/signature/0");
+            assert_eq!(error.instance_path(), "/signature/0");
             assert_eq!(error.keyword(), "type");
         }
 
@@ -295,7 +295,7 @@ mod validate_identity_topup_transition_basic {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/signature");
+            assert_eq!(error.instance_path(), "/signature");
             assert_eq!(error.keyword(), "minItems");
         }
 
@@ -315,7 +315,7 @@ mod validate_identity_topup_transition_basic {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/signature");
+            assert_eq!(error.instance_path(), "/signature");
             assert_eq!(error.keyword(), "maxItems");
         }
     }

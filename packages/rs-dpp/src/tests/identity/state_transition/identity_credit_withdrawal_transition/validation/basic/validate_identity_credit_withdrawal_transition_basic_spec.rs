@@ -60,7 +60,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/protocolVersion");
+            assert_eq!(error.instance_path(), "/protocolVersion");
             assert_eq!(error.keyword(), "type");
         }
 
@@ -106,7 +106,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "");
+            assert_eq!(error.instance_path(), "");
             assert_eq!(error.keyword(), "required");
             assert_eq!(error.property_name(), "type");
         }
@@ -123,7 +123,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/type");
+            assert_eq!(error.instance_path(), "/type");
             assert_eq!(error.keyword(), "type");
         }
 
@@ -139,7 +139,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/type");
+            assert_eq!(error.instance_path(), "/type");
             assert_eq!(error.keyword(), "const");
         }
     }
@@ -179,7 +179,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/identityId/0");
+            assert_eq!(error.instance_path(), "/identityId/0");
             assert_eq!(error.keyword(), "type");
         }
 
@@ -197,7 +197,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/identityId");
+            assert_eq!(error.instance_path(), "/identityId");
             assert_eq!(error.keyword(), "minItems");
         }
 
@@ -215,7 +215,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/identityId");
+            assert_eq!(error.instance_path(), "/identityId");
             assert_eq!(error.keyword(), "maxItems");
         }
     }
@@ -236,7 +236,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "");
+            assert_eq!(error.instance_path(), "");
             assert_eq!(error.keyword(), "required");
             assert_eq!(error.property_name(), "amount");
         }
@@ -253,7 +253,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/amount");
+            assert_eq!(error.instance_path(), "/amount");
             assert_eq!(error.keyword(), "type");
         }
 
@@ -269,7 +269,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/amount");
+            assert_eq!(error.instance_path(), "/amount");
             assert_eq!(error.keyword(), "minimum");
         }
     }
@@ -289,7 +289,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "");
+            assert_eq!(error.instance_path(), "");
             assert_eq!(error.keyword(), "required");
             assert_eq!(error.property_name(), "coreFeePerByte");
         }
@@ -308,7 +308,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/coreFeePerByte");
+            assert_eq!(error.instance_path(), "/coreFeePerByte");
             assert_eq!(error.keyword(), "type");
         }
 
@@ -326,7 +326,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/coreFeePerByte");
+            assert_eq!(error.instance_path(), "/coreFeePerByte");
             assert_eq!(error.keyword(), "minimum");
         }
 
@@ -344,7 +344,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/coreFeePerByte");
+            assert_eq!(error.instance_path(), "/coreFeePerByte");
             assert_eq!(error.keyword(), "maximum");
         }
 
@@ -385,7 +385,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "");
+            assert_eq!(error.instance_path(), "");
             assert_eq!(error.keyword(), "required");
             assert_eq!(error.property_name(), "pooling");
         }

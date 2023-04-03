@@ -1,4 +1,6 @@
 use jsonschema::error::{TypeKind, ValidationErrorKind};
+use jsonschema::paths::PathChunk;
+use jsonschema::ValidationError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::ops::Deref;
@@ -10,9 +12,9 @@ pub struct JsonSchemaErrorData {
     pub property_name: String,
 }
 
-impl From<&ValidationErrorKind> for JsonSchemaErrorData {
-    fn from(validation_error_kind: &ValidationErrorKind) -> Self {
-        match validation_error_kind {
+impl<'a> From<&ValidationError<'a>> for JsonSchemaErrorData {
+    fn from(validation_error: &ValidationError<'a>) -> Self {
+        match &validation_error.kind {
             ValidationErrorKind::Required { property } => DataBuilder::new()
                 .set_keyword("required")
                 .set_property_name(property.to_string())
@@ -56,7 +58,13 @@ impl From<&ValidationErrorKind> for JsonSchemaErrorData {
                 .add_param("exclusiveMinimum", limit.clone())
                 .build(),
             ValidationErrorKind::FalseSchema => {
-                DataBuilder::new().set_keyword("falseSchema").build()
+                let chunk = validation_error.schema_path.last();
+                let keyword = match chunk {
+                    None | Some(PathChunk::Property(_) | PathChunk::Index(_)) => "falseSchema",
+                    Some(PathChunk::Keyword(keyword)) => keyword,
+                };
+
+                DataBuilder::new().set_keyword(keyword).build()
             }
             ValidationErrorKind::FileNotFound { .. } => {
                 DataBuilder::new().set_keyword("fileNotFound").build()
@@ -134,7 +142,7 @@ impl From<&ValidationErrorKind> for JsonSchemaErrorData {
                     keyword,
                     params,
                     property_name,
-                } = JsonSchemaErrorData::from(&error.kind);
+                } = JsonSchemaErrorData::from(error.deref());
 
                 DataBuilder::new()
                     .set_keyword("propertyNames")
@@ -193,7 +201,7 @@ impl DataBuilder {
     }
 
     fn set_property_name(mut self, property_name: impl Into<String>) -> Self {
-        self.data.property_name = property_name.into();
+        self.data.property_name = property_name.into().trim_matches('"').to_string();
         self
     }
 

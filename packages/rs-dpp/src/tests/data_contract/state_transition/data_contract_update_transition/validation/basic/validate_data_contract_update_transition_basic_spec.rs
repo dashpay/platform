@@ -176,7 +176,7 @@ async fn type_should_be_equal_4() {
     let schema_error = get_schema_error(&result, 0);
     assert_eq!(
         format!("/{}", property_names::TRANSITION_TYPE),
-        schema_error.instance_path().to_string()
+        schema_error.instance_path()
     );
     assert_eq!("const", schema_error.keyword());
 }
@@ -270,10 +270,7 @@ async fn should_be_not_longer_than_n_bytes(property_name: &str, n_bytes: usize) 
         .expect("validation result should be returned");
 
     let schema_error = get_schema_error(&result, 0);
-    assert_eq!(
-        format!("/{}", property_name),
-        schema_error.instance_path().to_string()
-    );
+    assert_eq!(format!("/{}", property_name), schema_error.instance_path());
     assert_eq!("maxItems", schema_error.keyword());
 }
 

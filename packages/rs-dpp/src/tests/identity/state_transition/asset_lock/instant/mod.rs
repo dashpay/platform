@@ -95,7 +95,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "");
+            assert_eq!(error.instance_path(), "");
             assert_eq!(error.keyword(), "required");
             assert_eq!(error.property_name(), "type");
         }
@@ -115,7 +115,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/type");
+            assert_eq!(error.instance_path(), "/type");
             assert_eq!(error.keyword(), "const");
         }
     }
@@ -140,7 +140,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "");
+            assert_eq!(error.instance_path(), "");
             assert_eq!(error.keyword(), "required");
             assert_eq!(error.property_name(), "instantLock");
         }
@@ -162,7 +162,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 165);
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/instantLock/0");
+            assert_eq!(error.instance_path(), "/instantLock/0");
             assert_eq!(error.keyword(), "type");
         }
 
@@ -183,7 +183,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/instantLock");
+            assert_eq!(error.instance_path(), "/instantLock");
             assert_eq!(error.keyword(), "minItems");
         }
 
@@ -204,7 +204,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/instantLock");
+            assert_eq!(error.instance_path(), "/instantLock");
             assert_eq!(error.keyword(), "maxItems");
         }
 
@@ -315,7 +315,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "");
+            assert_eq!(error.instance_path(), "");
             assert_eq!(error.keyword(), "required");
             assert_eq!(error.property_name(), "transaction");
         }
@@ -337,7 +337,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 66);
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/instantLock/0");
+            assert_eq!(error.instance_path(), "/instantLock/0");
             assert_eq!(error.keyword(), "type");
         }
 
@@ -358,7 +358,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/instantLock");
+            assert_eq!(error.instance_path(), "/instantLock");
             assert_eq!(error.keyword(), "minItems");
         }
 
@@ -379,7 +379,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
             let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/instantLock");
+            assert_eq!(error.instance_path(), "/instantLock");
             assert_eq!(error.keyword(), "maxItems");
         }
 

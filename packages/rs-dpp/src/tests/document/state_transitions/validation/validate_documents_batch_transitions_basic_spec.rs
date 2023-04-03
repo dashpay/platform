@@ -150,7 +150,7 @@ async fn protocol_version_should_be_integer() {
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
-    assert_eq!("/protocolVersion", schema_error.instance_path().to_string());
+    assert_eq!("/protocolVersion", schema_error.instance_path());
     assert_eq!("type", schema_error.keyword());
 }
 
@@ -176,7 +176,7 @@ async fn protocol_version_should_be_valid() {
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
-    assert_eq!("/protocolVersion", schema_error.instance_path().to_string());
+    assert_eq!("/protocolVersion", schema_error.instance_path());
     assert_eq!("type", schema_error.keyword());
 }
 
@@ -202,7 +202,7 @@ async fn type_should_be_equal_1() {
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
-    assert_eq!("/type", schema_error.instance_path().to_string());
+    assert_eq!("/type", schema_error.instance_path());
     assert_eq!("const", schema_error.keyword());
 }
 
@@ -234,7 +234,7 @@ async fn property_in_state_transition_should_be_byte_array(property_name: &str) 
     let byte_array_schema_error = get_schema_error(&result, 1);
     assert_eq!(
         format!("/{}/0", property_name),
-        schema_error.instance_path().to_string()
+        schema_error.instance_path()
     );
     assert_eq!("type", schema_error.keyword());
     assert_eq!(
@@ -266,7 +266,7 @@ async fn owner_id_should_be_no_less_than_32_bytes() {
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
-    assert_eq!("/ownerId", schema_error.instance_path().to_string());
+    assert_eq!("/ownerId", schema_error.instance_path());
     assert_eq!("minItems", schema_error.keyword());
 }
 
@@ -294,7 +294,7 @@ async fn owner_id_should_be_no_longer_than_32_bytes() {
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
-    assert_eq!("/ownerId", schema_error.instance_path().to_string());
+    assert_eq!("/ownerId", schema_error.instance_path());
     assert_eq!("maxItems", schema_error.keyword());
 }
 
@@ -320,7 +320,7 @@ async fn transitions_should_be_an_array() {
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
-    assert_eq!("/transitions", schema_error.instance_path().to_string());
+    assert_eq!("/transitions", schema_error.instance_path());
     assert_eq!("type", schema_error.keyword());
 }
 
@@ -346,7 +346,7 @@ async fn transitions_should_have_at_least_one_element() {
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
-    assert_eq!("/transitions", schema_error.instance_path().to_string());
+    assert_eq!("/transitions", schema_error.instance_path());
     assert_eq!("minItems", schema_error.keyword());
 }
 
@@ -376,7 +376,7 @@ async fn transitions_should_have_no_more_than_10_elements() {
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
-    assert_eq!("/transitions", schema_error.instance_path().to_string());
+    assert_eq!("/transitions", schema_error.instance_path());
     assert_eq!("maxItems", schema_error.keyword());
 }
 
@@ -403,7 +403,7 @@ async fn transitions_should_have_an_object_as_elements() {
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
-    assert_eq!("/transitions/0", schema_error.instance_path().to_string());
+    assert_eq!("/transitions/0", schema_error.instance_path());
     assert_eq!("type", schema_error.keyword());
 }
 
@@ -497,7 +497,7 @@ async fn property_should_be_byte_array(property_name: &str) {
     let byte_array_schema_error = get_schema_error(&result, 1);
     assert_eq!(
         format!("/{}/0", property_name),
-        schema_error.instance_path().to_string()
+        schema_error.instance_path()
     );
     assert_eq!("type", schema_error.keyword());
     assert_eq!(
@@ -557,10 +557,7 @@ async fn property_should_be_no_less_than_32_bytes(property_name: &str) {
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
-    assert_eq!(
-        format!("/{}", property_name),
-        schema_error.instance_path().to_string()
-    );
+    assert_eq!(format!("/{}", property_name), schema_error.instance_path());
     assert_eq!("minItems", schema_error.keyword());
 }
 

@@ -6,10 +6,7 @@ use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 use crate::consensus::state::state_error::StateError;
 use crate::validation::{SimpleValidationResult, ValidationResult};
 use crate::{
-    consensus::{
-        basic::{BasicError, JsonSchemaError},
-        ConsensusError,
-    },
+    consensus::{basic::BasicError, ConsensusError},
     data_trigger::DataTriggerExecutionResult,
 };
 

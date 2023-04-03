@@ -43,7 +43,7 @@ pub mod id {
         let errors = assert_basic_consensus_errors!(&result, BasicError::JsonSchemaError, 1);
         let error = errors.get(0).unwrap();
 
-        assert_eq!(error.instance_path().to_string(), "");
+        assert_eq!(error.instance_path(), "");
         assert_eq!(error.keyword(), "required");
         assert_eq!(error.property_name(), "id");
     }
@@ -61,7 +61,7 @@ pub mod id {
         let errors = assert_basic_consensus_errors!(&result, BasicError::JsonSchemaError, 1);
         let error = errors.get(0).unwrap();
 
-        assert_eq!(error.instance_path().to_string(), "/id");
+        assert_eq!(error.instance_path(), "/id");
         assert_eq!(error.keyword(), "type");
     }
 
@@ -74,7 +74,7 @@ pub mod id {
         let errors = assert_basic_consensus_errors!(&result, BasicError::JsonSchemaError, 1);
         let error = errors.get(0).unwrap();
 
-        assert_eq!(error.instance_path().to_string(), "/id");
+        assert_eq!(error.instance_path(), "/id");
         assert_eq!(error.keyword(), "type");
     }
 
@@ -87,7 +87,7 @@ pub mod id {
         let errors = assert_basic_consensus_errors!(&result, BasicError::JsonSchemaError, 1);
         let error = errors.get(0).unwrap();
 
-        assert_eq!(error.instance_path().to_string(), "/id");
+        assert_eq!(error.instance_path(), "/id");
         assert_eq!(error.keyword(), "minimum");
     }
 }
@@ -110,7 +110,7 @@ pub mod key_type {
         let errors = assert_basic_consensus_errors!(&result, BasicError::JsonSchemaError, 4);
         let error = errors.get(0).unwrap();
 
-        assert_eq!(error.instance_path().to_string(), "/data");
+        assert_eq!(error.instance_path(), "/data");
         assert_eq!(error.keyword(), "minItems");
     }
 
@@ -124,7 +124,7 @@ pub mod key_type {
         let errors = assert_basic_consensus_errors!(&result, BasicError::JsonSchemaError, 2);
         let error = errors.first().unwrap();
 
-        assert_eq!(error.instance_path().to_string(), "/type");
+        assert_eq!(error.instance_path(), "/type");
         assert_eq!(error.keyword(), "type");
     }
 }

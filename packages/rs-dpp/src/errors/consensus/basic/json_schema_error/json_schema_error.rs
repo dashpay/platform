@@ -25,7 +25,7 @@ impl<'a> From<ValidationError<'a>> for JsonSchemaError {
             keyword,
             params,
             property_name,
-        } = JsonSchemaErrorData::from(&validation_error.kind);
+        } = JsonSchemaErrorData::from(&validation_error);
 
         Self {
             keyword,
