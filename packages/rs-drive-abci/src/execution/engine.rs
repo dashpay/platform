@@ -296,6 +296,14 @@ where
         })
     }
 
+    /// Update the current quorums if the core_height changes
+    pub fn update_state_cache_and_quorums(&self, block_info: BlockInfo) {
+        let state_cache = self.state.write().unwrap();
+
+        state_cache.last_committed_block_info = Some(block_info.clone());
+    }
+
+
     /// Finalize the block, this first involves validating it, then if valid
     /// it is committed to the state
     pub fn finalize_block_proposal(
@@ -373,9 +381,10 @@ where
             None
         };
 
+        // At the end we update the state cache
         let block_info = block_state_info.to_block_info(epoch_info.current_epoch_index);
 
-        self.state.write().unwrap().last_committed_block_info = Some(block_info.clone());
+        self.update_state_cache_and_quorums(block_info);
 
         let mut drive_cache = self.drive.cache.write().unwrap();
 

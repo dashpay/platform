@@ -1,6 +1,9 @@
+use std::collections::HashMap;
+use dashcore_rpc::json::QuorumType;
 use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::drive::block_info::BlockInfo;
 use drive::fee_pools::epochs::Epoch;
+use crate::rpc::core::QuorumListExtendedInfo;
 
 mod genesis;
 
@@ -15,6 +18,8 @@ pub struct PlatformState {
     pub current_protocol_version_in_consensus: ProtocolVersion,
     /// upcoming protocol version
     pub next_epoch_protocol_version: ProtocolVersion,
+    /// current quorums
+    pub quorums: HashMap<QuorumType, QuorumListExtendedInfo>
 }
 
 impl PlatformState {
