@@ -1,8 +1,9 @@
-import Identifier from '@dashevo/dpp/lib/Identifier';
-import Metadata from '@dashevo/dpp/lib/Metadata';
-import Document from '@dashevo/dpp/lib/document/Document';
-
 import { Platform } from '../../Platform';
+
+// TODO(wasm-dpp): provide type definitions from wasm-dpp
+let Identifier;
+let Document;
+let Metadata;
 
 /**
  * @param {WhereCondition[]} [where] - where
@@ -15,8 +16,8 @@ declare interface FetchOpts {
   where?: WhereCondition[];
   orderBy?: OrderByCondition[];
   limit?: number;
-  startAt?: string | Buffer | Document | Identifier;
-  startAfter?: string | Buffer | Document | Identifier;
+  startAt?: string | Buffer | typeof Document | typeof Identifier;
+  startAfter?: string | Buffer | typeof Document | typeof Identifier;
 }
 
 type OrderByCondition = [
@@ -123,6 +124,10 @@ export async function get(this: Platform, typeLocator: string, opts: FetchOpts):
   if (opts.where) {
     const binaryProperties = appDefinition.contract.getBinaryProperties(fieldType);
 
+    // TODO(wasm-dpp): remove when dppModule is typed
+    // @ts-ignore
+    ({ Identifier, Document, Metadata } = this.dppModule);
+
     opts.where = opts.where
       .map((whereCondition) => convertIdentifierProperties(
         whereCondition, binaryProperties,
@@ -152,7 +157,7 @@ export async function get(this: Platform, typeLocator: string, opts: FetchOpts):
 
   return Promise.all(
     rawDocuments.map(async (rawDocument) => {
-      const document = await this.dpp.document.createFromBuffer(rawDocument);
+      const document = await this.wasmDpp.document.createFromBuffer(rawDocument);
 
       let metadata = null;
       const responseMetadata = documentsResponse.getMetadata();

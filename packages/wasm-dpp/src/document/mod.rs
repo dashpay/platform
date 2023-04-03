@@ -212,11 +212,13 @@ impl DocumentWasm {
         Ok(())
     }
 
+    // TODO(wasm-dpp): return as js_sys::Date
     #[wasm_bindgen(js_name=getCreatedAt)]
     pub fn get_created_at(&self) -> Option<f64> {
         self.0.created_at.map(|v| v as f64)
     }
 
+    // TODO(wasm-dpp): return as js_sys::Date
     #[wasm_bindgen(js_name=getUpdatedAt)]
     pub fn get_updated_at(&self) -> Option<f64> {
         self.0.updated_at.map(|v| v as f64)

@@ -20,7 +20,7 @@ export async function create(
 ): Promise<any> {
   await this.initialize();
 
-  const { dpp } = this;
+  const { wasmDpp } = this;
 
   const appNames = this.client.getApps().getNames();
 
@@ -36,7 +36,7 @@ export async function create(
     throw new Error(`Contract ${appName} not found. Ensure contractId ${contractId} is correct.`);
   }
 
-  return dpp.document.create(
+  return wasmDpp.document.create(
     dataContract,
     identity.getId(),
     fieldType,
