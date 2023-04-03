@@ -510,8 +510,9 @@ class DriveStateRepository {
    */
   async fetchDocuments(contractId, type, options = {}, executionContext = undefined) {
     console.log('DriveStateRepository.fetchDocuments() start', {
-      contractId, type, options, executionContext,
+      contractId, type, executionContext,
     });
+    console.dir({ options }, { depth: null });
     const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
 
     const result = await this.fetchDocumentsFunction(

@@ -164,7 +164,7 @@ class Drive {
       let dataContract = encodedDataContract;
 
       if (encodedDataContract !== null) {
-        const [protocolVersion, rawDataContract] = decodeProtocolEntity(
+        const [protocolVersion, rawDataContract] = this.dppWasm.decodeProtocolEntity(
           encodedDataContract,
         );
 
@@ -313,6 +313,7 @@ class Drive {
     query = {},
     useTransaction = false,
   ) {
+    console.log('[Drive] Querying documents for type', documentType);
     const encodedQuery = await cbor.encodeAsync(query);
 
     const [encodedDocuments, , processingFee] = await driveQueryDocumentsAsync.call(
@@ -323,14 +324,15 @@ class Drive {
       epochIndex,
       useTransaction,
     );
-
+    console.log('[Drive] Found documents for type', documentType);
     const documents = encodedDocuments.map((encodedDocument) => {
-      const [protocolVersion, rawDocument] = decodeProtocolEntity(encodedDocument);
+      const [protocolVersion, rawDocument] = this.dppWasm.decodeProtocolEntity(encodedDocument);
 
       rawDocument.$protocolVersion = protocolVersion;
 
-      return new this.dppWasm.Document(rawDocument, dataContract);
+      return new this.dppWasm.Document(rawDocument, dataContract, documentType);
     });
+    console.log('[Drive] Parsed documents for type', documentType);
 
     return [
       documents,
@@ -399,7 +401,7 @@ class Drive {
         return null;
       }
 
-      const [protocolVersion, rawIdentity] = decodeProtocolEntity(
+      const [protocolVersion, rawIdentity] = this.dppWasm.decodeProtocolEntity(
         encodedIdentity,
       );
 
@@ -509,7 +511,7 @@ class Drive {
       let identity = encodedIdentity;
 
       if (encodedIdentity !== null) {
-        const [protocolVersion, rawIdentity] = decodeProtocolEntity(
+        const [protocolVersion, rawIdentity] = this.dppWasm.decodeProtocolEntity(
           encodedIdentity,
         );
 
@@ -624,7 +626,7 @@ class Drive {
       useTransaction,
     ).then((encodedIdentities) => (
       encodedIdentities.map((encodedIdentity) => {
-        const [protocolVersion, rawIdentity] = decodeProtocolEntity(
+        const [protocolVersion, rawIdentity] = this.dppWasm.decodeProtocolEntity(
           encodedIdentity,
         );
 
