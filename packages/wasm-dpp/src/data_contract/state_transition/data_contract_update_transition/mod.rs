@@ -147,6 +147,11 @@ impl DataContractUpdateTransitionWasm {
         self.0.set_execution_context(context.into())
     }
 
+    #[wasm_bindgen(js_name=getExecutionContext)]
+    pub fn get_execution_context(&mut self) -> StateTransitionExecutionContextWasm {
+        self.0.get_execution_context().into()
+    }
+
     #[wasm_bindgen(js_name=hash)]
     pub fn hash(&self, skip_signature: Option<bool>) -> Result<Buffer, JsValue> {
         let bytes = self
