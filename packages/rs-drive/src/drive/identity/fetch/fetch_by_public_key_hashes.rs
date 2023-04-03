@@ -6,7 +6,10 @@ use crate::drive::{
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use crate::query::QueryResultEncoding;
 use dpp::identity::Identity;
+use dpp::platform_value::Value;
+use dpp::Convertible;
 use grovedb::Element::Item;
 use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
 use std::collections::BTreeMap;
@@ -202,6 +205,23 @@ impl Drive {
             transaction,
             drive_operations,
         )
+    }
+
+    /// Fetches an identity with all its information from storage.
+    pub fn fetch_serialized_full_identity_by_unique_public_key_hash(
+        &self,
+        public_key_hash: [u8; 20],
+        encoding: QueryResultEncoding,
+        transaction: TransactionArg,
+    ) -> Result<Vec<u8>, Error> {
+        let identity =
+            self.fetch_full_identity_by_unique_public_key_hash(public_key_hash, transaction)?;
+
+        let identity_value = match identity {
+            None => Value::Null,
+            Some(identity) => identity.to_cleaned_object()?,
+        };
+        encoding.encode_value(&identity_value)
     }
 
     /// Fetches an identity with all its information from storage.

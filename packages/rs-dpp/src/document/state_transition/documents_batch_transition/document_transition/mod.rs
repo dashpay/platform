@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 
 use anyhow::Context;
+use derive_more::From;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -73,7 +74,7 @@ pub trait DocumentTransitionExt {
     fn set_data_contract_id(&mut self, id: Identifier);
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, From)]
 pub enum DocumentTransition {
     Create(DocumentCreateTransition),
     Replace(DocumentReplaceTransition),

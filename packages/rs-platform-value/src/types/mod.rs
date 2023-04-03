@@ -1,6 +1,7 @@
 use crate::string_encoding::Encoding;
 
 pub(crate) mod binary_data;
+pub(crate) mod bytes_20;
 pub(crate) mod bytes_32;
 pub(crate) mod bytes_36;
 pub(crate) mod identifier;

@@ -150,10 +150,18 @@ impl Drive {
                 }
             }
             "/identities/by-public-key-hash" => {
+                let public_key_hash = query.remove_bytes_20("publicKeyHash")?;
                 if prove {
-                    todo!()
+                    self.prove_full_identity_by_unique_public_key_hash(
+                        public_key_hash.into_buffer(),
+                        None,
+                    )
                 } else {
-                    todo!()
+                    self.fetch_serialized_full_identity_by_unique_public_key_hash(
+                        public_key_hash.into_buffer(),
+                        CborEncodedQueryResult,
+                        None,
+                    )
                 }
             }
             other => Err(Error::Query(QueryError::Unsupported(format!(

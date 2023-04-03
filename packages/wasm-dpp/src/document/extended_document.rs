@@ -193,6 +193,9 @@ impl ExtendedDocumentWasm {
                 Value::Bytes(bytes) => {
                     return Buffer::from_bytes(bytes).into();
                 }
+                Value::Bytes20(bytes) => {
+                    return Buffer::from_bytes(bytes.as_slice()).into();
+                }
                 Value::Bytes32(bytes) => {
                     return Buffer::from_bytes(bytes.as_slice()).into();
                 }

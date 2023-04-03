@@ -2,12 +2,16 @@ use dashcore::{Block, BlockHash};
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
 use mockall::{automock, predicate::*};
 use serde_json::Value;
+use tenderdash_abci::proto::types::CoreChainLock;
 
 /// Core RPC interface
 #[automock]
 pub trait CoreRPCLike {
     /// Get block hash by height
     fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error>;
+
+    /// Get block hash by height
+    fn get_best_chain_lock(&self, height: u32) -> Result<CoreChainLock, Error>;
 
     /// Get block by hash
     fn get_block(&self, block_hash: &BlockHash) -> Result<Block, Error>;
@@ -33,6 +37,10 @@ impl DefaultCoreRPC {
 impl CoreRPCLike for DefaultCoreRPC {
     fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> {
         self.inner.get_block_hash(height as u64)
+    }
+
+    fn get_best_chain_lock(&self, height: u32) -> Result<CoreChainLock, Error> {
+        self.inner.get_best_chain_lock(height)
     }
 
     fn get_block(&self, block_hash: &BlockHash) -> Result<Block, Error> {

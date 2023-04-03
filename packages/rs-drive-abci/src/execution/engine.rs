@@ -1,3 +1,16 @@
+use dpp::consensus::basic::identity::IdentityInsufficientBalanceError;
+use dpp::consensus::ConsensusError;
+use dpp::state_transition::StateTransition;
+use dpp::validation::{
+    ConsensusValidationResult, SimpleConsensusValidationResult, SimpleValidationResult,
+    ValidationResult,
+};
+use drive::drive::block_info::BlockInfo;
+use drive::error::Error::GroveDB;
+use drive::fee::result::FeeResult;
+use drive::grovedb::{Transaction, TransactionArg};
+use tenderdash_abci::proto::abci::{ExecTxResult, RequestFinalizeBlock};
+
 use crate::abci::AbciError;
 use crate::block::{BlockExecutionContext, BlockStateInfo};
 use crate::error::execution::ExecutionError;
@@ -11,23 +24,6 @@ use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use crate::validation::state_transition::validate_state_transition;
-use dpp::consensus::basic::identity::IdentityInsufficientBalanceError;
-use dpp::consensus::ConsensusError;
-use dpp::state_transition::StateTransition;
-use dpp::util::deserializer::ProtocolVersion;
-use dpp::validation::{
-    ConsensusValidationResult, SimpleConsensusValidationResult, SimpleValidationResult,
-    ValidationResult,
-};
-use drive::drive::block_info::BlockInfo;
-use drive::error::Error::GroveDB;
-use drive::fee::result::FeeResult;
-use drive::grovedb::{Transaction, TransactionArg};
-use tenderdash_abci::proto::abci::{
-    CommitInfo, ExecTxResult, RequestFinalizeBlock, RequestPrepareProposal, ResponsePrepareProposal,
-};
-use tenderdash_abci::proto::google::protobuf::Timestamp;
-use tenderdash_abci::Application;
 
 /// The outcome of the block execution, either by prepare proposal, or process proposal
 pub struct BlockExecutionOutcome {
@@ -92,7 +88,7 @@ where
                     ))
                 }
             }
-            ExecutionEvent::FreeDriveEvent { operations } => Ok(
+            ExecutionEvent::FreeDriveEvent { operations: _ } => Ok(
                 ConsensusValidationResult::new_with_data(FeeResult::default()),
             ),
         }

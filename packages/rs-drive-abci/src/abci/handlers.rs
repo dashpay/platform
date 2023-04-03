@@ -40,10 +40,11 @@ use dpp::identity::TimestampMillis;
 use dpp::state_transition::StateTransition;
 use drive::error::Error::GroveDB;
 use drive::fee::credits::SignedCredits;
+use tenderdash_abci::proto::abci::tx_record::TxAction;
 use tenderdash_abci::proto::abci::{
     RequestCheckTx, RequestFinalizeBlock, RequestInitChain, RequestPrepareProposal,
     RequestProcessProposal, RequestQuery, ResponseCheckTx, ResponseFinalizeBlock,
-    ResponseInitChain, ResponsePrepareProposal, ResponseProcessProposal, ResponseQuery,
+    ResponseInitChain, ResponsePrepareProposal, ResponseProcessProposal, ResponseQuery, TxRecord,
 };
 use tenderdash_abci::proto::{
     abci::{self as proto, ResponseException},
@@ -108,10 +109,43 @@ where
             .platform
             .run_block_proposal((&request).try_into()?, &transaction)?;
 
+        // We need to let Tenderdash know about the transactions we should remove from execution
+        let (tx_results, tx_records) = tx_results
+            .into_iter()
+            .map(|result| {
+                if result.code > 0 {
+                    TxRecord {
+                        action: TxAction::Removed as i32,
+                        tx: result.data.clone(),
+                    }
+                } else {
+                    TxRecord {
+                        action: TxAction::Unmodified as i32,
+                        tx: result.data.clone(),
+                    }
+                }
+            })
+            .collect();
+
+        // We should get the latest CoreChainLock from core
+        let latest_chain_lock = self.platform.core_rpc.get_best_chain_lock()?;
+
+        let core_chain_lock_update =
+            if request.core_chain_locked_height < latest_chain_lock.core_block_height {
+                Some(latest_chain_lock)
+            } else {
+                None
+            };
+
+        // Next we should check for validator set updates
+        // todo: validator set updates
+
         // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
         let response = ResponsePrepareProposal {
-            app_hash: app_hash.to_vec(),
             tx_results,
+            app_hash: app_hash.to_vec(),
+            tx_records,
+            core_chain_lock_update,
             ..Default::default()
         };
 

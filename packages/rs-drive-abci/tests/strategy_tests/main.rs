@@ -31,46 +31,35 @@
 //!
 
 use crate::DocumentAction::{DocumentActionDelete, DocumentActionInsert};
-use anyhow::anyhow;
 use dashcore::signer;
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::document::document_transition::document_base_transition::DocumentBaseTransition;
 use dpp::document::document_transition::{
-    document_create_transition, Action, DocumentCreateTransition, DocumentDeleteTransition,
+    Action, DocumentCreateTransition, DocumentDeleteTransition,
 };
 use dpp::document::DocumentsBatchTransition;
 use dpp::identity::signer::Signer;
-use dpp::identity::state_transition::identity_create_transition;
 use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::identity::{IdentityPublicKey, KeyType};
 use dpp::platform_value::Value;
 use dpp::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError,
 };
-use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned};
-use dpp::util::hash::ripemd160_sha256;
+use dpp::state_transition::StateTransition;
 use dpp::version::LATEST_VERSION;
 use dpp::ProtocolError;
 use drive::common::helpers::identities::create_test_masternode_identities_with_rng;
 use drive::contract::{Contract, CreateRandomDocument, DocumentType};
 use drive::dpp::document::Document;
-use drive::dpp::identity::{Identity, KeyID, PartialIdentity};
+use drive::dpp::identity::{Identity, KeyID};
 use drive::dpp::util::deserializer::ProtocolVersion;
-use drive::drive::batch::{
-    ContractOperationType, DocumentOperationType, DriveOperation, IdentityOperationType,
-    SystemOperationType,
-};
 use drive::drive::block_info::BlockInfo;
 use drive::drive::defaults::PROTOCOL_VERSION;
-use drive::drive::flags::StorageFlags;
 use drive::drive::flags::StorageFlags::SingleEpoch;
-use drive::drive::object_size_info::DocumentInfo::DocumentWithoutSerialization;
-use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use drive::drive::Drive;
 use drive::fee::credits::Credits;
 use drive::fee_pools::epochs::Epoch;
 use drive::query::DriveQuery;
-use drive_abci::execution::execution_event::ExecutionEvent;
 use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
 use drive_abci::platform::Platform;
 use drive_abci::test::fixture::abci::static_init_chain_request;
@@ -82,7 +71,6 @@ use rand::{Rng, SeedableRng};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap};
 use std::ops::Range;
-use tenderdash_abci::Application;
 
 mod upgrade_fork_tests;
 
