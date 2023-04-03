@@ -30,8 +30,12 @@ use std::path::PathBuf;
 
 use drive::drive::config::DriveConfig;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use dpp::identity::KeyType::ECDSA_SECP256K1;
+use dpp::prelude::Identity;
+use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 
 use crate::{abci::config::AbciConfig, error::Error};
+use crate::abci::config::Keys;
 
 /// Configuration for Dash Core RPC client
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -140,7 +144,11 @@ impl Default for PlatformConfig {
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 15,
             drive: Default::default(),
-            abci: Default::default(),
+            abci: AbciConfig {
+                bind_address: "tcp://127.0.0.1:1234".to_string(),
+                keys: Keys::new_random_keys_with_seed(18012014), //Dash genesis day
+                genesis_height: 1,
+            },
             core: CoreConfig {
                 rpc: CoreRpcConfig {
                     host: "127.0.0.1".to_owned(),

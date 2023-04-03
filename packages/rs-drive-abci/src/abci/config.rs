@@ -1,15 +1,18 @@
 //! Configuration of ABCI Application server
 
+use rand::prelude::StdRng;
+use rand::SeedableRng;
 use crate::config::FromEnv;
 
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
+use dpp::identity::KeyType::ECDSA_SECP256K1;
 
 use super::messages::{RequiredIdentityPublicKeysSet, SystemIdentityPublicKeys};
 
 /// AbciAppConfig stores configuration of the ABCI Application.
 #[allow(dead_code)]
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AbciConfig {
     /// Address to listen on
     ///
@@ -37,7 +40,7 @@ impl AbciConfig {
 impl FromEnv for AbciConfig {}
 
 #[serde_as]
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 
 /// Struct to easily load from environment keys used by the Platform.
 ///
@@ -84,6 +87,25 @@ pub struct Keys {
     /// hex-encoded
     #[serde_as(as = "serde_with::hex::Hex")]
     withdrawals_second_public_key: Vec<u8>,
+}
+
+impl Keys {
+    /// Create new random keys for a given seed
+    pub fn new_random_keys_with_seed(seed: u64) -> Self {
+        let mut rng = StdRng::seed_from_u64(seed);
+        Keys {
+            dpns_master_public_key: ECDSA_SECP256K1.random_public_key_data(&mut rng),
+            dpns_second_public_key: ECDSA_SECP256K1.random_public_key_data(&mut rng),
+            dashpay_master_public_key: ECDSA_SECP256K1.random_public_key_data(&mut rng),
+            dashpay_second_public_key: ECDSA_SECP256K1.random_public_key_data(&mut rng),
+            feature_flags_master_public_key: ECDSA_SECP256K1.random_public_key_data(&mut rng),
+            feature_flags_second_public_key: ECDSA_SECP256K1.random_public_key_data(&mut rng),
+            masternode_reward_shares_master_public_key: ECDSA_SECP256K1.random_public_key_data(&mut rng),
+            masternode_reward_shares_second_public_key: ECDSA_SECP256K1.random_public_key_data(&mut rng),
+            withdrawals_master_public_key: ECDSA_SECP256K1.random_public_key_data(&mut rng),
+            withdrawals_second_public_key: ECDSA_SECP256K1.random_public_key_data(&mut rng),
+        }
+    }
 }
 
 impl From<Keys> for SystemIdentityPublicKeys {
