@@ -217,12 +217,10 @@ function deliverTxFactory(
       }, `Actual fees are greater than predicted for ${actualStateTransitionFees.desiredAmount - predictedStateTransitionFees.desiredAmount} credits`);
     }
 
-    // TODO(wasm-dpp): !!!!Fee is a BigInt. Casting to Number might lead to data loss
-    // rust neon does not support BigInt yet, however PR is already merged https://github.com/neon-bindings/neon/pull/963
     const feeResult = FeeResult.create(
-      Number(actualStateTransitionFees.storageFee),
-      Number(actualStateTransitionFees.processingFee),
-      actualStateTransitionFees.feeRefunds.map((fee) => Number(fee)),
+      actualStateTransitionFees.storageFee,
+      actualStateTransitionFees.processingFee,
+      actualStateTransitionFees.feeRefunds,
     );
 
     const applyFeesToBalanceResult = await identityBalanceRepository.applyFees(
