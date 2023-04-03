@@ -1,5 +1,5 @@
-use wasm_bindgen::prelude::*;
 use dpp::consensus::basic::value_error::ValueError;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=PlatformValueError, inspectable)]
 #[derive(Debug)]
