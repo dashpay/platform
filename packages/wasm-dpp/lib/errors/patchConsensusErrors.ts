@@ -2,174 +2,89 @@ import * as dpp_module from '../../wasm/wasm_dpp';
 import { extend } from "../utils/extend";
 import { AbstractConsensusError } from "./AbstractConsensusError";
 
-const {
-    ProtocolVersionParsingError,
-    UnsupportedProtocolVersionError,
-    IncompatibleProtocolVersionError,
-    SerializedObjectParsingError,
-    JsonSchemaError,
-    InvalidIdentifierError,
-    DataContractMaxDepthExceedError,
-    DuplicateIndexError,
-    InvalidCompoundIndexError,
-    InvalidDataContractIdError,
-    InvalidIndexedPropertyConstraintError,
-    InvalidIndexPropertyTypeError,
-    SystemPropertyIndexAlreadyPresentError,
-    UndefinedIndexPropertyError,
-    UniqueIndicesLimitReachedError,
-    InconsistentCompoundIndexDataError,
-    InvalidDocumentTransitionActionError,
-    InvalidDocumentTransitionIdError,
-    DataContractNotPresentError,
-    InvalidDocumentTypeError,
-    MissingDataContractIdError,
-    MissingDocumentTransitionActionError,
-    MissingDocumentTransitionTypeError,
-    MissingDocumentTypeError,
-    DuplicatedIdentityPublicKeyError,
-    DuplicatedIdentityPublicKeyIdError,
-    MissingMasterPublicKeyError,
-    IdentityAssetLockProofLockedTransactionMismatchError,
-    IdentityAssetLockTransactionIsNotFoundError,
-    IdentityAssetLockTransactionOutPointAlreadyExistsError,
-    IdentityAssetLockTransactionOutputNotFoundError,
-    InvalidAssetLockProofCoreChainHeightError,
-    InvalidAssetLockProofTransactionHeightError,
-    InvalidIdentityAssetLockTransactionError,
-    InvalidIdentityAssetLockTransactionOutputError,
-    InvalidIdentityPublicKeyDataError,
-    InvalidIdentityPublicKeySecurityLevelError,
-    InvalidStateTransitionTypeError,
-    MissingStateTransitionTypeError,
-    StateTransitionMaxSizeExceededError,
-    IdentityNotFoundError,
-    InvalidIdentityPublicKeyTypeError,
-    InvalidStateTransitionSignatureError,
-    MissingPublicKeyError,
-    BalanceIsNotEnoughError,
-    DataContractAlreadyPresentError,
-    DataTriggerConditionError,
-    DataTriggerExecutionError,
-    DataTriggerInvalidResultError,
-    DocumentAlreadyPresentError,
-    DocumentNotFoundError,
-    DocumentOwnerIdMismatchError,
-    DocumentTimestampsMismatchError,
-    DocumentTimestampWindowViolationError,
-    DuplicateUniqueIndexError,
-    InvalidDocumentRevisionError,
-    IdentityAlreadyExistsError,
-    InvalidJsonSchemaRefError,
-    JsonSchemaCompilationError,
-    DuplicateDocumentTransitionsWithIdsError,
-    DuplicateDocumentTransitionsWithIndicesError,
-    InvalidAssetLockTransactionOutputReturnSizeError,
-    InvalidInstantAssetLockProofError,
-    InvalidInstantAssetLockProofSignatureError,
-    IncompatibleRe2PatternError,
-    InvalidDataContractVersionError,
-    IncompatibleDataContractSchemaError,
-    DataContractImmutablePropertiesUpdateError,
-    DataContractUniqueIndicesChangedError,
-    DuplicateIndexNameError,
-    DataContractInvalidIndexDefinitionUpdateError,
-    DataContractHaveNewUniqueIndexError,
-    IdentityPublicKeyDisabledAtWindowViolationError,
-    IdentityPublicKeyIsReadOnlyError,
-    InvalidIdentityPublicKeyIdError,
-    InvalidIdentityRevisionError,
-    MaxIdentityPublicKeyLimitReachedError,
-    InvalidIdentityKeySignatureError,
-    InvalidSignaturePublicKeySecurityLevelError,
-    PublicKeyIsDisabledError,
-    PublicKeySecurityLevelNotMetError,
-    WrongPublicKeyPurposeError,
-    IdentityPublicKeyIsDisabledError,
-} = dpp_module;
-
 export function patchConsensusErrors() {
-    extend(ProtocolVersionParsingError, AbstractConsensusError);
-    extend(UnsupportedProtocolVersionError, AbstractConsensusError);
-    extend(IncompatibleProtocolVersionError, AbstractConsensusError);
-    extend(SerializedObjectParsingError, AbstractConsensusError);
-    extend(JsonSchemaError, AbstractConsensusError);
-    extend(InvalidIdentifierError, AbstractConsensusError);
-    extend(DataContractMaxDepthExceedError, AbstractConsensusError);
-    extend(DuplicateIndexError, AbstractConsensusError);
-    extend(InvalidCompoundIndexError, AbstractConsensusError);
-    extend(InvalidDataContractIdError, AbstractConsensusError);
-    extend(InvalidIndexedPropertyConstraintError, AbstractConsensusError);
-    extend(InvalidIndexPropertyTypeError, AbstractConsensusError);
-    extend(SystemPropertyIndexAlreadyPresentError, AbstractConsensusError);
-    extend(UndefinedIndexPropertyError, AbstractConsensusError);
-    extend(UniqueIndicesLimitReachedError, AbstractConsensusError);
-    extend(InconsistentCompoundIndexDataError, AbstractConsensusError);
-    extend(InvalidDocumentTransitionActionError, AbstractConsensusError);
-    extend(InvalidDocumentTransitionIdError, AbstractConsensusError);
-    extend(DataContractNotPresentError, AbstractConsensusError);
-    extend(InvalidDocumentTypeError, AbstractConsensusError);
-    extend(MissingDataContractIdError, AbstractConsensusError);
-    extend(MissingDocumentTransitionActionError, AbstractConsensusError);
-    extend(MissingDocumentTransitionTypeError, AbstractConsensusError);
-    extend(MissingDocumentTypeError, AbstractConsensusError);
-    extend(DuplicatedIdentityPublicKeyError, AbstractConsensusError);
-    extend(DuplicatedIdentityPublicKeyIdError, AbstractConsensusError);
-    extend(MissingMasterPublicKeyError, AbstractConsensusError);
-    extend(IdentityAssetLockProofLockedTransactionMismatchError, AbstractConsensusError);
-    extend(IdentityAssetLockTransactionIsNotFoundError, AbstractConsensusError);
-    extend(IdentityAssetLockTransactionOutPointAlreadyExistsError, AbstractConsensusError);
-    extend(IdentityAssetLockTransactionOutputNotFoundError, AbstractConsensusError);
-    extend(InvalidAssetLockProofCoreChainHeightError, AbstractConsensusError);
-    extend(InvalidAssetLockProofTransactionHeightError, AbstractConsensusError);
-    extend(InvalidIdentityAssetLockTransactionError, AbstractConsensusError);
-    extend(InvalidIdentityAssetLockTransactionOutputError, AbstractConsensusError);
-    extend(InvalidIdentityPublicKeyDataError, AbstractConsensusError);
-    extend(InvalidIdentityPublicKeySecurityLevelError, AbstractConsensusError);
-    extend(InvalidStateTransitionTypeError, AbstractConsensusError);
-    extend(MissingStateTransitionTypeError, AbstractConsensusError);
-    extend(StateTransitionMaxSizeExceededError, AbstractConsensusError);
-    extend(IdentityNotFoundError, AbstractConsensusError);
-    extend(InvalidIdentityPublicKeyTypeError, AbstractConsensusError);
-    extend(InvalidStateTransitionSignatureError, AbstractConsensusError);
-    extend(MissingPublicKeyError, AbstractConsensusError);
-    extend(BalanceIsNotEnoughError, AbstractConsensusError);
-    extend(DataContractAlreadyPresentError, AbstractConsensusError);
-    extend(DataTriggerConditionError, AbstractConsensusError);
-    extend(DataTriggerExecutionError, AbstractConsensusError);
-    extend(DataTriggerInvalidResultError, AbstractConsensusError);
-    extend(DocumentAlreadyPresentError, AbstractConsensusError);
-    extend(DocumentNotFoundError, AbstractConsensusError);
-    extend(DocumentOwnerIdMismatchError, AbstractConsensusError);
-    extend(DocumentTimestampsMismatchError, AbstractConsensusError);
-    extend(DocumentTimestampWindowViolationError, AbstractConsensusError);
-    extend(DuplicateUniqueIndexError, AbstractConsensusError);
-    extend(InvalidDocumentRevisionError, AbstractConsensusError);
-    extend(IdentityAlreadyExistsError, AbstractConsensusError);
-    extend(InvalidJsonSchemaRefError, AbstractConsensusError);
-    extend(JsonSchemaCompilationError, AbstractConsensusError);
-    extend(DuplicateDocumentTransitionsWithIdsError, AbstractConsensusError);
-    extend(DuplicateDocumentTransitionsWithIndicesError, AbstractConsensusError);
-    extend(InvalidAssetLockTransactionOutputReturnSizeError, AbstractConsensusError);
-    extend(InvalidInstantAssetLockProofError, AbstractConsensusError);
-    extend(InvalidInstantAssetLockProofSignatureError, AbstractConsensusError);
-    extend(IncompatibleRe2PatternError, AbstractConsensusError);
-    extend(InvalidDataContractVersionError, AbstractConsensusError);
-    extend(IncompatibleDataContractSchemaError, AbstractConsensusError);
-    extend(DataContractImmutablePropertiesUpdateError, AbstractConsensusError);
-    extend(DataContractUniqueIndicesChangedError, AbstractConsensusError);
-    extend(DuplicateIndexNameError, AbstractConsensusError);
-    extend(DataContractInvalidIndexDefinitionUpdateError, AbstractConsensusError);
-    extend(DataContractHaveNewUniqueIndexError, AbstractConsensusError);
-    extend(IdentityPublicKeyDisabledAtWindowViolationError, AbstractConsensusError);
-    extend(IdentityPublicKeyIsReadOnlyError, AbstractConsensusError);
-    extend(InvalidIdentityPublicKeyIdError, AbstractConsensusError);
-    extend(InvalidIdentityRevisionError, AbstractConsensusError);
-    extend(MaxIdentityPublicKeyLimitReachedError, AbstractConsensusError);
-    extend(InvalidIdentityKeySignatureError, AbstractConsensusError);
-    extend(InvalidSignaturePublicKeySecurityLevelError, AbstractConsensusError);
-    extend(PublicKeyIsDisabledError, AbstractConsensusError);
-    extend(PublicKeySecurityLevelNotMetError, AbstractConsensusError);
-    extend(WrongPublicKeyPurposeError, AbstractConsensusError);
-    extend(IdentityPublicKeyIsDisabledError, AbstractConsensusError);
+    extend(dpp_module.ProtocolVersionParsingError, AbstractConsensusError);
+    extend(dpp_module.UnsupportedProtocolVersionError, AbstractConsensusError);
+    extend(dpp_module.IncompatibleProtocolVersionError, AbstractConsensusError);
+    extend(dpp_module.SerializedObjectParsingError, AbstractConsensusError);
+    extend(dpp_module.JsonSchemaError, AbstractConsensusError);
+    extend(dpp_module.InvalidIdentifierError, AbstractConsensusError);
+    extend(dpp_module.DataContractMaxDepthExceedError, AbstractConsensusError);
+    extend(dpp_module.DuplicateIndexError, AbstractConsensusError);
+    extend(dpp_module.InvalidCompoundIndexError, AbstractConsensusError);
+    extend(dpp_module.InvalidDataContractIdError, AbstractConsensusError);
+    extend(dpp_module.InvalidIndexedPropertyConstraintError, AbstractConsensusError);
+    extend(dpp_module.InvalidIndexPropertyTypeError, AbstractConsensusError);
+    extend(dpp_module.SystemPropertyIndexAlreadyPresentError, AbstractConsensusError);
+    extend(dpp_module.UndefinedIndexPropertyError, AbstractConsensusError);
+    extend(dpp_module.UniqueIndicesLimitReachedError, AbstractConsensusError);
+    extend(dpp_module.InconsistentCompoundIndexDataError, AbstractConsensusError);
+    extend(dpp_module.InvalidDocumentTransitionActionError, AbstractConsensusError);
+    extend(dpp_module.InvalidDocumentTransitionIdError, AbstractConsensusError);
+    extend(dpp_module.DataContractNotPresentError, AbstractConsensusError);
+    extend(dpp_module.InvalidDocumentTypeError, AbstractConsensusError);
+    extend(dpp_module.MissingDataContractIdError, AbstractConsensusError);
+    extend(dpp_module.MissingDocumentTransitionActionError, AbstractConsensusError);
+    extend(dpp_module.MissingDocumentTransitionTypeError, AbstractConsensusError);
+    extend(dpp_module.MissingDocumentTypeError, AbstractConsensusError);
+    extend(dpp_module.DuplicatedIdentityPublicKeyError, AbstractConsensusError);
+    extend(dpp_module.DuplicatedIdentityPublicKeyIdError, AbstractConsensusError);
+    extend(dpp_module.MissingMasterPublicKeyError, AbstractConsensusError);
+    extend(dpp_module.IdentityAssetLockProofLockedTransactionMismatchError, AbstractConsensusError);
+    extend(dpp_module.IdentityAssetLockTransactionIsNotFoundError, AbstractConsensusError);
+    extend(dpp_module.IdentityAssetLockTransactionOutPointAlreadyExistsError, AbstractConsensusError);
+    extend(dpp_module.IdentityAssetLockTransactionOutputNotFoundError, AbstractConsensusError);
+    extend(dpp_module.InvalidAssetLockProofCoreChainHeightError, AbstractConsensusError);
+    extend(dpp_module.InvalidAssetLockProofTransactionHeightError, AbstractConsensusError);
+    extend(dpp_module.InvalidIdentityAssetLockTransactionError, AbstractConsensusError);
+    extend(dpp_module.InvalidIdentityAssetLockTransactionOutputError, AbstractConsensusError);
+    extend(dpp_module.InvalidIdentityPublicKeyDataError, AbstractConsensusError);
+    extend(dpp_module.InvalidIdentityPublicKeySecurityLevelError, AbstractConsensusError);
+    extend(dpp_module.InvalidStateTransitionTypeError, AbstractConsensusError);
+    extend(dpp_module.MissingStateTransitionTypeError, AbstractConsensusError);
+    extend(dpp_module.StateTransitionMaxSizeExceededError, AbstractConsensusError);
+    extend(dpp_module.IdentityNotFoundError, AbstractConsensusError);
+    extend(dpp_module.InvalidIdentityPublicKeyTypeError, AbstractConsensusError);
+    extend(dpp_module.InvalidStateTransitionSignatureError, AbstractConsensusError);
+    extend(dpp_module.MissingPublicKeyError, AbstractConsensusError);
+    extend(dpp_module.BalanceIsNotEnoughError, AbstractConsensusError);
+    extend(dpp_module.DataContractAlreadyPresentError, AbstractConsensusError);
+    extend(dpp_module.DataTriggerConditionError, AbstractConsensusError);
+    extend(dpp_module.DataTriggerExecutionError, AbstractConsensusError);
+    extend(dpp_module.DataTriggerInvalidResultError, AbstractConsensusError);
+    extend(dpp_module.DocumentAlreadyPresentError, AbstractConsensusError);
+    extend(dpp_module.DocumentNotFoundError, AbstractConsensusError);
+    extend(dpp_module.DocumentOwnerIdMismatchError, AbstractConsensusError);
+    extend(dpp_module.DocumentTimestampsMismatchError, AbstractConsensusError);
+    extend(dpp_module.DocumentTimestampWindowViolationError, AbstractConsensusError);
+    extend(dpp_module.DuplicateUniqueIndexError, AbstractConsensusError);
+    extend(dpp_module.InvalidDocumentRevisionError, AbstractConsensusError);
+    extend(dpp_module.IdentityAlreadyExistsError, AbstractConsensusError);
+    extend(dpp_module.InvalidJsonSchemaRefError, AbstractConsensusError);
+    extend(dpp_module.JsonSchemaCompilationError, AbstractConsensusError);
+    extend(dpp_module.DuplicateDocumentTransitionsWithIdsError, AbstractConsensusError);
+    extend(dpp_module.DuplicateDocumentTransitionsWithIndicesError, AbstractConsensusError);
+    extend(dpp_module.InvalidAssetLockTransactionOutputReturnSizeError, AbstractConsensusError);
+    extend(dpp_module.InvalidInstantAssetLockProofError, AbstractConsensusError);
+    extend(dpp_module.InvalidInstantAssetLockProofSignatureError, AbstractConsensusError);
+    extend(dpp_module.IncompatibleRe2PatternError, AbstractConsensusError);
+    extend(dpp_module.InvalidDataContractVersionError, AbstractConsensusError);
+    extend(dpp_module.IncompatibleDataContractSchemaError, AbstractConsensusError);
+    extend(dpp_module.DataContractImmutablePropertiesUpdateError, AbstractConsensusError);
+    extend(dpp_module.DataContractUniqueIndicesChangedError, AbstractConsensusError);
+    extend(dpp_module.DuplicateIndexNameError, AbstractConsensusError);
+    extend(dpp_module.DataContractInvalidIndexDefinitionUpdateError, AbstractConsensusError);
+    extend(dpp_module.DataContractHaveNewUniqueIndexError, AbstractConsensusError);
+    extend(dpp_module.IdentityPublicKeyDisabledAtWindowViolationError, AbstractConsensusError);
+    extend(dpp_module.IdentityPublicKeyIsReadOnlyError, AbstractConsensusError);
+    extend(dpp_module.InvalidIdentityPublicKeyIdError, AbstractConsensusError);
+    extend(dpp_module.InvalidIdentityRevisionError, AbstractConsensusError);
+    extend(dpp_module.MaxIdentityPublicKeyLimitReachedError, AbstractConsensusError);
+    extend(dpp_module.InvalidIdentityKeySignatureError, AbstractConsensusError);
+    extend(dpp_module.InvalidSignaturePublicKeySecurityLevelError, AbstractConsensusError);
+    extend(dpp_module.PublicKeyIsDisabledError, AbstractConsensusError);
+    extend(dpp_module.PublicKeySecurityLevelNotMetError, AbstractConsensusError);
+    extend(dpp_module.WrongPublicKeyPurposeError, AbstractConsensusError);
+    extend(dpp_module.IdentityPublicKeyIsDisabledError, AbstractConsensusError);
+    extend(dpp_module.ValueError, AbstractConsensusError);
 }
