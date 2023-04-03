@@ -424,8 +424,6 @@ class DriveStateRepository {
       },
     );
 
-    // TODO(wasm-dpp): not sure if it will be reflected in
-    //  wasm-dpp because executionContext might be a copy
     if (executionContext) {
       for (const operation of result.getOperations()) {
         executionContext.addOperation(operation);

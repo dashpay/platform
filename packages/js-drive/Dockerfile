@@ -1,5 +1,8 @@
 # syntax = docker/dockerfile:1.3
 # Build wasm-dpp
+# TODO(wasm-dpp): implement custom Docker image to build mixed projects with rust/wasm/JS
+# Image has to be based on `rust` image, have wasm-bindgen-cli and wasm32-unknown targets preinstalled
+# and also have `node` and `yarn` to build JS part of wasm-dpp
 FROM rust as builder
 
 RUN --mount=type=cache,target=/var/cache/apt \
