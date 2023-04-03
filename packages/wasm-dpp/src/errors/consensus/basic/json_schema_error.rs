@@ -1,4 +1,5 @@
 use dpp::errors::consensus::basic::json_schema_error::JsonSchemaError;
+use serde::Serialize;
 
 use dpp::errors::consensus::codes::ErrorWithCode;
 
@@ -46,12 +47,9 @@ impl JsonSchemaErrorWasm {
 
     #[wasm_bindgen(js_name=getParams)]
     pub fn params(&self) -> Result<JsValue, JsError> {
-        // let ser = serde_wasm_bindgen::Serializer::json_compatible();
-        let json_value = self.inner.params().clone().try_into_validating_json()?;
+        let ser = serde_wasm_bindgen::Serializer::json_compatible();
 
-        serde_wasm_bindgen::to_value(&json_value).map_err(|e| e.into())
-
-        // json_value.serialize(&ser).map_err(|e| e.into())
+        self.inner.params().serialize(&ser).map_err(|e| e.into())
     }
 
     #[wasm_bindgen(js_name=getCode)]

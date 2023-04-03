@@ -58,10 +58,10 @@ impl<'a> From<&ValidationError<'a>> for JsonSchemaErrorData {
                 .add_param("exclusiveMinimum", limit.clone())
                 .build(),
             ValidationErrorKind::FalseSchema => {
-                let chunk = validation_error.schema_path.last();
-                let keyword = match chunk {
-                    None | Some(PathChunk::Property(_) | PathChunk::Index(_)) => "falseSchema",
+                let last_path_segment = validation_error.schema_path.last();
+                let keyword = match last_path_segment {
                     Some(PathChunk::Keyword(keyword)) => keyword,
+                    _ => "falseSchema",
                 };
 
                 DataBuilder::new().set_keyword(keyword).build()
