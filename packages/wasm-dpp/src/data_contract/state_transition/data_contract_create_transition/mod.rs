@@ -178,7 +178,6 @@ impl DataContractCreateTransitionWasm {
             .with_js_error()
     }
 
-    // TODO: add verify_signature to other identity signed state transitions
     #[wasm_bindgen(js_name=verifySignature)]
     pub fn verify_signature(
         &self,
