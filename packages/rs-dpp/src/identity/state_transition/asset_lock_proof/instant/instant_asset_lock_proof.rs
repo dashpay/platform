@@ -1,7 +1,7 @@
 use std::convert::{TryFrom, TryInto};
 
 use dashcore::consensus::{Decodable, Encodable};
-use dashcore::{InstantLock, Transaction, TxOut};
+use dashcore::{InstantLock, Transaction, TxIn, TxOut};
 use platform_value::{BinaryData, Value};
 use serde::de::Error as DeError;
 use serde::ser::Error as SerError;
@@ -59,8 +59,8 @@ impl Default for InstantAssetLockProof {
             transaction: Transaction {
                 version: 0,
                 lock_time: 0,
-                input: vec![],
-                output: vec![],
+                input: vec![TxIn::default()],
+                output: vec![TxOut::default()],
                 special_transaction_payload: None,
             },
             output_index: 0,

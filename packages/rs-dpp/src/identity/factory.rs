@@ -72,7 +72,7 @@ impl Identity {
                 protocol_version: IDENTITY_PROTOCOL_VERSION,
                 id,
                 revision,
-                asset_lock_proof: None,
+                asset_lock_proof: Some(AssetLockProof::Instant(InstantAssetLockProof::default())),
                 balance,
                 public_keys,
                 metadata: None,
