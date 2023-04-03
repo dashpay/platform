@@ -3,7 +3,6 @@ use crate::consensus::ConsensusError;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-// TODO wrong param - in js action is number
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Document transition action {} is not supported", action)]
 pub struct InvalidDocumentTransitionActionError {

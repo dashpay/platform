@@ -534,10 +534,6 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
                 BasicError::InvalidIdentityCreditWithdrawalTransitionOutputScriptError,
                 1
             );
-
-            let error = errors.first().unwrap();
-
-            assert_eq!(error.output_script(), CoreScript::from_bytes(vec![6; 23]));
         }
     }
 

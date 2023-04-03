@@ -4,21 +4,19 @@ use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 
-// TODO rename message and error
-// TODO missed setRefError
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[error("Invalid JSON Schema $ref: {error_message}")]
+#[error("Invalid JSON Schema $ref: {message}")]
 pub struct InvalidJsonSchemaRefError {
-    error_message: String,
+    message: String,
 }
 
 impl InvalidJsonSchemaRefError {
-    pub fn new(error_message: String) -> Self {
-        Self { error_message }
+    pub fn new(message: String) -> Self {
+        Self { message }
     }
 
-    pub fn error_message(&self) -> String {
-        self.error_message.clone()
+    pub fn message(&self) -> String {
+        self.message.clone()
     }
 }
 

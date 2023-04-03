@@ -4,7 +4,6 @@ use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 
-// TODO not primitive
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("'{property_name}' property of '{document_type}' document has an invalid type '{property_type}' and cannot be use as an index")]
 pub struct InvalidIndexPropertyTypeError {

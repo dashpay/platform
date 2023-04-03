@@ -19,7 +19,7 @@ impl From<&IdentityAlreadyExistsError> for IdentityAlreadyExistsErrorWasm {
 impl IdentityAlreadyExistsErrorWasm {
     #[wasm_bindgen(js_name=getIdentityId)]
     pub fn identity_id(&self) -> Buffer {
-        Buffer::from_bytes(self.inner.identity_id())
+        Buffer::from_bytes(&self.inner.identity_id().to_buffer())
     }
 
     #[wasm_bindgen(js_name=getCode)]

@@ -2823,7 +2823,7 @@ fn should_return_invalid_result_with_circular_ref_pointer() {
     match basic_error {
         BasicError::InvalidJsonSchemaRefError(err) => {
             assert_eq!(
-                err.error_message(),
+                err.message(),
                 "the ref '#/$defs/object' contains cycles".to_string()
             );
         }

@@ -4,7 +4,6 @@ use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 
-// TODO not primitive
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Indexed property '{property_name}' for '{document_type}' document has an invalid constraint '{constraint_name}', reason: '{reason}'")]
 pub struct InvalidIndexedPropertyConstraintError {

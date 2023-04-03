@@ -3,7 +3,6 @@ use crate::consensus::ConsensusError;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-// TODO JS constructor doesn't have index_limit
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("'{document_type}' document has more than '{index_limit}' unique indexes")]
 pub struct UniqueIndicesLimitReachedError {

@@ -7,7 +7,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use thiserror::Error;
 
-// TODO not primitive
 #[derive(Error, Debug, Serialize, Deserialize, Clone)]
 #[error("JsonSchemaError: keyword: {keyword}, instance_path: {instance_path}, schema_path:{schema_path}")]
 pub struct JsonSchemaError {

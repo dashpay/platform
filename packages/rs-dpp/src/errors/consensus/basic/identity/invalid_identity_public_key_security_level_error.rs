@@ -5,8 +5,6 @@ use thiserror::Error;
 
 use crate::identity::{KeyID, Purpose, SecurityLevel};
 
-// TODO wrong params - in js {number[]} allowedSecurityLevels
-// TODO missing setValidationError
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Invalid identity public key {public_key_id:?} security level: purpose {purpose:?} allows only for {allowed_security_levels:?} security levels, but got {security_level:?}")]
 pub struct InvalidIdentityPublicKeySecurityLevelError {

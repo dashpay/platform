@@ -4,8 +4,6 @@ use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 
-// TODO not primitive
-// TODO missed setParsingError
 #[derive(Error, Debug, Serialize, Deserialize)]
 #[error("Can't read protocol version from serialized object: {parsing_error}")]
 pub struct ProtocolVersionParsingError {

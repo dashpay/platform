@@ -3,22 +3,21 @@ use crate::consensus::ConsensusError;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-// TODO missing setValidationError
 #[derive(Error, Debug, Serialize, Deserialize)]
-#[error("Invalid asset lock transaction: ${error_message}")]
+#[error("Invalid asset lock transaction: ${message}")]
 pub struct InvalidIdentityAssetLockTransactionError {
-    error_message: String,
+    message: String,
 }
 
 impl InvalidIdentityAssetLockTransactionError {
     pub fn new(message: impl Into<String>) -> Self {
         Self {
-            error_message: message.into(),
+            message: message.into(),
         }
     }
 
-    pub fn error_message(&self) -> &str {
-        &self.error_message
+    pub fn message(&self) -> &str {
+        &self.message
     }
 }
 

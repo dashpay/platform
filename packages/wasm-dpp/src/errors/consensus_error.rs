@@ -254,7 +254,8 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
                 .into()
         }
         BasicError::DataContractMaxDepthExceedError(err) => {
-            DataContractMaxDepthExceedErrorWasm::new(err.max_depth(), code).into()
+            DataContractMaxDepthExceedErrorWasm::new(err.schema_depth(), err.max_depth(), code)
+                .into()
         }
         BasicError::InvalidDocumentTypeError(err) => {
             InvalidDocumentTypeErrorWasm::new(err.document_type(), err.data_contract_id(), code)
@@ -265,7 +266,7 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
                 .into()
         }
         BasicError::InvalidJsonSchemaRefError(err) => {
-            InvalidJsonSchemaRefErrorWasm::new(err.error_message(), code).into()
+            InvalidJsonSchemaRefErrorWasm::new(err.message(), code).into()
         }
         BasicError::UniqueIndicesLimitReachedError(err) => UniqueIndicesLimitReachedErrorWasm::new(
             err.document_type().to_string(),
@@ -358,7 +359,7 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::InvalidIdentifierError(err) => InvalidIdentifierErrorWasm::new(
             err.identifier_name().to_string(),
-            err.error_message().to_string(),
+            err.message().to_string(),
             code,
         )
         .into(),
@@ -460,8 +461,7 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
             IdentityAssetLockTransactionOutputNotFoundErrorWasm::from(e).into()
         }
         InvalidIdentityAssetLockTransactionError(e) => {
-            InvalidIdentityAssetLockTransactionErrorWasm::new(e.error_message().to_string(), code)
-                .into()
+            InvalidIdentityAssetLockTransactionErrorWasm::new(e.message().to_string(), code).into()
         }
         InvalidInstantAssetLockProofError(e) => {
             InvalidInstantAssetLockProofErrorWasm::from(e).into()

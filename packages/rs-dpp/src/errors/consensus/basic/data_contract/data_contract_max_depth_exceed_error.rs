@@ -3,20 +3,26 @@ use crate::consensus::ConsensusError;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-// TODO in js constructor does not have any params
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("JSON Schema depth is greater than {max_depth:?}")]
 pub struct DataContractMaxDepthExceedError {
+    schema_depth: usize,
     max_depth: usize,
 }
 
 impl DataContractMaxDepthExceedError {
-    pub fn new(max_depth: usize) -> Self {
-        Self { max_depth }
+    pub fn new(schema_depth: usize, max_depth: usize) -> Self {
+        Self {
+            schema_depth,
+            max_depth,
+        }
     }
 
     pub fn max_depth(&self) -> usize {
         self.max_depth
+    }
+    pub fn schema_depth(&self) -> usize {
+        self.schema_depth
     }
 }
 

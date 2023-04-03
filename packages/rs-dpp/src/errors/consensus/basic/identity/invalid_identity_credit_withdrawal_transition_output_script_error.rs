@@ -4,20 +4,13 @@ use thiserror::Error;
 use crate::consensus::basic::BasicError;
 use crate::{consensus::ConsensusError, identity::core_script::CoreScript};
 
-// TODO not primitive
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[error("Output script {output_script:?} must be either p2pkh or p2sh")]
-pub struct InvalidIdentityCreditWithdrawalTransitionOutputScriptError {
-    output_script: CoreScript,
-}
+#[error("Output script must be either p2pkh or p2sh")]
+pub struct InvalidIdentityCreditWithdrawalTransitionOutputScriptError {}
 
 impl InvalidIdentityCreditWithdrawalTransitionOutputScriptError {
-    pub fn new(output_script: CoreScript) -> Self {
-        Self { output_script }
-    }
-
-    pub fn output_script(&self) -> CoreScript {
-        self.output_script.clone()
+    pub fn new() -> Self {
+        Self {}
     }
 }
 

@@ -20,7 +20,7 @@ pub fn validate_data_contract_max_depth(data_contract_object: &Value) -> SimpleV
 
     if schema_depth > MAX_DEPTH {
         result.add_error(BasicError::DataContractMaxDepthExceedError(
-            DataContractMaxDepthExceedError::new(MAX_DEPTH),
+            DataContractMaxDepthExceedError::new(schema_depth, MAX_DEPTH),
         ));
     }
     result
@@ -141,7 +141,7 @@ mod test {
 
         let err = get_ref_error(result);
         assert_eq!(
-            err.error_message(),
+            err.message(),
             "the ref '#/$defs/object' contains cycles".to_string()
         );
     }
@@ -201,7 +201,7 @@ mod test {
 
         let err = get_ref_error(result);
         assert_eq!(
-            err.error_message(),
+            err.message(),
             "invalid ref for max depth '#/$defs/object': value error: structure error: unable to get property $defs in $defs.object"
                 .to_string()
         );
@@ -231,7 +231,7 @@ mod test {
 
         let err = get_ref_error(result);
         assert_eq!(
-            err.error_message(),
+            err.message(),
             "invalid ref for max depth 'https://json-schema.org/some': Generic Error: only local references are allowed"
                 .to_string()
         );
@@ -261,7 +261,7 @@ mod test {
 
         let err = get_ref_error(result);
         assert_eq!(
-            err.error_message(),
+            err.message(),
             "invalid ref for max depth '': Generic Error: only local references are allowed"
                 .to_string()
         );
