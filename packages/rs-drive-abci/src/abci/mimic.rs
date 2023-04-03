@@ -15,6 +15,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
     pub fn mimic_execute_block(
         &self,
         proposer_pro_tx_hash: [u8; 32],
+        quorum_hash: [u8; 32],
         proposed_version: ProtocolVersion,
         total_hpmns: u32,
         block_info: BlockInfo,
@@ -48,7 +49,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             proposer_pro_tx_hash: proposer_pro_tx_hash.to_vec(),
             proposed_app_version: proposed_version as u64,
             version: None,
-            quorum_hash: vec![],
+            quorum_hash: quorum_hash.to_vec(),
         };
 
         let response_prepare_proposal = self

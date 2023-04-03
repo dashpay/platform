@@ -38,7 +38,8 @@ mod tests {
         let ChainExecutionOutcome {
             abci_app,
             proposers,
-            current_proposers,
+            quorums,
+            current_quorum_hash,
             current_proposer_versions,
             end_time_ms,
             ..
@@ -104,7 +105,8 @@ mod tests {
         let ChainExecutionOutcome {
             abci_app,
             proposers,
-            current_proposers,
+            quorums,
+            current_quorum_hash,
             end_time_ms,
             ..
         } = continue_chain_for_strategy(
@@ -114,7 +116,8 @@ mod tests {
                 block_count: 200,
                 block_spacing_ms: hour_in_ms,
                 proposers,
-                current_proposers,
+                quorums,
+                current_quorum_hash,
                 current_proposer_versions: Some(current_proposer_versions.clone()),
                 current_time_ms: end_time_ms,
             },
@@ -175,7 +178,8 @@ mod tests {
                 block_count: 400,
                 block_spacing_ms: hour_in_ms,
                 proposers,
-                current_proposers,
+                quorums,
+                current_quorum_hash,
                 current_proposer_versions: Some(current_proposer_versions),
                 current_time_ms: end_time_ms,
             },
@@ -247,7 +251,8 @@ mod tests {
         let ChainExecutionOutcome {
             abci_app,
             proposers,
-            current_proposers,
+            quorums,
+            current_quorum_hash,
             current_proposer_versions,
             end_time_ms,
             ..
@@ -308,7 +313,8 @@ mod tests {
         let ChainExecutionOutcome {
             abci_app,
             proposers,
-            current_proposers,
+            quorums,
+            current_quorum_hash,
             end_time_ms,
             ..
         } = continue_chain_for_strategy(
@@ -318,7 +324,8 @@ mod tests {
                 block_count: 1600,
                 block_spacing_ms: hour_in_ms,
                 proposers,
-                current_proposers,
+                quorums,
+                current_quorum_hash,
                 current_proposer_versions: Some(current_proposer_versions.clone()),
                 current_time_ms: end_time_ms,
             },
@@ -378,7 +385,8 @@ mod tests {
                 block_count: 400,
                 block_spacing_ms: hour_in_ms,
                 proposers,
-                current_proposers,
+                quorums,
+                current_quorum_hash,
                 current_proposer_versions: Some(current_proposer_versions),
                 current_time_ms: end_time_ms,
             },
@@ -448,7 +456,8 @@ mod tests {
         let ChainExecutionOutcome {
             abci_app,
             proposers,
-            current_proposers,
+            quorums,
+            current_quorum_hash,
             current_proposer_versions,
             end_time_ms,
             ..
@@ -504,7 +513,8 @@ mod tests {
         let ChainExecutionOutcome {
             abci_app,
             proposers,
-            current_proposers,
+            quorums,
+            current_quorum_hash,
             end_time_ms,
             ..
         } = continue_chain_for_strategy(
@@ -514,7 +524,8 @@ mod tests {
                 block_count: 3000,
                 block_spacing_ms: hour_in_ms,
                 proposers,
-                current_proposers,
+                quorums,
+                current_quorum_hash,
                 current_proposer_versions: Some(current_proposer_versions),
                 current_time_ms: end_time_ms,
             },
@@ -586,7 +597,8 @@ mod tests {
         let ChainExecutionOutcome {
             abci_app,
             proposers,
-            current_proposers,
+            quorums,
+            current_quorum_hash,
             current_proposer_versions,
             end_time_ms,
             ..
@@ -597,7 +609,8 @@ mod tests {
                 block_count: 2000,
                 block_spacing_ms: hour_in_ms / 5, //speed things up
                 proposers,
-                current_proposers,
+                quorums,
+                current_quorum_hash,
                 current_proposer_versions: None, //restart the proposer versions
                 current_time_ms: end_time_ms,
             },
@@ -655,7 +668,8 @@ mod tests {
                 block_count: 100,
                 block_spacing_ms: hour_in_ms * 4, //let's try to move to next epoch
                 proposers,
-                current_proposers,
+                quorums,
+                current_quorum_hash,
                 current_proposer_versions: Some(current_proposer_versions),
                 current_time_ms: end_time_ms,
             },
@@ -726,8 +740,8 @@ mod tests {
         let ChainExecutionOutcome {
             abci_app,
             proposers,
-            current_proposers,
-
+            quorums,
+            current_quorum_hash,
             end_time_ms,
             ..
         } = run_chain_for_strategy(&platform, 1400, hour_in_ms, strategy, config.clone(), 15);
@@ -803,7 +817,8 @@ mod tests {
                 block_count: 700,
                 block_spacing_ms: hour_in_ms,
                 proposers,
-                current_proposers,
+                quorums,
+                current_quorum_hash,
                 current_proposer_versions: None,
                 current_time_ms: end_time_ms,
             },

@@ -76,6 +76,8 @@ use std::ops::Range;
 
 mod upgrade_fork_tests;
 
+pub type QuorumHash = [u8; 32];
+
 #[derive(Clone, Debug)]
 pub struct Frequency {
     pub times_per_block_range: Range<u16>, //insertion count when block is chosen
@@ -458,9 +460,10 @@ pub struct ChainExecutionOutcome<'a> {
     pub abci_app: AbciApplication<'a, MockCoreRPCLike>,
     pub masternode_identity_balances: BTreeMap<[u8; 32], Credits>,
     pub identities: Vec<Identity>,
-    pub proposers: Vec<[u8; 32]>,
-    pub current_proposers: Vec<[u8; 32]>,
-    pub current_proposer_versions: Option<HashMap<[u8; 32], ValidatorVersionMigration>>,
+    pub proposers: Vec<ProTxHash>,
+    pub quorums: BTreeMap<QuorumHash, Vec<ProTxHash>>,
+    pub current_quorum_hash: QuorumHash,
+    pub current_proposer_versions: Option<HashMap<ProTxHash, ValidatorVersionMigration>>,
     pub end_epoch_index: u16,
     pub end_time_ms: u64,
 }
@@ -470,10 +473,11 @@ pub struct ChainExecutionParameters {
     pub block_count: u64,
     pub block_spacing_ms: u64,
     pub proposers: Vec<[u8; 32]>,
-    pub current_proposers: Vec<[u8; 32]>,
+    pub quorums: BTreeMap<QuorumHash, Vec<ProTxHash>>,
+    pub current_quorum_hash: QuorumHash,
     // the first option is if it is set
     // the second option is if we are even upgrading
-    pub current_proposer_versions: Option<Option<HashMap<[u8; 32], ValidatorVersionMigration>>>,
+    pub current_proposer_versions: Option<Option<HashMap<ProTxHash, ValidatorVersionMigration>>>,
     pub current_time_ms: u64,
 }
 
@@ -490,6 +494,7 @@ pub(crate) fn run_chain_for_strategy(
     config: PlatformConfig,
     seed: u64,
 ) -> ChainExecutionOutcome {
+    let quorum_count = 24; // We assume 24 quorums
     let quorum_size = config.quorum_size;
     let abci_application = AbciApplication::new(&platform).expect("expected new abci application");
     let mut rng = StdRng::seed_from_u64(seed);
@@ -509,10 +514,23 @@ pub(crate) fn run_chain_for_strategy(
         None,
     );
 
-    let current_proposers: Vec<[u8; 32]> = proposers
-        .choose_multiple(&mut rng, quorum_size as usize)
-        .cloned()
+    let quorums: BTreeMap<QuorumHash, Vec<[u8; 32]>> = (0..quorum_count)
+        .into_iter()
+        .map(|_| {
+            let quorum_hash: [u8; 32] = rng.gen();
+            (
+                quorum_hash,
+                proposers
+                    .choose_multiple(&mut rng, quorum_size as usize)
+                    .cloned()
+                    .collect(),
+            )
+        })
         .collect();
+
+    let quorum_hashes: Vec<&QuorumHash> = quorums.keys().collect();
+
+    let current_quorum_hash = **quorum_hashes.choose(&mut rng).unwrap();
 
     continue_chain_for_strategy(
         abci_application,
@@ -521,7 +539,8 @@ pub(crate) fn run_chain_for_strategy(
             block_count,
             block_spacing_ms,
             proposers,
-            current_proposers,
+            quorums,
+            current_quorum_hash,
             current_proposer_versions: None,
             current_time_ms: 0,
         },
@@ -544,7 +563,8 @@ pub(crate) fn continue_chain_for_strategy(
         block_count,
         block_spacing_ms,
         proposers,
-        mut current_proposers,
+        quorums,
+        mut current_quorum_hash,
         current_proposer_versions,
         mut current_time_ms,
     } = chain_execution_parameters;
@@ -590,7 +610,11 @@ pub(crate) fn continue_chain_for_strategy(
             epoch: Epoch::new(epoch_info.current_epoch_index),
         };
 
-        let proposer = current_proposers.get(i as usize).unwrap();
+        let proposer = quorums
+            .get(current_quorum_hash.as_slice())
+            .unwrap()
+            .get(i as usize)
+            .unwrap();
         let state_transitions = strategy.state_transitions_for_block_with_new_identities(
             &platform,
             &block_info,
@@ -620,6 +644,7 @@ pub(crate) fn continue_chain_for_strategy(
         abci_app
             .mimic_execute_block(
                 *proposer,
+                current_quorum_hash,
                 proposed_version,
                 proposer_count,
                 block_info,
@@ -632,10 +657,9 @@ pub(crate) fn continue_chain_for_strategy(
         i %= quorum_size;
         let needs_rotation = block_height % quorum_rotation_block_count == 0;
         if needs_rotation {
-            current_proposers = proposers
-                .choose_multiple(&mut rng, quorum_size as usize)
-                .cloned()
-                .collect();
+            let quorum_hashes: Vec<&QuorumHash> = quorums.keys().collect();
+
+            current_quorum_hash = **quorum_hashes.choose(&mut rng).unwrap();
         }
     }
 
@@ -658,7 +682,8 @@ pub(crate) fn continue_chain_for_strategy(
         masternode_identity_balances,
         identities: current_identities,
         proposers,
-        current_proposers,
+        quorums,
+        current_quorum_hash,
         current_proposer_versions: proposer_versions,
         end_epoch_index,
         end_time_ms: current_time_ms,
