@@ -4347,7 +4347,7 @@ fn test_query_a_b_c_d_e_contract() {
 fn test_query_documents_by_created_at() {
     let drive = setup_drive_with_initial_state_structure();
 
-    let contract = json!({
+    let contract = platform_value!({
         "protocolVersion": 1,
         "$id": "BZUodcFoFL6KvnonehrnMVggTvCe8W5MiRnZuqLb6M54",
         "$schema": "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
@@ -4385,7 +4385,7 @@ fn test_query_documents_by_created_at() {
             .expect("expected to serialize to cbor");
 
     let contract =
-        DataContract::from_json_object(contract).expect("should create a contract from cbor");
+        DataContract::from_raw_object(contract).expect("should create a contract from cbor");
 
     drive
         .apply_contract(
@@ -4457,7 +4457,7 @@ fn test_query_documents_by_created_at() {
         Some(&WhereClause {
             field: "$createdAt".to_string(),
             operator: WhereOperator::Equal,
-            value: Value::I128(created_at as i128)
+            value: Value::U64(created_at as u64)
         })
     );
 
