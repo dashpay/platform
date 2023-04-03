@@ -1,25 +1,35 @@
 const Dash = require('dash');
 
+const crypto = require('crypto');
+const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 const generateRandomIdentifier = require('../utils/generateRandomIdentifier');
 
 const {
-  PlatformProtocol: {
-    DataContractFactory,
-    Identifier,
-    version,
-  },
+  Platform,
 } = Dash;
 
-const randomOwnerId = generateRandomIdentifier();
+let randomOwnerId = null;
 
 /**
  *
  * @param {Identifier} [ownerId]
- * @return {DataContract}
+ * @return {Promise<DataContract>}
  */
-module.exports = function getDataContractFixture(
+module.exports = async function getDataContractFixture(
   ownerId = randomOwnerId,
 ) {
+  const { DataContractFactory, DataContractValidator, Identifier } = await Platform
+    .initializeDppModule();
+
+  if (!randomOwnerId) {
+    randomOwnerId = await generateRandomIdentifier();
+  }
+
+  if (!ownerId) {
+    // eslint-disable-next-line no-param-reassign
+    ownerId = randomOwnerId;
+  }
+
   const documents = {
     niceDocument: {
       type: 'object',
@@ -118,11 +128,17 @@ module.exports = function getDataContractFixture(
     },
   };
 
-  const dpp = {
-    getProtocolVersion: () => version,
+  const dataContractValidator = new DataContractValidator();
+  const entropyGenerator = {
+    generate() {
+      return crypto.randomBytes(32);
+    },
   };
-
-  const factory = new DataContractFactory(dpp, () => {});
+  const factory = new DataContractFactory(
+    protocolVersion.latestVersion,
+    dataContractValidator,
+    entropyGenerator,
+  );
 
   return factory.create(ownerId, documents);
 };

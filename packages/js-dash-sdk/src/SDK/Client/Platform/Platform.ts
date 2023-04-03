@@ -217,9 +217,10 @@ export class Platform {
   async initialize() {
     await this.dpp.initialize();
 
-    const dppModule = await loadWasmDpp();
-    const { DashPlatformProtocol: DashPlatformProtocolWasm } = dppModule;
-    this.dppModule = dppModule;
+    this.dppModule = await Platform.initializeDppModule();
+    // TODO(wasm-dpp): properly type wasm-dpp
+    // @ts-ignore
+    const { DashPlatformProtocol: DashPlatformProtocolWasm } = this.dppModule;
 
     if (!this.wasmDpp) {
       const bls = await getBlsAdapter();
@@ -236,5 +237,9 @@ export class Platform {
         protocolVersion,
       );
     }
+  }
+
+  static async initializeDppModule() {
+    return loadWasmDpp();
   }
 }
