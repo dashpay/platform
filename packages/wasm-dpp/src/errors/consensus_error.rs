@@ -194,6 +194,7 @@ pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
         DPPConsensusError::ValueError(value_error) => {
             PlatformValueErrorWasm::new(value_error.clone()).into()
         }
+        DPPConsensusError::DefaultError => panic!(), //not possible
     }
 }
 

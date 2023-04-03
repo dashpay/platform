@@ -557,7 +557,6 @@ mod tests {
     mod update_withdrawal_statuses {
         use std::sync::RwLock;
 
-        use crate::block::BlockExecutionContextWithTransaction;
         use crate::{block::BlockStateInfo, test::helpers::setup::TestPlatformBuilder};
         use dpp::identity::core_script::CoreScript;
         use dpp::platform_value::platform_value;
@@ -765,7 +764,6 @@ mod tests {
         use drive::dpp::contracts::withdrawals_contract;
         use drive::tests::helpers::setup::setup_system_data_contract;
 
-        use crate::block::BlockExecutionContextWithTransaction;
         use crate::{block::BlockStateInfo, test::helpers::setup::TestPlatformBuilder};
 
         use super::*;
@@ -778,30 +776,30 @@ mod tests {
 
             let transaction = platform.drive.grove.start_transaction();
 
-            platform.block_execution_context =
-                RwLock::new(Some(BlockExecutionContextWithTransaction {
-                    current_transaction: transaction,
-                    block_execution_context: BlockExecutionContext {
-                        block_state_info: BlockStateInfo {
-                            height: 1,
-                            round: 0,
-                            block_time_ms: 1,
-                            previous_block_time_ms: Some(1),
-                            proposer_pro_tx_hash: [
-                                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                                0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                            ],
-                            core_chain_locked_height: 96,
-                            commit_hash: None,
-                        },
-                        epoch_info: EpochInfo {
-                            current_epoch_index: 1,
-                            previous_epoch_index: None,
-                            is_epoch_change: false,
-                        },
-                        hpmn_count: 100,
+            platform
+                .block_execution_context
+                .write()
+                .unwrap()
+                .replace(BlockExecutionContext {
+                    block_state_info: BlockStateInfo {
+                        height: 1,
+                        round: 0,
+                        block_time_ms: 1,
+                        previous_block_time_ms: Some(1),
+                        proposer_pro_tx_hash: [
+                            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                            0, 0, 0, 0, 0, 0, 0, 0,
+                        ],
+                        core_chain_locked_height: 96,
+                        commit_hash: None,
                     },
-                }));
+                    epoch_info: EpochInfo {
+                        current_epoch_index: 1,
+                        previous_epoch_index: None,
+                        is_epoch_change: false,
+                    },
+                    hpmn_count: 100,
+                });
 
             let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
                 .expect("to load system data contract");
@@ -863,10 +861,7 @@ mod tests {
             let guarded_block_execution_context = platform.block_execution_context.write().unwrap();
             let block_execution_context = guarded_block_execution_context.as_ref().unwrap();
             platform
-                .pool_withdrawals_into_transactions_queue(
-                    &block_execution_context.block_execution_context,
-                    &block_execution_context.current_transaction,
-                )
+                .pool_withdrawals_into_transactions_queue(&block_execution_context, &transaction)
                 .expect("to pool withdrawal documents into transactions");
 
             let updated_documents = platform

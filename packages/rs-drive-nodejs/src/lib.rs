@@ -20,16 +20,17 @@ use drive::fee::credits::Credits;
 use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::{PathQuery, Transaction};
 use drive::query::TransactionArg;
-use drive_abci::abci::handlers::TenderdashAbci;
 use drive_abci::abci::messages::{
     AfterFinalizeBlockRequest, BlockBeginRequest, BlockEndRequest, BlockFees, InitChainRequest,
     Serializable,
 };
 use drive_abci::platform::Platform;
+use drive_abci::rpc::core::DefaultCoreRPC;
 use fee::js_calculate_storage_fee_distribution_amount_and_leftovers;
 use neon::prelude::*;
 
-type PlatformCallback = Box<dyn for<'a> FnOnce(&'a Platform, TransactionArg, &Channel) + Send>;
+type PlatformCallback =
+    Box<dyn for<'a> FnOnce(&'a Platform<DefaultCoreRPC>, TransactionArg, &Channel) + Send>;
 type UnitCallback = Box<dyn FnOnce(&Channel) + Send>;
 type ErrorCallback = Box<dyn FnOnce(&Channel, Result<(), String>) + Send>;
 type TransactionCallback =
@@ -140,11 +141,12 @@ impl PlatformWrapper {
             };
 
             // TODO: think how to pass this error to JS
-            let mut platform: Platform = Platform::open(path, Some(platform_config)).unwrap();
+            let mut platform: Platform<DefaultCoreRPC> =
+                Platform::<DefaultCoreRPC>::open(path, Some(platform_config)).unwrap();
 
-            if cfg!(feature = "enable-mocking") {
-                platform.mock_core_rpc_client();
-            }
+            // if cfg!(feature = "enable-mocking") {
+            //     platform.mock_core_rpc_client();
+            // }
 
             let mut maybe_transaction: Option<Transaction> = None;
 
@@ -188,7 +190,7 @@ impl PlatformWrapper {
                     }
                     PlatformWrapperMessage::CommitTransaction(callback) => {
                         let result = if maybe_transaction.is_some() {
-                            let mut drive_cache = platform.drive.cache.borrow_mut();
+                            let mut drive_cache = platform.drive.cache.write().unwrap();
 
                             drive_cache.cached_contracts.merge_block_cache();
 
@@ -206,7 +208,7 @@ impl PlatformWrapper {
                     }
                     PlatformWrapperMessage::RollbackTransaction(callback) => {
                         let result = if let Some(transaction) = &maybe_transaction {
-                            let mut drive_cache = platform.drive.cache.borrow_mut();
+                            let mut drive_cache = platform.drive.cache.write().unwrap();
 
                             drive_cache.cached_contracts.clear_block_cache();
 
@@ -222,7 +224,7 @@ impl PlatformWrapper {
                     }
                     PlatformWrapperMessage::AbortTransaction(callback) => {
                         let result = if maybe_transaction.is_some() {
-                            let mut drive_cache = platform.drive.cache.borrow_mut();
+                            let mut drive_cache = platform.drive.cache.write().unwrap();
 
                             drive_cache.cached_contracts.clear_block_cache();
 
@@ -255,7 +257,9 @@ impl PlatformWrapper {
 
     fn send_to_drive_thread(
         &self,
-        callback: impl for<'a> FnOnce(&'a Platform, TransactionArg, &Channel) + Send + 'static,
+        callback: impl for<'a> FnOnce(&'a Platform<DefaultCoreRPC>, TransactionArg, &Channel)
+            + Send
+            + 'static,
     ) -> Result<(), mpsc::SendError<PlatformWrapperMessage>> {
         self.tx
             .send(PlatformWrapperMessage::Callback(Box::new(callback)))
@@ -365,37 +369,39 @@ impl PlatformWrapper {
         let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-                let transaction_result = if using_transaction {
-                    if transaction.is_none() {
-                        Err("transaction is not started".to_string())
+            .send_to_drive_thread(
+                move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                    let transaction_result = if using_transaction {
+                        if transaction.is_none() {
+                            Err("transaction is not started".to_string())
+                        } else {
+                            Ok(transaction)
+                        }
                     } else {
-                        Ok(transaction)
-                    }
-                } else {
-                    Ok(None)
-                };
-
-                let execution_result = transaction_result.and_then(|transaction_arg| {
-                    platform
-                        .drive
-                        .create_initial_state_structure(transaction_arg)
-                        .map_err(|err| err.to_string())
-                });
-
-                channel.send(move |mut task_context| {
-                    let callback = js_callback.into_inner(&mut task_context);
-                    let this = task_context.undefined();
-                    let callback_arguments: Vec<Handle<JsValue>> = match execution_result {
-                        Ok(_) => vec![task_context.null().upcast()],
-                        Err(err) => vec![task_context.error(err)?.upcast()],
+                        Ok(None)
                     };
 
-                    callback.call(&mut task_context, this, callback_arguments)?;
+                    let execution_result = transaction_result.and_then(|transaction_arg| {
+                        platform
+                            .drive
+                            .create_initial_state_structure(transaction_arg)
+                            .map_err(|err| err.to_string())
+                    });
 
-                    Ok(())
-                });
-            })
+                    channel.send(move |mut task_context| {
+                        let callback = js_callback.into_inner(&mut task_context);
+                        let this = task_context.undefined();
+                        let callback_arguments: Vec<Handle<JsValue>> = match execution_result {
+                            Ok(_) => vec![task_context.null().upcast()],
+                            Err(err) => vec![task_context.error(err)?.upcast()],
+                        };
+
+                        callback.call(&mut task_context, this, callback_arguments)?;
+
+                        Ok(())
+                    });
+                },
+            )
             .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
@@ -429,72 +435,77 @@ impl PlatformWrapper {
         let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-                let transaction_result = if using_transaction {
-                    if transaction.is_none() {
-                        Err("transaction is not started".to_string())
-                    } else {
-                        Ok(transaction)
-                    }
-                } else {
-                    Ok(None)
-                };
-
-                let result = transaction_result.and_then(|transaction_arg| {
-                    platform
-                        .drive
-                        .get_contract_with_fetch_info(
-                            contract_id,
-                            maybe_epoch.as_ref(),
-                            true,
-                            transaction_arg,
-                        )
-                        .map_err(|err| err.to_string())
-                });
-
-                channel.send(move |mut task_context| {
-                    let callback = js_callback.into_inner(&mut task_context);
-                    let this = task_context.undefined();
-
-                    let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok((maybe_fee_result, maybe_contract_fetch_info)) => {
-                            let js_result = task_context.empty_array();
-
-                            let js_contract: Handle<JsValue> = if let Some(contract_fetch_info) =
-                                maybe_contract_fetch_info
-                            {
-                                let contract_cbor =
-                                    contract_fetch_info.contract.to_buffer().or_else(|_| {
-                                        task_context.throw_range_error("can't serialize contract")
-                                    })?;
-
-                                JsBuffer::external(&mut task_context, contract_cbor).upcast()
-                            } else {
-                                task_context.null().upcast()
-                            };
-
-                            js_result.set(&mut task_context, 0, js_contract)?;
-
-                            if let Some(fee_result) = maybe_fee_result {
-                                let js_fee_result =
-                                    task_context.boxed(FeeResultWrapper::new(fee_result));
-
-                                js_result.set(&mut task_context, 1, js_fee_result)?;
-                            }
-
-                            // First parameter of JS callbacks is error, which is null in this case
-                            vec![task_context.null().upcast(), js_result.upcast()]
+            .send_to_drive_thread(
+                move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                    let transaction_result = if using_transaction {
+                        if transaction.is_none() {
+                            Err("transaction is not started".to_string())
+                        } else {
+                            Ok(transaction)
                         }
-
-                        // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    } else {
+                        Ok(None)
                     };
 
-                    callback.call(&mut task_context, this, callback_arguments)?;
+                    let result = transaction_result.and_then(|transaction_arg| {
+                        platform
+                            .drive
+                            .get_contract_with_fetch_info(
+                                contract_id,
+                                maybe_epoch.as_ref(),
+                                true,
+                                transaction_arg,
+                            )
+                            .map_err(|err| err.to_string())
+                    });
 
-                    Ok(())
-                });
-            })
+                    channel.send(move |mut task_context| {
+                        let callback = js_callback.into_inner(&mut task_context);
+                        let this = task_context.undefined();
+
+                        let callback_arguments: Vec<Handle<JsValue>> = match result {
+                            Ok((maybe_fee_result, maybe_contract_fetch_info)) => {
+                                let js_result = task_context.empty_array();
+
+                                let js_contract: Handle<JsValue> =
+                                    if let Some(contract_fetch_info) = maybe_contract_fetch_info {
+                                        let contract_cbor = contract_fetch_info
+                                            .contract
+                                            .to_buffer()
+                                            .or_else(|_| {
+                                                task_context
+                                                    .throw_range_error("can't serialize contract")
+                                            })?;
+
+                                        JsBuffer::external(&mut task_context, contract_cbor)
+                                            .upcast()
+                                    } else {
+                                        task_context.null().upcast()
+                                    };
+
+                                js_result.set(&mut task_context, 0, js_contract)?;
+
+                                if let Some(fee_result) = maybe_fee_result {
+                                    let js_fee_result =
+                                        task_context.boxed(FeeResultWrapper::new(fee_result));
+
+                                    js_result.set(&mut task_context, 1, js_fee_result)?;
+                                }
+
+                                // First parameter of JS callbacks is error, which is null in this case
+                                vec![task_context.null().upcast(), js_result.upcast()]
+                            }
+
+                            // Convert the error to a JavaScript exception on failure
+                            Err(err) => vec![task_context.error(err)?.upcast()],
+                        };
+
+                        callback.call(&mut task_context, this, callback_arguments)?;
+
+                        Ok(())
+                    });
+                },
+            )
             .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
@@ -517,52 +528,54 @@ impl PlatformWrapper {
         let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-                let transaction_result = if using_transaction {
-                    if transaction.is_none() {
-                        Err("transaction is not started".to_string())
-                    } else {
-                        Ok(transaction)
-                    }
-                } else {
-                    Ok(None)
-                };
-
-                let result = transaction_result.and_then(|transaction_arg| {
-                    platform
-                        .drive
-                        .insert_contract_cbor(
-                            contract_cbor,
-                            None,
-                            block_info,
-                            apply,
-                            transaction_arg,
-                        )
-                        .map_err(|err| err.to_string())
-                });
-
-                channel.send(move |mut task_context| {
-                    let callback = js_callback.into_inner(&mut task_context);
-                    let this = task_context.undefined();
-
-                    let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok(fee_result) => {
-                            let js_fee_result =
-                                task_context.boxed(FeeResultWrapper::new(fee_result));
-
-                            // First parameter of JS callbacks is error, which is null in this case
-                            vec![task_context.null().upcast(), js_fee_result.upcast()]
+            .send_to_drive_thread(
+                move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                    let transaction_result = if using_transaction {
+                        if transaction.is_none() {
+                            Err("transaction is not started".to_string())
+                        } else {
+                            Ok(transaction)
                         }
-
-                        // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    } else {
+                        Ok(None)
                     };
 
-                    callback.call(&mut task_context, this, callback_arguments)?;
+                    let result = transaction_result.and_then(|transaction_arg| {
+                        platform
+                            .drive
+                            .insert_contract_cbor(
+                                contract_cbor,
+                                None,
+                                block_info,
+                                apply,
+                                transaction_arg,
+                            )
+                            .map_err(|err| err.to_string())
+                    });
 
-                    Ok(())
-                });
-            })
+                    channel.send(move |mut task_context| {
+                        let callback = js_callback.into_inner(&mut task_context);
+                        let this = task_context.undefined();
+
+                        let callback_arguments: Vec<Handle<JsValue>> = match result {
+                            Ok(fee_result) => {
+                                let js_fee_result =
+                                    task_context.boxed(FeeResultWrapper::new(fee_result));
+
+                                // First parameter of JS callbacks is error, which is null in this case
+                                vec![task_context.null().upcast(), js_fee_result.upcast()]
+                            }
+
+                            // Convert the error to a JavaScript exception on failure
+                            Err(err) => vec![task_context.error(err)?.upcast()],
+                        };
+
+                        callback.call(&mut task_context, this, callback_arguments)?;
+
+                        Ok(())
+                    });
+                },
+            )
             .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
@@ -587,52 +600,54 @@ impl PlatformWrapper {
         let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-                let transaction_result = if using_transaction {
-                    if transaction.is_none() {
-                        Err("transaction is not started".to_string())
-                    } else {
-                        Ok(transaction)
-                    }
-                } else {
-                    Ok(None)
-                };
-
-                let result = transaction_result.and_then(|transaction_arg| {
-                    platform
-                        .drive
-                        .update_contract_cbor(
-                            contract_cbor,
-                            None,
-                            block_info,
-                            apply,
-                            transaction_arg,
-                        )
-                        .map_err(|err| err.to_string())
-                });
-
-                channel.send(move |mut task_context| {
-                    let callback = js_callback.into_inner(&mut task_context);
-                    let this = task_context.undefined();
-
-                    let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok(fee_result) => {
-                            let js_fee_result =
-                                task_context.boxed(FeeResultWrapper::new(fee_result));
-
-                            // First parameter of JS callbacks is error, which is null in this case
-                            vec![task_context.null().upcast(), js_fee_result.upcast()]
+            .send_to_drive_thread(
+                move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                    let transaction_result = if using_transaction {
+                        if transaction.is_none() {
+                            Err("transaction is not started".to_string())
+                        } else {
+                            Ok(transaction)
                         }
-
-                        // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    } else {
+                        Ok(None)
                     };
 
-                    callback.call(&mut task_context, this, callback_arguments)?;
+                    let result = transaction_result.and_then(|transaction_arg| {
+                        platform
+                            .drive
+                            .update_contract_cbor(
+                                contract_cbor,
+                                None,
+                                block_info,
+                                apply,
+                                transaction_arg,
+                            )
+                            .map_err(|err| err.to_string())
+                    });
 
-                    Ok(())
-                });
-            })
+                    channel.send(move |mut task_context| {
+                        let callback = js_callback.into_inner(&mut task_context);
+                        let this = task_context.undefined();
+
+                        let callback_arguments: Vec<Handle<JsValue>> = match result {
+                            Ok(fee_result) => {
+                                let js_fee_result =
+                                    task_context.boxed(FeeResultWrapper::new(fee_result));
+
+                                // First parameter of JS callbacks is error, which is null in this case
+                                vec![task_context.null().upcast(), js_fee_result.upcast()]
+                            }
+
+                            // Convert the error to a JavaScript exception on failure
+                            Err(err) => vec![task_context.error(err)?.upcast()],
+                        };
+
+                        callback.call(&mut task_context, this, callback_arguments)?;
+
+                        Ok(())
+                    });
+                },
+            )
             .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
@@ -663,59 +678,61 @@ impl PlatformWrapper {
         let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-                let transaction_result = if using_transaction {
-                    if transaction.is_none() {
-                        Err("transaction is not started".to_string())
-                    } else {
-                        Ok(transaction)
-                    }
-                } else {
-                    Ok(None)
-                };
-
-                let storage_flags =
-                    StorageFlags::new_single_epoch(block_info.epoch.index, Some(owner_id));
-
-                let result = transaction_result.and_then(|transaction_arg| {
-                    platform
-                        .drive
-                        .add_serialized_document_for_contract_id(
-                            &document_cbor,
-                            contract_id,
-                            &document_type_name,
-                            Some(owner_id),
-                            override_document,
-                            block_info,
-                            apply,
-                            storage_flags.into_optional_cow(),
-                            transaction_arg,
-                        )
-                        .map_err(|err| err.to_string())
-                });
-
-                channel.send(move |mut task_context| {
-                    let callback = js_callback.into_inner(&mut task_context);
-                    let this = task_context.undefined();
-
-                    let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok(fee_result) => {
-                            let js_fee_result =
-                                task_context.boxed(FeeResultWrapper::new(fee_result));
-
-                            // First parameter of JS callbacks is error, which is null in this case
-                            vec![task_context.null().upcast(), js_fee_result.upcast()]
+            .send_to_drive_thread(
+                move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                    let transaction_result = if using_transaction {
+                        if transaction.is_none() {
+                            Err("transaction is not started".to_string())
+                        } else {
+                            Ok(transaction)
                         }
-
-                        // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    } else {
+                        Ok(None)
                     };
 
-                    callback.call(&mut task_context, this, callback_arguments)?;
+                    let storage_flags =
+                        StorageFlags::new_single_epoch(block_info.epoch.index, Some(owner_id));
 
-                    Ok(())
-                });
-            })
+                    let result = transaction_result.and_then(|transaction_arg| {
+                        platform
+                            .drive
+                            .add_serialized_document_for_contract_id(
+                                &document_cbor,
+                                contract_id,
+                                &document_type_name,
+                                Some(owner_id),
+                                override_document,
+                                block_info,
+                                apply,
+                                storage_flags.into_optional_cow(),
+                                transaction_arg,
+                            )
+                            .map_err(|err| err.to_string())
+                    });
+
+                    channel.send(move |mut task_context| {
+                        let callback = js_callback.into_inner(&mut task_context);
+                        let this = task_context.undefined();
+
+                        let callback_arguments: Vec<Handle<JsValue>> = match result {
+                            Ok(fee_result) => {
+                                let js_fee_result =
+                                    task_context.boxed(FeeResultWrapper::new(fee_result));
+
+                                // First parameter of JS callbacks is error, which is null in this case
+                                vec![task_context.null().upcast(), js_fee_result.upcast()]
+                            }
+
+                            // Convert the error to a JavaScript exception on failure
+                            Err(err) => vec![task_context.error(err)?.upcast()],
+                        };
+
+                        callback.call(&mut task_context, this, callback_arguments)?;
+
+                        Ok(())
+                    });
+                },
+            )
             .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
@@ -744,58 +761,60 @@ impl PlatformWrapper {
         let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-                let transaction_result = if using_transaction {
-                    if transaction.is_none() {
-                        Err("transaction is not started".to_string())
-                    } else {
-                        Ok(transaction)
-                    }
-                } else {
-                    Ok(None)
-                };
-
-                let storage_flags =
-                    StorageFlags::new_single_epoch(block_info.epoch.index, Some(owner_id));
-
-                let result = transaction_result.and_then(|transaction_arg| {
-                    platform
-                        .drive
-                        .update_document_for_contract_id(
-                            &document_cbor,
-                            contract_id,
-                            &document_type_name,
-                            Some(owner_id),
-                            block_info,
-                            apply,
-                            storage_flags.into_optional_cow(),
-                            transaction_arg,
-                        )
-                        .map_err(|err| err.to_string())
-                });
-
-                channel.send(move |mut task_context| {
-                    let callback = js_callback.into_inner(&mut task_context);
-                    let this = task_context.undefined();
-
-                    let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok(fee_result) => {
-                            let js_fee_result =
-                                task_context.boxed(FeeResultWrapper::new(fee_result));
-
-                            // First parameter of JS callbacks is error, which is null in this case
-                            vec![task_context.null().upcast(), js_fee_result.upcast()]
+            .send_to_drive_thread(
+                move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                    let transaction_result = if using_transaction {
+                        if transaction.is_none() {
+                            Err("transaction is not started".to_string())
+                        } else {
+                            Ok(transaction)
                         }
-
-                        // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    } else {
+                        Ok(None)
                     };
 
-                    callback.call(&mut task_context, this, callback_arguments)?;
+                    let storage_flags =
+                        StorageFlags::new_single_epoch(block_info.epoch.index, Some(owner_id));
 
-                    Ok(())
-                });
-            })
+                    let result = transaction_result.and_then(|transaction_arg| {
+                        platform
+                            .drive
+                            .update_document_for_contract_id(
+                                &document_cbor,
+                                contract_id,
+                                &document_type_name,
+                                Some(owner_id),
+                                block_info,
+                                apply,
+                                storage_flags.into_optional_cow(),
+                                transaction_arg,
+                            )
+                            .map_err(|err| err.to_string())
+                    });
+
+                    channel.send(move |mut task_context| {
+                        let callback = js_callback.into_inner(&mut task_context);
+                        let this = task_context.undefined();
+
+                        let callback_arguments: Vec<Handle<JsValue>> = match result {
+                            Ok(fee_result) => {
+                                let js_fee_result =
+                                    task_context.boxed(FeeResultWrapper::new(fee_result));
+
+                                // First parameter of JS callbacks is error, which is null in this case
+                                vec![task_context.null().upcast(), js_fee_result.upcast()]
+                            }
+
+                            // Convert the error to a JavaScript exception on failure
+                            Err(err) => vec![task_context.error(err)?.upcast()],
+                        };
+
+                        callback.call(&mut task_context, this, callback_arguments)?;
+
+                        Ok(())
+                    });
+                },
+            )
             .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
@@ -822,54 +841,56 @@ impl PlatformWrapper {
         let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-                let transaction_result = if using_transaction {
-                    if transaction.is_none() {
-                        Err("transaction is not started".to_string())
-                    } else {
-                        Ok(transaction)
-                    }
-                } else {
-                    Ok(None)
-                };
-
-                let result = transaction_result.and_then(|transaction_arg| {
-                    platform
-                        .drive
-                        .delete_document_for_contract_id(
-                            document_id,
-                            contract_id,
-                            &document_type_name,
-                            None,
-                            block_info,
-                            apply,
-                            transaction_arg,
-                        )
-                        .map_err(|err| err.to_string())
-                });
-
-                channel.send(move |mut task_context| {
-                    let callback = js_callback.into_inner(&mut task_context);
-                    let this = task_context.undefined();
-
-                    let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok(fee_result) => {
-                            let js_fee_result =
-                                task_context.boxed(FeeResultWrapper::new(fee_result));
-
-                            // First parameter of JS callbacks is error, which is null in this case
-                            vec![task_context.null().upcast(), js_fee_result.upcast()]
+            .send_to_drive_thread(
+                move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                    let transaction_result = if using_transaction {
+                        if transaction.is_none() {
+                            Err("transaction is not started".to_string())
+                        } else {
+                            Ok(transaction)
                         }
-
-                        // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    } else {
+                        Ok(None)
                     };
 
-                    callback.call(&mut task_context, this, callback_arguments)?;
+                    let result = transaction_result.and_then(|transaction_arg| {
+                        platform
+                            .drive
+                            .delete_document_for_contract_id(
+                                document_id,
+                                contract_id,
+                                &document_type_name,
+                                None,
+                                block_info,
+                                apply,
+                                transaction_arg,
+                            )
+                            .map_err(|err| err.to_string())
+                    });
 
-                    Ok(())
-                });
-            })
+                    channel.send(move |mut task_context| {
+                        let callback = js_callback.into_inner(&mut task_context);
+                        let this = task_context.undefined();
+
+                        let callback_arguments: Vec<Handle<JsValue>> = match result {
+                            Ok(fee_result) => {
+                                let js_fee_result =
+                                    task_context.boxed(FeeResultWrapper::new(fee_result));
+
+                                // First parameter of JS callbacks is error, which is null in this case
+                                vec![task_context.null().upcast(), js_fee_result.upcast()]
+                            }
+
+                            // Convert the error to a JavaScript exception on failure
+                            Err(err) => vec![task_context.error(err)?.upcast()],
+                        };
+
+                        callback.call(&mut task_context, this, callback_arguments)?;
+
+                        Ok(())
+                    });
+                },
+            )
             .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
@@ -892,51 +913,53 @@ impl PlatformWrapper {
         let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-                let transaction_result = if using_transaction {
-                    if transaction.is_none() {
-                        Err("transaction is not started".to_string())
-                    } else {
-                        Ok(transaction)
-                    }
-                } else {
-                    Ok(None)
-                };
-
-                let result = transaction_result.and_then(|transaction_arg| {
-                    platform
-                        .drive
-                        .add_new_identity_from_cbor_encoded_bytes(
-                            identity_cbor,
-                            &block_info,
-                            apply,
-                            transaction_arg,
-                        )
-                        .map_err(|err| err.to_string())
-                });
-
-                channel.send(move |mut task_context| {
-                    let callback = js_callback.into_inner(&mut task_context);
-                    let this = task_context.undefined();
-
-                    let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok(fee_result) => {
-                            let js_fee_result =
-                                task_context.boxed(FeeResultWrapper::new(fee_result));
-
-                            // First parameter of JS callbacks is error, which is null in this case
-                            vec![task_context.null().upcast(), js_fee_result.upcast()]
+            .send_to_drive_thread(
+                move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                    let transaction_result = if using_transaction {
+                        if transaction.is_none() {
+                            Err("transaction is not started".to_string())
+                        } else {
+                            Ok(transaction)
                         }
-
-                        // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    } else {
+                        Ok(None)
                     };
 
-                    callback.call(&mut task_context, this, callback_arguments)?;
+                    let result = transaction_result.and_then(|transaction_arg| {
+                        platform
+                            .drive
+                            .add_new_identity_from_cbor_encoded_bytes(
+                                identity_cbor,
+                                &block_info,
+                                apply,
+                                transaction_arg,
+                            )
+                            .map_err(|err| err.to_string())
+                    });
 
-                    Ok(())
-                });
-            })
+                    channel.send(move |mut task_context| {
+                        let callback = js_callback.into_inner(&mut task_context);
+                        let this = task_context.undefined();
+
+                        let callback_arguments: Vec<Handle<JsValue>> = match result {
+                            Ok(fee_result) => {
+                                let js_fee_result =
+                                    task_context.boxed(FeeResultWrapper::new(fee_result));
+
+                                // First parameter of JS callbacks is error, which is null in this case
+                                vec![task_context.null().upcast(), js_fee_result.upcast()]
+                            }
+
+                            // Convert the error to a JavaScript exception on failure
+                            Err(err) => vec![task_context.error(err)?.upcast()],
+                        };
+
+                        callback.call(&mut task_context, this, callback_arguments)?;
+
+                        Ok(())
+                    });
+                },
+            )
             .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
@@ -956,64 +979,66 @@ impl PlatformWrapper {
         let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-                let transaction_result = if using_transaction {
-                    if transaction.is_none() {
-                        Err("transaction is not started".to_string())
-                    } else {
-                        Ok(transaction)
-                    }
-                } else {
-                    Ok(None)
-                };
-
-                let result = transaction_result.and_then(|transaction_arg| {
-                    platform
-                        .drive
-                        .fetch_full_identity(identity_id, transaction_arg)
-                        .map_err(|err| err.to_string())
-                });
-
-                channel.send(move |mut task_context| {
-                    let callback = js_callback.into_inner(&mut task_context);
-                    let this = task_context.undefined();
-
-                    let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok(maybe_identity) => {
-                            if let Some(identity) = maybe_identity {
-                                match identity.to_buffer() {
-                                    Ok(serialized_identity) => {
-                                        let js_serialized_identity = JsBuffer::external(
-                                            &mut task_context,
-                                            serialized_identity,
-                                        );
-
-                                        vec![
-                                            task_context.null().upcast(),
-                                            js_serialized_identity.upcast(),
-                                        ]
-                                    }
-                                    Err(e) => {
-                                        let err_message =
-                                            format!("can't serialise identities: {}", e);
-
-                                        vec![task_context.error(err_message)?.upcast()]
-                                    }
-                                }
-                            } else {
-                                vec![task_context.null().upcast(), task_context.null().upcast()]
-                            }
+            .send_to_drive_thread(
+                move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                    let transaction_result = if using_transaction {
+                        if transaction.is_none() {
+                            Err("transaction is not started".to_string())
+                        } else {
+                            Ok(transaction)
                         }
-
-                        // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    } else {
+                        Ok(None)
                     };
 
-                    callback.call(&mut task_context, this, callback_arguments)?;
+                    let result = transaction_result.and_then(|transaction_arg| {
+                        platform
+                            .drive
+                            .fetch_full_identity(identity_id, transaction_arg)
+                            .map_err(|err| err.to_string())
+                    });
 
-                    Ok(())
-                });
-            })
+                    channel.send(move |mut task_context| {
+                        let callback = js_callback.into_inner(&mut task_context);
+                        let this = task_context.undefined();
+
+                        let callback_arguments: Vec<Handle<JsValue>> = match result {
+                            Ok(maybe_identity) => {
+                                if let Some(identity) = maybe_identity {
+                                    match identity.to_buffer() {
+                                        Ok(serialized_identity) => {
+                                            let js_serialized_identity = JsBuffer::external(
+                                                &mut task_context,
+                                                serialized_identity,
+                                            );
+
+                                            vec![
+                                                task_context.null().upcast(),
+                                                js_serialized_identity.upcast(),
+                                            ]
+                                        }
+                                        Err(e) => {
+                                            let err_message =
+                                                format!("can't serialise identities: {}", e);
+
+                                            vec![task_context.error(err_message)?.upcast()]
+                                        }
+                                    }
+                                } else {
+                                    vec![task_context.null().upcast(), task_context.null().upcast()]
+                                }
+                            }
+
+                            // Convert the error to a JavaScript exception on failure
+                            Err(err) => vec![task_context.error(err)?.upcast()],
+                        };
+
+                        callback.call(&mut task_context, this, callback_arguments)?;
+
+                        Ok(())
+                    });
+                },
+            )
             .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
@@ -1033,47 +1058,49 @@ impl PlatformWrapper {
         let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-                let transaction_result = if using_transaction {
-                    if transaction.is_none() {
-                        Err("transaction is not started".to_string())
-                    } else {
-                        Ok(transaction)
-                    }
-                } else {
-                    Ok(None)
-                };
-
-                let result = transaction_result.and_then(|transaction_arg| {
-                    platform
-                        .drive
-                        .fetch_identity_balance(identity_id, transaction_arg)
-                        .map_err(|err| err.to_string())
-                });
-
-                channel.send(move |mut task_context| {
-                    let callback = js_callback.into_inner(&mut task_context);
-                    let this = task_context.undefined();
-
-                    let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok(maybe_balance) => {
-                            if let Some(credits) = maybe_balance {
-                                let value = JsNumber::new(&mut task_context, credits as f64);
-                                vec![task_context.null().upcast(), value.upcast()]
-                            } else {
-                                vec![task_context.null().upcast(), task_context.null().upcast()]
-                            }
+            .send_to_drive_thread(
+                move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                    let transaction_result = if using_transaction {
+                        if transaction.is_none() {
+                            Err("transaction is not started".to_string())
+                        } else {
+                            Ok(transaction)
                         }
-
-                        // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    } else {
+                        Ok(None)
                     };
 
-                    callback.call(&mut task_context, this, callback_arguments)?;
+                    let result = transaction_result.and_then(|transaction_arg| {
+                        platform
+                            .drive
+                            .fetch_identity_balance(identity_id, transaction_arg)
+                            .map_err(|err| err.to_string())
+                    });
 
-                    Ok(())
-                });
-            })
+                    channel.send(move |mut task_context| {
+                        let callback = js_callback.into_inner(&mut task_context);
+                        let this = task_context.undefined();
+
+                        let callback_arguments: Vec<Handle<JsValue>> = match result {
+                            Ok(maybe_balance) => {
+                                if let Some(credits) = maybe_balance {
+                                    let value = JsNumber::new(&mut task_context, credits as f64);
+                                    vec![task_context.null().upcast(), value.upcast()]
+                                } else {
+                                    vec![task_context.null().upcast(), task_context.null().upcast()]
+                                }
+                            }
+
+                            // Convert the error to a JavaScript exception on failure
+                            Err(err) => vec![task_context.error(err)?.upcast()],
+                        };
+
+                        callback.call(&mut task_context, this, callback_arguments)?;
+
+                        Ok(())
+                    });
+                },
+            )
             .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
@@ -1101,64 +1128,68 @@ impl PlatformWrapper {
         let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-                let transaction_result = if using_transaction {
-                    if transaction.is_none() {
-                        Err("transaction is not started".to_string())
-                    } else {
-                        Ok(transaction)
-                    }
-                } else {
-                    Ok(None)
-                };
-
-                let result = transaction_result.and_then(|transaction_arg| {
-                    platform
-                        .drive
-                        .fetch_identity_balance_include_debt_with_costs(
-                            identity_id,
-                            &block_info,
-                            apply,
-                            transaction_arg,
-                        )
-                        .map_err(|err| err.to_string())
-                });
-
-                channel.send(move |mut task_context| {
-                    let callback = js_callback.into_inner(&mut task_context);
-                    let this = task_context.undefined();
-
-                    let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok((maybe_balance, fee_result)) => {
-                            let js_result = task_context.empty_array();
-
-                            let js_balance: Handle<JsValue> = if let Some(credits) = maybe_balance {
-                                let value = JsNumber::new(&mut task_context, credits as f64);
-                                value.upcast()
-                            } else {
-                                task_context.null().upcast()
-                            };
-
-                            js_result.set(&mut task_context, 0, js_balance)?;
-
-                            let js_fee_result =
-                                task_context.boxed(FeeResultWrapper::new(fee_result));
-
-                            js_result.set(&mut task_context, 1, js_fee_result)?;
-
-                            // First parameter of JS callbacks is error, which is null in this case
-                            vec![task_context.null().upcast(), js_result.upcast()]
+            .send_to_drive_thread(
+                move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                    let transaction_result = if using_transaction {
+                        if transaction.is_none() {
+                            Err("transaction is not started".to_string())
+                        } else {
+                            Ok(transaction)
                         }
-
-                        // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    } else {
+                        Ok(None)
                     };
 
-                    callback.call(&mut task_context, this, callback_arguments)?;
+                    let result = transaction_result.and_then(|transaction_arg| {
+                        platform
+                            .drive
+                            .fetch_identity_balance_include_debt_with_costs(
+                                identity_id,
+                                &block_info,
+                                apply,
+                                transaction_arg,
+                            )
+                            .map_err(|err| err.to_string())
+                    });
 
-                    Ok(())
-                });
-            })
+                    channel.send(move |mut task_context| {
+                        let callback = js_callback.into_inner(&mut task_context);
+                        let this = task_context.undefined();
+
+                        let callback_arguments: Vec<Handle<JsValue>> = match result {
+                            Ok((maybe_balance, fee_result)) => {
+                                let js_result = task_context.empty_array();
+
+                                let js_balance: Handle<JsValue> = if let Some(credits) =
+                                    maybe_balance
+                                {
+                                    let value = JsNumber::new(&mut task_context, credits as f64);
+                                    value.upcast()
+                                } else {
+                                    task_context.null().upcast()
+                                };
+
+                                js_result.set(&mut task_context, 0, js_balance)?;
+
+                                let js_fee_result =
+                                    task_context.boxed(FeeResultWrapper::new(fee_result));
+
+                                js_result.set(&mut task_context, 1, js_fee_result)?;
+
+                                // First parameter of JS callbacks is error, which is null in this case
+                                vec![task_context.null().upcast(), js_result.upcast()]
+                            }
+
+                            // Convert the error to a JavaScript exception on failure
+                            Err(err) => vec![task_context.error(err)?.upcast()],
+                        };
+
+                        callback.call(&mut task_context, this, callback_arguments)?;
+
+                        Ok(())
+                    });
+                },
+            )
             .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
@@ -1184,64 +1215,68 @@ impl PlatformWrapper {
         let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-                let transaction_result = if using_transaction {
-                    if transaction.is_none() {
-                        Err("transaction is not started".to_string())
-                    } else {
-                        Ok(transaction)
-                    }
-                } else {
-                    Ok(None)
-                };
-
-                let result = transaction_result.and_then(|transaction_arg| {
-                    platform
-                        .drive
-                        .fetch_identity_balance_with_costs(
-                            identity_id,
-                            &block_info,
-                            apply,
-                            transaction_arg,
-                        )
-                        .map_err(|err| err.to_string())
-                });
-
-                channel.send(move |mut task_context| {
-                    let callback = js_callback.into_inner(&mut task_context);
-                    let this = task_context.undefined();
-
-                    let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok((maybe_balance, fee_result)) => {
-                            let js_result = task_context.empty_array();
-
-                            let js_balance: Handle<JsValue> = if let Some(credits) = maybe_balance {
-                                let value = JsNumber::new(&mut task_context, credits as f64);
-                                value.upcast()
-                            } else {
-                                task_context.null().upcast()
-                            };
-
-                            js_result.set(&mut task_context, 0, js_balance)?;
-
-                            let js_fee_result =
-                                task_context.boxed(FeeResultWrapper::new(fee_result));
-
-                            js_result.set(&mut task_context, 1, js_fee_result)?;
-
-                            // First parameter of JS callbacks is error, which is null in this case
-                            vec![task_context.null().upcast(), js_result.upcast()]
+            .send_to_drive_thread(
+                move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                    let transaction_result = if using_transaction {
+                        if transaction.is_none() {
+                            Err("transaction is not started".to_string())
+                        } else {
+                            Ok(transaction)
                         }
-
-                        // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    } else {
+                        Ok(None)
                     };
 
-                    callback.call(&mut task_context, this, callback_arguments)?;
+                    let result = transaction_result.and_then(|transaction_arg| {
+                        platform
+                            .drive
+                            .fetch_identity_balance_with_costs(
+                                identity_id,
+                                &block_info,
+                                apply,
+                                transaction_arg,
+                            )
+                            .map_err(|err| err.to_string())
+                    });
 
-                    Ok(())
-                });
-            })
+                    channel.send(move |mut task_context| {
+                        let callback = js_callback.into_inner(&mut task_context);
+                        let this = task_context.undefined();
+
+                        let callback_arguments: Vec<Handle<JsValue>> = match result {
+                            Ok((maybe_balance, fee_result)) => {
+                                let js_result = task_context.empty_array();
+
+                                let js_balance: Handle<JsValue> = if let Some(credits) =
+                                    maybe_balance
+                                {
+                                    let value = JsNumber::new(&mut task_context, credits as f64);
+                                    value.upcast()
+                                } else {
+                                    task_context.null().upcast()
+                                };
+
+                                js_result.set(&mut task_context, 0, js_balance)?;
+
+                                let js_fee_result =
+                                    task_context.boxed(FeeResultWrapper::new(fee_result));
+
+                                js_result.set(&mut task_context, 1, js_fee_result)?;
+
+                                // First parameter of JS callbacks is error, which is null in this case
+                                vec![task_context.null().upcast(), js_result.upcast()]
+                            }
+
+                            // Convert the error to a JavaScript exception on failure
+                            Err(err) => vec![task_context.error(err)?.upcast()],
+                        };
+
+                        callback.call(&mut task_context, this, callback_arguments)?;
+
+                        Ok(())
+                    });
+                },
+            )
             .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
@@ -1261,45 +1296,47 @@ impl PlatformWrapper {
         let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-                let transaction_result = if using_transaction {
-                    if transaction.is_none() {
-                        Err("transaction is not started".to_string())
-                    } else {
-                        Ok(transaction)
-                    }
-                } else {
-                    Ok(None)
-                };
-
-                let result = transaction_result.and_then(|transaction_arg| {
-                    platform
-                        .drive
-                        .prove_full_identity(identity_id, transaction_arg)
-                        .map_err(|err| err.to_string())
-                });
-
-                channel.send(move |mut task_context| {
-                    let callback = js_callback.into_inner(&mut task_context);
-                    let this = task_context.undefined();
-
-                    let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok(identity_proof) => {
-                            let js_identity_proof =
-                                JsBuffer::external(&mut task_context, identity_proof);
-
-                            vec![task_context.null().upcast(), js_identity_proof.upcast()]
+            .send_to_drive_thread(
+                move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                    let transaction_result = if using_transaction {
+                        if transaction.is_none() {
+                            Err("transaction is not started".to_string())
+                        } else {
+                            Ok(transaction)
                         }
-
-                        // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    } else {
+                        Ok(None)
                     };
 
-                    callback.call(&mut task_context, this, callback_arguments)?;
+                    let result = transaction_result.and_then(|transaction_arg| {
+                        platform
+                            .drive
+                            .prove_full_identity(identity_id, transaction_arg)
+                            .map_err(|err| err.to_string())
+                    });
 
-                    Ok(())
-                });
-            })
+                    channel.send(move |mut task_context| {
+                        let callback = js_callback.into_inner(&mut task_context);
+                        let this = task_context.undefined();
+
+                        let callback_arguments: Vec<Handle<JsValue>> = match result {
+                            Ok(identity_proof) => {
+                                let js_identity_proof =
+                                    JsBuffer::external(&mut task_context, identity_proof);
+
+                                vec![task_context.null().upcast(), js_identity_proof.upcast()]
+                            }
+
+                            // Convert the error to a JavaScript exception on failure
+                            Err(err) => vec![task_context.error(err)?.upcast()],
+                        };
+
+                        callback.call(&mut task_context, this, callback_arguments)?;
+
+                        Ok(())
+                    });
+                },
+            )
             .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
@@ -1319,45 +1356,47 @@ impl PlatformWrapper {
         let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-                let transaction_result = if using_transaction {
-                    if transaction.is_none() {
-                        Err("transaction is not started".to_string())
-                    } else {
-                        Ok(transaction)
-                    }
-                } else {
-                    Ok(None)
-                };
-
-                let result = transaction_result.and_then(|transaction_arg| {
-                    platform
-                        .drive
-                        .proved_full_identities(&identity_ids, transaction_arg)
-                        .map_err(|err| err.to_string())
-                });
-
-                channel.send(move |mut task_context| {
-                    let callback = js_callback.into_inner(&mut task_context);
-                    let this = task_context.undefined();
-
-                    let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok(identities_proof) => {
-                            let js_identities_proof =
-                                JsBuffer::external(&mut task_context, identities_proof);
-
-                            vec![task_context.null().upcast(), js_identities_proof.upcast()]
+            .send_to_drive_thread(
+                move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                    let transaction_result = if using_transaction {
+                        if transaction.is_none() {
+                            Err("transaction is not started".to_string())
+                        } else {
+                            Ok(transaction)
                         }
-
-                        // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    } else {
+                        Ok(None)
                     };
 
-                    callback.call(&mut task_context, this, callback_arguments)?;
+                    let result = transaction_result.and_then(|transaction_arg| {
+                        platform
+                            .drive
+                            .proved_full_identities(&identity_ids, transaction_arg)
+                            .map_err(|err| err.to_string())
+                    });
 
-                    Ok(())
-                });
-            })
+                    channel.send(move |mut task_context| {
+                        let callback = js_callback.into_inner(&mut task_context);
+                        let this = task_context.undefined();
+
+                        let callback_arguments: Vec<Handle<JsValue>> = match result {
+                            Ok(identities_proof) => {
+                                let js_identities_proof =
+                                    JsBuffer::external(&mut task_context, identities_proof);
+
+                                vec![task_context.null().upcast(), js_identities_proof.upcast()]
+                            }
+
+                            // Convert the error to a JavaScript exception on failure
+                            Err(err) => vec![task_context.error(err)?.upcast()],
+                        };
+
+                        callback.call(&mut task_context, this, callback_arguments)?;
+
+                        Ok(())
+                    });
+                },
+            )
             .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
@@ -1384,69 +1423,72 @@ impl PlatformWrapper {
         let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-                let transaction_result = if using_transaction {
-                    if transaction.is_none() {
-                        Err("transaction is not started".to_string())
-                    } else {
-                        Ok(transaction)
-                    }
-                } else {
-                    Ok(None)
-                };
-
-                let result: Result<Vec<Option<Vec<u8>>>, String> =
-                    transaction_result.and_then(|transaction_arg| {
-                        platform
-                            .drive
-                            .fetch_full_identities_by_unique_public_key_hashes(
-                                &public_key_hashes,
-                                transaction_arg,
-                            )
-                            .map_err(|err| err.to_string())
-                            .and_then(|hashes_to_identities| {
-                                hashes_to_identities
-                                    .into_values()
-                                    .filter(|identity| identity.is_some())
-                                    .map(|identity| identity.map(|i| i.to_buffer()).transpose())
-                                    .collect::<Result<_, _>>()
-                                    .map_err(|err| err.to_string())
-                            })
-                    });
-
-                channel.send(move |mut task_context| {
-                    let callback = js_callback.into_inner(&mut task_context);
-                    let this = task_context.undefined();
-
-                    let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok(hashes_to_identities) => {
-                            let js_array = task_context.empty_array();
-
-                            hashes_to_identities.into_iter().enumerate().try_for_each(
-                                |(i, identity_bytes)| {
-                                    let value: Handle<JsValue> = if let Some(bytes) = identity_bytes
-                                    {
-                                        JsBuffer::external(&mut task_context, bytes).upcast()
-                                    } else {
-                                        task_context.null().upcast()
-                                    };
-
-                                    js_array.set(&mut task_context, i as u32, value).map(|_| ())
-                                },
-                            )?;
-
-                            vec![task_context.null().upcast(), js_array.upcast()]
+            .send_to_drive_thread(
+                move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                    let transaction_result = if using_transaction {
+                        if transaction.is_none() {
+                            Err("transaction is not started".to_string())
+                        } else {
+                            Ok(transaction)
                         }
-
-                        // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    } else {
+                        Ok(None)
                     };
 
-                    callback.call(&mut task_context, this, callback_arguments)?;
+                    let result: Result<Vec<Option<Vec<u8>>>, String> =
+                        transaction_result.and_then(|transaction_arg| {
+                            platform
+                                .drive
+                                .fetch_full_identities_by_unique_public_key_hashes(
+                                    &public_key_hashes,
+                                    transaction_arg,
+                                )
+                                .map_err(|err| err.to_string())
+                                .and_then(|hashes_to_identities| {
+                                    hashes_to_identities
+                                        .into_values()
+                                        .filter(|identity| identity.is_some())
+                                        .map(|identity| identity.map(|i| i.to_buffer()).transpose())
+                                        .collect::<Result<_, _>>()
+                                        .map_err(|err| err.to_string())
+                                })
+                        });
 
-                    Ok(())
-                });
-            })
+                    channel.send(move |mut task_context| {
+                        let callback = js_callback.into_inner(&mut task_context);
+                        let this = task_context.undefined();
+
+                        let callback_arguments: Vec<Handle<JsValue>> = match result {
+                            Ok(hashes_to_identities) => {
+                                let js_array = task_context.empty_array();
+
+                                hashes_to_identities.into_iter().enumerate().try_for_each(
+                                    |(i, identity_bytes)| {
+                                        let value: Handle<JsValue> = if let Some(bytes) =
+                                            identity_bytes
+                                        {
+                                            JsBuffer::external(&mut task_context, bytes).upcast()
+                                        } else {
+                                            task_context.null().upcast()
+                                        };
+
+                                        js_array.set(&mut task_context, i as u32, value).map(|_| ())
+                                    },
+                                )?;
+
+                                vec![task_context.null().upcast(), js_array.upcast()]
+                            }
+
+                            // Convert the error to a JavaScript exception on failure
+                            Err(err) => vec![task_context.error(err)?.upcast()],
+                        };
+
+                        callback.call(&mut task_context, this, callback_arguments)?;
+
+                        Ok(())
+                    });
+                },
+            )
             .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
@@ -1473,48 +1515,50 @@ impl PlatformWrapper {
         let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-                let transaction_result = if using_transaction {
-                    if transaction.is_none() {
-                        Err("transaction is not started".to_string())
-                    } else {
-                        Ok(transaction)
-                    }
-                } else {
-                    Ok(None)
-                };
-
-                let result: Result<Vec<u8>, String> =
-                    transaction_result.and_then(|transaction_arg| {
-                        platform
-                            .drive
-                            .prove_full_identities_by_unique_public_key_hashes(
-                                &public_key_hashes,
-                                transaction_arg,
-                            )
-                            .map_err(|err| err.to_string())
-                    });
-
-                channel.send(move |mut task_context| {
-                    let callback = js_callback.into_inner(&mut task_context);
-                    let this = task_context.undefined();
-
-                    let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok(proof) => {
-                            let js_proof = JsBuffer::external(&mut task_context, proof);
-
-                            vec![task_context.null().upcast(), js_proof.upcast()]
+            .send_to_drive_thread(
+                move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                    let transaction_result = if using_transaction {
+                        if transaction.is_none() {
+                            Err("transaction is not started".to_string())
+                        } else {
+                            Ok(transaction)
                         }
-
-                        // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    } else {
+                        Ok(None)
                     };
 
-                    callback.call(&mut task_context, this, callback_arguments)?;
+                    let result: Result<Vec<u8>, String> =
+                        transaction_result.and_then(|transaction_arg| {
+                            platform
+                                .drive
+                                .prove_full_identities_by_unique_public_key_hashes(
+                                    &public_key_hashes,
+                                    transaction_arg,
+                                )
+                                .map_err(|err| err.to_string())
+                        });
 
-                    Ok(())
-                });
-            })
+                    channel.send(move |mut task_context| {
+                        let callback = js_callback.into_inner(&mut task_context);
+                        let this = task_context.undefined();
+
+                        let callback_arguments: Vec<Handle<JsValue>> = match result {
+                            Ok(proof) => {
+                                let js_proof = JsBuffer::external(&mut task_context, proof);
+
+                                vec![task_context.null().upcast(), js_proof.upcast()]
+                            }
+
+                            // Convert the error to a JavaScript exception on failure
+                            Err(err) => vec![task_context.error(err)?.upcast()],
+                        };
+
+                        callback.call(&mut task_context, this, callback_arguments)?;
+
+                        Ok(())
+                    });
+                },
+            )
             .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
@@ -1540,65 +1584,70 @@ impl PlatformWrapper {
         let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-                let transaction_result = if using_transaction {
-                    if transaction.is_none() {
-                        Err("transaction is not started".to_string())
-                    } else {
-                        Ok(transaction)
-                    }
-                } else {
-                    Ok(None)
-                };
-
-                let result = transaction_result.and_then(|transaction_arg| {
-                    platform
-                        .drive
-                        .fetch_full_identity_with_costs(identity_id, &epoch, transaction_arg)
-                        .map_err(|err| err.to_string())
-                });
-
-                channel.send(move |mut task_context| {
-                    let callback = js_callback.into_inner(&mut task_context);
-                    let this = task_context.undefined();
-
-                    let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok((maybe_identity, fee_result)) => {
-                            let js_result = task_context.empty_array();
-
-                            let js_identity: Handle<JsValue> = if let Some(identity) =
-                                maybe_identity
-                            {
-                                let serialized_identity = identity.to_buffer().or_else(|e| {
-                                    task_context
-                                        .throw_error(format!("can't serialize identity: {}", e))
-                                })?;
-
-                                JsBuffer::external(&mut task_context, serialized_identity).upcast()
-                            } else {
-                                task_context.null().upcast()
-                            };
-
-                            js_result.set(&mut task_context, 0, js_identity)?;
-
-                            let js_fee_result =
-                                task_context.boxed(FeeResultWrapper::new(fee_result));
-
-                            js_result.set(&mut task_context, 1, js_fee_result)?;
-
-                            // First parameter of JS callbacks is error, which is null in this case
-                            vec![task_context.null().upcast(), js_result.upcast()]
+            .send_to_drive_thread(
+                move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                    let transaction_result = if using_transaction {
+                        if transaction.is_none() {
+                            Err("transaction is not started".to_string())
+                        } else {
+                            Ok(transaction)
                         }
-
-                        // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    } else {
+                        Ok(None)
                     };
 
-                    callback.call(&mut task_context, this, callback_arguments)?;
+                    let result = transaction_result.and_then(|transaction_arg| {
+                        platform
+                            .drive
+                            .fetch_full_identity_with_costs(identity_id, &epoch, transaction_arg)
+                            .map_err(|err| err.to_string())
+                    });
 
-                    Ok(())
-                });
-            })
+                    channel.send(move |mut task_context| {
+                        let callback = js_callback.into_inner(&mut task_context);
+                        let this = task_context.undefined();
+
+                        let callback_arguments: Vec<Handle<JsValue>> = match result {
+                            Ok((maybe_identity, fee_result)) => {
+                                let js_result = task_context.empty_array();
+
+                                let js_identity: Handle<JsValue> =
+                                    if let Some(identity) = maybe_identity {
+                                        let serialized_identity =
+                                            identity.to_buffer().or_else(|e| {
+                                                task_context.throw_error(format!(
+                                                    "can't serialize identity: {}",
+                                                    e
+                                                ))
+                                            })?;
+
+                                        JsBuffer::external(&mut task_context, serialized_identity)
+                                            .upcast()
+                                    } else {
+                                        task_context.null().upcast()
+                                    };
+
+                                js_result.set(&mut task_context, 0, js_identity)?;
+
+                                let js_fee_result =
+                                    task_context.boxed(FeeResultWrapper::new(fee_result));
+
+                                js_result.set(&mut task_context, 1, js_fee_result)?;
+
+                                // First parameter of JS callbacks is error, which is null in this case
+                                vec![task_context.null().upcast(), js_result.upcast()]
+                            }
+
+                            // Convert the error to a JavaScript exception on failure
+                            Err(err) => vec![task_context.error(err)?.upcast()],
+                        };
+
+                        callback.call(&mut task_context, this, callback_arguments)?;
+
+                        Ok(())
+                    });
+                },
+            )
             .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
@@ -1623,52 +1672,54 @@ impl PlatformWrapper {
         let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-                let transaction_result = if using_transaction {
-                    if transaction.is_none() {
-                        Err("transaction is not started".to_string())
-                    } else {
-                        Ok(transaction)
-                    }
-                } else {
-                    Ok(None)
-                };
-
-                let result = transaction_result.and_then(|transaction_arg| {
-                    platform
-                        .drive
-                        .add_to_identity_balance(
-                            identity_id,
-                            balance_to_add,
-                            &block_info,
-                            apply,
-                            transaction_arg,
-                        )
-                        .map_err(|err| err.to_string())
-                });
-
-                channel.send(move |mut task_context| {
-                    let callback = js_callback.into_inner(&mut task_context);
-                    let this = task_context.undefined();
-
-                    let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok(fee_result) => {
-                            let js_fee_result =
-                                task_context.boxed(FeeResultWrapper::new(fee_result));
-
-                            // First parameter of JS callbacks is error, which is null in this case
-                            vec![task_context.null().upcast(), js_fee_result.upcast()]
+            .send_to_drive_thread(
+                move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                    let transaction_result = if using_transaction {
+                        if transaction.is_none() {
+                            Err("transaction is not started".to_string())
+                        } else {
+                            Ok(transaction)
                         }
-
-                        // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    } else {
+                        Ok(None)
                     };
 
-                    callback.call(&mut task_context, this, callback_arguments)?;
+                    let result = transaction_result.and_then(|transaction_arg| {
+                        platform
+                            .drive
+                            .add_to_identity_balance(
+                                identity_id,
+                                balance_to_add,
+                                &block_info,
+                                apply,
+                                transaction_arg,
+                            )
+                            .map_err(|err| err.to_string())
+                    });
 
-                    Ok(())
-                });
-            })
+                    channel.send(move |mut task_context| {
+                        let callback = js_callback.into_inner(&mut task_context);
+                        let this = task_context.undefined();
+
+                        let callback_arguments: Vec<Handle<JsValue>> = match result {
+                            Ok(fee_result) => {
+                                let js_fee_result =
+                                    task_context.boxed(FeeResultWrapper::new(fee_result));
+
+                                // First parameter of JS callbacks is error, which is null in this case
+                                vec![task_context.null().upcast(), js_fee_result.upcast()]
+                            }
+
+                            // Convert the error to a JavaScript exception on failure
+                            Err(err) => vec![task_context.error(err)?.upcast()],
+                        };
+
+                        callback.call(&mut task_context, this, callback_arguments)?;
+
+                        Ok(())
+                    });
+                },
+            )
             .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
@@ -1693,52 +1744,54 @@ impl PlatformWrapper {
         let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-                let transaction_result = if using_transaction {
-                    if transaction.is_none() {
-                        Err("transaction is not started".to_string())
-                    } else {
-                        Ok(transaction)
-                    }
-                } else {
-                    Ok(None)
-                };
-
-                let result = transaction_result.and_then(|transaction_arg| {
-                    platform
-                        .drive
-                        .remove_from_identity_balance(
-                            identity_id,
-                            amount,
-                            &block_info,
-                            apply,
-                            transaction_arg,
-                        )
-                        .map_err(|err| err.to_string())
-                });
-
-                channel.send(move |mut task_context| {
-                    let callback = js_callback.into_inner(&mut task_context);
-                    let this = task_context.undefined();
-
-                    let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok(fee_result) => {
-                            let js_fee_result =
-                                task_context.boxed(FeeResultWrapper::new(fee_result));
-
-                            // First parameter of JS callbacks is error, which is null in this case
-                            vec![task_context.null().upcast(), js_fee_result.upcast()]
+            .send_to_drive_thread(
+                move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                    let transaction_result = if using_transaction {
+                        if transaction.is_none() {
+                            Err("transaction is not started".to_string())
+                        } else {
+                            Ok(transaction)
                         }
-
-                        // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    } else {
+                        Ok(None)
                     };
 
-                    callback.call(&mut task_context, this, callback_arguments)?;
+                    let result = transaction_result.and_then(|transaction_arg| {
+                        platform
+                            .drive
+                            .remove_from_identity_balance(
+                                identity_id,
+                                amount,
+                                &block_info,
+                                apply,
+                                transaction_arg,
+                            )
+                            .map_err(|err| err.to_string())
+                    });
 
-                    Ok(())
-                });
-            })
+                    channel.send(move |mut task_context| {
+                        let callback = js_callback.into_inner(&mut task_context);
+                        let this = task_context.undefined();
+
+                        let callback_arguments: Vec<Handle<JsValue>> = match result {
+                            Ok(fee_result) => {
+                                let js_fee_result =
+                                    task_context.boxed(FeeResultWrapper::new(fee_result));
+
+                                // First parameter of JS callbacks is error, which is null in this case
+                                vec![task_context.null().upcast(), js_fee_result.upcast()]
+                            }
+
+                            // Convert the error to a JavaScript exception on failure
+                            Err(err) => vec![task_context.error(err)?.upcast()],
+                        };
+
+                        callback.call(&mut task_context, this, callback_arguments)?;
+
+                        Ok(())
+                    });
+                },
+            )
             .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
@@ -1762,46 +1815,51 @@ impl PlatformWrapper {
         let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-                let transaction_result = if using_transaction {
-                    if transaction.is_none() {
-                        Err("transaction is not started".to_string())
-                    } else {
-                        Ok(transaction)
-                    }
-                } else {
-                    Ok(None)
-                };
-
-                let result = transaction_result.and_then(|transaction_arg| {
-                    platform
-                        .drive
-                        .apply_balance_change_from_fee_to_identity(balance_change, transaction_arg)
-                        .map_err(|err| err.to_string())
-                });
-
-                channel.send(move |mut task_context| {
-                    let callback = js_callback.into_inner(&mut task_context);
-                    let this = task_context.undefined();
-
-                    let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok(outcome) => {
-                            let js_fee_result =
-                                task_context.boxed(FeeResultWrapper::new(outcome.actual_fee_paid));
-
-                            // First parameter of JS callbacks is error, which is null in this case
-                            vec![task_context.null().upcast(), js_fee_result.upcast()]
+            .send_to_drive_thread(
+                move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                    let transaction_result = if using_transaction {
+                        if transaction.is_none() {
+                            Err("transaction is not started".to_string())
+                        } else {
+                            Ok(transaction)
                         }
-
-                        // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    } else {
+                        Ok(None)
                     };
 
-                    callback.call(&mut task_context, this, callback_arguments)?;
+                    let result = transaction_result.and_then(|transaction_arg| {
+                        platform
+                            .drive
+                            .apply_balance_change_from_fee_to_identity(
+                                balance_change,
+                                transaction_arg,
+                            )
+                            .map_err(|err| err.to_string())
+                    });
 
-                    Ok(())
-                });
-            })
+                    channel.send(move |mut task_context| {
+                        let callback = js_callback.into_inner(&mut task_context);
+                        let this = task_context.undefined();
+
+                        let callback_arguments: Vec<Handle<JsValue>> = match result {
+                            Ok(outcome) => {
+                                let js_fee_result = task_context
+                                    .boxed(FeeResultWrapper::new(outcome.actual_fee_paid));
+
+                                // First parameter of JS callbacks is error, which is null in this case
+                                vec![task_context.null().upcast(), js_fee_result.upcast()]
+                            }
+
+                            // Convert the error to a JavaScript exception on failure
+                            Err(err) => vec![task_context.error(err)?.upcast()],
+                        };
+
+                        callback.call(&mut task_context, this, callback_arguments)?;
+
+                        Ok(())
+                    });
+                },
+            )
             .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
@@ -1820,43 +1878,45 @@ impl PlatformWrapper {
         let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-                let transaction_result = if using_transaction {
-                    if transaction.is_none() {
-                        Err("transaction is not started".to_string())
-                    } else {
-                        Ok(transaction)
-                    }
-                } else {
-                    Ok(None)
-                };
-
-                let result = transaction_result.and_then(|transaction_arg| {
-                    platform
-                        .drive
-                        .add_to_system_credits(amount, transaction_arg)
-                        .map_err(|err| err.to_string())
-                });
-
-                channel.send(move |mut task_context| {
-                    let callback = js_callback.into_inner(&mut task_context);
-                    let this = task_context.undefined();
-
-                    let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok(()) => {
-                            // First parameter of JS callbacks is error, which is null in this case
-                            vec![task_context.null().upcast()]
+            .send_to_drive_thread(
+                move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                    let transaction_result = if using_transaction {
+                        if transaction.is_none() {
+                            Err("transaction is not started".to_string())
+                        } else {
+                            Ok(transaction)
                         }
-
-                        // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    } else {
+                        Ok(None)
                     };
 
-                    callback.call(&mut task_context, this, callback_arguments)?;
+                    let result = transaction_result.and_then(|transaction_arg| {
+                        platform
+                            .drive
+                            .add_to_system_credits(amount, transaction_arg)
+                            .map_err(|err| err.to_string())
+                    });
 
-                    Ok(())
-                });
-            })
+                    channel.send(move |mut task_context| {
+                        let callback = js_callback.into_inner(&mut task_context);
+                        let this = task_context.undefined();
+
+                        let callback_arguments: Vec<Handle<JsValue>> = match result {
+                            Ok(()) => {
+                                // First parameter of JS callbacks is error, which is null in this case
+                                vec![task_context.null().upcast()]
+                            }
+
+                            // Convert the error to a JavaScript exception on failure
+                            Err(err) => vec![task_context.error(err)?.upcast()],
+                        };
+
+                        callback.call(&mut task_context, this, callback_arguments)?;
+
+                        Ok(())
+                    });
+                },
+            )
             .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
@@ -1881,52 +1941,54 @@ impl PlatformWrapper {
         let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-                let transaction_result = if using_transaction {
-                    if transaction.is_none() {
-                        Err("transaction is not started".to_string())
-                    } else {
-                        Ok(transaction)
-                    }
-                } else {
-                    Ok(None)
-                };
-
-                let result = transaction_result.and_then(|transaction_arg| {
-                    platform
-                        .drive
-                        .add_new_keys_to_identity(
-                            identity_id,
-                            keys_to_add,
-                            &block_info,
-                            apply,
-                            transaction_arg,
-                        )
-                        .map_err(|err| err.to_string())
-                });
-
-                channel.send(move |mut task_context| {
-                    let callback = js_callback.into_inner(&mut task_context);
-                    let this = task_context.undefined();
-
-                    let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok(fee_result) => {
-                            let js_fee_result =
-                                task_context.boxed(FeeResultWrapper::new(fee_result));
-
-                            // First parameter of JS callbacks is error, which is null in this case
-                            vec![task_context.null().upcast(), js_fee_result.upcast()]
+            .send_to_drive_thread(
+                move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                    let transaction_result = if using_transaction {
+                        if transaction.is_none() {
+                            Err("transaction is not started".to_string())
+                        } else {
+                            Ok(transaction)
                         }
-
-                        // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    } else {
+                        Ok(None)
                     };
 
-                    callback.call(&mut task_context, this, callback_arguments)?;
+                    let result = transaction_result.and_then(|transaction_arg| {
+                        platform
+                            .drive
+                            .add_new_keys_to_identity(
+                                identity_id,
+                                keys_to_add,
+                                &block_info,
+                                apply,
+                                transaction_arg,
+                            )
+                            .map_err(|err| err.to_string())
+                    });
 
-                    Ok(())
-                });
-            })
+                    channel.send(move |mut task_context| {
+                        let callback = js_callback.into_inner(&mut task_context);
+                        let this = task_context.undefined();
+
+                        let callback_arguments: Vec<Handle<JsValue>> = match result {
+                            Ok(fee_result) => {
+                                let js_fee_result =
+                                    task_context.boxed(FeeResultWrapper::new(fee_result));
+
+                                // First parameter of JS callbacks is error, which is null in this case
+                                vec![task_context.null().upcast(), js_fee_result.upcast()]
+                            }
+
+                            // Convert the error to a JavaScript exception on failure
+                            Err(err) => vec![task_context.error(err)?.upcast()],
+                        };
+
+                        callback.call(&mut task_context, this, callback_arguments)?;
+
+                        Ok(())
+                    });
+                },
+            )
             .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
@@ -1966,53 +2028,55 @@ impl PlatformWrapper {
         let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-                let transaction_result = if using_transaction {
-                    if transaction.is_none() {
-                        Err("transaction is not started".to_string())
-                    } else {
-                        Ok(transaction)
-                    }
-                } else {
-                    Ok(None)
-                };
-
-                let result = transaction_result.and_then(|transaction_arg| {
-                    platform
-                        .drive
-                        .disable_identity_keys(
-                            identity_id,
-                            key_ids,
-                            disabled_at,
-                            &block_info,
-                            apply,
-                            transaction_arg,
-                        )
-                        .map_err(|err| err.to_string())
-                });
-
-                channel.send(move |mut task_context| {
-                    let callback = js_callback.into_inner(&mut task_context);
-                    let this = task_context.undefined();
-
-                    let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok(fee_result) => {
-                            let js_fee_result =
-                                task_context.boxed(FeeResultWrapper::new(fee_result));
-
-                            // First parameter of JS callbacks is error, which is null in this case
-                            vec![task_context.null().upcast(), js_fee_result.upcast()]
+            .send_to_drive_thread(
+                move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                    let transaction_result = if using_transaction {
+                        if transaction.is_none() {
+                            Err("transaction is not started".to_string())
+                        } else {
+                            Ok(transaction)
                         }
-
-                        // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    } else {
+                        Ok(None)
                     };
 
-                    callback.call(&mut task_context, this, callback_arguments)?;
+                    let result = transaction_result.and_then(|transaction_arg| {
+                        platform
+                            .drive
+                            .disable_identity_keys(
+                                identity_id,
+                                key_ids,
+                                disabled_at,
+                                &block_info,
+                                apply,
+                                transaction_arg,
+                            )
+                            .map_err(|err| err.to_string())
+                    });
 
-                    Ok(())
-                });
-            })
+                    channel.send(move |mut task_context| {
+                        let callback = js_callback.into_inner(&mut task_context);
+                        let this = task_context.undefined();
+
+                        let callback_arguments: Vec<Handle<JsValue>> = match result {
+                            Ok(fee_result) => {
+                                let js_fee_result =
+                                    task_context.boxed(FeeResultWrapper::new(fee_result));
+
+                                // First parameter of JS callbacks is error, which is null in this case
+                                vec![task_context.null().upcast(), js_fee_result.upcast()]
+                            }
+
+                            // Convert the error to a JavaScript exception on failure
+                            Err(err) => vec![task_context.error(err)?.upcast()],
+                        };
+
+                        callback.call(&mut task_context, this, callback_arguments)?;
+
+                        Ok(())
+                    });
+                },
+            )
             .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
@@ -2039,52 +2103,54 @@ impl PlatformWrapper {
         let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-                let transaction_result = if using_transaction {
-                    if transaction.is_none() {
-                        Err("transaction is not started".to_string())
-                    } else {
-                        Ok(transaction)
-                    }
-                } else {
-                    Ok(None)
-                };
-
-                let result = transaction_result.and_then(|transaction_arg| {
-                    platform
-                        .drive
-                        .update_identity_revision(
-                            identity_id,
-                            revision,
-                            &block_info,
-                            apply,
-                            transaction_arg,
-                        )
-                        .map_err(|err| err.to_string())
-                });
-
-                channel.send(move |mut task_context| {
-                    let callback = js_callback.into_inner(&mut task_context);
-                    let this = task_context.undefined();
-
-                    let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok(fee_result) => {
-                            let js_fee_result =
-                                task_context.boxed(FeeResultWrapper::new(fee_result));
-
-                            // First parameter of JS callbacks is error, which is null in this case
-                            vec![task_context.null().upcast(), js_fee_result.upcast()]
+            .send_to_drive_thread(
+                move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                    let transaction_result = if using_transaction {
+                        if transaction.is_none() {
+                            Err("transaction is not started".to_string())
+                        } else {
+                            Ok(transaction)
                         }
-
-                        // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    } else {
+                        Ok(None)
                     };
 
-                    callback.call(&mut task_context, this, callback_arguments)?;
+                    let result = transaction_result.and_then(|transaction_arg| {
+                        platform
+                            .drive
+                            .update_identity_revision(
+                                identity_id,
+                                revision,
+                                &block_info,
+                                apply,
+                                transaction_arg,
+                            )
+                            .map_err(|err| err.to_string())
+                    });
 
-                    Ok(())
-                });
-            })
+                    channel.send(move |mut task_context| {
+                        let callback = js_callback.into_inner(&mut task_context);
+                        let this = task_context.undefined();
+
+                        let callback_arguments: Vec<Handle<JsValue>> = match result {
+                            Ok(fee_result) => {
+                                let js_fee_result =
+                                    task_context.boxed(FeeResultWrapper::new(fee_result));
+
+                                // First parameter of JS callbacks is error, which is null in this case
+                                vec![task_context.null().upcast(), js_fee_result.upcast()]
+                            }
+
+                            // Convert the error to a JavaScript exception on failure
+                            Err(err) => vec![task_context.error(err)?.upcast()],
+                        };
+
+                        callback.call(&mut task_context, this, callback_arguments)?;
+
+                        Ok(())
+                    });
+                },
+            )
             .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
@@ -2123,60 +2189,63 @@ impl PlatformWrapper {
         let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-                let transaction_result = if using_transaction {
-                    if transaction.is_none() {
-                        Err("transaction is not started".to_string())
-                    } else {
-                        Ok(transaction)
-                    }
-                } else {
-                    Ok(None)
-                };
-
-                let result = transaction_result.and_then(|transaction_arg| {
-                    platform
-                        .drive
-                        .query_documents_cbor_with_document_type_lookup(
-                            &query_cbor,
-                            contract_id,
-                            document_type_name.as_str(),
-                            maybe_epoch.as_ref(),
-                            transaction_arg,
-                        )
-                        .map_err(|err| err.to_string())
-                });
-
-                channel.send(move |mut task_context| {
-                    let callback = js_callback.into_inner(&mut task_context);
-                    let this = task_context.undefined();
-                    let callback_arguments: Vec<Handle<JsValue>> = match result {
-                        Ok(QuerySerializedDocumentsOutcome {
-                            items,
-                            skipped,
-                            cost,
-                        }) => {
-                            let js_array: Handle<JsArray> = task_context.empty_array();
-                            let js_vecs = converter::nested_vecs_to_js(&mut task_context, items)?;
-                            let js_num = task_context.number(skipped).upcast::<JsValue>();
-                            let js_cost = task_context.number(cost as f64).upcast::<JsValue>();
-
-                            js_array.set(&mut task_context, 0, js_vecs)?;
-                            js_array.set(&mut task_context, 1, js_num)?;
-                            js_array.set(&mut task_context, 2, js_cost)?;
-
-                            vec![task_context.null().upcast(), js_array.upcast()]
+            .send_to_drive_thread(
+                move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                    let transaction_result = if using_transaction {
+                        if transaction.is_none() {
+                            Err("transaction is not started".to_string())
+                        } else {
+                            Ok(transaction)
                         }
-
-                        // Convert the error to a JavaScript exception on failure
-                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    } else {
+                        Ok(None)
                     };
 
-                    callback.call(&mut task_context, this, callback_arguments)?;
+                    let result = transaction_result.and_then(|transaction_arg| {
+                        platform
+                            .drive
+                            .query_documents_cbor_with_document_type_lookup(
+                                &query_cbor,
+                                contract_id,
+                                document_type_name.as_str(),
+                                maybe_epoch.as_ref(),
+                                transaction_arg,
+                            )
+                            .map_err(|err| err.to_string())
+                    });
 
-                    Ok(())
-                });
-            })
+                    channel.send(move |mut task_context| {
+                        let callback = js_callback.into_inner(&mut task_context);
+                        let this = task_context.undefined();
+                        let callback_arguments: Vec<Handle<JsValue>> = match result {
+                            Ok(QuerySerializedDocumentsOutcome {
+                                items,
+                                skipped,
+                                cost,
+                            }) => {
+                                let js_array: Handle<JsArray> = task_context.empty_array();
+                                let js_vecs =
+                                    converter::nested_vecs_to_js(&mut task_context, items)?;
+                                let js_num = task_context.number(skipped).upcast::<JsValue>();
+                                let js_cost = task_context.number(cost as f64).upcast::<JsValue>();
+
+                                js_array.set(&mut task_context, 0, js_vecs)?;
+                                js_array.set(&mut task_context, 1, js_num)?;
+                                js_array.set(&mut task_context, 2, js_cost)?;
+
+                                vec![task_context.null().upcast(), js_array.upcast()]
+                            }
+
+                            // Convert the error to a JavaScript exception on failure
+                            Err(err) => vec![task_context.error(err)?.upcast()],
+                        };
+
+                        callback.call(&mut task_context, this, callback_arguments)?;
+
+                        Ok(())
+                    });
+                },
+            )
             .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
@@ -2200,7 +2269,7 @@ impl PlatformWrapper {
         let using_transaction = js_using_transaction.value(&mut cx);
 
         drive
-            .send_to_drive_thread(move |platform: &Platform, transaction, channel| {
+            .send_to_drive_thread(move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
                 let transaction_result = if using_transaction {
                     if transaction.is_none() {
                         Err("transaction is not started".to_string())
@@ -2368,24 +2437,26 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        db.send_to_drive_thread(move |_platform: &Platform, transaction, channel| {
-            let result = transaction.is_some();
+        db.send_to_drive_thread(
+            move |_platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                let result = transaction.is_some();
 
-            channel.send(move |mut task_context| {
-                let callback = js_callback.into_inner(&mut task_context);
-                let this = task_context.undefined();
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
 
-                // First parameter of JS callbacks is error, which is null in this case
-                let callback_arguments: Vec<Handle<JsValue>> = vec![
-                    task_context.null().upcast(),
-                    task_context.boolean(result).upcast(),
-                ];
+                    // First parameter of JS callbacks is error, which is null in this case
+                    let callback_arguments: Vec<Handle<JsValue>> = vec![
+                        task_context.null().upcast(),
+                        task_context.boolean(result).upcast(),
+                    ];
 
-                callback.call(&mut task_context, this, callback_arguments)?;
+                    callback.call(&mut task_context, this, callback_arguments)?;
 
-                Ok(())
-            });
-        })
+                    Ok(())
+                });
+            },
+        )
         .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
@@ -2408,48 +2479,50 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-            let transaction_result = if using_transaction {
-                if transaction.is_none() {
-                    Err("transaction is not started".to_string())
-                } else {
-                    Ok(transaction)
-                }
-            } else {
-                Ok(None)
-            };
-
-            let grove_db = &platform.drive.grove;
-            let path_slice = path.iter().map(|fragment| fragment.as_slice());
-            let result = transaction_result.and_then(|transaction_arg| {
-                grove_db
-                    .get(path_slice, &key, transaction_arg)
-                    .unwrap()
-                    .map_err(Error::GroveDB)
-                    .map_err(|err| err.to_string())
-            });
-
-            channel.send(move |mut task_context| {
-                let callback = js_callback.into_inner(&mut task_context);
-                let this = task_context.undefined();
-                let callback_arguments: Vec<Handle<JsValue>> = match result {
-                    Ok(element) => {
-                        // First parameter of JS callbacks is error, which is null in this case
-                        vec![
-                            task_context.null().upcast(),
-                            converter::element_to_js_object(&mut task_context, element)?,
-                        ]
+        db.send_to_drive_thread(
+            move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
                     }
-
-                    // Convert the error to a JavaScript exception on failure
-                    Err(err) => vec![task_context.error(err)?.upcast()],
+                } else {
+                    Ok(None)
                 };
 
-                callback.call(&mut task_context, this, callback_arguments)?;
+                let grove_db = &platform.drive.grove;
+                let path_slice = path.iter().map(|fragment| fragment.as_slice());
+                let result = transaction_result.and_then(|transaction_arg| {
+                    grove_db
+                        .get(path_slice, &key, transaction_arg)
+                        .unwrap()
+                        .map_err(Error::GroveDB)
+                        .map_err(|err| err.to_string())
+                });
 
-                Ok(())
-            });
-        })
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok(element) => {
+                            // First parameter of JS callbacks is error, which is null in this case
+                            vec![
+                                task_context.null().upcast(),
+                                converter::element_to_js_object(&mut task_context, element)?,
+                            ]
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            },
+        )
         .or_else(|err| cx.throw_error(err.to_string()))?;
 
         // The result is returned through the callback, not through direct return
@@ -2475,40 +2548,42 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-            let transaction_result = if using_transaction {
-                if transaction.is_none() {
-                    Err("transaction is not started".to_string())
+        db.send_to_drive_thread(
+            move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
                 } else {
-                    Ok(transaction)
-                }
-            } else {
-                Ok(None)
-            };
-
-            let grove_db = &platform.drive.grove;
-            let path_slice = path.iter().map(|fragment| fragment.as_slice());
-            let result = transaction_result.and_then(|transaction_arg| {
-                grove_db
-                    .insert(path_slice, &key, element, None, transaction_arg)
-                    .unwrap()
-                    .map_err(Error::GroveDB)
-                    .map_err(|err| err.to_string())
-            });
-
-            channel.send(move |mut task_context| {
-                let callback = js_callback.into_inner(&mut task_context);
-                let this = task_context.undefined();
-
-                let callback_arguments: Vec<Handle<JsValue>> = match result {
-                    Ok(_) => vec![task_context.null().upcast()],
-                    Err(err) => vec![task_context.error(err)?.upcast()],
+                    Ok(None)
                 };
 
-                callback.call(&mut task_context, this, callback_arguments)?;
-                Ok(())
-            });
-        })
+                let grove_db = &platform.drive.grove;
+                let path_slice = path.iter().map(|fragment| fragment.as_slice());
+                let result = transaction_result.and_then(|transaction_arg| {
+                    grove_db
+                        .insert(path_slice, &key, element, None, transaction_arg)
+                        .unwrap()
+                        .map_err(Error::GroveDB)
+                        .map_err(|err| err.to_string())
+                });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok(_) => vec![task_context.null().upcast()],
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+                    Ok(())
+                });
+            },
+        )
         .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
@@ -2533,46 +2608,49 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-            let transaction_result = if using_transaction {
-                if transaction.is_none() {
-                    Err("transaction is not started".to_string())
+        db.send_to_drive_thread(
+            move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
                 } else {
-                    Ok(transaction)
-                }
-            } else {
-                Ok(None)
-            };
-
-            let grove_db = &platform.drive.grove;
-
-            let path_slice: Vec<&[u8]> = path.iter().map(|fragment| fragment.as_slice()).collect();
-            let result = transaction_result.and_then(|transaction_arg| {
-                grove_db
-                    .insert_if_not_exists(path_slice, key.as_slice(), element, transaction_arg)
-                    .unwrap()
-                    .map_err(Error::GroveDB)
-                    .map_err(|err| err.to_string())
-            });
-
-            channel.send(move |mut task_context| {
-                let callback = js_callback.into_inner(&mut task_context);
-                let this = task_context.undefined();
-                let callback_arguments: Vec<Handle<JsValue>> = match result {
-                    Ok(is_inserted) => vec![
-                        task_context.null().upcast(),
-                        task_context
-                            .boolean(is_inserted)
-                            .as_value(&mut task_context),
-                    ],
-                    Err(err) => vec![task_context.error(err)?.upcast()],
+                    Ok(None)
                 };
 
-                callback.call(&mut task_context, this, callback_arguments)?;
+                let grove_db = &platform.drive.grove;
 
-                Ok(())
-            });
-        })
+                let path_slice: Vec<&[u8]> =
+                    path.iter().map(|fragment| fragment.as_slice()).collect();
+                let result = transaction_result.and_then(|transaction_arg| {
+                    grove_db
+                        .insert_if_not_exists(path_slice, key.as_slice(), element, transaction_arg)
+                        .unwrap()
+                        .map_err(Error::GroveDB)
+                        .map_err(|err| err.to_string())
+                });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok(is_inserted) => vec![
+                            task_context.null().upcast(),
+                            task_context
+                                .boolean(is_inserted)
+                                .as_value(&mut task_context),
+                        ],
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            },
+        )
         .or_else(|err| cx.throw_error(err.to_string()))?;
 
         Ok(cx.undefined())
@@ -2594,44 +2672,46 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-            let transaction_result = if using_transaction {
-                if transaction.is_none() {
-                    Err("transaction is not started".to_string())
-                } else {
-                    Ok(transaction)
-                }
-            } else {
-                Ok(None)
-            };
-
-            let grove_db = &platform.drive.grove;
-
-            let result = transaction_result.and_then(|transaction_arg| {
-                grove_db
-                    .put_aux(&key, &value, None, transaction_arg)
-                    .unwrap()
-                    .map_err(Error::GroveDB)
-                    .map_err(|err| err.to_string())
-            });
-
-            channel.send(move |mut task_context| {
-                let callback = js_callback.into_inner(&mut task_context);
-                let this = task_context.undefined();
-                let callback_arguments: Vec<Handle<JsValue>> = match result {
-                    Ok(()) => {
-                        vec![task_context.null().upcast()]
+        db.send_to_drive_thread(
+            move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
                     }
-
-                    // Convert the error to a JavaScript exception on failure
-                    Err(err) => vec![task_context.error(err)?.upcast()],
+                } else {
+                    Ok(None)
                 };
 
-                callback.call(&mut task_context, this, callback_arguments)?;
+                let grove_db = &platform.drive.grove;
 
-                Ok(())
-            });
-        })
+                let result = transaction_result.and_then(|transaction_arg| {
+                    grove_db
+                        .put_aux(&key, &value, None, transaction_arg)
+                        .unwrap()
+                        .map_err(Error::GroveDB)
+                        .map_err(|err| err.to_string())
+                });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok(()) => {
+                            vec![task_context.null().upcast()]
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            },
+        )
         .or_else(|err| cx.throw_error(err.to_string()))?;
 
         // The result is returned through the callback, not through direct return
@@ -2652,44 +2732,46 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-            let transaction_result = if using_transaction {
-                if transaction.is_none() {
-                    Err("transaction is not started".to_string())
-                } else {
-                    Ok(transaction)
-                }
-            } else {
-                Ok(None)
-            };
-
-            let grove_db = &platform.drive.grove;
-
-            let result = transaction_result.and_then(|transaction_arg| {
-                grove_db
-                    .delete_aux(&key, None, transaction_arg)
-                    .unwrap()
-                    .map_err(Error::GroveDB)
-                    .map_err(|err| err.to_string())
-            });
-
-            channel.send(move |mut task_context| {
-                let callback = js_callback.into_inner(&mut task_context);
-                let this = task_context.undefined();
-                let callback_arguments: Vec<Handle<JsValue>> = match result {
-                    Ok(()) => {
-                        vec![task_context.null().upcast()]
+        db.send_to_drive_thread(
+            move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
                     }
-
-                    // Convert the error to a JavaScript exception on failure
-                    Err(err) => vec![task_context.error(err)?.upcast()],
+                } else {
+                    Ok(None)
                 };
 
-                callback.call(&mut task_context, this, callback_arguments)?;
+                let grove_db = &platform.drive.grove;
 
-                Ok(())
-            });
-        })
+                let result = transaction_result.and_then(|transaction_arg| {
+                    grove_db
+                        .delete_aux(&key, None, transaction_arg)
+                        .unwrap()
+                        .map_err(Error::GroveDB)
+                        .map_err(|err| err.to_string())
+                });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok(()) => {
+                            vec![task_context.null().upcast()]
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            },
+        )
         .or_else(|err| cx.throw_error(err.to_string()))?;
 
         // The result is returned through the callback, not through direct return
@@ -2710,51 +2792,53 @@ impl PlatformWrapper {
 
         let using_transaction = js_using_transaction.value(&mut cx);
 
-        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-            let transaction_result = if using_transaction {
-                if transaction.is_none() {
-                    Err("transaction is not started".to_string())
-                } else {
-                    Ok(transaction)
-                }
-            } else {
-                Ok(None)
-            };
-
-            let grove_db = &platform.drive.grove;
-
-            let result = transaction_result.and_then(|transaction_arg| {
-                grove_db
-                    .get_aux(&key, transaction_arg)
-                    .unwrap()
-                    .map_err(Error::GroveDB)
-                    .map_err(|err| err.to_string())
-            });
-
-            channel.send(move |mut task_context| {
-                let callback = js_callback.into_inner(&mut task_context);
-                let this = task_context.undefined();
-                let callback_arguments: Vec<Handle<JsValue>> = match result {
-                    Ok(value) => {
-                        if let Some(value) = value {
-                            vec![
-                                task_context.null().upcast(),
-                                JsBuffer::external(&mut task_context, value).upcast(),
-                            ]
-                        } else {
-                            vec![task_context.null().upcast(), task_context.null().upcast()]
-                        }
+        db.send_to_drive_thread(
+            move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
                     }
-
-                    // Convert the error to a JavaScript exception on failure
-                    Err(err) => vec![task_context.error(err)?.upcast()],
+                } else {
+                    Ok(None)
                 };
 
-                callback.call(&mut task_context, this, callback_arguments)?;
+                let grove_db = &platform.drive.grove;
 
-                Ok(())
-            });
-        })
+                let result = transaction_result.and_then(|transaction_arg| {
+                    grove_db
+                        .get_aux(&key, transaction_arg)
+                        .unwrap()
+                        .map_err(Error::GroveDB)
+                        .map_err(|err| err.to_string())
+                });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok(value) => {
+                            if let Some(value) = value {
+                                vec![
+                                    task_context.null().upcast(),
+                                    JsBuffer::external(&mut task_context, value).upcast(),
+                                ]
+                            } else {
+                                vec![task_context.null().upcast(), task_context.null().upcast()]
+                            }
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            },
+        )
         .or_else(|err| cx.throw_error(err.to_string()))?;
 
         // The result is returned through the callback, not through direct return
@@ -2778,51 +2862,53 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-            let transaction_result = if using_transaction {
-                if transaction.is_none() {
-                    Err("transaction is not started".to_string())
-                } else {
-                    Ok(transaction)
-                }
-            } else {
-                Ok(None)
-            };
-
-            let grove_db = &platform.drive.grove;
-
-            let result = transaction_result.and_then(|transaction_arg| {
-                grove_db
-                    .query_item_value(&path_query, !skip_cache, transaction_arg)
-                    .unwrap()
-                    .map_err(Error::GroveDB)
-                    .map_err(|err| err.to_string())
-            });
-
-            channel.send(move |mut task_context| {
-                let callback = js_callback.into_inner(&mut task_context);
-                let this = task_context.undefined();
-                let callback_arguments: Vec<Handle<JsValue>> = match result {
-                    Ok((values, skipped)) => {
-                        let js_array: Handle<JsArray> = task_context.empty_array();
-                        let js_vecs = converter::nested_vecs_to_js(&mut task_context, values)?;
-                        let js_num = task_context.number(skipped).upcast::<JsValue>();
-
-                        js_array.set(&mut task_context, 0, js_vecs)?;
-                        js_array.set(&mut task_context, 1, js_num)?;
-
-                        vec![task_context.null().upcast(), js_array.upcast()]
+        db.send_to_drive_thread(
+            move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
                     }
-
-                    // Convert the error to a JavaScript exception on failure
-                    Err(err) => vec![task_context.error(err)?.upcast()],
+                } else {
+                    Ok(None)
                 };
 
-                callback.call(&mut task_context, this, callback_arguments)?;
+                let grove_db = &platform.drive.grove;
 
-                Ok(())
-            });
-        })
+                let result = transaction_result.and_then(|transaction_arg| {
+                    grove_db
+                        .query_item_value(&path_query, !skip_cache, transaction_arg)
+                        .unwrap()
+                        .map_err(Error::GroveDB)
+                        .map_err(|err| err.to_string())
+                });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok((values, skipped)) => {
+                            let js_array: Handle<JsArray> = task_context.empty_array();
+                            let js_vecs = converter::nested_vecs_to_js(&mut task_context, values)?;
+                            let js_num = task_context.number(skipped).upcast::<JsValue>();
+
+                            js_array.set(&mut task_context, 0, js_vecs)?;
+                            js_array.set(&mut task_context, 1, js_num)?;
+
+                            vec![task_context.null().upcast(), js_array.upcast()]
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            },
+        )
         .or_else(|err| cx.throw_error(err.to_string()))?;
 
         // The result is returned through the callback, not through direct return
@@ -2846,47 +2932,49 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-            let transaction_result = if using_transaction {
-                if transaction.is_none() {
-                    Err("transaction is not started".to_string())
-                } else {
-                    Ok(transaction)
-                }
-            } else {
-                Ok(None)
-            };
-
-            let grove_db = &platform.drive.grove;
-
-            let result = transaction_result.and_then(|transaction_arg| {
-                grove_db
-                    .get_proved_path_query(&path_query, get_verbose_proof, transaction_arg)
-                    .unwrap()
-                    .map_err(Error::GroveDB)
-                    .map_err(|err| err.to_string())
-            });
-
-            channel.send(move |mut task_context| {
-                let callback = js_callback.into_inner(&mut task_context);
-                let this = task_context.undefined();
-                let callback_arguments: Vec<Handle<JsValue>> = match result {
-                    Ok(proof) => {
-                        let js_buffer = JsBuffer::external(&mut task_context, proof);
-                        let js_value = js_buffer.as_value(&mut task_context);
-
-                        vec![task_context.null().upcast(), js_value.upcast()]
+        db.send_to_drive_thread(
+            move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
                     }
-
-                    // Convert the error to a JavaScript exception on failure
-                    Err(err) => vec![task_context.error(err)?.upcast()],
+                } else {
+                    Ok(None)
                 };
 
-                callback.call(&mut task_context, this, callback_arguments)?;
+                let grove_db = &platform.drive.grove;
 
-                Ok(())
-            });
-        })
+                let result = transaction_result.and_then(|transaction_arg| {
+                    grove_db
+                        .get_proved_path_query(&path_query, get_verbose_proof, transaction_arg)
+                        .unwrap()
+                        .map_err(Error::GroveDB)
+                        .map_err(|err| err.to_string())
+                });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok(proof) => {
+                            let js_buffer = JsBuffer::external(&mut task_context, proof);
+                            let js_value = js_buffer.as_value(&mut task_context);
+
+                            vec![task_context.null().upcast(), js_value.upcast()]
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            },
+        )
         .or_else(|err| cx.throw_error(err.to_string()))?;
 
         // The result is returned through the callback, not through direct return
@@ -2918,7 +3006,7 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        db.send_to_drive_thread(move |platform: &Platform, _, channel| {
+        db.send_to_drive_thread(move |platform: &Platform<DefaultCoreRPC>, _, channel| {
             let grove_db = &platform.drive.grove;
 
             let path_queries = path_queries.iter().collect();
@@ -2989,44 +3077,46 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-            let transaction_result = if using_transaction {
-                if transaction.is_none() {
-                    Err("transaction is not started".to_string())
+        db.send_to_drive_thread(
+            move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
+                    }
                 } else {
-                    Ok(transaction)
-                }
-            } else {
-                Ok(None)
-            };
-
-            let grove_db = &platform.drive.grove;
-
-            let result = transaction_result.and_then(|transaction_arg| {
-                grove_db
-                    .root_hash(transaction_arg)
-                    .unwrap()
-                    .map_err(Error::GroveDB)
-                    .map_err(|err| err.to_string())
-            });
-
-            channel.send(move |mut task_context| {
-                let callback = js_callback.into_inner(&mut task_context);
-                let this = task_context.undefined();
-
-                let callback_arguments: Vec<Handle<JsValue>> = match result {
-                    Ok(hash) => vec![
-                        task_context.null().upcast(),
-                        JsBuffer::external(&mut task_context, hash).upcast(),
-                    ],
-                    Err(err) => vec![task_context.error(err)?.upcast()],
+                    Ok(None)
                 };
 
-                callback.call(&mut task_context, this, callback_arguments)?;
+                let grove_db = &platform.drive.grove;
 
-                Ok(())
-            });
-        })
+                let result = transaction_result.and_then(|transaction_arg| {
+                    grove_db
+                        .root_hash(transaction_arg)
+                        .unwrap()
+                        .map_err(Error::GroveDB)
+                        .map_err(|err| err.to_string())
+                });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok(hash) => vec![
+                            task_context.null().upcast(),
+                            JsBuffer::external(&mut task_context, hash).upcast(),
+                        ],
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            },
+        )
         .or_else(|err| cx.throw_error(err.to_string()))?;
 
         // The result is returned through the callback, not through direct return
@@ -3050,45 +3140,48 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-            let transaction_result = if using_transaction {
-                if transaction.is_none() {
-                    Err("transaction is not started".to_string())
-                } else {
-                    Ok(transaction)
-                }
-            } else {
-                Ok(None)
-            };
-
-            let grove_db = &platform.drive.grove;
-
-            let path_slice: Vec<&[u8]> = path.iter().map(|fragment| fragment.as_slice()).collect();
-            let result = transaction_result.and_then(|transaction_arg| {
-                grove_db
-                    .delete(path_slice, key.as_slice(), None, transaction_arg)
-                    .unwrap()
-                    .map_err(Error::GroveDB)
-                    .map_err(|err| err.to_string())
-            });
-
-            channel.send(move |mut task_context| {
-                let callback = js_callback.into_inner(&mut task_context);
-                let this = task_context.undefined();
-                let callback_arguments: Vec<Handle<JsValue>> = match result {
-                    Ok(()) => {
-                        vec![task_context.null().upcast()]
+        db.send_to_drive_thread(
+            move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
                     }
-
-                    // Convert the error to a JavaScript exception on failure
-                    Err(err) => vec![task_context.error(err)?.upcast()],
+                } else {
+                    Ok(None)
                 };
 
-                callback.call(&mut task_context, this, callback_arguments)?;
+                let grove_db = &platform.drive.grove;
 
-                Ok(())
-            });
-        })
+                let path_slice: Vec<&[u8]> =
+                    path.iter().map(|fragment| fragment.as_slice()).collect();
+                let result = transaction_result.and_then(|transaction_arg| {
+                    grove_db
+                        .delete(path_slice, key.as_slice(), None, transaction_arg)
+                        .unwrap()
+                        .map_err(Error::GroveDB)
+                        .map_err(|err| err.to_string())
+                });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok(()) => {
+                            vec![task_context.null().upcast()]
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            },
+        )
         .or_else(|err| cx.throw_error(err.to_string()))?;
 
         // The result is returned through the callback, not through direct return
@@ -3096,237 +3189,244 @@ impl PlatformWrapper {
     }
 
     fn js_abci_init_chain(mut cx: FunctionContext) -> JsResult<JsUndefined> {
-        let js_request = cx.argument::<JsBuffer>(0)?;
-        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
-
-        let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
-
-        let using_transaction = js_using_transaction.value(&mut cx);
-
-        let db = cx
-            .this()
-            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
-
-        let request_bytes = converter::js_buffer_to_vec_u8(&mut cx, js_request);
-
-        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-            let transaction_result = if using_transaction {
-                if transaction.is_none() {
-                    Err("transaction is not started".to_string())
-                } else {
-                    Ok(transaction)
-                }
-            } else {
-                Ok(None)
-            };
-
-            let result = transaction_result.and_then(|transaction_arg| {
-                InitChainRequest::from_bytes(&request_bytes)
-                    .and_then(|request| platform.init_chain(request, transaction_arg))
-                    .and_then(|response| response.to_bytes())
-                    .map_err(|e| e.to_string())
-            });
-
-            channel.send(move |mut task_context| {
-                let callback = js_callback.into_inner(&mut task_context);
-                let this = task_context.undefined();
-
-                let callback_arguments: Vec<Handle<JsValue>> = match result {
-                    Ok(response_bytes) => {
-                        let value = JsBuffer::external(&mut task_context, response_bytes);
-
-                        vec![task_context.null().upcast(), value.upcast()]
-                    }
-
-                    // Convert the error to a JavaScript exception on failure
-                    Err(err) => vec![task_context.error(err)?.upcast()],
-                };
-
-                callback.call(&mut task_context, this, callback_arguments)?;
-
-                Ok(())
-            });
-        })
-        .or_else(|err| cx.throw_error(err.to_string()))?;
-
-        // The result is returned through the callback, not through direct return
-        Ok(cx.undefined())
+        //this needs to be removed
+        todo!();
+        // let js_request = cx.argument::<JsBuffer>(0)?;
+        // let js_using_transaction = cx.argument::<JsBoolean>(1)?;
+        //
+        // let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
+        //
+        // let using_transaction = js_using_transaction.value(&mut cx);
+        //
+        // let db = cx
+        //     .this()
+        //     .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
+        //
+        // let request_bytes = converter::js_buffer_to_vec_u8(&mut cx, js_request);
+        //
+        // db.send_to_drive_thread(move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+        //     let transaction_result = if using_transaction {
+        //         if transaction.is_none() {
+        //             Err("transaction is not started".to_string())
+        //         } else {
+        //             Ok(transaction)
+        //         }
+        //     } else {
+        //         Ok(None)
+        //     };
+        //
+        //     let result = transaction_result.and_then(|transaction_arg| {
+        //         InitChainRequest::from_bytes(&request_bytes)
+        //             .and_then(|request| platform.init_chain(request.into()))
+        //             .map_err(|e| e.to_string())
+        //     });
+        //
+        //     channel.send(move |mut task_context| {
+        //         let callback = js_callback.into_inner(&mut task_context);
+        //         let this = task_context.undefined();
+        //
+        //         let callback_arguments: Vec<Handle<JsValue>> = match result {
+        //             Ok(response_bytes) => {
+        //                 let value = JsBuffer::external(&mut task_context, response_bytes);
+        //
+        //                 vec![task_context.null().upcast(), value.upcast()]
+        //             }
+        //
+        //             // Convert the error to a JavaScript exception on failure
+        //             Err(err) => vec![task_context.error(err)?.upcast()],
+        //         };
+        //
+        //         callback.call(&mut task_context, this, callback_arguments)?;
+        //
+        //         Ok(())
+        //     });
+        // })
+        // .or_else(|err| cx.throw_error(err.to_string()))?;
+        //
+        // // The result is returned through the callback, not through direct return
+        // Ok(cx.undefined())
     }
 
     fn js_abci_block_begin(mut cx: FunctionContext) -> JsResult<JsUndefined> {
-        let js_request = cx.argument::<JsBuffer>(0)?;
-        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
-
-        let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
-
-        let using_transaction = js_using_transaction.value(&mut cx);
-
-        let db = cx
-            .this()
-            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
-
-        let request_bytes = converter::js_buffer_to_vec_u8(&mut cx, js_request);
-
-        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-            let transaction_result = if using_transaction {
-                if transaction.is_none() {
-                    Err("transaction is not started".to_string())
-                } else {
-                    Ok(transaction)
-                }
-            } else {
-                Ok(None)
-            };
-
-            let result = transaction_result.and_then(|transaction_arg| {
-                BlockBeginRequest::from_bytes(&request_bytes)
-                    .and_then(|request| platform.block_begin(request, transaction_arg))
-                    .and_then(|response| response.to_bytes())
-                    .map_err(|e| e.to_string())
-            });
-
-            channel.send(move |mut task_context| {
-                let callback = js_callback.into_inner(&mut task_context);
-                let this = task_context.undefined();
-
-                let callback_arguments: Vec<Handle<JsValue>> = match result {
-                    Ok(response_bytes) => {
-                        let value = JsBuffer::external(&mut task_context, response_bytes);
-
-                        vec![task_context.null().upcast(), value.upcast()]
-                    }
-
-                    // Convert the error to a JavaScript exception on failure
-                    Err(err) => vec![task_context.error(err)?.upcast()],
-                };
-
-                callback.call(&mut task_context, this, callback_arguments)?;
-
-                Ok(())
-            });
-        })
-        .or_else(|err| cx.throw_error(err.to_string()))?;
-
-        // The result is returned through the callback, not through direct return
-        Ok(cx.undefined())
+        //this needs to be removed
+        todo!()
+        // let js_request = cx.argument::<JsBuffer>(0)?;
+        // let js_using_transaction = cx.argument::<JsBoolean>(1)?;
+        //
+        // let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
+        //
+        // let using_transaction = js_using_transaction.value(&mut cx);
+        //
+        // let db = cx
+        //     .this()
+        //     .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
+        //
+        // let request_bytes = converter::js_buffer_to_vec_u8(&mut cx, js_request);
+        //
+        // db.send_to_drive_thread(move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+        //     let transaction_result = if using_transaction {
+        //         if transaction.is_none() {
+        //             Err("transaction is not started".to_string())
+        //         } else {
+        //             Ok(transaction)
+        //         }
+        //     } else {
+        //         Ok(None)
+        //     };
+        //
+        //     let result = transaction_result.and_then(|transaction_arg| {
+        //         BlockBeginRequest::from_bytes(&request_bytes)
+        //             .and_then(|request| platform.block_begin(request, transaction_arg))
+        //             .and_then(|response| response.to_bytes())
+        //             .map_err(|e| e.to_string())
+        //     });
+        //
+        //     channel.send(move |mut task_context| {
+        //         let callback = js_callback.into_inner(&mut task_context);
+        //         let this = task_context.undefined();
+        //
+        //         let callback_arguments: Vec<Handle<JsValue>> = match result {
+        //             Ok(response_bytes) => {
+        //                 let value = JsBuffer::external(&mut task_context, response_bytes);
+        //
+        //                 vec![task_context.null().upcast(), value.upcast()]
+        //             }
+        //
+        //             // Convert the error to a JavaScript exception on failure
+        //             Err(err) => vec![task_context.error(err)?.upcast()],
+        //         };
+        //
+        //         callback.call(&mut task_context, this, callback_arguments)?;
+        //
+        //         Ok(())
+        //     });
+        // })
+        // .or_else(|err| cx.throw_error(err.to_string()))?;
+        //
+        // // The result is returned through the callback, not through direct return
+        // Ok(cx.undefined())
     }
 
     fn js_abci_block_end(mut cx: FunctionContext) -> JsResult<JsUndefined> {
-        let js_request = cx.argument::<JsObject>(0)?;
-
-        let js_using_transaction = cx.argument::<JsBoolean>(1)?;
-
-        let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
-
-        let using_transaction = js_using_transaction.value(&mut cx);
-
-        let db = cx
-            .this()
-            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
-
-        let js_fees: Handle<JsObject> = js_request.get(&mut cx, "fees")?;
-
-        let js_processing_fee: Handle<JsNumber> = js_fees.get(&mut cx, "processingFee")?;
-        let processing_fee = js_processing_fee.value(&mut cx) as u64;
-
-        let js_storage_fee: Handle<JsNumber> = js_fees.get(&mut cx, "storageFee")?;
-        let storage_fee = js_storage_fee.value(&mut cx) as u64;
-
-        let js_refunds_per_epoch: Handle<JsObject> = js_fees.get(&mut cx, "refundsPerEpoch")?;
-
-        let refunds_per_epoch = js_object_to_fee_refunds(&mut cx, js_refunds_per_epoch)?;
-
-        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-            let transaction_result = if using_transaction {
-                if transaction.is_none() {
-                    Err("transaction is not started".to_string())
-                } else {
-                    Ok(transaction)
-                }
-            } else {
-                Ok(None)
-            };
-
-            let result = transaction_result.and_then(|transaction_arg| {
-                let request = BlockEndRequest {
-                    fees: BlockFees {
-                        processing_fee,
-                        storage_fee,
-                        refunds_per_epoch,
-                    },
-                };
-
-                platform
-                    .block_end(request, transaction_arg)
-                    .and_then(|response| response.to_bytes())
-                    .map_err(|e| e.to_string())
-            });
-
-            channel.send(move |mut task_context| {
-                let callback = js_callback.into_inner(&mut task_context);
-                let this = task_context.undefined();
-
-                let callback_arguments: Vec<Handle<JsValue>> = match result {
-                    Ok(response_bytes) => {
-                        let value = JsBuffer::external(&mut task_context, response_bytes);
-
-                        vec![task_context.null().upcast(), value.upcast()]
-                    }
-
-                    // Convert the error to a JavaScript exception on failure
-                    Err(err) => vec![task_context.error(err)?.upcast()],
-                };
-
-                callback.call(&mut task_context, this, callback_arguments)?;
-
-                Ok(())
-            });
-        })
-        .or_else(|err| cx.throw_error(err.to_string()))?;
-
-        // The result is returned through the callback, not through direct return
-        Ok(cx.undefined())
+        //this needs to be removed
+        todo!()
+        // let js_request = cx.argument::<JsObject>(0)?;
+        //
+        // let js_using_transaction = cx.argument::<JsBoolean>(1)?;
+        //
+        // let js_callback = cx.argument::<JsFunction>(2)?.root(&mut cx);
+        //
+        // let using_transaction = js_using_transaction.value(&mut cx);
+        //
+        // let db = cx
+        //     .this()
+        //     .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
+        //
+        // let js_fees: Handle<JsObject> = js_request.get(&mut cx, "fees")?;
+        //
+        // let js_processing_fee: Handle<JsNumber> = js_fees.get(&mut cx, "processingFee")?;
+        // let processing_fee = js_processing_fee.value(&mut cx) as u64;
+        //
+        // let js_storage_fee: Handle<JsNumber> = js_fees.get(&mut cx, "storageFee")?;
+        // let storage_fee = js_storage_fee.value(&mut cx) as u64;
+        //
+        // let js_refunds_per_epoch: Handle<JsObject> = js_fees.get(&mut cx, "refundsPerEpoch")?;
+        //
+        // let refunds_per_epoch = js_object_to_fee_refunds(&mut cx, js_refunds_per_epoch)?;
+        //
+        // db.send_to_drive_thread(move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+        //     let transaction_result = if using_transaction {
+        //         if transaction.is_none() {
+        //             Err("transaction is not started".to_string())
+        //         } else {
+        //             Ok(transaction)
+        //         }
+        //     } else {
+        //         Ok(None)
+        //     };
+        //
+        //     let result = transaction_result.and_then(|transaction_arg| {
+        //         let request = BlockEndRequest {
+        //             fees: BlockFees {
+        //                 processing_fee,
+        //                 storage_fee,
+        //                 refunds_per_epoch,
+        //             },
+        //         };
+        //
+        //         platform
+        //             .block_end(request, transaction_arg)
+        //             .and_then(|response| response.to_bytes())
+        //             .map_err(|e| e.to_string())
+        //     });
+        //
+        //     channel.send(move |mut task_context| {
+        //         let callback = js_callback.into_inner(&mut task_context);
+        //         let this = task_context.undefined();
+        //
+        //         let callback_arguments: Vec<Handle<JsValue>> = match result {
+        //             Ok(response_bytes) => {
+        //                 let value = JsBuffer::external(&mut task_context, response_bytes);
+        //
+        //                 vec![task_context.null().upcast(), value.upcast()]
+        //             }
+        //
+        //             // Convert the error to a JavaScript exception on failure
+        //             Err(err) => vec![task_context.error(err)?.upcast()],
+        //         };
+        //
+        //         callback.call(&mut task_context, this, callback_arguments)?;
+        //
+        //         Ok(())
+        //     });
+        // })
+        // .or_else(|err| cx.throw_error(err.to_string()))?;
+        //
+        // // The result is returned through the callback, not through direct return
+        // Ok(cx.undefined())
     }
 
     fn js_abci_after_finalize_block(mut cx: FunctionContext) -> JsResult<JsUndefined> {
-        let js_request = cx.argument::<JsBuffer>(0)?;
-        let js_callback = cx.argument::<JsFunction>(1)?.root(&mut cx);
-
-        let db = cx
-            .this()
-            .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
-
-        let request_bytes = converter::js_buffer_to_vec_u8(&mut cx, js_request);
-
-        db.send_to_drive_thread(move |platform: &Platform, _, channel| {
-            let result = AfterFinalizeBlockRequest::from_bytes(&request_bytes)
-                .and_then(|request| platform.after_finalize_block(request))
-                .and_then(|response| response.to_bytes());
-
-            channel.send(move |mut task_context| {
-                let callback = js_callback.into_inner(&mut task_context);
-                let this = task_context.undefined();
-
-                let callback_arguments: Vec<Handle<JsValue>> = match result {
-                    Ok(response_bytes) => {
-                        let value = JsBuffer::external(&mut task_context, response_bytes);
-
-                        vec![task_context.null().upcast(), value.upcast()]
-                    }
-
-                    // Convert the error to a JavaScript exception on failure
-                    Err(err) => vec![task_context.error(err.to_string())?.upcast()],
-                };
-
-                callback.call(&mut task_context, this, callback_arguments)?;
-
-                Ok(())
-            });
-        })
-        .or_else(|err| cx.throw_error(err.to_string()))?;
-
-        // The result is returned through the callback, not through direct return
-        Ok(cx.undefined())
+        //this needs to be removed
+        todo!();
+        // let js_request = cx.argument::<JsBuffer>(0)?;
+        // let js_callback = cx.argument::<JsFunction>(1)?.root(&mut cx);
+        //
+        // let db = cx
+        //     .this()
+        //     .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
+        //
+        // let request_bytes = converter::js_buffer_to_vec_u8(&mut cx, js_request);
+        //
+        // db.send_to_drive_thread(move |platform: &Platform<DefaultCoreRPC>, _, channel| {
+        //     let result = AfterFinalizeBlockRequest::from_bytes(&request_bytes)
+        //         .and_then(|request| platform.after_finalize_block(request))
+        //         .and_then(|response| response.to_bytes());
+        //
+        //     channel.send(move |mut task_context| {
+        //         let callback = js_callback.into_inner(&mut task_context);
+        //         let this = task_context.undefined();
+        //
+        //         let callback_arguments: Vec<Handle<JsValue>> = match result {
+        //             Ok(response_bytes) => {
+        //                 let value = JsBuffer::external(&mut task_context, response_bytes);
+        //
+        //                 vec![task_context.null().upcast(), value.upcast()]
+        //             }
+        //
+        //             // Convert the error to a JavaScript exception on failure
+        //             Err(err) => vec![task_context.error(err.to_string())?.upcast()],
+        //         };
+        //
+        //         callback.call(&mut task_context, this, callback_arguments)?;
+        //
+        //         Ok(())
+        //     });
+        // })
+        // .or_else(|err| cx.throw_error(err.to_string()))?;
+        //
+        // // The result is returned through the callback, not through direct return
+        // Ok(cx.undefined())
     }
 
     fn js_fetch_latest_withdrawal_transaction_index(
@@ -3345,68 +3445,70 @@ impl PlatformWrapper {
             .this()
             .downcast_or_throw::<JsBox<PlatformWrapper>, _>(&mut cx)?;
 
-        db.send_to_drive_thread(move |platform: &Platform, transaction, channel| {
-            let transaction_result = if using_transaction {
-                if transaction.is_none() {
-                    Err("transaction is not started".to_string())
-                } else {
-                    Ok(transaction)
-                }
-            } else {
-                Ok(None)
-            };
-
-            let result = transaction_result.and_then(|transaction_arg| {
-                let mut drive_operation_types = vec![];
-
-                let result = platform
-                    .drive
-                    .fetch_and_remove_latest_withdrawal_transaction_index_operations(
-                        &mut drive_operation_types,
-                        transaction_arg,
-                    )
-                    .map_err(|err| err.to_string())?;
-
-                platform
-                    .drive
-                    .apply_drive_operations(
-                        drive_operation_types,
-                        apply,
-                        &block_info,
-                        transaction_arg,
-                    )
-                    .map_err(|err| err.to_string())?;
-
-                Ok(result)
-            });
-
-            channel.send(move |mut task_context| {
-                let callback = js_callback.into_inner(&mut task_context);
-                let this = task_context.undefined();
-
-                let callback_arguments: Vec<Handle<JsValue>> = match result {
-                    Ok(index) => {
-                        let index_f64 = index as f64;
-                        if index_f64 as u64 != index {
-                            vec![task_context
-                                .error("could not convert withdrawal transaction index to f64")?
-                                .upcast()]
-                        } else {
-                            let value = JsNumber::new(&mut task_context, index_f64);
-
-                            vec![task_context.null().upcast(), value.upcast()]
-                        }
+        db.send_to_drive_thread(
+            move |platform: &Platform<DefaultCoreRPC>, transaction, channel| {
+                let transaction_result = if using_transaction {
+                    if transaction.is_none() {
+                        Err("transaction is not started".to_string())
+                    } else {
+                        Ok(transaction)
                     }
-
-                    // Convert the error to a JavaScript exception on failure
-                    Err(err) => vec![task_context.error(err)?.upcast()],
+                } else {
+                    Ok(None)
                 };
 
-                callback.call(&mut task_context, this, callback_arguments)?;
+                let result = transaction_result.and_then(|transaction_arg| {
+                    let mut drive_operation_types = vec![];
 
-                Ok(())
-            });
-        })
+                    let result = platform
+                        .drive
+                        .fetch_and_remove_latest_withdrawal_transaction_index_operations(
+                            &mut drive_operation_types,
+                            transaction_arg,
+                        )
+                        .map_err(|err| err.to_string())?;
+
+                    platform
+                        .drive
+                        .apply_drive_operations(
+                            drive_operation_types,
+                            apply,
+                            &block_info,
+                            transaction_arg,
+                        )
+                        .map_err(|err| err.to_string())?;
+
+                    Ok(result)
+                });
+
+                channel.send(move |mut task_context| {
+                    let callback = js_callback.into_inner(&mut task_context);
+                    let this = task_context.undefined();
+
+                    let callback_arguments: Vec<Handle<JsValue>> = match result {
+                        Ok(index) => {
+                            let index_f64 = index as f64;
+                            if index_f64 as u64 != index {
+                                vec![task_context
+                                    .error("could not convert withdrawal transaction index to f64")?
+                                    .upcast()]
+                            } else {
+                                let value = JsNumber::new(&mut task_context, index_f64);
+
+                                vec![task_context.null().upcast(), value.upcast()]
+                            }
+                        }
+
+                        // Convert the error to a JavaScript exception on failure
+                        Err(err) => vec![task_context.error(err)?.upcast()],
+                    };
+
+                    callback.call(&mut task_context, this, callback_arguments)?;
+
+                    Ok(())
+                });
+            },
+        )
         .or_else(|err| cx.throw_error(err.to_string()))?;
 
         // The result is returned through the callback, not through direct return

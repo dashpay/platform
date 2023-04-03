@@ -43,6 +43,8 @@ use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::fee::epoch::CreditsPerEpoch;
 use drive::fee::result::FeeResult;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use tenderdash_abci::proto::abci::RequestInitChain;
+use tenderdash_abci::proto::google::protobuf::Timestamp;
 
 /// A struct for handling chain initialization requests
 #[derive(Serialize, Deserialize)]
@@ -52,6 +54,27 @@ pub struct InitChainRequest {
     pub genesis_time_ms: TimestampMillis,
     /// The system identity public keys
     pub system_identity_public_keys: SystemIdentityPublicKeys,
+}
+
+impl From<InitChainRequest> for RequestInitChain {
+    fn from(value: InitChainRequest) -> Self {
+        let InitChainRequest {
+            genesis_time_ms,
+            system_identity_public_keys: _,
+        } = value;
+        RequestInitChain {
+            time: Some(Timestamp {
+                seconds: (genesis_time_ms / 1000) as i64,
+                nanos: ((genesis_time_ms % 1000) * 1000) as i32,
+            }),
+            chain_id: "".to_string(),
+            consensus_params: None,
+            validator_set: None,
+            app_state_bytes: vec![],
+            initial_height: 0,
+            initial_core_height: 0,
+        }
+    }
 }
 
 /// System identity public keys

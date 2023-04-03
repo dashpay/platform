@@ -482,14 +482,14 @@ pub enum StrategyRandomness {
     RNGEntropy(StdRng),
 }
 
-pub(crate) fn run_chain_for_strategy<'a>(
-    platform: &'a TempPlatform<MockCoreRPCLike>,
+pub(crate) fn run_chain_for_strategy(
+    platform: &TempPlatform<MockCoreRPCLike>,
     block_count: u64,
     block_spacing_ms: u64,
     strategy: Strategy,
     config: PlatformConfig,
     seed: u64,
-) -> ChainExecutionOutcome<'a> {
+) -> ChainExecutionOutcome {
     let quorum_size = config.quorum_size;
     let abci_application = AbciApplication::new(&platform).expect("expected new abci application");
     let mut rng = StdRng::seed_from_u64(seed);
