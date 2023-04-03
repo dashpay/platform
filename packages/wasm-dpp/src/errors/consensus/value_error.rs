@@ -1,10 +1,10 @@
-use wasm_bindgen::prelude::*;
+use crate::buffer::Buffer;
 use dpp::consensus::basic::value_error::ValueError;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
-use crate::buffer::Buffer;
+use wasm_bindgen::prelude::*;
 
-#[wasm_bindgen(js_name=PlatformValueError, inspectable)]
+#[wasm_bindgen(js_name=ValueError, inspectable)]
 #[derive(Debug)]
 pub struct ValueErrorWasm {
     inner: ValueError,
@@ -16,7 +16,7 @@ impl From<&ValueError> for ValueErrorWasm {
     }
 }
 
-#[wasm_bindgen(js_class=PlatformValueError)]
+#[wasm_bindgen(js_class=ValueError)]
 impl ValueErrorWasm {
     #[wasm_bindgen(js_name=getMessage)]
     pub fn get_message(&self) -> String {

@@ -35,4 +35,9 @@ impl ProtocolVersionParsingErrorWasm {
 
         Ok(Buffer::from_bytes(bytes.as_slice()))
     }
+
+    #[wasm_bindgen(getter)]
+    pub fn message(&self) -> String {
+        self.inner.to_string()
+    }
 }
