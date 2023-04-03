@@ -7,6 +7,7 @@ mod tests {
     };
 
     use drive_abci::config::PlatformConfig;
+    use drive_abci::test::helpers::setup::TestPlatformBuilder;
 
     #[test]
     fn run_chain_version_upgrade() {
@@ -31,14 +32,18 @@ mod tests {
             ..Default::default()
         };
         let twenty_minutes_in_ms = 1000 * 60 * 20;
+        let platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
         let ChainExecutionOutcome {
-            platform,
+            abci_app,
             proposers,
             current_proposers,
             current_proposer_versions,
             end_time_ms,
             ..
         } = run_chain_for_strategy(
+            &platform,
             1300,
             twenty_minutes_in_ms,
             strategy.clone(),
@@ -46,6 +51,7 @@ mod tests {
             15,
         );
         {
+            let platform = abci_app.platform;
             let drive_cache = platform.drive.cache.read().unwrap();
             let counter = drive_cache
                 .protocol_versions_counter
@@ -83,6 +89,8 @@ mod tests {
         // we did not yet hit the epoch change
         // let's go a little longer
 
+        let platform = abci_app.platform;
+
         let hour_in_ms = 1000 * 60 * 60;
         let block_start = platform
             .state
@@ -94,13 +102,13 @@ mod tests {
             .height
             + 1;
         let ChainExecutionOutcome {
-            platform,
+            abci_app,
             proposers,
             current_proposers,
             end_time_ms,
             ..
         } = continue_chain_for_strategy(
-            platform,
+            abci_app,
             ChainExecutionParameters {
                 block_start,
                 block_count: 200,
@@ -160,8 +168,8 @@ mod tests {
             .unwrap()
             .height
             + 1;
-        let ChainExecutionOutcome { platform, .. } = continue_chain_for_strategy(
-            platform,
+        let ChainExecutionOutcome { abci_app, .. } = continue_chain_for_strategy(
+            abci_app,
             ChainExecutionParameters {
                 block_start,
                 block_count: 400,
@@ -232,16 +240,27 @@ mod tests {
             validator_set_quorum_rotation_block_count: 50,
             ..Default::default()
         };
+        let platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
         let hour_in_ms = 1000 * 60 * 60;
         let ChainExecutionOutcome {
-            platform,
+            abci_app,
             proposers,
             current_proposers,
             current_proposer_versions,
             end_time_ms,
             ..
-        } = run_chain_for_strategy(2000, hour_in_ms, strategy.clone(), config.clone(), 15);
+        } = run_chain_for_strategy(
+            &platform,
+            2000,
+            hour_in_ms,
+            strategy.clone(),
+            config.clone(),
+            15,
+        );
         {
+            let platform = abci_app.platform;
             let drive_cache = platform.drive.cache.read().unwrap();
             let _counter = drive_cache
                 .protocol_versions_counter
@@ -276,6 +295,7 @@ mod tests {
         // we did not yet hit the required threshold to upgrade
         // let's go a little longer
 
+        let platform = abci_app.platform;
         let block_start = platform
             .state
             .read()
@@ -286,13 +306,13 @@ mod tests {
             .height
             + 1;
         let ChainExecutionOutcome {
-            platform,
+            abci_app,
             proposers,
             current_proposers,
             end_time_ms,
             ..
         } = continue_chain_for_strategy(
-            platform,
+            abci_app,
             ChainExecutionParameters {
                 block_start,
                 block_count: 1600,
@@ -351,8 +371,8 @@ mod tests {
             .unwrap()
             .height
             + 1;
-        let ChainExecutionOutcome { platform, .. } = continue_chain_for_strategy(
-            platform,
+        let ChainExecutionOutcome { abci_app, .. } = continue_chain_for_strategy(
+            abci_app,
             ChainExecutionParameters {
                 block_start,
                 block_count: 400,
@@ -421,16 +441,27 @@ mod tests {
             validator_set_quorum_rotation_block_count: 60,
             ..Default::default()
         };
+        let platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
         let hour_in_ms = 1000 * 60 * 60;
         let ChainExecutionOutcome {
-            platform,
+            abci_app,
             proposers,
             current_proposers,
             current_proposer_versions,
             end_time_ms,
             ..
-        } = run_chain_for_strategy(2000, hour_in_ms, strategy.clone(), config.clone(), 15);
+        } = run_chain_for_strategy(
+            &platform,
+            2000,
+            hour_in_ms,
+            strategy.clone(),
+            config.clone(),
+            15,
+        );
         {
+            let platform = abci_app.platform;
             let drive_cache = platform.drive.cache.read().unwrap();
             let _counter = drive_cache
                 .protocol_versions_counter
@@ -460,7 +491,7 @@ mod tests {
 
         // we still did not yet hit the required threshold to upgrade
         // let's go a just a little longer
-
+        let platform = abci_app.platform;
         let block_start = platform
             .state
             .read()
@@ -471,13 +502,13 @@ mod tests {
             .height
             + 1;
         let ChainExecutionOutcome {
-            platform,
+            abci_app,
             proposers,
             current_proposers,
             end_time_ms,
             ..
         } = continue_chain_for_strategy(
-            platform,
+            abci_app,
             ChainExecutionParameters {
                 block_start,
                 block_count: 3000,
@@ -553,14 +584,14 @@ mod tests {
             .height
             + 1;
         let ChainExecutionOutcome {
-            platform,
+            abci_app,
             proposers,
             current_proposers,
             current_proposer_versions,
             end_time_ms,
             ..
         } = continue_chain_for_strategy(
-            platform,
+            abci_app,
             ChainExecutionParameters {
                 block_start,
                 block_count: 2000,
@@ -617,8 +648,8 @@ mod tests {
             .unwrap()
             .height
             + 1;
-        let ChainExecutionOutcome { platform, .. } = continue_chain_for_strategy(
-            platform,
+        let ChainExecutionOutcome { abci_app, .. } = continue_chain_for_strategy(
+            abci_app,
             ChainExecutionParameters {
                 block_start,
                 block_count: 100,
@@ -688,16 +719,20 @@ mod tests {
             validator_set_quorum_rotation_block_count: 60,
             ..Default::default()
         };
+        let platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
         let hour_in_ms = 1000 * 60 * 60;
         let ChainExecutionOutcome {
-            platform,
+            abci_app,
             proposers,
             current_proposers,
 
             end_time_ms,
             ..
-        } = run_chain_for_strategy(1400, hour_in_ms, strategy, config.clone(), 15);
+        } = run_chain_for_strategy(&platform, 1400, hour_in_ms, strategy, config.clone(), 15);
         {
+            let platform = abci_app.platform;
             let drive_cache = platform.drive.cache.read().unwrap();
             let counter = drive_cache
                 .protocol_versions_counter
@@ -751,7 +786,7 @@ mod tests {
 
         // we hit the required threshold to upgrade
         // let's go a little longer
-
+        let platform = abci_app.platform;
         let block_start = platform
             .state
             .read()
@@ -761,8 +796,8 @@ mod tests {
             .unwrap()
             .height
             + 1;
-        let ChainExecutionOutcome { platform, .. } = continue_chain_for_strategy(
-            platform,
+        let ChainExecutionOutcome { abci_app, .. } = continue_chain_for_strategy(
+            abci_app,
             ChainExecutionParameters {
                 block_start,
                 block_count: 700,

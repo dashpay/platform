@@ -63,9 +63,10 @@ use drive::query::DriveQuery;
 use drive_abci::abci::AbciApplication;
 use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
 use drive_abci::platform::Platform;
+use drive_abci::rpc::core::MockCoreRPCLike;
 use drive_abci::test::fixture::abci::static_init_chain_request;
+use drive_abci::test::helpers::setup::TestPlatformBuilder;
 use drive_abci::{config::PlatformConfig, test::helpers::setup::TempPlatform};
-use drive_abci::{rpc::core::DefaultCoreRPC, test::helpers::setup::TestPlatformBuilder};
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
@@ -292,7 +293,7 @@ impl Strategy {
 
     fn document_state_transitions_for_block(
         &self,
-        platform: &Platform<DefaultCoreRPC>,
+        platform: &Platform<MockCoreRPCLike>,
         block_info: &BlockInfo,
         current_identities: &Vec<Identity>,
         rng: &mut StdRng,
@@ -401,7 +402,7 @@ impl Strategy {
 
     fn state_transitions_for_block_with_new_identities(
         &self,
-        platform: &Platform<DefaultCoreRPC>,
+        platform: &Platform<MockCoreRPCLike>,
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
         signer: &mut SimpleSigner,
@@ -453,8 +454,8 @@ fn create_identities_state_transitions(
     )
 }
 
-pub struct ChainExecutionOutcome {
-    pub platform: TempPlatform<DefaultCoreRPC>,
+pub struct ChainExecutionOutcome<'a> {
+    pub abci_app: AbciApplication<'a, MockCoreRPCLike>,
     pub masternode_identity_balances: BTreeMap<[u8; 32], Credits>,
     pub identities: Vec<Identity>,
     pub proposers: Vec<[u8; 32]>,
@@ -481,17 +482,15 @@ pub enum StrategyRandomness {
     RNGEntropy(StdRng),
 }
 
-pub(crate) fn run_chain_for_strategy(
+pub(crate) fn run_chain_for_strategy<'a>(
+    platform: &'a TempPlatform<MockCoreRPCLike>,
     block_count: u64,
     block_spacing_ms: u64,
     strategy: Strategy,
     config: PlatformConfig,
     seed: u64,
-) -> ChainExecutionOutcome {
+) -> ChainExecutionOutcome<'a> {
     let quorum_size = config.quorum_size;
-    let platform = TestPlatformBuilder::new()
-        .with_config(config.clone())
-        .build_with_default_rpc();
     let abci_application = AbciApplication::new(&platform).expect("expected new abci application");
     let mut rng = StdRng::seed_from_u64(seed);
     // init chain
@@ -517,7 +516,6 @@ pub(crate) fn run_chain_for_strategy(
 
     continue_chain_for_strategy(
         abci_application,
-        platform,
         ChainExecutionParameters {
             block_start: 1,
             block_count,
@@ -534,12 +532,13 @@ pub(crate) fn run_chain_for_strategy(
 }
 
 pub(crate) fn continue_chain_for_strategy(
-    platform: TempPlatform<DefaultCoreRPC>,
+    abci_app: AbciApplication<MockCoreRPCLike>,
     chain_execution_parameters: ChainExecutionParameters,
     strategy: Strategy,
     config: PlatformConfig,
     seed: StrategyRandomness,
 ) -> ChainExecutionOutcome {
+    let platform = abci_app.platform;
     let ChainExecutionParameters {
         block_start,
         block_count,
@@ -617,7 +616,7 @@ pub(crate) fn continue_chain_for_strategy(
             })
             .unwrap_or(1);
 
-        abci_application
+        abci_app
             .mimic_execute_block(
                 *proposer,
                 proposed_version,
@@ -654,7 +653,7 @@ pub(crate) fn continue_chain_for_strategy(
         .current_epoch_index;
 
     ChainExecutionOutcome {
-        platform,
+        abci_app,
         masternode_identity_balances,
         identities: current_identities,
         proposers,
@@ -688,7 +687,10 @@ mod tests {
             validator_set_quorum_rotation_block_count: 25,
             ..Default::default()
         };
-        run_chain_for_strategy(1000, 3000, strategy, config, 15);
+        let platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        run_chain_for_strategy(&platform, 1000, 3000, strategy, config, 15);
     }
 
     #[test]
@@ -709,7 +711,10 @@ mod tests {
             validator_set_quorum_rotation_block_count: 25,
             ..Default::default()
         };
-        let outcome = run_chain_for_strategy(100, 3000, strategy, config, 15);
+        let platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        let outcome = run_chain_for_strategy(&platform, 100, 3000, strategy, config, 15);
 
         assert_eq!(outcome.identities.len(), 100);
     }
@@ -733,7 +738,10 @@ mod tests {
             ..Default::default()
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
-        let outcome = run_chain_for_strategy(150, day_in_ms, strategy, config, 15);
+        let platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        let outcome = run_chain_for_strategy(&platform, 150, day_in_ms, strategy, config, 15);
         assert_eq!(outcome.identities.len(), 150);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -769,7 +777,10 @@ mod tests {
             validator_set_quorum_rotation_block_count: 25,
             ..Default::default()
         };
-        run_chain_for_strategy(1, 3000, strategy, config, 15);
+        let platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        run_chain_for_strategy(&platform, 1, 3000, strategy, config, 15);
     }
 
     #[test]
@@ -813,7 +824,10 @@ mod tests {
             validator_set_quorum_rotation_block_count: 25,
             ..Default::default()
         };
-        run_chain_for_strategy(100, 3000, strategy, config, 15);
+        let platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        run_chain_for_strategy(&platform, 100, 3000, strategy, config, 15);
     }
 
     #[test]
@@ -859,7 +873,11 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 120;
-        let outcome = run_chain_for_strategy(block_count, day_in_ms, strategy, config, 15);
+        let platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        let outcome =
+            run_chain_for_strategy(&platform, block_count, day_in_ms, strategy, config, 15);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -931,7 +949,11 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 120;
-        let outcome = run_chain_for_strategy(block_count, day_in_ms, strategy, config, 15);
+        let platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        let outcome =
+            run_chain_for_strategy(&platform, block_count, day_in_ms, strategy, config, 15);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -1003,7 +1025,11 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 120;
-        let outcome = run_chain_for_strategy(block_count, day_in_ms, strategy, config, 15);
+        let platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        let outcome =
+            run_chain_for_strategy(&platform, block_count, day_in_ms, strategy, config, 15);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -1075,7 +1101,11 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 30;
-        let outcome = run_chain_for_strategy(block_count, day_in_ms, strategy, config, 15);
+        let platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        let outcome =
+            run_chain_for_strategy(&platform, block_count, day_in_ms, strategy, config, 15);
         assert_eq!(outcome.identities.len() as u64, 398);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome

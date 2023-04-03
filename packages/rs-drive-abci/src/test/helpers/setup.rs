@@ -34,27 +34,12 @@
 
 use std::ops::{Deref, DerefMut};
 
+use crate::abci::AbciApplication;
 use crate::platform::Platform;
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::fixture::abci::static_system_identity_public_keys;
 use crate::{config::PlatformConfig, rpc::core::DefaultCoreRPC};
 use tempfile::TempDir;
-use crate::abci::AbciApplication;
-
-/// AbciApplication wrapper that takes care of temporary directory.
-pub struct TempAbciApplication<'a, C> {
-    app: AbciApplication<'a, C>,
-    _tempdir: TempDir,
-}
-
-impl<'a, C> TempAbciApplication<'a, C> {
-    pub fn from_platform(temp_platform: &TempPlatform<C>) -> TempAbciApplication<'a, C> {
-        TempAbciApplication {
-            app: AbciApplication { platform: temp_platform, transaction: Default::default() },
-            _tempdir: temp_platform._tempdir,
-        }
-    }
-}
 
 /// A test platform builder.
 pub struct TestPlatformBuilder {
@@ -129,20 +114,6 @@ impl<C> TempPlatform<C> {
             .expect("should create root tree successfully");
 
         self
-    }
-}
-
-impl<'a, C> Deref for TempAbciApplication<'a, C> {
-    type Target = AbciApplication<'a, C>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.app
-    }
-}
-
-impl<C> DerefMut for TempAbciApplication<C> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.app
     }
 }
 

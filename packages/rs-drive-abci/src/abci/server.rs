@@ -15,7 +15,8 @@ use std::{fmt::Debug, sync::MutexGuard};
 /// AbciApp implements logic that should be triggered when Tenderdash performs various operations, like
 /// creating new proposal or finalizing new block.
 pub struct AbciApplication<'a, C> {
-    pub(crate) platform: &'a Platform<C>,
+    /// Platform
+    pub platform: &'a Platform<C>,
     pub(crate) transaction: RwLock<Option<Transaction<'a>>>,
 }
 
