@@ -141,6 +141,7 @@ mod tests {
         let block_info = BlockInfo {
             time_ms: 1,
             height: 1,
+            core_height: 1,
             epoch: Epoch::new(1),
         };
 

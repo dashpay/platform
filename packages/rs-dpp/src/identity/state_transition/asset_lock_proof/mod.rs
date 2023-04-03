@@ -12,7 +12,7 @@ pub use asset_lock_transaction_output_fetcher::*;
 pub use asset_lock_transaction_validator::*;
 pub use chain::*;
 pub use instant::*;
-use platform_value::Value;
+use platform_value::{from_value, Value};
 
 use crate::identity::errors::{AssetLockOutputNotFoundError, AssetLockTransactionIsNotFoundError};
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
@@ -215,14 +215,22 @@ impl TryFrom<&Value> for AssetLockProof {
     type Error = ProtocolError;
 
     fn try_from(value: &Value) -> Result<Self, Self::Error> {
-        let proof_type_int: u8 = value
-            .get_integer("type")
-            .map_err(ProtocolError::ValueError)?;
-        let proof_type = AssetLockProofType::try_from(proof_type_int)?;
-
-        match proof_type {
-            AssetLockProofType::Instant => Ok(Self::Instant(value.clone().try_into()?)),
-            AssetLockProofType::Chain => Ok(Self::Chain(value.clone().try_into()?)),
+        //todo: replace with
+        //  from_value(value.clone()).map_err(ProtocolError::ValueError)
+        let map = value.as_map().ok_or(ProtocolError::DecodingError(format!(
+            "error decoding asset lock proof"
+        )))?;
+        let (key, asset_lock_value) = map.first().ok_or(ProtocolError::DecodingError(format!(
+            "error decoding asset lock proof as it was empty"
+        )))?;
+        match key.as_str().ok_or(ProtocolError::DecodingError(format!(
+            "error decoding asset lock proof"
+        )))? {
+            "Instant" => Ok(Self::Instant(asset_lock_value.clone().try_into()?)),
+            "Chain" => Ok(Self::Chain(asset_lock_value.clone().try_into()?)),
+            _ => Err(ProtocolError::DecodingError(format!(
+                "error decoding asset lock proof"
+            ))),
         }
     }
 }

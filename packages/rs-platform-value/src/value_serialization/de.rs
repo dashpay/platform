@@ -160,9 +160,9 @@ impl<'de> de::Deserialize<'de> for Value {
     }
 }
 
-pub(crate) struct Deserializer(pub(crate) Value);
+pub(crate) struct Deserializer<T>(pub(crate) T);
 
-impl<'de> de::Deserializer<'de> for Deserializer {
+impl<'de> de::Deserializer<'de> for Deserializer<Value> {
     type Error = Error;
 
     fn deserialize_any<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value, Self::Error> {
@@ -496,7 +496,7 @@ impl<'a, 'de> de::MapAccess<'de> for ValueMapDeserializer<'a> {
     }
 }
 
-impl<'a, 'de> de::VariantAccess<'de> for Deserializer {
+impl<'a, 'de> de::VariantAccess<'de> for Deserializer<Value> {
     type Error = Error;
 
     fn unit_variant(self) -> Result<(), Self::Error> {

@@ -58,7 +58,6 @@ where
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<ConsensusValidationResult<PublicKeyHash>, NonConsensusError> {
         let mut result = ConsensusValidationResult::default();
-
         result.merge(
             self.json_schema_validator
                 .validate(&asset_lock_proof_object.try_to_validating_json()?)?,

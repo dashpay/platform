@@ -441,6 +441,7 @@ pub fn js_object_to_block_info<'a, C: Context<'a>>(
         height: js_height.value(cx) as u64,
         time_ms: js_time.value(cx) as u64,
         epoch,
+        core_height: 1,
     };
 
     Ok(block_info)
