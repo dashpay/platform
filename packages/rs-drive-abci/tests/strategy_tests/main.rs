@@ -31,15 +31,26 @@
 //!
 
 use crate::DocumentAction::{DocumentActionDelete, DocumentActionInsert};
+use anyhow::anyhow;
+use dashcore::signer;
+use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::document::document_transition::document_base_transition::DocumentBaseTransition;
 use dpp::document::document_transition::{
     document_create_transition, Action, DocumentCreateTransition, DocumentDeleteTransition,
 };
 use dpp::document::DocumentsBatchTransition;
+use dpp::identity::signer::Signer;
 use dpp::identity::state_transition::identity_create_transition;
 use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransition;
+use dpp::identity::{IdentityPublicKey, KeyType};
+use dpp::platform_value::Value;
+use dpp::state_transition::errors::{
+    InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError,
+};
 use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned};
+use dpp::util::hash::ripemd160_sha256;
 use dpp::version::LATEST_VERSION;
+use dpp::ProtocolError;
 use drive::common::helpers::identities::create_test_masternode_identities_with_rng;
 use drive::contract::{Contract, CreateRandomDocument, DocumentType};
 use drive::dpp::document::Document;
@@ -112,6 +123,48 @@ pub struct DocumentOp {
 }
 
 pub type ProTxHash = [u8; 32];
+
+/// This simple signer is only to be used in tests
+pub struct SimpleSigner {
+    /// Private keys is a map from the public key to the Private key bytes
+    private_keys: HashMap<IdentityPublicKey, Vec<u8>>,
+}
+
+impl Signer for SimpleSigner {
+    fn sign(
+        &self,
+        identity_public_key: &IdentityPublicKey,
+        value: &Value,
+    ) -> Result<Vec<u8>, ProtocolError> {
+        let private_key = self.private_keys.get(identity_public_key).ok_or(
+            ProtocolError::InvalidSignaturePublicKeyError(InvalidSignaturePublicKeyError::new(
+                identity_public_key.data.to_vec(),
+            )),
+        )?;
+        let mut data = vec![];
+        ciborium::ser::into_writer(value, data).map_err(|_| {
+            ProtocolError::EncodingError("unable to serialize into cbor for signing".to_string())
+        })?;
+        match identity_public_key.key_type {
+            KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
+                let signature = signer::sign(&data, private_key)?;
+                Ok(signature.to_vec())
+            }
+            KeyType::BLS12_381 => {
+                todo!();
+                // self.set_signature(bls.sign(&data, private_key)?.into())
+            }
+            // the default behavior from
+            // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L187
+            // is to return the error for the BIP13_SCRIPT_HASH
+            KeyType::BIP13_SCRIPT_HASH => {
+                return Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
+                    InvalidIdentityPublicKeyTypeError::new(identity_public_key.key_type),
+                ))
+            }
+        }
+    }
+}
 
 pub type BlockHeight = u64;
 
@@ -206,13 +259,30 @@ impl Strategy {
         }
     }
 
-    fn contract_state_transitions(&self) -> Vec<StateTransition> {
+    fn contract_state_transitions(
+        &self,
+        current_identities: &Vec<Identity>,
+        signer: &SimpleSigner,
+        rng: &mut StdRng,
+    ) -> Vec<StateTransition> {
         self.contracts
             .iter()
             .map(|contract| {
-                contract
-                    .try_into()
-                    .expect("expected to create a state transition from a contract")
+                let identity_num = rng.gen_range(0..current_identities.len());
+                let identity = current_identities
+                    .get(identity_num)
+                    .unwrap()
+                    .clone()
+                    .into_partial_identity_info();
+
+                let state_transition = DataContractCreateTransition::new_from_data_contract(
+                    contract.clone(),
+                    &identity,
+                    0,
+                    signer,
+                )
+                .expect("expected to create a create state transition from a data contract");
+                state_transition.into()
             })
             .collect()
     }
@@ -341,7 +411,8 @@ impl Strategy {
 
         if block_info.height == 1 {
             // add contracts on block 1
-            let mut contract_state_transitions = self.contract_state_transitions();
+            let mut contract_state_transitions =
+                self.contract_state_transitions(current_identities, rng);
             state_transitions.append(&mut contract_state_transitions);
         }
 

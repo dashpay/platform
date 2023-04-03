@@ -23,7 +23,9 @@ use super::property_names::*;
 
 mod action;
 pub mod apply_data_contract_create_transition_factory;
+pub mod builder;
 pub mod validation;
+
 pub use action::{
     DataContractCreateTransitionAction, DATA_CONTRACT_CREATE_TRANSITION_ACTION_VERSION,
 };

@@ -31,7 +31,7 @@ pub type TimestampMillis = u64;
 
 pub const BINARY_DATA_FIELDS: [&str; 1] = ["data"];
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Ord, PartialOrd)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Ord, PartialOrd, Hash)]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityPublicKey {
     pub id: KeyID,
