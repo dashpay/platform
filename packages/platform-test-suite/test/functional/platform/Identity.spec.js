@@ -553,9 +553,7 @@ describe('Platform', () => {
         );
       });
 
-      // TODO(wasm-dpp): enable when the bug with treating publicKeyIds
-      //  as bytes instead of array is fixed
-      it.skip('should be able to disable public key of the identity', async () => {
+      it('should be able to disable public key of the identity', async () => {
         const now = new Date().getTime();
 
         const { Identity } = client.platform.dppModule;

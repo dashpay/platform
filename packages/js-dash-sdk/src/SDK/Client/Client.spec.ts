@@ -269,14 +269,12 @@ describe('Dash - Client', function suite() {
           signature: Buffer.alloc(0),
         }),
       ];
-      // const publicKeysToDisable = [identity.getPublicKeys()[0]];
+      const publicKeysToDisable = [identity.getPublicKeys()[0]];
 
       // Updating the identity
       await client.platform.identities.update(identity, {
         add: publicKeysToAdd,
-        // TODO(wasm-dpp): enable when the bug with treating publicKeyIds
-        //  as bytes instead of array is fixed
-        // disable: publicKeysToDisable,
+        disable: publicKeysToDisable,
       }, {
         3: privateKey,
       });
@@ -292,8 +290,8 @@ describe('Dash - Client', function suite() {
       const publicKeysAdded = interceptedIdentityStateTransition.getPublicKeysToAdd();
       expect(publicKeysAdded.map((key) => key.toObject({ skipSignature: true })))
         .to.deep.equal(publicKeysToAdd.map((key) => key.toObject({ skipSignature: true })));
-
-      // TODO(wasm): add check for publicKeyIdsToDisable as well
+      const publicKeysDisabled = interceptedIdentityStateTransition.getPublicKeyIdsToDisable();
+      expect(publicKeysDisabled).to.deep.equal(publicKeysToDisable.map((key) => key.getId()));
     });
 
     it('should throw TransitionBroadcastError when transport resolves error', async () => {
