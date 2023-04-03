@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::consensus::basic::BasicError;
-use crate::{consensus::ConsensusError, identity::core_script::CoreScript};
+use crate::{consensus::ConsensusError};
 
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Output script must be either p2pkh or p2sh")]

@@ -1,20 +1,33 @@
 use wasm_bindgen::prelude::*;
+use dpp::consensus::basic::state_transition::MissingStateTransitionTypeError;
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::ConsensusError;
+use crate::buffer::Buffer;
 
 #[wasm_bindgen(js_name=MissingStateTransitionTypeError)]
 pub struct MissingStateTransitionTypeErrorWasm {
-    code: u32,
+  inner: MissingStateTransitionTypeError,
 }
 
-impl MissingStateTransitionTypeErrorWasm {
-    pub fn new(code: u32) -> Self {
-        MissingStateTransitionTypeErrorWasm { code }
-    }
+impl From<&MissingStateTransitionTypeError> for MissingStateTransitionTypeErrorWasm {
+  fn from(e: &MissingStateTransitionTypeError) -> Self {
+    Self { inner: e.clone() }
+  }
 }
 
 #[wasm_bindgen(js_class=MissingStateTransitionTypeError)]
 impl MissingStateTransitionTypeErrorWasm {
-    #[wasm_bindgen(js_name=getCode)]
-    pub fn get_code(&self) -> u32 {
-        self.code
-    }
+  #[wasm_bindgen(js_name=getCode)]
+  pub fn get_code(&self) -> u32 {
+    ConsensusError::from(self.inner.clone()).code()
+  }
+
+  #[wasm_bindgen(js_name=serialize)]
+  pub fn serialize(&self) -> Result<Buffer, JsError> {
+    let bytes = ConsensusError::from(self.inner.clone())
+      .serialize()
+      .map_err(|e| JsError::from(e))?;
+
+    Ok(Buffer::from_bytes(bytes.as_slice()))
+  }
 }

@@ -1,28 +1,38 @@
 use crate::buffer::Buffer;
-use dpp::identifier::Identifier;
 use wasm_bindgen::prelude::*;
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::ConsensusError;
+use dpp::consensus::state::document::document_not_found_error::DocumentNotFoundError;
 
 #[wasm_bindgen(js_name=DocumentNotFoundError)]
 pub struct DocumentNotFoundErrorWasm {
-    document_id: Identifier,
-    code: u32,
+  inner: DocumentNotFoundError,
+}
+
+impl From<&DocumentNotFoundError> for DocumentNotFoundErrorWasm {
+  fn from(e: &DocumentNotFoundError) -> Self {
+    Self { inner: e.clone() }
+  }
 }
 
 #[wasm_bindgen(js_class=DocumentNotFoundError)]
 impl DocumentNotFoundErrorWasm {
     #[wasm_bindgen(js_name=getDocumentId)]
     pub fn document_id(&self) -> Buffer {
-        Buffer::from_bytes(self.document_id.as_bytes())
+        Buffer::from_bytes(self.inner.document_id().as_bytes())
     }
 
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {
-        self.code
+      ConsensusError::from(self.inner.clone()).code()
     }
-}
 
-impl DocumentNotFoundErrorWasm {
-    pub fn new(document_id: Identifier, code: u32) -> Self {
-        Self { document_id, code }
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+      let bytes = ConsensusError::from(self.inner.clone())
+        .serialize()
+        .map_err(|e| JsError::from(e))?;
+
+      Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }

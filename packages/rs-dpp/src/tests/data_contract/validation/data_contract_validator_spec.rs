@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use jsonschema::error::ValidationErrorKind;
 use log::trace;
 use platform_value::{platform_value, Value};
 use serde_json::Value as JsonValue;

@@ -1,6 +1,7 @@
 use crate::consensus::basic::BasicError;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use crate::consensus::ConsensusError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Invalid State Transition type {transition_type}")]
@@ -18,8 +19,8 @@ impl InvalidStateTransitionTypeError {
     }
 }
 
-impl From<InvalidStateTransitionTypeError> for BasicError {
+impl From<InvalidStateTransitionTypeError> for ConsensusError {
     fn from(err: InvalidStateTransitionTypeError) -> Self {
-        Self::InvalidStateTransitionTypeError(err)
+        Self::BasicError(BasicError::InvalidStateTransitionTypeError(err))
     }
 }

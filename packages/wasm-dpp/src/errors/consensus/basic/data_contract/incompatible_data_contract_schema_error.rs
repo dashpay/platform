@@ -1,50 +1,48 @@
 use crate::buffer::Buffer;
-use dpp::prelude::Identifier;
 use wasm_bindgen::prelude::*;
+use dpp::consensus::basic::data_contract::IncompatibleDataContractSchemaError;
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::ConsensusError;
 
 #[wasm_bindgen(js_name=IncompatibleDataContractSchemaError)]
 pub struct IncompatibleDataContractSchemaErrorWasm {
-    data_contract_id: Identifier,
-    operation: String,
-    field_path: String,
-    code: u32,
+  inner: IncompatibleDataContractSchemaError,
 }
 
-impl IncompatibleDataContractSchemaErrorWasm {
-    pub fn new(
-        data_contract_id: Identifier,
-        operation: String,
-        field_path: String,
-        code: u32,
-    ) -> Self {
-        IncompatibleDataContractSchemaErrorWasm {
-            data_contract_id,
-            operation,
-            field_path,
-            code,
-        }
-    }
+impl From<&IncompatibleDataContractSchemaError> for IncompatibleDataContractSchemaErrorWasm {
+  fn from(e: &IncompatibleDataContractSchemaError) -> Self {
+    Self { inner: e.clone() }
+  }
 }
 
 #[wasm_bindgen(js_class=IncompatibleDataContractSchemaError)]
 impl IncompatibleDataContractSchemaErrorWasm {
     #[wasm_bindgen(js_name=getDataContractId)]
     pub fn get_data_contract_id(&self) -> Buffer {
-        Buffer::from_bytes(self.data_contract_id.as_bytes())
+        Buffer::from_bytes(self.inner.data_contract_id().as_bytes())
     }
 
     #[wasm_bindgen(js_name=getOperation)]
     pub fn get_operation(&self) -> String {
-        self.operation.clone()
+        self.inner.operation().to_string()
     }
 
     #[wasm_bindgen(js_name=getFieldPath)]
     pub fn get_field_path(&self) -> String {
-        self.field_path.clone()
+        self.inner.field_path().to_string()
     }
 
-    #[wasm_bindgen(js_name=getCode)]
-    pub fn get_code(&self) -> u32 {
-        self.code
-    }
+  #[wasm_bindgen(js_name=getCode)]
+  pub fn get_code(&self) -> u32 {
+    ConsensusError::from(self.inner.clone()).code()
+  }
+
+  #[wasm_bindgen(js_name=serialize)]
+  pub fn serialize(&self) -> Result<Buffer, JsError> {
+    let bytes = ConsensusError::from(self.inner.clone())
+      .serialize()
+      .map_err(|e| JsError::from(e))?;
+
+    Ok(Buffer::from_bytes(bytes.as_slice()))
+  }
 }

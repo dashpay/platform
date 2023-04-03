@@ -1,31 +1,39 @@
-use dpp::consensus::basic::identity::InvalidIdentityAssetLockTransactionError;
-
-use dpp::consensus::basic::BasicError;
-use dpp::consensus::codes::ErrorWithCode;
 use wasm_bindgen::prelude::*;
+use dpp::consensus::basic::identity::InvalidIdentityAssetLockTransactionError;
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::ConsensusError;
+use crate::buffer::Buffer;
 
 #[wasm_bindgen(js_name=InvalidIdentityAssetLockTransactionError)]
 pub struct InvalidIdentityAssetLockTransactionErrorWasm {
-    error_message: String,
-    code: u32,
+  inner: InvalidIdentityAssetLockTransactionError,
+}
+
+impl From<&InvalidIdentityAssetLockTransactionError> for InvalidIdentityAssetLockTransactionErrorWasm {
+  fn from(e: &InvalidIdentityAssetLockTransactionError) -> Self {
+    Self { inner: e.clone() }
+  }
 }
 
 #[wasm_bindgen(js_class=InvalidIdentityAssetLockTransactionError)]
 impl InvalidIdentityAssetLockTransactionErrorWasm {
-    pub fn new(error_message: String, code: u32) -> Self {
-        Self {
-            error_message,
-            code,
-        }
-    }
 
     #[wasm_bindgen(js_name=getErrorMessage)]
     pub fn get_error_message(&self) -> String {
-        self.error_message.clone()
+        self.inner.message().to_string()
     }
 
-    #[wasm_bindgen(js_name=getCode)]
-    pub fn get_code(&self) -> u32 {
-        self.code
+  #[wasm_bindgen(js_name=getCode)]
+  pub fn get_code(&self) -> u32 {
+    ConsensusError::from(self.inner.clone()).code()
+  }
+
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+      let bytes = ConsensusError::from(self.inner.clone())
+        .serialize()
+        .map_err(|e| JsError::from(e))?;
+
+      Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }

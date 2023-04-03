@@ -24,7 +24,6 @@ use crate::{
     version::{ProtocolVersionValidator, LATEST_VERSION},
 };
 
-use crate::consensus::basic::json_schema_error::JsonSchemaError;
 use jsonschema::error::ValidationErrorKind;
 use platform_value::{platform_value, BinaryData, Value};
 use serde_json::Value as JsonValue;

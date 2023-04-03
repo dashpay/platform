@@ -1,38 +1,43 @@
 use crate::buffer::Buffer;
-use dpp::prelude::Identifier;
 use wasm_bindgen::prelude::*;
+use dpp::consensus::basic::document::InvalidDocumentTransitionIdError;
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::ConsensusError;
 
 #[wasm_bindgen(js_name=InvalidDocumentTransitionIdError)]
 pub struct InvalidDocumentTransitionIdErrorWasm {
-    expected_id: Identifier,
-    invalid_id: Identifier,
-    code: u32,
+  inner: InvalidDocumentTransitionIdError,
 }
 
-impl InvalidDocumentTransitionIdErrorWasm {
-    pub fn new(expected_id: Identifier, invalid_id: Identifier, code: u32) -> Self {
-        InvalidDocumentTransitionIdErrorWasm {
-            expected_id,
-            invalid_id,
-            code,
-        }
-    }
+impl From<&InvalidDocumentTransitionIdError> for InvalidDocumentTransitionIdErrorWasm {
+  fn from(e: &InvalidDocumentTransitionIdError) -> Self {
+    Self { inner: e.clone() }
+  }
 }
 
 #[wasm_bindgen(js_class=InvalidDocumentTransitionIdError)]
 impl InvalidDocumentTransitionIdErrorWasm {
     #[wasm_bindgen(js_name=getExpectedId)]
     pub fn get_expected_id(&self) -> Buffer {
-        Buffer::from_bytes(self.expected_id.as_bytes())
+        Buffer::from_bytes(self.inner.expected_id().as_bytes())
     }
 
     #[wasm_bindgen(js_name=getInvalidId)]
     pub fn get_invalid_id(&self) -> Buffer {
-        Buffer::from_bytes(self.invalid_id.as_bytes())
+        Buffer::from_bytes(self.inner.invalid_id().as_bytes())
     }
 
-    #[wasm_bindgen(js_name=getCode)]
-    pub fn get_code(&self) -> u32 {
-        self.code
-    }
+  #[wasm_bindgen(js_name=getCode)]
+  pub fn get_code(&self) -> u32 {
+    ConsensusError::from(self.inner.clone()).code()
+  }
+
+  #[wasm_bindgen(js_name=serialize)]
+  pub fn serialize(&self) -> Result<Buffer, JsError> {
+    let bytes = ConsensusError::from(self.inner.clone())
+      .serialize()
+      .map_err(|e| JsError::from(e))?;
+
+    Ok(Buffer::from_bytes(bytes.as_slice()))
+  }
 }

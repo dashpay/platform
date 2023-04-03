@@ -1,33 +1,44 @@
 use dpp::state_transition::fee::Credits;
 use wasm_bindgen::prelude::*;
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::ConsensusError;
+use dpp::consensus::fee::balance_is_not_enough_error::BalanceIsNotEnoughError;
+use crate::buffer::Buffer;
 
 #[wasm_bindgen(js_name=BalanceIsNotEnoughError)]
 pub struct BalanceIsNotEnoughErrorWasm {
-    balance: Credits,
-    fee: Credits,
-    code: u32,
+  inner: BalanceIsNotEnoughError,
 }
 
-impl BalanceIsNotEnoughErrorWasm {
-    pub fn new(balance: Credits, fee: Credits, code: u32) -> Self {
-        BalanceIsNotEnoughErrorWasm { balance, fee, code }
-    }
+impl From<&BalanceIsNotEnoughError> for BalanceIsNotEnoughErrorWasm {
+  fn from(e: &BalanceIsNotEnoughError) -> Self {
+    Self { inner: e.clone() }
+  }
 }
 
 #[wasm_bindgen(js_class=BalanceIsNotEnoughError)]
 impl BalanceIsNotEnoughErrorWasm {
     #[wasm_bindgen(js_name=getBalance)]
     pub fn get_balance(&self) -> Credits {
-        self.balance
+        self.inner.balance()
     }
 
     #[wasm_bindgen(js_name=getFee)]
     pub fn get_fee(&self) -> Credits {
-        self.fee
+        self.inner.fee()
     }
 
-    #[wasm_bindgen(js_name=getCode)]
-    pub fn get_code(&self) -> u32 {
-        self.code
-    }
+  #[wasm_bindgen(js_name=getCode)]
+  pub fn get_code(&self) -> u32 {
+    ConsensusError::from(self.inner.clone()).code()
+  }
+
+  #[wasm_bindgen(js_name=serialize)]
+  pub fn serialize(&self) -> Result<Buffer, JsError> {
+    let bytes = ConsensusError::from(self.inner.clone())
+      .serialize()
+      .map_err(|e| JsError::from(e))?;
+
+    Ok(Buffer::from_bytes(bytes.as_slice()))
+  }
 }

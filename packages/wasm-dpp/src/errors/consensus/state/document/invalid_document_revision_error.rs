@@ -1,38 +1,44 @@
 use crate::buffer::Buffer;
-use dpp::{identifier::Identifier, prelude::Revision};
+use dpp::{prelude::Revision};
 use wasm_bindgen::prelude::*;
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::ConsensusError;
+use dpp::consensus::state::document::invalid_document_revision_error::InvalidDocumentRevisionError;
 
 #[wasm_bindgen(js_name=InvalidDocumentRevisionError)]
 pub struct InvalidDocumentRevisionErrorWasm {
-    document_id: Identifier,
-    current_revision: Option<Revision>,
-    code: u32,
+  inner: InvalidDocumentRevisionError,
+}
+
+impl From<&InvalidDocumentRevisionError> for InvalidDocumentRevisionErrorWasm {
+  fn from(e: &InvalidDocumentRevisionError) -> Self {
+    Self { inner: e.clone() }
+  }
 }
 
 #[wasm_bindgen(js_class=InvalidDocumentRevisionError)]
 impl InvalidDocumentRevisionErrorWasm {
     #[wasm_bindgen(js_name=getDocumentId)]
     pub fn document_id(&self) -> Buffer {
-        Buffer::from_bytes(self.document_id.as_bytes())
+        Buffer::from_bytes(self.inner.document_id().as_bytes())
     }
 
     #[wasm_bindgen(js_name=getCurrentRevision)]
     pub fn current_revision(&self) -> Option<Revision> {
-        self.current_revision
+        *self.inner.current_revision()
     }
 
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {
-        self.code
+      ConsensusError::from(self.inner.clone()).code()
     }
-}
 
-impl InvalidDocumentRevisionErrorWasm {
-    pub fn new(document_id: Identifier, current_revision: Option<Revision>, code: u32) -> Self {
-        Self {
-            document_id,
-            current_revision,
-            code,
-        }
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+      let bytes = ConsensusError::from(self.inner.clone())
+        .serialize()
+        .map_err(|e| JsError::from(e))?;
+
+      Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }

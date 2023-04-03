@@ -8,6 +8,7 @@ use dpp::errors::consensus::ConsensusError;
 use serde_json::Value;
 
 use wasm_bindgen::prelude::*;
+use crate::buffer::Buffer;
 
 #[wasm_bindgen(js_name=JsonSchemaError, inspectable)]
 #[derive(Debug)]
@@ -15,11 +16,9 @@ pub struct JsonSchemaErrorWasm {
     inner: JsonSchemaError,
 }
 
-impl JsonSchemaErrorWasm {
-    pub fn new(e: &JsonSchemaError) -> Self {
-        Self {
-            inner: e.to_owned(),
-        }
+impl From<&JsonSchemaError> for JsonSchemaErrorWasm {
+    fn from(e: &JsonSchemaError) -> Self {
+        Self { inner: e.clone() }
     }
 }
 
@@ -60,5 +59,14 @@ impl JsonSchemaErrorWasm {
     #[wasm_bindgen(js_name=toString)]
     pub fn to_string_format(&self) -> String {
         format!("{:#?}", self)
+    }
+
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+        let bytes = ConsensusError::from(self.inner.clone())
+            .serialize()
+            .map_err(|e| JsError::from(e))?;
+
+        Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }

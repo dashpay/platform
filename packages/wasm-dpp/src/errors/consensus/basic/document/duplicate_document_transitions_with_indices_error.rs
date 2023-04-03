@@ -1,24 +1,26 @@
 use crate::buffer::Buffer;
 use std::iter::FromIterator;
 use wasm_bindgen::prelude::*;
+use dpp::consensus::basic::document::DuplicateDocumentTransitionsWithIndicesError;
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::ConsensusError;
 
 #[wasm_bindgen(js_name=DuplicateDocumentTransitionsWithIndicesError)]
 pub struct DuplicateDocumentTransitionsWithIndicesErrorWasm {
-    references: Vec<(String, [u8; 32])>,
-    code: u32,
+  inner: DuplicateDocumentTransitionsWithIndicesError,
 }
 
-impl DuplicateDocumentTransitionsWithIndicesErrorWasm {
-    pub fn new(references: Vec<(String, [u8; 32])>, code: u32) -> Self {
-        DuplicateDocumentTransitionsWithIndicesErrorWasm { references, code }
-    }
+impl From<&DuplicateDocumentTransitionsWithIndicesError> for DuplicateDocumentTransitionsWithIndicesErrorWasm {
+  fn from(e: &DuplicateDocumentTransitionsWithIndicesError) -> Self {
+    Self { inner: e.clone() }
+  }
 }
 
 #[wasm_bindgen(js_class=DuplicateDocumentTransitionsWithIndicesError)]
 impl DuplicateDocumentTransitionsWithIndicesErrorWasm {
     #[wasm_bindgen(js_name=getDocumentTransitionReferences)]
     pub fn get_references(&self) -> js_sys::Array {
-        self.references
+        self.inner.references()
             .iter()
             .map(|v| {
                 js_sys::Array::from_iter(vec![
@@ -29,8 +31,17 @@ impl DuplicateDocumentTransitionsWithIndicesErrorWasm {
             .collect()
     }
 
-    #[wasm_bindgen(js_name=getCode)]
-    pub fn get_code(&self) -> u32 {
-        self.code
-    }
+  #[wasm_bindgen(js_name=getCode)]
+  pub fn get_code(&self) -> u32 {
+    ConsensusError::from(self.inner.clone()).code()
+  }
+
+  #[wasm_bindgen(js_name=serialize)]
+  pub fn serialize(&self) -> Result<Buffer, JsError> {
+    let bytes = ConsensusError::from(self.inner.clone())
+      .serialize()
+      .map_err(|e| JsError::from(e))?;
+
+    Ok(Buffer::from_bytes(bytes.as_slice()))
+  }
 }

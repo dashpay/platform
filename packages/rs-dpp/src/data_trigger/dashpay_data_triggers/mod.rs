@@ -285,8 +285,6 @@ mod test {
             &data_trigger_error,
             &DataTriggerError::DataTriggerConditionError(e)  if {
                 e.message() == &format!("Identity {contract_request_to_user_id} doesn't exist")
-
-
             }
         ));
     }

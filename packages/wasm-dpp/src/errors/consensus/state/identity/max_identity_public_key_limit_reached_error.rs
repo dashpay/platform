@@ -1,27 +1,39 @@
 use wasm_bindgen::prelude::*;
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::ConsensusError;
+use dpp::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
+use crate::buffer::Buffer;
 
 #[wasm_bindgen(js_name=MaxIdentityPublicKeyLimitReachedError)]
 pub struct MaxIdentityPublicKeyLimitReachedErrorWasm {
     // TODO we can't use usize otherwise it might be a big int in JS if count is too high
-    max_items: usize,
-    code: u32,
+    inner: MaxIdentityPublicKeyLimitReachedError,
+}
+
+impl From<&MaxIdentityPublicKeyLimitReachedError> for MaxIdentityPublicKeyLimitReachedErrorWasm {
+  fn from(e: &MaxIdentityPublicKeyLimitReachedError) -> Self {
+    Self { inner: e.clone() }
+  }
 }
 
 #[wasm_bindgen(js_class=MaxIdentityPublicKeyLimitReachedError)]
 impl MaxIdentityPublicKeyLimitReachedErrorWasm {
     #[wasm_bindgen(js_name=getMaxItems)]
     pub fn max_items(&self) -> usize {
-        self.max_items
+        self.inner.max_items()
     }
 
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {
-        self.code
+      ConsensusError::from(self.inner.clone()).code()
     }
-}
 
-impl MaxIdentityPublicKeyLimitReachedErrorWasm {
-    pub fn new(max_items: usize, code: u32) -> Self {
-        Self { max_items, code }
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+      let bytes = ConsensusError::from(self.inner.clone())
+        .serialize()
+        .map_err(|e| JsError::from(e))?;
+
+      Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }

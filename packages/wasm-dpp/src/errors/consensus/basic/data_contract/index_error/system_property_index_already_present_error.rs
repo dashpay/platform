@@ -1,51 +1,48 @@
-use dpp::util::json_schema::Index;
 use wasm_bindgen::prelude::*;
-
-use crate::IndexDefinitionWasm;
+use dpp::consensus::basic::data_contract::SystemPropertyIndexAlreadyPresentError;
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::ConsensusError;
+use crate::buffer::Buffer;
 
 #[wasm_bindgen(js_name=SystemPropertyIndexAlreadyPresentError)]
 pub struct SystemPropertyIndexAlreadyPresentErrorWasm {
-    document_type: String,
-    index_name: String,
-    property_name: String,
-    code: u32,
+  inner: SystemPropertyIndexAlreadyPresentError,
 }
 
-impl SystemPropertyIndexAlreadyPresentErrorWasm {
-    pub fn new(
-        document_type: String,
-        index_name: String,
-        property_name: String,
-        code: u32,
-    ) -> Self {
-        SystemPropertyIndexAlreadyPresentErrorWasm {
-            document_type,
-            index_name,
-            property_name,
-            code,
-        }
-    }
+impl From<&SystemPropertyIndexAlreadyPresentError> for SystemPropertyIndexAlreadyPresentErrorWasm {
+  fn from(e: &SystemPropertyIndexAlreadyPresentError) -> Self {
+    Self { inner: e.clone() }
+  }
 }
 
 #[wasm_bindgen(js_class=SystemPropertyIndexAlreadyPresentError)]
 impl SystemPropertyIndexAlreadyPresentErrorWasm {
     #[wasm_bindgen(js_name=getDocumentType)]
     pub fn get_document_type(&self) -> String {
-        self.document_type.clone()
+        self.inner.document_type().to_string()
     }
 
     #[wasm_bindgen(js_name=getIndexName)]
     pub fn get_index_name(&self) -> String {
-        self.index_name.clone()
+        self.inner.index_name().to_string()
     }
 
     #[wasm_bindgen(js_name=getPropertyName)]
     pub fn get_property_name(&self) -> String {
-        self.property_name.clone()
+        self.inner.property_name().to_string()
     }
 
-    #[wasm_bindgen(js_name=getCode)]
-    pub fn get_code(&self) -> u32 {
-        self.code
-    }
+  #[wasm_bindgen(js_name=getCode)]
+  pub fn get_code(&self) -> u32 {
+    ConsensusError::from(self.inner.clone()).code()
+  }
+
+  #[wasm_bindgen(js_name=serialize)]
+  pub fn serialize(&self) -> Result<Buffer, JsError> {
+    let bytes = ConsensusError::from(self.inner.clone())
+      .serialize()
+      .map_err(|e| JsError::from(e))?;
+
+    Ok(Buffer::from_bytes(bytes.as_slice()))
+  }
 }

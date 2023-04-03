@@ -1,53 +1,48 @@
 use crate::buffer::Buffer;
-use crate::document::state_transition::document_batch_transition::document_transition::from_document_transition_to_js_value;
-
-use dpp::identifier::Identifier;
-use dpp::prelude::DocumentTransition;
 use wasm_bindgen::prelude::*;
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::ConsensusError;
+use dpp::consensus::state::data_trigger::data_trigger_execution_error::DataTriggerExecutionError;
 
 #[wasm_bindgen(js_name=DataTriggerExecutionError)]
 pub struct DataTriggerExecutionErrorWasm {
-    data_contract_id: Identifier,
-    document_id: Identifier,
-    message: String,
-    code: u32,
+  inner: DataTriggerExecutionError,
+}
+
+impl From<&DataTriggerExecutionError> for DataTriggerExecutionErrorWasm {
+  fn from(e: &DataTriggerExecutionError) -> Self {
+    Self { inner: e.clone() }
+  }
 }
 
 #[wasm_bindgen(js_class=DataTriggerExecutionError)]
 impl DataTriggerExecutionErrorWasm {
     #[wasm_bindgen(js_name=getDataContractId)]
     pub fn data_contract_id(&self) -> Buffer {
-        Buffer::from_bytes(self.data_contract_id.as_bytes())
+        Buffer::from_bytes(self.inner.data_contract_id().as_bytes())
     }
 
     #[wasm_bindgen(js_name=getDocumentId)]
     pub fn document_id(&self) -> Buffer {
-        Buffer::from_bytes(self.document_id.as_bytes())
+        Buffer::from_bytes(self.inner.document_id().as_bytes())
     }
 
     #[wasm_bindgen(js_name=getMessage)]
     pub fn message(&self) -> String {
-        self.message.clone()
+        self.inner.message().to_string()
     }
 
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {
-        self.code
+      ConsensusError::from(self.inner.clone()).code()
     }
-}
 
-impl DataTriggerExecutionErrorWasm {
-    pub fn new(
-        data_contract_id: Identifier,
-        document_id: Identifier,
-        message: String,
-        code: u32,
-    ) -> Self {
-        Self {
-            data_contract_id,
-            document_id,
-            message,
-            code,
-        }
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+      let bytes = ConsensusError::from(self.inner.clone())
+        .serialize()
+        .map_err(|e| JsError::from(e))?;
+
+      Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }

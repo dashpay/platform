@@ -1,9 +1,10 @@
-use crate::errors::PublicKeyValidationErrorWasm;
 use dpp::consensus::basic::identity::InvalidIdentityPublicKeyDataError;
 use dpp::errors::consensus::codes::ErrorWithCode;
 
 use dpp::errors::consensus::ConsensusError as DPPConsensusError;
 use wasm_bindgen::prelude::*;
+use dpp::consensus::ConsensusError;
+use crate::buffer::Buffer;
 
 #[wasm_bindgen(js_name=InvalidIdentityPublicKeyDataError)]
 pub struct InvalidIdentityPublicKeyDataErrorWasm {
@@ -32,5 +33,14 @@ impl InvalidIdentityPublicKeyDataErrorWasm {
     #[wasm_bindgen(js_name=getCode)]
     pub fn code(&self) -> u32 {
         DPPConsensusError::from(self.inner.clone()).code()
+    }
+
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+      let bytes = ConsensusError::from(self.inner.clone())
+        .serialize()
+        .map_err(|e| JsError::from(e))?;
+
+      Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }

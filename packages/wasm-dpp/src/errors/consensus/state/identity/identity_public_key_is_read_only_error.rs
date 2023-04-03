@@ -1,32 +1,44 @@
 use dpp::identity::KeyID;
 use wasm_bindgen::prelude::*;
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::ConsensusError;
+use dpp::consensus::state::identity::identity_public_key_is_read_only_error::IdentityPublicKeyIsReadOnlyError;
+use crate::buffer::Buffer;
 
 #[wasm_bindgen(js_name=IdentityPublicKeyIsReadOnlyError)]
 pub struct IdentityPublicKeyIsReadOnlyErrorWasm {
-    key_id: KeyID,
-    code: u32,
+  inner: IdentityPublicKeyIsReadOnlyError,
+}
+
+impl From<&IdentityPublicKeyIsReadOnlyError> for IdentityPublicKeyIsReadOnlyErrorWasm {
+  fn from(e: &IdentityPublicKeyIsReadOnlyError) -> Self {
+    Self { inner: e.clone() }
+  }
 }
 
 #[wasm_bindgen(js_class=IdentityPublicKeyIsReadOnlyError)]
 impl IdentityPublicKeyIsReadOnlyErrorWasm {
     #[wasm_bindgen(js_name=getKeyId)]
     pub fn key_id(&self) -> KeyID {
-        self.key_id
-    }
-
-    #[wasm_bindgen(js_name=getCode)]
-    pub fn get_code(&self) -> u32 {
-        self.code
+        self.inner.public_key_index()
     }
 
     #[wasm_bindgen(js_name=getPublicKeyIndex)]
     pub fn public_key_index(&self) -> KeyID {
-        self.key_id
+      self.inner.public_key_index()
     }
-}
 
-impl IdentityPublicKeyIsReadOnlyErrorWasm {
-    pub fn new(key_id: KeyID, code: u32) -> Self {
-        Self { key_id, code }
+    #[wasm_bindgen(js_name=getCode)]
+    pub fn get_code(&self) -> u32 {
+      ConsensusError::from(self.inner.clone()).code()
+    }
+
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+      let bytes = ConsensusError::from(self.inner.clone())
+        .serialize()
+        .map_err(|e| JsError::from(e))?;
+
+      Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }

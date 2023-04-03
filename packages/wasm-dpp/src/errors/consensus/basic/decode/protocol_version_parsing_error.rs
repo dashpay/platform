@@ -9,11 +9,9 @@ pub struct ProtocolVersionParsingErrorWasm {
     inner: ProtocolVersionParsingError,
 }
 
-impl ProtocolVersionParsingErrorWasm {
-    pub fn new(error: &ProtocolVersionParsingError) -> Self {
-        Self {
-            inner: error.clone(),
-        }
+impl From<&ProtocolVersionParsingError> for ProtocolVersionParsingErrorWasm {
+    fn from(e: &ProtocolVersionParsingError) -> Self {
+        Self { inner: e.clone() }
     }
 }
 

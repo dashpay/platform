@@ -23,7 +23,7 @@ impl UndefinedIndexPropertyError {
     pub fn document_type(&self) -> &str {
         &self.document_type
     }
-    pub fn index_definition(&self) -> &str {
+    pub fn index_name(&self) -> &str {
         &self.index_name
     }
     pub fn property_name(&self) -> &str {

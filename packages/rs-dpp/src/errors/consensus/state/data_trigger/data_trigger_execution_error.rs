@@ -5,7 +5,7 @@ use platform_value::Identifier;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Error, Debug, Serialize, Deserialize)]
+#[derive(Error, Debug, Clone, Serialize, Deserialize)]
 #[error("{message}")]
 pub struct DataTriggerExecutionError {
     data_contract_id: Identifier,

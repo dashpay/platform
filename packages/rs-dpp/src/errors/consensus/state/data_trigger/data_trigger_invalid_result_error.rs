@@ -9,22 +9,22 @@ use thiserror::Error;
 #[error("Data trigger have not returned any result")]
 pub struct DataTriggerInvalidResultError {
     data_contract_id: Identifier,
-    document_transition_id: Identifier,
+    document_id: Identifier,
 }
 
 impl DataTriggerInvalidResultError {
-    pub fn new(data_contract_id: Identifier, document_transition_id: Identifier) -> Self {
+    pub fn new(data_contract_id: Identifier, document_id: Identifier) -> Self {
         Self {
             data_contract_id,
-            document_transition_id,
+            document_id,
         }
     }
 
     pub fn data_contract_id(&self) -> &Identifier {
         &self.data_contract_id
     }
-    pub fn document_transition_id(&self) -> &Identifier {
-        &self.document_transition_id
+    pub fn document_id(&self) -> &Identifier {
+        &self.document_id
     }
 }
 
