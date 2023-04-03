@@ -64,7 +64,7 @@ describe('Platform', () => {
       await client.platform.contracts.publish(dataContractFixture, identity);
     });
 
-    it.only('should be able to get newly created data contract', async () => {
+    it('should be able to get newly created data contract', async () => {
       // Additional wait time to mitigate testnet latency
       await waitForSTPropagated();
 
@@ -110,6 +110,7 @@ describe('Platform', () => {
 
       const documentSchema = fetchedDataContract.getDocumentSchema('withByteArrays');
       delete documentSchema.properties.identifierField;
+      dataContractFixture.setDocumentSchema('withByteArrays', documentSchema);
 
       let broadcastError;
 
@@ -120,10 +121,12 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
-      expect(broadcastError.getCause()).to.be.an.instanceOf(IncompatibleDataContractSchemaError);
+      expect(broadcastError.getCause().getCode()).to.equal(1051);
+      // TODO(wasm-dpp): fix this after createConsensusError is ported to wasm-dpp
+      // expect(broadcastError.getCause()).to.be.an.instanceOf(IncompatibleDataContractSchemaError);
     });
 
-    it('should be able to update an existing data contract', async () => {
+    it.only('should be able to update an existing data contract', async () => {
       // Additional wait time to mitigate testnet latency
       await waitForSTPropagated();
 
