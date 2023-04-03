@@ -1,4 +1,5 @@
 const getDataContractJSFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const crypto = require('crypto');
 const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
 
 const { default: loadWasmDpp } = require('../../..');
@@ -24,7 +25,9 @@ describe('DataContractFacade', () => {
 
   beforeEach(async () => {
     blsAdapter = await getBlsAdapterMock();
-    dpp = new DashPlatformProtocol(1, blsAdapter);
+    dpp = new DashPlatformProtocol(
+      blsAdapter, {}, { generate: () => crypto.randomBytes(32) }, 1,
+    );
 
     dataContractJs = await getDataContractJSFixture();
     rawDataContract = dataContractJs.toObject();

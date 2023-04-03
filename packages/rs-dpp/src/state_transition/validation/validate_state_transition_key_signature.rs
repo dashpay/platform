@@ -172,8 +172,9 @@ mod test {
     fn setup_test() -> TestData {
         let state_repository_mock = MockStateRepositoryLike::new();
         let shared_state_repository = Arc::new(state_repository_mock);
-        let asset_lock_transaction_output_fetcher =
-            AssetLockTransactionOutputFetcher::new(shared_state_repository.clone());
+        let asset_lock_transaction_output_fetcher = Arc::new(
+            AssetLockTransactionOutputFetcher::new(shared_state_repository.clone()),
+        );
 
         let asset_lock_public_key_hash_fetcher = AssetLockPublicKeyHashFetcher::new(
             shared_state_repository,

@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
@@ -45,7 +46,12 @@ describe('DocumentFacade', () => {
     stateRepositoryMock.fetchDataContract.resolves(dataContract);
 
     blsAdapter = await getBlsAdapterMock();
-    dpp = new DashPlatformProtocol(blsAdapter, stateRepositoryMock, 1);
+    dpp = new DashPlatformProtocol(
+      blsAdapter,
+      stateRepositoryMock,
+      { generate: () => crypto.randomBytes(32) },
+      1,
+    );
 
     documentsJs = getDocumentsFixture(dataContractJs);
     documents = documentsJs.map((d) => {

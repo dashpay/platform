@@ -11,6 +11,7 @@ use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::DPPError;
 
+#[derive(Clone)]
 pub struct AssetLockTransactionOutputFetcher<SR> {
     state_repository: Arc<SR>,
 }

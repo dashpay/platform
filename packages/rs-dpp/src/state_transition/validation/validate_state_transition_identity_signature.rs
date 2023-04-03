@@ -139,6 +139,7 @@ fn convert_to_consensus_signature_error(
                 InvalidIdentityPublicKeyTypeError::new(err.public_key_type()),
             )),
         ),
+        ProtocolError::WrongPublicKeyPurposeError(err) => Ok(err.into()),
         ProtocolError::Error(_) => Err(error),
         _ => Ok(ConsensusError::SignatureError(
             SignatureError::InvalidStateTransitionSignatureError,

@@ -9,7 +9,7 @@ module.exports = async function getPrivateAndPublicKeyForSigningFixture(privateK
   const publicKey = privateKey.toPublicKey();
 
   const rawPublicKey = {
-    id: 1,
+    id: 2,
     type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
     data: publicKey.toBuffer(),
     purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
