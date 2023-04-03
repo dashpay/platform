@@ -894,7 +894,7 @@ describe('validateDataContractFactory', () => {
         const [error] = result.getErrors();
 
         expect(error.getInstancePath()).to.equal('/documents/indexedDocument/properties/firstName/default');
-        expect(error.getKeyword()).to.equal('falseSchema');
+        expect(error.getKeyword()).to.equal('unevaluatedProperties');
       });
 
       it('should return invalid result if remote `$ref` is used', async () => {
@@ -935,7 +935,7 @@ describe('validateDataContractFactory', () => {
         const [error] = result.getErrors();
 
         expect(error.getInstancePath()).to.equal('/documents/indexedDocument/propertyNames');
-        expect(error.getKeyword()).to.equal('falseSchema');
+        expect(error.getKeyword()).to.equal('unevaluatedProperties');
       });
 
       it('should have `maxItems` if `uniqueItems` is used', async () => {
