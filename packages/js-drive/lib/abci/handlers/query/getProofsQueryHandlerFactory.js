@@ -74,7 +74,7 @@ function getProofsQueryHandlerFactory(
 
     if (identityIds && identityIds.length) {
       const identitiesProof = await identityRepository.proveMany(
-        identityIds.map((identityId) => dppWasm.Identifier.from(identityId).toBuffer()),
+        identityIds.map((identityId) => dppWasm.Identifier.from(identityId)),
       );
 
       response.identitiesProof = {
@@ -87,7 +87,7 @@ function getProofsQueryHandlerFactory(
 
     if (dataContractIds && dataContractIds.length) {
       const dataContractsProof = await dataContractRepository.proveMany(
-        dataContractIds.map((dataContractId) => dppWasm.Identifier.from(dataContractId).toBuffer()),
+        dataContractIds.map((dataContractId) => dppWasm.Identifier.from(dataContractId)),
       );
 
       response.dataContractsProof = {
