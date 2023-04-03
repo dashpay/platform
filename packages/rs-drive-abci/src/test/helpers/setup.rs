@@ -67,9 +67,7 @@ impl TestPlatformBuilder {
         self.config = Some(config);
         self
     }
-}
 
-impl TestPlatformBuilder {
     /// Create a new temp platform with a mock core rpc
     pub fn build_with_mock_rpc(self) -> TempPlatform<MockCoreRPCLike> {
         let platform = Platform::<MockCoreRPCLike>::open(self.tempdir.path(), self.config)

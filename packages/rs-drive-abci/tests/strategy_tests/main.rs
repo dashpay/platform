@@ -60,6 +60,7 @@ use drive::drive::Drive;
 use drive::fee::credits::Credits;
 use drive::fee_pools::epochs::Epoch;
 use drive::query::DriveQuery;
+use drive_abci::abci::AbciApplication;
 use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
 use drive_abci::platform::Platform;
 use drive_abci::test::fixture::abci::static_init_chain_request;
@@ -141,7 +142,7 @@ impl Signer for SimpleSigner {
             )),
         )?;
         let mut data = vec![];
-        ciborium::ser::into_writer(value, data).map_err(|_| {
+        ciborium::ser::into_writer(value, &mut data).map_err(|_| {
             ProtocolError::EncodingError("unable to serialize into cbor for signing".to_string())
         })?;
         match identity_public_key.key_type {
@@ -442,6 +443,7 @@ fn create_identities_state_transitions(
             .into_iter()
             .map(|identity| {
                 let identity_create_transition: IdentityCreateTransition = identity
+                    .clone()
                     .try_into()
                     .expect("expected to transform identity into identity create transition");
                 (identity, identity_create_transition.into())
@@ -490,6 +492,7 @@ pub(crate) fn run_chain_for_strategy(
     let platform = TestPlatformBuilder::new()
         .with_config(config.clone())
         .build_with_default_rpc();
+    let abci_application = AbciApplication::new(&platform).expect("expected new abci application");
     let mut rng = StdRng::seed_from_u64(seed);
     // init chain
     let init_chain_request = static_init_chain_request();
@@ -513,6 +516,7 @@ pub(crate) fn run_chain_for_strategy(
         .collect();
 
     continue_chain_for_strategy(
+        abci_application,
         platform,
         ChainExecutionParameters {
             block_start: 1,
@@ -613,7 +617,7 @@ pub(crate) fn continue_chain_for_strategy(
             })
             .unwrap_or(1);
 
-        platform
+        abci_application
             .mimic_execute_block(
                 *proposer,
                 proposed_version,
