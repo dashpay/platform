@@ -8,5 +8,7 @@ pub mod execution_event;
 pub mod fee_pools;
 /// Helper methods
 pub mod helpers;
+/// Initialization
+pub mod initialization;
 /// Protocol upgrade
 pub mod protocol_upgrade;

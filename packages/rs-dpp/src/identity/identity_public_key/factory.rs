@@ -102,6 +102,57 @@ impl IdentityPublicKey {
     }
 
     // TODO: Move to a separate module under a feature
+    pub fn random_authentication_key_with_private_key_with_rng(
+        id: KeyID,
+        rng: &mut StdRng,
+        used_key_matrix: Option<(KeyCount, &mut UsedKeyMatrix)>,
+    ) -> Result<(Self, Vec<u8>), ProtocolError> {
+        // we have 16 different permutations possible
+        let mut binding = [false; 16].to_vec();
+        let (key_count, key_matrix) = used_key_matrix.unwrap_or((0, &mut binding));
+        if key_count > 16 {
+            return Err(ProtocolError::PublicKeyGenerationError(
+                "too many keys already created".to_string(),
+            ));
+        }
+        let key_number = rng.gen_range(0..(16 - key_count as u8));
+        // now we need to find the first bool that isn't set to true
+        let mut needed_pos = None;
+        let mut counter = 0;
+        key_matrix.iter_mut().enumerate().for_each(|(pos, is_set)| {
+            if !*is_set {
+                if counter == key_number {
+                    needed_pos = Some(pos as u8);
+                    *is_set = true;
+                }
+                counter += 1;
+            }
+        });
+        let needed_pos = needed_pos.ok_or(ProtocolError::PublicKeyGenerationError(
+            "too many keys already created".to_string(),
+        ))?;
+        let key_type = needed_pos.div(&4);
+        let security_level = needed_pos.rem(&4);
+        let security_level = SecurityLevel::try_from(security_level).unwrap();
+        let key_type = KeyType::try_from(key_type).unwrap();
+        let read_only = false;
+        let (public_data, private_data) = key_type.random_public_and_private_key_data(rng);
+        let data = BinaryData::new(public_data);
+        Ok((
+            IdentityPublicKey {
+                id,
+                key_type,
+                purpose: AUTHENTICATION,
+                security_level,
+                read_only,
+                disabled_at: None,
+                data,
+            },
+            private_data,
+        ))
+    }
+
+    // TODO: Move to a separate module under a feature
     pub fn random_key_with_rng(
         id: KeyID,
         rng: &mut StdRng,
@@ -195,6 +246,24 @@ impl IdentityPublicKey {
             .map(|i| {
                 Self::random_authentication_key_with_rng(i, rng, Some((i, &mut used_key_matrix)))
                     .unwrap()
+            })
+            .collect()
+    }
+
+    // TODO: Move to a separate module under a feature
+    pub fn random_authentication_keys_with_private_keys_with_rng(
+        key_count: KeyCount,
+        rng: &mut StdRng,
+    ) -> Vec<(Self, Vec<u8>)> {
+        let mut used_key_matrix = [false; 16].to_vec();
+        (0..key_count)
+            .map(|i| {
+                Self::random_authentication_key_with_private_key_with_rng(
+                    i,
+                    rng,
+                    Some((i, &mut used_key_matrix)),
+                )
+                .unwrap()
             })
             .collect()
     }

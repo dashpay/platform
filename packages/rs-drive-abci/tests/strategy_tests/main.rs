@@ -125,9 +125,20 @@ pub struct DocumentOp {
 pub type ProTxHash = [u8; 32];
 
 /// This simple signer is only to be used in tests
+#[derive(Default, Debug)]
 pub struct SimpleSigner {
     /// Private keys is a map from the public key to the Private key bytes
     private_keys: HashMap<IdentityPublicKey, Vec<u8>>,
+}
+
+impl SimpleSigner {
+    fn add_key(&mut self, public_key: IdentityPublicKey, private_key: Vec<u8>) {
+        self.private_keys.insert(public_key, private_key);
+    }
+
+    fn add_keys<I: IntoIterator<Item = (IdentityPublicKey, Vec<u8>)>>(&mut self, keys: I) {
+        self.private_keys.extend(keys)
+    }
 }
 
 impl Signer for SimpleSigner {
@@ -249,7 +260,10 @@ impl Strategy {
     fn identity_state_transitions_for_block(
         &self,
         rng: &mut StdRng,
-    ) -> Vec<(Identity, StateTransition)> {
+    ) -> (
+        Vec<(Identity, StateTransition)>,
+        Vec<(IdentityPublicKey, Vec<u8>)>,
+    ) {
         let frequency = &self.identities_inserts;
         if frequency.check_hit(rng) {
             let count = frequency.events(rng);
@@ -401,18 +415,19 @@ impl Strategy {
         platform: &Platform<DefaultCoreRPC>,
         block_info: &BlockInfo,
         current_identities: &mut Vec<Identity>,
+        signer: &mut SimpleSigner,
         rng: &mut StdRng,
     ) -> Vec<StateTransition> {
-        let (mut identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) = self
-            .identity_state_transitions_for_block(rng)
-            .into_iter()
-            .unzip();
+        let (identity_state_transitions, new_keys) = self.identity_state_transitions_for_block(rng);
+        let (mut identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
+            identity_state_transitions.into_iter().unzip();
         current_identities.append(&mut identities);
+        signer.add_keys(new_keys);
 
         if block_info.height == 1 {
             // add contracts on block 1
             let mut contract_state_transitions =
-                self.contract_state_transitions(current_identities, rng);
+                self.contract_state_transitions(current_identities, signer, rng);
             state_transitions.append(&mut contract_state_transitions);
         }
 
@@ -428,17 +443,24 @@ fn create_identities_state_transitions(
     count: u16,
     key_count: KeyID,
     rng: &mut StdRng,
-) -> Vec<(Identity, StateTransition)> {
-    let identities = Identity::random_identities_with_rng(count, key_count, rng);
-    identities
-        .into_iter()
-        .map(|identity| {
-            let identity_create_transition: IdentityCreateTransition = identity
-                .try_into()
-                .expect("expected to transform identity into identity create transition");
-            (identity, identity_create_transition.into())
-        })
-        .collect()
+) -> (
+    Vec<(Identity, StateTransition)>,
+    Vec<(IdentityPublicKey, Vec<u8>)>,
+) {
+    let (identities, keys) =
+        Identity::random_identities_with_private_keys_with_rng(count, key_count, rng);
+    (
+        identities
+            .into_iter()
+            .map(|identity| {
+                let identity_create_transition: IdentityCreateTransition = identity
+                    .try_into()
+                    .expect("expected to transform identity into identity create transition");
+                (identity, identity_create_transition.into())
+            })
+            .collect(),
+        keys,
+    )
 }
 
 pub struct ChainExecutionOutcome {
@@ -485,7 +507,7 @@ pub(crate) fn run_chain_for_strategy(
     let init_chain_request = static_init_chain_request();
 
     platform
-        .init_chain(init_chain_request, None)
+        .init_chain(init_chain_request)
         .expect("should init chain");
 
     platform.create_mn_shares_contract(None);
@@ -543,6 +565,7 @@ pub(crate) fn continue_chain_for_strategy(
     let quorum_rotation_block_count = config.validator_set_quorum_rotation_block_count;
     let first_block_time = 0;
     let mut current_identities = vec![];
+    let mut signer = SimpleSigner::default();
     let mut i = 0;
 
     let blocks_per_epoch = EPOCH_CHANGE_TIME_MS / block_spacing_ms;
@@ -580,6 +603,7 @@ pub(crate) fn continue_chain_for_strategy(
             &platform,
             &block_info,
             &mut current_identities,
+            &mut signer,
             &mut rng,
         );
 

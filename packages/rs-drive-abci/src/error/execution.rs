@@ -20,6 +20,10 @@ pub enum ExecutionError {
     CorruptedCodeExecution(&'static str),
 
     /// Error
+    #[error("initialization error: {0}")]
+    InitializationError(&'static str),
+
+    /// Error
     #[error("drive incoherence error: {0}")]
     DriveIncoherence(&'static str),
 

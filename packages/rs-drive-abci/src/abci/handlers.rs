@@ -83,22 +83,7 @@ where
         &self,
         request: RequestInitChain,
     ) -> Result<ResponseInitChain, ResponseException> {
-        let transaction = self.platform.drive.grove.start_transaction();
-        let genesis_time = request
-            .time
-            .ok_or("genesis time is required in init chain")?
-            .to_milis() as TimestampMillis;
-
-        self.platform.create_genesis_state(
-            genesis_time,
-            self.platform.config.abci.keys.clone().into(),
-            Some(&transaction),
-        )?;
-
-        self.platform
-            .drive
-            .commit_transaction(transaction)
-            .map_err(Error::Drive)?;
+        self.platform.init_chain(request)?;
 
         let response = ResponseInitChain {
             ..Default::default()

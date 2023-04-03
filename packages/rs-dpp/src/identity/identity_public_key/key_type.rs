@@ -1,3 +1,4 @@
+use crate::util::hash::ripemd160_sha256;
 use anyhow::bail;
 use bls_signatures::Serialize;
 use ciborium::value::Value as CborValue;
@@ -66,6 +67,48 @@ impl KeyType {
             }
             KeyType::ECDSA_HASH160 | KeyType::BIP13_SCRIPT_HASH => {
                 (0..self.default_size()).map(|_| rng.gen::<u8>()).collect()
+            }
+        }
+    }
+
+    //todo: put this in a specific feature
+    /// Gets the default size of the public key
+    pub fn random_public_and_private_key_data(&self, rng: &mut StdRng) -> (Vec<u8>, Vec<u8>) {
+        match self {
+            KeyType::ECDSA_SECP256K1 => {
+                let secp = Secp256k1::new();
+                let mut rng = EcdsaRng::from_rng(rng).unwrap();
+                let secret_key = dashcore::secp256k1::SecretKey::new(&mut rng);
+                let private_key = dashcore::PrivateKey::new(secret_key, Network::Dash);
+                (
+                    private_key.public_key(&secp).to_bytes(),
+                    private_key.to_bytes(),
+                )
+            }
+            KeyType::BLS12_381 => {
+                let private_key = bls_signatures::PrivateKey::generate(rng);
+                (private_key.public_key().as_bytes(), private_key.as_bytes())
+            }
+            KeyType::ECDSA_HASH160 => {
+                let secp = Secp256k1::new();
+                let mut rng = EcdsaRng::from_rng(rng).unwrap();
+                let secret_key = dashcore::secp256k1::SecretKey::new(&mut rng);
+                let private_key = dashcore::PrivateKey::new(secret_key, Network::Dash);
+                (
+                    ripemd160_sha256(private_key.public_key(&secp).to_bytes().as_slice()),
+                    private_key.to_bytes(),
+                )
+            }
+            KeyType::BIP13_SCRIPT_HASH => {
+                //todo (using ECDSA_HASH160 for now)
+                let secp = Secp256k1::new();
+                let mut rng = EcdsaRng::from_rng(rng).unwrap();
+                let secret_key = dashcore::secp256k1::SecretKey::new(&mut rng);
+                let private_key = dashcore::PrivateKey::new(secret_key, Network::Dash);
+                (
+                    ripemd160_sha256(private_key.public_key(&secp).to_bytes().as_slice()),
+                    private_key.to_bytes(),
+                )
             }
         }
     }

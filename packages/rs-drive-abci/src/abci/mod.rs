@@ -10,7 +10,7 @@ pub mod messages;
 #[cfg(feature = "server")]
 pub mod config;
 #[cfg(test)]
-mod mimic;
+pub mod mimic;
 #[cfg(feature = "server")]
 mod server;
 
