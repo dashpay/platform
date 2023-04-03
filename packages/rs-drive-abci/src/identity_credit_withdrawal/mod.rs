@@ -49,6 +49,9 @@ where
         let block_info = BlockInfo {
             time_ms: block_execution_context.block_state_info.block_time_ms,
             height: block_execution_context.block_state_info.height,
+            core_height: block_execution_context
+                .block_state_info
+                .core_chain_locked_height,
             epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
         };
 
@@ -184,6 +187,9 @@ where
         let block_info = BlockInfo {
             time_ms: block_execution_context.block_state_info.block_time_ms,
             height: block_execution_context.block_state_info.height,
+            core_height: block_execution_context
+                .block_state_info
+                .core_chain_locked_height,
             epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
         };
 
@@ -306,6 +312,9 @@ where
         let block_info = BlockInfo {
             time_ms: block_execution_context.block_state_info.block_time_ms,
             height: block_execution_context.block_state_info.height,
+            core_height: block_execution_context
+                .block_state_info
+                .core_chain_locked_height,
             epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
         };
 

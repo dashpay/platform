@@ -1,14 +1,10 @@
 //! This module implements ABCI application server.
 //!
-use super::config::AbciConfig;
-use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 use crate::{config::PlatformConfig, error::Error, platform::Platform, rpc::core::CoreRPCLike};
 use drive::grovedb::Transaction;
-use drive::query::TransactionArg;
-use std::panic::RefUnwindSafe;
-use std::sync::{RwLock, RwLockReadGuard};
-use std::{fmt::Debug, sync::MutexGuard};
+use std::fmt::Debug;
+use std::sync::RwLock;
 
 /// AbciApp is an implementation of ABCI Application, as defined by Tenderdash.
 ///

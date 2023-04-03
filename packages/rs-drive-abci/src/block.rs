@@ -31,7 +31,6 @@ use crate::abci::AbciError;
 use drive::drive::block_info::BlockInfo;
 use drive::fee::epoch::EpochIndex;
 use drive::fee_pools::epochs::Epoch;
-use drive::grovedb::Transaction;
 
 use crate::error::Error;
 use crate::execution::block_proposal::BlockProposal;
@@ -61,6 +60,7 @@ impl BlockStateInfo {
         BlockInfo {
             time_ms: self.block_time_ms,
             height: self.height,
+            core_height: self.core_chain_locked_height,
             epoch: Epoch::new(epoch_index),
         }
     }

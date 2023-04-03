@@ -23,8 +23,8 @@ use dpp::{
         validation::data_contract_validator::DataContractValidator,
     },
     platform_value::{self, Value},
-    state_transition::{StateTransitionAction, StateTransitionConvert},
-    validation::{JsonSchemaValidator, SimpleValidationResult, ValidationResult},
+    state_transition::StateTransitionAction,
+    validation::ValidationResult,
     version::ProtocolVersionValidator,
     Convertible, ProtocolError,
 };

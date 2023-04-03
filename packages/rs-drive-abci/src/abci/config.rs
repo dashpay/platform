@@ -1,12 +1,12 @@
 //! Configuration of ABCI Application server
 
+use crate::config::FromEnv;
 use rand::prelude::StdRng;
 use rand::SeedableRng;
-use crate::config::FromEnv;
 
+use dpp::identity::KeyType::ECDSA_SECP256K1;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use dpp::identity::KeyType::ECDSA_SECP256K1;
 
 use super::messages::{RequiredIdentityPublicKeysSet, SystemIdentityPublicKeys};
 
@@ -100,8 +100,10 @@ impl Keys {
             dashpay_second_public_key: ECDSA_SECP256K1.random_public_key_data(&mut rng),
             feature_flags_master_public_key: ECDSA_SECP256K1.random_public_key_data(&mut rng),
             feature_flags_second_public_key: ECDSA_SECP256K1.random_public_key_data(&mut rng),
-            masternode_reward_shares_master_public_key: ECDSA_SECP256K1.random_public_key_data(&mut rng),
-            masternode_reward_shares_second_public_key: ECDSA_SECP256K1.random_public_key_data(&mut rng),
+            masternode_reward_shares_master_public_key: ECDSA_SECP256K1
+                .random_public_key_data(&mut rng),
+            masternode_reward_shares_second_public_key: ECDSA_SECP256K1
+                .random_public_key_data(&mut rng),
             withdrawals_master_public_key: ECDSA_SECP256K1.random_public_key_data(&mut rng),
             withdrawals_second_public_key: ECDSA_SECP256K1.random_public_key_data(&mut rng),
         }

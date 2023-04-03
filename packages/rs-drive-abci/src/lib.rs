@@ -49,3 +49,5 @@ pub mod rpc;
 // TODO We should compile it only for tests
 /// Test helpers and fixtures
 pub mod test;
+/// Validator Set
+pub mod validator_set;

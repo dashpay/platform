@@ -134,7 +134,7 @@ impl<C> Platform<C> {
             .unwrap_or(PROTOCOL_VERSION);
 
         let state = PlatformState {
-            last_block_info: None,
+            last_committed_block_info: None,
             //todo: put current epoch
             current_epoch: Default::default(),
             current_protocol_version_in_consensus,

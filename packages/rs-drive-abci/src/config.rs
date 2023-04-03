@@ -30,12 +30,9 @@ use std::path::PathBuf;
 
 use drive::drive::config::DriveConfig;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use dpp::identity::KeyType::ECDSA_SECP256K1;
-use dpp::prelude::Identity;
-use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 
-use crate::{abci::config::AbciConfig, error::Error};
 use crate::abci::config::Keys;
+use crate::{abci::config::AbciConfig, error::Error};
 
 /// Configuration for Dash Core RPC client
 #[derive(Clone, Debug, Serialize, Deserialize)]

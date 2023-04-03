@@ -204,7 +204,7 @@ where
 
         let state = self.state.read().unwrap();
         let previous_block_time_ms = state
-            .last_block_info
+            .last_committed_block_info
             .as_ref()
             .map(|block_info| block_info.time_ms);
         drop(state);
@@ -375,7 +375,7 @@ where
 
         let block_info = block_state_info.to_block_info(epoch_info.current_epoch_index);
 
-        self.state.write().unwrap().last_block_info = Some(block_info.clone());
+        self.state.write().unwrap().last_committed_block_info = Some(block_info.clone());
 
         let mut drive_cache = self.drive.cache.write().unwrap();
 
@@ -401,7 +401,7 @@ where
 
         // We need the approximate block info
         let block_info_guard = self.state.read().unwrap();
-        if let Some(block_info) = block_info_guard.last_block_info.as_ref() {
+        if let Some(block_info) = block_info_guard.last_committed_block_info.as_ref() {
             // We do not put the transaction, because this event happens outside of a block
             execution_event.and_then_borrowed_validation(|execution_event| {
                 self.validate_fees_of_event(&execution_event, block_info, None)

@@ -28,6 +28,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         let BlockInfo {
             time_ms,
             height,
+            core_height,
             epoch,
         } = block_info;
 

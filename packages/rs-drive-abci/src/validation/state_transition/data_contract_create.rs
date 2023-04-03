@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
+use dpp::prelude::ConsensusValidationResult;
 use dpp::{
     consensus::basic::{data_contract::InvalidDataContractIdError, BasicError},
     data_contract::{
         state_transition::data_contract_create_transition::DataContractCreateTransitionAction,
-        validation::data_contract_validator::DataContractValidator, DataContract,
+        validation::data_contract_validator::DataContractValidator,
     },
     validation::SimpleConsensusValidationResult,
     StateError,
@@ -17,10 +18,8 @@ use dpp::{
             DataContractCreateTransition,
         },
     },
-    validation::JsonSchemaValidator,
     Convertible,
 };
-use dpp::{prelude::ConsensusValidationResult, state_transition::StateTransitionConvert};
 use dpp::{state_transition::StateTransitionAction, version::ProtocolVersionValidator};
 use drive::{drive::Drive, grovedb::Transaction};
 

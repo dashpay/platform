@@ -33,29 +33,19 @@
 //!
 
 use crate::abci::server::AbciApplication;
-use crate::abci::AbciError;
-use crate::block::BlockExecutionContext;
 use crate::rpc::core::CoreRPCLike;
-use dpp::identity::TimestampMillis;
-use dpp::state_transition::StateTransition;
-use drive::error::Error::GroveDB;
 use drive::fee::credits::SignedCredits;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
+use tenderdash_abci::proto::abci::{self as proto, ResponseException};
 use tenderdash_abci::proto::abci::{
     ExecTxResult, RequestCheckTx, RequestFinalizeBlock, RequestInitChain, RequestPrepareProposal,
     RequestProcessProposal, RequestQuery, ResponseCheckTx, ResponseFinalizeBlock,
     ResponseInitChain, ResponsePrepareProposal, ResponseProcessProposal, ResponseQuery, TxRecord,
 };
-use tenderdash_abci::proto::{
-    abci::{self as proto, ResponseException},
-    serializers::timestamp::ToMilis,
-};
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::engine::BlockExecutionOutcome;
-use crate::platform::Platform;
-use crate::validation::state_transition::validate_state_transition;
 
 impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>
 where

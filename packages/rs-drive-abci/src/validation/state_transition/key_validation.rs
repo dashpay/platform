@@ -17,7 +17,6 @@ use drive::drive::identity::key::fetch::{
 use drive::drive::Drive;
 use drive::grovedb::Transaction;
 use lazy_static::lazy_static;
-use mockall::Any;
 use std::collections::HashSet;
 lazy_static! {
     static ref SUPPORTED_KEY_TYPES: HashSet<KeyType> = {

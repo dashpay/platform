@@ -577,7 +577,7 @@ pub(crate) fn continue_chain_for_strategy(
                 .state
                 .read()
                 .expect("lock is poisoned")
-                .last_block_info
+                .last_committed_block_info
                 .as_ref()
                 .map(|block_info| block_info.time_ms),
         )

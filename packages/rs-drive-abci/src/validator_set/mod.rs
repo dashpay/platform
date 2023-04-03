@@ -2,6 +2,10 @@
 //!
 //!
 
+mod error;
+
+pub use error::ValidatorSetError;
+
 use dashcore_rpc::dashcore::hashes::{sha256, Hash, HashEngine};
 use dashcore_rpc::dashcore_rpc_json::{
     ExtendedQuorumDetails, QuorumHash, QuorumInfoResult, QuorumType,
@@ -73,7 +77,7 @@ impl ValidatorSet {
         core_height: CoreHeight,
         quorum_type: &QuorumType,
         seed: Option<Vec<u8>>,
-    ) -> Result<Self, ValSetError> {
+    ) -> Result<Self, ValidatorSetError> {
         let quorums = client.get_quorum_listextended(Some(core_height))?;
         let quorums = match quorum_type {
             QuorumType::Llmq50_60 => quorums.llmq_50_60,
@@ -92,7 +96,7 @@ impl ValidatorSet {
             QuorumType::UNKNOWN => panic!("unsupported quorum type {:?}", quorum_type),
             // no default here, so if the list of quorums changes, we will detect it during build
         }
-        .ok_or(ValSetError::NoQuorumAtHeight(
+        .ok_or(ValidatorSetError::NoQuorumAtHeight(
             Some(core_height),
             quorum_type.to_owned(),
         ))?;
@@ -107,7 +111,7 @@ impl ValidatorSet {
             Self::choose_random_quorum(config, core_height, &quorum_type, &quorums, &entropy)?;
         let quorum_info = client
             .get_quorum_info(quorum_type.clone().into(), &quorum.into(), Some(false))
-            .map_err(|e| ValSetError::RpcError(e))?;
+            .map_err(|e| ValidatorSetError::RpcError(e))?;
 
         Ok(Self { quorum_info })
     }
@@ -119,7 +123,7 @@ impl ValidatorSet {
         quorum_type: &QuorumType,
         quorums_extended_info: &Vec<QuorumListExtendedInfo>,
         entropy: &Vec<u8>,
-    ) -> Result<Quorum, ValSetError> {
+    ) -> Result<Quorum, ValidatorSetError> {
         // read some config
         let rotation_block_interval: CoreHeight = config.validator_set_quorum_rotation_block_count;
         let min_valid_members = config.core.min_quorum_valid_members;
@@ -129,7 +133,10 @@ impl ValidatorSet {
 
         let number_of_quorums = quorums_extended_info.len() as u32;
         if number_of_quorums == 0 {
-            return Err(ValSetError::NoQuorumAtHeight(None, quorum_type.to_owned()));
+            return Err(ValidatorSetError::NoQuorumAtHeight(
+                None,
+                quorum_type.to_owned(),
+            ));
         }
 
         // First, convert dashcore rpc quorum info into our Quorum struct
@@ -155,13 +162,14 @@ impl ValidatorSet {
 
         // Now we select the final quorum, based on some scoring algorithm.
         filtered_quorums.sort();
-        let winner = filtered_quorums
-            .into_iter()
-            .next()
-            .ok_or(ValSetError::NoQuorumAtHeight(
-                Some(core_height),
-                quorum_type.to_owned(),
-            ))?;
+        let winner =
+            filtered_quorums
+                .into_iter()
+                .next()
+                .ok_or(ValidatorSetError::NoQuorumAtHeight(
+                    Some(core_height),
+                    quorum_type.to_owned(),
+                ))?;
 
         Ok(winner.to_owned())
     }
@@ -232,26 +240,6 @@ impl Quorum {
 
         quorum_ttl
     }
-}
-
-/// Error returned by Core RPC endpoint
-#[derive(Debug, thiserror::Error)]
-pub enum ValSetError {
-    #[error{"Core RPC returned error: {0}"}]
-    /// Error returned by RPC interface
-    RpcError(#[from] dashcore_rpc::Error),
-
-    /// Requested height is not found
-    #[error{"No quorum of type {1:?} at core height {0:?} found"}]
-    NoQuorumAtHeight(Option<CoreHeight>, QuorumType),
-
-    /// Quorum with given hash not found
-    #[error{"No quorum with hash {0:?} of type {1:?} found"}]
-    QuorumNotFound(QuorumHash, QuorumType),
-
-    /// Quorum with given hash not found
-    #[error{"Invalid format of field {field}: {details}"}]
-    InvalidDataFormat { field: String, details: String },
 }
 
 #[cfg(test)]

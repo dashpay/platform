@@ -91,11 +91,7 @@ pub fn setup_system_data_contract(
         .apply_contract_cbor(
             data_contract.to_cbor().unwrap(),
             Some(data_contract.id.to_buffer()),
-            BlockInfo {
-                time_ms: 1,
-                height: 1,
-                epoch: Epoch::new(1),
-            },
+            BlockInfo::default(),
             true,
             None,
             transaction,
@@ -122,11 +118,7 @@ pub fn setup_document(
                 document_type,
             },
             false,
-            BlockInfo {
-                time_ms: 1,
-                height: 1,
-                epoch: Epoch::new(1),
-            },
+            BlockInfo::default(),
             true,
             transaction,
         )

@@ -31,18 +31,15 @@ use crate::abci::messages::SystemIdentityPublicKeys;
 use crate::error::Error;
 use crate::platform::Platform;
 
-use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
-use dpp::platform_value::{platform_value, BinaryData, Bytes32};
+use dpp::platform_value::{platform_value, BinaryData};
 use dpp::ProtocolError;
 use drive::contract::DataContract;
 use drive::dpp::data_contract::DriveContractExt;
 use drive::dpp::document::Document;
-use drive::dpp::document::ExtendedDocument;
 use drive::dpp::identity::{
     Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel, TimestampMillis,
 };
 
-use dpp::platform_value::string_encoding::{encode, Encoding};
 use drive::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use drive::drive::batch::{
     ContractOperationType, DocumentOperationType, DriveOperation, IdentityOperationType,
@@ -51,7 +48,6 @@ use drive::drive::block_info::BlockInfo;
 use drive::drive::defaults::PROTOCOL_VERSION;
 use drive::drive::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
 use drive::query::TransactionArg;
-use serde_json::json;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 

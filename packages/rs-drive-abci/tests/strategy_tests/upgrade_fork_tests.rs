@@ -67,7 +67,7 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_block_info
+                    .last_committed_block_info
                     .as_ref()
                     .unwrap()
                     .epoch
@@ -96,7 +96,7 @@ mod tests {
             .state
             .read()
             .unwrap()
-            .last_block_info
+            .last_committed_block_info
             .as_ref()
             .unwrap()
             .height
@@ -133,7 +133,7 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_block_info
+                    .last_committed_block_info
                     .as_ref()
                     .unwrap()
                     .epoch
@@ -163,7 +163,7 @@ mod tests {
             .state
             .read()
             .unwrap()
-            .last_block_info
+            .last_committed_block_info
             .as_ref()
             .unwrap()
             .height
@@ -194,7 +194,7 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_block_info
+                    .last_committed_block_info
                     .as_ref()
                     .unwrap()
                     .epoch
@@ -271,7 +271,7 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_block_info
+                    .last_committed_block_info
                     .as_ref()
                     .unwrap()
                     .epoch
@@ -300,7 +300,7 @@ mod tests {
             .state
             .read()
             .unwrap()
-            .last_block_info
+            .last_committed_block_info
             .as_ref()
             .unwrap()
             .height
@@ -337,7 +337,7 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_block_info
+                    .last_committed_block_info
                     .as_ref()
                     .unwrap()
                     .epoch
@@ -366,7 +366,7 @@ mod tests {
             .state
             .read()
             .unwrap()
-            .last_block_info
+            .last_committed_block_info
             .as_ref()
             .unwrap()
             .height
@@ -397,7 +397,7 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_block_info
+                    .last_committed_block_info
                     .as_ref()
                     .unwrap()
                     .epoch
@@ -472,7 +472,7 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_block_info
+                    .last_committed_block_info
                     .as_ref()
                     .unwrap()
                     .epoch
@@ -496,7 +496,7 @@ mod tests {
             .state
             .read()
             .unwrap()
-            .last_block_info
+            .last_committed_block_info
             .as_ref()
             .unwrap()
             .height
@@ -533,7 +533,7 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_block_info
+                    .last_committed_block_info
                     .as_ref()
                     .unwrap()
                     .epoch
@@ -578,7 +578,7 @@ mod tests {
             .state
             .read()
             .unwrap()
-            .last_block_info
+            .last_committed_block_info
             .as_ref()
             .unwrap()
             .height
@@ -618,7 +618,7 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_block_info
+                    .last_committed_block_info
                     .as_ref()
                     .unwrap()
                     .epoch
@@ -643,7 +643,7 @@ mod tests {
             .state
             .read()
             .unwrap()
-            .last_block_info
+            .last_committed_block_info
             .as_ref()
             .unwrap()
             .height
@@ -675,7 +675,7 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_block_info
+                    .last_committed_block_info
                     .as_ref()
                     .unwrap()
                     .epoch
@@ -744,7 +744,7 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_block_info
+                    .last_committed_block_info
                     .as_ref()
                     .unwrap()
                     .epoch
@@ -791,7 +791,7 @@ mod tests {
             .state
             .read()
             .unwrap()
-            .last_block_info
+            .last_committed_block_info
             .as_ref()
             .unwrap()
             .height
@@ -822,7 +822,7 @@ mod tests {
                     .state
                     .read()
                     .unwrap()
-                    .last_block_info
+                    .last_committed_block_info
                     .as_ref()
                     .unwrap()
                     .epoch

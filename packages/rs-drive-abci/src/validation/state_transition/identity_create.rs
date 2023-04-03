@@ -1,8 +1,6 @@
 use dpp::{
     identity::state_transition::identity_create_transition::validation::basic::INDENTITY_CREATE_TRANSITION_SCHEMA,
-    state_transition::StateTransitionConvert,
-    validation::{ConsensusValidationResult, JsonSchemaValidator},
-    version::ProtocolVersionValidator,
+    validation::ConsensusValidationResult,
 };
 use dpp::{
     identity::state_transition::identity_create_transition::IdentityCreateTransition,

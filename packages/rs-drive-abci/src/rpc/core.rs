@@ -1,12 +1,13 @@
-use std::collections::HashMap;
 use crate::error::Error;
-use dashcore::{Block, BlockHash};
-use dashcore_rpc::dashcore_rpc_json::{ExtendedQuorumDetails, GetBestChainLockResult, QuorumInfoResult, QuorumListResult, QuorumType};
+use dashcore::{Block, BlockHash, QuorumHash};
+use dashcore_rpc::dashcore_rpc_json::{
+    ExtendedQuorumDetails, GetBestChainLockResult, QuorumInfoResult, QuorumListResult, QuorumType,
+};
 use dashcore_rpc::{Auth, Client, RpcApi};
 use mockall::{automock, predicate::*};
 use serde_json::Value;
+use std::collections::HashMap;
 use tenderdash_abci::proto::types::CoreChainLock;
-use dpp::dashcore::QuorumHash;
 
 /// Information returned by QuorumListExtended
 pub type QuorumListExtendedInfo = HashMap<QuorumHash, ExtendedQuorumDetails>;
@@ -93,7 +94,9 @@ impl CoreRPCLike for DefaultCoreRPC {
         &self,
         height: Option<CoreHeight>,
     ) -> Result<QuorumListResult<QuorumListExtendedInfo>, Error> {
-        self.inner.get_quorum_listextended(height.map(|i| i as i64)).map_err(Error::CoreRpc)
+        self.inner
+            .get_quorum_listextended(height.map(|i| i as i64))
+            .map_err(Error::CoreRpc)
     }
 
     fn get_quorum_info(

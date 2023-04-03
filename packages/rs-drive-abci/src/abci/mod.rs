@@ -6,8 +6,6 @@ pub mod handlers;
 // #[deprecated = "use tenderdash-proto crate whenever possible"]
 pub mod messages;
 
-mod validator_set;
-
 // new code - config,
 #[cfg(feature = "server")]
 pub mod config;

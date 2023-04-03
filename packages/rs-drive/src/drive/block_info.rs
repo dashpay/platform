@@ -9,6 +9,9 @@ pub struct BlockInfo {
     /// Block height
     pub height: u64,
 
+    /// Core height
+    pub core_height: u32,
+
     /// Current fee epoch
     pub epoch: Epoch,
 }
