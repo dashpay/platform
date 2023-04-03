@@ -61,12 +61,39 @@ impl CoreRpcConfig {
     }
 }
 
+impl Default for CoreRpcConfig {
+    fn default() -> Self {
+        Self {
+            host: String::from("127.0.0.1"),
+            port: String::from("1234"),
+            username: String::from(""),
+            password: String::from(""),
+        }
+    }
+}
+
 /// Configuration for Dash Core related things
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
 pub struct CoreConfig {
     /// Core RPC config
     #[serde(flatten)]
     pub rpc: CoreRpcConfig,
+
+    /// DKG interval
+    pub dkg_interval: u32,
+    /// Minimum number of valid members to use the quorum
+    pub min_quorum_valid_members: u32,
+}
+
+impl Default for CoreConfig {
+    fn default() -> Self {
+        Self {
+            dkg_interval: 24,
+            min_quorum_valid_members: 3,
+            rpc: Default::default(),
+        }
+    }
 }
 
 /// Configurtion of Dash Platform.
@@ -108,7 +135,7 @@ pub struct PlatformConfig {
     pub quorum_size: u16,
 
     /// How often should quorums change?
-    pub validator_set_quorum_rotation_block_count: u64,
+    pub validator_set_quorum_rotation_block_count: u32,
 
     /// Path to data storage
     pub db_path: PathBuf,
@@ -141,14 +168,7 @@ impl Default for PlatformConfig {
             validator_set_quorum_rotation_block_count: 15,
             drive: Default::default(),
             abci: Default::default(),
-            core: CoreConfig {
-                rpc: CoreRpcConfig {
-                    host: "127.0.0.1".to_owned(),
-                    port: "0".to_owned(),
-                    username: "".to_owned(),
-                    password: "".to_owned(),
-                },
-            },
+            core: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
         }
     }

@@ -129,6 +129,7 @@ impl PlatformWrapper {
                     username: core_rpc_username,
                     password: core_rpc_password,
                 },
+                ..Default::default()
             };
 
             let platform_config = PlatformConfig {

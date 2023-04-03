@@ -47,7 +47,7 @@ use crate::rpc::core::MockCoreRPCLike;
 #[cfg(feature = "fixtures-and-mocks")]
 use dashcore::hashes::hex::FromHex;
 #[cfg(feature = "fixtures-and-mocks")]
-use dashcore::BlockHash;
+use dashcore_rpc::dashcore::BlockHash;
 #[cfg(feature = "fixtures-and-mocks")]
 use serde_json::json;
 
