@@ -35,12 +35,9 @@ pub fn start(config: &PlatformConfig) -> Result<(), Error> {
 
     loop {
         tracing::info!("waiting for new connection");
-        let result = std::panic::catch_unwind(|| match server.handle_connection() {
-            Ok(_) => (),
+        match server.handle_connection() {
             Err(e) => tracing::error!("tenderdash connection terminated: {:?}", e),
-        });
-        if let Err(_e) = result {
-            tracing::error!("panic: connection terminated");
+            Ok(_) => tracing::info!("tenderdash connection closed"),
         }
     }
 }

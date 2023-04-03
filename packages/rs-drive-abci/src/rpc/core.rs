@@ -1,12 +1,19 @@
-use dashcore::{Block, BlockHash};
+use std::collections::HashMap;
+
+use dashcore_rpc::dashcore::{Block, BlockHash};
 use dashcore_rpc::{
-    dashcore_rpc_json::{QuorumHash, QuorumInfoResult, QuorumListResult, QuorumType},
+    dashcore_rpc_json::{
+        ExtendedQuorumDetails, QuorumHash, QuorumInfoResult, QuorumListResult, QuorumType,
+    },
     Auth, Client, Error, RpcApi,
 };
 
 #[cfg(feature = "fixtures-and-mocks")]
 use mockall::{automock, predicate::*};
 use serde_json::Value;
+
+/// Information returned by QuorumListExtended
+pub type QuorumListExtendedInfo = HashMap<QuorumHash, ExtendedQuorumDetails>;
 
 /// Core height must be of type u32 (Platform heights are u64)
 pub type CoreHeight = u32;
@@ -28,7 +35,7 @@ pub trait CoreRPCLike {
     fn get_quorum_listextended(
         &self,
         height: Option<CoreHeight>,
-    ) -> Result<QuorumListResult, Error>;
+    ) -> Result<QuorumListResult<QuorumListExtendedInfo>, Error>;
 
     /// Get quorum information.
     ///
@@ -70,7 +77,7 @@ impl CoreRPCLike for DefaultCoreRPC {
     fn get_quorum_listextended(
         &self,
         height: Option<CoreHeight>,
-    ) -> Result<QuorumListResult, Error> {
+    ) -> Result<QuorumListResult<QuorumListExtendedInfo>, Error> {
         self.inner.get_quorum_listextended(height.map(|i| i as i64))
     }
 

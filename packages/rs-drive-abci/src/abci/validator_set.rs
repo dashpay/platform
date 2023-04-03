@@ -2,12 +2,15 @@
 //!
 //!
 
-use dashcore_rpc::dashcore_rpc_json::{QuorumHash, QuorumInfoResult, QuorumType};
+use dashcore_rpc::dashcore::hashes::{sha256, Hash, HashEngine};
+use dashcore_rpc::dashcore_rpc_json::{
+    ExtendedQuorumDetails, QuorumHash, QuorumInfoResult, QuorumType,
+};
 use tenderdash_abci::proto::{abci, crypto as abci_crypto};
 
 use crate::{
     config::PlatformConfig,
-    rpc::core::{CoreHeight, CoreRPCLike},
+    rpc::core::{CoreHeight, CoreRPCLike, QuorumListExtendedInfo},
 };
 
 /// ValidatorSet contains validators that should be in use at a given height.
@@ -33,11 +36,12 @@ impl From<ValidatorSet> for tenderdash_abci::proto::abci::ValidatorSetUpdate {
             if !validator.valid {
                 continue;
             }
+
             let pubkey = validator.pub_key_share.map(|k| u8_to_bls12381_pubkey(k));
             let vu = abci::ValidatorUpdate {
                 node_address: Default::default(),
-                power: 100,      // TODO: double-check
-                pub_key: pubkey, // TODO: double-check if it should be pub_key_share
+                power: 100,      // FIXME: double-check
+                pub_key: pubkey, // FIXME: double-check if it should be pub_key_share
                 pro_tx_hash: validator.pro_tx_hash.0,
             };
 
@@ -70,7 +74,6 @@ impl ValidatorSet {
         quorum_type: &QuorumType,
         seed: Option<Vec<u8>>,
     ) -> Result<Self, ValSetError> {
-        // TODO: parse QuorumInfoResult to return
         let quorums = client.get_quorum_listextended(Some(core_height))?;
         let quorums = match quorum_type {
             QuorumType::Llmq50_60 => quorums.llmq_50_60,
@@ -100,28 +103,28 @@ impl ValidatorSet {
             seed.unwrap()
         };
 
-        let quorum_hash =
+        let quorum =
             Self::choose_random_quorum(config, core_height, &quorum_type, &quorums, &entropy)?;
         let quorum_info = client
-            .get_quorum_info(quorum_type.clone().into(), &quorum_hash, Some(false))
+            .get_quorum_info(quorum_type.clone().into(), &quorum.into(), Some(false))
             .map_err(|e| ValSetError::RpcError(e))?;
 
         Ok(Self { quorum_info })
     }
 
-    /// Returns best quorum to use
-    /// TODO: replace Vec<QuorumHash> with Vec<QuorumListExtendedInfo>
+    /// Returns quorum to use at provided height
     fn choose_random_quorum(
         config: &PlatformConfig,
         core_height: CoreHeight,
         quorum_type: &QuorumType,
-        quorums_extended_info: &Vec<QuorumHash>,
+        quorums_extended_info: &Vec<QuorumListExtendedInfo>,
         entropy: &Vec<u8>,
-    ) -> Result<QuorumHash, ValSetError> {
-        // TODO: migrate to config file
-        const DKG_INTERVAL: CoreHeight = 24;
-        const MIN_QUORUM_VALID_MEMBERS: CoreHeight = 3;
+    ) -> Result<Quorum, ValSetError> {
+        // read some config
         let rotation_block_interval: CoreHeight = config.validator_set_quorum_rotation_block_count;
+        let min_valid_members = config.core.min_quorum_valid_members;
+        let dkg_interval = config.core.dkg_interval;
+
         let min_ttl: CoreHeight = rotation_block_interval * 3;
 
         let number_of_quorums = quorums_extended_info.len() as u32;
@@ -129,56 +132,76 @@ impl ValidatorSet {
             return Err(ValSetError::NoQuorumAtHeight(None, quorum_type.to_owned()));
         }
 
-        // let quorum_hash = quorums_extended_info
-        //     .first()
-        //     .ok_or(ValSetError::NoQuorumAtHeight(None, quorum_type.to_owned()))?;
+        // First, convert dashcore rpc quorum info into our Quorum struct
+        let quorums = quorums_extended_info
+            .into_iter()
+            .flatten()
+            .map(|(hash, details)| Quorum::new(hash, details, entropy))
+            .collect::<Vec<Quorum>>();
 
-        let quorums_weighted = quorums_extended_info
+        // Now, let's filter quorums. We use iter() to not consume `quorums`, needed later
+        let mut filtered_quorums = quorums
             .iter()
-            .map(|item| QuorumWeighted::new(item, entropy))
-            .collect::<Vec<QuorumWeighted>>();
-
-        let mut final_quorums = quorums_weighted
-            .iter()
-            .filter(|_item| {
-                // TODO: read the items below from quorums_extended_info
-                let num_valid_members = 3;
-
-                num_valid_members >= MIN_QUORUM_VALID_MEMBERS
+            .filter(|item| {
+                item.num_valid_members >= min_valid_members
+                    && item.quorum_ttl(core_height, dkg_interval, number_of_quorums) > min_ttl
             })
-            .filter(|item| item.quorum_ttl(core_height, DKG_INTERVAL, number_of_quorums) > min_ttl)
-            .collect::<Vec<&QuorumWeighted>>();
-        // let mut filtered_quorums = &filtered_quorums;
+            .collect::<Vec<&Quorum>>();
+
         // if there is no "vital" quorums, we choose among others with default min quorum size
-        if final_quorums.len() == 0 {
-            final_quorums = quorums_weighted.iter().collect::<Vec<&QuorumWeighted>>();
+        if filtered_quorums.len() == 0 {
+            filtered_quorums = quorums.iter().collect::<Vec<&Quorum>>();
         }
 
-        // Now we select best quorum, based on some scoring algorithm.
-        final_quorums.sort();
-        let winner = final_quorums.first().ok_or(ValSetError::NoQuorumAtHeight(
-            Some(core_height),
-            quorum_type.to_owned(),
-        ))?;
+        // Now we select the final quorum, based on some scoring algorithm.
+        filtered_quorums.sort();
+        let winner = filtered_quorums
+            .into_iter()
+            .next()
+            .ok_or(ValSetError::NoQuorumAtHeight(
+                Some(core_height),
+                quorum_type.to_owned(),
+            ))?;
 
-        // TODO: when dashcore_rpc is updated, use winner.unwrap().quorum_details.quorum_hash below
-        Ok(QuorumHash(winner.quorum_details.to_owned()))
+        Ok(winner.to_owned())
     }
 }
 
+impl From<Quorum> for QuorumHash {
+    fn from(value: Quorum) -> Self {
+        QuorumHash(value.quorum_hash)
+    }
+}
 /// Quorum info with additional weight details. Easy to sort by weight.
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
-struct QuorumWeighted {
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
+struct Quorum {
     // ensure weight is first, as it metters when sorting
     weight: Vec<u8>,
-    quorum_details: Vec<u8>,
+
+    quorum_hash: Vec<u8>,
+
+    creation_height: u32,
+    quorum_index: Option<u32>,
+    // mined_block_hash: BlockHash,
+    num_valid_members: u32,
+    health_ratio: i32,
 }
 
-impl QuorumWeighted {
-    fn new(quorum_details: &QuorumHash, entropy: &Vec<u8>) -> Self {
-        QuorumWeighted {
-            quorum_details: quorum_details.0.to_owned(),
-            weight: Self::calculate_weight(quorum_details, entropy),
+impl Quorum {
+    fn new(
+        quorum_hash: &QuorumHash,
+        quorum_details: &ExtendedQuorumDetails,
+        entropy: &Vec<u8>,
+    ) -> Self {
+        Quorum {
+            weight: Self::calculate_weight(quorum_hash, entropy),
+
+            quorum_hash: quorum_hash.0.clone(),
+            creation_height: quorum_details.creation_height,
+            // To avoid playing with floats, which don't implement Ord, we just multiply health ratio by 10^6
+            health_ratio: (quorum_details.health_ratio * 1000000.0).round() as i32,
+            num_valid_members: quorum_details.num_valid_members,
+            quorum_index: quorum_details.quorum_index,
         }
     }
 
@@ -187,7 +210,9 @@ impl QuorumWeighted {
         let mut hash = quorum_hash.0.clone();
         hash.extend(entropy);
 
-        hash
+        let mut hasher = sha256::HashEngine::default();
+        hasher.input(&hash);
+        sha256::Hash::from_engine(hasher).to_vec()
     }
 
     /// Calculate estimated quorum time-to-live
@@ -197,10 +222,11 @@ impl QuorumWeighted {
         dkg_interval: u32,
         number_of_quorums: u32,
     ) -> u32 {
-        // TODO: read the item below from quorums_extended_info
-        let creation_height: CoreHeight = 2000;
-
-        let quorum_remove_height: CoreHeight = creation_height + (dkg_interval * number_of_quorums);
+        let quorum_remove_height: CoreHeight =
+            self.creation_height + (dkg_interval * number_of_quorums);
+        if quorum_remove_height <= core_height {
+            return 0;
+        }
         let how_much_in_rest: CoreHeight = quorum_remove_height - core_height;
         let quorum_ttl: u32 = how_much_in_rest * 5 / 2; // multiply by 2.5, round down
 
@@ -222,21 +248,47 @@ pub enum ValSetError {
     /// Quorum with given hash not found
     #[error{"No quorum with hash {0:?} of type {1:?} found"}]
     QuorumNotFound(QuorumHash, QuorumType),
+
+    /// Quorum with given hash not found
+    #[error{"Invalid format of field {field}: {details}"}]
+    InvalidDataFormat { field: String, details: String },
 }
 
 #[cfg(test)]
 mod tests {
-    use dashcore_rpc::dashcore_rpc_json::{QuorumHash, QuorumInfoResult};
+    use dashcore_rpc::dashcore::{hashes::Hash, BlockHash};
+    use dashcore_rpc::dashcore_rpc_json::{ExtendedQuorumDetails, QuorumHash, QuorumInfoResult};
     use tenderdash_abci::proto::abci::ValidatorSetUpdate;
 
-    use crate::config::PlatformConfig;
+    use crate::{config::PlatformConfig, rpc::core::QuorumListExtendedInfo};
+
+    fn generate_quorums_extended_info(n: u32) -> QuorumListExtendedInfo {
+        let mut quorums = QuorumListExtendedInfo::new();
+
+        for i in 0..n {
+            let i_bytes = [i as u8; 32];
+
+            let hash = QuorumHash(i_bytes.to_vec());
+
+            let details = ExtendedQuorumDetails {
+                creation_height: i,
+                health_ratio: (i as f32) / (n as f32),
+                mined_block_hash: BlockHash::from_slice(&i_bytes).unwrap(),
+                num_valid_members: i,
+                quorum_index: Some(i),
+            };
+
+            quorums
+                .insert(hash.clone(), details)
+                .map(|v| panic!("duplicate record {:?}={:?}", hash, v));
+        }
+        quorums
+    }
 
     #[test]
     fn test_new_random_at_height() {
         const CORE_HEIGHT: u32 = 2000;
         let quorum_type = dashcore_rpc::dashcore_rpc_json::QuorumType::Llmq50_60;
-        let quorum1 = QuorumHash(vec![1u8; 32]);
-        let winning_quorum = quorum1.clone();
 
         let config = PlatformConfig::default();
         let mut client = crate::rpc::core::MockCoreRPCLike::new();
@@ -244,15 +296,24 @@ mod tests {
             .expect_get_quorum_listextended()
             .returning(move |_| {
                 Ok(dashcore_rpc::dashcore_rpc_json::QuorumListResult {
-                    llmq_50_60: Some(vec![quorum1.clone()]),
+                    llmq_50_60: Some(vec![generate_quorums_extended_info(100)]),
                     llmq_400_60: None,
                     llmq_400_85: None,
                     llmq_100_67: None,
+                    llmq_60_75: None,
+                    llmq_25_67: None,
+                    // for devnets only
+                    llmq_devnet: None,
+                    llmq_devnet_platform: None,
+                    // for devnets only. rotated version (v2) for devnets
+                    llmq_devnet_dip0024: None,
+                    // for testing only
                     llmq_test: None,
                     llmq_test_instantsend: None,
                     llmq_test_v17: None,
                     llmq_test_dip0024: None,
                     llmq_test_platform: None,
+                    // TODO: simplify with ..Default::default() when it's implemented by dashcore_rpc
                 })
             })
             .once();
@@ -278,6 +339,6 @@ mod tests {
                 .expect("failed to fetch validator set");
 
         let vsu = ValidatorSetUpdate::from(vset);
-        assert_eq!(vsu.quorum_hash, winning_quorum.0);
+        assert_eq!(vsu.quorum_hash, [17u8; 32]);
     }
 }
