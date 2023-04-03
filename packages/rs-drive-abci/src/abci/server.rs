@@ -1,6 +1,7 @@
 //! This module implements ABCI application server.
 //!
 use super::config::AbciConfig;
+use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 use crate::{config::PlatformConfig, error::Error, platform::Platform, rpc::core::CoreRPCLike};
 use drive::grovedb::Transaction;
@@ -21,10 +22,7 @@ pub struct AbciApplication<'a, C> {
 /// Start ABCI server and process incoming connections.
 ///
 /// Should never return.
-pub fn start<C: CoreRPCLike + RefUnwindSafe>(
-    config: &PlatformConfig,
-    core_rpc: C,
-) -> Result<(), Error> {
+pub fn start<C: CoreRPCLike>(config: &PlatformConfig, core_rpc: C) -> Result<(), Error> {
     let bind_address = config.abci.bind_address.clone();
 
     let platform: Platform<C> =
@@ -37,13 +35,13 @@ pub fn start<C: CoreRPCLike + RefUnwindSafe>(
 
     loop {
         tracing::info!("waiting for new connection");
-        let result = std::panic::catch_unwind(|| match server.handle_connection() {
-            Ok(_) => (),
-            Err(e) => tracing::error!("tenderdash connection terminated: {:?}", e),
-        });
-        if let Err(_e) = result {
-            tracing::error!("panic: connection terminated");
-        }
+        server
+            .handle_connection()
+            .map_err(|e| Error::Abci(AbciError::Tenderdash(e)))?;
+        // let result = std::panic::catch_unwind(||  {
+        //     Ok(_) => (),
+        //     Err(e) => tracing::error!("tenderdash connection terminated: {:?}", e),
+        // });
     }
 }
 

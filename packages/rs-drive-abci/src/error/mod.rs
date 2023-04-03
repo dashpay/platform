@@ -1,6 +1,7 @@
 use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 use crate::error::serialization::SerializationError;
+use dashcore_rpc::Error as CoreRpcError;
 use drive::dpp::ProtocolError;
 use drive::error::Error as DriveError;
 use tenderdash_abci::proto::abci::ResponseException;
@@ -27,6 +28,9 @@ pub enum Error {
     /// Execution Error
     #[error("execution: {0}")]
     Execution(#[from] ExecutionError),
+    /// Core RPC Error
+    #[error("core rpc error: {0}")]
+    CoreRpc(#[from] CoreRpcError),
     /// Serialization Error
     #[error("serialization: {0}")]
     Serialization(#[from] SerializationError),

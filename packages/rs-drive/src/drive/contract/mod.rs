@@ -37,6 +37,10 @@ mod estimation_costs;
 /// Various paths for contract operations
 #[cfg(feature = "full")]
 pub(crate) mod paths;
+#[cfg(feature = "full")]
+pub(crate) mod prove;
+#[cfg(feature = "full")]
+pub(crate) mod queries;
 
 #[cfg(feature = "full")]
 use std::borrow::Cow;

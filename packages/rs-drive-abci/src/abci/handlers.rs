@@ -42,7 +42,7 @@ use drive::error::Error::GroveDB;
 use drive::fee::credits::SignedCredits;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 use tenderdash_abci::proto::abci::{
-    RequestCheckTx, RequestFinalizeBlock, RequestInitChain, RequestPrepareProposal,
+    ExecTxResult, RequestCheckTx, RequestFinalizeBlock, RequestInitChain, RequestPrepareProposal,
     RequestProcessProposal, RequestQuery, ResponseCheckTx, ResponseFinalizeBlock,
     ResponseInitChain, ResponsePrepareProposal, ResponseProcessProposal, ResponseQuery, TxRecord,
 };
@@ -110,22 +110,30 @@ where
             .run_block_proposal((&request).try_into()?, &transaction)?;
 
         // We need to let Tenderdash know about the transactions we should remove from execution
-        let (tx_results, tx_records) = tx_results
+        let (tx_results, tx_records): (Vec<Option<ExecTxResult>>, Vec<TxRecord>) = tx_results
             .into_iter()
             .map(|result| {
                 if result.code > 0 {
-                    TxRecord {
-                        action: TxAction::Removed as i32,
-                        tx: result.data.clone(),
-                    }
+                    (
+                        None,
+                        TxRecord {
+                            action: TxAction::Removed as i32,
+                            tx: result.data,
+                        },
+                    )
                 } else {
-                    TxRecord {
-                        action: TxAction::Unmodified as i32,
-                        tx: result.data.clone(),
-                    }
+                    (
+                        Some(result.clone()),
+                        TxRecord {
+                            action: TxAction::Unmodified as i32,
+                            tx: result.data,
+                        },
+                    )
                 }
             })
-            .collect();
+            .unzip();
+
+        let tx_results = tx_results.into_iter().flatten().collect();
 
         // We should get the latest CoreChainLock from core
         let latest_chain_lock = self.platform.core_rpc.get_best_chain_lock()?;

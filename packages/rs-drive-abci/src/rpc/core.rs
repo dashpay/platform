@@ -1,5 +1,7 @@
+use crate::error::Error;
 use dashcore::{Block, BlockHash};
-use dashcore_rpc::{Auth, Client, Error, RpcApi};
+use dashcore_rpc::dashcore_rpc_json::GetBestChainLockResult;
+use dashcore_rpc::{Auth, Client, RpcApi};
 use mockall::{automock, predicate::*};
 use serde_json::Value;
 use tenderdash_abci::proto::types::CoreChainLock;
@@ -11,7 +13,7 @@ pub trait CoreRPCLike {
     fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error>;
 
     /// Get block hash by height
-    fn get_best_chain_lock(&self, height: u32) -> Result<CoreChainLock, Error>;
+    fn get_best_chain_lock(&self) -> Result<CoreChainLock, Error>;
 
     /// Get block by hash
     fn get_block(&self, block_hash: &BlockHash) -> Result<Block, Error>;
@@ -36,18 +38,30 @@ impl DefaultCoreRPC {
 
 impl CoreRPCLike for DefaultCoreRPC {
     fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> {
-        self.inner.get_block_hash(height as u64)
+        self.inner.get_block_hash(height).map_err(Error::CoreRpc)
     }
 
-    fn get_best_chain_lock(&self, height: u32) -> Result<CoreChainLock, Error> {
-        self.inner.get_best_chain_lock(height)
+    fn get_best_chain_lock(&self) -> Result<CoreChainLock, Error> {
+        let GetBestChainLockResult {
+            blockhash,
+            height,
+            signature,
+            known_block,
+        } = self.inner.get_best_chain_lock().map_err(Error::CoreRpc)?;
+        Ok(CoreChainLock {
+            core_block_height: height,
+            core_block_hash: blockhash.to_vec(),
+            signature,
+        })
     }
 
     fn get_block(&self, block_hash: &BlockHash) -> Result<Block, Error> {
-        self.inner.get_block(block_hash)
+        self.inner.get_block(block_hash).map_err(Error::CoreRpc)
     }
 
     fn get_block_json(&self, block_hash: &BlockHash) -> Result<Value, Error> {
-        self.inner.get_block_json(block_hash)
+        self.inner
+            .get_block_json(block_hash)
+            .map_err(Error::CoreRpc)
     }
 }

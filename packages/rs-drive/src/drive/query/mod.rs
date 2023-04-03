@@ -99,26 +99,48 @@ impl Drive {
                 ProtocolError::DecodingError(format!("Unable to decode identity CBOR: {}", e))
             })?;
         match path.as_str() {
-            "/identities" => {
+            "/identity/balance" => {
+                let identity_id = query.remove_identifier("identityId")?;
                 if prove {
-                    todo!()
+                    self.prove_identity_balance(identity_id.into_buffer(), None)
                 } else {
-                    todo!()
-                }
-            }
-            "/dataContracts" => {
-                if prove {
-                    todo!()
-                } else {
-                    let contract_id = query.remove_identifier("contractId")?;
-                    self.query_contract_as_serialized(
-                        contract_id.to_buffer(),
+                    self.fetch_serialized_identity_balance(
+                        identity_id.into_buffer(),
                         CborEncodedQueryResult,
                         None,
                     )
                 }
             }
-            "/documents" | "/dataContracts/documents" => {
+            "/identity/balanceAndRevision" => {
+                let identity_id = query.remove_identifier("identityId")?;
+                if prove {
+                    self.prove_identity_balance_and_revision(identity_id.into_buffer(), None)
+                } else {
+                    self.fetch_serialized_identity_balance_and_revision(
+                        identity_id.into_buffer(),
+                        CborEncodedQueryResult,
+                        None,
+                    )
+                }
+            }
+            "/identities/keys" => {
+                // let identity_id = query.remove_identifier("identityIds")?;
+                // let request = query.str_val("keyRequest")?;
+                todo!()
+            }
+            "/dataContract" => {
+                let contract_id = query.remove_identifier("contractId")?;
+                if prove {
+                    self.prove_contract(contract_id.into_buffer(), None)
+                } else {
+                    self.query_contract_as_serialized(
+                        contract_id.into_buffer(),
+                        CborEncodedQueryResult,
+                        None,
+                    )
+                }
+            }
+            "/documents" | "/dataContract/documents" => {
                 let contract_id = query.remove_identifier("contractId")?;
                 let (_, contract) =
                     self.get_contract_with_fetch_info(contract_id.to_buffer(), None, true, None)?;

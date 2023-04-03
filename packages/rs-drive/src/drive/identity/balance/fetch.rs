@@ -24,6 +24,8 @@ use crate::fee::credits::{Creditable, Credits, SignedCredits};
 use crate::fee::op::LowLevelDriveOperation;
 #[cfg(feature = "full")]
 use crate::fee::result::FeeResult;
+use crate::query::QueryResultEncoding;
+use dpp::platform_value::platform_value;
 #[cfg(feature = "full")]
 use grovedb::Element::{Item, SumItem};
 #[cfg(feature = "full")]
@@ -47,6 +49,39 @@ impl Drive {
             transaction,
             &mut drive_operations,
         )
+    }
+
+    #[cfg(feature = "full")]
+    /// Fetches the Identity's balance from the backing store
+    /// Passing apply as false get the estimated cost instead
+    pub fn fetch_serialized_identity_balance(
+        &self,
+        identity_id: [u8; 32],
+        encoding: QueryResultEncoding,
+        transaction: TransactionArg,
+    ) -> Result<Vec<u8>, Error> {
+        let balance = self.fetch_identity_balance(identity_id, transaction)?;
+        let value = platform_value!({ "balance": balance });
+        encoding.encode_value(&value)
+    }
+
+    #[cfg(feature = "full")]
+    /// Fetches the Identity's balance from the backing store
+    /// Passing apply as false get the estimated cost instead
+    pub fn fetch_serialized_identity_balance_and_revision(
+        &self,
+        identity_id: [u8; 32],
+        encoding: QueryResultEncoding,
+        transaction: TransactionArg,
+    ) -> Result<Vec<u8>, Error> {
+        let balance = self.fetch_identity_balance(identity_id, transaction)?;
+
+        let revision = self.fetch_identity_revision(identity_id, true, transaction)?;
+        let value = platform_value!({
+            "balance" : balance,
+            "revision" : revision,
+        });
+        encoding.encode_value(&value)
     }
 
     #[cfg(feature = "full")]
