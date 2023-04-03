@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 const bs58 = require('bs58');
-let { Identifier, IdentifierError, PlatformValueError } = require('../..');
+let { Identifier, IdentifierError } = require('../..');
 const { default: loadWasmDpp } = require('../..');
 
 describe('Identifier', () => {
@@ -9,7 +9,7 @@ describe('Identifier', () => {
   beforeEach(async () => {
     buffer = crypto.randomBytes(32);
 
-    ({ Identifier, IdentifierError, PlatformValueError } = await loadWasmDpp());
+    ({ Identifier, IdentifierError } = await loadWasmDpp());
   });
 
   describe('#constructor', () => {
@@ -39,8 +39,8 @@ describe('Identifier', () => {
 
         expect.fail('Expected to throw error');
       } catch (e) {
-        expect(e).to.be.instanceOf(PlatformValueError);
-        expect(e.getMessage()).to.equal('byte length not 32 bytes error: Identifier must be 32 bytes long');
+        expect(e).to.be.instanceOf(IdentifierError);
+        expect(e.toString()).to.equal('IdentifierError: Identifier must be 32 long');
       }
     });
   });
