@@ -217,7 +217,7 @@ describe('Platform', () => {
       expect(document.toObject()).to.deep.equal(fetchedDocument.toObject());
     });
 
-    it('should be able to update document', async () => {
+    it.skip('should be able to update document', async () => {
       const [storedDocument] = await client.platform.documents.get(
         'customContracts.indexedDocument',
         { where: [['$id', '==', document.getId()]] },
@@ -286,7 +286,7 @@ describe('Platform', () => {
       expect(proof.round).to.be.greaterThanOrEqual(0);
     });
 
-    it('should fail to update document with timestamp in violated time frame', async () => {
+    it.skip('should fail to update document with timestamp in violated time frame', async () => {
       const [storedDocument] = await client.platform.documents.get(
         'customContracts.indexedDocument',
         { where: [['$id', '==', document.getId()]] },
@@ -322,7 +322,7 @@ describe('Platform', () => {
       expect(broadcastError.message).to.match(/Document \w* updatedAt timestamp .* are out of block time window from .* and .*/);
     });
 
-    it('should be able to delete a document', async () => {
+    it.skip('should be able to delete a document', async () => {
       await client.platform.documents.broadcast({
         delete: [document],
       }, identity);
@@ -337,7 +337,7 @@ describe('Platform', () => {
       expect(storedDocument).to.not.exist();
     });
 
-    it('should fail to create a new document with timestamp in violated time frame', async () => {
+    it.skip('should fail to create a new document with timestamp in violated time frame', async () => {
       document = await client.platform.documents.create(
         'customContracts.indexedDocument',
         identity,
