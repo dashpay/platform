@@ -64,6 +64,10 @@ export default async function update(
     recreatedFromBuffer = await wasmDpp.stateTransition.createFromBuffer(dataContractUpdateTransition.toBuffer());
   } catch (e) {
     console.log(e);
+    e.getErrors().forEach((e) => {
+      console.log(e);
+      // console.log(e.getFieldPath());
+    });
     throw e;
   }
 
