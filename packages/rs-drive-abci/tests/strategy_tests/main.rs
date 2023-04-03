@@ -269,7 +269,7 @@ impl Strategy {
             let count = frequency.events(rng);
             create_identities_state_transitions(count, 5, rng)
         } else {
-            vec![]
+            (vec![], vec![])
         }
     }
 

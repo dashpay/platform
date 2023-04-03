@@ -9,7 +9,8 @@ pub mod messages;
 // new code - config,
 #[cfg(feature = "server")]
 pub mod config;
-#[cfg(test)]
+// #[cfg(test)]
+/// Mimic of block execution for tests
 pub mod mimic;
 #[cfg(feature = "server")]
 mod server;

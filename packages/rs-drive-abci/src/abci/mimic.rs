@@ -1,5 +1,6 @@
 use crate::abci::server::AbciApplication;
 use crate::error::Error;
+use crate::rpc::core::CoreRPCLike;
 use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;
 use drive::drive::block_info::BlockInfo;
@@ -9,7 +10,7 @@ use tenderdash_abci::proto::abci::{
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::Application;
 
-impl<'a, C> AbciApplication<'a, C> {
+impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
     /// Execute a block with various state transitions
     pub fn mimic_execute_block(
         &self,
