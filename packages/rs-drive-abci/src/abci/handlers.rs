@@ -199,6 +199,8 @@ where
         self.platform
             .finalize_block_proposal(request, transaction)?;
 
+        drop(transaction_guard);
+
         self.commit_transaction()?;
 
         Ok(ResponseFinalizeBlock {
