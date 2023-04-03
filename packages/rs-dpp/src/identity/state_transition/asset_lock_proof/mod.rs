@@ -28,7 +28,7 @@ mod asset_lock_transaction_validator;
 pub mod chain;
 pub mod instant;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum AssetLockProof {
     Instant(InstantAssetLockProof),
     Chain(ChainAssetLockProof),
@@ -104,41 +104,41 @@ impl AsRef<AssetLockProof> for AssetLockProof {
     }
 }
 
-impl Serialize for AssetLockProof {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match self {
-            AssetLockProof::Instant(instant_proof) => instant_proof.serialize(serializer),
-            AssetLockProof::Chain(chain) => chain.serialize(serializer),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for AssetLockProof {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = platform_value::Value::deserialize(deserializer)?;
-
-        let proof_type_int: u8 = value
-            .get_integer("type")
-            .map_err(|e| D::Error::custom(e.to_string()))?;
-        let proof_type = AssetLockProofType::try_from(proof_type_int)
-            .map_err(|e| D::Error::custom(e.to_string()))?;
-
-        match proof_type {
-            AssetLockProofType::Instant => Ok(Self::Instant(
-                platform_value::from_value(value).map_err(|e| D::Error::custom(e.to_string()))?,
-            )),
-            AssetLockProofType::Chain => Ok(Self::Chain(
-                platform_value::from_value(value).map_err(|e| D::Error::custom(e.to_string()))?,
-            )),
-        }
-    }
-}
+// impl Serialize for AssetLockProof {
+//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+//     where
+//         S: Serializer,
+//     {
+//         match self {
+//             AssetLockProof::Instant(instant_proof) => instant_proof.serialize(serializer),
+//             AssetLockProof::Chain(chain) => chain.serialize(serializer),
+//         }
+//     }
+// }
+//
+// impl<'de> Deserialize<'de> for AssetLockProof {
+//     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+//     where
+//         D: Deserializer<'de>,
+//     {
+//         let value = platform_value::Value::deserialize(deserializer)?;
+//
+//         let proof_type_int: u8 = value
+//             .get_integer("type")
+//             .map_err(|e| D::Error::custom(e.to_string()))?;
+//         let proof_type = AssetLockProofType::try_from(proof_type_int)
+//             .map_err(|e| D::Error::custom(e.to_string()))?;
+//
+//         match proof_type {
+//             AssetLockProofType::Instant => Ok(Self::Instant(
+//                 platform_value::from_value(value).map_err(|e| D::Error::custom(e.to_string()))?,
+//             )),
+//             AssetLockProofType::Chain => Ok(Self::Chain(
+//                 platform_value::from_value(value).map_err(|e| D::Error::custom(e.to_string()))?,
+//             )),
+//         }
+//     }
+// }
 
 pub enum AssetLockProofType {
     Instant = 0,
