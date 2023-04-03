@@ -36,13 +36,10 @@ pub fn start<C: CoreRPCLike>(config: &PlatformConfig, core_rpc: C) -> Result<(),
 
     loop {
         tracing::info!("waiting for new connection");
-        server
-            .handle_connection()
-            .map_err(|e| Error::Abci(AbciError::Tenderdash(e)))?;
-        // let result = std::panic::catch_unwind(||  {
-        //     Ok(_) => (),
-        //     Err(e) => tracing::error!("tenderdash connection terminated: {:?}", e),
-        // });
+        match server.handle_connection() {
+            Err(e) => tracing::error!("tenderdash connection terminated: {:?}", e),
+            Ok(_) => tracing::info!("tenderdash connection closed"),
+        }
     }
 }
 

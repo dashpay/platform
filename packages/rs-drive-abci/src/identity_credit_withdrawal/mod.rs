@@ -1,6 +1,6 @@
 use std::{collections::HashMap, ops::Deref};
 
-use dashcore::{
+use dashcore_rpc::dashcore::{
     blockdata::transaction::special_transaction::asset_unlock::{
         request_info::AssetUnlockRequestInfo,
         unqualified_asset_unlock::{AssetUnlockBasePayload, AssetUnlockBaseTransactionInfo},
@@ -539,7 +539,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use dashcore::{
+    use dashcore_rpc::dashcore::{
         hashes::hex::{FromHex, ToHex},
         BlockHash,
     };
