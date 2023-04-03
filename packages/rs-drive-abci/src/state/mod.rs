@@ -1,9 +1,9 @@
-use std::collections::HashMap;
+use crate::rpc::core::QuorumListExtendedInfo;
 use dashcore_rpc::json::QuorumType;
 use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::drive::block_info::BlockInfo;
 use drive::fee_pools::epochs::Epoch;
-use crate::rpc::core::QuorumListExtendedInfo;
+use std::collections::HashMap;
 
 mod genesis;
 
@@ -19,29 +19,39 @@ pub struct PlatformState {
     /// upcoming protocol version
     pub next_epoch_protocol_version: ProtocolVersion,
     /// current quorums
-    pub quorums: HashMap<QuorumType, QuorumListExtendedInfo>
+    pub quorums: HashMap<QuorumType, QuorumListExtendedInfo>,
 }
 
 impl PlatformState {
     /// The height of the platform, only committed blocks increase height
     pub fn height(&self) -> u64 {
-        self.last_committed_block_info.unwrap_or_default().height
+        self.last_committed_block_info
+            .as_ref()
+            .map(|block_info| block_info.height)
+            .unwrap_or_default()
     }
 
     /// The height of the core blockchain that Platform knows about through chain locks
     pub fn core_height(&self) -> u32 {
         self.last_committed_block_info
+            .as_ref()
+            .map(|block_info| block_info.core_height)
             .unwrap_or_default()
-            .core_height
     }
 
     /// The last block time in milliseconds
     pub fn last_block_time_ms(&self) -> u64 {
-        self.last_committed_block_info.unwrap_or_default().time_ms
+        self.last_committed_block_info
+            .as_ref()
+            .map(|block_info| block_info.time_ms)
+            .unwrap_or_default()
     }
 
     /// The current epoch
     pub fn epoch(&self) -> Epoch {
-        self.last_committed_block_info.unwrap_or_default().epoch
+        self.last_committed_block_info
+            .as_ref()
+            .map(|block_info| block_info.epoch)
+            .unwrap_or_default()
     }
 }

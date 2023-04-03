@@ -298,11 +298,10 @@ where
 
     /// Update the current quorums if the core_height changes
     pub fn update_state_cache_and_quorums(&self, block_info: BlockInfo) {
-        let state_cache = self.state.write().unwrap();
+        let mut state_cache = self.state.write().unwrap();
 
         state_cache.last_committed_block_info = Some(block_info.clone());
     }
-
 
     /// Finalize the block, this first involves validating it, then if valid
     /// it is committed to the state

@@ -1,8 +1,9 @@
-use crate::error::Error;
-use dashcore::{Block, BlockHash, QuorumHash};
+use dashcore::{Block, BlockHash};
 use dashcore_rpc::dashcore_rpc_json::{
-    ExtendedQuorumDetails, GetBestChainLockResult, QuorumInfoResult, QuorumListResult, QuorumType,
+    ExtendedQuorumDetails, GetBestChainLockResult, QuorumHash, QuorumInfoResult, QuorumListResult,
+    QuorumType,
 };
+use dashcore_rpc::Error;
 use dashcore_rpc::{Auth, Client, RpcApi};
 use mockall::{automock, predicate::*};
 use serde_json::Value;
@@ -64,7 +65,7 @@ impl DefaultCoreRPC {
 
 impl CoreRPCLike for DefaultCoreRPC {
     fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> {
-        self.inner.get_block_hash(height).map_err(Error::CoreRpc)
+        self.inner.get_block_hash(height)
     }
 
     fn get_best_chain_lock(&self) -> Result<CoreChainLock, Error> {
@@ -73,7 +74,7 @@ impl CoreRPCLike for DefaultCoreRPC {
             height,
             signature,
             known_block,
-        } = self.inner.get_best_chain_lock().map_err(Error::CoreRpc)?;
+        } = self.inner.get_best_chain_lock()?;
         Ok(CoreChainLock {
             core_block_height: height,
             core_block_hash: blockhash.to_vec(),
@@ -82,21 +83,17 @@ impl CoreRPCLike for DefaultCoreRPC {
     }
 
     fn get_block(&self, block_hash: &BlockHash) -> Result<Block, Error> {
-        self.inner.get_block(block_hash).map_err(Error::CoreRpc)
+        self.inner.get_block(block_hash)
     }
 
     fn get_block_json(&self, block_hash: &BlockHash) -> Result<Value, Error> {
-        self.inner
-            .get_block_json(block_hash)
-            .map_err(Error::CoreRpc)
+        self.inner.get_block_json(block_hash)
     }
     fn get_quorum_listextended(
         &self,
         height: Option<CoreHeight>,
     ) -> Result<QuorumListResult<QuorumListExtendedInfo>, Error> {
-        self.inner
-            .get_quorum_listextended(height.map(|i| i as i64))
-            .map_err(Error::CoreRpc)
+        self.inner.get_quorum_listextended(height.map(|i| i as i64))
     }
 
     fn get_quorum_info(

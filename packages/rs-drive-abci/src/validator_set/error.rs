@@ -19,5 +19,10 @@ pub enum ValidatorSetError {
 
     /// Quorum with given hash not found
     #[error{"Invalid format of field {field}: {details}"}]
-    InvalidDataFormat { field: String, details: String },
+    InvalidDataFormat {
+        /// the field that is invalid
+        field: String,
+        /// details explaining why the format is invalid
+        details: String,
+    },
 }

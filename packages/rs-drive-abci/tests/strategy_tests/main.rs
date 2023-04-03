@@ -586,6 +586,7 @@ pub(crate) fn continue_chain_for_strategy(
         let block_info = BlockInfo {
             time_ms: current_time_ms,
             height: block_height,
+            core_height: 1,
             epoch: Epoch::new(epoch_info.current_epoch_index),
         };
 

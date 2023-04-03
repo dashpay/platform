@@ -126,7 +126,11 @@ where
         let tx_results = tx_results.into_iter().flatten().collect();
 
         // We should get the latest CoreChainLock from core
-        let latest_chain_lock = self.platform.core_rpc.get_best_chain_lock()?;
+        let latest_chain_lock = self
+            .platform
+            .core_rpc
+            .get_best_chain_lock()
+            .map_err(Error::CoreRpc)?;
 
         let core_chain_lock_update =
             if request.core_chain_locked_height < latest_chain_lock.core_block_height {
