@@ -81,7 +81,7 @@ use crate::errors::consensus::state::identity::{
 };
 use crate::errors::value_error::PlatformValueErrorWasm;
 
-use super::consensus::basic::data_contract::{
+use crate::errors::consensus::basic::data_contract::{
     DataContractMaxDepthExceedErrorWasm, DuplicateIndexErrorWasm, DuplicateIndexNameErrorWasm,
     IncompatibleRe2PatternErrorWasm, InvalidCompoundIndexErrorWasm,
     InvalidDataContractVersionErrorWasm, InvalidIndexPropertyTypeErrorWasm,
@@ -89,24 +89,24 @@ use super::consensus::basic::data_contract::{
     SystemPropertyIndexAlreadyPresentErrorWasm, UndefinedIndexPropertyErrorWasm,
     UniqueIndicesLimitReachedErrorWasm,
 };
-use super::consensus::basic::decode::{
+use crate::errors::consensus::basic::decode::{
     ProtocolVersionParsingErrorWasm, SerializedObjectParsingErrorWasm,
 };
-use super::consensus::basic::document::{
+use crate::errors::consensus::basic::document::{
     DataContractNotPresentErrorWasm, InconsistentCompoundIndexDataErrorWasm,
     InvalidDocumentTypeErrorWasm, MissingDocumentTransitionActionErrorWasm,
     MissingDocumentTransitionTypeErrorWasm,
 };
-use super::consensus::basic::identity::{
+use crate::errors::consensus::basic::identity::{
     InvalidIdentityPublicKeyTypeErrorWasm, MissingPublicKeyErrorWasm,
 };
-use super::consensus::basic::{
+use crate::errors::consensus::basic::{
     InvalidSignaturePublicKeySecurityLevelErrorWasm, InvalidStateTransitionSignatureErrorWasm,
     JsonSchemaCompilationErrorWasm, PublicKeyIsDisabledErrorWasm,
     PublicKeySecurityLevelNotMetErrorWasm, WrongPublicKeyPurposeErrorWasm,
 };
-use super::consensus::fee::BalanceIsNotEnoughErrorWasm;
-use super::consensus::state::data_contract::data_trigger::DataTriggerInvalidResultErrorWasm;
+use crate::errors::consensus::fee::BalanceIsNotEnoughErrorWasm;
+use crate::errors::consensus::state::data_contract::data_trigger::DataTriggerInvalidResultErrorWasm;
 
 pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
     let code = e.code();
@@ -424,9 +424,7 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         BasicError::InvalidDataContractIdError(err) => {
             InvalidDataContractIdErrorWasm::new(err.expected_id(), err.invalid_id(), code).into()
         }
-        ProtocolVersionParsingError(e) => {
-            ProtocolVersionParsingErrorWasm::new(e.parsing_error().to_string(), code).into()
-        }
+        ProtocolVersionParsingError(e) => ProtocolVersionParsingErrorWasm::new(e).into(),
         SerializedObjectParsingError(e) => SerializedObjectParsingErrorWasm::new(
             wasm_bindgen::JsError::new(e.parsing_error().to_string().as_ref()),
             code,
