@@ -1,19 +1,17 @@
+use crate::buffer::Buffer;
+use dpp::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::ConsensusError;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=InvalidIdentifierError)]
 pub struct InvalidIdentifierErrorWasm {
-    identifier_name: String,
-    error: String,
-    code: u32,
+    inner: InvalidIdentifierError,
 }
 
-impl InvalidIdentifierErrorWasm {
-    pub fn new(identifier_name: String, error: String, code: u32) -> Self {
-        InvalidIdentifierErrorWasm {
-            identifier_name,
-            error,
-            code,
-        }
+impl From<&InvalidIdentifierError> for InvalidIdentifierErrorWasm {
+    fn from(e: &InvalidIdentifierError) -> Self {
+        Self { inner: e.clone() }
     }
 }
 
@@ -21,16 +19,30 @@ impl InvalidIdentifierErrorWasm {
 impl InvalidIdentifierErrorWasm {
     #[wasm_bindgen(js_name=getIdentifierName)]
     pub fn get_identifier_name(&self) -> String {
-        self.identifier_name.clone()
+        self.inner.identifier_name().to_string()
     }
 
     #[wasm_bindgen(js_name=getIdentifierError)]
     pub fn get_error(&self) -> String {
-        self.error.clone()
+        self.inner.message().to_string()
     }
 
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {
-        self.code
+        ConsensusError::from(self.inner.clone()).code()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn message(&self) -> String {
+        self.inner.to_string()
+    }
+
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+        let bytes = ConsensusError::from(self.inner.clone())
+            .serialize()
+            .map_err(|e| JsError::from(e))?;
+
+        Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }

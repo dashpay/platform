@@ -1,13 +1,17 @@
+use crate::buffer::Buffer;
+use dpp::consensus::basic::document::MissingDocumentTypeError;
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::ConsensusError;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=MissingDocumentTypeError)]
 pub struct MissingDocumentTypeErrorWasm {
-    code: u32,
+    inner: MissingDocumentTypeError,
 }
 
-impl MissingDocumentTypeErrorWasm {
-    pub fn new(code: u32) -> Self {
-        MissingDocumentTypeErrorWasm { code }
+impl From<&MissingDocumentTypeError> for MissingDocumentTypeErrorWasm {
+    fn from(e: &MissingDocumentTypeError) -> Self {
+        Self { inner: e.clone() }
     }
 }
 
@@ -15,6 +19,20 @@ impl MissingDocumentTypeErrorWasm {
 impl MissingDocumentTypeErrorWasm {
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {
-        self.code
+        ConsensusError::from(self.inner.clone()).code()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn message(&self) -> String {
+        self.inner.to_string()
+    }
+
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+        let bytes = ConsensusError::from(self.inner.clone())
+            .serialize()
+            .map_err(|e| JsError::from(e))?;
+
+        Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }

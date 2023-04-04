@@ -4,7 +4,9 @@ use crate::identity::validation::TPublicKeysValidator;
 use crate::identity::{KeyID, KeyType, Purpose, SecurityLevel};
 use crate::tests::fixtures::get_public_keys_validator;
 
-use crate::{assert_consensus_errors, NativeBlsModule};
+use crate::consensus::basic::BasicError;
+use crate::consensus::codes::ErrorWithCode;
+use crate::{assert_basic_consensus_errors, NativeBlsModule};
 use platform_value::BinaryData;
 use platform_value::{platform_value, Value};
 
@@ -20,7 +22,8 @@ fn setup_test() -> (Vec<Value>, PublicKeysValidator<NativeBlsModule>) {
 pub mod id {
     use jsonschema::error::ValidationErrorKind;
 
-    use crate::assert_consensus_errors;
+    use crate::assert_basic_consensus_errors;
+    use crate::consensus::basic::BasicError;
     use crate::errors::consensus::ConsensusError;
     use crate::identity::validation::TPublicKeysValidator;
     use crate::identity::KeyID;
@@ -37,18 +40,12 @@ pub mod id {
             .unwrap();
 
         let result = validator.validate_keys(&raw_public_keys).unwrap();
-        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
+        let errors = assert_basic_consensus_errors!(&result, BasicError::JsonSchemaError, 1);
         let error = errors.get(0).unwrap();
 
-        assert_eq!(error.instance_path().to_string(), "");
-        assert_eq!(error.keyword().unwrap(), "required");
-
-        match error.kind() {
-            ValidationErrorKind::Required { property } => {
-                assert_eq!(property.to_string(), "\"id\"");
-            }
-            _ => panic!("Expected to be missing property"),
-        }
+        assert_eq!(error.instance_path(), "");
+        assert_eq!(error.keyword(), "required");
+        assert_eq!(error.property_name(), "id");
     }
 
     #[test]
@@ -61,11 +58,11 @@ pub mod id {
             .unwrap();
 
         let result = validator.validate_keys(&raw_public_keys).unwrap();
-        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
+        let errors = assert_basic_consensus_errors!(&result, BasicError::JsonSchemaError, 1);
         let error = errors.get(0).unwrap();
 
-        assert_eq!(error.instance_path().to_string(), "/id");
-        assert_eq!(error.keyword().unwrap(), "type");
+        assert_eq!(error.instance_path(), "/id");
+        assert_eq!(error.keyword(), "type");
     }
 
     #[test]
@@ -74,11 +71,11 @@ pub mod id {
         platform_value_set_ref(raw_public_keys.get_mut(1).unwrap(), "id", 1.1);
 
         let result = validator.validate_keys(&raw_public_keys).unwrap();
-        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
+        let errors = assert_basic_consensus_errors!(&result, BasicError::JsonSchemaError, 1);
         let error = errors.get(0).unwrap();
 
-        assert_eq!(error.instance_path().to_string(), "/id");
-        assert_eq!(error.keyword().unwrap(), "type");
+        assert_eq!(error.instance_path(), "/id");
+        assert_eq!(error.keyword(), "type");
     }
 
     #[test]
@@ -87,16 +84,17 @@ pub mod id {
         platform_value_set_ref(raw_public_keys.get_mut(1).unwrap(), "id", -1);
 
         let result = validator.validate_keys(&raw_public_keys).unwrap();
-        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
+        let errors = assert_basic_consensus_errors!(&result, BasicError::JsonSchemaError, 1);
         let error = errors.get(0).unwrap();
 
-        assert_eq!(error.instance_path().to_string(), "/id");
-        assert_eq!(error.keyword().unwrap(), "minimum");
+        assert_eq!(error.instance_path(), "/id");
+        assert_eq!(error.keyword(), "minimum");
     }
 }
 
 pub mod key_type {
-    use crate::assert_consensus_errors;
+    use crate::assert_basic_consensus_errors;
+    use crate::consensus::basic::BasicError;
     use crate::errors::consensus::ConsensusError;
     use crate::identity::validation::TPublicKeysValidator;
     use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
@@ -109,11 +107,11 @@ pub mod key_type {
 
         let result = validator.validate_keys(&raw_public_keys).unwrap();
         // TODO: in the original code, there was only one error
-        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 4);
+        let errors = assert_basic_consensus_errors!(&result, BasicError::JsonSchemaError, 4);
         let error = errors.get(0).unwrap();
 
-        assert_eq!(error.instance_path().to_string(), "/data");
-        assert_eq!(error.keyword().unwrap(), "minItems");
+        assert_eq!(error.instance_path(), "/data");
+        assert_eq!(error.keyword(), "minItems");
     }
 
     #[test]
@@ -123,18 +121,19 @@ pub mod key_type {
 
         let result = validator.validate_keys(&raw_public_keys).unwrap();
         // TODO: in the original code, there was only one error
-        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 2);
+        let errors = assert_basic_consensus_errors!(&result, BasicError::JsonSchemaError, 2);
         let error = errors.first().unwrap();
 
-        assert_eq!(error.instance_path().to_string(), "/type");
-        assert_eq!(error.keyword().unwrap(), "type");
+        assert_eq!(error.instance_path(), "/type");
+        assert_eq!(error.keyword(), "type");
     }
 }
 
 pub mod data {
     use jsonschema::error::ValidationErrorKind;
 
-    use crate::assert_consensus_errors;
+    use crate::assert_basic_consensus_errors;
+    use crate::consensus::basic::BasicError;
     use crate::errors::consensus::ConsensusError;
     use crate::identity::validation::TPublicKeysValidator;
     use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
@@ -145,18 +144,12 @@ pub mod data {
         raw_public_keys.get_mut(1).unwrap().remove("data").unwrap();
 
         let result = validator.validate_keys(&raw_public_keys).unwrap();
-        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
+        let errors = assert_basic_consensus_errors!(&result, BasicError::JsonSchemaError, 1);
         let error = errors.get(0).unwrap();
 
         assert_eq!(error.instance_path().to_string(), "");
-        assert_eq!(error.keyword().unwrap(), "required");
-
-        match error.kind() {
-            ValidationErrorKind::Required { property } => {
-                assert_eq!(property.to_string(), "\"data\"");
-            }
-            _ => panic!("Expected to be missing property"),
-        }
+        assert_eq!(error.keyword(), "required");
+        assert_eq!(error.property_name(), "data");
     }
 
     #[test]
@@ -170,21 +163,22 @@ pub mod data {
 
         let result = validator.validate_keys(&raw_public_keys).unwrap();
 
-        let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 33);
+        let errors = assert_basic_consensus_errors!(&result, BasicError::JsonSchemaError, 33);
 
         // let byte_array_error = errors.last().unwrap();
 
         for (i, err) in errors.iter().enumerate() {
             assert_eq!(err.instance_path().to_string(), format!("/data/{}", i));
-            assert_eq!(err.keyword().unwrap(), "type");
+            assert_eq!(err.keyword(), "type");
         }
 
         // TODO: do we need to bring that back?
-        //assert_eq!(byte_array_error.keyword().unwrap(), "byteArray");
+        //assert_eq!(byte_array_error.keyword(), "byteArray");
     }
 
     pub mod ecdsa_secp256k1 {
-        use crate::assert_consensus_errors;
+        use crate::assert_basic_consensus_errors;
+        use crate::consensus::basic::BasicError;
         use crate::errors::consensus::ConsensusError;
         use crate::identity::validation::TPublicKeysValidator;
         use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
@@ -196,11 +190,11 @@ pub mod data {
             platform_value_set_ref(raw_public_keys.get_mut(1).unwrap(), "data", vec![0; 32]);
 
             let result = validator.validate_keys(&raw_public_keys).unwrap();
-            let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(&result, BasicError::JsonSchemaError, 1);
             let error = errors.get(0).unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/data");
-            assert_eq!(error.keyword().unwrap(), "minItems");
+            assert_eq!(error.keyword(), "minItems");
         }
 
         #[test]
@@ -209,16 +203,17 @@ pub mod data {
             platform_value_set_ref(raw_public_keys.get_mut(1).unwrap(), "data", vec![0; 34]);
 
             let result = validator.validate_keys(&raw_public_keys).unwrap();
-            let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(&result, BasicError::JsonSchemaError, 1);
             let error = errors.get(0).unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/data");
-            assert_eq!(error.keyword().unwrap(), "maxItems");
+            assert_eq!(error.keyword(), "maxItems");
         }
     }
 
     pub mod bls12_381 {
-        use crate::assert_consensus_errors;
+        use crate::assert_basic_consensus_errors;
+        use crate::consensus::basic::BasicError;
         use crate::errors::consensus::ConsensusError;
         use crate::identity::validation::TPublicKeysValidator;
         use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
@@ -231,11 +226,11 @@ pub mod data {
             platform_value_set_ref(raw_public_keys.get_mut(1).unwrap(), "type", 1);
 
             let result = validator.validate_keys(&raw_public_keys).unwrap();
-            let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(&result, BasicError::JsonSchemaError, 1);
             let error = errors.get(0).unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/data");
-            assert_eq!(error.keyword().unwrap(), "minItems");
+            assert_eq!(error.keyword(), "minItems");
         }
 
         #[test]
@@ -245,16 +240,17 @@ pub mod data {
             platform_value_set_ref(raw_public_keys.get_mut(1).unwrap(), "type", 1);
 
             let result = validator.validate_keys(&raw_public_keys).unwrap();
-            let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(&result, BasicError::JsonSchemaError, 1);
             let error = errors.get(0).unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/data");
-            assert_eq!(error.keyword().unwrap(), "maxItems");
+            assert_eq!(error.keyword(), "maxItems");
         }
     }
 
     pub mod bip13_hash_script {
-        use crate::assert_consensus_errors;
+        use crate::assert_basic_consensus_errors;
+        use crate::consensus::basic::BasicError;
         use crate::errors::consensus::ConsensusError;
         use crate::identity::validation::TPublicKeysValidator;
         use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
@@ -267,11 +263,11 @@ pub mod data {
             platform_value_set_ref(raw_public_keys.get_mut(1).unwrap(), "type", 3);
 
             let result = validator.validate_keys(&raw_public_keys).unwrap();
-            let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(&result, BasicError::JsonSchemaError, 1);
             let error = errors.get(0).unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/data");
-            assert_eq!(error.keyword().unwrap(), "minItems");
+            assert_eq!(error.keyword(), "minItems");
         }
 
         #[test]
@@ -281,16 +277,17 @@ pub mod data {
             platform_value_set_ref(raw_public_keys.get_mut(1).unwrap(), "type", 3);
 
             let result = validator.validate_keys(&raw_public_keys).unwrap();
-            let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(&result, BasicError::JsonSchemaError, 1);
             let error = errors.get(0).unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/data");
-            assert_eq!(error.keyword().unwrap(), "maxItems");
+            assert_eq!(error.keyword(), "maxItems");
         }
     }
 
     pub mod ecdsa_hash_160 {
-        use crate::assert_consensus_errors;
+        use crate::assert_basic_consensus_errors;
+        use crate::consensus::basic::BasicError;
         use crate::errors::consensus::ConsensusError;
         use crate::identity::validation::TPublicKeysValidator;
         use crate::tests::identity::validation::public_keys_validator_spec::setup_test;
@@ -303,11 +300,11 @@ pub mod data {
             platform_value_set_ref(raw_public_keys.get_mut(1).unwrap(), "type", 2);
 
             let result = validator.validate_keys(&raw_public_keys).unwrap();
-            let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(&result, BasicError::JsonSchemaError, 1);
             let error = errors.get(0).unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/data");
-            assert_eq!(error.keyword().unwrap(), "minItems");
+            assert_eq!(error.keyword(), "minItems");
         }
 
         #[test]
@@ -317,11 +314,11 @@ pub mod data {
             platform_value_set_ref(raw_public_keys.get_mut(1).unwrap(), "type", 2);
 
             let result = validator.validate_keys(&raw_public_keys).unwrap();
-            let errors = assert_consensus_errors!(&result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(&result, BasicError::JsonSchemaError, 1);
             let error = errors.get(0).unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/data");
-            assert_eq!(error.keyword().unwrap(), "maxItems");
+            assert_eq!(error.keyword(), "maxItems");
         }
     }
 }
@@ -336,9 +333,9 @@ pub fn should_return_invalid_result_if_there_are_duplicate_key_ids() {
 
     let result = validator.validate_keys(&raw_public_keys).unwrap();
 
-    let errors = assert_consensus_errors!(
+    let errors = assert_basic_consensus_errors!(
         result,
-        ConsensusError::DuplicatedIdentityPublicKeyBasicIdError,
+        BasicError::DuplicatedIdentityPublicKeyIdBasicError,
         1
     );
     let consensus_error = result.errors.first().unwrap();
@@ -363,9 +360,9 @@ pub fn should_return_invalid_result_if_there_are_duplicate_keys() {
         .expect("expected to set data");
 
     let result = validator.validate_keys(&raw_public_keys).unwrap();
-    let errors = assert_consensus_errors!(
+    let errors = assert_basic_consensus_errors!(
         &result,
-        ConsensusError::DuplicatedIdentityPublicKeyBasicError,
+        BasicError::DuplicatedIdentityPublicKeyBasicError,
         1
     );
 
@@ -392,11 +389,8 @@ pub fn should_return_invalid_result_if_key_data_is_not_a_valid_der() {
         .expect("expected to set data");
 
     let result = validator.validate_keys(&raw_public_keys).unwrap();
-    let errors = assert_consensus_errors!(
-        &result,
-        ConsensusError::InvalidIdentityPublicKeyDataError,
-        1
-    );
+    let errors =
+        assert_basic_consensus_errors!(&result, BasicError::InvalidIdentityPublicKeyDataError, 1);
 
     let consensus_error = result.errors.first().unwrap();
     let error = errors.first().unwrap();
@@ -407,7 +401,7 @@ pub fn should_return_invalid_result_if_key_data_is_not_a_valid_der() {
         raw_public_keys[1].get_integer::<KeyID>("id").unwrap()
     );
     assert_eq!(
-        error.validation_error().as_ref().unwrap().message(),
+        error.validation_error(),
         "Key secp256k1 error: malformed public key"
     );
 }
@@ -429,9 +423,9 @@ pub fn should_return_invalid_result_if_key_has_an_invalid_combination_of_purpose
         .unwrap();
 
     let result = validator.validate_keys(&raw_public_keys).unwrap();
-    let errors = assert_consensus_errors!(
+    let errors = assert_basic_consensus_errors!(
         &result,
-        ConsensusError::InvalidIdentityPublicKeySecurityLevelError,
+        BasicError::InvalidIdentityPublicKeySecurityLevelError,
         1
     );
     let consensus_error = result.errors.first().unwrap();
@@ -520,11 +514,8 @@ pub fn should_return_invalid_result_if_bls12_381_public_key_is_invalid() {
 
     let result = validator.validate_keys(raw_public_keys).unwrap();
 
-    let errors = assert_consensus_errors!(
-        &result,
-        ConsensusError::InvalidIdentityPublicKeyDataError,
-        1
-    );
+    let errors =
+        assert_basic_consensus_errors!(&result, BasicError::InvalidIdentityPublicKeyDataError, 1);
     let consensus_error = result.errors.first().unwrap();
     let error = errors.first().unwrap();
 
@@ -539,8 +530,5 @@ pub fn should_return_invalid_result_if_bls12_381_public_key_is_invalid() {
     );
     // TODO
     //assert_eq!(error.validation_error(), TypeError);
-    assert_eq!(
-        error.validation_error().as_ref().unwrap().message(),
-        "Group decode error"
-    );
+    assert_eq!(error.validation_error().to_string(), "Group decode error");
 }

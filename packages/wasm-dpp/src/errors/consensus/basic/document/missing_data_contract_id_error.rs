@@ -1,19 +1,18 @@
-use dpp::platform_value::Value;
-use serde::Serialize;
+use dpp::consensus::basic::document::MissingDataContractIdBasicError;
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::ConsensusError;
 use wasm_bindgen::prelude::*;
+
+use crate::buffer::Buffer;
 
 #[wasm_bindgen(js_name=MissingDataContractIdError)]
 pub struct MissingDataContractIdErrorWasm {
-    raw_document_transition: Value,
-    code: u32,
+    inner: MissingDataContractIdBasicError,
 }
 
-impl MissingDataContractIdErrorWasm {
-    pub fn new(raw_document_transition: Value, code: u32) -> Self {
-        MissingDataContractIdErrorWasm {
-            raw_document_transition,
-            code,
-        }
+impl From<&MissingDataContractIdBasicError> for MissingDataContractIdErrorWasm {
+    fn from(e: &MissingDataContractIdBasicError) -> Self {
+        Self { inner: e.clone() }
     }
 }
 
@@ -21,14 +20,20 @@ impl MissingDataContractIdErrorWasm {
 impl MissingDataContractIdErrorWasm {
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {
-        self.code
+        ConsensusError::from(self.inner.clone()).code()
     }
 
-    #[wasm_bindgen(js_name=rawDocumentTransition)]
-    pub fn raw_document_transition(&self) -> wasm_bindgen::JsValue {
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        self.raw_document_transition
-            .serialize(&serializer)
-            .expect("implements Serialize")
+    #[wasm_bindgen(getter)]
+    pub fn message(&self) -> String {
+        self.inner.to_string()
+    }
+
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+        let bytes = ConsensusError::from(self.inner.clone())
+            .serialize()
+            .map_err(|e| JsError::from(e))?;
+
+        Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }

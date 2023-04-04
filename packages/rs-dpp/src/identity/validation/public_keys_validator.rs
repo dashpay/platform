@@ -4,7 +4,7 @@ use dashcore::PublicKey;
 use lazy_static::lazy_static;
 
 use crate::errors::consensus::basic::identity::{
-    DuplicatedIdentityPublicKeyError, DuplicatedIdentityPublicKeyIdError,
+    DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
     InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError,
 };
 use crate::identity::{IdentityPublicKey, KeyID, KeyType};
@@ -69,14 +69,16 @@ impl<T: BlsModule> TPublicKeysValidator for PublicKeysValidator<T> {
         let duplicated_ids = duplicated_key_ids(&public_keys);
 
         if !duplicated_ids.is_empty() {
-            result.add_error(DuplicatedIdentityPublicKeyIdError::new(duplicated_ids));
+            result.add_error(DuplicatedIdentityPublicKeyIdBasicError::new(duplicated_ids));
         }
 
         // Check that there's no duplicated keys
         let duplicated_key_ids = duplicated_keys(&public_keys);
 
         if !duplicated_key_ids.is_empty() {
-            result.add_error(DuplicatedIdentityPublicKeyError::new(duplicated_key_ids));
+            result.add_error(DuplicatedIdentityPublicKeyBasicError::new(
+                duplicated_key_ids,
+            ));
         }
 
         let mut validation_error: Option<PublicKeyValidationError>;
@@ -106,11 +108,7 @@ impl<T: BlsModule> TPublicKeysValidator for PublicKeysValidator<T> {
             };
 
             if let Some(error) = validation_error {
-                result.add_error(InvalidIdentityPublicKeyDataError::new(
-                    public_key.id,
-                    error.to_string(),
-                    Some(error),
-                ));
+                result.add_error(InvalidIdentityPublicKeyDataError::new(public_key.id, error));
             }
         }
 

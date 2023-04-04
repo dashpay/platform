@@ -1,9 +1,16 @@
 use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Data Contract Id must be {}, got {}", bs58::encode(expected_id).into_string(), bs58::encode(invalid_id).into_string())]
 pub struct InvalidDataContractIdError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     expected_id: Vec<u8>,
     invalid_id: Vec<u8>,
 }
@@ -24,8 +31,8 @@ impl InvalidDataContractIdError {
     }
 }
 
-impl From<InvalidDataContractIdError> for BasicError {
+impl From<InvalidDataContractIdError> for ConsensusError {
     fn from(err: InvalidDataContractIdError) -> Self {
-        Self::InvalidDataContractIdError(err)
+        Self::BasicError(BasicError::InvalidDataContractIdError(err))
     }
 }

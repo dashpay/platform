@@ -19,11 +19,11 @@ use crate::data_contract::contract_config::{
 use crate::data_contract::get_binary_properties_from_schema::get_binary_properties;
 
 use crate::{
-    errors::ProtocolError,
+    identifier,
     metadata::Metadata,
     util::{hash::hash, serializer},
+    Convertible, ProtocolError,
 };
-use crate::{identifier, Convertible};
 use platform_value::string_encoding::Encoding;
 
 use super::document_type::DocumentType;

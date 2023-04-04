@@ -37,9 +37,9 @@ const expectError = {
    * @param {ValidationResult} result
    * @param [count]
    */
-  async expectPlatformValueError(result, count = 1) {
+  async expectValueError(result, count = 1) {
     const wasmDpp = await loadWasmDpp();
-    await expectError.expectValidationError(result, wasmDpp.PlatformValueError, count);
+    await expectError.expectValidationError(result, wasmDpp.ValueError, count);
   },
 };
 
