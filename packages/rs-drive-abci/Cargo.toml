@@ -25,7 +25,7 @@ rand = "0.8.5"
 tempfile = "3.3.0"
 bs58 = "0.4.0"
 base64 = "0.13.0"
-hex = "0.4.3"
+hex = "0.4.3"   
 dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
     "std",
     "secp-recovery",
@@ -33,7 +33,7 @@ dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
     "signer",
     "use-serde",
 ], default-features = false, rev = "51548a4a1b9eca7430f5f3caf94d9784886ff2e9" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", rev = "fde07c63e90a70b1aa4d6c41d89fb8d2eda289b4" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", rev = "58c70856e881e6aaef016411e7f1dd9b869bd7ce" }
 dpp = { path = "../rs-dpp", features = ["fixtures-and-mocks"] }
 rust_decimal = "1.2.5"
 rust_decimal_macros = "1.25.0"
