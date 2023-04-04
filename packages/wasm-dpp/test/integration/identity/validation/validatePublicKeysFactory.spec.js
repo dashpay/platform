@@ -20,7 +20,6 @@ describe('validatePublicKeysFactory', function main() {
   let publicKeysValidator;
 
   let PublicKeysValidator;
-  let PublicKeyValidationError;
   let IdentityPublicKey;
 
   let DuplicatedIdentityPublicKeyError;
@@ -36,7 +35,6 @@ describe('validatePublicKeysFactory', function main() {
       InvalidIdentityPublicKeyDataError,
       DuplicatedIdentityPublicKeyError, DuplicatedIdentityPublicKeyIdError,
       InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError,
-      PublicKeyValidationError,
     } = await loadWasmDpp());
 
     bls = await BlsSignatures.getInstance();

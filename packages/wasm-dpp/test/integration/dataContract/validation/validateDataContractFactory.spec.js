@@ -1712,8 +1712,6 @@ describe('validateDataContractFactory', () => {
           additionalProperties: false,
         };
 
-        const indexDefinition = rawDataContract.documents.indexedArray.indices[0];
-
         const result = await validateDataContract(rawDataContract);
 
         expectValidationError(result, InvalidIndexPropertyTypeError);

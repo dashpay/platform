@@ -18,7 +18,6 @@ describe('validateAssetLockTransactionFactory', () => {
   let InvalidIdentityAssetLockTransactionOutputError;
   let InvalidAssetLockTransactionOutputReturnSizeError;
   let IdentityAssetLockTransactionOutPointAlreadyExistsError;
-  let TransactionDecodeError;
   let ValidationResult;
 
   let validateAssetLockTransaction;
@@ -28,7 +27,6 @@ describe('validateAssetLockTransactionFactory', () => {
     ({
       StateTransitionExecutionContext,
       ValidationResult,
-      TransactionDecodeError,
       InvalidIdentityAssetLockTransactionError,
       IdentityAssetLockTransactionOutputNotFoundError,
       InvalidIdentityAssetLockTransactionOutputError,
