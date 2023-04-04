@@ -96,11 +96,12 @@ class FeeResult {
     const processingFeeBuffer = Buffer.allocUnsafe(8);
     processingFeeBuffer.writeBigInt64BE(processingFee, 0);
 
-    const feeRefundsWithBuffers = feeRefunds.map(({ identifier, creditsPerEpoch }) => {
+    const feeRefundsWithBuffers = feeRefunds.map((refund) => {
+      const { identifier, creditsPerEpoch } = refund.toObject();
       const refundsMap = new Map();
 
-      creditsPerEpoch.entries.forEach((key, value) => {
-        const refundBuffer = Buffer.unsafeAlloc(8);
+      creditsPerEpoch.forEach((value, key) => {
+        const refundBuffer = Buffer.allocUnsafe(8);
         refundBuffer.writeBigInt64BE(value);
 
         refundsMap.set(key, refundBuffer);
@@ -108,7 +109,7 @@ class FeeResult {
 
       return {
         identifier,
-        creditsPerEpoch: refundMap,
+        creditsPerEpoch: refundsMap,
       };
     });
 
