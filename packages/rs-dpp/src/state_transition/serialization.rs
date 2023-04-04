@@ -1,6 +1,7 @@
 use crate::state_transition::StateTransition;
 use crate::ProtocolError;
 use bincode::Options;
+use platform_value::Value;
 
 impl StateTransition {
     pub fn serialize(&self) -> Result<Vec<u8>, ProtocolError> {
@@ -43,8 +44,9 @@ impl StateTransition {
             .collect()
     }
 
-    // pub fn deserialize_cbor(cbor_state_transitions: &[u8]) -> Result<Vec<Self>, ProtocolError> {
-    //     call_method!(self, to_json, skip_signature)
+    // pub fn deserialize_cbor(cbor_state_transition: &[u8]) -> Result<Self, ProtocolError> {
+    //     let value : Value = ciborium::de::from_reader(cbor_state_transition).map_err(|e| ProtocolError::DecodingError(format!("{}", e)))?;
+    //     Self::from_value(value)
     // }
     //
     // pub fn deserialize_many_cbor(
@@ -52,7 +54,31 @@ impl StateTransition {
     // ) -> Result<Vec<Self>, ProtocolError> {
     //     cbor_state_transitions
     //         .iter()
-    //         .map(|raw_state_transition| Self(raw_state_transition))
+    //         .map(|raw_state_transition| Self::deserialize_cbor(raw_state_transition))
     //         .collect()
     // }
 }
+
+// #[cfg(test)]
+// mod tests {
+//     use crate::document::document_transition::Action;
+//     use crate::document::DocumentsBatchTransition;
+//     use crate::state_transition::{StateTransition, StateTransitionConvert};
+//     use crate::tests::fixtures::{get_data_contract_fixture, get_document_transitions_fixture, get_documents_fixture_with_owner_id_from_contract};
+//
+//     #[test]
+//     fn cbor_ser_de() {
+//         let data_contract = get_data_contract_fixture(None);
+//         let documents =
+//             get_documents_fixture_with_owner_id_from_contract(data_contract.clone()).unwrap();
+//         let transitions = get_document_transitions_fixture([(Action::Create, documents)]);
+//         let documents_batch_transition = DocumentsBatchTransition {
+//             owner_id: data_contract.owner_id,
+//             transitions,
+//             ..Default::default()
+//         };
+//         let state_transition : StateTransition = documents_batch_transition.into();
+//         let buffer = state_transition.to_cbor_buffer(false).expect("expected to get cbor");
+//         let recovered_state_transition = StateTransition::deserialize_cbor(buffer.as_slice()).expect("expect to recover state transition");
+//     }
+// }

@@ -73,12 +73,6 @@ impl Default for IdentityCreateTransition {
     }
 }
 
-impl From<IdentityCreateTransition> for StateTransition {
-    fn from(d: IdentityCreateTransition) -> Self {
-        Self::IdentityCreate(d)
-    }
-}
-
 impl TryFrom<Identity> for IdentityCreateTransition {
     type Error = ProtocolError;
 
@@ -131,10 +125,10 @@ impl TryFrom<Identity> for IdentityCreateTransition {
 
 /// Main state transition functionality implementation
 impl IdentityCreateTransition {
-    pub fn new(raw_state_transition: Value) -> Result<Self, ProtocolError> {
+    pub fn from_raw_object(raw_object: Value) -> Result<Self, ProtocolError> {
         let mut state_transition = Self::default();
 
-        let mut transition_map = raw_state_transition
+        let mut transition_map = raw_object
             .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
         if let Some(keys_value_array) = transition_map

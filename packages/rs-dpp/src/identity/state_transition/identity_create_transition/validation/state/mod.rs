@@ -106,7 +106,7 @@ mod test {
     async fn should_not_verify_signature_on_dry_run() {
         let mut state_repository = MockStateRepositoryLike::new();
         let raw_transition = identity_create_transition_fixture(None);
-        let transition = IdentityCreateTransition::new(raw_transition).unwrap();
+        let transition = IdentityCreateTransition::from_raw_object(raw_transition).unwrap();
 
         transition.get_execution_context().enable_dry_run();
         state_repository

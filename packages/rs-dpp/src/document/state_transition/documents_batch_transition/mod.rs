@@ -164,7 +164,7 @@ impl DocumentsBatchTransition {
     }
 
     /// creates the instance of [`DocumentsBatchTransition`] from raw object
-    pub fn from_raw_object(
+    pub fn from_raw_object_with_contracts(
         raw_object: Value,
         data_contracts: Vec<DataContract>,
     ) -> Result<Self, ProtocolError> {

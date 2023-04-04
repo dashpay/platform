@@ -50,12 +50,6 @@ impl Default for IdentityTopUpTransition {
     }
 }
 
-impl From<IdentityTopUpTransition> for StateTransition {
-    fn from(d: IdentityTopUpTransition) -> Self {
-        Self::IdentityTopUp(d)
-    }
-}
-
 /// Main state transition functionality implementation
 impl IdentityTopUpTransition {
     pub fn new(raw_state_transition: Value) -> Result<Self, ProtocolError> {

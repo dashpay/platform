@@ -86,30 +86,28 @@ impl std::default::Default for DataContractCreateTransition {
 
 impl DataContractCreateTransition {
     pub fn from_raw_object(
-        mut raw_data_contract_update_transition: Value,
+        mut raw_object: Value,
     ) -> Result<DataContractCreateTransition, ProtocolError> {
         Ok(DataContractCreateTransition {
-            protocol_version: raw_data_contract_update_transition.get_integer(PROTOCOL_VERSION)?,
-            signature: raw_data_contract_update_transition
+            protocol_version: raw_object.get_integer(PROTOCOL_VERSION)?,
+            signature: raw_object
                 .remove_optional_binary_data(SIGNATURE)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
-            signature_public_key_id: raw_data_contract_update_transition
+            signature_public_key_id: raw_object
                 .get_optional_integer(SIGNATURE_PUBLIC_KEY_ID)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
-            entropy: raw_data_contract_update_transition
+            entropy: raw_object
                 .remove_optional_bytes_32(ENTROPY)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
             data_contract: DataContract::from_raw_object(
-                raw_data_contract_update_transition
-                    .remove(DATA_CONTRACT)
-                    .map_err(|_| {
-                        ProtocolError::DecodingError(
-                            "data contract missing on state transition".to_string(),
-                        )
-                    })?,
+                raw_object.remove(DATA_CONTRACT).map_err(|_| {
+                    ProtocolError::DecodingError(
+                        "data contract missing on state transition".to_string(),
+                    )
+                })?,
             )?,
             ..Default::default()
         })

@@ -1,3 +1,4 @@
+use derive_more::From;
 use serde::{Deserialize, Serialize};
 
 pub use abstract_state_transition::{
@@ -80,7 +81,7 @@ macro_rules! call_static_method {
     };
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, From)]
 pub enum StateTransition {
     DataContractCreate(DataContractCreateTransition),
     DataContractUpdate(DataContractUpdateTransition),
@@ -92,6 +93,32 @@ pub enum StateTransition {
 }
 
 impl StateTransition {
+    // pub fn from_value(value: Value) -> Result<Self, ProtocolError> {
+    //     let state_transition_type = value.get_integer("type")? as StateTransitionType;
+    //     Ok(match state_transition_type {
+    //         StateTransitionType::DataContractCreate => {
+    //             DataContractCreateTransition::from_raw_object(value)?.into()
+    //         }
+    //         StateTransitionType::DocumentsBatch => {
+    //             DocumentsBatchTransition::from_raw_object_with_contracts(value)?.into()
+    //         }
+    //         StateTransitionType::IdentityCreate => {
+    //             IdentityCreateTransition::from_raw_object(value)?.into()
+    //         }
+    //         StateTransitionType::IdentityTopUp => {
+    //             IdentityTopUpTransition::from_raw_object(value)?.into()
+    //         }
+    //         StateTransitionType::DataContractUpdate => {
+    //             DataContractUpdateTransition::from_raw_object(value)?.into()
+    //         }
+    //         StateTransitionType::IdentityUpdate => {
+    //             IdentityUpdateTransition::from_raw_object(value)?.into()
+    //         }
+    //         StateTransitionType::IdentityCreditWithdrawal => {
+    //             IdentityCreditWithdrawalTransition::from_raw_object(value)?.into()
+    //         }
+    //     })
+    // }
     fn signature_property_paths(&self) -> Vec<&'static str> {
         call_static_method!(self, signature_property_paths)
     }
@@ -182,35 +209,5 @@ impl StateTransitionLike for StateTransition {
 
     fn get_modified_data_ids(&self) -> Vec<crate::prelude::Identifier> {
         call_method!(self, get_modified_data_ids)
-    }
-}
-
-impl From<DataContractCreateTransition> for StateTransition {
-    fn from(d: DataContractCreateTransition) -> Self {
-        Self::DataContractCreate(d)
-    }
-}
-
-impl From<DataContractUpdateTransition> for StateTransition {
-    fn from(d: DataContractUpdateTransition) -> Self {
-        Self::DataContractUpdate(d)
-    }
-}
-
-impl From<DocumentsBatchTransition> for StateTransition {
-    fn from(d: DocumentsBatchTransition) -> Self {
-        Self::DocumentsBatch(d)
-    }
-}
-
-impl From<IdentityCreditWithdrawalTransition> for StateTransition {
-    fn from(d: IdentityCreditWithdrawalTransition) -> Self {
-        Self::IdentityCreditWithdrawal(d)
-    }
-}
-
-impl From<IdentityUpdateTransition> for StateTransition {
-    fn from(d: IdentityUpdateTransition) -> Self {
-        Self::IdentityUpdate(d)
     }
 }

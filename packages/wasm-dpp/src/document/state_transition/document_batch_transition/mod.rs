@@ -78,9 +78,11 @@ impl DocumentsBatchTransitionWasm {
             .map_err(ProtocolError::ValueError)
             .with_js_error()?;
 
-        let documents_batch_transition =
-            DocumentsBatchTransition::from_raw_object(batch_transition_value, data_contracts)
-                .with_js_error()?;
+        let documents_batch_transition = DocumentsBatchTransition::from_raw_object_with_contracts(
+            batch_transition_value,
+            data_contracts,
+        )
+        .with_js_error()?;
 
         Ok(documents_batch_transition.into())
     }

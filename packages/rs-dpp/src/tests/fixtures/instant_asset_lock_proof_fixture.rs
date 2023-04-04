@@ -13,6 +13,16 @@ use crate::util::vec::hex_to_array;
 //3bufpwQjL5qsvuP4fmCKgXJrKG852DDMYfi9J6XKqPAT
 //[198, 23, 40, 120, 58, 93, 0, 165, 27, 49, 4, 117, 107, 204,  67, 46, 164, 216, 230, 135, 201, 92, 31, 155, 62, 131, 211, 177, 139, 175, 163, 237]
 
+pub fn raw_instant_asset_lock_proof_fixture(
+    one_time_private_key: Option<PrivateKey>,
+) -> InstantAssetLockProof {
+    let transaction = instant_asset_lock_proof_transaction_fixture(one_time_private_key);
+
+    let instant_lock = instant_asset_lock_is_lock_fixture(transaction.txid());
+
+    InstantAssetLockProof::new(instant_lock, transaction, 0)
+}
+
 pub fn instant_asset_lock_proof_fixture(
     one_time_private_key: Option<PrivateKey>,
 ) -> AssetLockProof {

@@ -61,11 +61,12 @@ pub fn validate_public_key_signatures<'a, T: BlsModule>(
     let mut state_transition =
         match transition_type {
             StateTransitionType::IdentityCreate => {
-                let transition = IdentityCreateTransition::new(raw_state_transition.clone())
-                    .map_err(|e| NonConsensusError::ObjectCreationError {
-                        object_name: object_names::STATE_TRANSITION,
-                        details: format!("{e:#}"),
-                    })?;
+                let transition =
+                    IdentityCreateTransition::from_raw_object(raw_state_transition.clone())
+                        .map_err(|e| NonConsensusError::ObjectCreationError {
+                            object_name: object_names::STATE_TRANSITION,
+                            details: format!("{e:#}"),
+                        })?;
                 StateTransition::IdentityCreate(transition)
             }
             StateTransitionType::IdentityUpdate => {
