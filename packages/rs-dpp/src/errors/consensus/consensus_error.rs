@@ -53,10 +53,8 @@ impl ConsensusError {
             .reject_trailing_bytes()
             .with_big_endian()
             .serialize(self)
-            .map_err(|_| {
-                ProtocolError::EncodingError(String::from(
-                    "unable to serialize identity public key",
-                ))
+            .map_err(|e| {
+                ProtocolError::EncodingError(format!("unable to serialize consensus error: {e}"))
             })
     }
 
@@ -67,7 +65,7 @@ impl ConsensusError {
             .with_big_endian()
             .deserialize(bytes)
             .map_err(|e| {
-                ProtocolError::EncodingError(format!("unable to deserialize consensus error {}", e))
+                ProtocolError::EncodingError(format!("unable to deserialize consensus error: {e}"))
             })
     }
 }
