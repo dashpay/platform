@@ -183,6 +183,18 @@ where
         Ok((aggregate_fee_result, exec_tx_results))
     }
 
+    pub fn update_masternode_identities(
+        &self,
+        previous_core_height: u32,
+        current_core_height: u32,
+    ) -> Result<(), Error> {
+        if previous_core_height != current_core_height {
+            //todo:
+            // self.drive.fetch_full_identity()
+            // self.drive.add_new_non_unique_keys_to_identity()
+        }
+    }
+
     /// Run a block proposal, either from process proposal, or prepare proposal
     pub fn run_block_proposal(
         &self,
@@ -203,6 +215,7 @@ where
         let genesis_time_ms = self.get_genesis_time(height, block_time_ms, &transaction)?;
 
         let state = self.state.read().unwrap();
+        let previous_core_height = state.core_height();
         let previous_block_time_ms = state
             .last_committed_block_info
             .as_ref()
@@ -275,6 +288,8 @@ where
             block_fees.into(),
             transaction,
         )?;
+
+        self.update_masternode_identities(previous_core_height, core_chain_locked_height)?;
 
         let root_hash = self
             .drive

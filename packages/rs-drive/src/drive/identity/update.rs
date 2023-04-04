@@ -200,6 +200,38 @@ impl Drive {
         Ok(drive_operations)
     }
 
+    /// Add new non unique keys to an identity
+    pub fn add_new_non_unique_keys_to_identity(
+        &self,
+        identity_id: [u8; 32],
+        keys_to_add: Vec<IdentityPublicKey>,
+        block_info: &BlockInfo,
+        apply: bool,
+        transaction: TransactionArg,
+    ) -> Result<FeeResult, Error> {
+        let mut estimated_costs_only_with_layer_info = if apply {
+            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+        } else {
+            Some(HashMap::new())
+        };
+        let batch_operations = self.add_new_keys_to_identity_operations(
+            identity_id,
+            keys_to_add,
+            true,
+            &mut estimated_costs_only_with_layer_info,
+            transaction,
+        )?;
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+        self.apply_batch_low_level_drive_operations(
+            estimated_costs_only_with_layer_info,
+            transaction,
+            batch_operations,
+            &mut drive_operations,
+        )?;
+        let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+        Ok(fees)
+    }
+
     /// Add new keys to an identity
     pub fn add_new_keys_to_identity(
         &self,
