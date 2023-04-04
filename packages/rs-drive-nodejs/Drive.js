@@ -303,6 +303,7 @@ class Drive {
    * @param [query.startAfter]
    * @param [query.orderBy]
    * @param {boolean} [useTransaction=false]
+   * @param {boolean} [extended=false]
    *
    * @returns {Promise<[Document[], number]>}
    */
@@ -312,6 +313,7 @@ class Drive {
     epochIndex = undefined,
     query = {},
     useTransaction = false,
+    extended = false,
   ) {
     console.log('[Drive] Querying documents for type', documentType);
     const encodedQuery = await cbor.encodeAsync(query);
@@ -330,7 +332,11 @@ class Drive {
 
       rawDocument.$protocolVersion = protocolVersion;
 
-      return new this.dppWasm.Document(rawDocument, dataContract, documentType);
+      const { Document, ExtendedDocument } = this.dppWasm;
+
+      return extended
+        ? new ExtendedDocument(rawDocument, dataContract)
+        : new Document(rawDocument, dataContract, documentType);
     });
     console.log('[Drive] Parsed documents for type', documentType);
 

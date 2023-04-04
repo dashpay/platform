@@ -219,6 +219,20 @@ class CachedStateRepositoryDecorator {
   }
 
   /**
+   * Fetch Extended Documents by contract ID and type
+   *
+   * @param {Identifier} contractId
+   * @param {string} type
+   * @param {{ where: Object }} [options]
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<ExtendedDocument[]>}
+   */
+  async fetchExtendedDocuments(contractId, type, options = {}, executionContext = undefined) {
+    return this.stateRepository.fetchExtendedDocuments(contractId, type, options, executionContext);
+  }
+
+  /**
    * Create document
    *
    * @param {Document} document
