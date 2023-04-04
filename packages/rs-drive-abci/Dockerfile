@@ -36,6 +36,7 @@ RUN apk add --no-cache \
         git \
         linux-headers \
         openssl-dev \
+        musl \
         perl \
         sccache \
         unzip \
@@ -45,8 +46,11 @@ SHELL ["/bin/bash", "-c"]
 
 # Install protoc - protobuf compiler
 # The one shipped with Alpine does not work
-ARG PROTOC_ARCH=x86_64
-RUN wget -q -O /tmp/protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v22.2/protoc-22.2-linux-${PROTOC_ARCH}.zip && \
+ARG TARGETARCH
+ENV PROTOC_ARCH=x86_64
+RUN \
+    if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; fi; \
+    wget -q -O /tmp/protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v22.2/protoc-22.2-linux-${PROTOC_ARCH}.zip && \
     unzip -qd /opt/protoc /tmp/protoc.zip && \
     rm /tmp/protoc.zip && \
     ln -s /opt/protoc/bin/protoc /usr/bin/

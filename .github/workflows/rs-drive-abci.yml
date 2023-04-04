@@ -1,4 +1,5 @@
-name: RS Drive
+---
+name: RS Drive ABCI
 
 on:
   workflow_dispatch:
@@ -18,7 +19,7 @@ on:
       - packages/rs-drive-abci/**
       - packages/rs-platform-value/**
   schedule:
-    - cron: '30 4 * * *'
+    - cron: "30 4 * * *"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -29,4 +30,15 @@ jobs:
     name: Rust
     uses: ./.github/workflows/rs-checks.yml
     with:
-      package: 'drive-abci'
+      package: "drive-abci"
+
+  docker:
+    name: Docker
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ./.github/actions/docker
+        with:
+          dockerfile: ./packages/rs-drive-abci/Dockerfile
+          image: dashpay/drive-abci
+          push: false
