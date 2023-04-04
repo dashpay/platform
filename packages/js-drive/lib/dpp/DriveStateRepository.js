@@ -539,6 +539,47 @@ class DriveStateRepository {
   }
 
   /**
+   * Fetch Extended Documents by contract ID and type
+   *
+   * @param {Identifier} contractId
+   * @param {string} type
+   * @param {{ where: Object }} [options]
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<ExtendedDocument[]>}
+   */
+  async fetchExtendedDocuments(contractId, type, options = {}, executionContext = undefined) {
+    console.log('DriveStateRepository.fetchExtendedDocuments() start', {
+      contractId, type, executionContext,
+    });
+    console.dir({ options }, { depth: null });
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
+
+    const result = await this.fetchDocumentsFunction(
+      contractId,
+      type,
+      {
+        blockInfo,
+        ...options,
+        ...this.#createRepositoryOptions(executionContext),
+      },
+      true,
+    );
+
+    if (executionContext) {
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
+    }
+
+    const value = result.getValue();
+    console.log('DriveStateRepository.fetchExtendedDocuments() end', {
+      value,
+    });
+    return value;
+  }
+
+  /**
    * Create document
    *
    * @param {Document} document
