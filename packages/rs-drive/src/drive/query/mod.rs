@@ -40,16 +40,29 @@ use crate::drive::Drive;
 use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::fee::calculate_fee;
-use crate::fee::op::DriveOperation;
+use crate::fee::op::LowLevelDriveOperation;
 use crate::query::DriveQuery;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::DriveContractExt;
+use dpp::document::Document;
+use dpp::ProtocolError;
 
 use crate::drive::block_info::BlockInfo;
 use crate::fee_pools::epochs::Epoch;
 
+#[derive(Debug)]
 /// The outcome of a query
 pub struct QueryDocumentsOutcome {
+    /// returned items
+    pub documents: Vec<Document>,
+    /// skipped item count
+    pub skipped: u16,
+    /// the processing cost
+    pub cost: u64,
+}
+
+/// The outcome of a query
+pub struct QuerySerializedDocumentsOutcome {
     /// returned items
     pub items: Vec<Vec<u8>>,
     /// skipped item count
@@ -77,7 +90,36 @@ impl Drive {
         epoch: Option<&Epoch>,
         transaction: TransactionArg,
     ) -> Result<QueryDocumentsOutcome, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+        let (items, skipped) =
+            query.execute_serialized_no_proof_internal(self, transaction, &mut drive_operations)?;
+        let documents = items
+            .into_iter()
+            .map(|serialized| Document::from_cbor(serialized.as_slice(), None, None))
+            .collect::<Result<Vec<Document>, ProtocolError>>()?;
+        let cost = if let Some(epoch) = epoch {
+            let fee_result = calculate_fee(None, Some(drive_operations), epoch)?;
+            fee_result.processing_fee
+        } else {
+            0
+        };
+
+        Ok(QueryDocumentsOutcome {
+            documents,
+            skipped,
+            cost,
+        })
+    }
+
+    /// Performs and returns the result of the specified query along with skipped items
+    /// and the cost.
+    pub fn query_documents_as_serialized(
+        &self,
+        query: DriveQuery,
+        epoch: Option<&Epoch>,
+        transaction: TransactionArg,
+    ) -> Result<QuerySerializedDocumentsOutcome, Error> {
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let (items, skipped) =
             query.execute_serialized_no_proof_internal(self, transaction, &mut drive_operations)?;
         let cost = if let Some(epoch) = epoch {
@@ -87,7 +129,7 @@ impl Drive {
             0
         };
 
-        Ok(QueryDocumentsOutcome {
+        Ok(QuerySerializedDocumentsOutcome {
             items,
             skipped,
             cost,
@@ -102,7 +144,7 @@ impl Drive {
         epoch: Option<&Epoch>,
         transaction: TransactionArg,
     ) -> Result<QueryDocumentIdsOutcome, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let (items, skipped) = query.execute_no_proof_internal(
             self,
             QueryResultType::QueryKeyElementPairResultType,
@@ -136,8 +178,8 @@ impl Drive {
         document_type_name: &str,
         epoch: Option<&Epoch>,
         transaction: TransactionArg,
-    ) -> Result<QueryDocumentsOutcome, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+    ) -> Result<QuerySerializedDocumentsOutcome, Error> {
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let contract = self
             .get_contract_with_fetch_info_and_add_to_operations(
                 contract_id,
@@ -154,7 +196,7 @@ impl Drive {
 
         let query = DriveQuery::from_cbor(query_cbor, &contract.contract, document_type)?;
 
-        self.query_documents(query, epoch, transaction)
+        self.query_documents_as_serialized(query, epoch, transaction)
     }
 
     /// Performs and returns the result of the specified query along with skipped items and the cost.
@@ -166,7 +208,7 @@ impl Drive {
         block_info: Option<BlockInfo>,
         transaction: TransactionArg,
     ) -> Result<(Vec<Vec<u8>>, u16, u64), Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let contract = <Contract as DriveContractExt>::from_cbor(contract_cbor, None)?;
         //todo cbor cost
         let document_type = contract.document_type_for_name(document_type_name.as_str())?;
@@ -196,7 +238,7 @@ impl Drive {
         block_info: Option<BlockInfo>,
         transaction: TransactionArg,
     ) -> Result<(Vec<Vec<u8>>, u16, u64), Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let (items, skipped) = self.query_documents_for_cbor_query_internal(
             contract,
             document_type,
@@ -222,7 +264,7 @@ impl Drive {
         block_info: Option<BlockInfo>,
         transaction: TransactionArg,
     ) -> Result<(Vec<Vec<u8>>, u16, u64), Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let (items, skipped) = self.query_documents_for_cbor_query_internal(
             contract,
             document_type,
@@ -246,7 +288,7 @@ impl Drive {
         document_type: &DocumentType,
         query_cbor: &[u8],
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
         let query = DriveQuery::from_cbor(query_cbor, contract, document_type)?;
 
@@ -264,7 +306,7 @@ impl Drive {
         epoch: Option<&Epoch>,
         transaction: TransactionArg,
     ) -> Result<(Vec<u8>, u64), Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let contract = self
             .get_contract_with_fetch_info_and_add_to_operations(
                 contract_id,
@@ -304,7 +346,7 @@ impl Drive {
         block_info: Option<BlockInfo>,
         transaction: TransactionArg,
     ) -> Result<(Vec<u8>, u64), Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
         let items = self.query_proof_of_documents_using_cbor_encoded_query(
             contract,
@@ -330,7 +372,7 @@ impl Drive {
         document_type: &DocumentType,
         query_cbor: &[u8],
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<Vec<u8>, Error> {
         let query = DriveQuery::from_cbor(query_cbor, contract, document_type)?;
 
@@ -346,7 +388,7 @@ impl Drive {
         block_info: Option<BlockInfo>,
         transaction: TransactionArg,
     ) -> Result<([u8; 32], Vec<Vec<u8>>, u64), Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
         let (root_hash, items) = self
             .query_proof_of_documents_using_cbor_encoded_query_only_get_elements_internal(
@@ -372,7 +414,7 @@ impl Drive {
         document_type: &DocumentType,
         query_cbor: &[u8],
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<([u8; 32], Vec<Vec<u8>>), Error> {
         let query = DriveQuery::from_cbor(query_cbor, contract, document_type)?;
 

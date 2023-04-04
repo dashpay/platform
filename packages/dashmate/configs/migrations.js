@@ -434,4 +434,82 @@ module.exports = {
 
     return configFile;
   },
+  '0.24.0-dev.14': (configFile) => {
+    if (configFile.configs.base) {
+      configFile.configs.base.platform.drive.tenderdash.genesis = systemConfigs.base.platform
+        .drive.tenderdash.genesis;
+
+      configFile.configs.base.platform.drive.tenderdash.genesis = systemConfigs.base.platform
+        .drive.tenderdash.genesis;
+    }
+
+    if (configFile.configs.local) {
+      configFile.configs.local.platform.drive.abci.validatorSet.llmqType = systemConfigs.local
+        .platform.drive.abci.validatorSet.llmqType;
+    }
+
+    Object.entries(configFile.configs)
+      .forEach(([, config]) => {
+        if (config.platform) {
+          if (config.group === 'local') {
+            config.platform.drive.abci.validatorSet.llmqType = systemConfigs.local
+              .platform.drive.abci.validatorSet.llmqType;
+          }
+
+          config.platform.drive.tenderdash.node = {
+            id: config.platform.drive.tenderdash.nodeId,
+          };
+
+          if (config.platform.drive.tenderdash.nodeKey
+            && config.platform.drive.tenderdash.nodeKey.priv_key
+            && config.platform.drive.tenderdash.nodeKey.priv_key.value
+          ) {
+            config.platform.drive.tenderdash.node.key = config.platform.drive
+              .tenderdash.nodeKey.priv_key.value;
+          }
+
+          delete config.platform.drive.tenderdash.nodeId;
+          delete config.platform.drive.tenderdash.nodeKey;
+        }
+      });
+
+    return configFile;
+  },
+  '0.24.0-dev.17': (configFile) => {
+    Object.entries(configFile.configs)
+      .forEach(([name, config]) => {
+        if (config.platform) {
+          config.platform.enable = name !== 'mainnet';
+        } else {
+          config.platform = (systemConfigs[name] || systemConfigs.base).platform;
+        }
+
+        if (systemConfigs[name]) {
+          config.core.p2p.port = systemConfigs[name].core.p2p.port;
+          config.core.rpc.port = systemConfigs[name].core.rpc.port;
+
+          if (config.platform) {
+            config.platform.dapi.envoy.http.port = systemConfigs[name]
+              .platform.dapi.envoy.http.port;
+
+            config.platform.drive.tenderdash.p2p.port = systemConfigs[name]
+              .platform.drive.tenderdash.p2p.port;
+
+            config.platform.drive.tenderdash.rpc.port = systemConfigs[name]
+              .platform.drive.tenderdash.rpc.port;
+          }
+        }
+
+        config.core.devnet.name = config.core.devnetName;
+        delete config.core.devnetName;
+
+        config.core.devnet.powTargetSpacing = config.core.powTargetSpacing;
+        delete config.core.powTargetSpacing;
+
+        config.core.devnet.minimumDifficultyBlocks = config.core.minimumDifficultyBlocks;
+        delete config.core.minimumDifficultyBlocks;
+      });
+
+    return configFile;
+  },
 };

@@ -1,13 +1,18 @@
+use std::convert::TryInto;
+
 use anyhow::Context;
 use anyhow::{anyhow, bail};
-use serde_json::{json, Value as JsonValue};
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
+use serde_json::json;
 
 use crate::document::Document;
 use crate::util::hash::hash;
-use crate::util::string_encoding::Encoding;
+
+use crate::ProtocolError;
 use crate::{
     document::document_transition::DocumentTransition, get_from_transition, prelude::Identifier,
-    state_repository::StateRepositoryLike, util::json_value::JsonValueExt,
+    state_repository::StateRepositoryLike,
 };
 
 use super::{create_error, DataTriggerExecutionContext, DataTriggerExecutionResult};
@@ -47,20 +52,29 @@ where
     })?;
 
     let top_level_identity = top_level_identity.context("top level identity isn't provided")?;
-    let owner_id = context.owner_id.to_string(Encoding::Base58);
-    let label = data.get_string(PROPERTY_LABEL)?;
-    let normalized_label = data.get_string(PROPERTY_NORMALIZED_LABEL)?;
-    let normalized_parent_domain_name = data.get_string(PROPERTY_NORMALIZED_PARENT_DOMAIN_NAME)?;
+    let owner_id = context.owner_id;
+    let label = data
+        .get_string(PROPERTY_LABEL)
+        .map_err(ProtocolError::ValueError)?;
+    let normalized_label = data
+        .get_str(PROPERTY_NORMALIZED_LABEL)
+        .map_err(ProtocolError::ValueError)?;
+    let normalized_parent_domain_name = data
+        .get_string(PROPERTY_NORMALIZED_PARENT_DOMAIN_NAME)
+        .map_err(ProtocolError::ValueError)?;
 
-    let preorder_salt = data.get_bytes(PROPERTY_PREORDER_SALT)?;
+    let preorder_salt = data
+        .get_hash256_bytes(PROPERTY_PREORDER_SALT)
+        .map_err(ProtocolError::ValueError)?;
     let records = data
         .get(PROPERTY_RECORDS)
-        .ok_or_else(|| anyhow!("property '{}' doesn't exist", PROPERTY_RECORDS))?;
+        .ok_or_else(|| anyhow!("property '{}' doesn't exist", PROPERTY_RECORDS))?
+        .to_btree_ref_string_map()
+        .map_err(ProtocolError::ValueError)?;
 
     let rule_allow_subdomains = data
-        .get_value(PROPERTY_ALLOW_SUBDOMAINS)?
-        .as_bool()
-        .ok_or_else(|| anyhow!("property '{}' isn't a bool", PROPERTY_ALLOW_SUBDOMAINS))?;
+        .get_bool_at_path(PROPERTY_ALLOW_SUBDOMAINS)
+        .map_err(ProtocolError::ValueError)?;
 
     let mut result = DataTriggerExecutionResult::default();
     let full_domain_name = normalized_label;
@@ -88,8 +102,11 @@ where
             result.add_error(err.into());
         }
 
-        if let Some(JsonValue::String(ref id)) = records.get(PROPERTY_DASH_UNIQUE_IDENTITY_ID) {
-            if id != &owner_id {
+        if let Some(id) = records
+            .get_optional_identifier(PROPERTY_DASH_UNIQUE_IDENTITY_ID)
+            .map_err(ProtocolError::ValueError)?
+        {
+            if id != owner_id {
                 let err = create_error(
                     context,
                     dt_create,
@@ -102,8 +119,11 @@ where
             }
         }
 
-        if let Some(JsonValue::String(ref id)) = records.get(PROPERTY_DASH_ALIAS_IDENTITY_ID) {
-            if id != &owner_id {
+        if let Some(id) = records
+            .get_optional_identifier(PROPERTY_DASH_ALIAS_IDENTITY_ID)
+            .map_err(ProtocolError::ValueError)?
+        {
+            if id != owner_id {
                 let err = create_error(
                     context,
                     dt_create,
@@ -132,20 +152,24 @@ where
         let parent_domain_label = parent_domain_segments.next().unwrap().to_string();
         let grand_parent_domain_name = parent_domain_segments.collect::<Vec<&str>>().join(".");
 
-        let documents: Vec<Document> = context
+        let documents_data = context
             .state_repository
             .fetch_documents(
                 &context.data_contract.id,
-                &dt_create.base.document_type,
+                &dt_create.base.document_type_name,
                 json!({
                     "where" : [
                         ["normalizedParentDomainName", "==", grand_parent_domain_name],
                         ["normalizedLabel", "==", parent_domain_label]
                     ]
                 }),
-                context.state_transition_execution_context,
+                Some(context.state_transition_execution_context),
             )
             .await?;
+        let documents: Vec<Document> = documents_data
+            .into_iter()
+            .map(|d| d.try_into().map_err(Into::<ProtocolError>::into))
+            .collect::<Result<Vec<Document>, ProtocolError>>()?;
 
         if !is_dry_run {
             if documents.is_empty() {
@@ -155,6 +179,7 @@ where
                     "Parent domain is not present".to_string(),
                 );
                 result.add_error(err.into());
+                return Ok(result);
             }
             let parent_domain = &documents[0];
 
@@ -169,10 +194,8 @@ where
             }
 
             if (!parent_domain
-                .data
-                .get_value(PROPERTY_ALLOW_SUBDOMAINS)?
-                .as_bool()
-                .unwrap())
+                .properties
+                .get_bool_at_path(PROPERTY_ALLOW_SUBDOMAINS)?)
                 && context.owner_id != &parent_domain.owner_id
             {
                 let err = create_error(
@@ -191,7 +214,7 @@ where
 
     let salted_domain_hash = hash(salted_domain_buffer);
 
-    let preorder_documents: Vec<Document> = context
+    let preorder_documents_data = context
         .state_repository
         .fetch_documents(
             &context.data_contract.id,
@@ -200,9 +223,13 @@ where
                 //? should this be a base64 encoded
                 "where" : [["saltedDomainHash", "==", salted_domain_hash]]
             }),
-            context.state_transition_execution_context,
+            Some(context.state_transition_execution_context),
         )
         .await?;
+    let preorder_documents: Vec<Document> = preorder_documents_data
+        .into_iter()
+        .map(|d| d.try_into().map_err(Into::<ProtocolError>::into))
+        .collect::<Result<Vec<Document>, ProtocolError>>()?;
 
     if is_dry_run {
         return Ok(result);
@@ -222,9 +249,10 @@ where
 
 #[cfg(test)]
 mod test {
+
     use crate::{
         data_trigger::DataTriggerExecutionContext,
-        document::{document_transition::Action, Document},
+        document::document_transition::Action,
         state_repository::MockStateRepositoryLike,
         state_transition::state_transition_execution_context::StateTransitionExecutionContext,
         tests::{
@@ -252,7 +280,7 @@ mod test {
         let first_transition = transitions.get(0).expect("transition should be present");
 
         state_repository
-            .expect_fetch_documents::<Document>()
+            .expect_fetch_documents()
             .returning(|_, _, _, _| Ok(vec![]));
         transition_execution_context.enable_dry_run();
 

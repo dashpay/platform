@@ -59,7 +59,7 @@ use crate::drive::object_size_info::DocumentInfo::{
     DocumentEstimatedAverageSize, DocumentWithoutSerialization,
 };
 use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
-use dpp::document::document_stub::DocumentStub;
+use dpp::document::Document;
 
 use crate::drive::grove_operations::BatchDeleteApplyType::{
     StatefulBatchDelete, StatelessBatchDelete,
@@ -73,8 +73,10 @@ use crate::error::drive::DriveError;
 use crate::error::fee::FeeError;
 use crate::error::Error;
 use crate::fee::calculate_fee;
-use crate::fee::op::DriveOperation;
+use crate::fee::op::LowLevelDriveOperation;
+
 use crate::fee::result::FeeResult;
+use crate::fee_pools::epochs::Epoch;
 
 impl Drive {
     /// Deletes a document and returns the associated fee.
@@ -88,7 +90,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let estimated_costs_only_with_layer_info = if apply {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
         } else {
@@ -143,7 +145,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let estimated_costs_only_with_layer_info = if apply {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
         } else {
@@ -157,7 +159,7 @@ impl Drive {
                 transaction,
                 &mut drive_operations,
             )?
-            .ok_or(Error::Document(DocumentError::ContractNotFound()))?;
+            .ok_or(Error::Document(DocumentError::ContractNotFound))?;
 
         let contract = &contract_fetch_info.contract;
 
@@ -187,7 +189,7 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         let batch_operations = self.delete_document_for_contract_with_named_type_operations(
             document_id,
@@ -198,7 +200,7 @@ impl Drive {
             &mut estimated_costs_only_with_layer_info,
             transaction,
         )?;
-        self.apply_batch_drive_operations(
+        self.apply_batch_low_level_drive_operations(
             estimated_costs_only_with_layer_info,
             transaction,
             batch_operations,
@@ -246,7 +248,7 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        batch_operations: &mut Vec<DriveOperation>,
+        batch_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         let apply_type = if estimated_costs_only_with_layer_info.is_some() {
             StatelessBatchDelete {
@@ -286,13 +288,13 @@ impl Drive {
         unique: bool,
         any_fields_null: bool,
         storage_flags: &Option<&StorageFlags>,
-        previous_batch_operations: &Option<&mut Vec<DriveOperation>>,
+        previous_batch_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         event_id: [u8; 32],
         transaction: TransactionArg,
-        batch_operations: &mut Vec<DriveOperation>,
+        batch_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         let mut key_info_path = index_path_info.convert_to_key_info_path();
 
@@ -380,13 +382,13 @@ impl Drive {
         index_level: &IndexLevel,
         mut any_fields_null: bool,
         storage_flags: &Option<&StorageFlags>,
-        previous_batch_operations: &Option<&mut Vec<DriveOperation>>,
+        previous_batch_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         event_id: [u8; 32],
         transaction: TransactionArg,
-        batch_operations: &mut Vec<DriveOperation>,
+        batch_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         let sub_level_index_count = index_level.sub_index_levels.len() as u32;
 
@@ -497,12 +499,12 @@ impl Drive {
     fn remove_indices_for_top_index_level_for_contract_operations(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
-        previous_batch_operations: &Option<&mut Vec<DriveOperation>>,
+        previous_batch_operations: &Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        batch_operations: &mut Vec<DriveOperation>,
+        batch_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         let document_type = document_and_contract_info.document_type;
         let index_level = &document_type.index_structure;
@@ -628,18 +630,25 @@ impl Drive {
     }
 
     /// Prepares the operations for deleting a document.
-    pub(crate) fn delete_document_for_contract_with_named_type_operations(
+    pub(crate) fn delete_document_for_contract_id_with_named_type_operations(
         &self,
         document_id: [u8; 32],
-        contract: &Contract,
+        contract_id: [u8; 32],
         document_type_name: &str,
         owner_id: Option<[u8; 32]>,
-        previous_batch_operations: Option<&mut Vec<DriveOperation>>,
+        epoch: &Epoch,
+        previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-    ) -> Result<Vec<DriveOperation>, Error> {
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        let mut operations = vec![];
+        let Some(contract_fetch_info) = self.get_contract_with_fetch_info_and_add_to_operations(contract_id, Some(epoch), transaction, &mut operations)? else {
+            return Err(Error::Document(DocumentError::ContractNotFound))
+        };
+
+        let contract = &contract_fetch_info.contract;
         let document_type = contract.document_type_for_name(document_type_name)?;
         self.delete_document_for_contract_operations(
             document_id,
@@ -653,19 +662,45 @@ impl Drive {
     }
 
     /// Prepares the operations for deleting a document.
+    pub(crate) fn delete_document_for_contract_with_named_type_operations(
+        &self,
+        document_id: [u8; 32],
+        contract: &Contract,
+        document_type_name: &str,
+        owner_id: Option<[u8; 32]>,
+        previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        let document_type = contract.document_type_for_name(document_type_name)?;
+        self.delete_document_for_contract_operations(
+            document_id,
+            contract,
+            document_type,
+            owner_id,
+            previous_batch_operations,
+            estimated_costs_only_with_layer_info,
+            transaction,
+        )
+    }
+
+    //todo: remove owner_id?
+    /// Prepares the operations for deleting a document.
     pub(crate) fn delete_document_for_contract_operations(
         &self,
         document_id: [u8; 32],
         contract: &Contract,
         document_type: &DocumentType,
         owner_id: Option<[u8; 32]>,
-        previous_batch_operations: Option<&mut Vec<DriveOperation>>,
+        previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-    ) -> Result<Vec<DriveOperation>, Error> {
-        let mut batch_operations: Vec<DriveOperation> = vec![];
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
 
         if !document_type.documents_mutable {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableDocument(
@@ -722,9 +757,9 @@ impl Drive {
         } else if let Some(document_element) = &document_element {
             if let Element::Item(data, element_flags) = document_element {
                 //todo: remove this hack
-                let document = match DocumentStub::from_cbor(data.as_slice(), None, owner_id) {
+                let document = match Document::from_cbor(data.as_slice(), None, owner_id) {
                     Ok(document) => Ok(document),
-                    Err(_) => DocumentStub::from_bytes(data.as_slice(), document_type),
+                    Err(_) => Document::from_bytes(data.as_slice(), document_type),
                 }?;
                 let storage_flags = StorageFlags::map_cow_some_element_flags_ref(element_flags)?;
                 DocumentWithoutSerialization((document, storage_flags))
@@ -790,7 +825,7 @@ mod tests {
     use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use crate::fee_pools::epochs::Epoch;
     use crate::query::DriveQuery;
-    use dpp::document::document_stub::DocumentStub;
+    use dpp::document::Document;
     use dpp::util::serializer;
 
     #[test]
@@ -818,7 +853,7 @@ mod tests {
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let document =
-            DocumentStub::from_cbor(&person_serialized_document, None, Some(random_owner_id))
+            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
                 .expect("expected to deserialize the document");
 
         let document_type = contract
@@ -916,7 +951,7 @@ mod tests {
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let document =
-            DocumentStub::from_cbor(&person_serialized_document, None, Some(random_owner_id))
+            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
                 .expect("expected to deserialize the document");
 
         let document_type = contract
@@ -1030,7 +1065,7 @@ mod tests {
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let document =
-            DocumentStub::from_cbor(&person_serialized_document, None, Some(random_owner_id))
+            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
                 .expect("expected to deserialize the document");
 
         let document_type = contract
@@ -1069,7 +1104,7 @@ mod tests {
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let document =
-            DocumentStub::from_cbor(&person_serialized_document, None, Some(random_owner_id))
+            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
                 .expect("expected to deserialize the document");
 
         let document_type = contract
@@ -1217,7 +1252,7 @@ mod tests {
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let document =
-            DocumentStub::from_cbor(&person_serialized_document, None, Some(random_owner_id))
+            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
                 .expect("expected to deserialize the document");
 
         let document_type = contract
@@ -1256,7 +1291,7 @@ mod tests {
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let document =
-            DocumentStub::from_cbor(&person_serialized_document, None, Some(random_owner_id))
+            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
                 .expect("expected to deserialize the document");
 
         let document_type = contract
@@ -1334,7 +1369,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         let document =
-            DocumentStub::from_cbor(&person_serialized_document, None, Some(random_owner_id))
+            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
                 .expect("expected to deserialize the document");
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
@@ -1646,12 +1681,12 @@ mod tests {
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
-        let documents: Vec<DocumentStub> = document_hexes
+        let documents: Vec<Document> = document_hexes
             .iter()
             .map(|document_hex| {
                 let serialized_document = cbor_from_hex(document_hex.to_string());
 
-                let document = DocumentStub::from_cbor(&serialized_document, None, None)
+                let document = Document::from_cbor(&serialized_document, None, None)
                     .expect("expected to deserialize the document");
 
                 let document_type = contract
@@ -1691,8 +1726,8 @@ mod tests {
             ],
         });
 
-        let query_cbor =
-            serializer::value_to_cbor(query_json, None).expect("expected to serialize to cbor");
+        let query_cbor = serializer::serializable_value_to_cbor(&query_json, None)
+            .expect("expected to serialize to cbor");
 
         drive
             .grove
@@ -1716,10 +1751,10 @@ mod tests {
 
         drive
             .delete_document_for_contract(
-                documents.get(0).unwrap().id,
+                documents.get(0).unwrap().id.to_buffer(),
                 &contract,
                 "niceDocument",
-                Some(documents.get(0).unwrap().owner_id),
+                Some(documents.get(0).unwrap().owner_id.to_buffer()),
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
@@ -1732,8 +1767,8 @@ mod tests {
             ],
         });
 
-        let query_cbor =
-            serializer::value_to_cbor(query_json, None).expect("expected to serialize to cbor");
+        let query_cbor = serializer::serializable_value_to_cbor(&query_json, None)
+            .expect("expected to serialize to cbor");
 
         let (results, _, _) = drive
             .query_documents_cbor_from_contract(

@@ -142,7 +142,7 @@ impl TenderdashAbci for Platform {
         // If last synced Core block height is not set instead of scanning
         // number of blocks for asset unlock transactions scan only one
         // on Core chain locked height by setting last_synced_core_height to the same value
-        let last_synced_core_height = if request.last_synced_core_height == 0 {
+        let _last_synced_core_height = if request.last_synced_core_height == 0 {
             block_execution_context.block_info.core_chain_locked_height
         } else {
             request.last_synced_core_height
@@ -151,10 +151,12 @@ impl TenderdashAbci for Platform {
         self.block_execution_context
             .replace(Some(block_execution_context));
 
-        self.update_broadcasted_withdrawal_transaction_statuses(
-            last_synced_core_height,
-            transaction,
-        )?;
+        // TODO: This code is not stable and blocking WASM-DPP integration and v0.24 testing
+        //   Must be enabled and accomplished when we come back to withdrawals
+        // self.update_broadcasted_withdrawal_transaction_statuses(
+        //     last_synced_core_height,
+        //     transaction,
+        // )?;
 
         let unsigned_withdrawal_transaction_bytes = self
             .fetch_and_prepare_unsigned_withdrawal_transactions(
@@ -255,7 +257,9 @@ mod tests {
         use dashcore_rpc::dashcore::BlockHash;
         use dpp::contracts::withdrawals_contract;
         use dpp::data_contract::DriveContractExt;
+        use dpp::identity::core_script::CoreScript;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
+        use dpp::platform_value::{platform_value, BinaryData};
         use dpp::prelude::Identifier;
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
         use dpp::tests::fixtures::get_withdrawal_document_fixture;
@@ -314,17 +318,19 @@ mod tests {
                 let document = get_withdrawal_document_fixture(
                     &data_contract,
                     owner_id,
-                    json!({
-                        "amount": 1000,
-                        "coreFeePerByte": 1,
-                        "pooling": Pooling::Never,
-                        "outputScript": (0..23).collect::<Vec<u8>>(),
-                        "status": withdrawals_contract::WithdrawalStatus::POOLED,
-                        "transactionIndex": 1,
-                        "transactionSignHeight": 93,
-                        "transactionId": tx_id,
+                    platform_value!({
+                        "amount": 1000u64,
+                        "coreFeePerByte": 1u32,
+                        "pooling": Pooling::Never as u8,
+                        "outputScript": CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
+                        "status": withdrawals_contract::WithdrawalStatus::POOLED as u8,
+                        "transactionIndex": 1u64,
+                        "transactionSignHeight": 93u64,
+                        "transactionId": BinaryData::new(tx_id),
                     }),
-                );
+                    None,
+                )
+                .expect("expected withdrawal document");
 
                 let document_type = data_contract
                     .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)

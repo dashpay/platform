@@ -22,7 +22,7 @@ function obtainSelfSignedCertificateTaskFactory(
     return new Listr([
       {
         task: async (ctx) => {
-          const platformConfigs = configGroup.filter((config) => config.has('platform'));
+          const platformConfigs = configGroup.filter((config) => config.get('platform.enable'));
 
           const subTasks = platformConfigs.map((config) => ({
             title: `Create certificate for ${config.getName()}`,

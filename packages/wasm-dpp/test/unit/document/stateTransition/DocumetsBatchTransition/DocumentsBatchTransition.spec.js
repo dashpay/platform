@@ -5,11 +5,10 @@ const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 const DocumentFactoryJs = require('@dashevo/dpp/lib/document/DocumentFactory');
 const { default: loadWasmDpp } = require('../../../../../dist');
-const newDocumentsContainer = require('../../../../../lib/test/utils/newDocumentsContainer');
 
 let DocumentFactory;
 let DataContract;
-let Document;
+let ExtendedDocument;
 let DocumentValidator;
 let ProtocolVersionValidator;
 
@@ -25,7 +24,7 @@ describe('DocumentsBatchTransition', () => {
   beforeEach(async () => {
     ({
       ProtocolVersionValidator, DocumentValidator, DocumentFactory, DataContract,
-      Document,
+      ExtendedDocument,
     } = await loadWasmDpp());
   });
 
@@ -35,7 +34,7 @@ describe('DocumentsBatchTransition', () => {
 
     documentsJs = getDocumentsFixture(dataContractJs);
     documents = documentsJs.map((d) => {
-      const doc = new Document(d.toObject(), dataContract);
+      const doc = new ExtendedDocument(d.toObject(), dataContract);
       doc.setEntropy(d.entropy);
       return doc;
     });
@@ -49,20 +48,12 @@ describe('DocumentsBatchTransition', () => {
       create: documentsJs,
     });
 
-    stateTransition = factory.createStateTransition(await newDocumentsContainer({
+    stateTransition = factory.createStateTransition({
       create: documents,
-    }));
-  });
-
-  describe('#getProtocolVersion', () => {
-    it('should return the current protocol version', () => {
-      const result = stateTransitionJs.getProtocolVersion();
-
-      expect(result).to.equal(protocolVersion.latestVersion);
     });
   });
 
-  describe('#getProtocolVersion - Rust', () => {
+  describe('#getProtocolVersion', () => {
     it('should return the current protocol version', () => {
       const result = stateTransition.getProtocolVersion();
 
@@ -72,14 +63,6 @@ describe('DocumentsBatchTransition', () => {
 
   describe('#getType', () => {
     it('should return State Transition type', () => {
-      const result = stateTransitionJs.getType();
-
-      expect(result).to.equal(stateTransitionTypes.DOCUMENTS_BATCH);
-    });
-  });
-
-  describe('#getType - Rust', () => {
-    it('should return State Transition type', () => {
       const result = stateTransition.getType();
 
       expect(result).to.equal(stateTransitionTypes.DOCUMENTS_BATCH);
@@ -88,33 +71,14 @@ describe('DocumentsBatchTransition', () => {
 
   describe('#getTransitions', () => {
     it('should return document transitions', () => {
-      const result = stateTransitionJs.getTransitions();
+      const result = stateTransition.getTransitions().map((t) => t.toObject());
 
-      expect(result).to.equal(stateTransitionJs.transitions);
-    });
-  });
-
-  describe('#getTransitions - Rust', () => {
-    it('should return document transitions', () => {
-      const transitionsJs = stateTransitionJs.getTransitions().map((t) => t.toJSON());
-      const transitions = stateTransition.getTransitions().map((t) => t.toJSON());
-      expect(transitionsJs).to.deep.equal(transitions);
+      expect(result).to.deep.equal(stateTransitionJs.getTransitions().map((t) => t.toObject()));
     });
   });
 
   describe('#toJSON', () => {
     it('should return State Transition as JSON', () => {
-      expect(stateTransitionJs.toJSON()).to.deep.equal({
-        protocolVersion: protocolVersion.latestVersion,
-        type: stateTransitionTypes.DOCUMENTS_BATCH,
-        ownerId: documentsJs[0].getOwnerId().toString(),
-        transitions: stateTransitionJs.getTransitions().map((d) => d.toJSON()),
-        signaturePublicKeyId: undefined,
-        signature: undefined,
-      });
-    });
-
-    it('should return State Transition as JSON - Rust', () => {
       expect(stateTransition.toJSON()).to.deep.equal({
         protocolVersion: protocolVersion.latestVersion,
         type: stateTransitionTypes.DOCUMENTS_BATCH,
@@ -128,7 +92,7 @@ describe('DocumentsBatchTransition', () => {
 
   describe('#toObject', () => {
     it('should return State Transition as plain object', () => {
-      expect(stateTransitionJs.toObject()).to.deep.equal({
+      expect(stateTransition.toObject()).to.deep.equal({
         protocolVersion: protocolVersion.latestVersion,
         type: stateTransitionTypes.DOCUMENTS_BATCH,
         ownerId: documentsJs[0].getOwnerId(),
@@ -136,13 +100,6 @@ describe('DocumentsBatchTransition', () => {
         signaturePublicKeyId: undefined,
         signature: undefined,
       });
-    });
-
-    it('should return State Transition as plain object -  Rust', () => {
-      const rawObject = stateTransition.toObject();
-      const rawObjectJs = stateTransitionJs.toObject();
-
-      expect(rawObject).to.deep.equal(rawObjectJs);
     });
   });
 
@@ -166,14 +123,6 @@ describe('DocumentsBatchTransition', () => {
 
   describe('#getOwnerId', () => {
     it('should return owner id', async () => {
-      const result = stateTransitionJs.getOwnerId();
-
-      expect(result).to.deep.equal(getDocumentsFixture.ownerId);
-    });
-  });
-
-  describe('#getOwnerId - Rust', () => {
-    it('should return owner id', async () => {
       const result = stateTransition.getOwnerId();
 
       expect(result.toBuffer()).to.deep.equal(getDocumentsFixture.ownerId.toBuffer());
@@ -181,16 +130,6 @@ describe('DocumentsBatchTransition', () => {
   });
 
   describe('#getModifiedDataIds', () => {
-    it('should return ids of affected documents', () => {
-      const expectedIds = documentsJs.map((doc) => doc.getId());
-      const result = stateTransitionJs.getModifiedDataIds();
-
-      expect(result.length).to.be.equal(10);
-      expect(result).to.be.deep.equal(expectedIds);
-    });
-  });
-
-  describe('#getModifiedDataIds - Rust', () => {
     it('should return ids of affected documents', () => {
       const expectedIds = documentsJs.map((doc) => doc.getId().toBuffer());
       const result = stateTransition.getModifiedDataIds().map((id) => id.toBuffer());
@@ -202,35 +141,17 @@ describe('DocumentsBatchTransition', () => {
 
   describe('#isDataContractStateTransition', () => {
     it('should return false', () => {
-      expect(stateTransitionJs.isDataContractStateTransition()).to.be.false();
-    });
-  });
-
-  describe('#isDataContractStateTransition - Rust', () => {
-    it('should return false', () => {
       expect(stateTransition.isDataContractStateTransition()).to.be.false();
     });
   });
 
   describe('#isDocumentStateTransition', () => {
     it('should return true', () => {
-      expect(stateTransitionJs.isDocumentStateTransition()).to.be.true();
-    });
-  });
-
-  describe('#isDocumentStateTransition - Rust', () => {
-    it('should return true', () => {
       expect(stateTransition.isDocumentStateTransition()).to.be.true();
     });
   });
 
   describe('#isIdentityStateTransition', () => {
-    it('should return false', () => {
-      expect(stateTransitionJs.isIdentityStateTransition()).to.be.false();
-    });
-  });
-
-  describe('#isIdentityStateTransition - Rust', () => {
     it('should return false', () => {
       expect(stateTransition.isIdentityStateTransition()).to.be.false();
     });

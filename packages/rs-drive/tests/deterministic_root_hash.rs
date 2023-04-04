@@ -38,7 +38,7 @@ use std::option::Option::None;
 #[cfg(feature = "full")]
 use dpp::data_contract::DriveContractExt;
 #[cfg(feature = "full")]
-use dpp::document::document_stub::DocumentStub;
+use dpp::document::Document;
 #[cfg(feature = "full")]
 use dpp::util::serializer;
 #[cfg(feature = "full")]
@@ -143,10 +143,12 @@ pub fn add_domains_to_contract(
     let domains = Domain::random_domains_in_parent(count, seed, "dash");
     for domain in domains {
         let value = serde_json::to_value(domain).expect("serialized domain");
-        let document_cbor =
-            serializer::value_to_cbor(value, Some(drive::drive::defaults::PROTOCOL_VERSION))
-                .expect("expected to serialize to cbor");
-        let document = DocumentStub::from_cbor(document_cbor.as_slice(), None, None)
+        let document_cbor = serializer::serializable_value_to_cbor(
+            &value,
+            Some(drive::drive::defaults::PROTOCOL_VERSION),
+        )
+        .expect("expected to serialize to cbor");
+        let document = Document::from_cbor(document_cbor.as_slice(), None, None)
             .expect("document should be properly deserialized");
         let document_type = contract
             .document_type_for_name("domain")

@@ -7,7 +7,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::calculate_fee;
-use crate::fee::op::DriveOperation;
+use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::result::FeeResult;
 use grovedb::Element::Item;
 use grovedb::TransactionArg;
@@ -21,7 +21,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
     ) -> Result<Option<u64>, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.fetch_identity_revision_operations(
             identity_id,
             apply,
@@ -39,7 +39,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
     ) -> Result<(Option<u64>, FeeResult), Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let value = self.fetch_identity_revision_operations(
             identity_id,
             apply,
@@ -57,7 +57,7 @@ impl Drive {
         identity_id: [u8; 32],
         apply: bool,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<Option<u64>, Error> {
         let direct_query_type = if apply {
             DirectQueryType::StatefulDirectQuery

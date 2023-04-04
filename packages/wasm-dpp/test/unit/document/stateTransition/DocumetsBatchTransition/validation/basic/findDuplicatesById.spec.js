@@ -1,16 +1,20 @@
-const findDuplicateDocuments = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/validation/basic/findDuplicatesById');
+const getDocumentTransitionsFixture = require('../../../../../../../lib/test/fixtures/getDocumentTransitionsFixture');
+const { default: loadWasmDpp } = require('../../../../../../../dist');
 
-const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
+let findDuplicatesById;
 
 describe('findDuplicatesById', () => {
   let rawDocumentTransitions;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    ({
+      findDuplicatesById,
+    } = await loadWasmDpp());
     rawDocumentTransitions = getDocumentTransitionsFixture().map((t) => t.toObject());
   });
 
   it('should return empty array if there are no duplicated Documents', () => {
-    const result = findDuplicateDocuments(rawDocumentTransitions);
+    const result = findDuplicatesById(rawDocumentTransitions);
 
     expect(result).to.be.an('array');
     expect(result).to.have.lengthOf(0);
@@ -19,7 +23,7 @@ describe('findDuplicatesById', () => {
   it('should return duplicated Documents', () => {
     rawDocumentTransitions.push(rawDocumentTransitions[0]);
 
-    const result = findDuplicateDocuments(rawDocumentTransitions);
+    const result = findDuplicatesById(rawDocumentTransitions);
 
     expect(result).to.be.an('array');
     expect(result).to.have.lengthOf(2);

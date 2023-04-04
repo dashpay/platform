@@ -1,26 +1,33 @@
 use std::convert::TryInto;
 
-use anyhow::anyhow;
-use anyhow::Context;
-use json_patch::PatchOperation;
-use lazy_static::lazy_static;
-use serde_json::{json, Value as JsonValue};
-use std::sync::Arc;
-
+use crate::consensus::basic::data_contract::{
+    DataContractImmutablePropertiesUpdateError, IncompatibleDataContractSchemaError,
+};
+use crate::consensus::basic::decode::ProtocolVersionParsingError;
+use crate::consensus::basic::invalid_data_contract_version_error::InvalidDataContractVersionError;
+use crate::consensus::ConsensusError;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::validation::AsyncDataValidatorWithContext;
 use crate::{
     consensus::basic::BasicError,
     data_contract::{
         property_names as contract_property_names, state_transition::property_names,
         validation::data_contract_validator::DataContractValidator, DataContract,
     },
-    prelude::Identifier,
     state_repository::StateRepositoryLike,
     util::json_value::JsonValueExt,
     validation::{JsonSchemaValidator, SimpleValidationResult},
     version::ProtocolVersionValidator,
-    DashPlatformProtocolInitError, ProtocolError,
+    Convertible, DashPlatformProtocolInitError, ProtocolError,
 };
+use anyhow::anyhow;
+use anyhow::Context;
+use async_trait::async_trait;
+use lazy_static::lazy_static;
+use platform_value::patch::PatchOperation;
+use platform_value::Value;
+use serde_json::{json, Value as JsonValue};
+use std::sync::Arc;
 
 use super::schema_compatibility_validator::validate_schema_compatibility;
 use super::schema_compatibility_validator::DiffVAlidatorError;
@@ -60,36 +67,61 @@ where
             json_schema_validator,
         })
     }
+}
 
-    pub async fn validate(
+#[async_trait(?Send)]
+impl<SR> AsyncDataValidatorWithContext for DataContractUpdateTransitionBasicValidator<SR>
+where
+    SR: StateRepositoryLike,
+{
+    type Item = Value;
+
+    async fn validate(
         &self,
-        raw_state_transition: &JsonValue,
+        raw_state_transition: &Value,
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<SimpleValidationResult, ProtocolError> {
         let mut validation_result = SimpleValidationResult::default();
 
-        let result = self.json_schema_validator.validate(raw_state_transition)?;
+        let result = self.json_schema_validator.validate(
+            &raw_state_transition
+                .try_to_validating_json()
+                .map_err(ProtocolError::ValueError)?,
+        )?;
         if !result.is_valid() {
             return Ok(result);
         }
 
-        let protocol_version = raw_state_transition
-            .get_u64(property_names::PROTOCOL_VERSION)
-            .with_context(|| "invalid protocol version")? as u32;
+        let protocol_version =
+            match raw_state_transition.get_integer(property_names::PROTOCOL_VERSION) {
+                Ok(v) => v,
+                Err(parsing_error) => {
+                    return Ok(SimpleValidationResult::new_with_errors(vec![
+                        ConsensusError::ProtocolVersionParsingError(
+                            ProtocolVersionParsingError::new(parsing_error.into()),
+                        ),
+                    ]))
+                }
+            };
+
         let result = self.protocol_version_validator.validate(protocol_version)?;
         if !result.is_valid() {
             return Ok(result);
         }
 
         // Validate Data Contract
-        let raw_data_contract = raw_state_transition.get_value(property_names::DATA_CONTRACT)?;
-        let result = self.data_contract_validator.validate(raw_data_contract)?;
+        let new_data_contract_object =
+            raw_state_transition.get_value(property_names::DATA_CONTRACT)?;
+        let result = self
+            .data_contract_validator
+            .validate(new_data_contract_object)?;
         if !result.is_valid() {
             return Ok(result);
         }
 
-        let raw_data_contract_id = raw_data_contract.get_bytes(contract_property_names::ID)?;
-        let data_contract_id = Identifier::from_bytes(&raw_data_contract_id)?;
+        let data_contract_id = new_data_contract_object
+            .get_identifier(contract_property_names::ID)
+            .map_err(ProtocolError::ValueError)?;
 
         if execution_context.is_dry_run() {
             return Ok(result);
@@ -98,7 +130,7 @@ where
         // Data Contract should exists
         let existing_data_contract: DataContract = match self
             .state_repository
-            .fetch_data_contract(&data_contract_id, execution_context)
+            .fetch_data_contract(&data_contract_id, Some(execution_context))
             .await?
             .map(TryInto::try_into)
             .transpose()
@@ -112,72 +144,61 @@ where
             }
         };
 
-        let new_version = raw_data_contract.get_u64(contract_property_names::VERSION)? as u32;
+        let new_version = new_data_contract_object.get_integer(contract_property_names::VERSION)?;
         let old_version = existing_data_contract.version;
         if (new_version - old_version) != 1 {
-            validation_result.add_error(BasicError::InvalidDataContractVersionError {
-                expected_version: old_version + 1,
-                version: new_version,
-            })
+            validation_result.add_error(BasicError::InvalidDataContractVersionError(
+                InvalidDataContractVersionError::new(old_version + 1, new_version),
+            ))
         }
-        let raw_existing_data_contract = existing_data_contract.to_object(false)?;
+        let mut existing_data_contract_object = existing_data_contract.to_object()?;
 
-        let mut old_base_data_contract = raw_existing_data_contract;
-        old_base_data_contract.remove(contract_property_names::DEFINITIONS)?;
-        old_base_data_contract.remove(contract_property_names::DOCUMENTS)?;
-        old_base_data_contract.remove(contract_property_names::VERSION)?;
+        existing_data_contract_object
+            .remove_many(&vec![
+                contract_property_names::DEFINITIONS,
+                contract_property_names::DOCUMENTS,
+                contract_property_names::VERSION,
+            ])
+            .map_err(ProtocolError::ValueError)?;
 
-        replace_bytes_with_hex_string(
-            &[
-                contract_property_names::ID,
-                contract_property_names::OWNER_ID,
-            ],
-            &mut old_base_data_contract,
-        )?;
-
-        let mut new_base_data_contract = raw_data_contract.clone();
-        new_base_data_contract.remove(contract_property_names::DEFINITIONS)?;
+        let mut new_base_data_contract = new_data_contract_object.clone();
+        new_base_data_contract
+            .remove(contract_property_names::DEFINITIONS)
+            .ok();
         new_base_data_contract.remove(contract_property_names::DOCUMENTS)?;
         new_base_data_contract.remove(contract_property_names::VERSION)?;
 
-        replace_bytes_with_hex_string(
-            &[
-                contract_property_names::ID,
-                contract_property_names::OWNER_ID,
-            ],
-            &mut new_base_data_contract,
-        )?;
-
         let base_data_contract_diff =
-            json_patch::diff(&old_base_data_contract, &new_base_data_contract);
+            platform_value::patch::diff(&existing_data_contract_object, &new_base_data_contract);
 
         for diff in base_data_contract_diff.0.iter() {
             let (operation, property_name) = get_operation_and_property_name(diff);
-            validation_result.add_error(BasicError::DataContractImmutablePropertiesUpdateError {
-                operation: operation.to_owned(),
-                field_path: property_name.to_owned(),
-            })
+            validation_result.add_error(BasicError::DataContractImmutablePropertiesUpdateError(
+                DataContractImmutablePropertiesUpdateError::new(
+                    operation.to_owned(),
+                    property_name.to_owned(),
+                    existing_data_contract_object
+                        .get(property_name.split_at(1).1)?
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                    new_base_data_contract
+                        .get(property_name.split_at(1).1)?
+                        .cloned()
+                        .unwrap_or(Value::Null),
+                ),
+            ))
         }
         if !validation_result.is_valid() {
             return Ok(validation_result);
         }
 
-        // check indices are not changes
-        let new_documents = raw_data_contract
-            .get_value("documents")?
-            .as_object()
-            .ok_or_else(|| anyhow!("the 'documents' property is not an array"))?;
-        let result = validate_indices_are_backward_compatible(
-            existing_data_contract.documents(),
-            new_documents,
-        )?;
-        if !result.is_valid() {
-            return Ok(result);
-        }
-
         // Schema should be backward compatible
-        let old_schema = existing_data_contract.documents();
-        let new_schema = raw_data_contract.get_value("documents")?;
+        let old_schema = &existing_data_contract.documents;
+        let new_schema: JsonValue = new_data_contract_object
+            .get_value("documents")?
+            .clone()
+            .try_into()
+            .map_err(ProtocolError::ValueError)?;
 
         for (document_type, document_schema) in old_schema.iter() {
             let new_document_schema = new_schema.get(document_type).unwrap_or(&EMPTY_JSON);
@@ -186,19 +207,41 @@ where
                 Ok(_) => {}
                 Err(DiffVAlidatorError::SchemaCompatibilityError { diffs }) => {
                     let (operation_name, property_name) =
-                        get_operation_and_property_name(&diffs[0]);
-                    validation_result.add_error(BasicError::IncompatibleDataContractSchemaError {
-                        data_contract_id: existing_data_contract.id,
-                        operation: operation_name.to_owned(),
-                        field_path: property_name.to_owned(),
-                        old_schema: document_schema.clone(),
-                        new_schema: new_document_schema.clone(),
-                    });
+                        get_operation_and_property_name_json(&diffs[0]);
+                    validation_result.add_error(BasicError::IncompatibleDataContractSchemaError(
+                        IncompatibleDataContractSchemaError::new(
+                            existing_data_contract.id,
+                            operation_name.to_owned(),
+                            property_name.to_owned(),
+                            document_schema.clone(),
+                            new_document_schema.clone(),
+                        ),
+                    ));
                 }
                 Err(DiffVAlidatorError::DataStructureError(e)) => {
                     return Err(ProtocolError::ParsingError(e.to_string()))
                 }
             }
+        }
+
+        if !validation_result.is_valid() {
+            return Ok(validation_result);
+        }
+
+        // check indices are not changed
+        let new_documents: JsonValue = new_data_contract_object
+            .get_value("documents")
+            .and_then(|a| a.clone().try_into())
+            .map_err(ProtocolError::ValueError)?;
+        let new_documents = new_documents
+            .as_object()
+            .ok_or_else(|| anyhow!("the 'documents' property is not an array"))?;
+        let result = validate_indices_are_backward_compatible(
+            existing_data_contract.documents.iter(),
+            new_documents,
+        )?;
+        if !result.is_valid() {
+            return Ok(result);
         }
 
         Ok(validation_result)
@@ -227,6 +270,17 @@ fn get_operation_and_property_name(p: &PatchOperation) -> (&'static str, &str) {
         PatchOperation::Replace(ref o) => ("replace", o.path.as_str()),
         PatchOperation::Move(ref o) => ("move", o.path.as_str()),
         PatchOperation::Test(ref o) => ("test", o.path.as_str()),
+    }
+}
+
+fn get_operation_and_property_name_json(p: &json_patch::PatchOperation) -> (&'static str, &str) {
+    match &p {
+        json_patch::PatchOperation::Add(ref o) => ("add json", o.path.as_str()),
+        json_patch::PatchOperation::Copy(ref o) => ("copy json", o.path.as_str()),
+        json_patch::PatchOperation::Remove(ref o) => ("remove json", o.path.as_str()),
+        json_patch::PatchOperation::Replace(ref o) => ("replace json", o.path.as_str()),
+        json_patch::PatchOperation::Move(ref o) => ("move json", o.path.as_str()),
+        json_patch::PatchOperation::Test(ref o) => ("test json", o.path.as_str()),
     }
 }
 

@@ -1,12 +1,10 @@
+use platform_value::Value;
 use std::collections::HashMap;
-
-use serde_json::Value;
-use serde_json::Value::Null;
 
 use crate::consensus::basic::identity::MissingMasterPublicKeyError;
 use crate::identity::validation::TPublicKeysValidator;
 use crate::identity::{IdentityPublicKey, Purpose, SecurityLevel};
-use crate::validation::ValidationResult;
+use crate::validation::SimpleValidationResult;
 use crate::{DashPlatformProtocolInitError, NonConsensusError};
 
 #[derive(Eq, Hash, PartialEq)]
@@ -22,19 +20,26 @@ impl TPublicKeysValidator for RequiredPurposeAndSecurityLevelValidator {
     fn validate_keys(
         &self,
         raw_public_keys: &[Value],
-    ) -> Result<ValidationResult<()>, NonConsensusError> {
-        let mut result = ValidationResult::default();
+    ) -> Result<SimpleValidationResult, NonConsensusError> {
+        let mut result = SimpleValidationResult::default();
 
         let mut key_purposes_and_levels_count: HashMap<PurposeKey, usize> = HashMap::new();
 
-        for raw_public_key in raw_public_keys.iter().filter(|pk| {
-            if let Some(disabled_at) = pk.get("disabledAt") {
-                disabled_at == &Null
-            } else {
-                true
-            }
-        }) {
-            let public_key: IdentityPublicKey = serde_json::from_value(raw_public_key.clone())?;
+        for raw_public_key in raw_public_keys
+            .iter()
+            .filter_map(|pk| {
+                match pk
+                    .get_optional_integer::<u64>("disabledAt")
+                    .map_err(NonConsensusError::ValueError)
+                {
+                    Ok(Some(_)) => None,
+                    Ok(None) => Some(Ok(pk)),
+                    Err(e) => Some(Err(e)),
+                }
+            })
+            .collect::<Result<Vec<_>, NonConsensusError>>()?
+        {
+            let public_key: IdentityPublicKey = platform_value::from_value(raw_public_key.clone())?;
             let combo = PurposeKey {
                 purpose: public_key.purpose,
                 security_level: public_key.security_level,

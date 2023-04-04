@@ -37,14 +37,14 @@ module.exports = {
   },
   core: {
     docker: {
-      image: 'dashpay/dashd:19.0.0-beta.6',
+      image: 'dashpay/dashd:19.0.0-rc.7',
     },
     p2p: {
-      port: 20001,
+      port: 9999,
       seeds: [],
     },
     rpc: {
-      port: 20002,
+      port: 9998,
       user: 'dashrpc',
       password: 'rpcpassword',
       allowIps: [
@@ -74,16 +74,18 @@ module.exports = {
         image: 'dashpay/sentinel:1.7.1',
       },
     },
+    devnet: {
+      name: null,
+      minimumDifficultyBlocks: 0,
+      powTargetSpacing: 150,
+    },
     debug: 0,
     logIps: 0,
     indexes: true,
-    minimumDifficultyBlocks: 0,
-    powTargetSpacing: 150,
     reindex: {
       enable: false,
       containerId: null,
     },
-    devnetName: null,
   },
   platform: {
     dapi: {
@@ -92,7 +94,7 @@ module.exports = {
           image: 'dashpay/envoy:0.24-dev',
         },
         http: {
-          port: 3000,
+          port: 443,
         },
         rateLimiter: {
           maxTokens: 300,
@@ -141,7 +143,7 @@ module.exports = {
       },
       tenderdash: {
         docker: {
-          image: 'dashpay/tenderdash:0.11.0-dev.3',
+          image: 'dashpay/tenderdash:0.11.0-dev.4',
         },
         p2p: {
           port: 26656,
@@ -159,13 +161,32 @@ module.exports = {
           level: 'debug',
           format: 'plain',
         },
-        nodeKey: {
-
+        node: {
+          id: null,
+          key: null,
         },
         genesis: {
-
+          consensus_params: {
+            block: {
+              max_bytes: '22020096',
+              max_gas: '-1',
+              time_iota_ms: '5000',
+            },
+            evidence: {
+              max_age: '100000',
+              max_age_num_blocks: '100000',
+              max_age_duration: '172800000000000',
+            },
+            validator: {
+              pub_key_types: [
+                'bls12381',
+              ],
+            },
+            version: {
+              app_version: '1',
+            },
+          },
         },
-        nodeId: null,
         moniker: null,
       },
     },
@@ -207,6 +228,7 @@ module.exports = {
       masterPublicKey: null,
       secondPublicKey: null,
     },
+    enable: true,
   },
   dashmate: {
     helper: {

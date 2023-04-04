@@ -36,7 +36,7 @@ use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use dpp::data_contract::extra::common::json_document_to_cbor;
 
 use dpp::data_contract::DriveContractExt;
-use dpp::document::document_stub::DocumentStub;
+use dpp::document::Document;
 use drive::contract::Contract;
 use drive::contract::CreateRandomDocument;
 
@@ -78,7 +78,7 @@ fn test_drive_10_serialization(c: &mut Criterion) {
             || document_type.random_documents(10, Some(3333)),
             |documents| {
                 documents.iter().for_each(|document| {
-                    document.to_cbor();
+                    document.to_cbor().expect("expected to encode to cbor");
                 })
             },
             BatchSize::LargeInput,
@@ -116,7 +116,12 @@ fn test_drive_10_deserialization(c: &mut Criterion) {
         document_type
             .random_documents(10, Some(3333))
             .iter()
-            .map(|a| (a.serialize(document_type).unwrap(), a.to_cbor()))
+            .map(|a| {
+                (
+                    a.serialize(document_type).unwrap(),
+                    a.to_cbor().expect("expected to encode to cbor"),
+                )
+            })
             .unzip();
 
     let mut group = c.benchmark_group("Deserialization");
@@ -124,7 +129,7 @@ fn test_drive_10_deserialization(c: &mut Criterion) {
     group.bench_function("DDSR 10", |b| {
         b.iter(|| {
             serialized_documents.iter().for_each(|serialized_document| {
-                DocumentStub::from_bytes(serialized_document, document_type)
+                Document::from_bytes(serialized_document, document_type)
                     .expect("expected to deserialize");
             })
         })
@@ -134,7 +139,7 @@ fn test_drive_10_deserialization(c: &mut Criterion) {
             cbor_serialized_documents
                 .iter()
                 .for_each(|serialized_document| {
-                    DocumentStub::from_cbor(serialized_document, None, None)
+                    Document::from_cbor(serialized_document, None, None)
                         .expect("expected to deserialize");
                 })
         })

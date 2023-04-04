@@ -1,31 +1,31 @@
-use std::convert::TryFrom;
+use std::collections::BTreeMap;
+use std::convert::{TryFrom, TryInto};
 
 use anyhow::bail;
-use num_enum::{IntoPrimitive, TryFromPrimitive};
+use num_enum::IntoPrimitive;
+use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
+use platform_value::Value;
 use serde::{Deserialize, Serialize};
 pub use serde_json::Value as JsonValue;
 use serde_repr::*;
 
-use crate::{
-    data_contract::DataContract,
-    errors::ProtocolError,
-    identifier::Identifier,
-    util::json_value::{JsonValueExt, ReplaceWith},
-};
+use crate::document::document_transition::Action::{Create, Delete, Replace};
 
-pub const IDENTIFIER_FIELDS: [&str; 2] = ["$id", "$dataContractId"];
+use crate::document::errors::DocumentError;
+use crate::{data_contract::DataContract, errors::ProtocolError, identifier::Identifier};
+
+pub(self) mod property_names {
+    pub const ID: &str = "$id";
+    pub const DATA_CONTRACT_ID: &str = "$dataContractId";
+    pub const DOCUMENT_TYPE: &str = "$type";
+    pub const ACTION: &str = "$action";
+}
+
+pub const IDENTIFIER_FIELDS: [&str; 2] = [property_names::ID, property_names::DATA_CONTRACT_ID];
 
 #[derive(
-    Debug,
-    Serialize_repr,
-    Deserialize_repr,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Hash,
-    TryFromPrimitive,
-    IntoPrimitive,
+    Debug, Serialize_repr, Deserialize_repr, Clone, Copy, PartialEq, Eq, Hash, IntoPrimitive,
 )]
 #[repr(u8)]
 pub enum Action {
@@ -44,6 +44,21 @@ impl Default for Action {
 impl std::fmt::Display for Action {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{self:?}")
+    }
+}
+
+impl TryFrom<u8> for Action {
+    type Error = ProtocolError;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(Create),
+            1 => Ok(Replace),
+            3 => Ok(Delete),
+            other => Err(ProtocolError::Document(Box::new(
+                DocumentError::InvalidActionError(other),
+            ))),
+        }
     }
 }
 
@@ -77,7 +92,7 @@ pub struct DocumentBaseTransition {
     pub id: Identifier,
     /// Name of document type found int the data contract associated with the `data_contract_id`
     #[serde(rename = "$type")]
-    pub document_type: String,
+    pub document_type_name: String,
     /// Action the platform should take for the associated document
     #[serde(rename = "$action")]
     pub action: Action,
@@ -87,6 +102,33 @@ pub struct DocumentBaseTransition {
 
     #[serde(skip)]
     pub data_contract: DataContract,
+}
+
+impl DocumentBaseTransition {
+    pub fn from_value_map_consume(
+        map: &mut BTreeMap<String, Value>,
+        data_contract: DataContract,
+    ) -> Result<DocumentBaseTransition, ProtocolError> {
+        Ok(DocumentBaseTransition {
+            id: Identifier::from(
+                map.remove_hash256_bytes(property_names::ID)
+                    .map_err(ProtocolError::ValueError)?,
+            ),
+            document_type_name: map
+                .remove_string(property_names::DOCUMENT_TYPE)
+                .map_err(ProtocolError::ValueError)?,
+            action: map
+                .remove_integer::<u8>(property_names::ACTION)
+                .map_err(ProtocolError::ValueError)?
+                .try_into()?,
+            data_contract_id: Identifier::new(
+                map.remove_optional_hash256_bytes(property_names::DATA_CONTRACT_ID)
+                    .map_err(ProtocolError::ValueError)?
+                    .unwrap_or(data_contract.id.to_buffer()),
+            ),
+            data_contract,
+        })
+    }
 }
 
 impl DocumentTransitionObjectLike for DocumentBaseTransition {
@@ -102,28 +144,69 @@ impl DocumentTransitionObjectLike for DocumentBaseTransition {
     }
 
     fn from_raw_object(
-        mut raw_transition: JsonValue,
+        raw_transition: Value,
         data_contract: DataContract,
     ) -> Result<DocumentBaseTransition, ProtocolError> {
-        raw_transition.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Base58)?;
-        let mut document: DocumentBaseTransition = serde_json::from_value(raw_transition)?;
-
-        document.data_contract_id = data_contract.id;
-        document.data_contract = data_contract;
-
-        Ok(document)
+        let map = raw_transition
+            .into_btree_string_map()
+            .map_err(ProtocolError::ValueError)?;
+        Self::from_value_map(map, data_contract)
     }
 
-    fn to_object(&self) -> Result<JsonValue, ProtocolError> {
-        let mut object = serde_json::to_value(self)?;
+    fn from_value_map(
+        map: BTreeMap<String, Value>,
+        data_contract: DataContract,
+    ) -> Result<DocumentBaseTransition, ProtocolError> {
+        Ok(DocumentBaseTransition {
+            id: Identifier::from(
+                map.get_hash256_bytes(property_names::ID)
+                    .map_err(ProtocolError::ValueError)?,
+            ),
+            document_type_name: map
+                .get_string(property_names::DOCUMENT_TYPE)
+                .map_err(ProtocolError::ValueError)?,
+            action: map
+                .get_integer::<u8>(property_names::ACTION)
+                .map_err(ProtocolError::ValueError)?
+                .try_into()?,
+            data_contract_id: data_contract.id,
+            data_contract,
+        })
+    }
 
-        object.replace_identifier_paths(IDENTIFIER_FIELDS, ReplaceWith::Bytes)?;
-        Ok(object)
+    fn to_object(&self) -> Result<Value, ProtocolError> {
+        Ok(self.to_value_map()?.into())
+    }
+
+    fn to_value_map(&self) -> Result<BTreeMap<String, Value>, ProtocolError> {
+        let mut btree_map = BTreeMap::new();
+        btree_map.insert(
+            property_names::ID.to_string(),
+            Value::Identifier(self.id.to_buffer()),
+        );
+        btree_map.insert(
+            property_names::DATA_CONTRACT_ID.to_string(),
+            Value::Identifier(self.data_contract_id.to_buffer()),
+        );
+        btree_map.insert(
+            property_names::ACTION.to_string(),
+            Value::U8(self.action as u8),
+        );
+        btree_map.insert(
+            property_names::DOCUMENT_TYPE.to_string(),
+            Value::Text(self.document_type_name.clone()),
+        );
+        Ok(btree_map)
     }
 
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
-        let value = serde_json::to_value(self)?;
-        Ok(value)
+        self.to_object()?
+            .try_into()
+            .map_err(ProtocolError::ValueError)
+    }
+
+    fn to_cleaned_object(&self) -> Result<Value, ProtocolError> {
+        Ok(self.to_value_map()?.into())
     }
 }
 
@@ -138,16 +221,27 @@ pub trait DocumentTransitionObjectLike {
         Self: std::marker::Sized;
     /// Creates the document transition from Raw Object
     fn from_raw_object(
-        raw_transition: JsonValue,
+        raw_transition: Value,
         data_contract: DataContract,
     ) -> Result<Self, ProtocolError>
     where
         Self: std::marker::Sized;
-    /// Object is an [`serde_json::Value`] instance that preserves the `Vec<u8>` representation
+    fn from_value_map(
+        map: BTreeMap<String, Value>,
+        data_contract: DataContract,
+    ) -> Result<Self, ProtocolError>
+    where
+        Self: std::marker::Sized;
+    /// Object is an [`platform::Value`] instance that preserves the `Vec<u8>` representation
     /// for Identifiers and binary data
-    fn to_object(&self) -> Result<JsonValue, ProtocolError>;
+    fn to_object(&self) -> Result<Value, ProtocolError>;
+
+    /// Value Map is a Map of string to [`platform::Value`] that represents the state transition
+    fn to_value_map(&self) -> Result<BTreeMap<String, Value>, ProtocolError>;
+
     /// Object is an [`serde_json::Value`] instance that replaces the binary data with
     ///  - base58 string for Identifiers
     ///  - base64 string for other binary data
     fn to_json(&self) -> Result<JsonValue, ProtocolError>;
+    fn to_cleaned_object(&self) -> Result<Value, ProtocolError>;
 }

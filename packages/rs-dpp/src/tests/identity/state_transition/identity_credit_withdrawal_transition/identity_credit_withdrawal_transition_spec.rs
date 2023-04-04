@@ -11,6 +11,7 @@ use crate::{
 mod deserialization {
     use dashcore::{hashes::hex::FromHex, PubkeyHash, Script};
     use lazy_static::__Deref;
+    use platform_value::BinaryData;
 
     use super::*;
 
@@ -31,7 +32,7 @@ mod deserialization {
                 &PubkeyHash::from_hex("0000000000000000000000000000000000000000").unwrap()
             )
         );
-        assert_eq!(state_transition.signature, vec![0; 65]);
+        assert_eq!(state_transition.signature, BinaryData::new(vec![0; 65]));
     }
 
     #[test]

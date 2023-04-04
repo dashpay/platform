@@ -1,6 +1,6 @@
-import { Platform } from "../../Platform";
-import broadcastStateTransition from "../../broadcastStateTransition";
-import { signStateTransition } from "../../signStateTransition";
+import { Platform } from '../../Platform';
+import broadcastStateTransition from '../../broadcastStateTransition';
+import { signStateTransition } from '../../signStateTransition';
 
 /**
  * Publish contract onto the platform
@@ -10,7 +10,11 @@ import { signStateTransition } from "../../signStateTransition";
  * @param identity - identity
  * @return {DataContractUpdateTransition}
  */
-export default async function update(this: Platform, dataContract: any, identity: any): Promise<any> {
+export default async function update(
+  this: Platform,
+  dataContract: any,
+  identity: any,
+): Promise<any> {
   await this.initialize();
 
   const { dpp } = this;
@@ -22,12 +26,14 @@ export default async function update(this: Platform, dataContract: any, identity
 
   updatedDataContract.incrementVersion();
 
-  const dataContractUpdateTransition = dpp.dataContract.createDataContractUpdateTransition(updatedDataContract);
+  const dataContractUpdateTransition = dpp.dataContract
+    .createDataContractUpdateTransition(updatedDataContract);
 
   await signStateTransition(this, dataContractUpdateTransition, identity, 1);
   await broadcastStateTransition(this, dataContractUpdateTransition);
 
   // Update app with updated data contract if available
+  // eslint-disable-next-line
   for (const appName of this.client.getApps().getNames()) {
     const appDefinition = this.client.getApps().get(appName);
     if (appDefinition.contractId.equals(updatedDataContract.getId()) && appDefinition.contract) {

@@ -1,4 +1,6 @@
+pub mod validate_state_transition_basic;
+pub mod validate_state_transition_by_type;
 pub mod validate_state_transition_fee;
 pub mod validate_state_transition_identity_signature;
 pub mod validate_state_transition_key_signature;
-pub mod validator_transaction_basic;
+pub mod validate_state_transition_state;

@@ -74,7 +74,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::calculate_fee;
-use crate::fee::op::DriveOperation;
+use crate::fee::op::LowLevelDriveOperation;
 
 use crate::drive::block_info::BlockInfo;
 use crate::drive::grove_operations::DirectQueryType::{StatefulDirectQuery, StatelessDirectQuery};
@@ -83,7 +83,8 @@ use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyT
 use crate::error::document::DocumentError;
 use crate::error::fee::FeeError;
 use crate::fee::result::FeeResult;
-use dpp::document::document_stub::DocumentStub;
+use dpp::document::Document;
+use dpp::prelude::Identifier;
 
 impl Drive {
     /// Adds a document to primary storage.
@@ -98,13 +99,13 @@ impl Drive {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         //let mut base_operations : EnumMap<Op, u64> = EnumMap::default();
         let contract = document_and_contract_info.contract;
         let document_type = document_and_contract_info.document_type;
         let primary_key_path = contract_documents_primary_key_path(
-            contract.id().as_bytes(),
+            contract.id.as_bytes(),
             document_type.name.as_str(),
         );
         // if we are trying to get estimated costs we should add this level
@@ -187,7 +188,7 @@ impl Drive {
                         );
                         let document_id_in_primary_path =
                             contract_documents_keeping_history_primary_key_path_for_document_id(
-                                contract.id().as_bytes(),
+                                contract.id.as_bytes(),
                                 document_type.name.as_str(),
                                 document.id.as_slice(),
                             );
@@ -204,7 +205,7 @@ impl Drive {
                         );
                         let document_id_in_primary_path =
                             contract_documents_keeping_history_primary_key_path_for_document_id(
-                                contract.id().as_bytes(),
+                                contract.id.as_bytes(),
                                 document_type.name.as_str(),
                                 document.id.as_slice(),
                             );
@@ -428,9 +429,49 @@ impl Drive {
         Ok(())
     }
 
-    /// To do
-    pub fn add_document(&self, _serialized_document: &[u8]) -> Result<(), Error> {
-        todo!()
+    /// Adds a document using bincode serialization
+    pub fn add_document(
+        &self,
+        owned_document_info: OwnedDocumentInfo,
+        data_contract_id: Identifier,
+        document_type_name: &str,
+        override_document: bool,
+        block_info: &BlockInfo,
+        apply: bool,
+        transaction: TransactionArg,
+    ) -> Result<FeeResult, Error> {
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+
+        let contract_fetch_info = self
+            .get_contract_with_fetch_info_and_add_to_operations(
+                data_contract_id.into_buffer(),
+                Some(&block_info.epoch),
+                transaction,
+                &mut drive_operations,
+            )?
+            .ok_or(Error::Document(DocumentError::ContractNotFound))?;
+
+        let contract = &contract_fetch_info.contract;
+
+        let document_type = contract.document_type_for_name(document_type_name)?;
+
+        let document_and_contract_info = DocumentAndContractInfo {
+            owned_document_info,
+            contract,
+            document_type,
+        };
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+        self.add_document_for_contract_apply_and_add_to_operations(
+            document_and_contract_info,
+            override_document,
+            block_info,
+            true,
+            apply,
+            transaction,
+            &mut drive_operations,
+        )?;
+        let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+        Ok(fees)
     }
 
     /// Deserializes a document and a contract and adds the document to the contract.
@@ -448,7 +489,7 @@ impl Drive {
     ) -> Result<FeeResult, Error> {
         let contract = <Contract as DriveContractExt>::from_cbor(serialized_contract, None)?;
 
-        let document = DocumentStub::from_cbor(serialized_document, None, owner_id)?;
+        let document = Document::from_cbor(serialized_document, None, owner_id)?;
 
         let document_info =
             DocumentRefAndSerialization((&document, serialized_document, storage_flags));
@@ -484,7 +525,7 @@ impl Drive {
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
-        let document = DocumentStub::from_cbor(serialized_document, None, owner_id)?;
+        let document = Document::from_cbor(serialized_document, None, owner_id)?;
 
         let document_info =
             DocumentRefAndSerialization((&document, serialized_document, storage_flags));
@@ -520,7 +561,7 @@ impl Drive {
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
         let contract_fetch_info = self
             .get_contract_with_fetch_info_and_add_to_operations(
@@ -529,11 +570,11 @@ impl Drive {
                 transaction,
                 &mut drive_operations,
             )?
-            .ok_or(Error::Document(DocumentError::ContractNotFound()))?;
+            .ok_or(Error::Document(DocumentError::ContractNotFound))?;
 
         let contract = &contract_fetch_info.contract;
 
-        let document = DocumentStub::from_cbor(serialized_document, None, owner_id)?;
+        let document = Document::from_cbor(serialized_document, None, owner_id)?;
 
         let document_info =
             DocumentRefAndSerialization((&document, serialized_document, storage_flags));
@@ -571,7 +612,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.add_document_for_contract_apply_and_add_to_operations(
             document_and_contract_info,
             override_document,
@@ -594,7 +635,7 @@ impl Drive {
         document_is_unique_for_document_type_in_batch: bool,
         apply: bool,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         let mut estimated_costs_only_with_layer_info = if apply {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
@@ -610,7 +651,7 @@ impl Drive {
                 &mut estimated_costs_only_with_layer_info,
                 transaction,
             )?;
-            self.apply_batch_drive_operations(
+            self.apply_batch_low_level_drive_operations(
                 estimated_costs_only_with_layer_info,
                 transaction,
                 batch_operations,
@@ -625,7 +666,7 @@ impl Drive {
                 &mut estimated_costs_only_with_layer_info,
                 transaction,
             )?;
-            self.apply_batch_drive_operations(
+            self.apply_batch_low_level_drive_operations(
                 estimated_costs_only_with_layer_info,
                 transaction,
                 batch_operations,
@@ -641,13 +682,13 @@ impl Drive {
         mut index_path_info: PathInfo<0>,
         unique: bool,
         any_fields_null: bool,
-        previous_batch_operations: &mut Option<&mut Vec<DriveOperation>>,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         storage_flags: &Option<&StorageFlags>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        batch_operations: &mut Vec<DriveOperation>,
+        batch_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         // unique indexes will be stored under key "0"
         // non unique indices should have a tree at key "0" that has all elements based off of primary key
@@ -811,14 +852,14 @@ impl Drive {
         index_path_info: PathInfo<0>,
         index_level: &IndexLevel,
         mut any_fields_null: bool,
-        previous_batch_operations: &mut Option<&mut Vec<DriveOperation>>,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         storage_flags: &Option<&StorageFlags>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         event_id: [u8; 32],
         transaction: TransactionArg,
-        batch_operations: &mut Vec<DriveOperation>,
+        batch_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         if let Some(unique) = index_level.has_index_with_uniqueness {
             self.add_reference_for_index_level_for_contract_operations(
@@ -968,12 +1009,12 @@ impl Drive {
     fn add_indices_for_top_index_level_for_contract_operations(
         &self,
         document_and_contract_info: &DocumentAndContractInfo,
-        previous_batch_operations: &mut Option<&mut Vec<DriveOperation>>,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-        batch_operations: &mut Vec<DriveOperation>,
+        batch_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         let index_level = &document_and_contract_info.document_type.index_structure;
         let contract = document_and_contract_info.contract;
@@ -1130,13 +1171,13 @@ impl Drive {
         document_and_contract_info: DocumentAndContractInfo,
         override_document: bool,
         block_info: &BlockInfo,
-        previous_batch_operations: &mut Option<&mut Vec<DriveOperation>>,
+        previous_batch_operations: &mut Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         transaction: TransactionArg,
-    ) -> Result<Vec<DriveOperation>, Error> {
-        let mut batch_operations: Vec<DriveOperation> = vec![];
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
         let primary_key_path = contract_documents_primary_key_path(
             document_and_contract_info.contract.id.as_bytes(),
             document_and_contract_info.document_type.name.as_str(),
@@ -1228,9 +1269,9 @@ mod tests {
     use crate::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
     use crate::drive::Drive;
     use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
-    use crate::fee::op::DriveOperation;
+    use crate::fee::op::LowLevelDriveOperation;
     use crate::fee_pools::epochs::Epoch;
-    use dpp::document::document_stub::DocumentStub;
+    use dpp::document::Document;
 
     #[test]
     fn test_add_dashpay_documents_no_transaction() {
@@ -1588,9 +1629,8 @@ mod tests {
         .expect("expected to get cbor document");
 
         let owner_id = rand::thread_rng().gen::<[u8; 32]>();
-        let document =
-            DocumentStub::from_cbor(&dashpay_cr_serialized_document, None, Some(owner_id))
-                .expect("expected to deserialize document successfully");
+        let document = Document::from_cbor(&dashpay_cr_serialized_document, None, Some(owner_id))
+            .expect("expected to deserialize document successfully");
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
@@ -1603,8 +1643,8 @@ mod tests {
         let document_type = contract
             .document_type_for_name("contactRequest")
             .expect("expected to get document type successfully");
-        let mut fee_drive_operations: Vec<DriveOperation> = vec![];
-        let mut actual_drive_operations: Vec<DriveOperation> = vec![];
+        let mut fee_drive_operations: Vec<LowLevelDriveOperation> = vec![];
+        let mut actual_drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
         let root_hash = drive
             .grove
@@ -1685,7 +1725,7 @@ mod tests {
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
-        let document = DocumentStub::from_cbor(
+        let document = Document::from_cbor(
             &dpns_domain_serialized_document,
             None,
             Some(random_owner_id),

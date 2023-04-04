@@ -1,5 +1,5 @@
 const { PrivateKey } = require('@dashevo/dashcore-lib');
-const getIdentityUpdateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityUpdateTransitionFixture');
+const getIdentityUpdateTransitionFixture = require('../../../../../../../lib/test/fixtures/getIdentityUpdateTransitionFixture');
 
 const { expectJsonSchemaError, expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
 const { default: loadWasmDpp } = require('../../../../../../../dist');
@@ -11,9 +11,8 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
   let stateTransition;
   let publicKeyToAdd;
 
-  let IdentityUpdateTransition;
   let IdentityPublicKey;
-  let IdentityPublicKeyCreateTransition;
+  let IdentityPublicKeyWithWitness;
   let UnsupportedProtocolVersionError;
   let InvalidIdentityKeySignatureError;
   let DuplicatedIdentityPublicKeyIdStateError;
@@ -21,12 +20,11 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
 
   before(async () => {
     ({
-      IdentityUpdateTransition,
       UnsupportedProtocolVersionError,
       InvalidIdentityKeySignatureError,
       DuplicatedIdentityPublicKeyIdStateError,
       IdentityPublicKey,
-      IdentityPublicKeyCreateTransition,
+      IdentityPublicKeyWithWitness,
       IdentityUpdateTransitionBasicValidator,
     } = await loadWasmDpp());
   });
@@ -37,8 +35,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
     const validator = new IdentityUpdateTransitionBasicValidator(blsAdapter);
     validateIdentityUpdateTransitionBasic = (st) => validator.validate(st);
 
-    const stateTransitionJS = getIdentityUpdateTransitionFixture();
-    stateTransition = new IdentityUpdateTransition(stateTransitionJS.toObject());
+    stateTransition = await getIdentityUpdateTransitionFixture();
 
     const privateKey = new PrivateKey('9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2');
     const publicKey = privateKey.toPublicKey().toBuffer();
@@ -52,7 +49,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
       readOnly: false,
     });
 
-    let identityPublicKeyCreateTransition = new IdentityPublicKeyCreateTransition({
+    let identityPublicKeyCreateTransition = new IdentityPublicKeyWithWitness({
       ...identityPublicKey.toObject(),
       signature: Buffer.alloc(0),
     });
@@ -315,7 +312,7 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
       const privateKey = new PrivateKey();
       const publicKey = privateKey.toPublicKey();
 
-      const identityPublicKeyCreateTransition = new IdentityPublicKeyCreateTransition(
+      const identityPublicKeyCreateTransition = new IdentityPublicKeyWithWitness(
         publicKeyToAdd,
       );
       identityPublicKeyCreateTransition.setData(publicKey.toBuffer());
@@ -387,8 +384,8 @@ describe('validateIdentityUpdateTransitionBasicFactory', () => {
       const keyWithDupeId = { ...publicKeyToAdd, data: Buffer.alloc(33) };
 
       stateTransition.setPublicKeysToAdd([
-        new IdentityPublicKeyCreateTransition(publicKeyToAdd),
-        new IdentityPublicKeyCreateTransition(keyWithDupeId),
+        new IdentityPublicKeyWithWitness(publicKeyToAdd),
+        new IdentityPublicKeyWithWitness(keyWithDupeId),
       ]);
 
       rawStateTransition = stateTransition.toObject();

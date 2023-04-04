@@ -2,14 +2,13 @@ use std::collections::HashMap;
 
 use dashcore::PublicKey;
 use lazy_static::lazy_static;
-use serde_json::Value;
 
 use crate::errors::consensus::basic::identity::{
     DuplicatedIdentityPublicKeyError, DuplicatedIdentityPublicKeyIdError,
     InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError,
 };
 use crate::identity::{IdentityPublicKey, KeyID, KeyType};
-use crate::validation::{JsonSchemaValidator, ValidationResult};
+use crate::validation::{JsonSchemaValidator, SimpleValidationResult};
 use crate::{
     BlsModule, DashPlatformProtocolInitError, NonConsensusError, PublicKeyValidationError,
 };
@@ -17,11 +16,13 @@ use crate::{
 use crate::identity::security_level::ALLOWED_SECURITY_LEVELS;
 #[cfg(test)]
 use mockall::{automock, predicate::*};
+use platform_value::Value;
+use serde_json::Value as JsonValue;
 
 lazy_static! {
-    pub static ref PUBLIC_KEY_SCHEMA: serde_json::Value =
+    pub static ref PUBLIC_KEY_SCHEMA: JsonValue =
         serde_json::from_str(include_str!("./../../schema/identity/publicKey.json")).unwrap();
-    pub static ref PUBLIC_KEY_SCHEMA_FOR_TRANSITION: serde_json::Value = serde_json::from_str(
+    pub static ref PUBLIC_KEY_SCHEMA_FOR_TRANSITION: JsonValue = serde_json::from_str(
         include_str!("./../../schema/identity/stateTransition/publicKey.json")
     )
     .unwrap();
@@ -32,7 +33,7 @@ pub trait TPublicKeysValidator {
     fn validate_keys(
         &self,
         raw_public_keys: &[Value],
-    ) -> Result<ValidationResult<()>, NonConsensusError>;
+    ) -> Result<SimpleValidationResult, NonConsensusError>;
 }
 
 pub struct PublicKeysValidator<T: BlsModule> {
@@ -44,8 +45,8 @@ impl<T: BlsModule> TPublicKeysValidator for PublicKeysValidator<T> {
     fn validate_keys(
         &self,
         raw_public_keys: &[Value],
-    ) -> Result<ValidationResult<()>, NonConsensusError> {
-        let mut result = ValidationResult::new(None);
+    ) -> Result<SimpleValidationResult, NonConsensusError> {
+        let mut result = SimpleValidationResult::default();
 
         // TODO: convert buffers to arrays?
         // Validate public key structure
@@ -60,7 +61,7 @@ impl<T: BlsModule> TPublicKeysValidator for PublicKeysValidator<T> {
         // Public keys already passed json schema validation at this point
         let mut public_keys = Vec::<IdentityPublicKey>::with_capacity(raw_public_keys.len());
         for raw_public_key in raw_public_keys {
-            let pk: IdentityPublicKey = serde_json::from_value(raw_public_key.clone())?;
+            let pk: IdentityPublicKey = platform_value::from_value(raw_public_key.clone())?;
             public_keys.push(pk);
         }
 
@@ -158,7 +159,7 @@ impl<T: BlsModule> PublicKeysValidator<T> {
     }
 
     pub fn new_with_schema(
-        schema: Value,
+        schema: JsonValue,
         bls_validator: T,
     ) -> Result<Self, DashPlatformProtocolInitError> {
         let public_key_schema_validator = JsonSchemaValidator::new(schema)?;
@@ -174,8 +175,12 @@ impl<T: BlsModule> PublicKeysValidator<T> {
     pub fn validate_public_key_structure(
         &self,
         public_key: &Value,
-    ) -> Result<ValidationResult<()>, NonConsensusError> {
-        self.public_key_schema_validator.validate(public_key)
+    ) -> Result<SimpleValidationResult, NonConsensusError> {
+        self.public_key_schema_validator.validate(
+            &public_key
+                .try_to_validating_json()
+                .map_err(NonConsensusError::ValueError)?,
+        )
     }
 }
 

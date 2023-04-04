@@ -38,7 +38,7 @@ function startGroupNodesTaskFactory(
     ));
 
     const platformBuildConfig = configGroup.find((config) => (
-      config.has('platform.sourcePath') && config.get('platform.sourcePath') !== null
+      config.get('platform.enable') && config.get('platform.sourcePath') !== null
     ));
 
     return new Listr([
@@ -155,7 +155,7 @@ function startGroupNodesTaskFactory(
         enabled: (ctx) => Boolean(ctx.waitForReadiness),
         task: () => {
           const tasks = configGroup
-            .filter((config) => config.has('platform'))
+            .filter((config) => config.get('platform.enable'))
             .map((config) => ({
               title: `Wait for ${config.getName()} node`,
               task: () => waitForNodeToBeReadyTask(config),

@@ -1,5 +1,5 @@
 use crate::errors::consensus_error::from_consensus_error_ref;
-use dpp::validation::ValidationResult;
+use dpp::{consensus::ConsensusError, validation::ValidationResult};
 use js_sys::JsString;
 use wasm_bindgen::prelude::*;
 
@@ -22,11 +22,7 @@ impl ValidationResultWasm {
     /// remove before shipping
     #[wasm_bindgen(js_name=errorsText)]
     pub fn errors_text(&self) -> Vec<JsString> {
-        self.0
-            .errors()
-            .iter()
-            .map(|e| e.to_string().into())
-            .collect()
+        self.0.errors.iter().map(|e| e.to_string().into()).collect()
     }
 
     #[wasm_bindgen(js_name=isValid)]
@@ -36,11 +32,7 @@ impl ValidationResultWasm {
 
     #[wasm_bindgen(js_name=getErrors)]
     pub fn errors(&self) -> Vec<JsValue> {
-        self.0
-            .errors()
-            .iter()
-            .map(from_consensus_error_ref)
-            .collect()
+        self.0.errors.iter().map(from_consensus_error_ref).collect()
     }
 
     #[wasm_bindgen(js_name=getData)]
@@ -55,5 +47,11 @@ impl ValidationResultWasm {
         } else {
             JsValue::undefined()
         }
+    }
+}
+
+impl ValidationResultWasm {
+    pub fn add_error(&mut self, error: impl Into<ConsensusError>) {
+        self.0.add_error(error)
     }
 }

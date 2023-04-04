@@ -16,6 +16,7 @@ use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
+
 use crate::errors::from_dpp_err;
 use crate::utils::ToSerdeJSONExt;
 use crate::{
@@ -116,7 +117,7 @@ impl IdentityCreateTransitionBasicValidatorWasm {
             Arc::new(public_keys_transition_validator),
             Arc::new(asset_lock_proof_validator),
             BlsAdapter(js_bls),
-            public_keys_signature_validator,
+            Arc::new(public_keys_signature_validator),
         )
         .map_err(|e| from_dpp_err(ProtocolError::Generic(e.to_string())))?;
 
@@ -140,11 +141,11 @@ impl IdentityCreateTransitionBasicValidatorWasm {
             .protocol_version_validator()
             .set_current_protocol_version(current_protocol_version);
 
-        let state_transition_json = raw_state_transition.with_serde_to_json_value()?;
+        let state_transition_object = raw_state_transition.with_serde_to_platform_value()?;
 
         let validation_result = self
             .0
-            .validate(&state_transition_json, execution_context)
+            .validate(&state_transition_object, execution_context)
             .await
             .map_err(|e| from_dpp_err(e.into()))?;
 

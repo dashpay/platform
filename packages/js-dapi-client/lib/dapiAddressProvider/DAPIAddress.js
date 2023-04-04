@@ -167,14 +167,14 @@ class DAPIAddress {
   }
 }
 
-DAPIAddress.DEFAULT_PORT = 3000;
+DAPIAddress.DEFAULT_PORT = 443;
 DAPIAddress.DEFAULT_PROTOCOL = 'https';
 
 /**
  * @typedef {object} RawDAPIAddress
  * @property {string} protocol
  * @property {string} host
- * @property {number} [port=3000]
+ * @property {number} [port=443]
  * @property {string} [proRegTxHash]
  * @property {bool} [selfSigned]
  */

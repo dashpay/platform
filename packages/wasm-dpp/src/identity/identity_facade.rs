@@ -13,7 +13,7 @@ use crate::errors::{from_dpp_err, RustConversionError};
 use crate::identifier::IdentifierWrapper;
 use crate::identity::errors::InvalidIdentityError;
 
-use crate::utils::ToSerdeJSONExt;
+use crate::utils::{ToSerdeJSONExt, WithJsError};
 use crate::validation::ValidationResultWasm;
 use crate::{
     create_asset_lock_proof_from_wasm_instance, with_js_error, ChainAssetLockProofWasm,
@@ -23,7 +23,7 @@ use crate::{
 use dpp::dashcore::{consensus, InstantLock, Transaction};
 
 use dpp::version::ProtocolVersionValidator;
-use dpp::NonConsensusError;
+use dpp::{Convertible, NonConsensusError};
 use serde::Deserialize;
 
 #[derive(Clone)]
@@ -60,7 +60,7 @@ impl IdentityFacadeWasm {
         self.0
             .create(asset_lock_proof, public_keys)
             .map(|identity| identity.into())
-            .map_err(from_dpp_err)
+            .with_js_error()
     }
 
     #[wasm_bindgen(js_name=createFromObject)]
@@ -75,7 +75,7 @@ impl IdentityFacadeWasm {
             Default::default()
         };
 
-        let raw_identity = identity_object.with_serde_to_json_value()?;
+        let raw_identity = identity_object.with_serde_to_platform_value()?;
 
         let result = self
             .0
@@ -118,7 +118,7 @@ impl IdentityFacadeWasm {
     #[wasm_bindgen]
     pub fn validate(&self, identity: IdentityWasm) -> Result<ValidationResultWasm, JsValue> {
         let identity: Identity = identity.into();
-        let identity_json = identity.to_object().map_err(from_dpp_err)?;
+        let identity_json = identity.to_cleaned_object().with_js_error()?;
 
         let validation_result = self
             .0
@@ -174,7 +174,7 @@ impl IdentityFacadeWasm {
         self.0
             .create_identity_create_transition(Identity::from(identity.to_owned()))
             .map(Into::into)
-            .map_err(from_dpp_err)
+            .with_js_error()
     }
 
     #[wasm_bindgen(js_name=createIdentityTopUpTransition)]
@@ -188,7 +188,7 @@ impl IdentityFacadeWasm {
         self.0
             .create_identity_topup_transition(identity_id.to_owned().into(), asset_lock_proof)
             .map(Into::into)
-            .map_err(from_dpp_err)
+            .with_js_error()
     }
 
     #[wasm_bindgen(js_name=createIdentityUpdateTransition)]
@@ -209,7 +209,7 @@ impl IdentityFacadeWasm {
                 Some(now),
             )
             .map(Into::into)
-            .map_err(from_dpp_err)
+            .with_js_error()
     }
 }
 

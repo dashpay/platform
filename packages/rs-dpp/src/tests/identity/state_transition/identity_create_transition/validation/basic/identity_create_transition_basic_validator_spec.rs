@@ -1,6 +1,5 @@
+use platform_value::Value;
 use std::sync::Arc;
-
-use serde_json::Value;
 
 use crate::bls::NativeBlsModule;
 use crate::identity::state_transition::asset_lock_proof::{
@@ -64,14 +63,14 @@ pub fn setup_test(
 
     let protocol_version_validator = ProtocolVersionValidator::default();
     (
-        crate::tests::fixtures::identity_create_transition_fixture_json(None),
+        crate::tests::fixtures::identity_create_transition_fixture(None),
         IdentityCreateTransitionBasicValidator::new(
             protocol_version_validator,
             public_keys_validator,
             public_keys_transition_validator,
             asset_lock_proof_validator,
             NativeBlsModule::default(),
-            SignaturesValidatorMock::default(),
+            Arc::new(SignaturesValidatorMock::default()),
         )
         .unwrap(),
     )
@@ -83,7 +82,6 @@ mod validate_identity_create_transition_basic_factory {
     use crate::identity::validation::RequiredPurposeAndSecurityLevelValidator;
     use crate::state_repository::MockStateRepositoryLike;
     use crate::tests::fixtures::PublicKeysValidatorMock;
-    use crate::tests::utils::SerdeTestExtension;
     use crate::validation::ValidationResult;
 
     pub use super::setup_test;
@@ -97,7 +95,6 @@ mod validate_identity_create_transition_basic_factory {
         use crate::identity::validation::RequiredPurposeAndSecurityLevelValidator;
         use crate::state_repository::MockStateRepositoryLike;
         use crate::tests::fixtures::get_public_keys_validator_for_transition;
-        use crate::tests::utils::SerdeTestExtension;
         use crate::{assert_consensus_errors, NonConsensusError};
 
         use super::setup_test;
@@ -110,7 +107,7 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 state_repository,
             );
-            raw_state_transition.remove_key("protocolVersion");
+            raw_state_transition.remove("protocolVersion").unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -138,7 +135,9 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
-            raw_state_transition.set_key_value("protocolVersion", "1");
+            raw_state_transition
+                .set_into_value("protocolVersion", "1")
+                .unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -160,7 +159,9 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
-            raw_state_transition.set_key_value("protocolVersion", -1);
+            raw_state_transition
+                .set_into_value("protocolVersion", -1)
+                .unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -171,11 +172,11 @@ mod validate_identity_create_transition_basic_factory {
                     panic!("Expected error");
                 }
                 Err(e) => match e {
-                    NonConsensusError::SerdeParsingError(e) => {
-                        assert_eq!(e.message(), "Expected protocolVersion to be a uint");
+                    NonConsensusError::ValueError(e) => {
+                        assert_eq!(e.to_string(), "integer out of bounds");
                     }
                     _ => {
-                        panic!("Expected version parsing error");
+                        panic!("Expected value error");
                     }
                 },
             }
@@ -192,7 +193,6 @@ mod validate_identity_create_transition_basic_factory {
         use crate::identity::validation::RequiredPurposeAndSecurityLevelValidator;
         use crate::state_repository::MockStateRepositoryLike;
         use crate::tests::fixtures::get_public_keys_validator_for_transition;
-        use crate::tests::utils::SerdeTestExtension;
 
         use super::super::setup_test;
 
@@ -203,7 +203,7 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
-            raw_state_transition.remove_key("type");
+            raw_state_transition.remove("type").unwrap();
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
                 .await
@@ -231,7 +231,7 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
-            raw_state_transition.set_key_value("type", 666);
+            raw_state_transition.set_into_value("type", 666).unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -264,7 +264,6 @@ mod validate_identity_create_transition_basic_factory {
         use crate::identity::validation::RequiredPurposeAndSecurityLevelValidator;
         use crate::state_repository::MockStateRepositoryLike;
         use crate::tests::fixtures::get_public_keys_validator_for_transition;
-        use crate::tests::utils::SerdeTestExtension;
 
         use super::super::setup_test;
 
@@ -275,7 +274,7 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
-            raw_state_transition.remove_key("assetLockProof");
+            raw_state_transition.remove("assetLockProof").unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -304,7 +303,9 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
-            raw_state_transition.set_key_value("assetLockProof", 1);
+            raw_state_transition
+                .set_into_value("assetLockProof", 1)
+                .unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -326,18 +327,18 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
-            let st_map = raw_state_transition
-                .get_mut("assetLockProof")
-                .unwrap()
-                .as_object_mut()
+            raw_state_transition
+                .set_value_at_path(
+                    "assetLockProof",
+                    "transaction",
+                    "totally not a valid type".into(),
+                )
                 .unwrap();
-            st_map.insert("transaction".into(), "totally not a valid type".into());
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
                 .await
                 .unwrap();
-
             let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
@@ -350,7 +351,7 @@ mod validate_identity_create_transition_basic_factory {
         use std::sync::Arc;
 
         use jsonschema::error::ValidationErrorKind;
-        use serde_json::Value;
+        use platform_value::Value;
 
         use crate::assert_consensus_errors;
         use crate::consensus::basic::TestConsensusError;
@@ -360,7 +361,6 @@ mod validate_identity_create_transition_basic_factory {
         use crate::tests::fixtures::{
             get_public_keys_validator_for_transition, PublicKeysValidatorMock,
         };
-        use crate::tests::utils::SerdeTestExtension;
         use crate::validation::ValidationResult;
 
         use super::super::setup_test;
@@ -372,7 +372,7 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
-            raw_state_transition.remove_key("publicKeys");
+            raw_state_transition.remove("publicKeys").unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -401,7 +401,9 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
-            raw_state_transition.set_key_value("publicKeys", Vec::<Value>::new());
+            raw_state_transition
+                .set_into_value("publicKeys", Vec::<Value>::new())
+                .unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -425,8 +427,7 @@ mod validate_identity_create_transition_basic_factory {
             );
 
             let public_keys = raw_state_transition
-                .get_value_mut("publicKeys")
-                .as_array_mut()
+                .get_array_mut_ref("publicKeys")
                 .unwrap();
             let key = public_keys.first().unwrap().clone();
 
@@ -456,11 +457,10 @@ mod validate_identity_create_transition_basic_factory {
             );
 
             let public_keys = raw_state_transition
-                .get_value_mut("publicKeys")
-                .as_array_mut()
+                .get_array_mut_ref("publicKeys")
                 .unwrap();
             let key = public_keys.first().unwrap().clone();
-            public_keys.push(key.clone());
+            public_keys.push(key);
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -480,9 +480,9 @@ mod validate_identity_create_transition_basic_factory {
             let pk_validator_mock = Arc::new(PublicKeysValidatorMock::new());
             let pk_error = TestConsensusError::new("test");
             pk_validator_mock.returns_fun(move || {
-                Ok(ValidationResult::new(Some(vec![ConsensusError::from(
-                    TestConsensusError::new("test"),
-                )])))
+                Ok(ValidationResult::new_with_errors(vec![
+                    ConsensusError::from(TestConsensusError::new("test")),
+                ]))
             });
 
             let (raw_state_transition, validator) = setup_test(
@@ -503,11 +503,8 @@ mod validate_identity_create_transition_basic_factory {
             assert_eq!(error, &&pk_error);
 
             assert_eq!(
-                &pk_validator_mock.called_with(),
-                raw_state_transition
-                    .get_value("publicKeys")
-                    .as_array()
-                    .unwrap()
+                pk_validator_mock.called_with(),
+                raw_state_transition.get_array("publicKeys").unwrap()
             );
         }
 
@@ -516,9 +513,9 @@ mod validate_identity_create_transition_basic_factory {
             let pk_validator_mock = Arc::new(PublicKeysValidatorMock::new());
             let pk_error = TestConsensusError::new("test");
             pk_validator_mock.returns_fun(move || {
-                Ok(ValidationResult::new(Some(vec![ConsensusError::from(
-                    TestConsensusError::new("test"),
-                )])))
+                Ok(ValidationResult::new_with_errors(vec![
+                    ConsensusError::from(TestConsensusError::new("test")),
+                ]))
             });
 
             let (raw_state_transition, validator) = setup_test(
@@ -538,11 +535,8 @@ mod validate_identity_create_transition_basic_factory {
             assert_eq!(error, &&pk_error);
 
             assert_eq!(
-                &pk_validator_mock.called_with(),
-                raw_state_transition
-                    .get_value("publicKeys")
-                    .as_array()
-                    .unwrap()
+                pk_validator_mock.called_with(),
+                raw_state_transition.get_array("publicKeys").unwrap()
             );
         }
     }
@@ -557,7 +551,6 @@ mod validate_identity_create_transition_basic_factory {
         use crate::identity::validation::RequiredPurposeAndSecurityLevelValidator;
         use crate::state_repository::MockStateRepositoryLike;
         use crate::tests::fixtures::get_public_keys_validator_for_transition;
-        use crate::tests::utils::SerdeTestExtension;
 
         use super::super::setup_test;
 
@@ -568,7 +561,7 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
-            raw_state_transition.remove_key("signature");
+            raw_state_transition.remove("signature").unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -597,7 +590,9 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
-            raw_state_transition.set_key_value("signature", vec!["string"; 65]);
+            raw_state_transition
+                .set_into_value("signature", vec!["string"; 65])
+                .unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -619,7 +614,9 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
-            raw_state_transition.set_key_value("signature", vec![0; 64]);
+            raw_state_transition
+                .set_into_value("signature", vec![0; 64])
+                .unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -641,7 +638,9 @@ mod validate_identity_create_transition_basic_factory {
                 Arc::new(RequiredPurposeAndSecurityLevelValidator::default()),
                 MockStateRepositoryLike::new(),
             );
-            raw_state_transition.set_key_value("signature", vec![0; 66]);
+            raw_state_transition
+                .set_into_value("signature", vec![0; 66])
+                .unwrap();
 
             let result = validator
                 .validate(&raw_state_transition, &Default::default())
@@ -682,11 +681,8 @@ mod validate_identity_create_transition_basic_factory {
 
         assert!(result.is_valid());
         assert_eq!(
-            &pk_validator_mock.called_with(),
-            raw_state_transition
-                .get_value("publicKeys")
-                .as_array()
-                .unwrap()
+            pk_validator_mock.called_with(),
+            raw_state_transition.get_array("publicKeys").unwrap()
         );
     }
 }

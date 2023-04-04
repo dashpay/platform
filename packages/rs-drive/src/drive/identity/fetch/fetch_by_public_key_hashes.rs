@@ -5,7 +5,7 @@ use crate::drive::{
 };
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee::op::DriveOperation;
+use crate::fee::op::LowLevelDriveOperation;
 use dpp::identity::Identity;
 use grovedb::Element::Item;
 use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
@@ -18,7 +18,7 @@ impl Drive {
         public_key_hash: [u8; 20],
         transaction: TransactionArg,
     ) -> Result<Option<[u8; 32]>, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.fetch_identity_id_by_unique_public_key_hash_operations(
             public_key_hash,
             transaction,
@@ -31,7 +31,7 @@ impl Drive {
         &self,
         public_key_hash: [u8; 20],
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<Option<[u8; 32]>, Error> {
         let unique_key_hashes = unique_key_hashes_tree_path();
         match self.grove_get_raw(
@@ -67,7 +67,7 @@ impl Drive {
         public_key_hashes: &[[u8; 20]],
         transaction: TransactionArg,
     ) -> Result<BTreeMap<[u8; 20], Option<[u8; 32]>>, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.fetch_identity_ids_by_unique_public_key_hashes_operations(
             public_key_hashes,
             transaction,
@@ -80,7 +80,7 @@ impl Drive {
         &self,
         public_key_hashes: &[[u8; 20]],
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<BTreeMap<[u8; 20], Option<[u8; 32]>>, Error> {
         let unique_key_hashes = unique_key_hashes_tree_path_vec();
         let mut query = Query::new();
@@ -126,7 +126,7 @@ impl Drive {
         public_key_hash: [u8; 20],
         transaction: TransactionArg,
     ) -> Result<bool, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.has_unique_public_key_hash_operations(
             public_key_hash,
             transaction,
@@ -139,7 +139,7 @@ impl Drive {
         &self,
         public_key_hash: [u8; 20],
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<bool, Error> {
         let unique_key_hashes = unique_key_hashes_tree_path();
         self.grove_has_raw(
@@ -157,7 +157,7 @@ impl Drive {
         public_key_hash: [u8; 20],
         transaction: TransactionArg,
     ) -> Result<bool, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.has_unique_public_key_hash_operations(
             public_key_hash,
             transaction,
@@ -170,7 +170,7 @@ impl Drive {
         &self,
         public_key_hash: [u8; 20],
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<bool, Error> {
         let non_unique_key_hashes = non_unique_key_hashes_tree_path();
         // this will actually get a tree
@@ -190,7 +190,7 @@ impl Drive {
         public_key_hash: [u8; 20],
         identity_id: [u8; 32],
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<bool, Error> {
         let public_key_hash_sub_tree =
             non_unique_key_hashes_sub_tree_path(public_key_hash.as_slice());
@@ -210,7 +210,7 @@ impl Drive {
         public_key_hash: [u8; 20],
         transaction: TransactionArg,
     ) -> Result<Option<Identity>, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.fetch_full_identity_by_unique_public_key_hash_operations(
             public_key_hash,
             transaction,
@@ -223,7 +223,7 @@ impl Drive {
         &self,
         public_key_hash: [u8; 20],
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<Option<Identity>, Error> {
         let identity_id = self.fetch_identity_id_by_unique_public_key_hash_operations(
             public_key_hash,
@@ -243,7 +243,7 @@ impl Drive {
         public_key_hashes: &[[u8; 20]],
         transaction: TransactionArg,
     ) -> Result<BTreeMap<[u8; 20], Option<Identity>>, Error> {
-        let mut drive_operations: Vec<DriveOperation> = vec![];
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.fetch_full_identities_by_unique_public_key_hashes_operations(
             public_key_hashes,
             transaction,
@@ -256,7 +256,7 @@ impl Drive {
         &self,
         public_key_hashes: &[[u8; 20]],
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<BTreeMap<[u8; 20], Option<Identity>>, Error> {
         let identity_ids = self.fetch_identity_ids_by_unique_public_key_hashes_operations(
             public_key_hashes,

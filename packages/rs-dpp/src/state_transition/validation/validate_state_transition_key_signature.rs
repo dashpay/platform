@@ -4,6 +4,9 @@ use anyhow::{bail, Context};
 use async_trait::async_trait;
 use dashcore::signer::verify_hash_signature;
 
+use crate::consensus::signature::IdentityNotFoundError;
+use crate::consensus::ConsensusError;
+use crate::validation::AsyncDataValidator;
 use crate::{
     consensus::signature::SignatureError,
     identity::{
@@ -16,7 +19,7 @@ use crate::{
         state_transition_execution_context::StateTransitionExecutionContext,
         StateTransition, StateTransitionConvert, StateTransitionLike,
     },
-    validation::{AsyncDataValidator, SimpleValidationResult, ValidationResult},
+    validation::SimpleValidationResult,
     ProtocolError,
 };
 
@@ -31,6 +34,8 @@ where
     SR: StateRepositoryLike,
 {
     type Item = StateTransition;
+    type ResultItem = ();
+
     async fn validate(&self, data: &Self::Item) -> Result<SimpleValidationResult, ProtocolError> {
         validate_state_transition_key_signature(
             self.state_repository.as_ref(),
@@ -60,7 +65,7 @@ pub async fn validate_state_transition_key_signature<SR: StateRepositoryLike>(
     state_repository: &impl StateRepositoryLike,
     asset_lock_public_key_hash_fetcher: &AssetLockPublicKeyHashFetcher<SR>,
     state_transition: &StateTransition,
-) -> Result<ValidationResult<()>, ProtocolError> {
+) -> Result<SimpleValidationResult, ProtocolError> {
     let mut result = SimpleValidationResult::default();
 
     let execution_context = state_transition.get_execution_context();
@@ -75,16 +80,18 @@ pub async fn validate_state_transition_key_signature<SR: StateRepositoryLike>(
 
         // Target identity must exist
         let balance = state_repository
-            .fetch_identity_balance(target_identity_id, &tmp_execution_context)
+            .fetch_identity_balance(target_identity_id, Some(&tmp_execution_context))
             .await?;
 
         // Collect operations back from temporary context
         execution_context.add_operations(tmp_execution_context.get_operations());
 
         if balance.is_none() {
-            result.add_error(SignatureError::IdentityNotFoundError {
-                identity_id: *target_identity_id,
-            });
+            result.add_error(ConsensusError::SignatureError(
+                SignatureError::IdentityNotFoundError(IdentityNotFoundError::new(
+                    *target_identity_id,
+                )),
+            ));
             return Ok(result);
         }
     }
@@ -102,7 +109,7 @@ pub async fn validate_state_transition_key_signature<SR: StateRepositoryLike>(
 
     let verification_result = verify_hash_signature(
         &state_transition_hash,
-        state_transition.get_signature(),
+        state_transition.get_signature().as_slice(),
         &public_key_hash,
     );
     if verification_result.is_err() {
@@ -130,6 +137,7 @@ fn get_asset_lock_proof(
 #[cfg(test)]
 mod test {
     use dashcore::{secp256k1::SecretKey, Network, PrivateKey};
+    use platform_value::BinaryData;
     use std::sync::Arc;
 
     use crate::{
@@ -148,9 +156,7 @@ mod test {
         state_repository::MockStateRepositoryLike,
         state_transition::{StateTransition, StateTransitionLike},
         tests::{
-            fixtures::{
-                identity_create_transition_fixture_json, identity_topup_transition_fixture_json,
-            },
+            fixtures::{identity_create_transition_fixture, identity_topup_transition_fixture},
             utils::get_signature_error_from_result,
         },
         NativeBlsModule,
@@ -213,11 +219,10 @@ mod test {
             .expect("secret key should be created");
 
         let private_key = PrivateKey::new(secret_key, Network::Testnet);
-        let mut state_transition: StateTransition = IdentityCreateTransition::new(
-            identity_create_transition_fixture_json(Some(private_key)),
-        )
-        .unwrap()
-        .into();
+        let mut state_transition: StateTransition =
+            IdentityCreateTransition::new(identity_create_transition_fixture(Some(private_key)))
+                .unwrap()
+                .into();
 
         state_transition
             .sign_by_private_key(
@@ -250,11 +255,10 @@ mod test {
             .expect("secret key should be created");
 
         let private_key = PrivateKey::new(secret_key, Network::Testnet);
-        let mut state_transition: StateTransition = IdentityCreateTransition::new(
-            identity_create_transition_fixture_json(Some(private_key)),
-        )
-        .unwrap()
-        .into();
+        let mut state_transition: StateTransition =
+            IdentityCreateTransition::new(identity_create_transition_fixture(Some(private_key)))
+                .unwrap()
+                .into();
 
         state_transition
             .sign_by_private_key(
@@ -265,7 +269,7 @@ mod test {
             .expect("state transition should be signed");
 
         // setting an invalid signature
-        state_transition.set_signature(vec![0u8; 65]);
+        state_transition.set_signature(BinaryData::new(vec![0u8; 65]));
 
         let result = validate_state_transition_key_signature(
             &state_repository,
@@ -295,7 +299,7 @@ mod test {
 
         let private_key = PrivateKey::new(secret_key, Network::Testnet);
         let state_transition: StateTransition =
-            IdentityTopUpTransition::new(identity_topup_transition_fixture_json(Some(private_key)))
+            IdentityTopUpTransition::new(identity_topup_transition_fixture(Some(private_key)))
                 .unwrap()
                 .into();
 

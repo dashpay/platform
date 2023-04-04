@@ -4,7 +4,7 @@ const stateTransitionTypes = require(
 
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
-const getIdentityUpdateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityUpdateTransitionFixture');
+const getIdentityUpdateTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityUpdateTransitionFixture');
 
 const { default: loadWasmDpp } = require('../../../../../dist');
 const generateRandomIdentifierAsync = require('../../../../../lib/test/utils/generateRandomIdentifierAsync');
@@ -13,25 +13,21 @@ describe('IdentityUpdateTransition', () => {
   let rawStateTransition;
   let stateTransition;
 
-  let IdentityUpdateTransition;
   let IdentityPublicKey;
   let Identifier;
-  let IdentityPublicKeyCreateTransition;
+  let IdentityPublicKeyWithWitness;
 
   before(async () => {
     ({
-      IdentityUpdateTransition,
       IdentityPublicKey,
       Identifier,
-      IdentityPublicKeyCreateTransition,
+      IdentityPublicKeyWithWitness,
     } = await loadWasmDpp());
   });
 
-  beforeEach(() => {
-    rawStateTransition = getIdentityUpdateTransitionFixture().toObject();
-    stateTransition = new IdentityUpdateTransition(
-      rawStateTransition,
-    );
+  beforeEach(async () => {
+    stateTransition = await getIdentityUpdateTransitionFixture();
+    rawStateTransition = stateTransition.toObject();
   });
 
   describe('#getType', () => {
@@ -85,14 +81,14 @@ describe('IdentityUpdateTransition', () => {
       expect(stateTransition.getPublicKeysToAdd().map((key) => key.toObject()))
         .to.deep.equal(
           rawStateTransition.addPublicKeys
-            .map((rawPublicKey) => new IdentityPublicKeyCreateTransition(rawPublicKey).toObject()),
+            .map((rawPublicKey) => new IdentityPublicKeyWithWitness(rawPublicKey).toObject()),
         );
     });
   });
 
   describe('#setPublicKeysToAdd', () => {
     it('should set public keys to add', () => {
-      const publicKeys = [new IdentityPublicKeyCreateTransition({
+      const publicKeys = [new IdentityPublicKeyWithWitness({
         id: 0,
         type: IdentityPublicKey.TYPES.BLS12_381,
         purpose: 0,

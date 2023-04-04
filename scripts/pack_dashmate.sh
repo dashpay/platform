@@ -25,16 +25,22 @@ ROOT_PATH=$(dirname "$DIR_PATH")
 cd $ROOT_PATH/packages/dashmate || exit 1
 yarn pack --install-if-needed
 tar zxvf package.tgz -C .
-cd package || exit 1
+cd $ROOT_PATH/packages/dashmate/package || exit 1
 cp $ROOT_PATH/yarn.lock ./yarn.lock
 mkdir .yarn
 echo "nodeLinker: node-modules"  > .yarnrc.yml
-yarn install
+yarn install --no-immutable
 yarn oclif manifest
-yarn oclif pack macos
+yarn oclif pack $COMMAND
 cd ..  || exit 1
 rm package.tgz
 cp -R package/dist "$ROOT_PATH/packages/dashmate"
-rm -rf package
+
+# fix for deb package build
+sudo chown -R $USER "$ROOT_PATH/packages/dashmate/package" || true
+sudo chgrp -R $USER "$ROOT_PATH/packages/dashmate/package" || true
+
+# remove build folder
+rm -rf package || true
 
 echo "Done"

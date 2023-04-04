@@ -52,13 +52,16 @@ where
             .add_to_identity_balance(
                 identity_id,
                 credits_amount,
-                state_transition.get_execution_context(),
+                Some(state_transition.get_execution_context()),
             )
             .await?;
 
         let balance = self
             .state_repository
-            .fetch_identity_balance_with_debt(identity_id, state_transition.get_execution_context())
+            .fetch_identity_balance_with_debt(
+                identity_id,
+                Some(state_transition.get_execution_context()),
+            )
             .await?
             .ok_or_else(|| anyhow!("balance must be persisted"))?;
 
@@ -69,13 +72,16 @@ where
         }
 
         self.state_repository
-            .add_to_system_credits(credits_amount, state_transition.get_execution_context())
+            .add_to_system_credits(
+                credits_amount,
+                Some(state_transition.get_execution_context()),
+            )
             .await?;
 
         self.state_repository
             .mark_asset_lock_transaction_out_point_as_used(
                 &out_point,
-                state_transition.get_execution_context(),
+                Some(state_transition.get_execution_context()),
             )
             .await?;
 
@@ -95,14 +101,14 @@ mod test {
         },
         state_repository::MockStateRepositoryLike,
         state_transition::StateTransitionLike,
-        tests::fixtures::identity_topup_transition_fixture_json,
+        tests::fixtures::identity_topup_transition_fixture,
     };
 
     use super::ApplyIdentityTopUpTransition;
 
     #[tokio::test]
     async fn should_topup_amount_to_identity_balance() {
-        let raw_transition = identity_topup_transition_fixture_json(None);
+        let raw_transition = identity_topup_transition_fixture(None);
         let state_transition = IdentityTopUpTransition::new(raw_transition).unwrap();
 
         let IdentityTopUpTransition { identity_id, .. } = state_transition.clone();
@@ -151,7 +157,7 @@ mod test {
 
     #[tokio::test]
     async fn should_ignore_balance_debt_for_system_credits() {
-        let raw_transition = identity_topup_transition_fixture_json(None);
+        let raw_transition = identity_topup_transition_fixture(None);
         let state_transition = IdentityTopUpTransition::new(raw_transition).unwrap();
 
         let IdentityTopUpTransition { identity_id, .. } = state_transition.clone();
@@ -200,7 +206,7 @@ mod test {
 
     #[tokio::test]
     async fn should_add_topup_amount_to_identity_balance_on_dry_run() {
-        let raw_transition = identity_topup_transition_fixture_json(None);
+        let raw_transition = identity_topup_transition_fixture(None);
         let state_transition = IdentityTopUpTransition::new(raw_transition).unwrap();
 
         let IdentityTopUpTransition { identity_id, .. } = state_transition.clone();

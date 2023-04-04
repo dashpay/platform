@@ -3,10 +3,13 @@ use std::sync::Arc;
 use test_case::test_case;
 
 use crate::{
-    consensus::basic::BasicError,
+    consensus::{basic::BasicError, ConsensusError},
     data_contract::state_transition::{
-        data_contract_update_transition::validation::basic::DataContractUpdateTransitionBasicValidator,
-        property_names, DataContractUpdateTransition,
+        data_contract_update_transition::{
+            validation::basic::DataContractUpdateTransitionBasicValidator,
+            DataContractUpdateTransition,
+        },
+        property_names,
     },
     state_repository::MockStateRepositoryLike,
     state_transition::{
@@ -17,12 +20,13 @@ use crate::{
         fixtures::{get_data_contract_fixture, get_protocol_version_validator_fixture},
         utils::{get_basic_error_from_result, get_schema_error},
     },
-    util::json_value::JsonValueExt,
+    validation::AsyncDataValidatorWithContext,
     version::{ProtocolVersionValidator, LATEST_VERSION},
 };
 
 use jsonschema::error::ValidationErrorKind;
-use serde_json::{json, Value};
+use platform_value::{platform_value, BinaryData, Value};
+use serde_json::Value as JsonValue;
 
 struct TestData {
     version_validator: ProtocolVersionValidator,
@@ -38,7 +42,7 @@ fn setup_test() -> TestData {
     let state_transition = DataContractUpdateTransition {
         protocol_version: LATEST_VERSION,
         data_contract: updated_data_contract,
-        signature: vec![0; 65],
+        signature: BinaryData::new(vec![0; 65]),
         signature_public_key_id: 0,
         transition_type: StateTransitionType::DataContractUpdate,
         execution_context: Default::default(),
@@ -88,7 +92,7 @@ async fn should_be_present(property: &str) {
     assert!(matches!(
         schema_error.kind(),
         ValidationErrorKind::Required {
-            property: Value::String(missing_property)
+            property: JsonValue::String(missing_property)
         } if missing_property == property
     ));
 }
@@ -109,7 +113,7 @@ async fn should_be_integer(property: &str) {
     )
     .expect("validator should be created");
 
-    raw_state_transition[property] = json!("1");
+    raw_state_transition[property] = platform_value!("1");
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
@@ -138,13 +142,17 @@ async fn protocol_version_should_be_valid() {
     )
     .expect("validator should be created");
 
-    raw_state_transition[property_names::PROTOCOL_VERSION] = json!(-1);
+    raw_state_transition[property_names::PROTOCOL_VERSION] = platform_value!(-1);
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
         .await
-        .expect_err("err should be returned");
-    assert_eq!("invalid protocol version", result.to_string())
+        .expect("validation result should be returned");
+
+    assert!(matches!(
+        result.errors.first(),
+        Some(ConsensusError::ProtocolVersionParsingError { .. })
+    ));
 }
 
 #[tokio::test]
@@ -161,7 +169,7 @@ async fn type_should_be_equal_4() {
     )
     .expect("validator should be created");
 
-    raw_state_transition[property_names::TRANSITION_TYPE] = json!(666);
+    raw_state_transition[property_names::TRANSITION_TYPE] = platform_value!(666);
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
@@ -192,7 +200,7 @@ async fn property_should_be_byte_array(property_name: &str) {
     .expect("validator should be created");
 
     let array = ["string"; 32];
-    raw_state_transition[property_name] = json!(array);
+    raw_state_transition[property_name] = platform_value!(array);
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
@@ -228,7 +236,7 @@ async fn should_be_not_less_than_n_bytes(property_name: &str, n_bytes: usize) {
     .expect("validator should be created");
 
     let array = vec![0u8; n_bytes - 1];
-    raw_state_transition[property_name] = json!(array);
+    raw_state_transition[property_name] = platform_value!(array);
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
@@ -259,7 +267,7 @@ async fn should_be_not_longer_than_n_bytes(property_name: &str, n_bytes: usize) 
     .expect("validator should be created");
 
     let array = vec![0u8; n_bytes + 1];
-    raw_state_transition[property_name] = json!(array);
+    raw_state_transition[property_name] = platform_value!(array);
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
@@ -288,7 +296,7 @@ async fn signature_public_key_id_should_be_valid() {
     )
     .expect("validator should be created");
 
-    raw_state_transition[property_names::SIGNATURE_PUBLIC_KEY_ID] = json!(-1);
+    raw_state_transition[property_names::SIGNATURE_PUBLIC_KEY_ID] = platform_value!(-1);
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())
@@ -317,7 +325,7 @@ async fn should_allow_making_backward_compatible_changes() {
     .expect("validator should be created");
 
     raw_state_transition[property_names::DATA_CONTRACT]["documents"]["indexedDocument"]
-        ["properties"]["newProp"] = json!({
+        ["properties"]["newProp"] = platform_value!({
         "type" : "integer",
         "minimum" : 0,
 
@@ -346,7 +354,7 @@ async fn should_have_existing_documents_schema_backward_compatible() {
     .expect("validator should be created");
 
     raw_state_transition[property_names::DATA_CONTRACT]["documents"]["niceDocument"]["required"]
-        .push(json!("name"))
+        .push(platform_value!("name"))
         .unwrap();
 
     let result = validator
@@ -355,13 +363,17 @@ async fn should_have_existing_documents_schema_backward_compatible() {
         .expect("validation result should be returned");
 
     let basic_error = get_basic_error_from_result(&result, 0);
-    assert!(matches!(
-        basic_error,
-        BasicError::IncompatibleDataContractSchemaError {  operation, field_path, ..}  if {
-            operation == "add" &&
-            field_path == "/required/1"
+
+    match basic_error {
+        BasicError::IncompatibleDataContractSchemaError(err) => {
+            assert_eq!(err.operation(), "add json".to_string());
+            assert_eq!(err.field_path(), "/required/1".to_string());
         }
-    ));
+        _ => panic!(
+            "Expected IncompatibleDataContractSchemaError, got {}",
+            basic_error
+        ),
+    }
 }
 
 #[tokio::test]

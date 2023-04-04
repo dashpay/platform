@@ -1,17 +1,17 @@
 use anyhow::anyhow;
-use dashcore::{consensus, BlockHeader};
-use serde_json::Value;
+use platform_value::Value;
 use std::convert::TryInto;
 use std::sync::Arc;
 
+use crate::consensus::signature::{IdentityNotFoundError, SignatureError};
+use crate::identity::state_transition::identity_update_transition::IdentityUpdateTransitionAction;
 use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
-    consensus::basic::BasicError,
     identity::validation::{RequiredPurposeAndSecurityLevelValidator, TPublicKeysValidator},
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike,
-    validation::SimpleValidationResult,
-    NonConsensusError, SerdeParsingError, StateError,
+    validation::ValidationResult,
+    NonConsensusError, StateError,
 };
 
 use super::identity_update_transition::{property_names, IdentityUpdateTransition};
@@ -36,30 +36,36 @@ where
     pub async fn validate(
         &self,
         state_transition: &IdentityUpdateTransition,
-    ) -> Result<SimpleValidationResult, NonConsensusError> {
-        let mut validation_result = SimpleValidationResult::default();
+    ) -> Result<ValidationResult<IdentityUpdateTransitionAction>, NonConsensusError> {
+        let mut validation_result = ValidationResult::default();
 
         let maybe_stored_identity = self
             .state_repository
             .fetch_identity(
                 state_transition.get_identity_id(),
-                state_transition.get_execution_context(),
+                Some(state_transition.get_execution_context()),
             )
             .await?
             .map(TryInto::try_into)
             .transpose()
             .map_err(Into::into)
-            .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
+            .map_err(|e| {
+                NonConsensusError::StateRepositoryFetchError(format!(
+                    "state repository fetch identity for identity update validation error: {}",
+                    e.to_string()
+                ))
+            })?;
 
         if state_transition.get_execution_context().is_dry_run() {
-            return Ok(validation_result);
+            let action: IdentityUpdateTransitionAction = state_transition.into();
+            return Ok(action.into());
         }
 
         let stored_identity = match maybe_stored_identity {
             None => {
-                validation_result.add_error(BasicError::IdentityNotFoundError {
-                    identity_id: state_transition.get_identity_id().to_owned(),
-                });
+                validation_result.add_error(SignatureError::IdentityNotFoundError(
+                    IdentityNotFoundError::new(state_transition.get_identity_id().to_owned()),
+                ));
                 return Ok(validation_result);
             }
             Some(identity) => identity,
@@ -102,16 +108,17 @@ where
         }
 
         if !state_transition.get_public_key_ids_to_disable().is_empty() {
-            let block_header_bytes = self
+            let last_block_header_time = self
                 .state_repository
-                .fetch_latest_platform_block_header()
+                .fetch_latest_platform_block_time()
                 .await
-                .map_err(|e| NonConsensusError::StateRepositoryFetchError(e.to_string()))?;
+                .map_err(|e| {
+                    NonConsensusError::StateRepositoryFetchError(format!(
+                        "state repository fetch latest platform block time error: {}",
+                        e.to_string()
+                    ))
+                })?;
 
-            let block_header: BlockHeader = consensus::deserialize(&block_header_bytes)
-                .map_err(|e| NonConsensusError::from(anyhow!(e.to_string())))?;
-
-            let last_block_header_time = block_header.time as u64 * 1000;
             let disabled_at_ms = state_transition.get_public_keys_disabled_at().ok_or(
                 NonConsensusError::RequiredPropertyError {
                     property_name: property_names::PUBLIC_KEYS_DISABLED_AT.to_owned(),
@@ -152,18 +159,28 @@ where
                 .map(|k| k.to_identity_public_key()),
         );
 
-        let raw_public_keys: Vec<Value> = identity
+        let raw_public_keys = identity
             .public_keys
             .values()
-            .map(|pk| pk.to_raw_json_object())
-            .collect::<Result<_, SerdeParsingError>>()?;
+            .map(|pk| pk.try_into().map_err(NonConsensusError::ValueError))
+            .collect::<Result<Vec<Value>, NonConsensusError>>()?;
 
-        let result = self.public_keys_validator.validate_keys(&raw_public_keys)?;
+        let result = self
+            .public_keys_validator
+            .validate_keys(raw_public_keys.as_slice())?;
         if !result.is_valid() {
-            return Ok(result);
+            validation_result.add_errors(result.errors);
+            return Ok(validation_result);
         }
 
         let validator = RequiredPurposeAndSecurityLevelValidator {};
-        validator.validate_keys(&raw_public_keys)
+        let result = validator.validate_keys(&raw_public_keys)?;
+        if !result.is_valid() {
+            validation_result.add_errors(result.errors);
+            return Ok(validation_result);
+        }
+
+        let action: IdentityUpdateTransitionAction = state_transition.into();
+        Ok(action.into())
     }
 }

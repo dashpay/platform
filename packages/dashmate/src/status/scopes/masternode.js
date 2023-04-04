@@ -1,7 +1,7 @@
 const calculatePaymentQueuePosition = require('../../core/calculatePaymentQueuePosition');
 const blocksToTime = require('../../util/blocksToTime');
-const MasternodeStateEnum = require('../../enums/masternodeState');
-const MasternodeSyncAssetEnum = require('../../enums/masternodeSyncAsset');
+const MasternodeStateEnum = require('../enums/masternodeState');
+const MasternodeSyncAssetEnum = require('../enums/masternodeSyncAsset');
 
 /**
  * @returns {getMasternodeScopeFactory}

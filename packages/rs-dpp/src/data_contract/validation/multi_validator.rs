@@ -1,42 +1,39 @@
+use platform_value::Value;
 use regex::Regex;
-use serde_json::Value as JsonValue;
 
-use crate::{
-    consensus::{basic::BasicError, ConsensusError},
-    validation::ValidationResult,
-};
+use crate::consensus::basic::data_contract::IncompatibleRe2PatternError;
+use crate::consensus::{basic::BasicError, ConsensusError};
+use crate::validation::SimpleValidationResult;
 
-pub type SubValidator = fn(
-    path: &str,
-    key: &str,
-    parent: &JsonValue,
-    value: &JsonValue,
-    result: &mut ValidationResult<()>,
-);
+pub type SubValidator =
+    fn(path: &str, key: &str, parent: &Value, value: &Value, result: &mut SimpleValidationResult);
 
-pub fn validate(
-    raw_data_contract: &JsonValue,
-    validators: &[SubValidator],
-) -> ValidationResult<()> {
-    let mut result = ValidationResult::default();
-    let mut values_queue: Vec<(&JsonValue, String)> = vec![(raw_data_contract, String::from(""))];
+pub fn validate(raw_data_contract: &Value, validators: &[SubValidator]) -> SimpleValidationResult {
+    let mut result = SimpleValidationResult::default();
+    let mut values_queue: Vec<(&Value, String)> = vec![(raw_data_contract, String::from(""))];
 
     while let Some((value, path)) = values_queue.pop() {
         match value {
-            JsonValue::Object(current_map) => {
+            Value::Map(current_map) => {
                 for (key, current_value) in current_map.iter() {
-                    if current_value.is_object() || current_value.is_array() {
-                        let new_path = format!("{}/{}", path, key);
+                    if current_value.is_map() || current_value.is_array() {
+                        let new_path =
+                            format!("{}/{}", path, key.non_qualified_string_representation());
                         values_queue.push((current_value, new_path))
                     }
-                    for validator in validators {
-                        validator(&path, key, value, current_value, &mut result);
+                    match key.to_str().map_err(ConsensusError::ValueError) {
+                        Ok(key) => {
+                            for validator in validators {
+                                validator(&path, key, value, current_value, &mut result);
+                            }
+                        }
+                        Err(err) => result.add_error(err),
                     }
                 }
             }
-            JsonValue::Array(arr) => {
+            Value::Array(arr) => {
                 for (i, value) in arr.iter().enumerate() {
-                    if value.is_object() {
+                    if value.is_map() {
                         let new_path = format!("{}/[{}]", path, i);
                         values_queue.push((value, new_path))
                     }
@@ -51,19 +48,42 @@ pub fn validate(
 pub fn pattern_is_valid_regex_validator(
     path: &str,
     key: &str,
-    _parent: &JsonValue,
-    value: &JsonValue,
-    result: &mut ValidationResult<()>,
+    _parent: &Value,
+    value: &Value,
+    result: &mut SimpleValidationResult,
 ) {
     if key == "pattern" {
         if let Some(pattern) = value.as_str() {
             if let Err(err) = Regex::new(pattern) {
-                result.add_error(ConsensusError::IncompatibleRe2PatternError {
-                    pattern: String::from(pattern),
-                    path: path.to_string(),
-                    message: err.to_string(),
-                });
+                result.add_error(ConsensusError::IncompatibleRe2PatternError(
+                    IncompatibleRe2PatternError::new(
+                        String::from(pattern),
+                        path.to_string(),
+                        err.to_string(),
+                    ),
+                ));
             }
+        } else {
+            result.add_error(ConsensusError::IncompatibleRe2PatternError(
+                IncompatibleRe2PatternError::new(
+                    String::new(),
+                    path.to_string(),
+                    format!("{} is not a string", path),
+                ),
+            ));
+        }
+    }
+}
+
+fn unwrap_error_to_result<'a, 'b>(
+    v: Result<Option<&'a Value>, ConsensusError>,
+    result: &'b mut SimpleValidationResult,
+) -> Option<&'a Value> {
+    match v {
+        Ok(v) => v,
+        Err(e) => {
+            result.add_error(e);
+            None
         }
     }
 }
@@ -71,13 +91,24 @@ pub fn pattern_is_valid_regex_validator(
 pub fn byte_array_has_no_items_as_parent_validator(
     path: &str,
     key: &str,
-    parent: &JsonValue,
-    value: &JsonValue,
-    result: &mut ValidationResult<()>,
+    parent: &Value,
+    value: &Value,
+    result: &mut SimpleValidationResult,
 ) {
     if key == "byteArray"
-        && value.is_boolean()
-        && (parent.get("items").is_some() || parent.get("prefixItems").is_some())
+        && value.is_bool()
+        && (unwrap_error_to_result(
+            parent.get("items").map_err(ConsensusError::ValueError),
+            result,
+        )
+        .is_some()
+            || unwrap_error_to_result(
+                parent
+                    .get("prefixItems")
+                    .map_err(ConsensusError::ValueError),
+                result,
+            )
+            .is_some())
     {
         result.add_error(BasicError::JsonSchemaCompilationError(format!(
             "invalid path: '{}': byteArray cannot be used with 'items' or 'prefixItems",
@@ -88,7 +119,7 @@ pub fn byte_array_has_no_items_as_parent_validator(
 
 #[cfg(test)]
 mod test {
-    use serde_json::json;
+    use platform_value::platform_value;
 
     use super::*;
 
@@ -100,7 +131,7 @@ mod test {
 
     #[test]
     fn should_return_error_if_bytes_array_parent_contains_items_or_prefix_items() {
-        let schema = json!(
+        let schema: Value = platform_value!(
              {
                 "type": "object",
                 "properties": {
@@ -117,7 +148,7 @@ mod test {
               }
         );
         let mut result = validate(&schema, &[byte_array_has_no_items_as_parent_validator]);
-        assert_eq!(2, result.errors().len());
+        assert_eq!(2, result.errors.len());
         let first_error = get_basic_error(result.errors.pop().unwrap());
         let second_error = get_basic_error(result.errors.pop().unwrap());
 
@@ -133,7 +164,7 @@ mod test {
 
     #[test]
     fn should_return_valid_result() {
-        let schema = json!(
+        let schema: Value = platform_value!(
              {
                 "type": "object",
                 "properties": {
@@ -153,7 +184,7 @@ mod test {
 
     #[test]
     fn should_return_invalid_result() {
-        let schema = json!({
+        let schema: Value = platform_value!({
             "type": "object",
             "properties": {
               "foo": { "type": "integer" },
@@ -169,13 +200,17 @@ mod test {
         let result = validate(&schema, &[pattern_is_valid_regex_validator]);
         let consensus_error = result.errors.get(0).expect("the error should be returned");
 
-        assert!(
-            matches!(consensus_error, ConsensusError::IncompatibleRe2PatternError {pattern, path, ..}
-             if  path == "/properties/bar" &&
-                 pattern == "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$" &&
-                 consensus_error.code() == 1009
-            )
-        );
+        match consensus_error {
+            ConsensusError::IncompatibleRe2PatternError(err) => {
+                assert_eq!(err.path(), "/properties/bar".to_string());
+                assert_eq!(
+                    err.pattern(),
+                    "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$".to_string()
+                );
+                assert_eq!(consensus_error.code(), 1009);
+            }
+            _ => panic!("Expected error to be IncompatibleRe2PatternError"),
+        }
     }
 
     #[test]
@@ -188,40 +223,54 @@ mod test {
     fn invalid_result_for_array_of_object() {
         let mut schema = get_document_schema();
         schema["properties"]["arrayOfObject"]["items"]["properties"]["simple"]["pattern"] =
-            json!("^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$");
+            platform_value!("^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$");
 
         let result = validate(&schema, &[pattern_is_valid_regex_validator]);
         let consensus_error = result.errors.get(0).expect("the error should be returned");
 
-        assert!(
-            matches!(consensus_error, ConsensusError::IncompatibleRe2PatternError {pattern, path, ..}
-             if  path == "/properties/arrayOfObject/items/properties/simple" &&
-                 pattern == "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$" &&
-                 consensus_error.code() == 1009
-            )
-        );
+        match consensus_error {
+            ConsensusError::IncompatibleRe2PatternError(err) => {
+                assert_eq!(
+                    err.path(),
+                    "/properties/arrayOfObject/items/properties/simple".to_string()
+                );
+                assert_eq!(
+                    err.pattern(),
+                    "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$".to_string()
+                );
+                assert_eq!(consensus_error.code(), 1009);
+            }
+            _ => panic!("Expected error to be IncompatibleRe2PatternError"),
+        }
     }
 
     #[test]
     fn invalid_result_for_array_of_objects() {
         let mut schema = get_document_schema();
         schema["properties"]["arrayOfObjects"]["items"][0]["properties"]["simple"]["pattern"] =
-            json!("^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$");
+            platform_value!("^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$");
 
         let result = validate(&schema, &[pattern_is_valid_regex_validator]);
         let consensus_error = result.errors.get(0).expect("the error should be returned");
 
-        assert!(
-            matches!(consensus_error, ConsensusError::IncompatibleRe2PatternError {pattern, path, ..}
-             if  path == "/properties/arrayOfObjects/items/[0]/properties/simple" &&
-                 pattern == "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$" &&
-                 consensus_error.code() == 1009
-            )
-        );
+        match consensus_error {
+            ConsensusError::IncompatibleRe2PatternError(err) => {
+                assert_eq!(
+                    err.path(),
+                    "/properties/arrayOfObjects/items/[0]/properties/simple".to_string()
+                );
+                assert_eq!(
+                    err.pattern(),
+                    "^((?!-|_)[a-zA-Z0-9-_]{0,62}[a-zA-Z0-9])$".to_string()
+                );
+                assert_eq!(consensus_error.code(), 1009);
+            }
+            _ => panic!("Expected error to be IncompatibleRe2PatternError"),
+        }
     }
 
-    fn get_document_schema() -> JsonValue {
-        json!({
+    fn get_document_schema() -> Value {
+        platform_value!({
             "properties": {
                 "simple": {
                     "type": "string"
@@ -304,6 +353,6 @@ mod test {
         if let ConsensusError::BasicError(err) = error {
             return *err;
         }
-        panic!("the error: {} isn't a BasicError", error)
+        panic!("the error: {:?} isn't a BasicError", error)
     }
 }
