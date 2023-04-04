@@ -6,7 +6,8 @@ use platform_value::{BinaryData, Value, ValueMapHelper};
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 
-use crate::consensus::signature::signature_error::SignatureError;
+use crate::consensus::signature::InvalidStateTransitionSignatureError;
+use crate::consensus::signature::SignatureError;
 use crate::consensus::ConsensusError;
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, StateTransitionIsNotSignedError,
@@ -17,7 +18,6 @@ use crate::{
     util::{hash, serializer},
     BlsModule,
 };
-use crate::consensus::signature::InvalidStateTransitionSignatureError;
 
 use super::{
     state_transition_execution_context::StateTransitionExecutionContext, StateTransition,
@@ -117,7 +117,9 @@ pub trait StateTransitionLike:
         signer::verify_hash_signature(&data_hash, self.get_signature().as_slice(), public_key_hash)
             .map_err(|_| {
                 ProtocolError::from(ConsensusError::SignatureError(
-                    SignatureError::InvalidStateTransitionSignatureError(InvalidStateTransitionSignatureError::new()),
+                    SignatureError::InvalidStateTransitionSignatureError(
+                        InvalidStateTransitionSignatureError::new(),
+                    ),
                 ))
             })
     }
@@ -133,8 +135,12 @@ pub trait StateTransitionLike:
 
         signer::verify_data_signature(&data, self.get_signature().as_slice(), public_key).map_err(
             |_| {
+                // TODO: it shouldn't respond with consensus error
+
                 ProtocolError::from(ConsensusError::SignatureError(
-                    SignatureError::InvalidStateTransitionSignatureError(InvalidStateTransitionSignatureError::new()),
+                    SignatureError::InvalidStateTransitionSignatureError(
+                        InvalidStateTransitionSignatureError::new(),
+                    ),
                 ))
             },
         )
@@ -157,8 +163,11 @@ pub trait StateTransitionLike:
         bls.verify_signature(self.get_signature().as_slice(), &data, public_key)
             .map(|_| ())
             .map_err(|_| {
+                // TODO: it shouldn't respond with consensus error
                 ProtocolError::from(ConsensusError::SignatureError(
-                    SignatureError::InvalidStateTransitionSignatureError(InvalidStateTransitionSignatureError::new()),
+                    SignatureError::InvalidStateTransitionSignatureError(
+                        InvalidStateTransitionSignatureError::new(),
+                    ),
                 ))
             })
     }

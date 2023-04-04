@@ -1,4 +1,9 @@
-use crate::consensus::signature::{IdentityNotFoundError, InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeySecurityLevelError, InvalidStateTransitionSignatureError, MissingPublicKeyError, PublicKeyIsDisabledError, PublicKeySecurityLevelNotMetError, WrongPublicKeyPurposeError};
+use crate::consensus::signature::{
+    IdentityNotFoundError, InvalidIdentityPublicKeyTypeError,
+    InvalidSignaturePublicKeySecurityLevelError, InvalidStateTransitionSignatureError,
+    MissingPublicKeyError, PublicKeyIsDisabledError, PublicKeySecurityLevelNotMetError,
+    WrongPublicKeyPurposeError,
+};
 use crate::consensus::ConsensusError;
 use thiserror::Error;
 

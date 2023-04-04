@@ -1,7 +1,7 @@
 use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 
 use crate::errors::consensus::{
-    basic::BasicError, fee::fee_error::FeeError, signature::signature_error::SignatureError,
+    basic::BasicError, fee::fee_error::FeeError, signature::SignatureError,
     state::state_error::StateError, ConsensusError,
 };
 

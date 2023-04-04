@@ -1,4 +1,5 @@
-use dpp::consensus::basic::value_error::ValueError;
+use dpp::platform_value;
+use platform_value::Error as ValueError;
 use wasm_bindgen::prelude::*;
 
 // TODO Rename to ProtocolValueError
@@ -12,22 +13,6 @@ pub struct PlatformValueErrorWasm {
 impl From<ValueError> for PlatformValueErrorWasm {
     fn from(e: ValueError) -> Self {
         Self {
-            message: e.to_string(),
-        }
-    }
-}
-
-impl From<&ValueError> for PlatformValueErrorWasm {
-    fn from(e: &ValueError) -> Self {
-        Self {
-            message: e.to_string(),
-        }
-    }
-}
-
-impl PlatformValueErrorWasm {
-    pub fn new(e: ValueError) -> Self {
-        PlatformValueErrorWasm {
             message: e.to_string(),
         }
     }

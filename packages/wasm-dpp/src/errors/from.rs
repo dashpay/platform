@@ -29,7 +29,7 @@ pub fn from_dpp_err(pe: ProtocolError) -> JsValue {
         ProtocolError::DataContractNotPresentError(err) => {
             DataContractNotPresentNotConsensusErrorWasm::new(err.data_contract_id()).into()
         }
-        ProtocolError::ValueError(value_error) => PlatformValueErrorWasm::new(value_error).into(),
+        ProtocolError::ValueError(value_error) => PlatformValueErrorWasm::from(value_error).into(),
         _ => JsValue::from_str(&format!("Error conversion not implemented: {pe:#}",)),
     }
 }

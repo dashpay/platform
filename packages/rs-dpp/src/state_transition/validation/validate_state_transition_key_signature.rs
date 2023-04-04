@@ -4,7 +4,7 @@ use anyhow::{bail, Context};
 use async_trait::async_trait;
 use dashcore::signer::verify_hash_signature;
 
-use crate::consensus::signature::signature_error::SignatureError;
+use crate::consensus::signature::SignatureError;
 use crate::consensus::signature::{IdentityNotFoundError, InvalidStateTransitionSignatureError};
 use crate::consensus::ConsensusError;
 use crate::validation::AsyncDataValidator;
@@ -113,7 +113,9 @@ pub async fn validate_state_transition_key_signature<SR: StateRepositoryLike>(
         &public_key_hash,
     );
     if verification_result.is_err() {
-        result.add_error(SignatureError::InvalidStateTransitionSignatureError(InvalidStateTransitionSignatureError::new()))
+        result.add_error(SignatureError::InvalidStateTransitionSignatureError(
+            InvalidStateTransitionSignatureError::new(),
+        ))
     }
 
     Ok(result)
@@ -284,7 +286,9 @@ mod test {
         let signature_error = get_signature_error_from_result(&result, 0);
         assert!(matches!(
             signature_error,
-            SignatureError::InvalidStateTransitionSignatureError(InvalidStateTransitionSignatureError {..})
+            SignatureError::InvalidStateTransitionSignatureError(
+                InvalidStateTransitionSignatureError { .. }
+            )
         ));
     }
 

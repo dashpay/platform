@@ -7,7 +7,7 @@ pub use apply::*;
 pub use validation::*;
 
 use dpp::consensus::signature::SignatureError;
-use dpp::consensus::ConsensusError::SignatureError as ConsensusSignatureErrorVariant;
+use dpp::consensus::ConsensusError;
 use dpp::{
     data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition,
     platform_value,
@@ -188,9 +188,9 @@ impl DataContractCreateTransitionWasm {
         match verification_result {
             Ok(()) => Ok(true),
             Err(protocol_error) => match &protocol_error {
-                ProtocolError::AbstractConsensusError(err) => match err.as_ref() {
-                    ConsensusSignatureErrorVariant(
-                        SignatureError::InvalidStateTransitionSignatureError,
+                ProtocolError::ConsensusError(err) => match err.as_ref() {
+                    ConsensusError::SignatureError(
+                        SignatureError::InvalidStateTransitionSignatureError { .. },
                     ) => Ok(false),
                     _ => Err(protocol_error),
                 },

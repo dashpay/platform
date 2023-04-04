@@ -5,7 +5,7 @@ use thiserror::Error;
 use crate::consensus::state::state_error::StateError;
 
 use crate::consensus::fee::fee_error::FeeError;
-use crate::consensus::signature::signature_error::SignatureError;
+use crate::consensus::signature::SignatureError;
 
 #[cfg(test)]
 use crate::consensus::test_consensus_error::TestConsensusError;

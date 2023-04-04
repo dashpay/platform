@@ -1,7 +1,7 @@
 use crate::consensus::basic::json_schema_error::JsonSchemaError;
 use crate::consensus::basic::value_error::ValueError;
 use crate::consensus::fee::fee_error::FeeError;
-use crate::consensus::signature::signature_error::SignatureError;
+use crate::consensus::signature::SignatureError;
 use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 use crate::consensus::state::state_error::StateError;
 use crate::validation::{SimpleValidationResult, ValidationResult};
