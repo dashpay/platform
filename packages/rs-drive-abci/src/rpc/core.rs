@@ -1,10 +1,16 @@
 use dashcore::{Block, BlockHash};
+<<<<<<< HEAD
 use dashcore_rpc::dashcore_rpc_json::{
     ExtendedQuorumDetails, GetBestChainLockResult, QuorumHash, QuorumInfoResult, QuorumListResult,
     QuorumType,
 };
 use dashcore_rpc::Error;
 use dashcore_rpc::{Auth, Client, RpcApi};
+=======
+use dashcore_rpc::{Auth, Client, Error, RpcApi};
+use dashcore_rpc::json::{MasternodeListDiff, ProTxHash, ProTxInfo};
+#[cfg(feature = "fixtures-and-mocks")]
+>>>>>>> b9879e802 (add needed rpc functions)
 use mockall::{automock, predicate::*};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -47,6 +53,12 @@ pub trait CoreRPCLike {
         hash: &QuorumHash,
         o: Option<bool>,
     ) -> Result<QuorumInfoResult, Error>;
+
+    /// Get the diff and proof between two masternode lists
+    fn get_protx_diff(&self, base_block: u32, block: u32) -> Result<MasternodeListDiff, Error>;
+
+    /// Get the detailed information about a deterministic masternode
+    fn get_protx_info(&self, protx_hash: &ProTxHash) -> Result<ProTxInfo, Error>;
 }
 
 /// Default implementation of Dash Core RPC using DashCoreRPC client
@@ -89,6 +101,7 @@ impl CoreRPCLike for DefaultCoreRPC {
     fn get_block_json(&self, block_hash: &BlockHash) -> Result<Value, Error> {
         self.inner.get_block_json(block_hash)
     }
+
     fn get_quorum_listextended(
         &self,
         height: Option<CoreHeight>,
@@ -104,5 +117,13 @@ impl CoreRPCLike for DefaultCoreRPC {
     ) -> Result<QuorumInfoResult, Error> {
         self.inner
             .get_quorum_info(quorum_type, quorum_hash, include_sk_share)
+    }
+
+    fn get_protx_diff(&self, base_block: u32, block: u32) -> Result<MasternodeListDiff, Error> {
+        self.inner.get_protx_diff(base_block, block)
+    }
+
+    fn get_protx_info(&self, protx_hash: &ProTxHash) -> Result<ProTxInfo, Error> {
+        self.inner.get_protx_info(protx_hash)
     }
 }
