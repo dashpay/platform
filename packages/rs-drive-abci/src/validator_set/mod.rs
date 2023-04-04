@@ -84,7 +84,7 @@ impl ValidatorSet {
             QuorumType::Llmq400_60 => quorums.llmq_400_60,
             QuorumType::Llmq400_85 => quorums.llmq_400_85,
             QuorumType::Llmq100_67 => quorums.llmq_100_67,
-            //QuorumType::Llmq25_67 => quorums.llmq_25_67,
+            QuorumType::Llmq25_67 => quorums.llmq_25_67,
             QuorumType::Llmq60_75 => panic!("unsupported quorum type {:?}", quorum_type),
             QuorumType::LlmqTest => quorums.llmq_test,
             QuorumType::LlmqDevnet => panic!("unsupported quorum type {:?}", quorum_type),

@@ -183,6 +183,7 @@ where
         Ok((aggregate_fee_result, exec_tx_results))
     }
 
+    /// Update of the masternode identities
     pub fn update_masternode_identities(
         &self,
         previous_core_height: u32,
@@ -193,6 +194,7 @@ where
             // self.drive.fetch_full_identity()
             // self.drive.add_new_non_unique_keys_to_identity()
         }
+        Ok(())
     }
 
     /// Run a block proposal, either from process proposal, or prepare proposal
