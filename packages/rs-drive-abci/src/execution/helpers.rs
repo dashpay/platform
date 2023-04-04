@@ -1,9 +1,20 @@
+use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform::Platform;
+use crate::rpc::core::CoreRPCLike;
+use dashcore::signer::sign;
+use dpp::bls_signatures;
+use dpp::bls_signatures::Serialize;
+use dpp::validation::{SimpleValidationResult, ValidationResult};
 use drive::grovedb::Transaction;
+use tenderdash_abci::proto::abci::CommitInfo;
+use tenderdash_abci::proto::types::BlockId;
 
-impl<C> Platform<C> {
+impl<C> Platform<C>
+where
+    C: CoreRPCLike,
+{
     pub(crate) fn get_genesis_time(
         &self,
         block_height: u64,

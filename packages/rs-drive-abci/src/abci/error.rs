@@ -1,4 +1,5 @@
 use crate::validator_set::ValidatorSetError;
+use dpp::bls_signatures::Error as BLSError;
 
 /// Error returned within ABCI server
 #[derive(Debug, thiserror::Error)]
@@ -24,6 +25,10 @@ pub enum AbciError {
     #[cfg(feature = "server")]
     #[error("tenderdash: {0}")]
     Tenderdash(#[from] tenderdash_abci::Error),
+
+    /// Error occurred during bls signature verification
+    #[error("bls error set: {0}")]
+    BLSError(#[from] BLSError),
 
     /// Error occurred during validator set creation
     #[error("validator set: {0}")]

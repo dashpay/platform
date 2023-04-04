@@ -1,3 +1,6 @@
+use dashcore_rpc::json::QuorumHash;
+use dpp::bls_signatures;
+use dpp::bls_signatures::Serialize;
 use dpp::consensus::basic::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::ConsensusError;
 use dpp::state_transition::StateTransition;
@@ -369,7 +372,26 @@ where
 
         // Next we need to verify that the signature returned from the quorum is valid
 
-        // todo: verify commit
+        if let Some(commit) = commit {
+            if let Some(block_id) = block_id {
+                let result = self.validate_commit(commit, block_id)?;
+                if !result.is_valid() {
+                    return Ok(validation_result.into());
+                }
+            } else {
+                validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
+                    "received a block for h: {} r: {} without a block id",
+                    height, round
+                )));
+                return Ok(validation_result.into());
+            }
+        } else {
+            validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
+                "received a block for h: {} r: {} without a commit",
+                height, round
+            )));
+            return Ok(validation_result.into());
+        }
 
         // Next let's check that the hash received is the same as the hash we expect
 

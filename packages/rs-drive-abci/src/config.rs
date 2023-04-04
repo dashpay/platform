@@ -26,6 +26,7 @@
 // IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
+use dashcore_rpc::json::QuorumType;
 use std::path::PathBuf;
 
 use drive::drive::config::DriveConfig;
@@ -131,6 +132,9 @@ pub struct PlatformConfig {
     /// Should we verify sum trees? Useful to set as `false` for tests
     #[serde(default = "PlatformConfig::default_verify_sum_trees")]
     pub verify_sum_trees: bool,
+
+    /// The default quorum type
+    pub quorum_type: QuorumType,
 
     /// The default quorum size
     pub quorum_size: u16,

@@ -1,5 +1,7 @@
 /// The block proposal
 pub mod block_proposal;
+/// Commit validation
+pub mod commit_validation;
 /// Engine module
 pub mod engine;
 /// An execution event

@@ -38,6 +38,13 @@ impl<TData: Clone, E: Debug> ValidationResult<TData, E> {
         }
     }
 
+    pub fn new_with_error(error: E) -> Self {
+        Self {
+            errors: vec![error],
+            data: None,
+        }
+    }
+
     pub fn new_with_errors(errors: Vec<E>) -> Self {
         Self { errors, data: None }
     }
