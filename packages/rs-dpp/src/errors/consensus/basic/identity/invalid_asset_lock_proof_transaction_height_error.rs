@@ -1,10 +1,17 @@
+use crate::consensus::basic::BasicError;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Core chain locked height {proof_core_chain_locked_height:?} must be higher than block {transaction_height:?} with Asset Lock transaction")]
 pub struct InvalidAssetLockProofTransactionHeightError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     proof_core_chain_locked_height: u32,
     transaction_height: Option<u32>,
 }
@@ -28,6 +35,6 @@ impl InvalidAssetLockProofTransactionHeightError {
 
 impl From<InvalidAssetLockProofTransactionHeightError> for ConsensusError {
     fn from(err: InvalidAssetLockProofTransactionHeightError) -> Self {
-        Self::InvalidAssetLockProofTransactionHeightError(err)
+        Self::BasicError(BasicError::InvalidAssetLockProofTransactionHeightError(err))
     }
 }

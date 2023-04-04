@@ -1,35 +1,17 @@
-use dpp::util::json_schema::Index;
+use crate::buffer::Buffer;
+use dpp::consensus::basic::data_contract::InvalidIndexedPropertyConstraintError;
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::ConsensusError;
 use wasm_bindgen::prelude::*;
-
-use crate::IndexDefinitionWasm;
 
 #[wasm_bindgen(js_name=InvalidIndexedPropertyConstraintError)]
 pub struct InvalidIndexedPropertyConstraintErrorWasm {
-    document_type: String,
-    index_definition: Index,
-    property_name: String,
-    constraint_name: String,
-    reason: String,
-    code: u32,
+    inner: InvalidIndexedPropertyConstraintError,
 }
 
-impl InvalidIndexedPropertyConstraintErrorWasm {
-    pub fn new(
-        document_type: String,
-        index_definition: Index,
-        property_name: String,
-        constraint_name: String,
-        reason: String,
-        code: u32,
-    ) -> Self {
-        InvalidIndexedPropertyConstraintErrorWasm {
-            document_type,
-            index_definition,
-            property_name,
-            constraint_name,
-            reason,
-            code,
-        }
+impl From<&InvalidIndexedPropertyConstraintError> for InvalidIndexedPropertyConstraintErrorWasm {
+    fn from(e: &InvalidIndexedPropertyConstraintError) -> Self {
+        Self { inner: e.clone() }
     }
 }
 
@@ -37,31 +19,45 @@ impl InvalidIndexedPropertyConstraintErrorWasm {
 impl InvalidIndexedPropertyConstraintErrorWasm {
     #[wasm_bindgen(js_name=getDocumentType)]
     pub fn get_document_type(&self) -> String {
-        self.document_type.clone()
+        self.inner.document_type().to_string()
     }
 
-    #[wasm_bindgen(js_name=getIndexDefinition)]
-    pub fn get_index_definition(&self) -> JsValue {
-        IndexDefinitionWasm::from(self.index_definition.clone()).into()
+    #[wasm_bindgen(js_name=getIndexName)]
+    pub fn get_index_name(&self) -> String {
+        self.inner.index_name().to_string()
     }
 
     #[wasm_bindgen(js_name=getPropertyName)]
     pub fn get_property_name(&self) -> String {
-        self.property_name.clone()
+        self.inner.property_name().to_string()
     }
 
     #[wasm_bindgen(js_name=getConstraintName)]
     pub fn get_constraint_name(&self) -> String {
-        self.constraint_name.clone()
+        self.inner.constraint_name().to_string()
     }
 
     #[wasm_bindgen(js_name=getReason)]
     pub fn get_reason(&self) -> String {
-        self.reason.clone()
+        self.inner.reason().to_string()
     }
 
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {
-        self.code
+        ConsensusError::from(self.inner.clone()).code()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn message(&self) -> String {
+        self.inner.to_string()
+    }
+
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+        let bytes = ConsensusError::from(self.inner.clone())
+            .serialize()
+            .map_err(|e| JsError::from(e))?;
+
+        Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }

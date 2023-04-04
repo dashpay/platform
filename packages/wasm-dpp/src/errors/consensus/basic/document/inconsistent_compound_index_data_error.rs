@@ -1,20 +1,18 @@
+use crate::buffer::Buffer;
+use dpp::consensus::basic::document::InconsistentCompoundIndexDataError;
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::ConsensusError;
 use js_sys::JsString;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=InconsistentCompoundIndexDataError)]
 pub struct InconsistentCompoundIndexDataErrorWasm {
-    index_properties: Vec<String>,
-    document_type: String,
-    code: u32,
+    inner: InconsistentCompoundIndexDataError,
 }
 
-impl InconsistentCompoundIndexDataErrorWasm {
-    pub fn new(index_properties: Vec<String>, document_type: String, code: u32) -> Self {
-        InconsistentCompoundIndexDataErrorWasm {
-            index_properties,
-            document_type,
-            code,
-        }
+impl From<&InconsistentCompoundIndexDataError> for InconsistentCompoundIndexDataErrorWasm {
+    fn from(e: &InconsistentCompoundIndexDataError) -> Self {
+        Self { inner: e.clone() }
     }
 }
 
@@ -22,7 +20,8 @@ impl InconsistentCompoundIndexDataErrorWasm {
 impl InconsistentCompoundIndexDataErrorWasm {
     #[wasm_bindgen(js_name=getIndexedProperties)]
     pub fn get_indexed_properties(&self) -> js_sys::Array {
-        self.index_properties
+        self.inner
+            .index_properties()
             .iter()
             .map(|string| JsString::from(string.as_ref()))
             .collect()
@@ -30,11 +29,25 @@ impl InconsistentCompoundIndexDataErrorWasm {
 
     #[wasm_bindgen(js_name=getDocumentType)]
     pub fn get_document_type(&self) -> String {
-        self.document_type.clone()
+        self.inner.document_type().to_string()
     }
 
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {
-        self.code
+        ConsensusError::from(self.inner.clone()).code()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn message(&self) -> String {
+        self.inner.to_string()
+    }
+
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+        let bytes = ConsensusError::from(self.inner.clone())
+            .serialize()
+            .map_err(|e| JsError::from(e))?;
+
+        Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }

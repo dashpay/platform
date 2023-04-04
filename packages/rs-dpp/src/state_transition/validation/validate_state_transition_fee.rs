@@ -2,13 +2,14 @@ use anyhow::Context;
 use std::convert::TryInto;
 
 use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
+use crate::consensus::fee::balance_is_not_enough_error::BalanceIsNotEnoughError;
+use crate::consensus::fee::fee_error::FeeError;
 use crate::data_contract::errors::IdentityNotPresentError;
 use crate::state_transition::fee::calculate_state_transition_fee_factory::calculate_state_transition_fee;
 use crate::state_transition::fee::{Credits, FeeResult};
 use crate::state_transition::StateTransitionType;
 use crate::NonConsensusError;
 use crate::{
-    consensus::fee::FeeError,
     identity::{
         convert_satoshi_to_credits,
         state_transition::asset_lock_proof::AssetLockTransactionOutputFetcher,
@@ -100,10 +101,8 @@ where
                 }
 
                 if identity_balance.is_negative() && identity_balance.unsigned_abs() > balance {
-                    result.add_error(FeeError::BalanceIsNotEnoughError {
-                        balance: 0,
-                        fee: required_fee.desired_amount,
-                    });
+                    result.add_error(BalanceIsNotEnoughError::new(0, required_fee.desired_amount));
+
                     return Ok(result);
                 }
 
@@ -165,10 +164,9 @@ where
 
         // ? make sure Fee cannot be negative and refunds are handled differently
         if balance < required_fee.desired_amount {
-            result.add_error(FeeError::BalanceIsNotEnoughError {
-                balance,
-                fee: required_fee.desired_amount,
-            })
+            result.add_error(FeeError::BalanceIsNotEnoughError(
+                BalanceIsNotEnoughError::new(balance, required_fee.desired_amount),
+            ))
         }
 
         Ok(result)
@@ -196,6 +194,7 @@ where
 
 #[cfg(test)]
 mod test {
+    use super::*;
     use crate::tests::fixtures::{
         identity_create_transition_fixture, identity_topup_transition_fixture,
     };
@@ -210,7 +209,6 @@ mod test {
     use crate::state_transition::StateTransition;
     use crate::ProtocolError;
     use crate::{
-        consensus::fee::FeeError,
         document::{document_transition::Action, DocumentsBatchTransition},
         identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
         state_repository::MockStateRepositoryLike,
@@ -281,11 +279,7 @@ mod test {
             .expect("the validation result should be returned");
 
         let fee_error = get_fee_error_from_result(&result, 0);
-        assert!(
-            matches!(fee_error, FeeError::BalanceIsNotEnoughError { balance, fee: _ } if {
-                *balance == 1
-            })
-        );
+        assert!(matches!(fee_error, FeeError::BalanceIsNotEnoughError(e) if e.balance() == 1));
     }
 
     #[tokio::test]
@@ -342,11 +336,7 @@ mod test {
             .expect("the validation result should be returned");
 
         let fee_error = get_fee_error_from_result(&result, 0);
-        assert!(
-            matches!(fee_error, FeeError::BalanceIsNotEnoughError { balance, .. } if {
-                *balance == 1
-            })
-        );
+        assert!(matches!(fee_error, FeeError::BalanceIsNotEnoughError(e) if e.balance() == 1));
     }
 
     #[tokio::test]
@@ -435,9 +425,7 @@ mod test {
         let fee_error = get_fee_error_from_result(&result, 0);
 
         assert!(
-            matches!(fee_error, FeeError::BalanceIsNotEnoughError { balance, .. } if {
-                *balance == output_amount
-            })
+            matches!(fee_error, FeeError::BalanceIsNotEnoughError(e) if e.balance() == output_amount)
         );
     }
 
@@ -492,10 +480,9 @@ mod test {
             .expect("the validation result should be returned");
 
         let fee_error = get_fee_error_from_result(&result, 0);
+
         assert!(
-            matches!(fee_error, FeeError::BalanceIsNotEnoughError { balance, .. } if {
-                *balance == output_amount + 1
-            })
+            matches!(fee_error, FeeError::BalanceIsNotEnoughError(e) if e.balance() == output_amount + 1)
         );
     }
 

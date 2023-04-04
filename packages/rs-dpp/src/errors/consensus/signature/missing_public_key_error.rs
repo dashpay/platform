@@ -1,12 +1,19 @@
 use thiserror::Error;
 
-use crate::consensus::signature::SignatureError;
+use crate::consensus::signature::signature_error::SignatureError;
 use crate::consensus::ConsensusError;
 use crate::identity::KeyID;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Public key {public_key_id} doesn't exist")]
 pub struct MissingPublicKeyError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     public_key_id: KeyID,
 }
 

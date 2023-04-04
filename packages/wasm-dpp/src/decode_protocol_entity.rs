@@ -1,6 +1,6 @@
 use crate::errors::protocol_error::from_protocol_error;
 use core::iter::FromIterator;
-use dpp::decode_protocol_entity_factory::DecodeProtocolEntity;
+use dpp::encoding::decode_protocol_entity_factory::DecodeProtocolEntity;
 use dpp::ProtocolError;
 use js_sys::Array;
 use serde::Serialize;

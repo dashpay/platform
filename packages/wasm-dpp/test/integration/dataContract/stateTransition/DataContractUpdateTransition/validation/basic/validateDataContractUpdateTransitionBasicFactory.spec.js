@@ -1,7 +1,7 @@
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const { expectJsonSchemaError, expectValidationError, expectPlatformValueError } = require('../../../../../../../lib/test/expect/expectError');
+const { expectJsonSchemaError, expectValidationError, expectValueError } = require('../../../../../../../lib/test/expect/expectError');
 
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 
@@ -10,7 +10,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
   let validateDataContractUpdateTransitionBasic;
   let ValidationResult;
   let StateTransitionExecutionContext;
-  let PlatformValueError;
+  let ValueError;
   let DataContractValidator;
   let DataContractFactory;
   let DataContractImmutablePropertiesUpdateError;
@@ -30,7 +30,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
       validateDataContractUpdateTransitionBasic,
       ValidationResult,
       StateTransitionExecutionContext,
-      PlatformValueError,
+      ValueError,
       DataContractValidator,
       DataContractFactory,
       DataContractImmutablePropertiesUpdateError,
@@ -93,11 +93,11 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
         executionContext,
       );
 
-      await expectPlatformValueError(result);
+      await expectValueError(result);
 
       const [error] = result.getErrors();
 
-      expect(error).to.be.an.instanceOf(PlatformValueError);
+      expect(error).to.be.an.instanceOf(ValueError);
     });
 
     it('should be valid', async () => {
@@ -108,11 +108,11 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
         executionContext,
       );
 
-      await expectPlatformValueError(result);
+      await expectValueError(result);
 
       const [error] = result.getErrors();
 
-      expect(error).to.be.an.instanceOf(PlatformValueError);
+      expect(error).to.be.an.instanceOf(ValueError);
     });
   });
 
