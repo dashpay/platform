@@ -8,7 +8,7 @@ use serde_json::Value as JsonValue;
 use crate::consensus::basic::data_contract::InvalidDataContractIdError;
 use crate::consensus::basic::decode::ProtocolVersionParsingError;
 use crate::{
-    consensus::{basic::BasicError, ConsensusError},
+    consensus::basic::BasicError,
     data_contract::{generate_data_contract_id, state_transition::property_names},
     data_contract::{
         property_names as data_contract_property_names,
@@ -91,9 +91,7 @@ fn validate_data_contract_create_transition_basic(
         Ok(v) => v,
         Err(parsing_error) => {
             return Ok(SimpleValidationResult::new_with_errors(vec![
-                ConsensusError::ProtocolVersionParsingError(ProtocolVersionParsingError::new(
-                    parsing_error,
-                )),
+                ProtocolVersionParsingError::new(parsing_error.to_string()).into(),
             ]))
         }
     };

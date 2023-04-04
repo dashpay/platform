@@ -1,11 +1,20 @@
-use dpp::identity::KeyID;
-
+use crate::buffer::Buffer;
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::state::identity::duplicated_identity_public_key_id_state_error::DuplicatedIdentityPublicKeyIdStateError;
+use dpp::consensus::ConsensusError;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=DuplicatedIdentityPublicKeyIdStateError)]
 pub struct DuplicatedIdentityPublicKeyIdStateErrorWasm {
-    duplicated_ids: Vec<KeyID>,
-    code: u32,
+    inner: DuplicatedIdentityPublicKeyIdStateError,
+}
+
+impl From<&DuplicatedIdentityPublicKeyIdStateError>
+    for DuplicatedIdentityPublicKeyIdStateErrorWasm
+{
+    fn from(e: &DuplicatedIdentityPublicKeyIdStateError) -> Self {
+        Self { inner: e.clone() }
+    }
 }
 
 #[wasm_bindgen(js_class=DuplicatedIdentityPublicKeyIdStateError)]
@@ -13,7 +22,8 @@ impl DuplicatedIdentityPublicKeyIdStateErrorWasm {
     #[wasm_bindgen(js_name=getDuplicatedIds)]
     pub fn duplicated_ids(&self) -> js_sys::Array {
         // TODO: key ids probably should be u32
-        self.duplicated_ids
+        self.inner
+            .duplicated_ids()
             .iter()
             .map(|id| JsValue::from(*id))
             .collect()
@@ -21,15 +31,20 @@ impl DuplicatedIdentityPublicKeyIdStateErrorWasm {
 
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {
-        self.code
+        ConsensusError::from(self.inner.clone()).code()
     }
-}
 
-impl DuplicatedIdentityPublicKeyIdStateErrorWasm {
-    pub fn new(duplicated_ids: Vec<KeyID>, code: u32) -> Self {
-        Self {
-            duplicated_ids,
-            code,
-        }
+    #[wasm_bindgen(getter)]
+    pub fn message(&self) -> String {
+        self.inner.to_string()
+    }
+
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+        let bytes = ConsensusError::from(self.inner.clone())
+            .serialize()
+            .map_err(|e| JsError::from(e))?;
+
+        Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }

@@ -1,26 +1,27 @@
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
 use crate::identity::KeyID;
+use crate::PublicKeyValidationError;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::PublicKeyValidationError;
-
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
-#[error("Invalid identity public key {public_key_id:?} data: {message:?}")]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[error("Invalid identity public key {public_key_id:?} data: {validation_error:?}")]
 pub struct InvalidIdentityPublicKeyDataError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     public_key_id: KeyID,
-    message: String,
-    validation_error: Option<PublicKeyValidationError>,
+    validation_error: String,
 }
 
 impl InvalidIdentityPublicKeyDataError {
-    pub fn new(
-        public_key_id: KeyID,
-        message: String,
-        validation_error: Option<PublicKeyValidationError>,
-    ) -> Self {
+    pub fn new(public_key_id: KeyID, validation_error: PublicKeyValidationError) -> Self {
         Self {
             public_key_id,
-            message,
-            validation_error,
+            validation_error: validation_error.message().to_string(),
         }
     }
 
@@ -28,7 +29,12 @@ impl InvalidIdentityPublicKeyDataError {
         self.public_key_id
     }
 
-    pub fn validation_error(&self) -> &Option<PublicKeyValidationError> {
+    pub fn validation_error(&self) -> &str {
         &self.validation_error
+    }
+}
+impl From<InvalidIdentityPublicKeyDataError> for ConsensusError {
+    fn from(err: InvalidIdentityPublicKeyDataError) -> Self {
+        Self::BasicError(BasicError::InvalidIdentityPublicKeyDataError(err))
     }
 }

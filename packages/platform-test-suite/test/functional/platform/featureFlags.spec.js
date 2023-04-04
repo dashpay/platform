@@ -40,7 +40,9 @@ describe('Platform', () => {
           ownerId,
         );
 
-        const { blockHeight: lastBlockHeight } = identity.getMetadata();
+        const metadata = identity.getMetadata();
+
+        const lastBlockHeight = metadata.getBlockHeight();
 
         oldConsensusParams = await ownerClient.getDAPIClient().platform.getConsensusParams();
 
@@ -115,7 +117,8 @@ describe('Platform', () => {
             ownerId,
           );
 
-          ({ blockHeight: height } = someIdentity.getMetadata());
+          const metadata = someIdentity.getMetadata();
+          height = metadata.getBlockHeight();
         } while (height <= updateConsensusParamsFeatureFlag.enableAtHeight);
 
         let newConsensusParams;
@@ -155,7 +158,8 @@ describe('Platform', () => {
             ownerId,
           );
 
-          ({ blockHeight: height } = someIdentity.getMetadata());
+          const metadata = someIdentity.getMetadata();
+          height = metadata.getBlockHeight();
         } while (height <= revertConsensusParamsFeatureFlag.enableAtHeight);
 
         for (let i = 0; i < 5; i++) {

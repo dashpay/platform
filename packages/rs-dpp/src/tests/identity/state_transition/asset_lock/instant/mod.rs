@@ -3,15 +3,15 @@ mod validate_instant_asset_lock_proof_structure_factory {
     use std::str::FromStr;
     use std::sync::Arc;
 
+    use crate::consensus::basic::BasicError;
+    use crate::consensus::consensus_error::ConsensusError;
+
     use dashcore::hashes::sha256d::Hash as Sha256;
     use dashcore::hashes::Hash;
     use dashcore::Txid;
     use dashcore::{PrivateKey, Transaction};
-    use jsonschema::error::ValidationErrorKind;
     use platform_value::Value;
 
-    use crate::assert_consensus_errors;
-    use crate::consensus::ConsensusError;
     use crate::identity::state_transition::asset_lock_proof::{
         AssetLockProof, InstantAssetLockProof,
     };
@@ -23,7 +23,6 @@ mod validate_instant_asset_lock_proof_structure_factory {
     use crate::tests::fixtures::{
         instant_asset_lock_is_lock_fixture, instant_asset_lock_proof_transaction_fixture,
     };
-
     struct TestData {
         pub validate_instant_asset_lock_proof_structure:
             InstantAssetLockProofStructureValidator<MockStateRepositoryLike>,
@@ -80,6 +79,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
 
     mod asset_lock_type {
         use super::*;
+        use crate::assert_basic_consensus_errors;
 
         #[tokio::test]
         async fn should_be_present() {
@@ -92,17 +92,12 @@ mod validate_instant_asset_lock_proof_structure_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"type\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.instance_path(), "");
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "type");
         }
 
         #[tokio::test]
@@ -116,17 +111,20 @@ mod validate_instant_asset_lock_proof_structure_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/type");
-            assert_eq!(error.keyword().unwrap(), "const");
+            assert_eq!(error.instance_path(), "/type");
+            assert_eq!(error.keyword(), "const");
         }
     }
 
     mod instant_lock {
         use super::*;
+        use crate::assert_basic_consensus_errors;
+        use crate::consensus::basic::BasicError;
+        use crate::consensus::codes::ErrorWithCode;
 
         #[tokio::test]
         async fn should_be_present() {
@@ -139,17 +137,12 @@ mod validate_instant_asset_lock_proof_structure_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"instantLock\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.instance_path(), "");
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "instantLock");
         }
 
         #[tokio::test]
@@ -166,11 +159,11 @@ mod validate_instant_asset_lock_proof_structure_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 165);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 165);
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/instantLock/0");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.instance_path(), "/instantLock/0");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -187,11 +180,11 @@ mod validate_instant_asset_lock_proof_structure_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/instantLock");
-            assert_eq!(error.keyword().unwrap(), "minItems");
+            assert_eq!(error.instance_path(), "/instantLock");
+            assert_eq!(error.keyword(), "minItems");
         }
 
         #[tokio::test]
@@ -208,11 +201,11 @@ mod validate_instant_asset_lock_proof_structure_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/instantLock");
-            assert_eq!(error.keyword().unwrap(), "maxItems");
+            assert_eq!(error.instance_path(), "/instantLock");
+            assert_eq!(error.keyword(), "maxItems");
         }
 
         #[tokio::test]
@@ -229,7 +222,11 @@ mod validate_instant_asset_lock_proof_structure_factory {
                 .await
                 .unwrap();
 
-            assert_consensus_errors!(result, ConsensusError::InvalidInstantAssetLockProofError, 1);
+            assert_basic_consensus_errors!(
+                result,
+                BasicError::InvalidInstantAssetLockProofError,
+                1
+            );
 
             let consensus_error = result.first_error().unwrap();
             assert_eq!(consensus_error.code(), 1041);
@@ -256,9 +253,9 @@ mod validate_instant_asset_lock_proof_structure_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(
+            let errors = assert_basic_consensus_errors!(
                 result,
-                ConsensusError::IdentityAssetLockProofLockedTransactionMismatchError,
+                BasicError::IdentityAssetLockProofLockedTransactionMismatchError,
                 1
             );
 
@@ -288,9 +285,9 @@ mod validate_instant_asset_lock_proof_structure_factory {
 
             assert!(!result.is_valid());
 
-            assert_consensus_errors!(
+            assert_basic_consensus_errors!(
                 result,
-                ConsensusError::InvalidInstantAssetLockProofSignatureError,
+                BasicError::InvalidInstantAssetLockProofSignatureError,
                 1
             );
 
@@ -301,6 +298,8 @@ mod validate_instant_asset_lock_proof_structure_factory {
 
     mod transaction {
         use super::*;
+        use crate::assert_basic_consensus_errors;
+        use crate::consensus::codes::ErrorWithCode;
 
         #[tokio::test]
         async fn should_be_present() {
@@ -313,17 +312,12 @@ mod validate_instant_asset_lock_proof_structure_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"transaction\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.instance_path(), "");
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "transaction");
         }
 
         #[tokio::test]
@@ -340,11 +334,11 @@ mod validate_instant_asset_lock_proof_structure_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 66);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 66);
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/instantLock/0");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.instance_path(), "/instantLock/0");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -361,11 +355,11 @@ mod validate_instant_asset_lock_proof_structure_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/instantLock");
-            assert_eq!(error.keyword().unwrap(), "minItems");
+            assert_eq!(error.instance_path(), "/instantLock");
+            assert_eq!(error.keyword(), "minItems");
         }
 
         #[tokio::test]
@@ -382,11 +376,11 @@ mod validate_instant_asset_lock_proof_structure_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/instantLock");
-            assert_eq!(error.keyword().unwrap(), "maxItems");
+            assert_eq!(error.instance_path(), "/instantLock");
+            assert_eq!(error.keyword(), "maxItems");
         }
 
         #[tokio::test]
@@ -403,9 +397,9 @@ mod validate_instant_asset_lock_proof_structure_factory {
                 .await
                 .unwrap();
 
-            assert_consensus_errors!(
+            assert_basic_consensus_errors!(
                 result,
-                ConsensusError::InvalidIdentityAssetLockTransactionError,
+                BasicError::InvalidIdentityAssetLockTransactionError,
                 1
             );
 
@@ -416,6 +410,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
 
     mod output_index {
         use super::*;
+        use crate::assert_basic_consensus_errors;
 
         #[tokio::test]
         async fn should_be_present() {
@@ -428,17 +423,12 @@ mod validate_instant_asset_lock_proof_structure_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"outputIndex\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "outputIndex");
         }
 
         #[tokio::test]
@@ -455,11 +445,11 @@ mod validate_instant_asset_lock_proof_structure_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/outputIndex");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -476,11 +466,11 @@ mod validate_instant_asset_lock_proof_structure_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/outputIndex");
-            assert_eq!(error.keyword().unwrap(), "minimum");
+            assert_eq!(error.keyword(), "minimum");
         }
     }
 

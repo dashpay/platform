@@ -1,20 +1,17 @@
-use dpp::identity::Purpose;
+use crate::buffer::Buffer;
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::signature::WrongPublicKeyPurposeError;
+use dpp::consensus::ConsensusError;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=WrongPublicKeyPurposeError)]
 pub struct WrongPublicKeyPurposeErrorWasm {
-    public_key_purpose: Purpose,
-    key_purpose_requirement: Purpose,
-    code: u32,
+    inner: WrongPublicKeyPurposeError,
 }
 
-impl WrongPublicKeyPurposeErrorWasm {
-    pub fn new(public_key_purpose: Purpose, key_purpose_requirement: Purpose, code: u32) -> Self {
-        WrongPublicKeyPurposeErrorWasm {
-            public_key_purpose,
-            key_purpose_requirement,
-            code,
-        }
+impl From<&WrongPublicKeyPurposeError> for WrongPublicKeyPurposeErrorWasm {
+    fn from(e: &WrongPublicKeyPurposeError) -> Self {
+        Self { inner: e.clone() }
     }
 }
 
@@ -22,16 +19,30 @@ impl WrongPublicKeyPurposeErrorWasm {
 impl WrongPublicKeyPurposeErrorWasm {
     #[wasm_bindgen(js_name=getPublicKeyPurpose)]
     pub fn get_public_key_purpose(&self) -> u8 {
-        self.public_key_purpose as u8
+        self.inner.public_key_purpose() as u8
     }
 
     #[wasm_bindgen(js_name=getKeyPurposeRequirement)]
     pub fn get_key_purpose_requirement(&self) -> u8 {
-        self.key_purpose_requirement as u8
+        self.inner.key_purpose_requirement() as u8
     }
 
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {
-        self.code
+        ConsensusError::from(self.inner.clone()).code()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn message(&self) -> String {
+        self.inner.to_string()
+    }
+
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+        let bytes = ConsensusError::from(self.inner.clone())
+            .serialize()
+            .map_err(|e| JsError::from(e))?;
+
+        Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }
