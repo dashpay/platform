@@ -451,6 +451,41 @@ class LoggedStateRepositoryDecorator {
   }
 
   /**
+   * Fetch Extended Documents by contract ID and type
+   *
+   * @param {Identifier} contractId
+   * @param {string} type
+   * @param {{ where: Object }} [options]
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<ExtendedDocument[]>}
+   */
+  async fetchExtendedDocuments(contractId, type, options = {}, executionContext = undefined) {
+    let response;
+
+    try {
+      response = await this.stateRepository.fetchExtendedDocuments(
+        contractId,
+        type,
+        options,
+        executionContext,
+      );
+    } finally {
+      this.log(
+        'fetchExtendedDocuments',
+        {
+          contractId,
+          type,
+          options,
+        },
+        response,
+      );
+    }
+
+    return response;
+  }
+
+  /**
    * Create document
    *
    * @param {Document} document
