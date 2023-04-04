@@ -7,6 +7,9 @@ use platform_value::platform_value;
 
 use crate::consensus::signature::IdentityNotFoundError;
 
+use crate::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
+use crate::consensus::state::identity::IdentityInsufficientBalanceError;
+use crate::consensus::state::state_error::StateError;
 use crate::contracts::withdrawals_contract;
 use crate::document::{generate_document_id, Document};
 use crate::identity::state_transition::identity_credit_withdrawal_transition::{
@@ -14,10 +17,9 @@ use crate::identity::state_transition::identity_credit_withdrawal_transition::{
 };
 use crate::validation::ValidationResult;
 use crate::{
-    consensus::basic::identity::IdentityInsufficientBalanceError,
     identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
     state_repository::StateRepositoryLike, state_transition::StateTransitionLike,
-    NonConsensusError, ProtocolError, StateError,
+    NonConsensusError, ProtocolError,
 };
 
 pub struct IdentityCreditWithdrawalTransitionValidator<SR>
@@ -80,10 +82,12 @@ where
 
         // Check revision
         if existing_identity.get_revision() != (state_transition.get_revision() - 1) {
-            result.add_error(StateError::InvalidIdentityRevisionError {
-                identity_id: existing_identity.get_id().to_owned(),
-                current_revision: existing_identity.get_revision(),
-            });
+            result.add_error(StateError::InvalidIdentityRevisionError(
+                InvalidIdentityRevisionError::new(
+                    existing_identity.get_id().to_owned(),
+                    existing_identity.get_revision(),
+                ),
+            ));
 
             return Ok(result);
         }

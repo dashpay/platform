@@ -20,7 +20,6 @@ describe('validatePublicKeysFactory', function main() {
   let publicKeysValidator;
 
   let PublicKeysValidator;
-  let PublicKeyValidationError;
   let IdentityPublicKey;
 
   let DuplicatedIdentityPublicKeyError;
@@ -36,7 +35,6 @@ describe('validatePublicKeysFactory', function main() {
       InvalidIdentityPublicKeyDataError,
       DuplicatedIdentityPublicKeyError, DuplicatedIdentityPublicKeyIdError,
       InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError,
-      PublicKeyValidationError,
     } = await loadWasmDpp());
 
     bls = await BlsSignatures.getInstance();
@@ -336,8 +334,7 @@ describe('validatePublicKeysFactory', function main() {
 
     expect(error.getCode()).to.equal(1040);
     expect(error.getPublicKeyId()).to.deep.equal(rawPublicKeys[1].id);
-    expect(error.getValidationError()).to.be.instanceOf(PublicKeyValidationError);
-    expect(error.getValidationError().message).to.equal('Key secp256k1 error: malformed public key');
+    expect(error.getValidationError()).to.equal('Key secp256k1 error: malformed public key');
   });
 
   it('should return invalid result if key has an invalid combination of purpose and security level', async () => {
@@ -410,8 +407,7 @@ describe('validatePublicKeysFactory', function main() {
 
     expect(error.getCode()).to.equal(1040);
     expect(error.getPublicKeyId()).to.deep.equal(rawPublicKeys[0].id);
-    expect(error.getValidationError()).to.be.instanceOf(PublicKeyValidationError);
-    expect(error.getValidationError().message).to.equal('Invalid public key');
+    expect(error.getValidationError()).to.equal('Invalid public key');
   });
 
   describe('Identity Schema', () => {

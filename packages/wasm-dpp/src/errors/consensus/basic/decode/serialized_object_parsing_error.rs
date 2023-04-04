@@ -1,29 +1,43 @@
+use crate::buffer::Buffer;
+use dpp::consensus::basic::decode::SerializedObjectParsingError;
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::ConsensusError;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=SerializedObjectParsingError)]
 pub struct SerializedObjectParsingErrorWasm {
-    parsing_error: JsError,
-    code: u32,
+    inner: SerializedObjectParsingError,
 }
 
-impl SerializedObjectParsingErrorWasm {
-    pub fn new(parsing_error: JsError, code: u32) -> Self {
-        SerializedObjectParsingErrorWasm {
-            parsing_error,
-            code,
-        }
+impl From<&SerializedObjectParsingError> for SerializedObjectParsingErrorWasm {
+    fn from(e: &SerializedObjectParsingError) -> Self {
+        Self { inner: e.clone() }
     }
 }
 
 #[wasm_bindgen(js_class=SerializedObjectParsingError)]
 impl SerializedObjectParsingErrorWasm {
     #[wasm_bindgen(js_name=getParsingError)]
-    pub fn get_parsing_error(&self) -> JsError {
-        self.parsing_error.clone()
+    pub fn get_parsing_error(&self) -> String {
+        self.inner.parsing_error().to_string()
     }
 
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {
-        self.code
+        ConsensusError::from(self.inner.clone()).code()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn message(&self) -> String {
+        self.inner.to_string()
+    }
+
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+        let bytes = ConsensusError::from(self.inner.clone())
+            .serialize()
+            .map_err(|e| JsError::from(e))?;
+
+        Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }
