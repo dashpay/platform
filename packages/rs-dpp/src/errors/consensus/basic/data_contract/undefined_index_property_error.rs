@@ -6,6 +6,11 @@ use thiserror::Error;
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("'{property_name}' property is not defined in the '{document_type}' document")]
 pub struct UndefinedIndexPropertyError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     document_type: String,
     index_name: String,
     property_name: String,

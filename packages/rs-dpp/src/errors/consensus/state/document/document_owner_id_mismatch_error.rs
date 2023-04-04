@@ -7,6 +7,11 @@ use thiserror::Error;
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Provided document {document_id} owner ID {document_owner_id} mismatch with existing {existing_document_owner_id}")]
 pub struct DocumentOwnerIdMismatchError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     document_id: Identifier,
     document_owner_id: Identifier,
     existing_document_owner_id: Identifier,

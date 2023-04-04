@@ -6,6 +6,11 @@ use thiserror::Error;
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Invalid instant lock proof: ${message}")]
 pub struct InvalidInstantAssetLockProofError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     pub message: String,
 }
 

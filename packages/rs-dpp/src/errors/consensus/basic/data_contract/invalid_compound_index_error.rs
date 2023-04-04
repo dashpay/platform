@@ -7,6 +7,11 @@ use crate::consensus::ConsensusError;
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("All or none of unique compound properties must be set for '{index_name}' index of '{document_type}' document")]
 pub struct InvalidCompoundIndexError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     document_type: String,
     index_name: String,
 }

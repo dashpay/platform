@@ -6,6 +6,11 @@ use thiserror::Error;
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("System property '{property_name}' is already indexed and can't be used in '{index_name}' index of '{document_type}' document")]
 pub struct SystemPropertyIndexAlreadyPresentError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     document_type: String,
     index_name: String,
     property_name: String,

@@ -6,6 +6,11 @@ use thiserror::Error;
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Protocol version {parsed_protocol_version:?} is not supported. Minimal supported protocol version is {minimal_protocol_version:?}")]
 pub struct IncompatibleProtocolVersionError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     parsed_protocol_version: u32,
     minimal_protocol_version: u32,
 }

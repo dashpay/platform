@@ -6,6 +6,11 @@ use thiserror::Error;
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Document with type {document_type} has updated unique index named '{index_name}'. Change of unique indices is not allowed")]
 pub struct DataContractUniqueIndicesChangedError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     document_type: String,
     index_name: String,
 }

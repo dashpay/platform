@@ -10,6 +10,11 @@ use thiserror::Error;
 #[derive(Error, Debug, Serialize, Deserialize, Clone)]
 #[error("JsonSchemaError: keyword: {keyword}, instance_path: {instance_path}, schema_path:{schema_path}")]
 pub struct JsonSchemaError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     error_summary: String,
     keyword: String,
     instance_path: String,

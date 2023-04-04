@@ -8,6 +8,11 @@ use crate::identity::{KeyID, Purpose, SecurityLevel};
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Invalid identity public key {public_key_id:?} security level: purpose {purpose:?} allows only for {allowed_security_levels:?} security levels, but got {security_level:?}")]
 pub struct InvalidIdentityPublicKeySecurityLevelError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     public_key_id: KeyID,
     purpose: Purpose,
     security_level: SecurityLevel,

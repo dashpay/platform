@@ -7,6 +7,11 @@ use thiserror::Error;
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Document {document_id} createdAt and updatedAt timestamps are not equal")]
 pub struct DocumentTimestampsMismatchError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     document_id: Identifier,
 }
 

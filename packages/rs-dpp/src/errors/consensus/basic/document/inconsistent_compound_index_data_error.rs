@@ -9,6 +9,11 @@ use thiserror::Error;
     index_properties
 )]
 pub struct InconsistentCompoundIndexDataError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     document_type: String,
     index_properties: Vec<String>,
 }

@@ -8,6 +8,11 @@ use crate::prelude::Identifier;
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Insufficient identity ${identity_id} balance ${balance}")]
 pub struct IdentityInsufficientBalanceError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     pub identity_id: Identifier,
     pub balance: u64,
 }

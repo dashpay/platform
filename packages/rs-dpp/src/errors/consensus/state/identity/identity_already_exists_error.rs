@@ -7,6 +7,11 @@ use thiserror::Error;
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Identity ${identity_id:?} already exists")]
 pub struct IdentityAlreadyExistsError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     identity_id: Identifier,
 }
 

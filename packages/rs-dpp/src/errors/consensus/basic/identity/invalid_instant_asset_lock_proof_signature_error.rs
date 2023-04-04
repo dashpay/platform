@@ -7,6 +7,12 @@ use thiserror::Error;
 #[error("Invalid instant lock proof signature")]
 pub struct InvalidInstantAssetLockProofSignatureError;
 
+/*
+
+DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+*/
+
 impl InvalidInstantAssetLockProofSignatureError {
     pub fn new() -> Self {
         Self::default()

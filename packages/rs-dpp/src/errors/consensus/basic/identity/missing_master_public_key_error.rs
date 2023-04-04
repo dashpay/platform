@@ -7,7 +7,13 @@ use thiserror::Error;
 #[error(
     "Identity doesn't contain any master key, thus can not be updated. Please add a master key"
 )]
-pub struct MissingMasterPublicKeyError {}
+pub struct MissingMasterPublicKeyError;
+
+/*
+
+DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+*/
 
 impl MissingMasterPublicKeyError {
     pub fn new() -> Self {

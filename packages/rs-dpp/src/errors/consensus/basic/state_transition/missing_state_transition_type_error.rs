@@ -7,6 +7,12 @@ use thiserror::Error;
 #[error("State transition type is not present")]
 pub struct MissingStateTransitionTypeError;
 
+/*
+
+DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+*/
+
 impl MissingStateTransitionTypeError {
     pub fn new() -> Self {
         Self::default()

@@ -7,6 +7,11 @@ use crate::consensus::ConsensusError;
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Core chain locked height {proof_core_chain_locked_height:?} must be higher than block {transaction_height:?} with Asset Lock transaction")]
 pub struct InvalidAssetLockProofTransactionHeightError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     proof_core_chain_locked_height: u32,
     transaction_height: Option<u32>,
 }

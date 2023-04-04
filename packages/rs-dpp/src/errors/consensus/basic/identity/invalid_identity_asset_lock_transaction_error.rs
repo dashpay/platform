@@ -6,6 +6,11 @@ use thiserror::Error;
 #[derive(Error, Debug, Clone, Serialize, Deserialize)]
 #[error("Invalid asset lock transaction: ${message}")]
 pub struct InvalidIdentityAssetLockTransactionError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     message: String,
 }
 

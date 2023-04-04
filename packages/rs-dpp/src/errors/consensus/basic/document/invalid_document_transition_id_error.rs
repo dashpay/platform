@@ -11,6 +11,11 @@ use thiserror::Error;
     expected_id
 )]
 pub struct InvalidDocumentTransitionIdError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     expected_id: Identifier,
     invalid_id: Identifier,
 }

@@ -7,6 +7,11 @@ use crate::consensus::ConsensusError;
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Duplicate index name '{duplicate_index_name}' defined in '{document_type}' document")]
 pub struct DuplicateIndexNameError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     document_type: String,
     duplicate_index_name: String,
 }

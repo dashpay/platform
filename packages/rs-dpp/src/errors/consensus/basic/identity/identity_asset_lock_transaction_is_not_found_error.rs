@@ -9,6 +9,11 @@ use crate::consensus::ConsensusError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IdentityAssetLockTransactionIsNotFoundError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     transaction_id: [u8; 32],
 }
 

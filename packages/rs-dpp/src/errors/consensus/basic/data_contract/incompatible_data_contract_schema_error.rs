@@ -9,6 +9,11 @@ use crate::prelude::Identifier;
 #[error("Data Contract updated schema is not backward compatible with one defined in Data Contract wid id {data_contract_id}. Field: '{field_path}', Operation: '{operation}'"
 )]
 pub struct IncompatibleDataContractSchemaError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     data_contract_id: Identifier,
     operation: String,
     field_path: String,

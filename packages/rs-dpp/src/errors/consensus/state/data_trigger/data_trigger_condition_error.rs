@@ -8,6 +8,11 @@ use thiserror::Error;
 #[derive(Error, Debug, Clone, Serialize, Deserialize)]
 #[error("{message}")]
 pub struct DataTriggerConditionError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     data_contract_id: Identifier,
     document_id: Identifier,
     message: String,

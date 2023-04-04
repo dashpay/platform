@@ -9,6 +9,11 @@ use thiserror::Error;
     references
 )]
 pub struct DuplicateDocumentTransitionsWithIndicesError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     references: Vec<(String, [u8; 32])>,
 }
 

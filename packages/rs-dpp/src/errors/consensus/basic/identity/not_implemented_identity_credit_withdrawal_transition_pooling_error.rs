@@ -9,6 +9,11 @@ use crate::consensus::ConsensusError;
     "pooling {pooling:?} should be equal to 0. Other pooling mechanism are not implemented yet"
 )]
 pub struct NotImplementedIdentityCreditWithdrawalTransitionPoolingError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     pooling: u8,
 }
 

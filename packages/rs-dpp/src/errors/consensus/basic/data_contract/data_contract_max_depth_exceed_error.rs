@@ -6,6 +6,11 @@ use thiserror::Error;
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("JSON Schema depth is greater than {max_depth:?}")]
 pub struct DataContractMaxDepthExceedError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     schema_depth: usize,
     max_depth: usize,
 }

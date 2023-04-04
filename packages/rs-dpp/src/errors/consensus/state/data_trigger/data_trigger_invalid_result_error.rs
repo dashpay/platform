@@ -8,6 +8,11 @@ use thiserror::Error;
 #[derive(Error, Debug, Clone, Serialize, Deserialize)]
 #[error("Data trigger have not returned any result")]
 pub struct DataTriggerInvalidResultError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     data_contract_id: Identifier,
     document_id: Identifier,
 }

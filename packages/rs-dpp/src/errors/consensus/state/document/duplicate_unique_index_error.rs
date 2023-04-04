@@ -7,6 +7,11 @@ use thiserror::Error;
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Document {document_id} has duplicate unique properties {duplicating_properties:?} with other documents")]
 pub struct DuplicateUniqueIndexError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     document_id: Identifier,
     duplicating_properties: Vec<String>,
 }

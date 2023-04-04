@@ -6,6 +6,11 @@ use thiserror::Error;
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Asset Lock Transaction Output with index ${output_index} not found")]
 pub struct IdentityAssetLockTransactionOutputNotFoundError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     output_index: usize,
 }
 

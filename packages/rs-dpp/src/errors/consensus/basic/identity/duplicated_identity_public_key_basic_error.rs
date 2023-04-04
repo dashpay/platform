@@ -7,6 +7,11 @@ use thiserror::Error;
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Duplicated public keys ${duplicated_ids:?} found")]
 pub struct DuplicatedIdentityPublicKeyBasicError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     duplicated_ids: Vec<KeyID>,
 }
 

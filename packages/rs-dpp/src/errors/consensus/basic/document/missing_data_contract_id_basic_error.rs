@@ -7,6 +7,12 @@ use thiserror::Error;
 #[error("$dataContractId is not present")]
 pub struct MissingDataContractIdBasicError;
 
+/*
+
+DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+*/
+
 impl MissingDataContractIdBasicError {
     pub fn new() -> Self {
         Self::default()

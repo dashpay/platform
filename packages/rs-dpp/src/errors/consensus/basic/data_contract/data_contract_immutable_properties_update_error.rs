@@ -7,6 +7,11 @@ use crate::consensus::ConsensusError;
 #[derive(Error, Debug, Clone, Serialize, Deserialize)]
 #[error("only $defs, version and documents fields are allowed to be updated. Forbidden operation '{operation}' on '{field_path}'")]
 pub struct DataContractImmutablePropertiesUpdateError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     operation: String,
     field_path: String,
 }

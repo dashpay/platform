@@ -7,6 +7,11 @@ use thiserror::Error;
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Asset lock transaction ${transaction_id:?} output ${output_index:?} already used")]
 pub struct IdentityAssetLockTransactionOutPointAlreadyExistsError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     transaction_id: Txid,
     output_index: usize,
 }

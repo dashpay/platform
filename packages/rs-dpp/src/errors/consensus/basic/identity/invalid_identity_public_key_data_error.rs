@@ -8,6 +8,11 @@ use thiserror::Error;
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Invalid identity public key {public_key_id:?} data: {validation_error:?}")]
 pub struct InvalidIdentityPublicKeyDataError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     public_key_id: KeyID,
     validation_error: String,
 }

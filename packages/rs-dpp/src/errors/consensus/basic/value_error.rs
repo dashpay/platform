@@ -1,12 +1,17 @@
 use crate::consensus::basic::BasicError;
-use platform_value::Error as PlatformValueError;
 use crate::consensus::ConsensusError;
+use platform_value::Error as PlatformValueError;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("{value_error}")]
 pub struct ValueError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     value_error: String,
 }
 

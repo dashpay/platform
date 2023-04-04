@@ -8,6 +8,11 @@ use crate::prelude::{Identifier, Revision};
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Identity {identity_id} has invalid revision. The current revision is {current_revision}")]
 pub struct InvalidIdentityRevisionError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     identity_id: Identifier,
     current_revision: Revision,
 }

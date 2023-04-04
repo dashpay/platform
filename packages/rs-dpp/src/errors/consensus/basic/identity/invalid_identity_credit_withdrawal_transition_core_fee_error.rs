@@ -7,6 +7,11 @@ use crate::consensus::ConsensusError;
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Core fee per byte {core_fee_per_byte:?} must be part of fibonacci sequence")]
 pub struct InvalidIdentityCreditWithdrawalTransitionCoreFeeError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     core_fee_per_byte: u32,
 }
 

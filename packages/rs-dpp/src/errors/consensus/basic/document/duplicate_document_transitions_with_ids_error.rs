@@ -6,6 +6,11 @@ use thiserror::Error;
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Document transitions with duplicate IDs {:?}", references)]
 pub struct DuplicateDocumentTransitionsWithIdsError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     references: Vec<(String, [u8; 32])>,
 }
 

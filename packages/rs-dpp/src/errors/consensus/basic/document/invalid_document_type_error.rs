@@ -8,6 +8,11 @@ use crate::prelude::Identifier;
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Data Contract {data_contract_id} doesn't define document with the type {document_type}")]
 pub struct InvalidDocumentTypeError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     document_type: String,
     data_contract_id: Identifier,
 }

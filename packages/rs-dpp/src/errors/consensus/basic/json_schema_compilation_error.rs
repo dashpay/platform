@@ -6,14 +6,17 @@ use thiserror::Error;
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("JsonSchema compilation error: {compilation_error}")]
 pub struct JsonSchemaCompilationError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     compilation_error: String,
 }
 
 impl JsonSchemaCompilationError {
     pub fn new(compilation_error: String) -> Self {
-        Self {
-            compilation_error,
-        }
+        Self { compilation_error }
     }
 
     pub fn compilation_error(&self) -> &str {

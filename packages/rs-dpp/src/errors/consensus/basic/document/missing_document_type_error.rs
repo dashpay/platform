@@ -7,6 +7,12 @@ use thiserror::Error;
 #[error("$type is not present")]
 pub struct MissingDocumentTypeError;
 
+/*
+
+DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+*/
+
 impl MissingDocumentTypeError {
     pub fn new() -> Self {
         Self::default()

@@ -7,6 +7,11 @@ use crate::consensus::ConsensusError;
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Pattern '{pattern}' at '{path}' is not not compatible with Re2: {message}")]
 pub struct IncompatibleRe2PatternError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     pattern: String,
     path: String,
     message: String,

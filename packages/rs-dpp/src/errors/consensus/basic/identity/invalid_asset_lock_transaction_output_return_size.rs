@@ -8,6 +8,11 @@ use thiserror::Error;
     "Asset Lock output ${output_index} has invalid public key hash. Must be 20 length bytes hash"
 )]
 pub struct InvalidAssetLockTransactionOutputReturnSizeError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     output_index: usize,
 }
 

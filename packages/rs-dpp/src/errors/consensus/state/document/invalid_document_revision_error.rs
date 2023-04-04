@@ -10,6 +10,11 @@ use thiserror::Error;
     "Document {document_id} has invalid revision. The current revision is {current_revision:?}"
 )]
 pub struct InvalidDocumentRevisionError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     document_id: Identifier,
     current_revision: Option<Revision>,
 }

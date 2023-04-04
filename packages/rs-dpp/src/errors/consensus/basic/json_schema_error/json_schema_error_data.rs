@@ -7,6 +7,11 @@ use std::ops::Deref;
 
 #[derive(Debug, Serialize, Default, Deserialize)]
 pub struct JsonSchemaErrorData {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     pub keyword: String,
     pub params: serde_json::Map<String, Value>,
     pub property_name: String,

@@ -8,6 +8,11 @@ use serde::{Deserialize, Serialize};
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Current credits balance {balance} is not enough to pay {fee} fee")]
 pub struct BalanceIsNotEnoughError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     balance: Credits,
     fee: Credits,
 }

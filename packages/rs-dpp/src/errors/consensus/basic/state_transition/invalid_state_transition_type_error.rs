@@ -1,11 +1,16 @@
 use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use crate::consensus::ConsensusError;
 
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Invalid State Transition type {transition_type}")]
 pub struct InvalidStateTransitionTypeError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     transition_type: u8,
 }
 

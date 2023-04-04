@@ -8,6 +8,11 @@ use crate::identity::KeyID;
 #[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Identity key {public_key_id} has invalid signature")]
 pub struct InvalidIdentityKeySignatureError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     public_key_id: KeyID,
 }
 

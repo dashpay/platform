@@ -7,6 +7,12 @@ use thiserror::Error;
 #[error("$action is not present")]
 pub struct MissingDocumentTransitionActionError;
 
+/*
+
+DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+*/
+
 impl MissingDocumentTransitionActionError {
     pub fn new() -> Self {
         Self::default()
