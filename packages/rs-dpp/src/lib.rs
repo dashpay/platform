@@ -53,6 +53,7 @@ pub mod prelude {
     pub use crate::document::ExtendedDocument;
     pub use crate::errors::ProtocolError;
     pub use crate::identifier::Identifier;
+    pub use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
     pub use crate::identity::Identity;
     pub use crate::identity::IdentityPublicKey;
     pub use crate::validation::ValidationResult;
