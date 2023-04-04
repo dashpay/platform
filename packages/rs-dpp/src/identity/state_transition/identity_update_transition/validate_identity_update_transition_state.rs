@@ -11,12 +11,7 @@ use crate::consensus::state::identity::identity_public_key_is_read_only_error::I
 use crate::consensus::state::identity::invalid_identity_public_key_id_error::InvalidIdentityPublicKeyIdError;
 use crate::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
 use crate::consensus::state::state_error::StateError;
-use crate::consensus::ConsensusError::StateError;
 use crate::identity::state_transition::identity_update_transition::IdentityUpdateTransitionAction;
-use crate::StateError::{
-    IdentityPublicKeyIsDisabledError, IdentityPublicKeyIsReadOnlyError,
-    InvalidIdentityPublicKeyIdError, InvalidIdentityRevisionError,
-};
 use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
     identity::validation::{RequiredPurposeAndSecurityLevelValidator, TPublicKeysValidator},
