@@ -144,9 +144,16 @@ where
             }
         };
 
-        let new_version = new_data_contract_object.get_integer(contract_property_names::VERSION)?;
+        let new_version: u32 =
+            new_data_contract_object.get_integer(contract_property_names::VERSION)?;
         let old_version = existing_data_contract.version;
-        if new_version < old_version || new_version - old_version != 1 {
+
+        let version_diff = new_version
+            .checked_sub(old_version)
+            .ok_or(ProtocolError::Overflow(
+                "comparing protocol versions failed",
+            ))?;
+        if new_version < old_version || version_diff != 1 {
             validation_result.add_error(BasicError::InvalidDataContractVersionError(
                 InvalidDataContractVersionError::new(old_version + 1, new_version),
             ))

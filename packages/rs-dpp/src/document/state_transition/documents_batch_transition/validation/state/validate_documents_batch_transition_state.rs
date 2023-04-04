@@ -21,6 +21,7 @@ use crate::document::state_transition::documents_batch_transition::{
 };
 use crate::document::Document;
 use crate::validation::{AsyncDataValidator, SimpleConsensusValidationResult};
+use crate::NonConsensusError;
 use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
     consensus::ConsensusError,
@@ -260,11 +261,11 @@ fn validate_transition(
             result.merge(validation_result);
 
             let validation_result =
-                check_created_inside_time_window(transition, last_header_block_time_millis);
+                check_created_inside_time_window(transition, last_header_block_time_millis)?;
             result.merge(validation_result);
 
             let validation_result =
-                check_updated_inside_time_window(transition, last_header_block_time_millis);
+                check_updated_inside_time_window(transition, last_header_block_time_millis)?;
             result.merge(validation_result);
 
             let validation_result =
@@ -285,7 +286,7 @@ fn validate_transition(
                 DocumentTransitionAction::ReplaceAction(DocumentReplaceTransitionAction::default()),
             );
             let validation_result =
-                check_updated_inside_time_window(transition, last_header_block_time_millis);
+                check_updated_inside_time_window(transition, last_header_block_time_millis)?;
             result.merge(validation_result);
 
             let validation_result = check_revision(transition, fetched_documents);
@@ -459,15 +460,16 @@ pub fn check_if_timestamps_are_equal(
 pub fn check_created_inside_time_window(
     document_transition: &DocumentTransition,
     last_block_ts_millis: TimestampMillis,
-) -> SimpleConsensusValidationResult {
+) -> Result<SimpleConsensusValidationResult, NonConsensusError> {
     let mut result = SimpleConsensusValidationResult::default();
     let created_at = match document_transition.get_created_at() {
         Some(t) => t,
-        None => return result,
+        None => return Ok(result),
     };
 
     //todo: deal with block spacing
-    let window_validation = validate_time_in_block_time_window(last_block_ts_millis, created_at, 0);
+    let window_validation =
+        validate_time_in_block_time_window(last_block_ts_millis, created_at, 0)?;
     if !window_validation.is_valid() {
         result.add_error(ConsensusError::StateError(
             StateError::DocumentTimestampWindowViolationError(
@@ -481,21 +483,22 @@ pub fn check_created_inside_time_window(
             ),
         ));
     }
-    result
+    Ok(result)
 }
 
 pub fn check_updated_inside_time_window(
     document_transition: &DocumentTransition,
     last_block_ts_millis: TimestampMillis,
-) -> SimpleConsensusValidationResult {
+) -> Result<SimpleConsensusValidationResult, ProtocolError> {
     let mut result = SimpleConsensusValidationResult::default();
     let updated_at = match document_transition.get_updated_at() {
         Some(t) => t,
-        None => return result,
+        None => return Ok(result),
     };
 
     //todo: deal with block spacing
-    let window_validation = validate_time_in_block_time_window(last_block_ts_millis, updated_at, 0);
+    let window_validation =
+        validate_time_in_block_time_window(last_block_ts_millis, updated_at, 0)?;
     if !window_validation.is_valid() {
         result.add_error(ConsensusError::StateError(
             StateError::DocumentTimestampWindowViolationError(
@@ -509,5 +512,5 @@ pub fn check_updated_inside_time_window(
             ),
         ));
     }
-    result
+    Ok(result)
 }
