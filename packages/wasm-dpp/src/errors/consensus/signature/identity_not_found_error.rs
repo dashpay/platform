@@ -4,6 +4,7 @@ use dpp::consensus::ConsensusError;
 use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;
+use crate::identifier::IdentifierWrapper;
 
 #[wasm_bindgen(js_name=IdentityNotFoundError)]
 pub struct IdentityNotFoundErrorWasm {
@@ -18,9 +19,16 @@ impl From<&IdentityNotFoundError> for IdentityNotFoundErrorWasm {
 
 #[wasm_bindgen(js_class=IdentityNotFoundError)]
 impl IdentityNotFoundErrorWasm {
+    #[wasm_bindgen(constructor)]
+    pub fn new(identity_id: IdentifierWrapper) -> Self {
+        Self {
+            inner: IdentityNotFoundError::new(identity_id.into()),
+        }
+    }
+
     #[wasm_bindgen(js_name=getIdentityId)]
-    pub fn get_identity_id(&self) -> Buffer {
-        Buffer::from_bytes(self.inner.identity_id().as_bytes())
+    pub fn get_identity_id(&self) -> IdentifierWrapper {
+        self.inner.identity_id().into()
     }
 
     #[wasm_bindgen(js_name=getCode)]
@@ -37,7 +45,7 @@ impl IdentityNotFoundErrorWasm {
     pub fn serialize(&self) -> Result<Buffer, JsError> {
         let bytes = ConsensusError::from(self.inner.clone())
             .serialize()
-            .map_err(|e| JsError::from(e))?;
+            .map_err(JsError::from)?;
 
         Ok(Buffer::from_bytes(bytes.as_slice()))
     }
