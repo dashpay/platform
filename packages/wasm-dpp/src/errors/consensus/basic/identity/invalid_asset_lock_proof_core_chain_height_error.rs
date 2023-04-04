@@ -1,8 +1,8 @@
+use crate::buffer::Buffer;
 use dpp::consensus::basic::identity::InvalidAssetLockProofCoreChainHeightError;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
 use wasm_bindgen::prelude::*;
-use crate::buffer::Buffer;
 
 #[wasm_bindgen(js_name=InvalidAssetLockProofCoreChainHeightError)]
 pub struct InvalidAssetLockProofCoreChainHeightErrorWasm {
@@ -35,16 +35,16 @@ impl InvalidAssetLockProofCoreChainHeightErrorWasm {
     }
 
     #[wasm_bindgen(getter)]
-pub fn message(&self) -> String {
-  self.inner.to_string()
-}
+    pub fn message(&self) -> String {
+        self.inner.to_string()
+    }
 
-#[wasm_bindgen(js_name=serialize)]
+    #[wasm_bindgen(js_name=serialize)]
     pub fn serialize(&self) -> Result<Buffer, JsError> {
-      let bytes = ConsensusError::from(self.inner.clone())
-        .serialize()
-        .map_err(|e| JsError::from(e))?;
+        let bytes = ConsensusError::from(self.inner.clone())
+            .serialize()
+            .map_err(|e| JsError::from(e))?;
 
-      Ok(Buffer::from_bytes(bytes.as_slice()))
+        Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }

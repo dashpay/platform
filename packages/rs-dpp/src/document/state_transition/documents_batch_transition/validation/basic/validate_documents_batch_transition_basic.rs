@@ -5,7 +5,13 @@ use std::{
     sync::Arc,
 };
 
-use crate::consensus::basic::document::{DataContractNotPresentError, DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError, InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError, InvalidDocumentTypeError, MissingDataContractIdBasicError, MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError};
+use crate::consensus::basic::document::{
+    DataContractNotPresentError, DuplicateDocumentTransitionsWithIdsError,
+    DuplicateDocumentTransitionsWithIndicesError, InvalidDocumentTransitionActionError,
+    InvalidDocumentTransitionIdError, InvalidDocumentTypeError, MissingDataContractIdBasicError,
+    MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError,
+};
+use crate::consensus::basic::value_error::ValueError;
 use crate::document::state_transition::documents_batch_transition::property_names;
 use crate::document::validation::basic::find_duplicates_by_id::find_duplicates_by_id;
 use crate::validation::SimpleValidationResult;
@@ -31,7 +37,6 @@ use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::converter::serde_json::BTreeValueRefJsonConverter;
 use platform_value::Value;
 use serde_json::Value as JsonValue;
-use crate::consensus::basic::value_error::ValueError;
 
 use super::{
     find_duplicates_by_indices::find_duplicates_by_indices,
@@ -147,7 +152,9 @@ pub async fn validate_documents_batch_transition_basic(
             .get_optional_identifier(property_names::DATA_CONTRACT_ID)
         {
             Ok(None) => {
-                result.add_error(BasicError::MissingDataContractIdBasicError(MissingDataContractIdBasicError::new()));
+                result.add_error(BasicError::MissingDataContractIdBasicError(
+                    MissingDataContractIdBasicError::new(),
+                ));
                 continue;
             }
             Ok(Some(id)) => id,

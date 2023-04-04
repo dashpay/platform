@@ -1,19 +1,19 @@
+use crate::buffer::Buffer;
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::state::identity::identity_public_key_is_disabled_error::IdentityPublicKeyIsDisabledError;
+use dpp::consensus::ConsensusError;
 use dpp::identity::KeyID;
 use wasm_bindgen::prelude::*;
-use dpp::consensus::codes::ErrorWithCode;
-use dpp::consensus::ConsensusError;
-use dpp::consensus::state::identity::identity_public_key_is_disabled_error::IdentityPublicKeyIsDisabledError;
-use crate::buffer::Buffer;
 
 #[wasm_bindgen(js_name=IdentityPublicKeyIsDisabledError)]
 pub struct IdentityPublicKeyIsDisabledErrorWasm {
-  inner: IdentityPublicKeyIsDisabledError,
+    inner: IdentityPublicKeyIsDisabledError,
 }
 
 impl From<&IdentityPublicKeyIsDisabledError> for IdentityPublicKeyIsDisabledErrorWasm {
-  fn from(e: &IdentityPublicKeyIsDisabledError) -> Self {
-    Self { inner: e.clone() }
-  }
+    fn from(e: &IdentityPublicKeyIsDisabledError) -> Self {
+        Self { inner: e.clone() }
+    }
 }
 
 #[wasm_bindgen(js_class=IdentityPublicKeyIsDisabledError)]
@@ -25,20 +25,20 @@ impl IdentityPublicKeyIsDisabledErrorWasm {
 
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {
-      ConsensusError::from(self.inner.clone()).code()
+        ConsensusError::from(self.inner.clone()).code()
     }
 
     #[wasm_bindgen(getter)]
-pub fn message(&self) -> String {
-  self.inner.to_string()
-}
+    pub fn message(&self) -> String {
+        self.inner.to_string()
+    }
 
-#[wasm_bindgen(js_name=serialize)]
+    #[wasm_bindgen(js_name=serialize)]
     pub fn serialize(&self) -> Result<Buffer, JsError> {
-      let bytes = ConsensusError::from(self.inner.clone())
-        .serialize()
-        .map_err(|e| JsError::from(e))?;
+        let bytes = ConsensusError::from(self.inner.clone())
+            .serialize()
+            .map_err(|e| JsError::from(e))?;
 
-      Ok(Buffer::from_bytes(bytes.as_slice()))
+        Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }

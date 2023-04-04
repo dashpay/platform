@@ -30,7 +30,6 @@ pub enum StateError {
     DO NOT CHANGE ORDER OF VARIANTS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-
     #[error(transparent)]
     DataContractAlreadyPresentError(DataContractAlreadyPresentError),
 

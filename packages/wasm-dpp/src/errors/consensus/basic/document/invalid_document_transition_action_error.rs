@@ -1,18 +1,18 @@
-use wasm_bindgen::prelude::*;
+use crate::buffer::Buffer;
 use dpp::consensus::basic::document::InvalidDocumentTransitionActionError;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
-use crate::buffer::Buffer;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=InvalidDocumentTransitionActionError)]
 pub struct InvalidDocumentTransitionActionErrorWasm {
-  inner: InvalidDocumentTransitionActionError,
+    inner: InvalidDocumentTransitionActionError,
 }
 
 impl From<&InvalidDocumentTransitionActionError> for InvalidDocumentTransitionActionErrorWasm {
-  fn from(e: &InvalidDocumentTransitionActionError) -> Self {
-    Self { inner: e.clone() }
-  }
+    fn from(e: &InvalidDocumentTransitionActionError) -> Self {
+        Self { inner: e.clone() }
+    }
 }
 
 #[wasm_bindgen(js_class=InvalidDocumentTransitionActionError)]
@@ -22,22 +22,22 @@ impl InvalidDocumentTransitionActionErrorWasm {
         self.inner.action().to_string()
     }
 
-  #[wasm_bindgen(js_name=getCode)]
-  pub fn get_code(&self) -> u32 {
-    ConsensusError::from(self.inner.clone()).code()
-  }
+    #[wasm_bindgen(js_name=getCode)]
+    pub fn get_code(&self) -> u32 {
+        ConsensusError::from(self.inner.clone()).code()
+    }
 
-  #[wasm_bindgen(getter)]
-pub fn message(&self) -> String {
-  self.inner.to_string()
-}
+    #[wasm_bindgen(getter)]
+    pub fn message(&self) -> String {
+        self.inner.to_string()
+    }
 
-#[wasm_bindgen(js_name=serialize)]
-  pub fn serialize(&self) -> Result<Buffer, JsError> {
-    let bytes = ConsensusError::from(self.inner.clone())
-      .serialize()
-      .map_err(|e| JsError::from(e))?;
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+        let bytes = ConsensusError::from(self.inner.clone())
+            .serialize()
+            .map_err(|e| JsError::from(e))?;
 
-    Ok(Buffer::from_bytes(bytes.as_slice()))
-  }
+        Ok(Buffer::from_bytes(bytes.as_slice()))
+    }
 }

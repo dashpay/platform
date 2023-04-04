@@ -2,6 +2,7 @@ use std::{collections::BTreeMap, sync::Arc};
 
 use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
+use dpp::consensus::basic::value_error::ValueError;
 use dpp::validation::{AsyncDataValidatorWithContext, SimpleValidationResult};
 use dpp::{
     data_contract::state_transition::data_contract_update_transition::validation::{
@@ -15,7 +16,6 @@ use dpp::{
     version::ProtocolVersionValidator,
 };
 use wasm_bindgen::prelude::*;
-use dpp::consensus::basic::value_error::ValueError;
 
 use crate::utils::WithJsError;
 use crate::{

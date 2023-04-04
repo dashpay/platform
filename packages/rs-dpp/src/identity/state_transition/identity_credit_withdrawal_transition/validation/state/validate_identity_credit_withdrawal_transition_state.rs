@@ -7,6 +7,7 @@ use platform_value::platform_value;
 
 use crate::consensus::signature::IdentityNotFoundError;
 
+use crate::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
 use crate::consensus::state::identity::IdentityInsufficientBalanceError;
 use crate::consensus::state::state_error::StateError;
 use crate::contracts::withdrawals_contract;
@@ -20,7 +21,6 @@ use crate::{
     state_repository::StateRepositoryLike, state_transition::StateTransitionLike,
     NonConsensusError, ProtocolError,
 };
-use crate::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
 
 pub struct IdentityCreditWithdrawalTransitionValidator<SR>
 where
@@ -86,7 +86,7 @@ where
                 InvalidIdentityRevisionError::new(
                     existing_identity.get_id().to_owned(),
                     existing_identity.get_revision(),
-                )
+                ),
             ));
 
             return Ok(result);

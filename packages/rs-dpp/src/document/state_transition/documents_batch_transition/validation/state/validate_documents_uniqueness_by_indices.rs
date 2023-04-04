@@ -5,6 +5,7 @@ use itertools::Itertools;
 use platform_value::string_encoding::Encoding;
 use serde_json::{json, Value as JsonValue};
 
+use crate::consensus::state::document::duplicate_unique_index_error::DuplicateUniqueIndexError;
 use crate::consensus::state::state_error::StateError;
 use crate::document::Document;
 use crate::validation::SimpleValidationResult;
@@ -16,7 +17,6 @@ use crate::{
     util::json_schema::{Index, JsonSchemaExt},
     ProtocolError,
 };
-use crate::consensus::state::document::duplicate_unique_index_error::DuplicateUniqueIndexError;
 
 struct QueryDefinition<'a> {
     document_type: &'a str,
@@ -167,7 +167,7 @@ fn validate_uniqueness<'a>(
                     .iter()
                     .map(|property| property.name.to_owned())
                     .collect_vec(),
-            )
+            ),
         ))
     }
     Ok(validation_result)

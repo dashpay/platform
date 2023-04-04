@@ -1,6 +1,6 @@
+use crate::ProtocolError;
 use platform_value::Value;
 use thiserror::Error;
-use crate::ProtocolError;
 
 #[derive(Error, Debug, Clone)]
 #[error("$dataContractId is not present")]

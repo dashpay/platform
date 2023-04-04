@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 
+use dpp::consensus::basic::value_error::ValueError;
 use dpp::validation::SimpleValidationResult;
 use dpp::{
     data_contract::state_transition::data_contract_create_transition::validation::state::{
@@ -14,7 +15,6 @@ use dpp::{
     version::ProtocolVersionValidator,
 };
 use wasm_bindgen::prelude::*;
-use dpp::consensus::basic::value_error::ValueError;
 
 use crate::utils::WithJsError;
 use crate::validation::ValidationResultWasm;

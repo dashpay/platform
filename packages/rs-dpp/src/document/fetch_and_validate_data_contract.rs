@@ -2,6 +2,9 @@ use std::{convert::TryInto, sync::Arc};
 
 use platform_value::Value;
 
+use crate::consensus::basic::document::{
+    DataContractNotPresentError, MissingDataContractIdBasicError,
+};
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     data_contract::DataContract,
@@ -10,7 +13,6 @@ use crate::{
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
     ProtocolError,
 };
-use crate::consensus::basic::document::{DataContractNotPresentError, MissingDataContractIdBasicError};
 
 use crate::document::extended_document::property_names;
 use crate::validation::ValidationResult;

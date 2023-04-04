@@ -3,7 +3,10 @@ use std::{convert::TryFrom, sync::Arc};
 use async_trait::async_trait;
 use platform_value::Value;
 
-use crate::consensus::basic::state_transition::{InvalidStateTransitionTypeError, MissingStateTransitionTypeError, StateTransitionMaxSizeExceededError};
+use crate::consensus::basic::state_transition::{
+    InvalidStateTransitionTypeError, MissingStateTransitionTypeError,
+    StateTransitionMaxSizeExceededError,
+};
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     state_repository::StateRepositoryLike,
@@ -121,6 +124,7 @@ mod test {
 
     use super::StateTransitionBasicValidator;
 
+    use crate::consensus::basic::state_transition::MissingStateTransitionTypeError;
     use crate::validation::SimpleValidationResult;
     use crate::{
         consensus::basic::BasicError,
@@ -137,7 +141,6 @@ mod test {
         version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
         NativeBlsModule,
     };
-    use crate::consensus::basic::state_transition::MissingStateTransitionTypeError;
 
     struct TestData {
         data_contract: DataContract,
@@ -214,7 +217,7 @@ mod test {
 
         assert!(matches!(
             basic_error,
-            BasicError::MissingStateTransitionTypeError(MissingStateTransitionTypeError {..})
+            BasicError::MissingStateTransitionTypeError(MissingStateTransitionTypeError { .. })
         ));
     }
 

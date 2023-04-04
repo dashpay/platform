@@ -1,18 +1,18 @@
-use wasm_bindgen::prelude::*;
+use crate::buffer::Buffer;
 use dpp::consensus::basic::data_contract::InvalidIndexedPropertyConstraintError;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
-use crate::buffer::Buffer;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=InvalidIndexedPropertyConstraintError)]
 pub struct InvalidIndexedPropertyConstraintErrorWasm {
-  inner: InvalidIndexedPropertyConstraintError,
+    inner: InvalidIndexedPropertyConstraintError,
 }
 
 impl From<&InvalidIndexedPropertyConstraintError> for InvalidIndexedPropertyConstraintErrorWasm {
-  fn from(e: &InvalidIndexedPropertyConstraintError) -> Self {
-    Self { inner: e.clone() }
-  }
+    fn from(e: &InvalidIndexedPropertyConstraintError) -> Self {
+        Self { inner: e.clone() }
+    }
 }
 
 #[wasm_bindgen(js_class=InvalidIndexedPropertyConstraintError)]
@@ -42,22 +42,22 @@ impl InvalidIndexedPropertyConstraintErrorWasm {
         self.inner.reason().to_string()
     }
 
-  #[wasm_bindgen(js_name=getCode)]
-  pub fn get_code(&self) -> u32 {
-    ConsensusError::from(self.inner.clone()).code()
-  }
+    #[wasm_bindgen(js_name=getCode)]
+    pub fn get_code(&self) -> u32 {
+        ConsensusError::from(self.inner.clone()).code()
+    }
 
-  #[wasm_bindgen(getter)]
-pub fn message(&self) -> String {
-  self.inner.to_string()
-}
+    #[wasm_bindgen(getter)]
+    pub fn message(&self) -> String {
+        self.inner.to_string()
+    }
 
-#[wasm_bindgen(js_name=serialize)]
-  pub fn serialize(&self) -> Result<Buffer, JsError> {
-    let bytes = ConsensusError::from(self.inner.clone())
-      .serialize()
-      .map_err(|e| JsError::from(e))?;
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+        let bytes = ConsensusError::from(self.inner.clone())
+            .serialize()
+            .map_err(|e| JsError::from(e))?;
 
-    Ok(Buffer::from_bytes(bytes.as_slice()))
-  }
+        Ok(Buffer::from_bytes(bytes.as_slice()))
+    }
 }
