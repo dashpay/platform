@@ -20,12 +20,6 @@ const {
   },
   PlatformProtocol: {
     IdentityPublicKey,
-    ConsensusErrors: {
-      // InvalidInstantAssetLockProofSignatureError,
-      IdentityAssetLockTransactionOutPointAlreadyExistsError,
-      BalanceIsNotEnoughError,
-      // InvalidIdentityKeySignatureError,
-    },
   },
 } = Dash;
 
@@ -61,6 +55,10 @@ describe('Platform', () => {
       await client.platform.initialize();
 
       const {
+        InvalidInstantAssetLockProofSignatureError,
+      } = client.platform.dppModule;
+
+      const {
         transaction,
         privateKey,
         outputIndex,
@@ -91,13 +89,14 @@ describe('Platform', () => {
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
       expect(broadcastError.getCause().getCode()).to.equal(1042);
-      // TODO(wasm-dpp): fix this after createConsensusError is ported to wasm-dpp
-      // expect(broadcastError.getCause()).to.be.an.instanceOf(
-      //   InvalidInstantAssetLockProofSignatureError,
-      // );
+      expect(broadcastError.getCause()).to.be.an.instanceOf(
+        InvalidInstantAssetLockProofSignatureError,
+      );
     });
 
     it('should fail to create an identity with already used asset lock output', async () => {
+      const { IdentityAssetLockTransactionOutPointAlreadyExistsError } = client.platform.dppModule;
+
       const {
         transaction,
         privateKey,
@@ -154,13 +153,14 @@ describe('Platform', () => {
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
       expect(broadcastError.getCause().getCode()).to.equal(1033);
-      // TODO(wasm-dpp): fix this after createConsensusError is ported to wasm-dpp
-      // expect(broadcastError.getCause()).to.be.an.instanceOf(
-      //   IdentityAssetLockTransactionOutPointAlreadyExistsError,
-      // );
+      expect(broadcastError.getCause()).to.be.an.instanceOf(
+        IdentityAssetLockTransactionOutPointAlreadyExistsError,
+      );
     });
 
     it('should not be able to create an identity without key proof', async () => {
+      const { InvalidIdentityKeySignatureError } = client.platform.dppModule;
+
       const {
         transaction,
         privateKey,
@@ -208,10 +208,9 @@ describe('Platform', () => {
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
       expect(broadcastError.getCause().getCode()).to.equal(1056);
-      // TODO(wasm-dpp): fix this after createConsensusError is ported to wasm-dpp
-      // expect(broadcastError.getCause()).to.be.an.instanceOf(
-      //   InvalidIdentityKeySignatureError,
-      // );
+      expect(broadcastError.getCause()).to.be.an.instanceOf(
+        InvalidIdentityKeySignatureError,
+      );
     });
 
     it('should be able to get newly created identity', async () => {
@@ -342,6 +341,8 @@ describe('Platform', () => {
       });
 
       it('should fail to create more documents if there are no more credits', async () => {
+        const { BalanceIsNotEnoughError } = client.platform.dppModule;
+
         const lowBalanceIdentity = await client.platform.identities.register(50000);
 
         const document = await client.platform.documents.create(
@@ -447,6 +448,10 @@ describe('Platform', () => {
       });
 
       it('should fail to top up an identity with already used asset lock output', async () => {
+        const {
+          IdentityAssetLockTransactionOutPointAlreadyExistsError,
+        } = client.platform.dppModule;
+
         const {
           transaction,
           privateKey,

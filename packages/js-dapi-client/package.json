@@ -31,6 +31,7 @@
     "@dashevo/dashcore-lib": "~0.20.0",
     "@dashevo/dpp": "workspace:*",
     "@dashevo/grpc-common": "workspace:*",
+    "@dashevo/wasm-dpp": "workspace:*",
     "bs58": "^4.0.1",
     "cbor": "^8.0.0",
     "lodash": "^4.17.21",

@@ -1,8 +1,16 @@
 const { Metadata, parseMetadata } = require('@dashevo/dapi-grpc');
 const GrpcError = require('@dashevo/grpc-common/lib/server/error/GrpcError');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
+
+let {
+  ProtocolVersionParsingError,
+} = require('@dashevo/wasm-dpp');
+
+const {
+  default: loadWasmDpp,
+} = require('@dashevo/wasm-dpp');
+
 const cbor = require('cbor');
-const SerializedObjectParsingError = require('@dashevo/dpp/lib/errors/consensus/basic/decode/SerializedObjectParsingError');
 const createGrpcTransportError = require('../../../../lib/transport/GrpcTransport/createGrpcTransportError');
 const DAPIAddress = require('../../../../lib/dapiAddressProvider/DAPIAddress');
 const NotFoundError = require('../../../../lib/transport/GrpcTransport/errors/NotFoundError');
@@ -16,6 +24,10 @@ describe('createGrpcTransportError', () => {
   let dapiAddress;
   let errorData;
   let metadata;
+
+  before(async () => {
+    ({ ProtocolVersionParsingError } = await loadWasmDpp());
+  });
 
   beforeEach(() => {
     dapiAddress = new DAPIAddress('127.0.0.1:3001:3002');
@@ -36,14 +48,14 @@ describe('createGrpcTransportError', () => {
     metadata.set('drive-error-data-bin', driveErrorDataBin);
   });
 
-  it('should return NotFoundError', () => {
+  it('should return NotFoundError', async () => {
     const grpcError = new GrpcError(
       GrpcErrorCodes.NOT_FOUND,
       'Not found',
     );
     grpcError.metadata = metadata;
 
-    const error = createGrpcTransportError(
+    const error = await createGrpcTransportError(
       grpcError,
       dapiAddress,
     );
@@ -55,7 +67,7 @@ describe('createGrpcTransportError', () => {
     expect(error.getData()).to.deep.equal(errorData);
   });
 
-  it('should get code from metadata', () => {
+  it('should get code from metadata', async () => {
     metadata.set('code', GrpcErrorCodes.INVALID_ARGUMENT);
 
     const grpcError = new GrpcError(
@@ -65,7 +77,7 @@ describe('createGrpcTransportError', () => {
 
     grpcError.metadata = metadata;
 
-    const error = createGrpcTransportError(
+    const error = await createGrpcTransportError(
       grpcError,
       dapiAddress,
     );
@@ -77,14 +89,14 @@ describe('createGrpcTransportError', () => {
     expect(error.getData()).to.deep.equal(errorData);
   });
 
-  it('should return InvalidRequestError', () => {
+  it('should return InvalidRequestError', async () => {
     const grpcError = new GrpcError(
       GrpcErrorCodes.INVALID_ARGUMENT,
       'Invalid arguments',
     );
     grpcError.metadata = metadata;
 
-    const error = createGrpcTransportError(
+    const error = await createGrpcTransportError(
       grpcError,
       dapiAddress,
     );
@@ -96,7 +108,7 @@ describe('createGrpcTransportError', () => {
     expect(error.getData()).to.deep.equal(errorData);
   });
 
-  it('should return InternalServerError with stack', () => {
+  it('should return InternalServerError with stack', async () => {
     const errorWithStack = new Error('Some error');
     const grpcError = new GrpcError(
       GrpcErrorCodes.INTERNAL,
@@ -115,7 +127,7 @@ describe('createGrpcTransportError', () => {
 
     grpcError.metadata = metadata;
 
-    const error = createGrpcTransportError(
+    const error = await createGrpcTransportError(
       grpcError,
       dapiAddress,
     );
@@ -130,14 +142,14 @@ describe('createGrpcTransportError', () => {
     expect(error.stack).to.deep.equal(`[REMOTE STACK] ${errorWithStack.stack}`);
   });
 
-  it('should return ServerError', () => {
+  it('should return ServerError', async () => {
     const grpcError = new GrpcError(
       GrpcErrorCodes.UNAVAILABLE,
       'Unavailable',
     );
     grpcError.metadata = metadata;
 
-    const error = createGrpcTransportError(
+    const error = await createGrpcTransportError(
       grpcError,
       dapiAddress,
     );
@@ -149,12 +161,10 @@ describe('createGrpcTransportError', () => {
     expect(error.getData()).to.deep.equal(errorData);
   });
 
-  it('should return InvalidRequestDPPError', () => {
-    const constructorArguments = ['arguments'];
-
+  it('should return InvalidRequestDPPError', async () => {
     // grpc-js expects Buffer
     let driveErrorDataBin = cbor.encode({
-      arguments: constructorArguments,
+      serializedError: new ProtocolVersionParsingError('test').serialize(),
       ...errorData,
     });
 
@@ -166,12 +176,12 @@ describe('createGrpcTransportError', () => {
     metadata.set('drive-error-data-bin', driveErrorDataBin);
 
     const grpcError = new GrpcError(
-      1001,
+      1000,
       'Parsing error',
     );
     grpcError.metadata = metadata;
 
-    const error = createGrpcTransportError(
+    const error = await createGrpcTransportError(
       grpcError,
       dapiAddress,
     );
@@ -184,18 +194,17 @@ describe('createGrpcTransportError', () => {
 
     const consensusError = error.getConsensusError();
 
-    expect(consensusError).to.be.an.instanceOf(SerializedObjectParsingError);
-    expect(consensusError.getConstructorArguments()).to.deep.equal(constructorArguments);
+    expect(consensusError).to.be.an.instanceOf(ProtocolVersionParsingError);
   });
 
-  it('should return ResponseError', () => {
+  it('should return ResponseError', async () => {
     const grpcError = new GrpcError(
       6000,
       'Unknown error',
     );
     grpcError.metadata = metadata;
 
-    const error = createGrpcTransportError(
+    const error = await createGrpcTransportError(
       grpcError,
       dapiAddress,
     );
@@ -207,7 +216,7 @@ describe('createGrpcTransportError', () => {
     expect(error.getData()).to.deep.equal(errorData);
   });
 
-  it('should handle plain object metadata', () => {
+  it('should handle plain object metadata', async () => {
     const objectMetadata = parseMetadata(metadata);
     const grpcError = new GrpcError(
       GrpcErrorCodes.NOT_FOUND,
@@ -215,7 +224,7 @@ describe('createGrpcTransportError', () => {
     );
     grpcError.metadata = objectMetadata;
 
-    const error = createGrpcTransportError(
+    const error = await createGrpcTransportError(
       grpcError,
       dapiAddress,
     );
