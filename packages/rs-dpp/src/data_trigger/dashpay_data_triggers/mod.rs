@@ -98,7 +98,7 @@ where
     let identity = context
         .state_repository
         .fetch_identity(
-            &to_user_id.into(),
+            &to_user_id,
             Some(context.state_transition_execution_context),
         )
         .await?;

@@ -65,7 +65,7 @@ pub async fn validate_identity_create_transition_state(
         .map_err(|e| {
             NonConsensusError::StateRepositoryFetchError(format!(
                 "state repository fetch identity balance error: {}",
-                e.to_string()
+                e
             ))
         })?;
 

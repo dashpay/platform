@@ -1,5 +1,8 @@
 use dpp::identity::KeyID;
+
 use dpp::{
+    consensus::signature::SignatureError,
+    consensus::ConsensusError::SignatureError as ConsensusSignatureErrorVariant,
     document::{
         document_transition::document_base_transition,
         state_transition::documents_batch_transition::property_names, DocumentsBatchTransition,
@@ -208,7 +211,7 @@ impl DocumentsBatchTransitionWasm {
                 if !options.skip_identifiers_conversion {
                     lodash_set(&js_value, path, buffer.into());
                 } else {
-                    let id = IdentifierWrapper::new(buffer.into())?;
+                    let id = IdentifierWrapper::new(buffer.into());
                     lodash_set(&js_value, path, id.into());
                 }
             }
@@ -294,12 +297,28 @@ impl DocumentsBatchTransitionWasm {
     #[wasm_bindgen(js_name=verifySignature)]
     pub fn verify_signature(
         &self,
-        public_key: &IdentityPublicKeyWasm,
+        identity_public_key: &IdentityPublicKeyWasm,
         bls: JsBlsAdapter,
-    ) -> Result<(), JsValue> {
-        self.0
-            .verify_signature(public_key.inner(), &BlsAdapter(bls))
-            .with_js_error()
+    ) -> Result<bool, JsValue> {
+        let bls_adapter = BlsAdapter(bls);
+
+        let verification_result = self
+            .0
+            .verify_signature(&identity_public_key.to_owned().into(), &bls_adapter);
+
+        match verification_result {
+            Ok(()) => Ok(true),
+            Err(protocol_error) => match &protocol_error {
+                ProtocolError::AbstractConsensusError(err) => match err.as_ref() {
+                    ConsensusSignatureErrorVariant(
+                        SignatureError::InvalidStateTransitionSignatureError,
+                    ) => Ok(false),
+                    _ => Err(protocol_error),
+                },
+                _ => Err(protocol_error),
+            },
+        }
+        .with_js_error()
     }
 
     #[wasm_bindgen(js_name=setSignaturePublicKey)]

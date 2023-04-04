@@ -9,7 +9,7 @@ use crate::DPPError;
 
 pub struct AssetLockPublicKeyHashFetcher<SR> {
     state_repository: Arc<SR>,
-    asset_lock_transaction_output_fetcher: AssetLockTransactionOutputFetcher<SR>,
+    asset_lock_transaction_output_fetcher: Arc<AssetLockTransactionOutputFetcher<SR>>,
 }
 
 impl<SR> AssetLockPublicKeyHashFetcher<SR>
@@ -18,7 +18,7 @@ where
 {
     pub fn new(
         state_repository: Arc<SR>,
-        asset_lock_transaction_output_fetcher: AssetLockTransactionOutputFetcher<SR>,
+        asset_lock_transaction_output_fetcher: Arc<AssetLockTransactionOutputFetcher<SR>>,
     ) -> Self {
         Self {
             state_repository,

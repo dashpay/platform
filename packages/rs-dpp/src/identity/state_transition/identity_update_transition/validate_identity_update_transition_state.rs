@@ -59,7 +59,7 @@ where
             .map_err(|e| {
                 NonConsensusError::StateRepositoryFetchError(format!(
                     "state repository fetch identity for identity update validation error: {}",
-                    e.to_string()
+                    e
                 ))
             })?;
 
@@ -126,7 +126,7 @@ where
                 .map_err(|e| {
                     NonConsensusError::StateRepositoryFetchError(format!(
                         "state repository fetch latest platform block time error: {}",
-                        e.to_string()
+                        e
                     ))
                 })?;
 

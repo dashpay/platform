@@ -57,7 +57,7 @@ where
             .map_err(|e| {
                 NonConsensusError::StateRepositoryFetchError(format!(
                     "state repository fetch identity for credit withdrawal verification error: {}",
-                    e.to_string()
+                    e
                 ))
             })?;
 

@@ -15,7 +15,7 @@ pub async fn apply_identity_update_transition_wasm(
 
     apply_identity_update_transition(
         &wrapped_state_repository,
-        state_transition.to_owned().into(),
+        &state_transition.to_owned().into(),
     )
     .await
     .map_err(|e| JsValue::from_str(&e.to_string()))?;
