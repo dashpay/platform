@@ -42,7 +42,7 @@ impl std::default::Default for Pooling {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityCreditWithdrawalTransition {
     pub protocol_version: u32,
@@ -56,8 +56,6 @@ pub struct IdentityCreditWithdrawalTransition {
     pub revision: Revision,
     pub signature_public_key_id: KeyID,
     pub signature: BinaryData,
-    #[serde(skip)]
-    pub execution_context: StateTransitionExecutionContext,
 }
 
 impl std::default::Default for IdentityCreditWithdrawalTransition {
@@ -73,7 +71,6 @@ impl std::default::Default for IdentityCreditWithdrawalTransition {
             revision: Default::default(),
             signature_public_key_id: Default::default(),
             signature: Default::default(),
-            execution_context: Default::default(),
         }
     }
 }
@@ -155,18 +152,6 @@ impl StateTransitionLike for IdentityCreditWithdrawalTransition {
 
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
         self.signature = BinaryData::new(signature)
-    }
-
-    fn get_execution_context(&self) -> &StateTransitionExecutionContext {
-        &self.execution_context
-    }
-
-    fn get_execution_context_mut(&mut self) -> &mut StateTransitionExecutionContext {
-        &mut self.execution_context
-    }
-
-    fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
-        self.execution_context = execution_context
     }
 }
 

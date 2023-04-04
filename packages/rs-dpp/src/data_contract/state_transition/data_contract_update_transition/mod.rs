@@ -11,7 +11,6 @@ use crate::{
     identity::KeyID,
     prelude::Identifier,
     state_transition::{
-        state_transition_execution_context::StateTransitionExecutionContext,
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionType,
     },
@@ -51,7 +50,7 @@ pub const U32_FIELDS: [&str; 2] = [
     property_names::DATA_CONTRACT_PROTOCOL_VERSION,
 ];
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DataContractUpdateTransition {
     pub protocol_version: u32,
@@ -62,8 +61,6 @@ pub struct DataContractUpdateTransition {
     pub data_contract: DataContract,
     pub signature_public_key_id: KeyID,
     pub signature: BinaryData,
-    #[serde(skip)]
-    pub execution_context: StateTransitionExecutionContext,
 }
 
 impl std::default::Default for DataContractUpdateTransition {
@@ -74,7 +71,6 @@ impl std::default::Default for DataContractUpdateTransition {
             signature_public_key_id: 0,
             signature: BinaryData::default(),
             data_contract: Default::default(),
-            execution_context: Default::default(),
         }
     }
 }
@@ -185,18 +181,6 @@ impl StateTransitionLike for DataContractUpdateTransition {
 
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
         self.signature = BinaryData::new(signature)
-    }
-
-    fn get_execution_context(&self) -> &StateTransitionExecutionContext {
-        &self.execution_context
-    }
-
-    fn get_execution_context_mut(&mut self) -> &mut StateTransitionExecutionContext {
-        &mut self.execution_context
-    }
-
-    fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
-        self.execution_context = execution_context
     }
 }
 

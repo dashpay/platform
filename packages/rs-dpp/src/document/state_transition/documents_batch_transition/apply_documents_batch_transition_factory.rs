@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::document::{Document, ExtendedDocument};
 use crate::prelude::TimestampMillis;
+use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::{
     document::errors::DocumentError, prelude::Identifier, state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike, ProtocolError,
@@ -34,14 +35,21 @@ where
     pub async fn apply(
         &self,
         state_transition: &DocumentsBatchTransition,
+        execution_context: StateTransitionExecutionContext,
     ) -> Result<(), ProtocolError> {
-        apply_documents_batch_transition(&self.state_repository, state_transition).await
+        apply_documents_batch_transition(
+            &self.state_repository,
+            state_transition,
+            execution_context,
+        )
+        .await
     }
 }
 
 pub async fn apply_documents_batch_transition(
     state_repository: &impl StateRepositoryLike,
     state_transition: &DocumentsBatchTransition,
+    execution_context: StateTransitionExecutionContext,
 ) -> Result<(), ProtocolError> {
     let replace_transitions: Vec<_> = state_transition
         .get_transitions_slice()
@@ -52,7 +60,7 @@ pub async fn apply_documents_batch_transition(
     let fetched_documents = fetch_extended_documents(
         state_repository,
         replace_transitions.as_slice(),
-        &state_transition.execution_context,
+        &execution_context,
     )
     .await?;
 
@@ -70,15 +78,15 @@ pub async fn apply_documents_batch_transition(
                     document_create_transition.to_extended_document(state_transition.owner_id)?;
                 //todo: eventually we should use Cow instead
                 state_repository
-                    .create_document(&document, Some(state_transition.get_execution_context()))
+                    .create_document(&document, Some(&execution_context))
                     .await?;
             }
             DocumentTransition::Replace(document_replace_transition) => {
-                if state_transition.execution_context.is_dry_run() {
+                if execution_context.is_dry_run() {
                     let document = document_replace_transition
                         .to_extended_document_for_dry_run(state_transition.owner_id)?;
                     state_repository
-                        .update_document(&document, Some(state_transition.get_execution_context()))
+                        .update_document(&document, Some(&execution_context))
                         .await?;
                 } else {
                     let document = fetched_documents_by_id
@@ -88,7 +96,7 @@ pub async fn apply_documents_batch_transition(
                         })?;
                     document_replace_transition.replace_extended_document(document)?;
                     state_repository
-                        .update_document(document, Some(state_transition.get_execution_context()))
+                        .update_document(document, Some(&execution_context))
                         .await?;
                 };
             }
@@ -98,7 +106,7 @@ pub async fn apply_documents_batch_transition(
                         &document_delete_transition.base.data_contract,
                         &document_delete_transition.base.document_type_name,
                         &document_delete_transition.base.id,
-                        Some(state_transition.get_execution_context()),
+                        Some(&execution_context.clone()),
                     )
                     .await?;
             }
@@ -143,6 +151,7 @@ mod test {
 
     use crate::tests::fixtures::get_extended_documents_fixture;
 
+    use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use crate::{
         document::{
             document_transition::{Action, DocumentTransitionObjectLike},
@@ -184,7 +193,8 @@ mod test {
             DocumentsBatchTransition::from_value_map(map, vec![data_contract.clone()])
                 .expect("documents batch state transition should be created");
 
-        state_transition.get_execution_context().enable_dry_run();
+        let execution_context = StateTransitionExecutionContext::default();
+        execution_context.enable_dry_run();
         state_repository
             .expect_fetch_extended_documents()
             .returning(|_, _, _, _| Ok(vec![]));
@@ -195,7 +205,12 @@ mod test {
             .expect_fetch_latest_platform_block_time()
             .returning(|| Ok(0));
 
-        let result = apply_documents_batch_transition(&state_repository, &state_transition).await;
+        let result = apply_documents_batch_transition(
+            &state_repository,
+            &state_transition,
+            execution_context,
+        )
+        .await;
         assert!(result.is_ok());
     }
 }

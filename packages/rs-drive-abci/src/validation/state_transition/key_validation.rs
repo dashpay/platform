@@ -1,5 +1,6 @@
 use crate::error::Error;
 use dpp::state_transition::fee::operations::{Operation, SignatureVerificationOperation};
+use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use dpp::state_transition::StateTransitionIdentitySigned;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::{
@@ -33,6 +34,7 @@ pub fn validate_state_transition_identity_signature(
     state_transition: &impl StateTransitionIdentitySigned,
     transaction: &Transaction,
     bls: &impl BlsModule,
+    execution_context: &StateTransitionExecutionContext,
 ) -> Result<SimpleConsensusValidationResult, Error> {
     let mut validation_result = SimpleConsensusValidationResult::default();
 
@@ -75,11 +77,9 @@ pub fn validate_state_transition_identity_signature(
     }
 
     let operation = SignatureVerificationOperation::new(public_key.key_type);
-    state_transition
-        .get_execution_context()
-        .add_operation(Operation::SignatureVerification(operation));
+    execution_context.add_operation(Operation::SignatureVerification(operation));
 
-    if state_transition.get_execution_context().is_dry_run() {
+    if execution_context.is_dry_run() {
         return Ok(validation_result);
     }
 

@@ -38,6 +38,7 @@ pub trait AsyncDataValidator {
     async fn validate(
         &self,
         data: &Self::Item,
+        execution_context: &StateTransitionExecutionContext,
     ) -> Result<ConsensusValidationResult<Self::ResultItem>, ProtocolError>;
 }
 

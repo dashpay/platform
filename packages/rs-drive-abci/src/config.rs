@@ -169,6 +169,7 @@ impl Default for PlatformConfig {
     fn default() -> Self {
         Self {
             verify_sum_trees: true,
+            quorum_type: QuorumType::Llmq100_67,
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 15,
             drive: Default::default(),

@@ -23,7 +23,7 @@ pub(self) mod property_names {
 /// Identifier fields in [`DocumentReplaceTransition`]
 pub use super::document_base_transition::IDENTIFIER_FIELDS;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentReplaceTransition {
     #[serde(flatten)]

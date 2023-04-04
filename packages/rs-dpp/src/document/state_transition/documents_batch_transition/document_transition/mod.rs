@@ -74,7 +74,7 @@ pub trait DocumentTransitionExt {
     fn set_data_contract_id(&mut self, id: Identifier);
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, From)]
+#[derive(Debug, Clone, Serialize, Deserialize, From, PartialEq)]
 pub enum DocumentTransition {
     Create(DocumentCreateTransition),
     Replace(DocumentReplaceTransition),

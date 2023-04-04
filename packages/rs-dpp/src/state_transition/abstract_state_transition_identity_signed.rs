@@ -256,17 +256,6 @@ mod test {
         fn set_signature(&mut self, signature: BinaryData) {
             self.signature = signature
         }
-        fn get_execution_context(&self) -> &StateTransitionExecutionContext {
-            &self.execution_context
-        }
-
-        fn get_execution_context_mut(&mut self) -> &mut StateTransitionExecutionContext {
-            &mut self.execution_context
-        }
-
-        fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
-            self.execution_context = execution_context
-        }
 
         fn set_signature_bytes(&mut self, signature: Vec<u8>) {
             self.signature = BinaryData::new(signature)

@@ -1,7 +1,7 @@
 use crate::identity::key_type::KEY_TYPE_MAX_SIZE_TYPE;
 use crate::identity::KeyType::ECDSA_SECP256K1;
 use crate::identity::Purpose::AUTHENTICATION;
-use crate::identity::SecurityLevel::{CRITICAL, MASTER};
+use crate::identity::SecurityLevel::MASTER;
 use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use crate::ProtocolError;
 use platform_value::BinaryData;

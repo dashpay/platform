@@ -186,7 +186,6 @@ impl DataContractFactory {
             entropy,
             signature_public_key_id: 0,
             signature: Default::default(),
-            execution_context: Default::default(),
         })
     }
 

@@ -84,7 +84,7 @@ impl TryFrom<String> for Action {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentBaseTransition {
     /// The document ID

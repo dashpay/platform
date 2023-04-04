@@ -63,7 +63,7 @@ pub const U32_FIELDS: [&str; 1] = [property_names::PROTOCOL_VERSION];
 const DEFAULT_SECURITY_LEVEL: SecurityLevel = SecurityLevel::HIGH;
 const EMPTY_VEC: Vec<u8> = vec![];
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentsBatchTransition {
     pub protocol_version: u32,
@@ -79,9 +79,6 @@ pub struct DocumentsBatchTransition {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signature: Option<BinaryData>,
-
-    #[serde(skip)]
-    pub execution_context: StateTransitionExecutionContext,
 }
 
 impl std::default::Default for DocumentsBatchTransition {
@@ -93,7 +90,6 @@ impl std::default::Default for DocumentsBatchTransition {
             transitions: vec![],
             signature_public_key_id: None,
             signature: None,
-            execution_context: Default::default(),
         }
     }
 }
@@ -516,17 +512,6 @@ impl StateTransitionLike for DocumentsBatchTransition {
     }
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
         self.signature = Some(BinaryData::new(signature));
-    }
-    fn get_execution_context(&self) -> &StateTransitionExecutionContext {
-        &self.execution_context
-    }
-
-    fn get_execution_context_mut(&mut self) -> &mut StateTransitionExecutionContext {
-        &mut self.execution_context
-    }
-
-    fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
-        self.execution_context = execution_context
     }
 }
 

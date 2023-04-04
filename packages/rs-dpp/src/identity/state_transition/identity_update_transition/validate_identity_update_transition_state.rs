@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use crate::consensus::signature::{IdentityNotFoundError, SignatureError};
 use crate::identity::state_transition::identity_update_transition::IdentityUpdateTransitionAction;
+use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
     identity::validation::{RequiredPurposeAndSecurityLevelValidator, TPublicKeysValidator},
@@ -36,15 +37,13 @@ where
     pub async fn validate(
         &self,
         state_transition: &IdentityUpdateTransition,
+        execution_context: &StateTransitionExecutionContext,
     ) -> Result<ConsensusValidationResult<IdentityUpdateTransitionAction>, NonConsensusError> {
         let mut validation_result = ConsensusValidationResult::default();
 
         let maybe_stored_identity = self
             .state_repository
-            .fetch_identity(
-                state_transition.get_identity_id(),
-                Some(state_transition.get_execution_context()),
-            )
+            .fetch_identity(state_transition.get_identity_id(), Some(execution_context))
             .await?
             .map(TryInto::try_into)
             .transpose()
@@ -56,7 +55,7 @@ where
                 ))
             })?;
 
-        if state_transition.get_execution_context().is_dry_run() {
+        if execution_context.is_dry_run() {
             let action: IdentityUpdateTransitionAction = state_transition.into();
             return Ok(action.into());
         }

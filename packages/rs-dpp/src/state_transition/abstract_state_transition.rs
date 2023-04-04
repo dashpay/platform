@@ -175,9 +175,6 @@ pub trait StateTransitionLike:
         IDENTITY_TRANSITION_TYPE.contains(&self.get_type())
     }
 
-    fn get_execution_context(&self) -> &StateTransitionExecutionContext;
-    fn get_execution_context_mut(&mut self) -> &mut StateTransitionExecutionContext;
-    fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext);
     fn set_signature_bytes(&mut self, signature: Vec<u8>);
 }
 

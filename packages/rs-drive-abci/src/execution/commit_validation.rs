@@ -3,6 +3,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
+use dashcore_rpc::dashcore_rpc_json::QuorumHash;
 use dpp::bls_signatures;
 use dpp::bls_signatures::Serialize;
 use dpp::validation::SimpleValidationResult;
@@ -44,9 +45,10 @@ where
                 &QuorumHash {
                     0: commit.quorum_hash,
                 },
+                Some(false),
             )?
             .quorum_public_key;
-        let public_key = match bls_signatures::PublicKey::from_bytes(signature.as_slice()) {
+        let public_key = match bls_signatures::PublicKey::from_bytes(public_key.as_slice()) {
             Ok(public_key) => public_key,
             Err(e) => return Ok(SimpleValidationResult::new_with_error(e.into())),
         };

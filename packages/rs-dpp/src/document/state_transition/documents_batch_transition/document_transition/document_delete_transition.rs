@@ -9,7 +9,7 @@ use super::{document_base_transition::DocumentBaseTransition, DocumentTransition
 /// Identifier fields in [`DocumentDeleteTransition`]
 pub use super::document_base_transition::IDENTIFIER_FIELDS;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct DocumentDeleteTransition {
     #[serde(flatten)]
     pub base: DocumentBaseTransition,

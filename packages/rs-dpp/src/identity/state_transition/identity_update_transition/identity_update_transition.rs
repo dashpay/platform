@@ -37,7 +37,7 @@ pub const BINARY_FIELDS: [&str; 3] = [
     property_names::SIGNATURE,
 ];
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityUpdateTransition {
     pub protocol_version: u32,
@@ -68,9 +68,6 @@ pub struct IdentityUpdateTransition {
     /// Timestamp when keys were disabled
     #[serde(skip_serializing_if = "Option::is_none")]
     pub public_keys_disabled_at: Option<TimestampMillis>,
-
-    #[serde(skip)]
-    pub execution_context: StateTransitionExecutionContext,
 }
 
 impl Default for IdentityUpdateTransition {
@@ -85,7 +82,6 @@ impl Default for IdentityUpdateTransition {
             add_public_keys: Default::default(),
             disable_public_keys: Default::default(),
             public_keys_disabled_at: Default::default(),
-            execution_context: Default::default(),
         }
     }
 }
@@ -132,7 +128,6 @@ impl IdentityUpdateTransition {
             disable_public_keys,
             public_keys_disabled_at,
             transition_type: StateTransitionType::IdentityUpdate,
-            execution_context: Default::default(),
         })
     }
 
@@ -331,18 +326,6 @@ impl StateTransitionLike for IdentityUpdateTransition {
 
     fn set_signature(&mut self, signature: BinaryData) {
         self.signature = signature;
-    }
-
-    fn get_execution_context(&self) -> &StateTransitionExecutionContext {
-        &self.execution_context
-    }
-
-    fn get_execution_context_mut(&mut self) -> &mut StateTransitionExecutionContext {
-        &mut self.execution_context
-    }
-
-    fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
-        self.execution_context = execution_context
     }
 
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {

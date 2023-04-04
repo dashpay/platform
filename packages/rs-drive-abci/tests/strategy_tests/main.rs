@@ -338,7 +338,6 @@ impl Strategy {
                                 transitions: vec![document_create_transition.into()],
                                 signature_public_key_id: None,
                                 signature: None,
-                                execution_context: Default::default(),
                             };
 
                             //todo: signing
@@ -387,7 +386,6 @@ impl Strategy {
                                 transitions: vec![document_delete_transition.into()],
                                 signature_public_key_id: None,
                                 signature: None,
-                                execution_context: Default::default(),
                             };
 
                             //todo: signing

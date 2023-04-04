@@ -81,7 +81,7 @@ macro_rules! call_static_method {
     };
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, From)]
+#[derive(Debug, Clone, Serialize, Deserialize, From, PartialEq)]
 pub enum StateTransition {
     DataContractCreate(DataContractCreateTransition),
     DataContractUpdate(DataContractUpdateTransition),
@@ -189,18 +189,6 @@ impl StateTransitionLike for StateTransition {
     /// set a new signature
     fn set_signature(&mut self, signature: BinaryData) {
         call_method!(self, set_signature, signature)
-    }
-
-    fn get_execution_context(&self) -> &StateTransitionExecutionContext {
-        call_method!(self, get_execution_context)
-    }
-
-    fn get_execution_context_mut(&mut self) -> &mut StateTransitionExecutionContext {
-        call_method!(self, get_execution_context_mut)
-    }
-
-    fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
-        call_method!(self, set_execution_context, execution_context)
     }
 
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {

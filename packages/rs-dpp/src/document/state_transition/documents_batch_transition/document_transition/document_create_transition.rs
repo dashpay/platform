@@ -29,7 +29,7 @@ pub const BINARY_FIELDS: [&str; 1] = ["$entropy"];
 /// The Identifier fields in [`DocumentCreateTransition`]
 pub use super::document_base_transition::IDENTIFIER_FIELDS;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentCreateTransition {
     /// Document Base Transition

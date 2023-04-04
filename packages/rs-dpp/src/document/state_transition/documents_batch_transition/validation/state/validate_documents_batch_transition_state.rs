@@ -26,7 +26,7 @@ use crate::{
     state_repository::StateRepositoryLike,
     state_transition::{
         state_transition_execution_context::StateTransitionExecutionContext,
-        StateTransitionIdentitySigned, StateTransitionLike,
+        StateTransitionIdentitySigned,
     },
     validation::ConsensusValidationResult,
     ProtocolError, StateError,
@@ -54,9 +54,11 @@ where
 
     async fn validate(
         &self,
-        data: &DocumentsBatchTransition,
+        data: &Self::Item,
+        execution_context: &StateTransitionExecutionContext,
     ) -> Result<ConsensusValidationResult<Self::ResultItem>, ProtocolError> {
-        validate_document_batch_transition_state(&self.state_repository, data).await
+        validate_document_batch_transition_state(&self.state_repository, data, execution_context)
+            .await
     }
 }
 
@@ -75,6 +77,7 @@ where
 pub async fn validate_document_batch_transition_state(
     state_repository: &impl StateRepositoryLike,
     state_transition: &DocumentsBatchTransition,
+    execution_context: &StateTransitionExecutionContext,
 ) -> Result<ConsensusValidationResult<DocumentsBatchTransitionAction>, ProtocolError> {
     let mut result = ConsensusValidationResult::<DocumentsBatchTransitionAction>::default();
     let owner_id = *state_transition.get_owner_id();
@@ -91,7 +94,7 @@ pub async fn validate_document_batch_transition_state(
             data_contract_id,
             owner_id,
             transitions,
-            state_transition.get_execution_context(),
+            execution_context,
         ))
     }
 

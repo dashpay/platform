@@ -41,7 +41,7 @@ pub struct SerializationOptions {
     pub into_validating_json: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityCreateTransition {
     // Own ST fields
@@ -54,8 +54,6 @@ pub struct IdentityCreateTransition {
     #[serde(rename = "type")]
     pub transition_type: StateTransitionType,
     pub signature: BinaryData,
-    #[serde(skip)]
-    pub execution_context: StateTransitionExecutionContext,
 }
 
 //todo: there shouldn't be a default
@@ -68,7 +66,6 @@ impl Default for IdentityCreateTransition {
             identity_id: Default::default(),
             protocol_version: Default::default(),
             signature: Default::default(),
-            execution_context: Default::default(),
         }
     }
 }
@@ -322,16 +319,5 @@ impl StateTransitionLike for IdentityCreateTransition {
 
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
         self.signature = BinaryData::new(signature)
-    }
-    fn get_execution_context(&self) -> &StateTransitionExecutionContext {
-        &self.execution_context
-    }
-
-    fn get_execution_context_mut(&mut self) -> &mut StateTransitionExecutionContext {
-        &mut self.execution_context
-    }
-
-    fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
-        self.execution_context = execution_context
     }
 }

@@ -22,7 +22,7 @@ mod property_names {
     pub const IDENTITY_ID: &str = "identityId";
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityTopUpTransition {
     // Own ST fields
@@ -33,8 +33,6 @@ pub struct IdentityTopUpTransition {
     #[serde(rename = "type")]
     pub transition_type: StateTransitionType,
     pub signature: BinaryData,
-    #[serde(skip)]
-    pub execution_context: StateTransitionExecutionContext,
 }
 
 impl Default for IdentityTopUpTransition {
@@ -45,7 +43,6 @@ impl Default for IdentityTopUpTransition {
             identity_id: Default::default(),
             protocol_version: Default::default(),
             signature: Default::default(),
-            execution_context: Default::default(),
         }
     }
 }
@@ -82,7 +79,6 @@ impl IdentityTopUpTransition {
             identity_id,
             asset_lock_proof,
             transition_type: StateTransitionType::IdentityTopUp,
-            execution_context: Default::default(),
         })
     }
 
@@ -191,17 +187,5 @@ impl StateTransitionLike for IdentityTopUpTransition {
     /// Returns ids of created identities
     fn get_modified_data_ids(&self) -> Vec<Identifier> {
         vec![*self.get_identity_id()]
-    }
-
-    fn get_execution_context(&self) -> &StateTransitionExecutionContext {
-        &self.execution_context
-    }
-
-    fn get_execution_context_mut(&mut self) -> &mut StateTransitionExecutionContext {
-        &mut self.execution_context
-    }
-
-    fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
-        self.execution_context = execution_context
     }
 }
