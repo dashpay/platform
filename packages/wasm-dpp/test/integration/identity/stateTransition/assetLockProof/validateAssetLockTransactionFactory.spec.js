@@ -18,7 +18,6 @@ describe('validateAssetLockTransactionFactory', () => {
   let InvalidIdentityAssetLockTransactionOutputError;
   let InvalidAssetLockTransactionOutputReturnSizeError;
   let IdentityAssetLockTransactionOutPointAlreadyExistsError;
-  let TransactionDecodeError;
   let ValidationResult;
 
   let validateAssetLockTransaction;
@@ -28,7 +27,6 @@ describe('validateAssetLockTransactionFactory', () => {
     ({
       StateTransitionExecutionContext,
       ValidationResult,
-      TransactionDecodeError,
       InvalidIdentityAssetLockTransactionError,
       IdentityAssetLockTransactionOutputNotFoundError,
       InvalidIdentityAssetLockTransactionOutputError,
@@ -70,7 +68,7 @@ describe('validateAssetLockTransactionFactory', () => {
     const [error] = result.getErrors();
 
     expect(error.getCode()).to.equal(1038);
-    expect(error.getValidationError()).to.be.instanceOf(TransactionDecodeError);
+    expect(error.getErrorMessage()).to.not.be.empty();
 
     expect(result.getData()).to.be.undefined();
     expect(stateRepositoryMock.isAssetLockTransactionOutPointAlreadyUsed).to.not.be.called();

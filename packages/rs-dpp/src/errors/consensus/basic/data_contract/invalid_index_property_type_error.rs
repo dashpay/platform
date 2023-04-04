@@ -1,14 +1,19 @@
-use crate::consensus::basic::{BasicError, IndexError};
+use crate::consensus::basic::BasicError;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
-use crate::data_contract::document_type::Index;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("'{property_name}' property of '{document_type}' document has an invalid type '{property_type}' and cannot be use as an index")]
 pub struct InvalidIndexPropertyTypeError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     document_type: String,
-    index_definition: Index,
+    index_name: String,
     property_name: String,
     property_type: String,
 }
@@ -16,36 +21,34 @@ pub struct InvalidIndexPropertyTypeError {
 impl InvalidIndexPropertyTypeError {
     pub fn new(
         document_type: String,
-        index_definition: Index,
+        index_name: String,
         property_name: String,
         property_type: String,
     ) -> Self {
         Self {
             document_type,
-            index_definition,
+            index_name,
             property_name,
             property_type,
         }
     }
 
-    pub fn document_type(&self) -> String {
-        self.document_type.clone()
+    pub fn document_type(&self) -> &str {
+        &self.document_type
     }
-    pub fn index_definition(&self) -> Index {
-        self.index_definition.clone()
+    pub fn index_name(&self) -> &str {
+        &self.index_name
     }
-    pub fn property_name(&self) -> String {
-        self.property_name.clone()
+    pub fn property_name(&self) -> &str {
+        &self.property_name
     }
-    pub fn property_type(&self) -> String {
-        self.property_type.clone()
+    pub fn property_type(&self) -> &str {
+        &self.property_type
     }
 }
 
 impl From<InvalidIndexPropertyTypeError> for ConsensusError {
     fn from(err: InvalidIndexPropertyTypeError) -> Self {
-        Self::BasicError(Box::new(BasicError::IndexError(
-            IndexError::InvalidIndexPropertyTypeError(err),
-        )))
+        Self::BasicError(BasicError::InvalidIndexPropertyTypeError(err))
     }
 }

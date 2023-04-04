@@ -20,7 +20,7 @@ use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
 use crate::{
     data_contract::{self, generate_data_contract_id},
-    decode_protocol_entity_factory::DecodeProtocolEntity,
+    encoding::decode_protocol_entity_factory::DecodeProtocolEntity,
     errors::ProtocolError,
     prelude::Identifier,
     Convertible,

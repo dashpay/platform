@@ -1,29 +1,17 @@
-use dpp::util::json_schema::Index;
+use crate::buffer::Buffer;
+use dpp::consensus::basic::data_contract::UndefinedIndexPropertyError;
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::ConsensusError;
 use wasm_bindgen::prelude::*;
-
-use crate::IndexDefinitionWasm;
 
 #[wasm_bindgen(js_name=UndefinedIndexPropertyError)]
 pub struct UndefinedIndexPropertyErrorWasm {
-    document_type: String,
-    index_definition: Index,
-    property_name: String,
-    code: u32,
+    inner: UndefinedIndexPropertyError,
 }
 
-impl UndefinedIndexPropertyErrorWasm {
-    pub fn new(
-        document_type: String,
-        index_definition: Index,
-        property_name: String,
-        code: u32,
-    ) -> Self {
-        UndefinedIndexPropertyErrorWasm {
-            document_type,
-            index_definition,
-            property_name,
-            code,
-        }
+impl From<&UndefinedIndexPropertyError> for UndefinedIndexPropertyErrorWasm {
+    fn from(e: &UndefinedIndexPropertyError) -> Self {
+        Self { inner: e.clone() }
     }
 }
 
@@ -31,21 +19,35 @@ impl UndefinedIndexPropertyErrorWasm {
 impl UndefinedIndexPropertyErrorWasm {
     #[wasm_bindgen(js_name=getDocumentType)]
     pub fn get_document_type(&self) -> String {
-        self.document_type.clone()
+        self.inner.document_type().to_string()
     }
 
-    #[wasm_bindgen(js_name=getIndexDefinition)]
-    pub fn get_index_definition(&self) -> JsValue {
-        IndexDefinitionWasm::from(self.index_definition.clone()).into()
+    #[wasm_bindgen(js_name=getIndexName)]
+    pub fn get_index_name(&self) -> String {
+        self.inner.index_name().to_string()
     }
 
     #[wasm_bindgen(js_name=getPropertyName)]
     pub fn get_property_name(&self) -> String {
-        self.property_name.clone()
+        self.inner.property_name().to_string()
     }
 
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {
-        self.code
+        ConsensusError::from(self.inner.clone()).code()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn message(&self) -> String {
+        self.inner.to_string()
+    }
+
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+        let bytes = ConsensusError::from(self.inner.clone())
+            .serialize()
+            .map_err(|e| JsError::from(e))?;
+
+        Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }

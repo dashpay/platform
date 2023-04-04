@@ -1,4 +1,4 @@
-use crate::decode_protocol_entity_factory::DecodeProtocolEntity;
+use crate::encoding::decode_protocol_entity_factory::DecodeProtocolEntity;
 use crate::identity::identity_public_key::factory::KeyCount;
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};

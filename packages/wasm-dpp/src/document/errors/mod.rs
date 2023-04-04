@@ -15,7 +15,7 @@ pub use invalid_initial_revision_error::*;
 pub use mismatch_owners_ids_error::*;
 pub use no_documents_supplied_error::*;
 
-use crate::errors::consensus_error::from_consensus_error;
+use crate::errors::consensus::consensus_error::from_consensus_error;
 use crate::utils::*;
 
 mod document_already_exists_error;

@@ -3,13 +3,14 @@ use crate::state_repository::{ExternalStateRepositoryLike, ExternalStateReposito
 use crate::utils::WithJsError;
 use crate::validation::ValidationResultWasm;
 
-use crate::errors::consensus_error::from_consensus_error;
+use crate::errors::consensus::consensus_error::from_consensus_error;
 use dpp::consensus::basic::state_transition::InvalidStateTransitionTypeError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use dpp::state_transition::validation::validate_state_transition_identity_signature::validate_state_transition_identity_signature;
 use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned};
+use dpp::ProtocolError;
 use std::sync::Arc;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
@@ -67,15 +68,17 @@ pub async fn validate_state_transition_identity_signature_wasm(
         StateTransition::DocumentsBatch(mut state_transition) => {
             validator.validate(&mut state_transition).await
         }
+        // TODO: We should use protocol error here, not consensus
         StateTransition::IdentityCreate(state_transition) => Err(from_consensus_error(
-            ConsensusError::BasicError(Box::new(BasicError::InvalidStateTransitionTypeError(
+            ConsensusError::BasicError(BasicError::InvalidStateTransitionTypeError(
                 InvalidStateTransitionTypeError::new(state_transition.transition_type as u8),
-            ))),
+            )),
         )),
+        // TODO: We should use protocol error here, not consensus
         StateTransition::IdentityTopUp(state_transition) => Err(from_consensus_error(
-            ConsensusError::BasicError(Box::new(BasicError::InvalidStateTransitionTypeError(
+            ConsensusError::BasicError(BasicError::InvalidStateTransitionTypeError(
                 InvalidStateTransitionTypeError::new(state_transition.transition_type as u8),
-            ))),
+            )),
         )),
         StateTransition::IdentityCreditWithdrawal(mut state_transition) => {
             validator.validate(&mut state_transition).await

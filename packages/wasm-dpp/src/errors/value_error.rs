@@ -1,5 +1,8 @@
-use dpp::platform_value::Error as PlatformValueError;
+use dpp::platform_value;
+use platform_value::Error as ValueError;
 use wasm_bindgen::prelude::*;
+
+// TODO Rename to ProtocolValueError
 
 #[wasm_bindgen(js_name=PlatformValueError, inspectable)]
 #[derive(Debug)]
@@ -7,25 +10,9 @@ pub struct PlatformValueErrorWasm {
     message: String,
 }
 
-impl From<PlatformValueError> for PlatformValueErrorWasm {
-    fn from(e: PlatformValueError) -> Self {
+impl From<ValueError> for PlatformValueErrorWasm {
+    fn from(e: ValueError) -> Self {
         Self {
-            message: e.to_string(),
-        }
-    }
-}
-
-impl From<&PlatformValueError> for PlatformValueErrorWasm {
-    fn from(e: &PlatformValueError) -> Self {
-        Self {
-            message: e.to_string(),
-        }
-    }
-}
-
-impl PlatformValueErrorWasm {
-    pub fn new(e: PlatformValueError) -> Self {
-        PlatformValueErrorWasm {
             message: e.to_string(),
         }
     }

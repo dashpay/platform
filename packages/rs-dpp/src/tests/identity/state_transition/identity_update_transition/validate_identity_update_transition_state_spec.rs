@@ -2,10 +2,13 @@ use std::sync::Arc;
 
 use chrono::Utc;
 
+use crate::consensus::basic::BasicError;
+use crate::consensus::state::state_error::StateError;
+use crate::consensus::test_consensus_error::TestConsensusError;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::{
     block_time_window::validate_time_in_block_time_window::BLOCK_TIME_WINDOW_MILLIS,
-    consensus::{basic::TestConsensusError, ConsensusError},
+    consensus::ConsensusError,
     identity::{
         state_transition::identity_update_transition::{
             identity_update_transition::IdentityUpdateTransition,
@@ -102,12 +105,9 @@ async fn should_return_invalid_identity_revision_error_if_new_revision_is_not_in
 
     assert!(matches!(
         state_error,
-        StateError::InvalidIdentityRevisionError {
-            identity_id,
-            current_revision
-        } if  {
-            identity_id ==  state_transition.get_identity_id()  &&
-            current_revision == &0
+        StateError::InvalidIdentityRevisionError(e) if  {
+            e.identity_id() ==  state_transition.get_identity_id()  &&
+            e.current_revision() == &0
         }
     ));
 }
@@ -144,9 +144,7 @@ async fn should_return_identity_public_key_is_read_only_error_if_disabling_publi
 
     assert!(matches!(
         state_error,
-        StateError::IdentityPublicKeyIsReadOnlyError {
-            public_key_index
-        } if   public_key_index == &0
+        StateError::IdentityPublicKeyIsReadOnlyError(e) if   e.public_key_index() == 0
     ));
 }
 
@@ -182,9 +180,7 @@ async fn should_return_error_if_disabling_public_key_is_already_disabled() {
 
     assert!(matches!(
         state_error,
-        StateError::IdentityPublicKeyIsDisabledError {
-            public_key_index
-        } if   public_key_index == &0
+        StateError::IdentityPublicKeyIsDisabledError(e) if   e.public_key_index() == 0
     ));
 }
 
@@ -245,8 +241,8 @@ async fn should_throw_invalid_identity_public_key_id_error_if_identity_does_not_
 
     assert!(matches!(
         state_error,
-        StateError::InvalidIdentityPublicKeyIdError { id } if  {
-            id == &3
+        StateError::InvalidIdentityPublicKeyIdError(e) if  {
+            e.id() == 3
         }
     ));
 }
@@ -373,7 +369,7 @@ async fn should_validate_purpose_and_security_level() {
 
     assert!(matches!(
         result.errors[0],
-        ConsensusError::MissingMasterPublicKeyError(_)
+        ConsensusError::BasicError(BasicError::MissingMasterPublicKeyError(_))
     ));
 }
 

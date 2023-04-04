@@ -4,9 +4,9 @@ use async_trait::async_trait;
 use platform_value::Value;
 
 use crate::consensus::basic::state_transition::{
-    InvalidStateTransitionTypeError, StateTransitionMaxSizeExceededError,
+    InvalidStateTransitionTypeError, MissingStateTransitionTypeError,
+    StateTransitionMaxSizeExceededError,
 };
-use crate::serialization_traits::PlatformSerializable;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     state_repository::StateRepositoryLike,
@@ -61,7 +61,7 @@ where
         let Ok(state_transition_type) = raw_state_transition.get_integer("type") else {
             result.add_error(
                 ConsensusError::BasicError(
-                    Box::new(BasicError::MissingStateTransitionTypeError)
+                    BasicError::MissingStateTransitionTypeError(MissingStateTransitionTypeError::new())
                 )
             );
 
@@ -71,9 +71,7 @@ where
         let Ok(state_transition_type) = StateTransitionType::try_from(state_transition_type) else {
             result.add_error(
                 ConsensusError::BasicError(
-                    Box::new(
                         BasicError::InvalidStateTransitionTypeError(InvalidStateTransitionTypeError::new(state_transition_type))
-                    )
                 )
             );
 
@@ -138,6 +136,7 @@ mod test {
 
     use super::StateTransitionBasicValidator;
 
+    use crate::consensus::basic::state_transition::MissingStateTransitionTypeError;
     use crate::validation::SimpleConsensusValidationResult;
     use crate::{
         consensus::basic::BasicError,
@@ -230,7 +229,7 @@ mod test {
 
         assert!(matches!(
             basic_error,
-            BasicError::MissingStateTransitionTypeError
+            BasicError::MissingStateTransitionTypeError(MissingStateTransitionTypeError { .. })
         ));
     }
 
