@@ -16,6 +16,7 @@ use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::{
     errors::ProtocolError, identifier::Identifier, metadata::Metadata, util::hash, Convertible,
 };
+use bincode::{Decode, Encode};
 
 use super::{IdentityPublicKey, KeyID};
 
@@ -30,17 +31,22 @@ pub const IDENTIFIER_FIELDS_RAW_OBJECT: [&str; 1] = [property_names::ID_RAW_OBJE
 
 /// Implement the Identity. Identity is a low-level construct that provides the foundation
 /// for user-facing functionality on the platform
-#[derive(Default, Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
+#[derive(Default, Debug, Serialize, Deserialize, Encode, Decode, Clone, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Identity {
     pub protocol_version: u32,
+    #[bincode(with_serde)]
     pub id: Identifier,
+    #[bincode(with_serde)]
     #[serde(with = "public_key_serialization")]
     pub public_keys: BTreeMap<KeyID, IdentityPublicKey>,
     pub balance: u64,
+    #[bincode(with_serde)]
     pub revision: Revision,
+    #[bincode(with_serde)]
     #[serde(skip)]
     pub asset_lock_proof: Option<AssetLockProof>,
+    #[bincode(with_serde)]
     #[serde(skip)]
     pub metadata: Option<Metadata>,
 }

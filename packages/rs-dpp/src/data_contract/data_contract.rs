@@ -1,3 +1,4 @@
+use bincode::{Decode, Encode};
 use std::collections::{BTreeMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 

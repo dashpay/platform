@@ -1,3 +1,4 @@
+use bincode::{Decode, Encode};
 use std::convert::{TryFrom, TryInto};
 
 use platform_value::{BinaryData, Value};
@@ -22,7 +23,7 @@ mod property_names {
     pub const IDENTITY_ID: &str = "identityId";
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityTopUpTransition {
     // Own ST fields

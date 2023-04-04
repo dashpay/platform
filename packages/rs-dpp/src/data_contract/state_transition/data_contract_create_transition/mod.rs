@@ -20,6 +20,8 @@ use crate::{
 
 use super::property_names::*;
 
+use bincode::{Decode, Encode};
+
 mod action;
 pub mod apply_data_contract_create_transition_factory;
 pub mod builder;
@@ -55,15 +57,19 @@ pub const U32_FIELDS: [&str; 2] = [
     property_names::DATA_CONTRACT_PROTOCOL_VERSION,
 ];
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DataContractCreateTransition {
     pub protocol_version: u32,
     #[serde(rename = "type")]
     pub transition_type: StateTransitionType,
+    #[bincode(with_serde)]
     pub data_contract: DataContract,
+    #[bincode(with_serde)]
     pub entropy: Bytes32,
+    #[bincode(with_serde)]
     pub signature_public_key_id: KeyID,
+    #[bincode(with_serde)]
     pub signature: BinaryData,
 }
 

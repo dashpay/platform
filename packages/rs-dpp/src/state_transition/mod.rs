@@ -17,6 +17,7 @@ use crate::identity::state_transition::identity_credit_withdrawal_transition::Id
 use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use crate::prelude::Identifier;
+use bincode::{Decode, Encode};
 
 mod abstract_state_transition;
 mod abstract_state_transition_identity_signed;
@@ -81,12 +82,12 @@ macro_rules! call_static_method {
     };
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, From, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, From, PartialEq)]
 pub enum StateTransition {
     DataContractCreate(DataContractCreateTransition),
     DataContractUpdate(DataContractUpdateTransition),
     DocumentsBatch(DocumentsBatchTransition),
-    IdentityCreate(IdentityCreateTransition),
+    IdentityCreate(#[bincode(with_serde)] IdentityCreateTransition),
     IdentityTopUp(IdentityTopUpTransition),
     IdentityCreditWithdrawal(IdentityCreditWithdrawalTransition),
     IdentityUpdate(IdentityUpdateTransition),

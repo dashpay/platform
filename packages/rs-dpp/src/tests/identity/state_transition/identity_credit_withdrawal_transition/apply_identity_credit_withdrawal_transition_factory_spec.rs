@@ -8,6 +8,7 @@ mod apply_identity_credit_withdrawal_transition_factory {
         AMOUNT, CORE_FEE_PER_BYTE, OUTPUT_SCRIPT, POOLING, STATUS,
     };
     use crate::document::ExtendedDocument;
+    use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use crate::{
         contracts::withdrawals_contract,
         identity::state_transition::identity_credit_withdrawal_transition::{
@@ -37,8 +38,10 @@ mod apply_identity_credit_withdrawal_transition_factory {
 
         let applier = ApplyIdentityCreditWithdrawalTransition::new(state_repository);
 
+        let execution_context = StateTransitionExecutionContext::default();
+
         match applier
-            .apply_identity_credit_withdrawal_transition(&state_transition)
+            .apply_identity_credit_withdrawal_transition(&state_transition, &execution_context)
             .await
         {
             Ok(_) => panic!("should not be able to apply state transition"),
@@ -130,8 +133,10 @@ mod apply_identity_credit_withdrawal_transition_factory {
 
         let applier = ApplyIdentityCreditWithdrawalTransition::new(state_repository);
 
+        let execution_context = StateTransitionExecutionContext::default();
+
         let result = applier
-            .apply_identity_credit_withdrawal_transition(&state_transition)
+            .apply_identity_credit_withdrawal_transition(&state_transition, &execution_context)
             .await;
 
         assert!(result.is_ok())

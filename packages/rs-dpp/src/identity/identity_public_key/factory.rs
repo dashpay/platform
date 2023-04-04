@@ -115,7 +115,7 @@ impl IdentityPublicKey {
                 "too many keys already created".to_string(),
             ));
         }
-        let key_number = rng.gen_range(0..(16 - key_count as u8));
+        let key_number = rng.gen_range(0..(12 - key_count as u8));
         // now we need to find the first bool that isn't set to true
         let mut needed_pos = None;
         let mut counter = 0;

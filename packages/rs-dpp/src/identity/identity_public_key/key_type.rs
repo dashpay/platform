@@ -1,5 +1,6 @@
 use crate::util::hash::ripemd160_sha256;
 use anyhow::bail;
+use bincode::{Decode, Encode};
 use bls_signatures::Serialize;
 use ciborium::value::Value as CborValue;
 use dashcore::secp256k1::rand::rngs::StdRng as EcdsaRng;
@@ -17,7 +18,18 @@ use std::convert::TryFrom;
 #[allow(non_camel_case_types)]
 #[repr(u8)]
 #[derive(
-    Debug, PartialEq, Eq, Clone, Copy, Serialize_repr, Deserialize_repr, Hash, Ord, PartialOrd,
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    Copy,
+    Serialize_repr,
+    Deserialize_repr,
+    Hash,
+    Ord,
+    PartialOrd,
+    Encode,
+    Decode,
 )]
 pub enum KeyType {
     ECDSA_SECP256K1 = 0,

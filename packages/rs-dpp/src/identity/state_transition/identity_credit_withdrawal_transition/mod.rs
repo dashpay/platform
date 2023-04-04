@@ -1,3 +1,4 @@
+use bincode::{Decode, Encode};
 use platform_value::{BinaryData, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -29,7 +30,7 @@ pub use action::{
 };
 
 #[repr(u8)]
-#[derive(Serialize_repr, Deserialize_repr, PartialEq, Eq, Clone, Copy, Debug)]
+#[derive(Serialize_repr, Deserialize_repr, PartialEq, Eq, Clone, Copy, Debug, Encode, Decode)]
 pub enum Pooling {
     Never = 0,
     IfAvailable = 1,
@@ -42,7 +43,7 @@ impl std::default::Default for Pooling {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityCreditWithdrawalTransition {
     pub protocol_version: u32,
@@ -52,6 +53,7 @@ pub struct IdentityCreditWithdrawalTransition {
     pub amount: u64,
     pub core_fee_per_byte: u32,
     pub pooling: Pooling,
+    #[bincode(with_serde)]
     pub output_script: CoreScript,
     pub revision: Revision,
     pub signature_public_key_id: KeyID,

@@ -4,8 +4,9 @@ use crate::{string_encoding, Error, Value};
 use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use bincode::{Encode, Decode};
 
-#[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Copy)]
+#[derive(Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Copy, Encode, Decode)]
 pub struct Bytes36(pub [u8; 36]);
 
 impl Bytes36 {

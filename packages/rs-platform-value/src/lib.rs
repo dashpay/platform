@@ -44,10 +44,11 @@ pub use types::identifier::{Identifier, IDENTIFIER_MEDIA_TYPE};
 pub use value_serialization::{from_value, to_value};
 
 pub use patch::{patch, Patch};
+use bincode::{Encode, Decode};
 
 /// A representation of a dynamic value that can handled dynamically
 #[non_exhaustive]
-#[derive(Clone, Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, PartialEq, PartialOrd, Encode, Decode)]
 pub enum Value {
     /// A u128 integer
     U128(u128),

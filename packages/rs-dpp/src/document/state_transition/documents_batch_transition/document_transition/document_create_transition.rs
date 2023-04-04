@@ -1,3 +1,4 @@
+use bincode::{Decode, Encode};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
@@ -29,7 +30,7 @@ pub const BINARY_FIELDS: [&str; 1] = ["$entropy"];
 /// The Identifier fields in [`DocumentCreateTransition`]
 pub use super::document_base_transition::IDENTIFIER_FIELDS;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentCreateTransition {
     /// Document Base Transition

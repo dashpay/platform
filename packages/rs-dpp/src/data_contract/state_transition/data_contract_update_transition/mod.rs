@@ -6,6 +6,8 @@ use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 
+use bincode::{Decode, Encode};
+
 use crate::{
     data_contract::DataContract,
     identity::KeyID,
@@ -50,7 +52,7 @@ pub const U32_FIELDS: [&str; 2] = [
     property_names::DATA_CONTRACT_PROTOCOL_VERSION,
 ];
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DataContractUpdateTransition {
     pub protocol_version: u32,
@@ -58,8 +60,11 @@ pub struct DataContractUpdateTransition {
     pub transition_type: StateTransitionType,
     // we want to skip serialization of transitions, as we does it manually in `to_object()`  and `to_json()`
     #[serde(skip_serializing)]
+    #[bincode(with_serde)]
     pub data_contract: DataContract,
+    #[bincode(with_serde)]
     pub signature_public_key_id: KeyID,
+    #[bincode(with_serde)]
     pub signature: BinaryData,
 }
 

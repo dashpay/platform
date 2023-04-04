@@ -1,8 +1,10 @@
 use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use ciborium::value::Value as CborValue;
+use dashcore::signer;
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 
+use bincode::{Decode, Encode};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{BinaryData, ReplacementType, Value, ValueMapHelper};
@@ -10,13 +12,14 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::errors::ProtocolError;
+use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
 use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
 use crate::util::serializer;
-use crate::{Convertible, SerdeParsingError};
+use crate::{BlsModule, Convertible, SerdeParsingError};
 
 pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Encode, Decode, Clone, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityPublicKeyWithWitness {
     pub id: KeyID,
@@ -90,6 +93,46 @@ impl IdentityPublicKeyWithWitness {
 
     pub fn from_raw_object(raw_object: Value) -> Result<Self, ProtocolError> {
         raw_object.try_into().map_err(ProtocolError::ValueError)
+    }
+
+    pub fn from_public_key_signed_with_private_key(
+        public_key: IdentityPublicKey,
+        private_key: &[u8],
+        bls: &impl BlsModule,
+    ) -> Result<Self, ProtocolError> {
+        let key_type = public_key.key_type;
+        let mut public_key_with_witness: IdentityPublicKeyWithWitness = public_key.into();
+        public_key_with_witness.sign_by_private_key(private_key, key_type, bls)?;
+        Ok(public_key_with_witness)
+    }
+
+    /// Signs data with the private key
+    fn sign_by_private_key(
+        &mut self,
+        private_key: &[u8],
+        key_type: KeyType,
+        bls: &impl BlsModule,
+    ) -> Result<(), ProtocolError> {
+        let data = self.to_buffer()?;
+        match key_type {
+            KeyType::BLS12_381 => self.signature = bls.sign(&data, private_key)?.into(),
+
+            // https://github.com/dashevo/platform/blob/9c8e6a3b6afbc330a6ab551a689de8ccd63f9120/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L169
+            KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
+                let signature = signer::sign(&data, private_key)?;
+                self.signature = signature.to_vec().into();
+            }
+
+            // the default behavior from
+            // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L187
+            // is to return the error for the BIP13_SCRIPT_HASH
+            KeyType::BIP13_SCRIPT_HASH => {
+                return Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
+                    InvalidIdentityPublicKeyTypeError::new(key_type),
+                ))
+            }
+        };
+        Ok(())
     }
 
     pub fn from_value_map(mut value_map: BTreeMap<String, Value>) -> Result<Self, ProtocolError> {
@@ -240,6 +283,20 @@ impl From<&IdentityPublicKeyWithWitness> for IdentityPublicKey {
             read_only: val.read_only,
             data: val.data.clone(),
             disabled_at: None,
+        }
+    }
+}
+
+impl From<IdentityPublicKey> for IdentityPublicKeyWithWitness {
+    fn from(val: IdentityPublicKey) -> Self {
+        IdentityPublicKeyWithWitness {
+            id: val.id,
+            purpose: val.purpose,
+            security_level: val.security_level,
+            key_type: val.key_type,
+            read_only: val.read_only,
+            data: val.data.clone(),
+            signature: Default::default(),
         }
     }
 }

@@ -4,8 +4,9 @@ use crate::{string_encoding, Error, Value};
 use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use bincode::{Encode, Decode};
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Encode, Decode)]
 pub struct BinaryData(pub Vec<u8>);
 
 impl Serialize for BinaryData {

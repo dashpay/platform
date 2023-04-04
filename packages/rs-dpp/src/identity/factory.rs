@@ -40,7 +40,7 @@ impl Identity {
             protocol_version: IDENTITY_PROTOCOL_VERSION,
             id,
             revision,
-            asset_lock_proof: None,
+            asset_lock_proof: Some(AssetLockProof::Instant(InstantAssetLockProof::default())),
             balance,
             public_keys,
             metadata: None,
@@ -48,24 +48,27 @@ impl Identity {
     }
 
     // TODO: Move to a separate module under a feature
-    pub fn random_identity_with_private_key_with_rng(
+    pub fn random_identity_with_private_key_with_rng<I>(
         key_count: KeyCount,
         rng: &mut StdRng,
-    ) -> (Self, Vec<(IdentityPublicKey, Vec<u8>)>) {
+    ) -> (Self, I)
+    where
+        I: Default
+            + IntoIterator<Item = (IdentityPublicKey, Vec<u8>)>
+            + Extend<(IdentityPublicKey, Vec<u8>)>,
+    {
         let id = Identifier::new(rng.gen::<[u8; 32]>());
         let revision = rng.gen_range(0..100);
         // balance must be in i64 (that would be >> 2)
         // but let's make it smaller
         let balance = rng.gen::<u64>() >> 20; //around 175 Dash as max
-        let (public_keys, private_keys): (
-            BTreeMap<KeyID, IdentityPublicKey>,
-            Vec<(IdentityPublicKey, Vec<u8>)>,
-        ) = IdentityPublicKey::random_authentication_keys_with_private_keys_with_rng(
-            key_count, rng,
-        )
-        .into_iter()
-        .map(|(key, private_key)| ((key.id, key.clone()), (key, private_key)))
-        .unzip();
+        let (public_keys, private_keys): (BTreeMap<KeyID, IdentityPublicKey>, I) =
+            IdentityPublicKey::random_authentication_keys_with_private_keys_with_rng(
+                key_count, rng,
+            )
+            .into_iter()
+            .map(|(key, private_key)| ((key.id, key.clone()), (key, private_key)))
+            .unzip();
 
         (
             Identity {

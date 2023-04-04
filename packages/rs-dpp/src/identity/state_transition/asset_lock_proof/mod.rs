@@ -10,6 +10,7 @@ pub use asset_lock_proof_validator::*;
 pub use asset_lock_public_key_hash_fetcher::*;
 pub use asset_lock_transaction_output_fetcher::*;
 pub use asset_lock_transaction_validator::*;
+pub use bincode::{Decode, Encode};
 pub use chain::*;
 pub use instant::*;
 use platform_value::{from_value, Value};
@@ -28,9 +29,9 @@ mod asset_lock_transaction_validator;
 pub mod chain;
 pub mod instant;
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Encode, Decode)]
 pub enum AssetLockProof {
-    Instant(InstantAssetLockProof),
+    Instant(#[bincode(with_serde)] InstantAssetLockProof),
     Chain(ChainAssetLockProof),
 }
 

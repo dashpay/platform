@@ -4,8 +4,9 @@ use crate::{string_encoding, Error, Value};
 use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use bincode::{Encode, Decode};
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Copy)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Copy, Encode, Decode)]
 pub struct Bytes20(pub [u8; 20]);
 
 impl AsRef<[u8]> for Bytes20 {

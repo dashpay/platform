@@ -1,3 +1,4 @@
+use bincode::{Decode, Encode};
 use std::collections::{BTreeMap, HashMap};
 use std::convert::TryInto;
 
@@ -63,7 +64,7 @@ pub const U32_FIELDS: [&str; 1] = [property_names::PROTOCOL_VERSION];
 const DEFAULT_SECURITY_LEVEL: SecurityLevel = SecurityLevel::HIGH;
 const EMPTY_VEC: Vec<u8> = vec![];
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Encode, Decode, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentsBatchTransition {
     pub protocol_version: u32,

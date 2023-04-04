@@ -105,11 +105,12 @@ mod test {
         state_repository_mock
             .expect_fetch_data_contract()
             .return_once(|_, _| Ok(None));
-        state_transition.execution_context.enable_dry_run();
+        let execution_context = StateTransitionExecutionContext::default().with_dry_run();
 
         let result = validate_data_contract_create_transition_state(
             &state_repository_mock,
             state_transition,
+            &execution_context,
         )
         .await
         .expect("should return validation result");

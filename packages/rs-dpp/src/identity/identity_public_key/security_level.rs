@@ -1,5 +1,6 @@
 use super::purpose::Purpose;
 use anyhow::bail;
+use bincode::{Decode, Encode};
 use ciborium::value::Value as CborValue;
 use lazy_static::lazy_static;
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -8,7 +9,18 @@ use std::convert::TryFrom;
 
 #[repr(u8)]
 #[derive(
-    Debug, PartialEq, Eq, Clone, Copy, Hash, Serialize_repr, Deserialize_repr, PartialOrd, Ord,
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    Copy,
+    Hash,
+    Serialize_repr,
+    Deserialize_repr,
+    PartialOrd,
+    Ord,
+    Encode,
+    Decode,
 )]
 pub enum SecurityLevel {
     MASTER = 0,

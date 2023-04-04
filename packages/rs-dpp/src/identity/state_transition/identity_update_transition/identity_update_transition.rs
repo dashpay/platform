@@ -1,9 +1,11 @@
+use bincode::{Decode, Encode};
 use platform_value::{BinaryData, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::convert::{TryFrom, TryInto};
 
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
+use crate::prelude::Identity;
 use crate::{
     identity::{KeyID, SecurityLevel},
     prelude::{Identifier, Revision, TimestampMillis},
@@ -37,7 +39,7 @@ pub const BINARY_FIELDS: [&str; 3] = [
     property_names::SIGNATURE,
 ];
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityUpdateTransition {
     pub protocol_version: u32,
@@ -62,11 +64,9 @@ pub struct IdentityUpdateTransition {
     pub add_public_keys: Vec<IdentityPublicKeyWithWitness>,
 
     /// Identity Public Keys ID's to disable for the Identity
-    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub disable_public_keys: Vec<KeyID>,
 
     /// Timestamp when keys were disabled
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub public_keys_disabled_at: Option<TimestampMillis>,
 }
 

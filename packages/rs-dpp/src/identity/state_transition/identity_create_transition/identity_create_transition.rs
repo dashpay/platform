@@ -43,17 +43,54 @@ pub struct SerializationOptions {
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[serde(try_from = "IdentityCreateTransitionInner")]
 pub struct IdentityCreateTransition {
+    #[serde(rename = "type")]
+    pub transition_type: StateTransitionType,
     // Own ST fields
     pub public_keys: Vec<IdentityPublicKeyWithWitness>,
     pub asset_lock_proof: AssetLockProof,
-    #[serde(skip)]
-    pub identity_id: Identifier,
     // Generic identity ST fields
     pub protocol_version: u32,
-    #[serde(rename = "type")]
-    pub transition_type: StateTransitionType,
     pub signature: BinaryData,
+    #[serde(skip)]
+    pub identity_id: Identifier,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IdentityCreateTransitionInner {
+    #[serde(rename = "type")]
+    transition_type: StateTransitionType,
+    // Own ST fields
+    public_keys: Vec<IdentityPublicKeyWithWitness>,
+    asset_lock_proof: AssetLockProof,
+    // Generic identity ST fields
+    protocol_version: u32,
+    signature: BinaryData,
+}
+
+impl TryFrom<IdentityCreateTransitionInner> for IdentityCreateTransition {
+    type Error = ProtocolError;
+
+    fn try_from(value: IdentityCreateTransitionInner) -> Result<Self, Self::Error> {
+        let IdentityCreateTransitionInner {
+            transition_type,
+            public_keys,
+            asset_lock_proof,
+            protocol_version,
+            signature,
+        } = value;
+        let identity_id = asset_lock_proof.create_identifier()?;
+        Ok(Self {
+            transition_type,
+            public_keys,
+            asset_lock_proof,
+            protocol_version,
+            signature,
+            identity_id,
+        })
+    }
 }
 
 //todo: there shouldn't be a default
@@ -95,30 +132,6 @@ impl TryFrom<Identity> for IdentityCreateTransition {
         Ok(identity_create_transition)
     }
 }
-
-// impl Serialize for IdentityCreateTransition {
-//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-//     where
-//         S: Serializer,
-//     {
-//         let raw = self
-//             .to_json_object(Default::default())
-//             .map_err(|e| S::Error::custom(e.to_string()))?;
-//
-//         raw.serialize(serializer)
-//     }
-// }
-//
-// impl<'de> Deserialize<'de> for IdentityCreateTransition {
-//     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-//     where
-//         D: Deserializer<'de>,
-//     {
-//         let value = platform_value::Value::deserialize(deserializer)?;
-//
-//         Self::new(value).map_err(|e| D::Error::custom(e.to_string()))
-//     }
-// }
 
 /// Main state transition functionality implementation
 impl IdentityCreateTransition {

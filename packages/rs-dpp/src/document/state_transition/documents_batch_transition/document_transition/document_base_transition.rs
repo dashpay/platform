@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 
 use anyhow::bail;
+use bincode::{Decode, Encode};
 use num_enum::IntoPrimitive;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
@@ -25,7 +26,17 @@ pub(self) mod property_names {
 pub const IDENTIFIER_FIELDS: [&str; 2] = [property_names::ID, property_names::DATA_CONTRACT_ID];
 
 #[derive(
-    Debug, Serialize_repr, Deserialize_repr, Clone, Copy, PartialEq, Eq, Hash, IntoPrimitive,
+    Debug,
+    Serialize_repr,
+    Deserialize_repr,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    Hash,
+    IntoPrimitive,
+    Encode,
+    Decode,
 )]
 #[repr(u8)]
 pub enum Action {
@@ -84,7 +95,7 @@ impl TryFrom<String> for Action {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentBaseTransition {
     /// The document ID
@@ -101,6 +112,7 @@ pub struct DocumentBaseTransition {
     pub data_contract_id: Identifier,
 
     #[serde(skip)]
+    #[bincode(with_serde)]
     pub data_contract: DataContract,
 }
 

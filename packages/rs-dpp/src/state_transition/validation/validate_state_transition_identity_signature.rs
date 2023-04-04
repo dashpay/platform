@@ -310,11 +310,13 @@ mod test {
         state_repository_mock
             .expect_fetch_identity()
             .returning(move |_, _| Ok(Some(identity.clone())));
+        let execution_context = StateTransitionExecutionContext::default();
 
         let result = validate_state_transition_identity_signature(
             Arc::new(state_repository_mock),
             &mut state_transition,
             &bls,
+            &execution_context,
         )
         .await
         .expect("the validation result should be returned");
@@ -335,11 +337,13 @@ mod test {
         state_repository_mock
             .expect_fetch_identity()
             .returning(move |_, _| Ok(None));
+        let execution_context = StateTransitionExecutionContext::default();
 
         let result = validate_state_transition_identity_signature(
             Arc::new(state_repository_mock),
             &mut state_transition,
             &bls,
+            &execution_context,
         )
         .await
         .expect("the validation result should be returned");
@@ -368,11 +372,13 @@ mod test {
         state_repository_mock
             .expect_fetch_identity()
             .returning(move |_, _| Ok(Some(identity.clone())));
+        let execution_context = StateTransitionExecutionContext::default();
 
         let result = validate_state_transition_identity_signature(
             Arc::new(state_repository_mock),
             &mut state_transition,
             &bls,
+            &execution_context,
         )
         .await
         .expect("the validation result should be returned");
@@ -400,11 +406,13 @@ mod test {
             .expect_fetch_identity()
             .returning(move |_, _| Ok(Some(identity.clone())));
         state_transition.return_error = Some(0);
+        let execution_context = StateTransitionExecutionContext::default();
 
         let result = validate_state_transition_identity_signature(
             Arc::new(state_repository_mock),
             &mut state_transition,
             &bls,
+            &execution_context,
         )
         .await
         .expect("the validation result should be returned");
@@ -433,11 +441,13 @@ mod test {
             .expect_fetch_identity()
             .returning(move |_, _| Ok(Some(identity.clone())));
         state_transition.return_error = Some(1);
+        let execution_context = StateTransitionExecutionContext::default();
 
         let result = validate_state_transition_identity_signature(
             Arc::new(state_repository_mock),
             &mut state_transition,
             &bls,
+            &execution_context,
         )
         .await
         .expect("the validation result should be returned");
@@ -463,14 +473,13 @@ mod test {
             .expect_fetch_identity()
             .returning(move |_, _| Ok(Some(identity.clone())));
         state_transition.return_error = Some(1);
-        let execution_context = StateTransitionExecutionContext::default();
-        execution_context.enable_dry_run();
+        let execution_context = StateTransitionExecutionContext::default().with_dry_run();
 
         let result = validate_state_transition_identity_signature(
             Arc::new(state_repository_mock),
             &mut state_transition,
-            execution_context,
             &bls,
+            &execution_context,
         )
         .await
         .expect("the validation result should be returned");
@@ -494,10 +503,13 @@ mod test {
             .returning(move |_, _| Ok(Some(identity.clone())));
         state_transition.return_error = Some(2);
 
+        let execution_context = StateTransitionExecutionContext::default();
+
         let result = validate_state_transition_identity_signature(
             Arc::new(state_repository_mock),
             &mut state_transition,
             &bls,
+            &execution_context,
         )
         .await
         .expect("the validation result should be returned");
@@ -525,10 +537,13 @@ mod test {
             .returning(move |_, _| Ok(Some(identity.clone())));
         state_transition.return_error = Some(3);
 
+        let execution_context = StateTransitionExecutionContext::default();
+
         let result = validate_state_transition_identity_signature(
             Arc::new(state_repository_mock),
             &mut state_transition,
             &bls,
+            &execution_context,
         )
         .await
         .expect("the validation result should be returned");

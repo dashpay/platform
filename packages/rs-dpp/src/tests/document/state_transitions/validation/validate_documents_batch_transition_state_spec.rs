@@ -26,6 +26,7 @@ use crate::{
 };
 use crate::document::{Document, ExtendedDocument};
 use crate::identity::TimestampMillis;
+use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::tests::fixtures::get_extended_documents_fixture;
 use crate::validation::ConsensusValidationResult;
 
@@ -185,10 +186,15 @@ async fn should_return_invalid_result_if_document_transition_with_action_delete_
         .expect_fetch_documents()
         .returning(move |_, _, _, _| Ok(vec![]));
 
-    let validation_result =
-        validate_document_batch_transition_state(&state_repository_mock, &state_transition)
-            .await
-            .expect("validation result should be returned");
+    let execution_context = StateTransitionExecutionContext::default();
+
+    let validation_result = validate_document_batch_transition_state(
+        &state_repository_mock,
+        &state_transition,
+        &execution_context,
+    )
+    .await
+    .expect("validation result should be returned");
 
     let state_error = get_state_error(&validation_result, 0);
     assert_eq!(4005, state_error.get_code());
@@ -258,10 +264,15 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
         .expect_fetch_documents()
         .returning(move |_, _, _, _| Ok(vec![documents[0].clone()]));
 
-    let validation_result =
-        validate_document_batch_transition_state(&state_repository_mock, &state_transition)
-            .await
-            .expect("validation result should be returned");
+    let execution_context = StateTransitionExecutionContext::default();
+
+    let validation_result = validate_document_batch_transition_state(
+        &state_repository_mock,
+        &state_transition,
+        &execution_context,
+    )
+    .await
+    .expect("validation result should be returned");
     let state_error = get_state_error(&validation_result, 0);
 
     assert_eq!(4010, state_error.get_code());
@@ -335,10 +346,15 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
         .expect_fetch_documents()
         .returning(move |_, _, _, _| Ok(vec![fetched_document.document.clone()]));
 
-    let validation_result =
-        validate_document_batch_transition_state(&state_repository_mock, &state_transition)
-            .await
-            .expect("validation result should be returned");
+    let execution_context = StateTransitionExecutionContext::default();
+
+    let validation_result = validate_document_batch_transition_state(
+        &state_repository_mock,
+        &state_transition,
+        &execution_context,
+    )
+    .await
+    .expect("validation result should be returned");
     let state_error = get_state_error(&validation_result, 0);
     assert_eq!(4006, state_error.get_code());
     assert!(matches!(
@@ -409,10 +425,15 @@ async fn should_return_invalid_result_if_timestamps_mismatch() {
         .expect_fetch_documents()
         .returning(move |_, _, _, _| Ok(vec![]));
 
-    let validation_result =
-        validate_document_batch_transition_state(&state_repository_mock, &state_transition)
-            .await
-            .expect("validation result should be returned");
+    let execution_context = StateTransitionExecutionContext::default();
+
+    let validation_result = validate_document_batch_transition_state(
+        &state_repository_mock,
+        &state_transition,
+        &execution_context,
+    )
+    .await
+    .expect("validation result should be returned");
 
     let state_error = get_state_error(&validation_result, 0);
     assert_eq!(4007, state_error.get_code());
@@ -469,10 +490,15 @@ async fn should_return_invalid_result_if_crated_at_has_violated_time_window() {
         .expect_fetch_documents()
         .returning(move |_, _, _, _| Ok(vec![]));
 
-    let validation_result =
-        validate_document_batch_transition_state(&state_repository_mock, &state_transition)
-            .await
-            .expect("validation result should be returned");
+    let execution_context = StateTransitionExecutionContext::default();
+
+    let validation_result = validate_document_batch_transition_state(
+        &state_repository_mock,
+        &state_transition,
+        &execution_context,
+    )
+    .await
+    .expect("validation result should be returned");
 
     let state_error = get_state_error(&validation_result, 0);
     assert_eq!(4008, state_error.get_code());
@@ -518,7 +544,7 @@ async fn should_not_validate_time_in_block_window_on_dry_run() {
         DocumentsBatchTransition::from_value_map(map, vec![data_contract.clone()])
             .expect("documents batch state transition should be created");
 
-    state_transition.get_execution_context().enable_dry_run();
+    let execution_context = StateTransitionExecutionContext::default().with_dry_run();
     let now_ts_minus_6_mins =
         Utc::now().timestamp_millis() as u64 - Duration::from_secs(60 * 6).as_millis() as u64;
     state_transition
@@ -530,10 +556,13 @@ async fn should_not_validate_time_in_block_window_on_dry_run() {
         .expect_fetch_documents()
         .returning(move |_, _, _, _| Ok(vec![]));
 
-    let result =
-        validate_document_batch_transition_state(&state_repository_mock, &state_transition)
-            .await
-            .expect("validation result should be returned");
+    let result = validate_document_batch_transition_state(
+        &state_repository_mock,
+        &state_transition,
+        &execution_context,
+    )
+    .await
+    .expect("validation result should be returned");
 
     assert!(result.is_valid());
 }
@@ -583,10 +612,15 @@ async fn should_return_invalid_result_if_updated_at_has_violated_time_window() {
         .expect_fetch_documents()
         .returning(move |_, _, _, _| Ok(vec![]));
 
-    let validation_result =
-        validate_document_batch_transition_state(&state_repository_mock, &state_transition)
-            .await
-            .expect("validation result should be returned");
+    let execution_context = StateTransitionExecutionContext::default();
+
+    let validation_result = validate_document_batch_transition_state(
+        &state_repository_mock,
+        &state_transition,
+        &execution_context,
+    )
+    .await
+    .expect("validation result should be returned");
 
     let state_error = get_state_error(&validation_result, 0);
     assert_eq!(4008, state_error.get_code());
@@ -649,10 +683,15 @@ async fn should_return_valid_result_if_document_transitions_are_valid() {
         DocumentsBatchTransition::from_value_map(map, vec![data_contract.clone()])
             .expect("documents batch state transition should be created");
 
-    let validation_result =
-        validate_document_batch_transition_state(&state_repository_mock, &state_transition)
-            .await
-            .expect("validation result should be returned");
+    let execution_context = StateTransitionExecutionContext::default();
+
+    let validation_result = validate_document_batch_transition_state(
+        &state_repository_mock,
+        &state_transition,
+        &execution_context,
+    )
+    .await
+    .expect("validation result should be returned");
     println!("result is {:#?}", validation_result);
     assert!(validation_result.is_valid());
 }
