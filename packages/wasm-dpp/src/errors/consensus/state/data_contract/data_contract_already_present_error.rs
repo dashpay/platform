@@ -1,7 +1,9 @@
 use crate::buffer::Buffer;
+use crate::identifier::IdentifierWrapper;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
 use dpp::consensus::ConsensusError;
+use dpp::identifier::Identifier;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=DataContractAlreadyPresentError)]
@@ -17,9 +19,16 @@ impl From<&DataContractAlreadyPresentError> for DataContractAlreadyPresentErrorW
 
 #[wasm_bindgen(js_class=DataContractAlreadyPresentError)]
 impl DataContractAlreadyPresentErrorWasm {
+    #[wasm_bindgen(constructor)]
+    pub fn new(data_contract_id: IdentifierWrapper) -> Self {
+        Self {
+            inner: DataContractAlreadyPresentError::new(data_contract_id.into()),
+        }
+    }
+
     #[wasm_bindgen(js_name=getDataContractId)]
-    pub fn data_contract_id(&self) -> Buffer {
-        Buffer::from_bytes(self.inner.data_contract_id().as_bytes())
+    pub fn data_contract_id(&self) -> IdentifierWrapper {
+        self.inner.data_contract_id().to_owned().into()
     }
 
     #[wasm_bindgen(js_name=getCode)]

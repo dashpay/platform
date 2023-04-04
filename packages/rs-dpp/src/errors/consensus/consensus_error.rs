@@ -56,8 +56,8 @@ impl ConsensusError {
             .with_variable_int_encoding()
             .with_big_endian();
 
-        bincode::serde::encode_to_vec(self, config).map_err(|_| {
-            ProtocolError::EncodingError(String::from("unable to serialize identity public key"))
+        bincode::serde::encode_to_vec(self, config).map_err(|e| {
+            ProtocolError::EncodingError(format!("unable to serialize consensus error: {e}"))
         })
     }
 
@@ -68,7 +68,7 @@ impl ConsensusError {
             .with_big_endian();
 
         bincode::serde::decode_borrowed_from_slice(bytes, config).map_err(|e| {
-            ProtocolError::EncodingError(format!("unable to deserialize consensus error {}", e))
+            ProtocolError::EncodingError(format!("unable to deserialize consensus error: {e}"))
         })
     }
 }
