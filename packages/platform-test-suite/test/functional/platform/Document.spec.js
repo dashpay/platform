@@ -60,7 +60,7 @@ describe('Platform', () => {
       }
     });
 
-    // TODO(wasm-dpp): fix later when figure out how to avoid mocking validateBasic
+    // TODO(wasm-dpp): fix later when figure out how to create document with invalid document type
     it.skip('should fail to create new document with an unknown type', async function it() {
       // Add undefined document type for
       client.getApps().get('customContracts').contract.documents.undefinedType = {
