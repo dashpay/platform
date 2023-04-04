@@ -112,6 +112,19 @@ impl PreCalculatedOperationWasm {
         }
     }
 
+    pub fn refunds_as_objects(&self) -> Result<Option<Array>, JsValue> {
+        let array_refunds = Array::new();
+        if let Some(refunds) = self.0.get_refunds() {
+            for refund in refunds {
+                let refund_wasm: RefundsWasm = refund.into();
+                array_refunds.push(&refund_wasm.to_object()?);
+            }
+            Ok(Some(array_refunds))
+        } else {
+            Ok(None)
+        }
+    }
+
     #[wasm_bindgen(js_name = toJSON)]
     pub fn to_json(&self) -> Result<JsValue, JsValue> {
         let json = js_sys::Object::new();
@@ -137,7 +150,7 @@ impl PreCalculatedOperationWasm {
         js_sys::Reflect::set(
             &json,
             &JsValue::from_str("feeRefunds"),
-            &JsValue::from(self.refunds().unwrap_or(Array::new())),
+            &JsValue::from(self.refunds_as_objects()?.unwrap_or(Array::new())),
         )?;
 
         Ok(json.into())
