@@ -8,7 +8,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#00e9d07b3fb810a8e0fd3c8485321e55295abdb9",
+    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#ef49bebe11f0bf03fd3e138d4c86023f6b8aa0e3",
     "@dashevo/dpns-contract": "workspace:*",
     "@dashevo/dpp": "workspace:*",
     "@dashevo/wallet-lib": "workspace:*",
