@@ -14,9 +14,15 @@ const {
     },
   },
 } = require('@dashevo/grpc-common');
+
+let {
+  deserializeConsensusError,
+} = require('@dashevo/wasm-dpp');
+
+const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
+
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const AlreadyExistsGrpcError = require('@dashevo/grpc-common/lib/server/error/AlreadyExistsGrpcError');
-// const createConsensusError = require('@dashevo/dpp/lib/errors/consensus/createConsensusError');
 
 /**
  * @param {Object} data
@@ -48,7 +54,9 @@ const COMMON_ERROR_CLASSES = {
  * @param {string} info
  * @return {GrpcError}
  */
-function createGrpcErrorFromDriveResponse(code, info) {
+async function createGrpcErrorFromDriveResponse(code, info) {
+  ({ deserializeConsensusError } = await loadWasmDpp());
+
   if (code === undefined) {
     return new InternalGrpcError(new Error('Drive’s error code is empty'));
   }
@@ -101,11 +109,7 @@ function createGrpcErrorFromDriveResponse(code, info) {
 
   // DPP errors
   if (code >= 1000 && code < 5000) {
-    // TODO(wasm-dpp): port `createConsensusError` to wasm-dpp
-    // const consensusError = createConsensusError(code, data.arguments || []);
-    const consensusError = {
-      message: `DPP Consensus Error with code "${code}" has been thrown`,
-    };
+    const consensusError = deserializeConsensusError(data.serializedError || []);
 
     // Basic
     if (code >= 1000 && code < 2000) {

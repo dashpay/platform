@@ -6,38 +6,27 @@ class DPPValidationAbciError extends AbstractAbciError {
   /**
    *
    * @param {string} message
-   * @param {AbstractConsensusError} consensusError
+   * @param {ConsensusError} consensusError
    */
   constructor(message, consensusError) {
-    // TODO(wasm-dpp): port?
-    // const args = consensusError.getConstructorArguments();
-
-    const data = { };
-    // if (args.length > 0) {
-    //   data.arguments = args;
-    // }
+    const data = {
+      serializedError: consensusError.serialize(),
+    };
 
     super(consensusError.getCode(), message, data);
   }
 
   /**
+   * Overload method to skip error message in info
+   *
    * @returns {{code: number, info: string}}
    */
   getAbciResponse() {
-    const info = { };
-
-    const data = this.getData();
-
-    let encodedInfo;
-    if (Object.keys(data).length > 0) {
-      info.data = data;
-
-      encodedInfo = cbor.encode(info).toString('base64');
-    }
+    const info = { data: this.getData() };
 
     return {
       code: this.getCode(),
-      info: encodedInfo,
+      info: cbor.encode(info).toString('base64'),
     };
   }
 }

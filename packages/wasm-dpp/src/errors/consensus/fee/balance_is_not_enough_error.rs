@@ -18,6 +18,13 @@ impl From<&BalanceIsNotEnoughError> for BalanceIsNotEnoughErrorWasm {
 
 #[wasm_bindgen(js_class=BalanceIsNotEnoughError)]
 impl BalanceIsNotEnoughErrorWasm {
+    #[wasm_bindgen(constructor)]
+    pub fn new(balance: Credits, fee: Credits) -> Self {
+        Self {
+            inner: BalanceIsNotEnoughError::new(balance, fee),
+        }
+    }
+
     #[wasm_bindgen(js_name=getBalance)]
     pub fn get_balance(&self) -> Credits {
         self.inner.balance()

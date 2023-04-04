@@ -9,13 +9,6 @@ const {
   Errors: {
     StateTransitionBroadcastError,
   },
-  PlatformProtocol: {
-    ConsensusErrors: {
-      IdentityNotFoundError,
-      InvalidDataContractVersionError,
-      IncompatibleDataContractSchemaError,
-    },
-  },
 } = Dash;
 
 describe('Platform', () => {
@@ -40,6 +33,8 @@ describe('Platform', () => {
     });
 
     it('should fail to create new data contract with unknown owner', async () => {
+      const { IdentityNotFoundError } = client.platform.dppModule;
+
       // if no identity is specified
       // random is generated within the function
       dataContractFixture = await getDataContractFixture();
@@ -54,11 +49,10 @@ describe('Platform', () => {
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
       expect(broadcastError.getCause().getCode()).to.equal(2000);
-      // TODO(wasm-dpp): fix this after createConsensusError is ported to wasm-dpp
-      // expect(broadcastError.getCause()).to.be.an.instanceOf(IdentityNotFoundError);
+      expect(broadcastError.getCause()).to.be.an.instanceOf(IdentityNotFoundError);
     });
 
-    it.only('should create new data contract with previously created identity as an owner', async () => {
+    it('should create new data contract with previously created identity as an owner', async () => {
       dataContractFixture = await getDataContractFixture(identity.getId());
 
       await client.platform.contracts.publish(dataContractFixture, identity);
@@ -77,6 +71,8 @@ describe('Platform', () => {
     });
 
     it('should not be able to update an existing data contract if version is incorrect', async () => {
+      const { InvalidDataContractVersionError } = client.platform.dppModule;
+
       // Additional wait time to mitigate testnet latency
       await waitForSTPropagated();
 
@@ -96,11 +92,12 @@ describe('Platform', () => {
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
       expect(broadcastError.getCause().getCode()).to.equal(1050);
-      // TODO(wasm-dpp): fix this after createConsensusError is ported to wasm-dpp
-      // expect(broadcastError.getCause()).to.be.an.instanceOf(InvalidDataContractVersionError);
+      expect(broadcastError.getCause()).to.be.an.instanceOf(InvalidDataContractVersionError);
     });
 
     it('should not be able to update an existing data contract if schema is not backward compatible', async () => {
+      const { IncompatibleDataContractSchemaError } = client.platform.dppModule;
+
       // Additional wait time to mitigate testnet latency
       await waitForSTPropagated();
 
@@ -122,11 +119,10 @@ describe('Platform', () => {
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
       expect(broadcastError.getCause().getCode()).to.equal(1051);
-      // TODO(wasm-dpp): fix this after createConsensusError is ported to wasm-dpp
-      // expect(broadcastError.getCause()).to.be.an.instanceOf(IncompatibleDataContractSchemaError);
+      expect(broadcastError.getCause()).to.be.an.instanceOf(IncompatibleDataContractSchemaError);
     });
 
-    it.only('should be able to update an existing data contract', async () => {
+    it('should be able to update an existing data contract', async () => {
       // Additional wait time to mitigate testnet latency
       await waitForSTPropagated();
 

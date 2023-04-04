@@ -1,6 +1,5 @@
 const cbor = require('cbor');
 
-// const createConsensusError = require('@dashevo/dpp/lib/errors/consensus/createConsensusError');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const { parseMetadata } = require('@dashevo/dapi-grpc');
 
@@ -11,6 +10,11 @@ const ServerError = require('../errors/response/ServerError');
 const InvalidRequestError = require('../errors/response/InvalidRequestError');
 const InvalidRequestDPPError = require('../errors/response/InvalidRequestDPPError');
 const InternalServerError = require('./errors/InternalServerError');
+
+let {
+  deserializeConsensusError,
+  default: loadWasmDpp,
+} = require('@dashevo/wasm-dpp');
 
 const INVALID_REQUEST_CODES = [
   GrpcErrorCodes.INVALID_ARGUMENT,
@@ -43,7 +47,9 @@ const errorClasses = {
  * @param {DAPIAddress} dapiAddress
  * @returns {ResponseError}
  */
-function createGrpcTransportError(grpcError, dapiAddress) {
+async function createGrpcTransportError(grpcError, dapiAddress) {
+  ({ deserializeConsensusError } = await loadWasmDpp());
+
   // Extract error code and data
   let data = {};
   let { code } = grpcError;
@@ -114,14 +120,9 @@ function createGrpcTransportError(grpcError, dapiAddress) {
 
   // DPP consensus errors
   if (code >= 1000 && code < 5000) {
-    // TODO(wasm-dpp): port `createConsensusError` to wasm-dpp
-    // const consensusError = createConsensusError(code, data.arguments || []);
-    const consensusError = {
-      message: `DPP consensus error with code "${code}" has been thrown`,
-      getCode: () => code,
-    };
+    const consensusError = deserializeConsensusError(data.serializedError || []);
 
-    delete data.arguments;
+    delete data.serializedError;
 
     return new InvalidRequestDPPError(consensusError, data, dapiAddress);
   }

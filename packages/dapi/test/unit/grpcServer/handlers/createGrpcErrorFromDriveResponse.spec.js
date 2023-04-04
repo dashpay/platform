@@ -9,10 +9,27 @@ const createGrpcErrorFromDriveResponse = require(
   '../../../../lib/grpcServer/handlers/createGrpcErrorFromDriveResponse',
 );
 
+let {
+  ProtocolVersionParsingError,
+  IdentityNotFoundError,
+  BalanceIsNotEnoughError,
+  DataContractAlreadyPresentError,
+  default: loadWasmDpp,
+} = require('@dashevo/wasm-dpp');
+
 describe('createGrpcErrorFromDriveResponse', () => {
   let message;
   let info;
   let encodedInfo;
+
+  before(async () => {
+    ({
+      ProtocolVersionParsingError,
+      IdentityNotFoundError,
+      BalanceIsNotEnoughError,
+      DataContractAlreadyPresentError,
+    } = await loadWasmDpp());
+  });
 
   beforeEach(() => {
     message = 'message';
@@ -32,8 +49,8 @@ describe('createGrpcErrorFromDriveResponse', () => {
       ![GrpcErrorCodes.VERSION_MISMATCH, GrpcErrorCodes.INTERNAL].includes(code)
     ))
     .forEach(([codeClass, code]) => {
-      it(`should throw ${codeClass} if response code is ${code}`, () => {
-        const error = createGrpcErrorFromDriveResponse(code, encodedInfo);
+      it(`should throw ${codeClass} if response code is ${code}`, async () => {
+        const error = await createGrpcErrorFromDriveResponse(code, encodedInfo);
 
         expect(error).to.be.an.instanceOf(GrpcError);
         expect(error.getMessage()).to.equal(message);
@@ -44,8 +61,8 @@ describe('createGrpcErrorFromDriveResponse', () => {
       });
     });
 
-  it('should throw GrpcError if error code = 17', () => {
-    const error = createGrpcErrorFromDriveResponse(17, encodedInfo);
+  it('should throw GrpcError if error code = 17', async () => {
+    const error = await createGrpcErrorFromDriveResponse(17, encodedInfo);
 
     expect(error).to.be.an.instanceOf(GrpcError);
     expect(error.getMessage()).to.equal(message);
@@ -55,31 +72,37 @@ describe('createGrpcErrorFromDriveResponse', () => {
     });
   });
 
-  it('should throw basic consensus error if error code = 1000', () => {
-    const data = { };
+  it('should throw basic consensus error if error code = 1000', async () => {
+    const consensusError = new ProtocolVersionParsingError('test');
+
+    const data = { serializedError: consensusError.serialize() };
     info = { data };
 
-    const error = createGrpcErrorFromDriveResponse(1000, cbor.encode(info).toString('base64'));
+    const error = await createGrpcErrorFromDriveResponse(1000, cbor.encode(info).toString('base64'));
 
     expect(error).to.be.an.instanceOf(InvalidArgumentGrpcError);
+    expect(error.message).to.be.equals(consensusError.message);
     expect(error.getRawMetadata()).to.deep.equal({
       code: 1000,
+      'drive-error-data-bin': cbor.encode(data),
     });
   });
 
-  // TODO: restore once `createConsensusError` is implemented in wasm-dpp
-  it.skip('should throw signature consensus error if error code = 2000', async () => {
+  it('should throw signature consensus error if error code = 2000', async () => {
     const id = await generateRandomIdentifierAsync();
 
-    const data = { arguments: [id] };
+    const consensusError = new IdentityNotFoundError(id);
+
+    const data = { serializedError: consensusError.serialize() };
     info = { data };
 
-    const error = createGrpcErrorFromDriveResponse(
+    const error = await createGrpcErrorFromDriveResponse(
       2000,
       cbor.encode(info).toString('base64'),
     );
 
     expect(error).to.be.an.instanceOf(GrpcError);
+    expect(error.message).to.be.equals(consensusError.message);
     expect(error.getCode()).to.equal(GrpcErrorCodes.UNAUTHENTICATED);
     expect(error.getRawMetadata()).to.deep.equal({
       code: 2000,
@@ -87,11 +110,13 @@ describe('createGrpcErrorFromDriveResponse', () => {
     });
   });
 
-  it('should throw fee consensus error if error code = 3000', () => {
-    const data = { arguments: [20, 10] };
+  it('should throw fee consensus error if error code = 3000', async () => {
+    const consensusError = new BalanceIsNotEnoughError(20n, 10n);
+
+    const data = { serializedError: consensusError.serialize() };
     info = { data };
 
-    const error = createGrpcErrorFromDriveResponse(3000, cbor.encode(info).toString('base64'));
+    const error = await createGrpcErrorFromDriveResponse(3000, cbor.encode(info).toString('base64'));
 
     expect(error).to.be.an.instanceOf(FailedPreconditionGrpcError);
     expect(error.getRawMetadata()).to.deep.equal({
@@ -100,14 +125,15 @@ describe('createGrpcErrorFromDriveResponse', () => {
     });
   });
 
-  // TODO: restore once `createConsensusError` is implemented in wasm-dpp
-  it.skip('should throw state consensus error if error code = 4000', async () => {
+  it('should throw state consensus error if error code = 4000', async () => {
     const dataContractId = await generateRandomIdentifierAsync();
 
-    const data = { arguments: [dataContractId] };
+    const consensusError = new DataContractAlreadyPresentError(dataContractId);
+
+    const data = { serializedError: consensusError.serialize() };
     info = { data };
 
-    const error = createGrpcErrorFromDriveResponse(
+    const error = await createGrpcErrorFromDriveResponse(
       4000,
       cbor.encode(info).toString('base64'),
     );
@@ -119,23 +145,23 @@ describe('createGrpcErrorFromDriveResponse', () => {
     });
   });
 
-  it('should throw Unknown error code >= 5000', () => {
-    const error = createGrpcErrorFromDriveResponse(5000, encodedInfo);
+  it('should throw Unknown error code >= 5000', async () => {
+    const error = await createGrpcErrorFromDriveResponse(5000, encodedInfo);
 
     expect(error).to.be.an.instanceOf(GrpcError);
     expect(error.getMessage()).to.equal('Internal error');
     expect(error.getError().message).to.deep.equal('Unknown Drive’s error code: 5000');
   });
 
-  it('should return InternalGrpcError if codes is undefined', () => {
-    const error = createGrpcErrorFromDriveResponse();
+  it('should return InternalGrpcError if codes is undefined', async () => {
+    const error = await createGrpcErrorFromDriveResponse();
 
     expect(error).to.be.an.instanceOf(InternalGrpcError);
     expect(error.getMessage()).to.equal('Internal error');
     expect(error.getError().message).to.deep.equal('Drive’s error code is empty');
   });
 
-  it('should return InternalGrpcError if code = 13', () => {
+  it('should return InternalGrpcError if code = 13', async () => {
     const errorInfo = {
       message,
       data: {
@@ -144,7 +170,7 @@ describe('createGrpcErrorFromDriveResponse', () => {
       },
     };
 
-    const error = createGrpcErrorFromDriveResponse(
+    const error = await createGrpcErrorFromDriveResponse(
       GrpcErrorCodes.INTERNAL,
       cbor.encode(errorInfo).toString('base64'),
     );

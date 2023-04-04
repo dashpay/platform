@@ -2378,6 +2378,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dashcore-lib", "npm:0.20.0"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
+            ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
             ["assert-browserify", "npm:2.0.0"],\
             ["babel-loader", "virtual:8f25fc90e0fb5fd89843707863857591fa8c52f9f33eadced4bf404b1871d91959f7bb86948ae0e1b53ee94d491ef8fde9c0b58b39c9490c0d0fa6c931945f97#npm:8.2.3"],\
             ["bs58", "npm:4.0.1"],\

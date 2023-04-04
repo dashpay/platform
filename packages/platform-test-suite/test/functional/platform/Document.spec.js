@@ -62,6 +62,8 @@ describe('Platform', () => {
 
     // TODO(wasm-dpp): fix later when figure out how to create document with invalid document type
     it.skip('should fail to create new document with an unknown type', async function it() {
+      const { InvalidDocumentTypeError } = client.platform.dppModule;
+
       // Add undefined document type for
       client.getApps().get('customContracts').contract.documents.undefinedType = {
         type: 'object',
