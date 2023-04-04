@@ -10,6 +10,7 @@ mod key_validation;
 
 use dpp::state_transition::{StateTransition, StateTransitionAction};
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
+use drive::query::TransactionArg;
 use drive::{drive::Drive, grovedb::Transaction};
 
 use crate::error::Error;
@@ -19,20 +20,12 @@ use crate::platform::Platform;
 pub fn validate_state_transition<'a, C>(
     platform: &Platform<C>,
     state_transition: StateTransition,
+    transaction: TransactionArg,
 ) -> Result<ConsensusValidationResult<ExecutionEvent<'a>>, Error> {
     // I still insist on better specifying function arguments, that won't allow us to have
     // None for execution context here what Platform in general permits
 
-    // let tx = platform
-    //     .block_execution_context
-    //     .read()
-    //     .expect("lock is poisoned")
-    //     .expect("TODO: there must be a block currently being processed")
-    //     .current_transaction;
-
-    let tx: Transaction = todo!();
-
-    let result = state_transition.validate_type(&platform.drive, &tx)?;
+    let result = state_transition.validate_type(&platform.drive, transaction)?;
     if !result.is_valid() {
         return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
     }
@@ -45,7 +38,7 @@ pub fn validate_state_transition<'a, C>(
         return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
     }
 
-    let result = state_transition.validate_state(&platform.drive, &tx)?;
+    let result = state_transition.validate_state(&platform.drive, transaction)?;
 
     todo!()
     // if !result.is_valid() {
@@ -60,7 +53,7 @@ pub trait StateTransitionValidation {
     fn validate_type(
         &self,
         drive: &Drive,
-        tx: &Transaction,
+        tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 
     fn validate_signature(&self, drive: &Drive) -> Result<SimpleConsensusValidationResult, Error>;
@@ -70,7 +63,7 @@ pub trait StateTransitionValidation {
     fn validate_state(
         &self,
         drive: &Drive,
-        tx: &Transaction,
+        tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
@@ -78,7 +71,7 @@ impl StateTransitionValidation for StateTransition {
     fn validate_type(
         &self,
         drive: &Drive,
-        tx: &Transaction,
+        tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match self {
             StateTransition::DataContractCreate(st) => st.validate_type(drive, tx),
@@ -118,7 +111,7 @@ impl StateTransitionValidation for StateTransition {
     fn validate_state(
         &self,
         drive: &Drive,
-        tx: &Transaction,
+        tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         match self {
             StateTransition::DataContractCreate(st) => st.validate_state(drive, tx),

@@ -1,10 +1,10 @@
 #[cfg(test)]
 mod tests {
-
     use crate::{
         continue_chain_for_strategy, run_chain_for_strategy, ChainExecutionOutcome,
         ChainExecutionParameters, Frequency, Strategy, StrategyRandomness, UpgradingInfo,
     };
+    use tenderdash_abci::proto::types::CoreChainLock;
 
     use drive_abci::config::PlatformConfig;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
@@ -32,9 +32,19 @@ mod tests {
             ..Default::default()
         };
         let twenty_minutes_in_ms = 1000 * 60 * 20;
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
         let ChainExecutionOutcome {
             abci_app,
             proposers,
@@ -244,9 +254,19 @@ mod tests {
             validator_set_quorum_rotation_block_count: 50,
             ..Default::default()
         };
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
         let hour_in_ms = 1000 * 60 * 60;
         let ChainExecutionOutcome {
             abci_app,
@@ -300,7 +320,7 @@ mod tests {
         // we did not yet hit the required threshold to upgrade
         // let's go a little longer
 
-        let platform = abci_app.platform;
+        let mut platform = abci_app.platform;
         let block_start = platform
             .state
             .read()
@@ -449,9 +469,19 @@ mod tests {
             validator_set_quorum_rotation_block_count: 60,
             ..Default::default()
         };
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
         let hour_in_ms = 1000 * 60 * 60;
         let ChainExecutionOutcome {
             abci_app,
@@ -733,9 +763,19 @@ mod tests {
             validator_set_quorum_rotation_block_count: 60,
             ..Default::default()
         };
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
         let hour_in_ms = 1000 * 60 * 60;
         let ChainExecutionOutcome {
             abci_app,

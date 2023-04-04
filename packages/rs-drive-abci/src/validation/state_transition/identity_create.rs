@@ -6,6 +6,7 @@ use dpp::{
     identity::state_transition::identity_create_transition::IdentityCreateTransition,
     state_transition::StateTransitionAction, validation::SimpleConsensusValidationResult,
 };
+use drive::grovedb::TransactionArg;
 use drive::{drive::Drive, grovedb::Transaction};
 
 use crate::{
@@ -19,7 +20,7 @@ impl StateTransitionValidation for IdentityCreateTransition {
     fn validate_type(
         &self,
         drive: &Drive,
-        tx: &Transaction,
+        tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let result = validate_schema(INDENTITY_CREATE_TRANSITION_SCHEMA.clone(), self);
         if !result.is_valid() {
@@ -45,7 +46,7 @@ impl StateTransitionValidation for IdentityCreateTransition {
     fn validate_state(
         &self,
         drive: &Drive,
-        tx: &Transaction,
+        tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         todo!()
     }

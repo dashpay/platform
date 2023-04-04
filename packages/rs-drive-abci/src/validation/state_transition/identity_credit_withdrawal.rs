@@ -3,6 +3,7 @@ use dpp::{
     state_transition::StateTransitionAction,
     validation::{ConsensusValidationResult, SimpleConsensusValidationResult},
 };
+use drive::grovedb::TransactionArg;
 use drive::{drive::Drive, grovedb::Transaction};
 
 use crate::error::Error;
@@ -13,7 +14,7 @@ impl StateTransitionValidation for IdentityCreditWithdrawalTransition {
     fn validate_type(
         &self,
         drive: &Drive,
-        tx: &Transaction,
+        tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         todo!()
     }
@@ -29,7 +30,7 @@ impl StateTransitionValidation for IdentityCreditWithdrawalTransition {
     fn validate_state(
         &self,
         drive: &Drive,
-        tx: &Transaction,
+        tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         todo!()
     }

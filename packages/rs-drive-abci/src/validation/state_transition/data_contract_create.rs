@@ -21,6 +21,7 @@ use dpp::{
     Convertible,
 };
 use dpp::{state_transition::StateTransitionAction, version::ProtocolVersionValidator};
+use drive::grovedb::TransactionArg;
 use drive::{drive::Drive, grovedb::Transaction};
 
 use crate::error::Error;
@@ -32,7 +33,7 @@ impl StateTransitionValidation for DataContractCreateTransition {
     fn validate_type(
         &self,
         drive: &Drive,
-        tx: &Transaction,
+        tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let result = validate_schema(DATA_CONTRACT_CREATE_SCHEMA.clone(), self);
         if !result.is_valid() {
@@ -84,11 +85,11 @@ impl StateTransitionValidation for DataContractCreateTransition {
     fn validate_state(
         &self,
         drive: &Drive,
-        tx: &Transaction,
+        tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         // Data contract shouldn't exist
         if drive
-            .get_contract_with_fetch_info(self.data_contract.id.0 .0, None, false, Some(tx))?
+            .get_contract_with_fetch_info(self.data_contract.id.0 .0, None, false, tx)?
             .1
             .is_some()
         {

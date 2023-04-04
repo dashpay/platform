@@ -749,9 +749,19 @@ mod tests {
             validator_set_quorum_rotation_block_count: 25,
             ..Default::default()
         };
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
         let outcome = run_chain_for_strategy(&platform, 100, 3000, strategy, config, 15);
 
         assert_eq!(outcome.identities.len(), 100);
@@ -776,9 +786,19 @@ mod tests {
             ..Default::default()
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
         let outcome = run_chain_for_strategy(&platform, 150, day_in_ms, strategy, config, 15);
         assert_eq!(outcome.identities.len(), 150);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
@@ -815,9 +835,19 @@ mod tests {
             validator_set_quorum_rotation_block_count: 25,
             ..Default::default()
         };
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
         run_chain_for_strategy(&platform, 1, 3000, strategy, config, 15);
     }
 
@@ -862,9 +892,19 @@ mod tests {
             validator_set_quorum_rotation_block_count: 25,
             ..Default::default()
         };
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
         run_chain_for_strategy(&platform, 100, 3000, strategy, config, 15);
     }
 
@@ -911,9 +951,19 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 120;
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
         let outcome =
             run_chain_for_strategy(&platform, block_count, day_in_ms, strategy, config, 15);
         assert_eq!(outcome.identities.len() as u64, block_count);
@@ -987,9 +1037,19 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 120;
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
         let outcome =
             run_chain_for_strategy(&platform, block_count, day_in_ms, strategy, config, 15);
         assert_eq!(outcome.identities.len() as u64, block_count);
@@ -1063,9 +1123,19 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 120;
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
         let outcome =
             run_chain_for_strategy(&platform, block_count, day_in_ms, strategy, config, 15);
         assert_eq!(outcome.identities.len() as u64, block_count);

@@ -14,6 +14,7 @@ use dpp::{
     state_transition::StateTransitionAction,
     validation::{ConsensusValidationResult, SimpleConsensusValidationResult, ValidationResult},
 };
+use drive::grovedb::TransactionArg;
 use drive::{drive::Drive, grovedb::Transaction};
 
 use crate::error::Error;
@@ -27,7 +28,7 @@ impl StateTransitionValidation for DocumentsBatchTransition {
     fn validate_type(
         &self,
         drive: &Drive,
-        tx: &Transaction,
+        tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let result = validate_schema(DOCUMENTS_BATCH_TRANSITIONS_SCHEMA.clone(), self);
         if !result.is_valid() {
@@ -62,7 +63,7 @@ impl StateTransitionValidation for DocumentsBatchTransition {
             // This block cache only gets merged to the main cache if the block is finalized
             let Some(contract_fetch_info) =
                 drive
-                .get_contract_with_fetch_info(data_contract_id.0.0, None, true, Some(tx))?
+                .get_contract_with_fetch_info(data_contract_id.0.0, None, true, tx)?
                 .1
             else {
                 result.add_error(BasicError::DataContractNotPresent {
@@ -101,7 +102,7 @@ impl StateTransitionValidation for DocumentsBatchTransition {
     fn validate_state(
         &self,
         drive: &Drive,
-        tx: &Transaction,
+        tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         todo!()
     }

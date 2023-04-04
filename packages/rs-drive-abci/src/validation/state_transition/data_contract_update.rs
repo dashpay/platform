@@ -32,6 +32,7 @@ use dpp::{
     data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransitionAction,
     validation::{ConsensusValidationResult, SimpleConsensusValidationResult},
 };
+use drive::grovedb::TransactionArg;
 use drive::{drive::Drive, grovedb::Transaction};
 use serde_json::Value as JsonValue;
 
@@ -43,7 +44,7 @@ impl StateTransitionValidation for DataContractUpdateTransition {
     fn validate_type(
         &self,
         drive: &Drive,
-        tx: &Transaction,
+        tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let result = validate_schema(DATA_CONTRACT_UPDATE_SCHEMA.clone(), self);
         if !result.is_valid() {
@@ -78,7 +79,7 @@ impl StateTransitionValidation for DataContractUpdateTransition {
         // Data contract should exist
         let Some(contract_fetch_info) =
             drive
-            .get_contract_with_fetch_info(self.data_contract.id.0 .0, None, true, Some(tx))?
+            .get_contract_with_fetch_info(self.data_contract.id.0 .0, None, true, tx)?
             .1
         else {
             validation_result
@@ -212,14 +213,14 @@ impl StateTransitionValidation for DataContractUpdateTransition {
     fn validate_state(
         &self,
         drive: &Drive,
-        tx: &Transaction,
+        tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let mut validation_result = ConsensusValidationResult::default();
 
         // Data contract should exist
         let Some(contract_fetch_info) =
             drive
-            .get_contract_with_fetch_info(self.data_contract.id.0 .0, None, false, Some(tx))?
+            .get_contract_with_fetch_info(self.data_contract.id.0 .0, None, false, tx)?
             .1
         else {
             validation_result

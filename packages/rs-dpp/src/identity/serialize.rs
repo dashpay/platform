@@ -32,3 +32,26 @@ impl Identity {
             })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use platform_value::Identifier;
+
+    #[test]
+    fn test() {
+        let bytes = bincode::DefaultOptions::default()
+            .with_varint_encoding()
+            .reject_trailing_bytes()
+            .with_big_endian()
+            .serialize(&Identifier::random())
+            .expect("a");
+
+        let i: Identifier = bincode::DefaultOptions::default()
+            .with_varint_encoding()
+            .reject_trailing_bytes()
+            .with_big_endian()
+            .deserialize(&bytes)
+            .expect("b");
+    }
+}

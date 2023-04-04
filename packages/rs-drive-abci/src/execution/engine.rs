@@ -163,7 +163,7 @@ where
             .into_iter()
             .map(|state_transition| {
                 let state_transition_execution_event =
-                    validate_state_transition(self, state_transition)?;
+                    validate_state_transition(self, state_transition, Some(transaction))?;
 
                 let execution_result = if state_transition_execution_event.is_valid() {
                     let execution_event = state_transition_execution_event.into_data()?;
@@ -420,7 +420,7 @@ where
     ) -> Result<ValidationResult<FeeResult, ConsensusError>, Error> {
         let state_transition =
             StateTransition::deserialize(raw_tx.as_slice()).map_err(Error::Protocol)?;
-        let execution_event = validate_state_transition(&self, state_transition)?;
+        let execution_event = validate_state_transition(&self, state_transition, None)?;
 
         // We should run the execution event in dry run to see if we would have enough fees for the transaction
 
