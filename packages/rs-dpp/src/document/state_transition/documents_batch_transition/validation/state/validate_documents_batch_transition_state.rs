@@ -333,7 +333,7 @@ fn validate_transition(
     }
 }
 
-fn check_ownership(
+pub fn check_ownership(
     document_transition: &DocumentTransition,
     fetched_document: &Document,
     owner_id: &Identifier,
@@ -351,7 +351,7 @@ fn check_ownership(
     result
 }
 
-fn check_revision(
+pub fn check_revision(
     document_transition: &DocumentTransition,
     fetched_documents: &[Document],
 ) -> SimpleConsensusValidationResult {
@@ -388,7 +388,7 @@ fn check_revision(
     result
 }
 
-fn check_if_document_is_already_present(
+pub fn check_if_document_is_already_present(
     document_transition: &DocumentTransition,
     fetched_documents: &[Document],
 ) -> SimpleConsensusValidationResult {
@@ -407,7 +407,7 @@ fn check_if_document_is_already_present(
     result
 }
 
-fn check_if_document_can_be_found<'a>(
+pub fn check_if_document_can_be_found<'a>(
     document_transition: &'a DocumentTransition,
     fetched_documents: &'a [Document],
 ) -> ConsensusValidationResult<&'a Document> {
@@ -426,7 +426,7 @@ fn check_if_document_can_be_found<'a>(
     }
 }
 
-fn check_if_timestamps_are_equal(
+pub fn check_if_timestamps_are_equal(
     document_transition: &DocumentTransition,
 ) -> SimpleConsensusValidationResult {
     let mut result = SimpleConsensusValidationResult::default();
@@ -444,7 +444,7 @@ fn check_if_timestamps_are_equal(
     result
 }
 
-fn check_created_inside_time_window(
+pub fn check_created_inside_time_window(
     document_transition: &DocumentTransition,
     last_block_ts_millis: TimestampMillis,
 ) -> SimpleConsensusValidationResult {
@@ -469,7 +469,7 @@ fn check_created_inside_time_window(
     result
 }
 
-fn check_updated_inside_time_window(
+pub fn check_updated_inside_time_window(
     document_transition: &DocumentTransition,
     last_block_ts_millis: TimestampMillis,
 ) -> SimpleConsensusValidationResult {

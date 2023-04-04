@@ -3,6 +3,9 @@ use dpp::{
     validation::{JsonSchemaValidator, SimpleConsensusValidationResult},
     version::ProtocolVersionValidator,
 };
+use drive::grovedb::Transaction;
+
+use crate::error::Error;
 
 pub(super) fn validate_schema(
     schema: serde_json::Value,
