@@ -136,10 +136,11 @@ class DocumentRepository {
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]
    * @param {BlockInfo} [options.blockInfo]
+   * @param {boolean} [extended=false]
    *
    * @throws InvalidQueryError
    *
-   * @returns {Promise<StorageResult<Document[]>>}
+   * @returns {Promise<StorageResult<Document[]|ExtendedDocument[]>>}
    */
   async find(dataContract, documentType, options = {}) {
     const query = lodashCloneDeep(options);
@@ -175,6 +176,7 @@ class DocumentRepository {
           epochIndex,
           query,
           useTransaction,
+          extended,
         );
 
       return new StorageResult(
