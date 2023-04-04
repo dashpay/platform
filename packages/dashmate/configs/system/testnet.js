@@ -17,7 +17,7 @@ module.exports = lodashMerge({}, baseConfig, {
   },
   core: {
     docker: {
-      image: 'dashpay/dashd:18.2.0',
+      image: 'dashpay/dashd:19.0.0-rc.7',
     },
     p2p: {
       port: 19999,
