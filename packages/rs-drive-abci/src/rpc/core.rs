@@ -1,16 +1,10 @@
 use dashcore::{Block, BlockHash};
-<<<<<<< HEAD
 use dashcore_rpc::dashcore_rpc_json::{
     ExtendedQuorumDetails, GetBestChainLockResult, QuorumHash, QuorumInfoResult, QuorumListResult,
     QuorumType,
 };
-use dashcore_rpc::Error;
-use dashcore_rpc::{Auth, Client, RpcApi};
-=======
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
 use dashcore_rpc::json::{MasternodeListDiff, ProTxHash, ProTxInfo};
-#[cfg(feature = "fixtures-and-mocks")]
->>>>>>> b9879e802 (add needed rpc functions)
 use mockall::{automock, predicate::*};
 use serde_json::Value;
 use std::collections::HashMap;
