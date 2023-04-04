@@ -142,7 +142,7 @@ class DocumentRepository {
    *
    * @returns {Promise<StorageResult<Document[]|ExtendedDocument[]>>}
    */
-  async find(dataContract, documentType, options = {}) {
+  async find(dataContract, documentType, options = {}, extended = false) {
     const query = lodashCloneDeep(options);
     let useTransaction = false;
 
