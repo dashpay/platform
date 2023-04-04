@@ -8,6 +8,7 @@ use crate::identity::{convert_satoshi_to_credits, Identity};
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::StateTransitionLike;
 
+#[derive(Clone)]
 pub struct ApplyIdentityCreateTransition<SR>
 where
     SR: StateRepositoryLike,

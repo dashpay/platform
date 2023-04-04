@@ -1,5 +1,7 @@
 import * as dpp_module from '../wasm/wasm_dpp';
 import { patchConsensusErrors } from './errors/patchConsensusErrors';
+import _Identifier from "./identifier/Identifier";
+import _IdentifierError from "./identifier/errors/IdentifierError";
 
 patchConsensusErrors();
 
@@ -11,6 +13,10 @@ dpp_module.IdentityPublicKey.TYPES = dpp_module.KeyType;
 dpp_module.IdentityPublicKey.PURPOSES = dpp_module.KeyPurpose;
 // @ts-ignore
 dpp_module.IdentityPublicKey.SECURITY_LEVELS = dpp_module.KeySecurityLevel;
+// @ts-ignore
+dpp_module.Identifier = _Identifier;
+// @ts-ignore
+dpp_module.IdentifierError = _IdentifierError;
 
 export * from '../wasm/wasm_dpp';
 export * from './errors/AbstractConsensusError';
@@ -22,3 +28,7 @@ export declare class IdentityPublicKey extends dpp_module.IdentityPublicKey {
     static PURPOSES: typeof dpp_module.KeyPurpose;
     static SECURITY_LEVELS: typeof dpp_module.KeySecurityLevel;
 }
+
+// TypeScript voodoo to ensure Identifier and IdentifierError are exported
+export declare class Identifier extends _Identifier {}
+export declare class IdentifierError extends _IdentifierError {}

@@ -57,7 +57,7 @@ fi
 #fi
 
 # Converting wasm into base64 so it can be bundled
-echo "Converting wasm binary into base64 module for bundling with Webpack"
+echo "Converting wasm binary into base64 module for building with TypeScript"
 WASM_BUILD_BASE_64=$(base64 -i "$OUTPUT_FILE")
 echo 'module.exports = "'${WASM_BUILD_BASE_64}'"' > "$OUTPUT_FILE_JS"
 
