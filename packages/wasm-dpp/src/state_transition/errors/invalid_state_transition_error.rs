@@ -1,7 +1,7 @@
 use dpp::consensus::ConsensusError;
 use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
 
-use crate::errors::consensus_error::from_consensus_error_ref;
+use crate::errors::consensus::consensus_error::from_consensus_error_ref;
 
 #[wasm_bindgen(js_name = InvalidStateTransitionError)]
 pub struct InvalidStateTransitionErrorWasm {

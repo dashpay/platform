@@ -22,6 +22,7 @@ use crate::{
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use crate::consensus::codes::ErrorWithCode;
 use crate::document::document_transition::document_base_transition::JsonValue;
 use crate::tests::utils::generate_random_identifier_struct;
 use jsonschema::error::ValidationErrorKind;
@@ -123,12 +124,8 @@ async fn property_should_be_present(property: &str) {
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
-    assert!(matches!(
-        schema_error.kind(),
-        ValidationErrorKind::Required {
-            property: JsonValue::String(missing_property)
-        } if missing_property == property
-    ));
+    assert_eq!(schema_error.keyword(), "required");
+    assert_eq!(schema_error.property_name(), property);
 }
 
 #[tokio::test]
@@ -153,8 +150,8 @@ async fn protocol_version_should_be_integer() {
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
-    assert_eq!("/protocolVersion", schema_error.instance_path().to_string());
-    assert_eq!(Some("type"), schema_error.keyword(),);
+    assert_eq!("/protocolVersion", schema_error.instance_path());
+    assert_eq!("type", schema_error.keyword());
 }
 
 #[tokio::test]
@@ -179,8 +176,8 @@ async fn protocol_version_should_be_valid() {
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
-    assert_eq!("/protocolVersion", schema_error.instance_path().to_string());
-    assert_eq!(Some("type"), schema_error.keyword(),);
+    assert_eq!("/protocolVersion", schema_error.instance_path());
+    assert_eq!("type", schema_error.keyword());
 }
 
 #[tokio::test]
@@ -205,8 +202,8 @@ async fn type_should_be_equal_1() {
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
-    assert_eq!("/type", schema_error.instance_path().to_string());
-    assert_eq!(Some("const"), schema_error.keyword(),);
+    assert_eq!("/type", schema_error.instance_path());
+    assert_eq!("const", schema_error.keyword());
 }
 
 #[test_case("ownerId")]
@@ -237,12 +234,12 @@ async fn property_in_state_transition_should_be_byte_array(property_name: &str) 
     let byte_array_schema_error = get_schema_error(&result, 1);
     assert_eq!(
         format!("/{}/0", property_name),
-        schema_error.instance_path().to_string()
+        schema_error.instance_path()
     );
-    assert_eq!(Some("type"), schema_error.keyword(),);
+    assert_eq!("type", schema_error.keyword());
     assert_eq!(
         format!("/properties/{}/byteArray/items/type", property_name),
-        byte_array_schema_error.schema_path().to_string()
+        byte_array_schema_error.schema_path()
     );
 }
 
@@ -269,8 +266,8 @@ async fn owner_id_should_be_no_less_than_32_bytes() {
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
-    assert_eq!("/ownerId", schema_error.instance_path().to_string());
-    assert_eq!(Some("minItems"), schema_error.keyword(),);
+    assert_eq!("/ownerId", schema_error.instance_path());
+    assert_eq!("minItems", schema_error.keyword());
 }
 
 #[tokio::test]
@@ -297,8 +294,8 @@ async fn owner_id_should_be_no_longer_than_32_bytes() {
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
-    assert_eq!("/ownerId", schema_error.instance_path().to_string());
-    assert_eq!(Some("maxItems"), schema_error.keyword(),);
+    assert_eq!("/ownerId", schema_error.instance_path());
+    assert_eq!("maxItems", schema_error.keyword());
 }
 
 #[tokio::test]
@@ -323,8 +320,8 @@ async fn transitions_should_be_an_array() {
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
-    assert_eq!("/transitions", schema_error.instance_path().to_string());
-    assert_eq!(Some("type"), schema_error.keyword(),);
+    assert_eq!("/transitions", schema_error.instance_path());
+    assert_eq!("type", schema_error.keyword());
 }
 
 #[tokio::test]
@@ -349,8 +346,8 @@ async fn transitions_should_have_at_least_one_element() {
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
-    assert_eq!("/transitions", schema_error.instance_path().to_string());
-    assert_eq!(Some("minItems"), schema_error.keyword(),);
+    assert_eq!("/transitions", schema_error.instance_path());
+    assert_eq!("minItems", schema_error.keyword());
 }
 
 #[tokio::test]
@@ -379,8 +376,8 @@ async fn transitions_should_have_no_more_than_10_elements() {
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
-    assert_eq!("/transitions", schema_error.instance_path().to_string());
-    assert_eq!(Some("maxItems"), schema_error.keyword(),);
+    assert_eq!("/transitions", schema_error.instance_path());
+    assert_eq!("maxItems", schema_error.keyword());
 }
 
 #[tokio::test]
@@ -406,8 +403,8 @@ async fn transitions_should_have_an_object_as_elements() {
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
-    assert_eq!("/transitions/0", schema_error.instance_path().to_string());
-    assert_eq!(Some("type"), schema_error.keyword(),);
+    assert_eq!("/transitions/0", schema_error.instance_path());
+    assert_eq!("type", schema_error.keyword());
 }
 
 // document transitions
@@ -438,12 +435,8 @@ async fn property_in_document_transition_should_be_present(property: &str) {
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
-    assert!(matches!(
-        schema_error.kind(),
-        ValidationErrorKind::Required {
-            property: JsonValue::String(missing_property)
-        } if missing_property == property
-    ));
+    assert_eq!(schema_error.keyword(), "required");
+    assert_eq!(schema_error.property_name(), property);
 }
 
 #[test_case("$action", 1026)]
@@ -504,9 +497,9 @@ async fn property_should_be_byte_array(property_name: &str) {
     let byte_array_schema_error = get_schema_error(&result, 1);
     assert_eq!(
         format!("/{}/0", property_name),
-        schema_error.instance_path().to_string()
+        schema_error.instance_path()
     );
-    assert_eq!(Some("type"), schema_error.keyword(),);
+    assert_eq!("type", schema_error.keyword());
     assert_eq!(
         format!("/properties/{}/byteArray/items/type", property_name),
         byte_array_schema_error.schema_path().to_string()
@@ -535,7 +528,8 @@ async fn data_contract_id_should_be_byte_array() {
         .expect("validation result should be returned");
 
     let error = &result.errors[0];
-    assert_eq!(5000, error.code());
+
+    assert_eq!(1060, error.code());
 }
 
 #[test_case("$id")]
@@ -563,11 +557,8 @@ async fn property_should_be_no_less_than_32_bytes(property_name: &str) {
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
-    assert_eq!(
-        format!("/{}", property_name),
-        schema_error.instance_path().to_string()
-    );
-    assert_eq!(Some("minItems"), schema_error.keyword(),);
+    assert_eq!(format!("/{}", property_name), schema_error.instance_path());
+    assert_eq!("minItems", schema_error.keyword());
 }
 
 #[test_case("$id")]
@@ -600,7 +591,7 @@ async fn id_should_be_no_longer_than_32_bytes(property_name: &str) {
         format!("/{}", property_name),
         schema_error.instance_path().to_string()
     );
-    assert_eq!(Some("maxItems"), schema_error.keyword(),);
+    assert_eq!("maxItems", schema_error.keyword());
 }
 
 #[tokio::test]
@@ -734,12 +725,8 @@ async fn property_in_replace_transition_should_be_present(property: &str) {
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
-    assert!(matches!(
-        schema_error.kind(),
-        ValidationErrorKind::Required {
-            property: JsonValue::String(missing_property)
-        } if missing_property == property
-    ));
+    assert_eq!(schema_error.keyword(), "required");
+    assert_eq!(schema_error.property_name(), property);
 }
 
 #[tokio::test]
@@ -765,7 +752,7 @@ async fn revision_should_be_number() {
     let schema_error = get_schema_error(&result, 0);
 
     assert_eq!("/$revision", schema_error.instance_path().to_string());
-    assert_eq!(Some("type"), schema_error.keyword(),);
+    assert_eq!("type", schema_error.keyword());
 }
 
 #[tokio::test]
@@ -791,7 +778,7 @@ async fn revision_should_not_be_fractional() {
     let schema_error = get_schema_error(&result, 0);
 
     assert_eq!("/$revision", schema_error.instance_path().to_string());
-    assert_eq!(Some("type"), schema_error.keyword(),);
+    assert_eq!("type", schema_error.keyword());
 }
 
 #[tokio::test]
@@ -817,7 +804,7 @@ async fn revision_should_be_at_least_1() {
     let schema_error = get_schema_error(&result, 0);
 
     assert_eq!("/$revision", schema_error.instance_path().to_string());
-    assert_eq!(Some("minimum"), schema_error.keyword(),);
+    assert_eq!("minimum", schema_error.keyword());
 }
 
 #[tokio::test]
@@ -844,12 +831,8 @@ async fn id_should_be_present_in_delete_transition() {
         .expect("validation result should be returned");
     let schema_error = get_schema_error(&result, 0);
 
-    assert!(matches!(
-        schema_error.kind(),
-        ValidationErrorKind::Required {
-            property: JsonValue::String(missing_property)
-        } if missing_property == "$id"
-    ));
+    assert_eq!(schema_error.keyword(), "required");
+    assert_eq!(schema_error.property_name(), "$id");
 }
 
 #[tokio::test]
@@ -888,7 +871,7 @@ async fn signature_should_be_not_less_than_65_bytes() {
     let schema_error = get_schema_error(&result, 0);
 
     assert_eq!("/signature", schema_error.instance_path().to_string());
-    assert_eq!(Some("minItems"), schema_error.keyword(),);
+    assert_eq!("minItems", schema_error.keyword());
 }
 
 #[tokio::test]
@@ -915,7 +898,7 @@ async fn signature_should_be_not_longer_than_96_bytes() {
     let schema_error = get_schema_error(&result, 0);
 
     assert_eq!("/signature", schema_error.instance_path().to_string());
-    assert_eq!(Some("maxItems"), schema_error.keyword(),);
+    assert_eq!("maxItems", schema_error.keyword());
 }
 
 #[tokio::test]
@@ -944,7 +927,7 @@ async fn signature_public_key_should_be_an_integer() {
         "/signaturePublicKeyId",
         schema_error.instance_path().to_string()
     );
-    assert_eq!(Some("type"), schema_error.keyword(),);
+    assert_eq!("type", schema_error.keyword());
 }
 
 #[tokio::test]

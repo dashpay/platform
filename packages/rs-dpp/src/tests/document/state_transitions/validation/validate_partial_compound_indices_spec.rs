@@ -11,6 +11,7 @@ use crate::{
         get_data_contract_fixture, get_document_transitions_fixture,
     },
 };
+use crate::consensus::codes::ErrorWithCode;
 use crate::document::ExtendedDocument;
 use crate::tests::fixtures::get_extended_documents_fixture;
 use crate::validation::ValidationResult;

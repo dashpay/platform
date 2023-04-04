@@ -3,7 +3,6 @@ use std::sync::Arc;
 use jsonschema::error::ValidationErrorKind;
 use platform_value::Value;
 
-use crate::assert_consensus_errors;
 use crate::errors::consensus::ConsensusError;
 use crate::identity::state_transition::asset_lock_proof::{
     AssetLockProofValidator, AssetLockTransactionValidator, ChainAssetLockProofStructureValidator,
@@ -52,6 +51,9 @@ pub fn setup_test(
 mod validate_identity_topup_transition_basic {
     pub use super::*;
 
+    use crate::assert_basic_consensus_errors;
+    use crate::errors::consensus::basic::BasicError;
+
     mod protocol_version {
         use super::*;
 
@@ -66,18 +68,13 @@ mod validate_identity_topup_transition_basic {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"protocolVersion\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.instance_path(), "");
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "protocolVersion");
         }
 
         #[tokio::test]
@@ -92,12 +89,12 @@ mod validate_identity_topup_transition_basic {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/protocolVersion");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.instance_path(), "/protocolVersion");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -139,19 +136,13 @@ mod validate_identity_topup_transition_basic {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"type\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.instance_path(), "");
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "type");
         }
 
         #[tokio::test]
@@ -164,19 +155,18 @@ mod validate_identity_topup_transition_basic {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/type");
-            assert_eq!(error.keyword().unwrap(), "const");
+            let allowed_value: u32 = error
+                .params()
+                .get_integer("allowedValue")
+                .expect("should get allowedValue");
 
-            match error.kind() {
-                ValidationErrorKind::Constant { expected_value } => {
-                    assert_eq!(expected_value.as_u64().unwrap(), 3u64);
-                }
-                _ => panic!("Expected to have a constant value"),
-            }
+            assert_eq!(error.instance_path(), "/type");
+            assert_eq!(error.keyword(), "const");
+            assert_eq!(allowed_value, 3);
         }
     }
 
@@ -193,19 +183,13 @@ mod validate_identity_topup_transition_basic {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"assetLockProof\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.instance_path(), "");
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "assetLockProof");
         }
 
         #[tokio::test]
@@ -220,12 +204,12 @@ mod validate_identity_topup_transition_basic {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/assetLockProof");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.instance_path(), "/assetLockProof");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -244,16 +228,17 @@ mod validate_identity_topup_transition_basic {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/transaction");
+            assert_eq!(error.instance_path(), "/transaction");
         }
     }
 
     mod signature {
         use super::*;
+        use futures::future::err;
 
         #[tokio::test]
         pub async fn should_be_present() {
@@ -265,19 +250,13 @@ mod validate_identity_topup_transition_basic {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"signature\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.instance_path(), "");
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "signature");
         }
 
         #[tokio::test]
@@ -292,12 +271,12 @@ mod validate_identity_topup_transition_basic {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 65);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 65);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/signature/0");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.instance_path(), "/signature/0");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -312,12 +291,12 @@ mod validate_identity_topup_transition_basic {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/signature");
-            assert_eq!(error.keyword().unwrap(), "minItems");
+            assert_eq!(error.instance_path(), "/signature");
+            assert_eq!(error.keyword(), "minItems");
         }
 
         #[tokio::test]
@@ -332,12 +311,12 @@ mod validate_identity_topup_transition_basic {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/signature");
-            assert_eq!(error.keyword().unwrap(), "maxItems");
+            assert_eq!(error.instance_path(), "/signature");
+            assert_eq!(error.keyword(), "maxItems");
         }
     }
 

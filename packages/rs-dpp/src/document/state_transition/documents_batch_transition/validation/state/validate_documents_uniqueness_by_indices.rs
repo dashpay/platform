@@ -5,6 +5,8 @@ use itertools::Itertools;
 use platform_value::string_encoding::Encoding;
 use serde_json::{json, Value as JsonValue};
 
+use crate::consensus::state::document::duplicate_unique_index_error::DuplicateUniqueIndexError;
+use crate::consensus::state::state_error::StateError;
 use crate::document::Document;
 use crate::validation::SimpleValidationResult;
 use crate::{
@@ -13,7 +15,7 @@ use crate::{
     state_repository::StateRepositoryLike,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
     util::json_schema::{Index, JsonSchemaExt},
-    ProtocolError, StateError,
+    ProtocolError,
 };
 
 struct QueryDefinition<'a> {
@@ -156,15 +158,17 @@ fn validate_uniqueness<'a>(
             continue;
         }
 
-        validation_result.add_error(StateError::DuplicateUniqueIndexError {
-            document_id: futures_meta[i].1.base().id,
-            duplicating_properties: futures_meta[i]
-                .0
-                .properties
-                .iter()
-                .map(|property| property.name.to_owned())
-                .collect_vec(),
-        })
+        validation_result.add_error(StateError::DuplicateUniqueIndexError(
+            DuplicateUniqueIndexError::new(
+                futures_meta[i].1.base().id,
+                futures_meta[i]
+                    .0
+                    .properties
+                    .iter()
+                    .map(|property| property.name.to_owned())
+                    .collect_vec(),
+            ),
+        ))
     }
     Ok(validation_result)
 }

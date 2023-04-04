@@ -1,41 +1,50 @@
 use crate::buffer::Buffer;
-use dpp::identifier::Identifier;
-use dpp::prelude::Revision;
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
+use dpp::consensus::ConsensusError;
 use js_sys::Number;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=InvalidIdentityRevisionError)]
 pub struct InvalidIdentityRevisionErrorWasm {
-    identity_id: Identifier,
-    current_revision: Revision,
-    code: u32,
+    inner: InvalidIdentityRevisionError,
+}
+
+impl From<&InvalidIdentityRevisionError> for InvalidIdentityRevisionErrorWasm {
+    fn from(e: &InvalidIdentityRevisionError) -> Self {
+        Self { inner: e.clone() }
+    }
 }
 
 #[wasm_bindgen(js_class=InvalidIdentityRevisionError)]
 impl InvalidIdentityRevisionErrorWasm {
     #[wasm_bindgen(js_name=getIdentityId)]
     pub fn identity_id(&self) -> Buffer {
-        Buffer::from_bytes(self.identity_id.as_bytes())
+        Buffer::from_bytes(self.inner.identity_id().as_bytes())
     }
 
     #[wasm_bindgen(js_name=getCurrentRevision)]
     pub fn current_revision(&self) -> Number {
         // It might be overflow
-        Number::from(self.current_revision as f64)
+        Number::from(*self.inner.current_revision() as f64)
     }
 
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {
-        self.code
+        ConsensusError::from(self.inner.clone()).code()
     }
-}
 
-impl InvalidIdentityRevisionErrorWasm {
-    pub fn new(identity_id: Identifier, current_revision: Revision, code: u32) -> Self {
-        Self {
-            identity_id,
-            current_revision,
-            code,
-        }
+    #[wasm_bindgen(getter)]
+    pub fn message(&self) -> String {
+        self.inner.to_string()
+    }
+
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+        let bytes = ConsensusError::from(self.inner.clone())
+            .serialize()
+            .map_err(|e| JsError::from(e))?;
+
+        Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }

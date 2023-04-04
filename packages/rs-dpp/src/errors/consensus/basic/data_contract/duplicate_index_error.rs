@@ -1,37 +1,39 @@
-use crate::consensus::basic::{BasicError, IndexError};
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::consensus::ConsensusError;
-use crate::data_contract::document_type::Index;
-
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
-#[error("Duplicate index definition for '{document_type} document")]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[error("Duplicate '{index_name}' index definition for '{document_type}' document")]
 pub struct DuplicateIndexError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     document_type: String,
-    index_definition: Index,
+    index_name: String,
 }
 
 impl DuplicateIndexError {
-    pub fn new(document_type: String, index_definition: Index) -> Self {
+    pub fn new(document_type: String, index_name: String) -> Self {
         Self {
             document_type,
-            index_definition,
+            index_name,
         }
     }
 
-    pub fn document_type(&self) -> String {
-        self.document_type.clone()
+    pub fn document_type(&self) -> &str {
+        &self.document_type
     }
 
-    pub fn index_definition(&self) -> Index {
-        self.index_definition.clone()
+    pub fn index_name(&self) -> &str {
+        &self.index_name
     }
 }
 
 impl From<DuplicateIndexError> for ConsensusError {
     fn from(err: DuplicateIndexError) -> Self {
-        Self::BasicError(Box::new(BasicError::IndexError(
-            IndexError::DuplicateIndexError(err),
-        )))
+        Self::BasicError(BasicError::DuplicateIndexError(err))
     }
 }

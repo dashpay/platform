@@ -1,21 +1,17 @@
+use crate::buffer::Buffer;
+use dpp::consensus::basic::data_contract::IncompatibleRe2PatternError;
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::ConsensusError;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=IncompatibleRe2PatternError)]
 pub struct IncompatibleRe2PatternErrorWasm {
-    pattern: String,
-    path: String,
-    message: String,
-    code: u32,
+    inner: IncompatibleRe2PatternError,
 }
 
-impl IncompatibleRe2PatternErrorWasm {
-    pub fn new(pattern: String, path: String, message: String, code: u32) -> Self {
-        IncompatibleRe2PatternErrorWasm {
-            pattern,
-            path,
-            message,
-            code,
-        }
+impl From<&IncompatibleRe2PatternError> for IncompatibleRe2PatternErrorWasm {
+    fn from(e: &IncompatibleRe2PatternError) -> Self {
+        Self { inner: e.clone() }
     }
 }
 
@@ -23,21 +19,35 @@ impl IncompatibleRe2PatternErrorWasm {
 impl IncompatibleRe2PatternErrorWasm {
     #[wasm_bindgen(js_name=getPattern)]
     pub fn get_pattern(&self) -> String {
-        self.pattern.clone()
+        self.inner.pattern().to_string()
     }
 
     #[wasm_bindgen(js_name=getPath)]
     pub fn get_path(&self) -> String {
-        self.path.clone()
+        self.inner.path().to_string()
     }
 
     #[wasm_bindgen(js_name=getMessage)]
     pub fn get_message(&self) -> String {
-        self.message.clone()
+        self.inner.message().clone()
     }
 
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {
-        self.code
+        ConsensusError::from(self.inner.clone()).code()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn message(&self) -> String {
+        self.inner.to_string()
+    }
+
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+        let bytes = ConsensusError::from(self.inner.clone())
+            .serialize()
+            .map_err(|e| JsError::from(e))?;
+
+        Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }

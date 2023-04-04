@@ -11,6 +11,7 @@ logips={{=it.core.logIps }}
 server=1
 rpcuser={{=it.core.rpc.user}}
 rpcpassword={{=it.core.rpc.password}}
+rpcwallet=main
 
 {{~it.core.rpc.allowIps :host}}
 rpcallowip={{=host}}{{~}}
@@ -39,6 +40,7 @@ spentindex=1
 # ZeroMQ notifications
 zmqpubrawtx=tcp://0.0.0.0:29998
 zmqpubrawtxlock=tcp://0.0.0.0:29998
+zmqpubrawblock=tcp://0.0.0.0:29998
 zmqpubhashblock=tcp://0.0.0.0:29998
 zmqpubrawchainlocksig=tcp://0.0.0.0:29998
 zmqpubrawchainlock=tcp://0.0.0.0:29998

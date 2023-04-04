@@ -1,4 +1,4 @@
-use crate::errors::StateError;
+use crate::consensus::state::state_error::StateError;
 
 #[derive(Debug, Default)]
 pub struct DataTriggerExecutionResult {

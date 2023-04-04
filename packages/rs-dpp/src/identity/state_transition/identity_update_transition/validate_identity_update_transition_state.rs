@@ -3,7 +3,14 @@ use platform_value::Value;
 use std::convert::TryInto;
 use std::sync::Arc;
 
-use crate::consensus::signature::{IdentityNotFoundError, SignatureError};
+use crate::consensus::signature::IdentityNotFoundError;
+use crate::consensus::signature::SignatureError;
+use crate::consensus::state::identity::identity_public_key_disabled_at_window_violation_error::IdentityPublicKeyDisabledAtWindowViolationError;
+use crate::consensus::state::identity::identity_public_key_is_disabled_error::IdentityPublicKeyIsDisabledError;
+use crate::consensus::state::identity::identity_public_key_is_read_only_error::IdentityPublicKeyIsReadOnlyError;
+use crate::consensus::state::identity::invalid_identity_public_key_id_error::InvalidIdentityPublicKeyIdError;
+use crate::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
+use crate::consensus::state::state_error::StateError;
 use crate::identity::state_transition::identity_update_transition::IdentityUpdateTransitionAction;
 use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
@@ -11,7 +18,7 @@ use crate::{
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike,
     validation::ValidationResult,
-    NonConsensusError, StateError,
+    NonConsensusError,
 };
 
 use super::identity_update_transition::{property_names, IdentityUpdateTransition};
@@ -76,29 +83,32 @@ where
 
         // Check revision
         if identity.get_revision() != (state_transition.get_revision() - 1) {
-            validation_result.add_error(StateError::InvalidIdentityRevisionError {
-                identity_id: state_transition.get_identity_id().to_owned(),
-                current_revision: identity.get_revision(),
-            });
+            validation_result.add_error(StateError::InvalidIdentityRevisionError(
+                InvalidIdentityRevisionError::new(
+                    state_transition.get_identity_id().to_owned(),
+                    identity.get_revision(),
+                ),
+            ));
             return Ok(validation_result);
         }
 
         for key_id in state_transition.get_public_key_ids_to_disable().iter() {
             match identity.get_public_key_by_id(*key_id) {
                 None => {
-                    validation_result
-                        .add_error(StateError::InvalidIdentityPublicKeyIdError { id: *key_id });
+                    validation_result.add_error(StateError::InvalidIdentityPublicKeyIdError(
+                        InvalidIdentityPublicKeyIdError::new(*key_id),
+                    ));
                 }
                 Some(public_key_to_disable) => {
                     if public_key_to_disable.read_only {
-                        validation_result.add_error(StateError::IdentityPublicKeyIsReadOnlyError {
-                            public_key_index: *key_id,
-                        })
+                        validation_result.add_error(StateError::IdentityPublicKeyIsReadOnlyError(
+                            IdentityPublicKeyIsReadOnlyError::new(*key_id),
+                        ))
                     }
                     if public_key_to_disable.is_disabled() {
-                        validation_result.add_error(StateError::IdentityPublicKeyIsDisabledError {
-                            public_key_index: *key_id,
-                        })
+                        validation_result.add_error(StateError::IdentityPublicKeyIsDisabledError(
+                            IdentityPublicKeyIsDisabledError::new(*key_id),
+                        ))
                     }
                 }
             }
@@ -129,11 +139,13 @@ where
 
             if !window_validation_result.is_valid() {
                 validation_result.add_error(
-                    StateError::IdentityPublicKeyDisabledAtWindowViolationError {
-                        disabled_at: disabled_at_ms,
-                        time_window_start: window_validation_result.time_window_start,
-                        time_window_end: window_validation_result.time_window_end,
-                    },
+                    StateError::IdentityPublicKeyDisabledAtWindowViolationError(
+                        IdentityPublicKeyDisabledAtWindowViolationError::new(
+                            disabled_at_ms,
+                            window_validation_result.time_window_start,
+                            window_validation_result.time_window_end,
+                        ),
+                    ),
                 );
                 return Ok(validation_result);
             }

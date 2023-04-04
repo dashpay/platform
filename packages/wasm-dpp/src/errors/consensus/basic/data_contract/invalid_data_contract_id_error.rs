@@ -1,20 +1,17 @@
 use crate::buffer::Buffer;
+use dpp::consensus::basic::data_contract::InvalidDataContractIdError;
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::ConsensusError;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=InvalidDataContractIdError)]
 pub struct InvalidDataContractIdErrorWasm {
-    expected_id: Vec<u8>,
-    invalid_id: Vec<u8>,
-    code: u32,
+    inner: InvalidDataContractIdError,
 }
 
-impl InvalidDataContractIdErrorWasm {
-    pub fn new(expected_id: Vec<u8>, invalid_id: Vec<u8>, code: u32) -> Self {
-        InvalidDataContractIdErrorWasm {
-            expected_id,
-            invalid_id,
-            code,
-        }
+impl From<&InvalidDataContractIdError> for InvalidDataContractIdErrorWasm {
+    fn from(e: &InvalidDataContractIdError) -> Self {
+        Self { inner: e.clone() }
     }
 }
 
@@ -22,16 +19,30 @@ impl InvalidDataContractIdErrorWasm {
 impl InvalidDataContractIdErrorWasm {
     #[wasm_bindgen(js_name=getExpectedId)]
     pub fn get_expected_id(&self) -> Buffer {
-        Buffer::from_bytes(&self.expected_id)
+        Buffer::from_bytes(&self.inner.expected_id())
     }
 
     #[wasm_bindgen(js_name=getInvalidId)]
     pub fn get_invalid_id(&self) -> Buffer {
-        Buffer::from_bytes(&self.invalid_id)
+        Buffer::from_bytes(&self.inner.invalid_id())
     }
 
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {
-        self.code
+        ConsensusError::from(self.inner.clone()).code()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn message(&self) -> String {
+        self.inner.to_string()
+    }
+
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+        let bytes = ConsensusError::from(self.inner.clone())
+            .serialize()
+            .map_err(|e| JsError::from(e))?;
+
+        Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }
