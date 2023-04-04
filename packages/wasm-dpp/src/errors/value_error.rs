@@ -1,7 +1,7 @@
 use dpp::consensus::basic::value_error::ValueError;
 use wasm_bindgen::prelude::*;
 
-// TODO Rename to ProtocolValueError or PlatformValueError
+// TODO Rename to ProtocolValueError
 
 #[wasm_bindgen(js_name=PlatformValueError, inspectable)]
 #[derive(Debug)]

@@ -22,7 +22,7 @@ impl DecodeProtocolEntity {
 
         let cbor_value: CborValue = ciborium::de::from_reader(document_bytes).map_err(|e| {
             ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
-                SerializedObjectParsingError::new(format!("Decode protocol entity: {:#?}", e)),
+                SerializedObjectParsingError::new(e.to_string()),
             ))
         })?;
 

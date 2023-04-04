@@ -3,7 +3,9 @@ use std::{
     sync::Arc,
 };
 
-use crate::consensus::basic::state_transition::{InvalidStateTransitionTypeError, MissingStateTransitionTypeError};
+use crate::consensus::basic::state_transition::{
+    InvalidStateTransitionTypeError, MissingStateTransitionTypeError,
+};
 
 use crate::consensus::basic::decode::SerializedObjectParsingError;
 use crate::data_contract::errors::DataContractNotPresentError;
@@ -116,11 +118,10 @@ where
                 Value::U32(protocol_version),
             ),
             _ => {
-                let consensus_error = ConsensusError::BasicError(
-                    BasicError::SerializedObjectParsingError(SerializedObjectParsingError::new(
-                        format!("the '{:?}' is not a map", raw_state_transition),
-                    )),
-                );
+                let consensus_error =
+                    ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
+                        SerializedObjectParsingError::new("expected a map".to_string()),
+                    ));
 
                 return Err(ProtocolError::StateTransitionError(
                     StateTransitionError::InvalidStateTransitionError {
