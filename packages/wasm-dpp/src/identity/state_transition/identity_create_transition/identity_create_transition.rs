@@ -237,7 +237,7 @@ impl IdentityCreateTransitionWasm {
 
         let buffer = self
             .0
-            .to_buffer(opts.skip_signature.unwrap_or(false))
+            .to_cbor_buffer(opts.skip_signature.unwrap_or(false))
             .map_err(from_dpp_err)?;
 
         Ok(Buffer::from_bytes(&buffer).into())

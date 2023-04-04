@@ -63,7 +63,7 @@ pub trait StateTransitionLike:
         key_type: KeyType,
         bls: &impl BlsModule,
     ) -> Result<(), ProtocolError> {
-        let data = self.to_buffer(true)?;
+        let data = self.to_cbor_buffer(true)?;
         match key_type {
             KeyType::BLS12_381 => self.set_signature(bls.sign(&data, private_key)?.into()),
 
@@ -128,7 +128,7 @@ pub trait StateTransitionLike:
                 StateTransitionIsNotSignedError::new(self.clone().into()),
             ));
         }
-        let data = self.to_buffer(true)?;
+        let data = self.to_cbor_buffer(true)?;
 
         signer::verify_data_signature(&data, self.get_signature().as_slice(), public_key).map_err(
             |_| {
@@ -151,7 +151,7 @@ pub trait StateTransitionLike:
             ));
         }
 
-        let data = self.to_buffer(true)?;
+        let data = self.to_cbor_buffer(true)?;
 
         bls.verify_signature(self.get_signature().as_slice(), &data, public_key)
             .map(|_| ())
@@ -240,7 +240,7 @@ pub trait StateTransitionConvert: Serialize {
     }
 
     // Returns the cbor-encoded bytes representation of the object. The data is  prefixed by 4 bytes containing the Protocol Version
-    fn to_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
+    fn to_cbor_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
         let mut value = self.to_canonical_cleaned_object(skip_signature)?;
         let protocol_version = value.remove_integer(PROPERTY_PROTOCOL_VERSION)?;
 
@@ -249,7 +249,7 @@ pub trait StateTransitionConvert: Serialize {
 
     // Returns the hash of cibor-encoded bytes representation of the object
     fn hash(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash::hash(self.to_buffer(skip_signature)?))
+        Ok(hash::hash(self.to_cbor_buffer(skip_signature)?))
     }
 
     fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {

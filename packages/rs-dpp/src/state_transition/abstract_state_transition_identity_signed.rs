@@ -414,7 +414,7 @@ mod test {
     #[test]
     fn to_buffer() {
         let st = get_mock_state_transition();
-        let hash = st.to_buffer(false).unwrap();
+        let hash = st.to_cbor_buffer(false).unwrap();
         let result = hex::encode(hash);
 
         assert_eq!("01a4676f776e6572496458208d6e06cac6cd2c4b9020806a3f1a4ec48fc90defd314330a5ce7d8548dfc2524697369676e617475726540747369676e61747572655075626c69634b65794964016e7472616e736974696f6e5479706501", result.as_str());
@@ -423,7 +423,7 @@ mod test {
     #[test]
     fn to_buffer_no_signature() {
         let st = get_mock_state_transition();
-        let hash = st.to_buffer(true).unwrap();
+        let hash = st.to_cbor_buffer(true).unwrap();
         let result = hex::encode(hash);
 
         assert_eq!("01a2676f776e6572496458208d6e06cac6cd2c4b9020806a3f1a4ec48fc90defd314330a5ce7d8548dfc25246e7472616e736974696f6e5479706501", result);

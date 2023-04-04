@@ -108,7 +108,7 @@ impl DataContractCreateTransitionWasm {
     pub fn to_buffer(&self, skip_signature: Option<bool>) -> Result<Buffer, JsValue> {
         let bytes = self
             .0
-            .to_buffer(skip_signature.unwrap_or(false))
+            .to_cbor_buffer(skip_signature.unwrap_or(false))
             .with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }

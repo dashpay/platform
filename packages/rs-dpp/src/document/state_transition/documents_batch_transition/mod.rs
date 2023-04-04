@@ -398,7 +398,7 @@ impl StateTransitionConvert for DocumentsBatchTransition {
         Ok(object)
     }
 
-    fn to_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
+    fn to_cbor_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
         let mut result_buf = self.protocol_version.encode_var_vec();
         let value: CborValue = self.to_object(skip_signature)?.try_into()?;
 
@@ -679,7 +679,7 @@ mod test {
         let state_transition = DocumentsBatchTransition::from_value_map(map, vec![data_contract])
             .expect("transition should be created");
 
-        let bytes = state_transition.to_buffer(false).unwrap();
+        let bytes = state_transition.to_cbor_buffer(false).unwrap();
 
         assert_eq!(hex::encode(expected_bytes), hex::encode(bytes));
     }

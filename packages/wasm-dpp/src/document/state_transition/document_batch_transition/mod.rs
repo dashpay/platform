@@ -363,7 +363,7 @@ impl DocumentsBatchTransitionWasm {
         } else {
             false
         };
-        let bytes = self.0.to_buffer(skip_signature).with_js_error()?;
+        let bytes = self.0.to_cbor_buffer(skip_signature).with_js_error()?;
 
         Ok(Buffer::from_bytes(&bytes))
     }

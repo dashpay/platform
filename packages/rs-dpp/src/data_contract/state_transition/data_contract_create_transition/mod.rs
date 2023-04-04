@@ -389,7 +389,7 @@ mod test {
         let data = get_test_data();
         let state_transition_bytes = data
             .state_transition
-            .to_buffer(false)
+            .to_cbor_buffer(false)
             .expect("state transition should be converted to buffer");
         let (protocol_version, _) =
             u32::decode_var(state_transition_bytes.as_ref()).expect("expected to decode");

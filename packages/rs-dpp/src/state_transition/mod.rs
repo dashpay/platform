@@ -114,8 +114,8 @@ impl StateTransitionConvert for StateTransition {
         call_method!(self, hash, skip_signature)
     }
 
-    fn to_buffer(&self, _skip_signature: bool) -> Result<Vec<u8>, crate::ProtocolError> {
-        call_method!(self, to_buffer, true)
+    fn to_cbor_buffer(&self, _skip_signature: bool) -> Result<Vec<u8>, crate::ProtocolError> {
+        call_method!(self, to_cbor_buffer, true)
     }
 
     fn to_json(&self, skip_signature: bool) -> Result<serde_json::Value, crate::ProtocolError> {

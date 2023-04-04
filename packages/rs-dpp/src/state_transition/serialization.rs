@@ -42,4 +42,17 @@ impl StateTransition {
             .map(|raw_state_transition| Self::deserialize(raw_state_transition))
             .collect()
     }
+
+    // pub fn deserialize_cbor(cbor_state_transitions: &[u8]) -> Result<Vec<Self>, ProtocolError> {
+    //     call_method!(self, to_json, skip_signature)
+    // }
+    //
+    // pub fn deserialize_many_cbor(
+    //     cbor_state_transitions: &Vec<Vec<u8>>,
+    // ) -> Result<Vec<Self>, ProtocolError> {
+    //     cbor_state_transitions
+    //         .iter()
+    //         .map(|raw_state_transition| Self(raw_state_transition))
+    //         .collect()
+    // }
 }
