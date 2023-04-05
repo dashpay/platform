@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Version (i.e. v0.22.3-pre.2)'
+        description: "Version (i.e. v0.22.3-pre.2)"
         required: true
 
 concurrency:
@@ -31,18 +31,15 @@ jobs:
           TAG_PREFIX: v
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@master
+        uses: ./.github/actions/rust
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
 
-      - name: Enable Rust cache
-        uses: Swatinem/rust-cache@v2
-
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
-          node-version: '16'
+          node-version: "16"
 
       - name: Enable corepack
         run: corepack enable
@@ -53,7 +50,7 @@ jobs:
       - name: Enable Yarn unplugged modules cache
         uses: actions/cache@v3
         with:
-          path: '.yarn/unplugged'
+          path: ".yarn/unplugged"
           key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
           restore-keys: |
             ${{ runner.os }}-yarn-unplugged-
@@ -113,7 +110,7 @@ jobs:
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
-          node-version: '16'
+          node-version: "16"
 
       - name: Enable corepack
         run: corepack enable
@@ -124,7 +121,7 @@ jobs:
       - name: Enable Yarn unplugged modules cache
         uses: actions/cache@v3
         with:
-          path: '.yarn/unplugged'
+          path: ".yarn/unplugged"
           key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
           restore-keys: |
             ${{ runner.os }}-yarn-unplugged-
@@ -224,7 +221,7 @@ jobs:
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
-          node-version: '16'
+          node-version: "16"
 
       - name: Enable corepack
         run: corepack enable
@@ -235,7 +232,7 @@ jobs:
       - name: Enable Yarn unplugged modules cache
         uses: actions/cache@v3
         with:
-          path: '.yarn/unplugged'
+          path: ".yarn/unplugged"
           key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
           restore-keys: |
             ${{ runner.os }}-yarn-unplugged-
@@ -335,7 +332,7 @@ jobs:
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
-          node-version: '16'
+          node-version: "16"
 
       - name: Enable corepack
         run: corepack enable
@@ -346,7 +343,7 @@ jobs:
       - name: Enable Yarn unplugged modules cache
         uses: actions/cache@v3
         with:
-          path: '.yarn/unplugged'
+          path: ".yarn/unplugged"
           key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
           restore-keys: |
             ${{ runner.os }}-yarn-unplugged-
@@ -534,7 +531,7 @@ jobs:
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
-          node-version: '16'
+          node-version: "16"
 
       - name: Enable corepack
         run: corepack enable
@@ -545,7 +542,7 @@ jobs:
       - name: Enable Yarn unplugged modules cache
         uses: actions/cache@v3
         with:
-          path: '.yarn/unplugged'
+          path: ".yarn/unplugged"
           key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
           restore-keys: |
             ${{ runner.os }}-yarn-unplugged-
@@ -677,7 +674,7 @@ jobs:
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
-          node-version: '16'
+          node-version: "16"
 
       - name: Enable corepack
         run: corepack enable
@@ -688,7 +685,7 @@ jobs:
       - name: Enable Yarn unplugged modules cache
         uses: actions/cache@v3
         with:
-          path: '.yarn/unplugged'
+          path: ".yarn/unplugged"
           key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
           restore-keys: |
             ${{ runner.os }}-yarn-unplugged-
@@ -712,15 +709,12 @@ jobs:
             return target;
           result-encoding: string
 
-      - name: Setup Rust toolchain and target
+      - name: Setup Rust
         if: ${{ runner.os == 'macOS' }}
-        uses: dtolnay/rust-toolchain@master
+        uses: ./.github/actions/rust
         with:
           toolchain: stable
           target: ${{ steps.set-target.outputs.result }}
-
-      - name: Enable Rust cache
-        uses: Swatinem/rust-cache@v2
 
       - name: Set LIBC argument
         uses: actions/github-script@v6
@@ -789,7 +783,7 @@ jobs:
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
-          node-version: '16'
+          node-version: "16"
 
       - name: Install macOS build deps
         if: runner.os == 'macOS'
@@ -802,7 +796,8 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get install -y nsis
 
-      - uses: dtolnay/rust-toolchain@master
+      - name: Setup Rust
+        uses: ./.github/actions/rust
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
@@ -816,7 +811,7 @@ jobs:
       - name: Enable Yarn unplugged modules cache
         uses: actions/cache@v3
         with:
-          path: '.yarn/unplugged'
+          path: ".yarn/unplugged"
           key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
           restore-keys: |
             ${{ runner.os }}-yarn-unplugged-

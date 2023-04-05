@@ -1,3 +1,4 @@
+---
 name: WASM DPP
 
 on:
@@ -18,7 +19,7 @@ on:
       - packages/dashpay-contract/**
       - packages/wasm-dpp/**
   schedule:
-    - cron: '30 4 * * *'
+    - cron: "30 4 * * *"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -29,14 +30,14 @@ jobs:
     name: JS
     uses: ./.github/workflows/js-checks.yml
     with:
-      package: '@dashevo/wasm-dpp'
+      package: "@dashevo/wasm-dpp"
       install-browsers: true
 
   rs-checks:
     name: Rust
     uses: ./.github/workflows/rs-checks.yml
     with:
-      package: 'wasm-dpp'
+      package: "wasm-dpp"
 
   wasm-errors:
     name: WASM compilation
@@ -46,13 +47,10 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@master
+        uses: ./.github/actions/rust
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
-
-      - name: Enable Rust cache
-        uses: Swatinem/rust-cache@v2
 
       - name: Compile WASM
         run: cargo check --lib --target wasm32-unknown-unknown --package=wasm-dpp
