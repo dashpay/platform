@@ -19,7 +19,7 @@ inputs:
     required: false
   image_tag:
     description: Docker image tag
-    default: ${{ github.ref_name }}
+    default: ${{ github.head_ref || github.ref_name }}
 
 runs:
   using: composite
