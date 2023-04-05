@@ -122,8 +122,8 @@ impl ValidatorSet {
     ) -> Result<Quorum, ValSetError> {
         // read some config
         let rotation_block_interval: CoreHeight = config.validator_set_quorum_rotation_block_count;
-        let min_valid_members = config.core.min_quorum_valid_members;
-        let dkg_interval = config.core.dkg_interval;
+        let min_valid_members = config.core.min_quorum_valid_members();
+        let dkg_interval = config.core.dkg_interval();
 
         let min_ttl: CoreHeight = rotation_block_interval * 3;
 
@@ -144,7 +144,8 @@ impl ValidatorSet {
             .iter()
             .filter(|item| {
                 item.num_valid_members >= min_valid_members
-                    && item.quorum_ttl(core_height, dkg_interval, number_of_quorums) > min_ttl
+                    && item.quorum_ttl(core_height, dkg_interval as u32, number_of_quorums)
+                        > min_ttl
             })
             .collect::<Vec<&Quorum>>();
 
