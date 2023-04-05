@@ -31,7 +31,9 @@
 //!
 
 use crate::DocumentAction::{DocumentActionDelete, DocumentActionInsert};
+use anyhow::anyhow;
 use dashcore::signer;
+use dpp::bls_signatures::Serialize;
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::document::document_transition::document_base_transition::DocumentBaseTransition;
 use dpp::document::document_transition::{
@@ -154,8 +156,10 @@ impl Signer for SimpleSigner {
                 Ok(signature.to_vec())
             }
             KeyType::BLS12_381 => {
-                todo!();
-                // self.set_signature(bls.sign(&data, private_key)?.into())
+                let pk = dpp::bls_signatures::PrivateKey::from_bytes(private_key).map_err(|e| {
+                    ProtocolError::Error(anyhow!("bls private key from bytes isn't correct"))
+                })?;
+                Ok(pk.sign(&data).as_bytes())
             }
             // the default behavior from
             // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L187
@@ -1207,9 +1211,19 @@ mod tests {
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 30;
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
         let outcome =
             run_chain_for_strategy(&platform, block_count, day_in_ms, strategy, config, 15);
         assert_eq!(outcome.identities.len() as u64, 398);
