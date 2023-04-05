@@ -61,6 +61,12 @@ pub trait StateRepositoryLike: Sync {
         execution_context: Option<&'a StateTransitionExecutionContext>,
     ) -> AnyResult<()>;
 
+    async fn update_data_contract<'a>(
+        &self,
+        data_contract: DataContract,
+        execution_context: Option<&'a StateTransitionExecutionContext>,
+    ) -> AnyResult<()>;
+
     /// Fetch Documents by Data Contract Id and type
     /// By default, the method should return data as bytes (`Vec<u8>`), but the deserialization to [`Document`] should be also possible
     async fn fetch_documents<'a>(
