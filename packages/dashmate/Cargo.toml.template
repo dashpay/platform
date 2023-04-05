@@ -1,4 +1,4 @@
-# Workspace template with Rust packages required for DAPI (needed for Docker build)
+# Workspace template with Rust packages required for Dashmate (needed for Docker build)
 [workspace]
 
 members = [

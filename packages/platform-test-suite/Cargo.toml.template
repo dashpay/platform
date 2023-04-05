@@ -1,9 +1,8 @@
+# Workspace template with Rust packages required for Test suite (needed for Docker build)
 [workspace]
 
 members = [
     "packages/rs-platform-value",
-    "packages/rs-drive-nodejs",
-    "packages/rs-drive",
     "packages/dashpay-contract",
     "packages/withdrawals-contract",
     "packages/masternode-reward-shares-contract",
