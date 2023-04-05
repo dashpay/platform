@@ -9,6 +9,7 @@ use tenderdash_abci::proto::abci::ExecTxResult;
 pub type DryRunFeeResult = FeeResult;
 
 /// An execution result
+#[derive(Debug)]
 pub enum ExecutionResult {
     /// Successfully executed a paid event
     SuccessfulPaidExecution(DryRunFeeResult, FeeResult),

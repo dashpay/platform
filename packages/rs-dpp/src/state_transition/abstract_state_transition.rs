@@ -17,6 +17,8 @@ use crate::{
     util::{hash, serializer},
     BlsModule,
 };
+use crate::identity::IdentityPublicKey;
+use crate::identity::signer::Signer;
 
 use super::{
     state_transition_execution_context::StateTransitionExecutionContext, StateTransition,

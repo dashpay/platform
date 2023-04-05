@@ -16,6 +16,7 @@ use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
 use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
 use crate::util::serializer;
 use crate::{BlsModule, Convertible, SerdeParsingError};
+use crate::identity::signer::Signer;
 
 pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
 
@@ -103,6 +104,16 @@ impl IdentityPublicKeyWithWitness {
         let key_type = public_key.key_type;
         let mut public_key_with_witness: IdentityPublicKeyWithWitness = public_key.into();
         public_key_with_witness.sign_by_private_key(private_key, key_type, bls)?;
+        Ok(public_key_with_witness)
+    }
+
+    pub fn from_public_key_signed_external<S: Signer>(
+        public_key: IdentityPublicKey,
+        signer : &S,
+    ) -> Result<Self, ProtocolError> {
+        let mut public_key_with_witness: IdentityPublicKeyWithWitness = public_key.clone().into();
+        let data = public_key_with_witness.to_buffer()?;
+        public_key_with_witness.signature = signer.sign(&public_key, data.as_slice())?;
         Ok(public_key_with_witness)
     }
 

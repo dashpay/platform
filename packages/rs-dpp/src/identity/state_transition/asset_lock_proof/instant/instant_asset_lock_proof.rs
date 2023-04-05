@@ -2,6 +2,7 @@ use std::convert::{TryFrom, TryInto};
 
 use dashcore::consensus::{Decodable, Encodable};
 use dashcore::{InstantLock, Transaction, TxIn, TxOut};
+use rand::rngs::StdRng;
 use platform_value::{BinaryData, Value};
 use serde::de::Error as DeError;
 use serde::ser::Error as SerError;
@@ -12,6 +13,7 @@ use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::hash::hash;
 use crate::util::vec::vec_to_array;
 use crate::{NonConsensusError, ProtocolError};
+use crate::identity::KeyType::ECDSA_HASH160;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InstantAssetLockProof {

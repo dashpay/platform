@@ -108,7 +108,6 @@ mod validate_instant_asset_lock_proof_structure_factory {
         #[tokio::test]
         async fn should_be_equal_to_0() {
             let mut test_data = setup_test(None);
-            dbg!(&test_data.raw_proof);
             test_data.raw_proof.set_into_value("type", -1).unwrap();
 
             let result = test_data

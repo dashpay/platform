@@ -32,7 +32,8 @@
 
 use crate::DocumentAction::{DocumentActionDelete, DocumentActionInsert};
 use anyhow::anyhow;
-use dashcore::signer;
+use dashcore::secp256k1::SecretKey;
+use dashcore::{signer, Network, PrivateKey};
 use dpp::bls_signatures::Serialize;
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::document::document_transition::document_base_transition::DocumentBaseTransition;
@@ -41,15 +42,20 @@ use dpp::document::document_transition::{
 };
 use dpp::document::DocumentsBatchTransition;
 use dpp::identity::signer::Signer;
+use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransition;
+use dpp::identity::KeyType::ECDSA_SECP256K1;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::{BinaryData, Value};
 use dpp::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError,
 };
 use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned};
+use dpp::tests::fixtures::{
+    instant_asset_lock_proof_fixture, instant_asset_lock_proof_transaction_fixture,
+};
 use dpp::version::LATEST_VERSION;
-use dpp::ProtocolError;
+use dpp::{NativeBlsModule, ProtocolError};
 use drive::common::helpers::identities::create_test_masternode_identities_with_rng;
 use drive::contract::{Contract, CreateRandomDocument, DocumentType};
 use drive::dpp::document::Document;
@@ -75,6 +81,7 @@ use rand::{Rng, SeedableRng};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
+use std::str::FromStr;
 
 mod upgrade_fork_tests;
 
@@ -251,17 +258,15 @@ impl Strategy {
     }
     fn identity_state_transitions_for_block(
         &self,
+        signer: &mut SimpleSigner,
         rng: &mut StdRng,
-    ) -> (
-        Vec<(Identity, StateTransition)>,
-        Vec<(IdentityPublicKey, Vec<u8>)>,
-    ) {
+    ) -> Vec<(Identity, StateTransition)> {
         let frequency = &self.identities_inserts;
         if frequency.check_hit(rng) {
             let count = frequency.events(rng);
-            create_identities_state_transitions(count, 5, rng)
+            create_identities_state_transitions(count, 5, signer, rng)
         } else {
-            (vec![], vec![])
+            vec![]
         }
     }
 
@@ -414,11 +419,10 @@ impl Strategy {
         signer: &mut SimpleSigner,
         rng: &mut StdRng,
     ) -> Vec<StateTransition> {
-        let (identity_state_transitions, new_keys) = self.identity_state_transitions_for_block(rng);
+        let identity_state_transitions = self.identity_state_transitions_for_block(signer, rng);
         let (mut identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
             identity_state_transitions.into_iter().unzip();
         current_identities.append(&mut identities);
-        signer.add_keys(new_keys);
 
         if block_info.height == 1 {
             // add contracts on block 1
@@ -444,27 +448,33 @@ impl Strategy {
 fn create_identities_state_transitions(
     count: u16,
     key_count: KeyID,
+    signer: &mut SimpleSigner,
     rng: &mut StdRng,
-) -> (
-    Vec<(Identity, StateTransition)>,
-    Vec<(IdentityPublicKey, Vec<u8>)>,
-) {
+) -> Vec<(Identity, StateTransition)> {
     let (identities, keys) =
-        Identity::random_identities_with_private_keys_with_rng(count, key_count, rng)
+        Identity::random_identities_with_private_keys_with_rng::<Vec<_>>(count, key_count, rng)
             .expect("expected to create identities");
-    (
-        identities
-            .into_iter()
-            .map(|identity| {
-                let identity_create_transition: IdentityCreateTransition = identity
-                    .clone()
-                    .try_into()
-                    .expect("expected to transform identity into identity create transition");
-                (identity, identity_create_transition.into())
-            })
-            .collect(),
-        keys,
-    )
+    signer.add_keys(keys);
+    identities
+        .into_iter()
+        .map(|identity| {
+            let (_, pk) = ECDSA_SECP256K1.random_public_and_private_key_data(rng);
+            let sk: [u8; 32] = pk.clone().try_into().unwrap();
+            let secret_key = SecretKey::from_str(hex::encode(sk).as_str()).unwrap();
+            let asset_lock_proof =
+                instant_asset_lock_proof_fixture(Some(PrivateKey::new(secret_key, Network::Dash)));
+            let identity_create_transition =
+                IdentityCreateTransition::try_from_identity_with_signer(
+                    identity.clone(),
+                    asset_lock_proof,
+                    pk.as_slice(),
+                    signer,
+                    &NativeBlsModule::default(),
+                )
+                .expect("expected to transform identity into identity create transition");
+            (identity, identity_create_transition.into())
+        })
+        .collect()
 }
 
 pub struct ChainExecutionOutcome<'a> {
@@ -659,6 +669,7 @@ pub(crate) fn continue_chain_for_strategy(
                 proposed_version,
                 proposer_count,
                 block_info,
+                false,
                 state_transitions,
             )
             .expect("expected to execute a block");
@@ -1235,7 +1246,7 @@ mod tests {
             });
         let outcome =
             run_chain_for_strategy(&platform, block_count, day_in_ms, strategy, config, 15);
-        assert_eq!(outcome.identities.len() as u64, 398);
+        assert_eq!(outcome.identities.len() as u64, 357);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances

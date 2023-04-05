@@ -17,6 +17,7 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::collections::BTreeMap;
 use std::convert::TryInto;
+use std::iter::FromIterator;
 
 use platform_value::Value;
 use std::sync::Arc;
@@ -116,11 +117,15 @@ impl Identity {
     }
 
     // TODO: Move to a separate module under a feature
-    pub fn random_identities_with_private_keys_with_rng(
+    pub fn random_identities_with_private_keys_with_rng<I>(
         count: u16,
         key_count: KeyCount,
         rng: &mut StdRng,
-    ) -> Result<(Vec<Self>, Vec<(IdentityPublicKey, Vec<u8>)>), ProtocolError> {
+    ) -> Result<(Vec<Self>, I), ProtocolError>
+        where
+            I: Default
+            + FromIterator<(IdentityPublicKey, Vec<u8>)>
+            + Extend<(IdentityPublicKey, Vec<u8>)> {
         let mut vec: Vec<Identity> = vec![];
         let mut private_key_map: Vec<(IdentityPublicKey, Vec<u8>)> = vec![];
         for _i in 0..count {
@@ -129,7 +134,7 @@ impl Identity {
             vec.push(identity);
             private_key_map.append(&mut map);
         }
-        Ok((vec, private_key_map))
+        Ok((vec, private_key_map.into_iter().collect()))
     }
 }
 

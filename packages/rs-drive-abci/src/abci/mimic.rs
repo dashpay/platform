@@ -1,4 +1,5 @@
 use crate::abci::server::AbciApplication;
+use crate::abci::AbciError;
 use crate::error::Error;
 use crate::rpc::core::CoreRPCLike;
 use dpp::state_transition::StateTransition;
@@ -19,6 +20,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         proposed_version: ProtocolVersion,
         total_hpmns: u32,
         block_info: BlockInfo,
+        expect_validation_errors: bool,
         state_transitions: Vec<StateTransition>,
     ) -> Result<(), Error> {
         let serialized_state_transitions = state_transitions
@@ -68,6 +70,19 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             core_chain_lock_update,
             validator_set_update,
         } = response_prepare_proposal;
+
+        if expect_validation_errors == false {
+            if tx_results.len() != tx_records.len() {
+                return Err(Error::Abci(AbciError::GenericWithCode(0)));
+            }
+            tx_results.into_iter().try_for_each(|tx_result| {
+                if tx_result.code > 0 {
+                    Err(Error::Abci(AbciError::GenericWithCode(tx_result.code)))
+                } else {
+                    Ok(())
+                }
+            })?;
+        }
 
         let request_finalize_block = RequestFinalizeBlock {
             commit: Some(CommitInfo {

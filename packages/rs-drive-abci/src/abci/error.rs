@@ -33,4 +33,8 @@ pub enum AbciError {
     /// Error occurred during validator set creation
     #[error("validator set: {0}")]
     ValidatorSet(#[from] ValidatorSetError),
+
+    /// Generic with code should only be used in tests
+    #[error("generic with code: {0}")]
+    GenericWithCode(u32),
 }
