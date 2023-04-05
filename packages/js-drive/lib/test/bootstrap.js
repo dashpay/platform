@@ -38,7 +38,7 @@ use(async (chai, util) => {
   const transformArguments = (args, basePath = '') => {
     lodash.forIn(args, function (value, key) {
       if (value !== undefined && value !== null && value.hasOwnProperty('ptr')) {
-        lodash.set(args, `${basePath}.${key}`, getMofifiedArgument(value));
+        lodash.set(args, `${basePath}${basePath === '' ? '' : '.'}${key}`, getMofifiedArgument(value));
         return;
       }
 
