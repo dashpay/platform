@@ -770,6 +770,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - package_type: tarballs
+            os: ubuntu-22.04
           - package_type: win
             os: ubuntu-22.04
           - package_type: deb
