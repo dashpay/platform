@@ -18,19 +18,16 @@ describe('createMasternodeIdentityFactory', () => {
   let Identity;
   let IdentityPublicKey;
   let ValidationResult;
-  let KeyPurpose;
-  let KeyType;
-  let KeySecurityLevel;
 
   before(function before() {
-    ({ Identity, IdentityPublicKey, ValidationResult, KeyPurpose, KeyType, KeySecurityLevel } = this.dppWasm);
+    ({ Identity, IdentityPublicKey, ValidationResult } = this.dppWasm);
   });
 
   beforeEach(function beforeEach() {
     dppMock = createDPPMock(this.sinon);
 
     getWithdrawPubKeyTypeFromPayoutScriptMock = this.sinon.stub().returns(
-      KeyType.BIP13_SCRIPT_HASH,
+      IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH,
     );
 
     getPublicKeyFromPayoutScriptMock = this.sinon.stub().returns(
@@ -47,10 +44,8 @@ describe('createMasternodeIdentityFactory', () => {
 
     createMasternodeIdentity = createMasternodeIdentityFactory(
       dppMock,
+      this.dppWasm,
       identityRepositoryMock,
-      getWithdrawPubKeyTypeFromPayoutScriptMock,
-      getPublicKeyFromPayoutScriptMock,
-      this.dppWasm
     );
 
     blockInfo = new BlockInfo(1, 0, Date.now());
@@ -59,7 +54,7 @@ describe('createMasternodeIdentityFactory', () => {
   it('should create masternode identity', async () => {
     const identityId = generateRandomIdentifier();
     const pubKeyData = Buffer.from([0]);
-    const pubKeyType = KeyType.ECDSA_HASH160;
+    const pubKeyType = IdentityPublicKey.TYPES.ECDSA_HASH160;
 
     const result = await createMasternodeIdentity(this.dppWasm, blockInfo, identityId, pubKeyData, pubKeyType);
 
@@ -69,8 +64,8 @@ describe('createMasternodeIdentityFactory', () => {
       publicKeys: [{
         id: 0,
         type: pubKeyType,
-        purpose: KeyPurpose.AUTHENTICATION,
-        securityLevel: KeySecurityLevel.MASTER,
+        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
         readOnly: true,
         // Copy data buffer
         data: Buffer.from([0]),
@@ -97,7 +92,7 @@ describe('createMasternodeIdentityFactory', () => {
   it('should store identity and public key hashed to the previous store', async () => {
     const identityId = generateRandomIdentifier();
     const pubKeyData = Buffer.from([0]);
-    const pubKeyType = KeyType.ECDSA_HASH160;
+    const pubKeyType = IdentityPublicKey.TYPES.ECDSA_HASH160;
 
     const result = await createMasternodeIdentity(blockInfo, identityId, pubKeyData, pubKeyType);
 
@@ -107,8 +102,8 @@ describe('createMasternodeIdentityFactory', () => {
       publicKeys: [{
         id: 0,
         type: pubKeyType,
-        purpose: KeyPurpose.AUTHENTICATION,
-        securityLevel: KeySecurityLevel.MASTER,
+        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
         readOnly: true,
         // Copy data buffer
         data: Buffer.from([0]),
@@ -133,7 +128,7 @@ describe('createMasternodeIdentityFactory', () => {
 
     const identityId = generateRandomIdentifier();
     const pubKeyData = Buffer.from([0]);
-    const pubKeyType = KeyType.ECDSA_HASH160;
+    const pubKeyType = IdentityPublicKey.TYPES.ECDSA_HASH160;
 
     try {
       await createMasternodeIdentity(blockInfo, identityId, pubKeyData, pubKeyType);
@@ -150,7 +145,7 @@ describe('createMasternodeIdentityFactory', () => {
   it.skip('should create masternode identity with payoutScript public key', async () => {
     const identityId = generateRandomIdentifier();
     const pubKeyData = Buffer.from([0]);
-    const pubKeyType = KeyType.ECDSA_HASH160;
+    const pubKeyType = IdentityPublicKey.TYPES.ECDSA_HASH160;
     const payoutScript = new Script(Address.fromString('7UkJidhNjEPJCQnCTXeaJKbJmL4JuyV66w'));
 
     const result = await createMasternodeIdentity(
@@ -167,15 +162,15 @@ describe('createMasternodeIdentityFactory', () => {
       publicKeys: [{
         id: 0,
         type: pubKeyType,
-        purpose: KeyPurpose.AUTHENTICATION,
-        securityLevel: KeySecurityLevel.MASTER,
+        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
         readOnly: true,
         data: Buffer.from([0]),
       }, {
         id: 1,
-        type: KeyType.BIP13_SCRIPT_HASH,
+        type: IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH,
         purpose: KeyPurpose.WITHDRAW,
-        securityLevel: KeySecurityLevel.CRITICAL,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.CRITICAL,
         readOnly: false,
         data: Buffer.alloc(20, 1),
       }],
