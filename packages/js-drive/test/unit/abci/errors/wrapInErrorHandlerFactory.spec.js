@@ -1,4 +1,3 @@
-const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
 const wrapInErrorHandlerFactory = require('../../../../lib/abci/errors/wrapInErrorHandlerFactory');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 const InternalAbciError = require('../../../../lib/abci/errors/InternalAbciError');
@@ -12,6 +11,11 @@ describe('wrapInErrorHandlerFactory', () => {
   let request;
   let handler;
   let wrapInErrorHandler;
+  let MissingStateTransitionTypeError;
+
+  before(function before() {
+      MissingStateTransitionTypeError = this.dppWasm.MissingStateTransitionTypeError;
+  });
 
   beforeEach(function beforeEach() {
     request = {
@@ -93,7 +97,7 @@ describe('wrapInErrorHandlerFactory', () => {
   it('should respond with error if method throws DPPValidationAbciError', async () => {
     const dppValidationError = new DPPValidationAbciError(
       'Some error',
-      new SomeConsensusError('Consensus error'),
+      new MissingStateTransitionTypeError(),
     );
 
     methodMock.throws(dppValidationError);

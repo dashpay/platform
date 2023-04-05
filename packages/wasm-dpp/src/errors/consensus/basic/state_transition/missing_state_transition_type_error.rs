@@ -17,6 +17,13 @@ impl From<&MissingStateTransitionTypeError> for MissingStateTransitionTypeErrorW
 
 #[wasm_bindgen(js_class=MissingStateTransitionTypeError)]
 impl MissingStateTransitionTypeErrorWasm {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+      Self {
+        inner: MissingStateTransitionTypeError::new(),
+      }
+    }
+
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {
         ConsensusError::from(self.inner.clone()).code()
