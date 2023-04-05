@@ -26,13 +26,13 @@ mod property_names {
 #[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityTopUpTransition {
+    #[serde(rename = "type")]
+    pub transition_type: StateTransitionType,
     // Own ST fields
     pub asset_lock_proof: AssetLockProof,
     pub identity_id: Identifier,
     // Generic identity ST fields
     pub protocol_version: u32,
-    #[serde(rename = "type")]
-    pub transition_type: StateTransitionType,
     pub signature: BinaryData,
 }
 

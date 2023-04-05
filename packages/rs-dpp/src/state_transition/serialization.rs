@@ -44,6 +44,7 @@ mod tests {
     use crate::document::DocumentsBatchTransition;
     use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;
     use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
+    use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
     use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
     use crate::identity::Identity;
     use crate::state_transition::{
@@ -67,6 +68,25 @@ mod tests {
             .try_into()
             .expect("expected to make an identity create transition");
         let state_transition: StateTransition = identity_create_transition.into();
+        let bytes = state_transition.serialize().expect("expected to serialize");
+        let recovered_state_transition =
+            StateTransition::deserialize(&bytes).expect("expected to deserialize state transition");
+        assert_eq!(state_transition, recovered_state_transition);
+    }
+
+    #[test]
+    fn identity_topup_transition_ser_de() {
+        let identity = Identity::random_identity(5, Some(5));
+        let identity_topup_transition = IdentityTopUpTransition {
+            asset_lock_proof: identity
+                .asset_lock_proof
+                .expect("expected an asset lock proof on the identity"),
+            identity_id: identity.id,
+            protocol_version: LATEST_VERSION,
+            transition_type: StateTransitionType::IdentityTopUp,
+            signature: [1u8; 65].to_vec().into(),
+        };
+        let state_transition: StateTransition = identity_topup_transition.into();
         let bytes = state_transition.serialize().expect("expected to serialize");
         let recovered_state_transition =
             StateTransition::deserialize(&bytes).expect("expected to deserialize state transition");
