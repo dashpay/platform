@@ -60,11 +60,8 @@ pub struct DataContractUpdateTransition {
     pub transition_type: StateTransitionType,
     // we want to skip serialization of transitions, as we does it manually in `to_object()`  and `to_json()`
     #[serde(skip_serializing)]
-    #[bincode(with_serde)]
     pub data_contract: DataContract,
-    #[bincode(with_serde)]
     pub signature_public_key_id: KeyID,
-    #[bincode(with_serde)]
     pub signature: BinaryData,
 }
 

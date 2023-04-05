@@ -1,4 +1,8 @@
-use bincode::{Decode, Encode};
+use bincode::de::{BorrowDecoder, Decoder};
+use bincode::enc::Encoder;
+use bincode::error::{DecodeError, EncodeError};
+use bincode::{BorrowDecode, Decode, Encode};
+use futures::StreamExt;
 use std::collections::{BTreeMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 
@@ -6,6 +10,7 @@ use itertools::{Either, Itertools};
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::{platform_value, Bytes32, Identifier};
 use platform_value::{ReplacementType, Value, ValueMapHelper};
+use serde::de::Error;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -121,6 +126,31 @@ pub struct DataContract {
 
     #[serde(skip)]
     pub binary_properties: BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>,
+}
+
+impl Encode for DataContract {
+    fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
+        let inner: DataContractInner = self.clone().into();
+        inner.encode(encoder)
+    }
+}
+
+impl Decode for DataContract {
+    fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
+        let inner = DataContractInner::decode(decoder)?;
+        inner
+            .try_into()
+            .map_err(|e: ProtocolError| DecodeError::custom(e.to_string()))
+    }
+}
+
+impl<'a> BorrowDecode<'a> for DataContract {
+    fn borrow_decode<D: BorrowDecoder<'a>>(decoder: &mut D) -> Result<Self, DecodeError> {
+        let inner = DataContractInner::decode(decoder)?;
+        inner
+            .try_into()
+            .map_err(|e: ProtocolError| DecodeError::custom(e.to_string()))
+    }
 }
 
 #[derive(Serialize, Deserialize, Encode, Decode)]

@@ -63,13 +63,9 @@ pub struct DataContractCreateTransition {
     pub protocol_version: u32,
     #[serde(rename = "type")]
     pub transition_type: StateTransitionType,
-    #[bincode(with_serde)]
     pub data_contract: DataContract,
-    #[bincode(with_serde)]
     pub entropy: Bytes32,
-    #[bincode(with_serde)]
     pub signature_public_key_id: KeyID,
-    #[bincode(with_serde)]
     pub signature: BinaryData,
 }
 

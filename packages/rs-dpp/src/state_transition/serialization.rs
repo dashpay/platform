@@ -17,7 +17,7 @@ impl StateTransition {
     }
 
     pub fn deserialize(bytes: &[u8]) -> Result<Self, ProtocolError> {
-        let config = config::standard().with_big_endian().with_limit::<15000>();
+        let config = config::standard().with_big_endian().with_limit::<100000>();
         bincode::decode_from_slice(bytes, config)
             .map_err(|e| {
                 ProtocolError::EncodingError(format!(
@@ -40,9 +40,15 @@ impl StateTransition {
 
 #[cfg(test)]
 mod tests {
+    use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
+    use crate::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
     use crate::document::document_transition::Action;
     use crate::document::DocumentsBatchTransition;
+    use crate::identity::core_script::CoreScript;
     use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;
+    use crate::identity::state_transition::identity_credit_withdrawal_transition::{
+        IdentityCreditWithdrawalTransition, Pooling,
+    };
     use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
     use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
     use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
@@ -182,8 +188,70 @@ mod tests {
     }
 
     #[test]
-    fn document_batch_transition_ser_de() {
-        let data_contract = get_data_contract_fixture(None);
+    fn identity_credit_withdrawal_transition_ser_de() {
+        let identity = Identity::random_identity(5, Some(5));
+        let mut identity_credit_withdrawal_transition = IdentityCreditWithdrawalTransition {
+            protocol_version: LATEST_VERSION,
+            transition_type: StateTransitionType::IdentityCreditWithdrawal,
+            identity_id: identity.id,
+            amount: 5000000,
+            core_fee_per_byte: 34,
+            pooling: Pooling::Standard,
+            output_script: CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
+            revision: 1,
+            signature_public_key_id: 0,
+            signature: [1u8; 65].to_vec().into(),
+        };
+        let state_transition: StateTransition = identity_credit_withdrawal_transition.into();
+        let bytes = state_transition.serialize().expect("expected to serialize");
+        let recovered_state_transition =
+            StateTransition::deserialize(&bytes).expect("expected to deserialize state transition");
+        assert_eq!(state_transition, recovered_state_transition);
+    }
+
+    #[test]
+    fn data_contract_create_ser_de() {
+        let identity = Identity::random_identity(5, Some(5));
+        let mut data_contract = get_data_contract_fixture(Some(identity.id));
+        data_contract.entropy = Default::default();
+        let data_contract_create_transition = DataContractCreateTransition {
+            protocol_version: LATEST_VERSION,
+            transition_type: StateTransitionType::DataContractCreate,
+            data_contract,
+            entropy: Default::default(),
+            signature_public_key_id: 0,
+            signature: [1u8; 65].to_vec().into(),
+        };
+        let state_transition: StateTransition = data_contract_create_transition.into();
+        let bytes = state_transition.serialize().expect("expected to serialize");
+        let recovered_state_transition =
+            StateTransition::deserialize(&bytes).expect("expected to deserialize state transition");
+        assert_eq!(state_transition, recovered_state_transition);
+    }
+
+    #[test]
+    fn data_contract_update_ser_de() {
+        let identity = Identity::random_identity(5, Some(5));
+        let mut data_contract = get_data_contract_fixture(Some(identity.id));
+        data_contract.entropy = Default::default();
+        let data_contract_update_transition = DataContractUpdateTransition {
+            protocol_version: LATEST_VERSION,
+            transition_type: StateTransitionType::DataContractCreate,
+            data_contract,
+            signature_public_key_id: 0,
+            signature: [1u8; 65].to_vec().into(),
+        };
+        let state_transition: StateTransition = data_contract_update_transition.into();
+        let bytes = state_transition.serialize().expect("expected to serialize");
+        let recovered_state_transition =
+            StateTransition::deserialize(&bytes).expect("expected to deserialize state transition");
+        assert_eq!(state_transition, recovered_state_transition);
+    }
+
+    #[test]
+    fn document_batch_transition_10_created_documents_ser_de() {
+        let mut data_contract = get_data_contract_fixture(None);
+        data_contract.entropy = Default::default();
         let documents =
             get_documents_fixture_with_owner_id_from_contract(data_contract.clone()).unwrap();
         let transitions = get_document_transitions_fixture([(Action::Create, documents)]);

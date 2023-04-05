@@ -112,7 +112,6 @@ pub struct DocumentBaseTransition {
     pub data_contract_id: Identifier,
 
     #[serde(skip)]
-    #[bincode(with_serde)]
     pub data_contract: DataContract,
 }
 
