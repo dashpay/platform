@@ -83,16 +83,32 @@ pub struct CoreConfig {
     pub rpc: CoreRpcConfig,
 
     /// DKG interval
-    pub dkg_interval: u32,
+    pub dkg_interval: String, // String due to https://github.com/softprops/envy/issues/26
     /// Minimum number of valid members to use the quorum
-    pub min_quorum_valid_members: u32,
+    pub min_quorum_valid_members: String, // String due to https://github.com/softprops/envy/issues/26
 }
 
+impl CoreConfig {
+    /// return dkg_interval
+    pub fn dkg_interval(&self) -> u32 {
+        return self
+            .dkg_interval
+            .parse::<u32>()
+            .expect("DKG_INTERVAL is not an int");
+    }
+    /// Returns minimal number of quorum members
+    pub fn min_quorum_valid_members(&self) -> u32 {
+        return self
+            .min_quorum_valid_members
+            .parse::<u32>()
+            .expect("MIN_QUORUM_VALID_MEMBERS is not an int");
+    }
+}
 impl Default for CoreConfig {
     fn default() -> Self {
         Self {
-            dkg_interval: 24,
-            min_quorum_valid_members: 3,
+            dkg_interval: String::from("24"),
+            min_quorum_valid_members: String::from("3"),
             rpc: Default::default(),
         }
     }
@@ -209,8 +225,8 @@ mod tests {
 
     #[test]
     fn test_config_from_env() {
-        let envfile = format!("{}/.env.example", env!("CARGO_MANIFEST_DIR"));
-        let envfile = std::path::PathBuf::from(envfile);
+        // let envfile = format!("{}/.env.example", env!("CARGO_MANIFEST_DIR"));
+        let envfile = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".env.example");
 
         dotenvy::from_path(envfile.as_path()).expect("cannot load .env file");
         assert_eq!("5", env::var("QUORUM_SIZE").unwrap());
