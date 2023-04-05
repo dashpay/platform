@@ -15,6 +15,49 @@ use(sinonChai);
 use(chaiAsPromised);
 use(chaiString);
 use(dirtyChai);
+use(async (chai, util) => {
+  const dppWasm = await loadWasmDpp();
+
+  chai.Assertion.overwriteMethod('equals', function (_super) {
+    return function (other) {
+      const original = this._obj;
+
+      if (Array.isArray(original)
+          && original.length > 0
+          && original[0].hasOwnProperty('ptr')) {
+        const isIdentifier = (original[0] instanceof dppWasm.Identifier);
+
+        if (isIdentifier) {
+          return new chai.Assertion(original.map((o) => o.toBuffer()))
+                  .to.have.deep.members(other.map((o) => o.toBuffer()));
+        }
+
+        return new chai.Assertion(original.map((o) => o.toJSON()))
+                  .to.have.deep.members(other.map((o) => o.toJSON()));
+      }
+
+      if (original.hasOwnProperty('ptr')) {
+        const isIdentifier = (original instanceof dppWasm.Identifier);
+
+        if (isIdentifier) {
+          return new chai.Assertion(original.toBuffer()).to.deep.equal(other.toBuffer());
+        }
+
+        return new chai.Assertion(original.toJSON()).to.deep.equal(other.toJSON());
+      }
+
+      _super.apply(this, arguments);
+    };
+  });
+
+  chai.Assertion.overwriteMethod('calledOnceWith', function (_super) {
+    return function (other) {
+      console.dir(this._obj);
+      console.dir(other);
+      _super.apply(this, arguments);
+    };
+  });
+});
 
 process.env.NODE_ENV = 'test';
 
