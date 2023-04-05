@@ -4,7 +4,7 @@ use std::convert::{TryFrom, TryInto};
 
 use itertools::{Either, Itertools};
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
-use platform_value::{Bytes32, Identifier};
+use platform_value::{platform_value, Bytes32, Identifier};
 use platform_value::{ReplacementType, Value, ValueMapHelper};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -92,6 +92,7 @@ impl Convertible for DataContract {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[serde(try_from = "DataContractInner")]
 pub struct DataContract {
     pub protocol_version: u32,
     #[serde(rename = "$id")]
@@ -114,11 +115,66 @@ pub struct DataContract {
     #[serde(rename = "$defs", default)]
     pub defs: Option<BTreeMap<DefinitionName, JsonSchema>>,
 
+    //todo: we should remove entropy
     #[serde(skip)]
     pub entropy: Bytes32,
 
     #[serde(skip)]
     pub binary_properties: BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>,
+}
+
+#[derive(Serialize, Deserialize, Encode, Decode)]
+#[serde(rename_all = "camelCase")]
+pub struct DataContractInner {
+    pub protocol_version: u32,
+    #[serde(rename = "$id")]
+    pub id: Identifier,
+    #[serde(rename = "$schema")]
+    pub schema: String,
+    pub version: u32,
+    pub owner_id: Identifier,
+    pub documents: BTreeMap<DocumentName, Value>,
+    #[serde(rename = "$defs", default)]
+    pub defs: Option<BTreeMap<DefinitionName, Value>>,
+}
+
+impl From<DataContract> for DataContractInner {
+    fn from(value: DataContract) -> Self {
+        let DataContract {
+            protocol_version,
+            id,
+            schema,
+            version,
+            owner_id,
+            documents,
+            defs,
+            ..
+        } = value;
+        DataContractInner {
+            protocol_version,
+            id,
+            schema,
+            version,
+            owner_id,
+            documents: documents
+                .into_iter()
+                .map(|(key, value)| (key, value.into()))
+                .collect(),
+            defs: defs.map(|defs| {
+                defs.into_iter()
+                    .map(|(key, value)| (key, value.into()))
+                    .collect()
+            }),
+        }
+    }
+}
+
+impl TryFrom<DataContractInner> for DataContract {
+    type Error = ProtocolError;
+
+    fn try_from(value: DataContractInner) -> Result<Self, Self::Error> {
+        DataContract::from_raw_object(platform_value!(value))
+    }
 }
 
 impl DataContract {
