@@ -13,6 +13,7 @@ use crate::{
     util::hash::ripemd160_sha256,
     BlsModule,
 };
+use crate::identity::signer::Signer;
 
 use super::StateTransitionLike;
 
@@ -23,6 +24,15 @@ where
     fn get_owner_id(&self) -> &Identifier;
     fn get_signature_public_key_id(&self) -> Option<KeyID>;
     fn set_signature_public_key_id(&mut self, key_id: KeyID);
+
+    fn sign_external<S: Signer>(&mut self, identity_public_key: &IdentityPublicKey, signer : &S) -> Result<(), ProtocolError> {
+        self.verify_public_key_level_and_purpose(identity_public_key)?;
+        self.verify_public_key_is_enabled(identity_public_key)?;
+        let data = self.to_cbor_buffer(true)?;
+        self.set_signature(signer.sign(identity_public_key, data.as_slice())?);
+        self.set_signature_public_key_id(identity_public_key.id);
+        Ok(())
+    }
 
     fn sign(
         &mut self,

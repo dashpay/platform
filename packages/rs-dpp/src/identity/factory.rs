@@ -48,10 +48,10 @@ impl Identity {
     }
 
     // TODO: Move to a separate module under a feature
-    pub fn random_identity_with_private_key_with_rng<I>(
+    pub fn random_identity_with_main_keys_with_private_key<I>(
         key_count: KeyCount,
         rng: &mut StdRng,
-    ) -> (Self, I)
+    ) -> Result<(Self, I), ProtocolError>
     where
         I: Default
             + IntoIterator<Item = (IdentityPublicKey, Vec<u8>)>
@@ -63,14 +63,14 @@ impl Identity {
         // but let's make it smaller
         let balance = rng.gen::<u64>() >> 20; //around 175 Dash as max
         let (public_keys, private_keys): (BTreeMap<KeyID, IdentityPublicKey>, I) =
-            IdentityPublicKey::random_authentication_keys_with_private_keys_with_rng(
+            IdentityPublicKey::main_keys_with_random_authentication_keys_with_private_keys_with_rng(
                 key_count, rng,
-            )
+            )?
             .into_iter()
             .map(|(key, private_key)| ((key.id, key.clone()), (key, private_key)))
             .unzip();
 
-        (
+        Ok((
             Identity {
                 protocol_version: IDENTITY_PROTOCOL_VERSION,
                 id,
@@ -81,7 +81,7 @@ impl Identity {
                 metadata: None,
             },
             private_keys,
-        )
+        ))
     }
 
     // TODO: Move to a separate module under a feature
@@ -120,16 +120,16 @@ impl Identity {
         count: u16,
         key_count: KeyCount,
         rng: &mut StdRng,
-    ) -> (Vec<Self>, Vec<(IdentityPublicKey, Vec<u8>)>) {
+    ) -> Result<(Vec<Self>, Vec<(IdentityPublicKey, Vec<u8>)>), ProtocolError> {
         let mut vec: Vec<Identity> = vec![];
         let mut private_key_map: Vec<(IdentityPublicKey, Vec<u8>)> = vec![];
         for _i in 0..count {
             let (identity, mut map) =
-                Self::random_identity_with_private_key_with_rng(key_count, rng);
+                Self::random_identity_with_main_keys_with_private_key(key_count, rng)?;
             vec.push(identity);
             private_key_map.append(&mut map);
         }
-        (vec, private_key_map)
+        Ok((vec, private_key_map))
     }
 }
 

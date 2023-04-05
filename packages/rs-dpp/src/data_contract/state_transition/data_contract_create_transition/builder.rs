@@ -22,7 +22,7 @@ impl DataContractCreateTransition {
             signature_public_key_id: key_id,
             signature: Default::default(),
         };
-        let value = transition.to_cleaned_object(true)?;
+        let value = transition.to_cbor_buffer(true)?;
         let public_key =
             identity
                 .loaded_public_keys

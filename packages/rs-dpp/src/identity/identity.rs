@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 
 use ciborium::value::Value as CborValue;
@@ -7,7 +7,7 @@ use platform_value::{ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-use crate::identity::identity_public_key;
+use crate::identity::{identity_public_key, KeyType, Purpose, SecurityLevel};
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::prelude::Revision;
 use crate::util::cbor_value::{CborBTreeMapHelper, CborCanonicalMap};
@@ -146,6 +146,16 @@ impl Identity {
     pub fn set_public_keys(&mut self, pub_key: BTreeMap<KeyID, IdentityPublicKey>) {
         self.public_keys = pub_key;
     }
+
+    /// Get first public key matching a purpose, security levels or key types
+    pub fn get_first_public_key_matching(&self, purpose: Purpose, security_levels: HashSet<SecurityLevel>, key_types: HashSet<KeyType>) -> Option<&IdentityPublicKey> {
+        self.public_keys.values().find(|key| {
+            key.purpose == purpose
+            && security_levels.contains(&key.security_level)
+            && key_types.contains(&key.key_type)
+        })
+    }
+
 
     /// Get Identity public keys revision
     pub fn get_public_keys(&self) -> &BTreeMap<KeyID, IdentityPublicKey> {

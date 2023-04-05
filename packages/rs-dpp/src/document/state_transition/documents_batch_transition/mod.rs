@@ -19,7 +19,7 @@ use crate::state_transition::state_transition_execution_context::StateTransition
 use crate::util::cbor_value::{CborCanonicalMap, FieldType, ReplacePaths, ValuesCollection};
 use crate::util::json_value::JsonValueExt;
 use crate::version::LATEST_VERSION;
-use crate::ProtocolError;
+use crate::{BlsModule, ProtocolError};
 use crate::{
     identity::{KeyID, SecurityLevel},
     state_transition::{
@@ -39,6 +39,8 @@ pub mod document_transition;
 pub mod validation;
 
 pub use action::{DocumentsBatchTransitionAction, DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION};
+use crate::identity::IdentityPublicKey;
+use crate::identity::signer::Signer;
 
 pub mod property_names {
     pub const TRANSITION_TYPE: &str = "type";

@@ -37,17 +37,12 @@ pub const BINARY_DATA_FIELDS: [&str; 1] = ["data"];
 )]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityPublicKey {
-    #[bincode(with_serde)]
     pub id: KeyID,
-    #[bincode(with_serde)]
     pub purpose: Purpose,
-    #[bincode(with_serde)]
     pub security_level: SecurityLevel,
-    #[bincode(with_serde)]
     #[serde(rename = "type")]
     pub key_type: KeyType,
     pub read_only: bool,
-    #[bincode(with_serde)]
     pub data: BinaryData,
     #[serde(default)]
     pub disabled_at: Option<TimestampMillis>,

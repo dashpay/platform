@@ -42,12 +42,12 @@ use dpp::document::document_transition::{
 use dpp::document::DocumentsBatchTransition;
 use dpp::identity::signer::Signer;
 use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransition;
-use dpp::identity::{IdentityPublicKey, KeyType};
-use dpp::platform_value::Value;
+use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+use dpp::platform_value::{BinaryData, Value};
 use dpp::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError,
 };
-use dpp::state_transition::StateTransition;
+use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned};
 use dpp::version::LATEST_VERSION;
 use dpp::ProtocolError;
 use drive::common::helpers::identities::create_test_masternode_identities_with_rng;
@@ -73,7 +73,7 @@ use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
 
 mod upgrade_fork_tests;
@@ -139,27 +139,23 @@ impl Signer for SimpleSigner {
     fn sign(
         &self,
         identity_public_key: &IdentityPublicKey,
-        value: &Value,
-    ) -> Result<Vec<u8>, ProtocolError> {
+        data: &[u8],
+    ) -> Result<BinaryData, ProtocolError> {
         let private_key = self.private_keys.get(identity_public_key).ok_or(
             ProtocolError::InvalidSignaturePublicKeyError(InvalidSignaturePublicKeyError::new(
                 identity_public_key.data.to_vec(),
             )),
         )?;
-        let mut data = vec![];
-        ciborium::ser::into_writer(value, &mut data).map_err(|_| {
-            ProtocolError::EncodingError("unable to serialize into cbor for signing".to_string())
-        })?;
         match identity_public_key.key_type {
             KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
-                let signature = signer::sign(&data, private_key)?;
-                Ok(signature.to_vec())
+                let signature = signer::sign(data, private_key)?;
+                Ok(signature.to_vec().into())
             }
             KeyType::BLS12_381 => {
                 let pk = dpp::bls_signatures::PrivateKey::from_bytes(private_key).map_err(|e| {
                     ProtocolError::Error(anyhow!("bls private key from bytes isn't correct"))
                 })?;
-                Ok(pk.sign(&data).as_bytes())
+                Ok(pk.sign(data).as_bytes().into())
             }
             // the default behavior from
             // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L187
@@ -302,6 +298,7 @@ impl Strategy {
         platform: &Platform<MockCoreRPCLike>,
         block_info: &BlockInfo,
         current_identities: &Vec<Identity>,
+        signer: &mut SimpleSigner,
         rng: &mut StdRng,
     ) -> Vec<StateTransition> {
         let mut operations = vec![];
@@ -315,11 +312,7 @@ impl Strategy {
                             .random_documents_with_rng(count as u32, rng);
                         documents.into_iter().for_each(|mut document| {
                             let identity_num = rng.gen_range(0..current_identities.len());
-                            let identity = current_identities
-                                .get(identity_num)
-                                .unwrap()
-                                .clone()
-                                .into_partial_identity_info();
+                            let identity = current_identities.get(identity_num).unwrap().clone();
 
                             let document_create_transition = DocumentCreateTransition {
                                 base: DocumentBaseTransition {
@@ -335,7 +328,7 @@ impl Strategy {
                                 data: document.properties.into(),
                             };
 
-                            let document_batch_transition = DocumentsBatchTransition {
+                            let mut document_batch_transition = DocumentsBatchTransition {
                                 protocol_version: LATEST_VERSION,
                                 transition_type: Default::default(),
                                 owner_id: identity.id,
@@ -344,8 +337,17 @@ impl Strategy {
                                 signature: None,
                             };
 
-                            //todo: signing
-                            //document_batch_transition.sign()
+                            let identity_public_key = identity
+                                .get_first_public_key_matching(
+                                    Purpose::AUTHENTICATION,
+                                    HashSet::from([SecurityLevel::HIGH, SecurityLevel::CRITICAL]),
+                                    HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
+                                )
+                                .expect("expected to get a signing key");
+
+                            document_batch_transition
+                                .sign_external(identity_public_key, signer)
+                                .expect("expected to sign");
 
                             operations.push(document_batch_transition.into());
                         });
@@ -426,7 +428,13 @@ impl Strategy {
         }
 
         let mut document_state_transitions: Vec<StateTransition> = self
-            .document_state_transitions_for_block(platform, block_info, current_identities, rng);
+            .document_state_transitions_for_block(
+                platform,
+                block_info,
+                current_identities,
+                signer,
+                rng,
+            );
 
         state_transitions.append(&mut document_state_transitions);
         state_transitions
@@ -442,7 +450,8 @@ fn create_identities_state_transitions(
     Vec<(IdentityPublicKey, Vec<u8>)>,
 ) {
     let (identities, keys) =
-        Identity::random_identities_with_private_keys_with_rng(count, key_count, rng);
+        Identity::random_identities_with_private_keys_with_rng(count, key_count, rng)
+            .expect("expected to create identities");
     (
         identities
             .into_iter()

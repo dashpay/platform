@@ -1,7 +1,7 @@
 use crate::identity::key_type::KEY_TYPE_MAX_SIZE_TYPE;
 use crate::identity::KeyType::ECDSA_SECP256K1;
 use crate::identity::Purpose::AUTHENTICATION;
-use crate::identity::SecurityLevel::MASTER;
+use crate::identity::SecurityLevel::{HIGH, MASTER};
 use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use crate::ProtocolError;
 use platform_value::BinaryData;
@@ -222,21 +222,39 @@ impl IdentityPublicKey {
     }
 
     // TODO: Move to a separate module under a feature
-    pub fn random_ecdsa_master_authentication_key_with_rng(id: KeyID, rng: &mut StdRng) -> Self {
+    pub fn random_ecdsa_master_authentication_key_with_rng(id: KeyID, rng: &mut StdRng) -> (Self, Vec<u8>) {
         let key_type = ECDSA_SECP256K1;
         let purpose = AUTHENTICATION;
         let security_level = MASTER;
         let read_only = false;
-        let data = BinaryData::new(key_type.random_public_key_data(rng));
-        IdentityPublicKey {
+        let (data, private_data) = key_type.random_public_and_private_key_data(rng);
+        (IdentityPublicKey {
             id,
             key_type,
             purpose,
             security_level,
             read_only,
             disabled_at: None,
-            data,
-        }
+            data: data.into(),
+        }, private_data)
+    }
+
+    // TODO: Move to a separate module under a feature
+    pub fn random_ecdsa_high_level_authentication_key_with_rng(id: KeyID, rng: &mut StdRng) -> (Self, Vec<u8>) {
+        let key_type = ECDSA_SECP256K1;
+        let purpose = AUTHENTICATION;
+        let security_level = HIGH;
+        let read_only = false;
+        let (data, private_data) = key_type.random_public_and_private_key_data(rng);
+        (IdentityPublicKey {
+            id,
+            key_type,
+            purpose,
+            security_level,
+            read_only,
+            disabled_at: None,
+            data: data.into(),
+        }, private_data)
     }
 
     // TODO: Move to a separate module under a feature
@@ -266,6 +284,32 @@ impl IdentityPublicKey {
                 .unwrap()
             })
             .collect()
+    }
+
+    pub fn main_keys_with_random_authentication_keys_with_private_keys_with_rng(
+        key_count: KeyCount,
+        rng: &mut StdRng,
+    ) -> Result<Vec<(Self, Vec<u8>)>, ProtocolError> {
+        if key_count < 2 {
+            return Err(ProtocolError::PublicKeyGenerationError(
+                "at least 2 keys must be created".to_string(),
+            ));
+        }
+        //create a master and a high level key
+        let mut main_keys = vec![Self::random_ecdsa_master_authentication_key_with_rng(0, rng), Self::random_ecdsa_high_level_authentication_key_with_rng(1, rng)];
+        let mut used_key_matrix = [false; 16].to_vec();
+        used_key_matrix[0] = true;
+        used_key_matrix[2] = true;
+        main_keys.extend((2..key_count)
+            .map(|i| {
+                Self::random_authentication_key_with_private_key_with_rng(
+                    i,
+                    rng,
+                    Some((i, &mut used_key_matrix)),
+                )
+                    .unwrap()
+            }));
+        Ok(main_keys)
     }
 
     // TODO: Move to a separate module under a feature

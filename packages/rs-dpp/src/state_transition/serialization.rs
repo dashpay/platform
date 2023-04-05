@@ -103,7 +103,7 @@ mod tests {
     fn identity_update_transition_add_keys_ser_de() {
         let mut rng = StdRng::seed_from_u64(5);
         let (identity, mut keys): (Identity, BTreeMap<_, _>) =
-            Identity::random_identity_with_private_key_with_rng(5, &mut rng);
+            Identity::random_identity_with_main_keys_with_private_key(5, &mut rng);
         let bls = NativeBlsModule::default();
         let mut identity_update_transition = IdentityUpdateTransition {
             protocol_version: LATEST_VERSION,
@@ -147,7 +147,7 @@ mod tests {
     fn identity_update_transition_disable_keys_ser_de() {
         let mut rng = StdRng::seed_from_u64(5);
         let (identity, mut keys): (Identity, BTreeMap<_, _>) =
-            Identity::random_identity_with_private_key_with_rng(5, &mut rng);
+            Identity::random_identity_with_main_keys_with_private_key(5, &mut rng);
         let bls = NativeBlsModule::default();
         let mut identity_update_transition = IdentityUpdateTransition {
             protocol_version: LATEST_VERSION,
