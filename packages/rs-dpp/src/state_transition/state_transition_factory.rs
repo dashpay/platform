@@ -140,11 +140,11 @@ where
         // to fix it, we need to call clean_value on it.
         if let Some(transition_type_int) = maybe_transition_type {
             let state_transition_type = StateTransitionType::try_from(transition_type_int)
-                .map_err(|_| {
-                    StateTransitionError::InvalidStateTransitionError {
-                        errors: vec![ConsensusError::from(InvalidStateTransitionTypeError::new(transition_type_int))],
-                        raw_state_transition: raw_state_transition.clone(),
-                    }
+                .map_err(|_| StateTransitionError::InvalidStateTransitionError {
+                    errors: vec![ConsensusError::from(InvalidStateTransitionTypeError::new(
+                        transition_type_int,
+                    ))],
+                    raw_state_transition: raw_state_transition.clone(),
                 })?;
 
             match state_transition_type {
@@ -157,7 +157,8 @@ where
             return Err(StateTransitionError::InvalidStateTransitionError {
                 errors: vec![ConsensusError::from(MissingStateTransitionTypeError::new())],
                 raw_state_transition,
-            }.into());
+            }
+            .into());
         }
 
         self.create_from_object(raw_state_transition, options).await
