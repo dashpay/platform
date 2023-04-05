@@ -29,7 +29,7 @@ export default async function broadcast(
 
   const documentsBatchTransition = wasmDpp.document.createStateTransition(documents);
 
-  this.logger.silly('[Document#broadcast] created documents batch transition');
+  this.logger.silly('[Document#broadcast] Created documents batch transition');
 
   await signStateTransition(this, documentsBatchTransition, identity, 1);
 
