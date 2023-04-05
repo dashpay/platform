@@ -1,6 +1,6 @@
 // TODO: should we take it from other place?
 const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 
 const Script = require('@dashevo/dashcore-lib/lib/script');
 const handleUpdatedScriptPayoutFactory = require('../../../../lib/identity/masternode/handleUpdatedScriptPayoutFactory');
@@ -25,8 +25,8 @@ describe('handleUpdatedScriptPayoutFactory', () => {
     ({ Identity, IdentityPublicKey, KeyPurpose, KeyType, KeySecurityLevel } = this.dppWasm);
   });
 
-  beforeEach(function beforeEach() {
-    identity = getIdentityFixture();
+  beforeEach(async function beforeEach() {
+    identity = await getIdentityFixture();
 
     blockInfo = new BlockInfo(1, 0, Date.now());
 
@@ -47,11 +47,11 @@ describe('handleUpdatedScriptPayoutFactory', () => {
     };
 
     handleUpdatedScriptPayout = handleUpdatedScriptPayoutFactory(
-      this.dppWasm,
       identityRepositoryMock,
       identityPublicKeyRepositoryMock,
       getWithdrawPubKeyTypeFromPayoutScriptMock,
       getPublicKeyFromPayoutScriptMock,
+      this.dppWasm,
     );
   });
 
@@ -83,20 +83,23 @@ describe('handleUpdatedScriptPayoutFactory', () => {
   it('should add a public key and disable an old one', async () => {
     const newPubKeyData = Buffer.alloc(20, '0');
 
+    console.log(identity.getPublicKeys()[0].getData());
+
     const result = await handleUpdatedScriptPayout(
       identity.getId(),
       newPubKeyData,
       blockInfo,
-      identity.publicKeys[0].getData(),
+      identity.getPublicKeys()[0].getData(),
     );
 
-    const newWithdrawalIdentityPublicKey = new IdentityPublicKey()
-      .setId(2)
-      .setType(KeyType.ECDSA_HASH160)
-      .setData(Buffer.from(newPubKeyData))
-      .setReadOnly(true)
-      .setPurpose(KeyPurpose.WITHDRAW)
-      .setSecurityLevel(KeySecurityLevel.MASTER);
+    const newWithdrawalIdentityPublicKey = new IdentityPublicKey({
+      id: 2,
+      type: KeyType.ECDSA_HASH160,
+      data: Buffer.from(newPubKeyData),
+      readOnly: true,
+      purpose: KeyPurpose.WITHDRAW,
+      securityLevel: KeySecurityLevel.MASTER,
+    });
 
     expect(identityRepositoryMock.updateRevision).to.be.calledOnceWithExactly(
       identity.getId(),
@@ -135,13 +138,14 @@ describe('handleUpdatedScriptPayoutFactory', () => {
       new Script(),
     );
 
-    const newWithdrawalIdentityPublicKey = new IdentityPublicKey()
-      .setId(2)
-      .setType(KeyType.ECDSA_HASH160)
-      .setData(Buffer.from(newPubKeyData))
-      .setReadOnly(true)
-      .setPurpose(KeyPurpose.WITHDRAW)
-      .setSecurityLevel(KeySecurityLevel.MASTER);
+    const newWithdrawalIdentityPublicKey = new IdentityPublicKey({
+      id: 2,
+      type: KeyType.ECDSA_HASH160,
+      data: Buffer.from(newPubKeyData),
+      readOnly: true,
+      purpose: KeyPurpose.WITHDRAW,
+      securityLevel: KeySecurityLevel.MASTER,
+    });
 
     expect(identityRepositoryMock.updateRevision).to.be.calledOnceWithExactly(
       identity.getId(),

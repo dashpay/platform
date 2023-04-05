@@ -7,6 +7,9 @@ const sinonChai = require('sinon-chai');
 const dirtyChai = require('dirty-chai');
 const chaiAsPromised = require('chai-as-promised');
 const chaiString = require('chai-string');
+
+const lodash = require('lodash');
+
 const DashCoreOptions = require('@dashevo/dp-services-ctl/lib/services/dashCore/DashCoreOptions');
 
 const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
@@ -15,6 +18,80 @@ use(sinonChai);
 use(chaiAsPromised);
 use(chaiString);
 use(dirtyChai);
+use(async (chai, util) => {
+  const dppWasm = await loadWasmDpp();
+
+  const getMofifiedArgument = (argument) => {
+    if (!argument.hasOwnProperty('ptr')) {
+      return argument;
+    }
+
+    const isIdentifier = (argument instanceof dppWasm.Identifier);
+
+    if (isIdentifier) {
+      return argument.toBuffer();
+    }
+
+    return argument.toJSON();
+  };
+
+  const transformArguments = (args, basePath = '') => {
+    lodash.forIn(args, function (value, key) {
+      if (value !== undefined && value !== null && value.hasOwnProperty('ptr')) {
+        lodash.set(args, `${basePath}${basePath === '' ? '' : '.'}${key}`, getMofifiedArgument(value));
+        return;
+      }
+
+      if (lodash.isArray(value)) {
+        value.forEach((item, index) => {
+          if (lodash.isObject(item)) {
+            if (item !== undefined && item !== null && item.hasOwnProperty('ptr')) {
+              lodash.set(args, `${basePath}${basePath === '' ? '' : '.'}${key}[${index}]`, getMofifiedArgument(item));
+              return;
+            }
+
+            transformArguments(item);
+          }
+        });
+      }
+
+      if (lodash.isObject(value)) {
+        transformArguments(value, `${basePath}${basePath === '' ? '' : '.'}${key}`);
+      }
+    });
+  };
+
+  chai.Assertion.overwriteMethod('equals', function (_super) {
+    return function (other) {
+      const originalObject = {
+        '0': this._obj,
+      };
+
+      transformArguments(originalObject);
+      transformArguments(arguments);
+
+      new chai.Assertion(originalObject['0']).to.deep.equal(arguments['0']);
+    };
+  });
+
+  chai.Assertion.overwriteMethod('calledOnceWithExactly', function (_super) {
+    return function () {
+      const clonedCallArgs = lodash.cloneDeep(
+        this._obj.getCall(0).args.reduce((obj, next, index) => ({
+          ...obj,
+          [index]: next,
+        }), {}),
+      );
+      transformArguments(clonedCallArgs);
+
+      const clonedArgs = lodash.cloneDeep(arguments);
+      transformArguments(clonedArgs);
+
+      new chai.Assertion(this._obj.callCount).to.equal(1);
+      new chai.Assertion(clonedCallArgs).to.deep.equal(clonedArgs);
+    };
+  });
+});
 
 process.env.NODE_ENV = 'test';
 
