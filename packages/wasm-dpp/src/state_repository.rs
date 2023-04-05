@@ -54,6 +54,13 @@ extern "C" {
         execution_context: &JsValue,
     ) -> Result<(), JsValue>;
 
+    #[wasm_bindgen(catch, structural, method, js_name=updateDataContract)]
+    pub async fn update_data_contract(
+        this: &ExternalStateRepositoryLike,
+        data_contract: DataContractWasm,
+        execution_context: &JsValue,
+    ) -> Result<(), JsValue>;
+
     #[wasm_bindgen(catch, structural, method, js_name=createDocument)]
     pub async fn create_document(
         this: &ExternalStateRepositoryLike,
@@ -319,6 +326,17 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     ) -> anyhow::Result<()> {
         self.0
             .store_data_contract(data_contract.into(), &ctx_to_js_value(execution_context))
+            .await
+            .map_err(from_js_error)
+    }
+
+    async fn update_data_contract<'a>(
+        &self,
+        data_contract: DataContract,
+        execution_context: Option<&'a StateTransitionExecutionContext>,
+    ) -> anyhow::Result<()> {
+        self.0
+            .update_data_contract(data_contract.into(), &ctx_to_js_value(execution_context))
             .await
             .map_err(from_js_error)
     }

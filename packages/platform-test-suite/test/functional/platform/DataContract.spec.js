@@ -107,7 +107,7 @@ describe('Platform', () => {
 
       const documentSchema = fetchedDataContract.getDocumentSchema('withByteArrays');
       delete documentSchema.properties.identifierField;
-      dataContractFixture.setDocumentSchema('withByteArrays', documentSchema);
+      fetchedDataContract.setDocumentSchema('withByteArrays', documentSchema);
 
       let broadcastError;
 

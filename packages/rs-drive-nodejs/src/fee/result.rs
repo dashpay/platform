@@ -1,4 +1,6 @@
-use crate::converter::{js_buffer_to_identifier, js_object_to_fee_refunds, js_buffer_to_vec_u8, js_buffer_to_u64};
+use crate::converter::{
+    js_buffer_to_identifier, js_buffer_to_u64, js_buffer_to_vec_u8, js_object_to_fee_refunds,
+};
 use drive::fee::result::refunds::{CreditsPerEpochByIdentifier, FeeRefunds};
 use drive::fee::result::FeeResult;
 use neon::prelude::*;

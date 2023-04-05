@@ -181,7 +181,9 @@ impl DataContractWasm {
         schema: JsValue,
     ) -> Result<(), JsValue> {
         let json_schema: JsonValue = with_js_error!(serde_wasm_bindgen::from_value(schema))?;
-        self.0.set_document_schema(doc_type, json_schema);
+        self.0
+            .set_document_schema(doc_type, json_schema)
+            .with_js_error()?;
         Ok(())
     }
 

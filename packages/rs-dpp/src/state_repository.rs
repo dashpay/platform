@@ -54,8 +54,15 @@ pub trait StateRepositoryLike: Sync {
         execution_context: Option<&'a StateTransitionExecutionContext>,
     ) -> AnyResult<Option<Self::FetchDataContract>>;
 
+    // TODO(wasm-dpp): rename to `create_data_contract`
     /// Store Data Contract
     async fn store_data_contract<'a>(
+        &self,
+        data_contract: DataContract,
+        execution_context: Option<&'a StateTransitionExecutionContext>,
+    ) -> AnyResult<()>;
+
+    async fn update_data_contract<'a>(
         &self,
         data_contract: DataContract,
         execution_context: Option<&'a StateTransitionExecutionContext>,
