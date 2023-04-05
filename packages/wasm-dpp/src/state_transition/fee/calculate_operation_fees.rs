@@ -1,11 +1,14 @@
-use dpp::state_transition::fee::{
-    calculate_operation_fees::calculate_operation_fees, operations::Operation,
+use dpp::{
+    state_transition::fee::{
+        calculate_operation_fees::calculate_operation_fees, operations::Operation,
+    },
+    ProtocolError,
 };
 use wasm_bindgen::prelude::*;
 
 use crate::{
     fee::dummy_fee_result::DummyFeesResultWasm,
-    utils::{Inner, IntoWasm},
+    utils::{Inner, IntoWasm, WithJsError},
 };
 
 use super::OperationWasm;
@@ -20,5 +23,8 @@ pub fn calculate_operation_fees_wasm(
         inner_operations.push(operation.into_inner())
     }
 
-    Ok(calculate_operation_fees(&inner_operations).into())
+    Ok(calculate_operation_fees(&inner_operations)
+        .map_err(ProtocolError::from)
+        .with_js_error()?
+        .into())
 }

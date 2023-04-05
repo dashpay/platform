@@ -3,6 +3,8 @@ use std::convert::TryInto;
 use anyhow::Result;
 use async_trait::async_trait;
 
+use crate::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
+use crate::consensus::state::state_error::StateError;
 use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransitionAction;
 use crate::validation::ValidationResult;
 use crate::{
@@ -10,7 +12,6 @@ use crate::{
         state_transition::data_contract_create_transition::DataContractCreateTransition,
         DataContract,
     },
-    errors::StateError,
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike,
     validation::AsyncDataValidator,
@@ -74,9 +75,9 @@ pub async fn validate_data_contract_create_transition_state(
         Ok(action.into())
     } else {
         Ok(ValidationResult::new_with_errors(vec![
-            StateError::DataContractAlreadyPresentError {
-                data_contract_id: state_transition.data_contract.id.to_owned(),
-            }
+            StateError::DataContractAlreadyPresentError(DataContractAlreadyPresentError::new(
+                state_transition.data_contract.id.to_owned(),
+            ))
             .into(),
         ]))
     }

@@ -1,12 +1,19 @@
 use thiserror::Error;
 
-use crate::consensus::signature::SignatureError;
+use crate::consensus::signature::signature_error::SignatureError;
 use crate::consensus::ConsensusError;
 use crate::prelude::Identifier;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Identity {identity_id} not found")]
 pub struct IdentityNotFoundError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     identity_id: Identifier,
 }
 

@@ -56,8 +56,8 @@ where
         if !are_all_properties_defined_or_undefined(properties.clone(), raw_transition_map) {
             validation_result.add_error(BasicError::InconsistentCompoundIndexDataError(
                 InconsistentCompoundIndexDataError::new(
-                    properties.map(ToOwned::to_owned).collect(),
                     document_type.to_string(),
+                    properties.map(ToOwned::to_owned).collect(),
                 ),
             ))
         }

@@ -334,12 +334,6 @@ impl Identity {
         raw_object.try_into()
     }
 
-    /// Creates an identity from a json object
-    pub fn from_json_object(raw_object: JsonValue) -> Result<Identity, ProtocolError> {
-        let value: Value = raw_object.into();
-        value.try_into()
-    }
-
     /// Computes the hash of an identity
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
         Ok(hash::hash(self.to_buffer()?))

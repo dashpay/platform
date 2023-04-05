@@ -20,6 +20,7 @@ use crate::MetadataWasm;
 use crate::{utils, with_js_error};
 pub use identity_public_key::*;
 
+use crate::buffer::Buffer;
 pub use state_transition::*;
 
 pub mod credits_converter;
@@ -50,7 +51,7 @@ impl IdentityWasm {
         let raw_identity: Value =
             serde_json::from_str(&identity_json).map_err(|e| e.to_string())?;
 
-        let identity = Identity::from_json_object(raw_identity).unwrap();
+        let identity = Identity::from_json(raw_identity).unwrap();
         Ok(IdentityWasm(identity))
     }
 
@@ -186,13 +187,9 @@ impl IdentityWasm {
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         let js_object = with_js_error!(value.serialize(&serializer))?;
 
-        let id: IdentifierWrapper = self.0.id.into();
+        let id = Buffer::from_bytes(self.0.id.as_slice());
 
-        js_sys::Reflect::set(
-            &js_object,
-            &"id".to_owned().into(),
-            &JsValue::from(id.to_buffer()),
-        )?;
+        js_sys::Reflect::set(&js_object, &"id".to_owned().into(), &id)?;
 
         js_sys::Reflect::set(
             &js_object,

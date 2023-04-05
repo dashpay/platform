@@ -1,4 +1,4 @@
-use crate::prelude::Identifier;
+use crate::{prelude::Identifier, NonConsensusError};
 
 use super::{
     calculate_operation_fees::calculate_operation_fees, constants::DEFAULT_USER_TIP,
@@ -8,7 +8,7 @@ use super::{
 pub fn calculate_state_transition_fee_from_operations(
     operations: &[Operation],
     identity_id: &Identifier,
-) -> FeeResult {
+) -> Result<FeeResult, NonConsensusError> {
     calculate_state_transition_fee_from_operations_with_custom_calculator(
         operations,
         identity_id,
@@ -19,9 +19,9 @@ pub fn calculate_state_transition_fee_from_operations(
 fn calculate_state_transition_fee_from_operations_with_custom_calculator(
     operations: &[Operation],
     identity_id: &Identifier,
-    calculate_operation_fees_fn: impl FnOnce(&[Operation]) -> DummyFeesResult,
-) -> FeeResult {
-    let calculated_fees = calculate_operation_fees_fn(operations);
+    calculate_operation_fees_fn: impl FnOnce(&[Operation]) -> Result<DummyFeesResult, NonConsensusError>,
+) -> Result<FeeResult, NonConsensusError> {
+    let calculated_fees = calculate_operation_fees_fn(operations)?;
 
     let storage_fee = calculated_fees.storage;
     let processing_fee = calculated_fees.processing;
@@ -43,14 +43,14 @@ fn calculate_state_transition_fee_from_operations_with_custom_calculator(
     let required_amount = (storage_fee - total_refunds) + DEFAULT_USER_TIP;
     let desired_amount = (storage_fee + processing_fee - total_refunds) + DEFAULT_USER_TIP;
 
-    FeeResult {
+    Ok(FeeResult {
         storage_fee,
         processing_fee,
         fee_refunds,
         total_refunds,
         required_amount,
         desired_amount,
-    }
+    })
 }
 
 #[cfg(test)]
@@ -62,6 +62,7 @@ mod test {
             operations::Operation, Credits, DummyFeesResult, FeeResult, Refunds,
         },
         tests::utils::generate_random_identifier_struct,
+        NonConsensusError,
     };
 
     use super::calculate_state_transition_fee_from_operations_with_custom_calculator;
@@ -84,19 +85,20 @@ mod test {
             credits_per_epoch,
         };
 
-        let mock = |_operations: &[Operation]| -> DummyFeesResult {
-            DummyFeesResult {
+        let mock = |_operations: &[Operation]| -> Result<DummyFeesResult, NonConsensusError> {
+            Ok(DummyFeesResult {
                 storage: storage_fee,
                 processing: processing_fee,
                 fee_refunds: vec![refunds.clone()],
-            }
+            })
         };
 
         let result = calculate_state_transition_fee_from_operations_with_custom_calculator(
             &[],
             &identifier,
             mock,
-        );
+        )
+        .expect("result should be returned");
         let expected = FeeResult {
             storage_fee,
             processing_fee,

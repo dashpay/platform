@@ -17,7 +17,6 @@ pub mod data_contract;
 
 mod convertible;
 pub mod data_trigger;
-pub mod decode_protocol_entity_factory;
 pub mod document;
 pub mod identifier;
 pub mod identity;
@@ -42,7 +41,9 @@ mod bls;
 #[cfg(feature = "fixtures-and-mocks")]
 pub mod tests;
 
+pub mod encoding;
 pub mod system_data_contracts;
+
 pub use bls::*;
 
 pub mod prelude {
@@ -52,6 +53,7 @@ pub mod prelude {
     pub use crate::document::ExtendedDocument;
     pub use crate::errors::ProtocolError;
     pub use crate::identifier::Identifier;
+    pub use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
     pub use crate::identity::Identity;
     pub use crate::identity::IdentityPublicKey;
     pub use crate::validation::ValidationResult;

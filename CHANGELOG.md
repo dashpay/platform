@@ -1,3 +1,57 @@
+## [0.24.0-dev.17](https://github.com/dashpay/platform/compare/v0.24.0-dev.16...v0.24.0-dev.17) (2023-04-04)
+
+
+### Features
+
+* **dashmate:** add new quroum in dashcore config ([#862](https://github.com/dashpay/platform/issues/862))
+* **dashmate:** enable platform option ([#853](https://github.com/dashpay/platform/issues/853))
+* **dashmate:** generate self-signed certificates in the `setup` command ([#869](https://github.com/dashpay/platform/issues/869))
+* **dashmate:** high-performance nodes registration with `setup` command ([#794](https://github.com/dashpay/platform/issues/794))
+* **dashmate:** hint to setup a node on start failure ([#866](https://github.com/dashpay/platform/issues/866))
+* **dpp:** add fees API  to rust wasm bindings ([#830](https://github.com/dashpay/platform/issues/830))
+* **dpp:** optional execution context in rs-dpp ([#811](https://github.com/dashpay/platform/issues/811))
+* **dpp:** state transition applicator ([#878](https://github.com/dashpay/platform/issues/878))
+* **rs-dpp:** migrate fees from js-dpp v0.24 ([#851](https://github.com/dashpay/platform/issues/851))
+* state transition conversion ([#844](https://github.com/dashpay/platform/issues/844))
+* **wasm-dpp:** add tests for state transition basic validator ([#857](https://github.com/dashpay/platform/issues/857))
+* **wasm-dpp:** DashPlatformProtocol tests ([#841](https://github.com/dashpay/platform/issues/841))
+* **wasm-dpp:** identity transitions additional functionality ([#855](https://github.com/dashpay/platform/issues/855))
+* **wasm-dpp:** implement validateStateTransitionStateFactory tests ([#861](https://github.com/dashpay/platform/issues/861))
+* **wasm-dpp:** provide external entropy generator to document factory ([#845](https://github.com/dashpay/platform/issues/845))
+* **wasm-dpp:** validate_state_transition_identity_signature binding and test ([#865](https://github.com/dashpay/platform/issues/865))
+
+
+### Bug Fixes
+
+* **dashmate:** ambiguous validation errors for file certificates ([#870](https://github.com/dashpay/platform/issues/870))
+* **dashmate:** config.isPlatformEnabled is not a function ([#872](https://github.com/dashpay/platform/issues/872))
+* **dpp:** incorrect public key validator schema in ST Facade ([#854](https://github.com/dashpay/platform/issues/854))
+* **scripts:** update configure_test_network for hpmn ([#863](https://github.com/dashpay/platform/issues/863))
+* **wasm-dpp:** fix decoding protocol version varint error to match previous implementation ([#849](https://github.com/dashpay/platform/issues/849))
+
+
+### Tests
+
+* **rs-drive:** fix path to EntropyGenerator ([#856](https://github.com/dashpay/platform/issues/856))
+
+
+### Code Refactoring
+
+* **dashmate:** always keep platform config ([#868](https://github.com/dashpay/platform/issues/868))
+* **dashmate:** move core devnet options to subsection ([#867](https://github.com/dashpay/platform/issues/867))
+
+
+### Build System
+
+* **dashmate:** fix deb package release  ([#864](https://github.com/dashpay/platform/issues/864))
+* operations in configure.sh script were in a wrong order ([#876](https://github.com/dashpay/platform/issues/876))
+
+
+### Miscellaneous Chores
+
+* `rs-dpp` and `wasm-dpp` updates for integration ([#875](https://github.com/dashpay/platform/issues/875))
+* **wasm-dpp:** proper identifier buffer inheritance ([#879](https://github.com/dashpay/platform/issues/879))
+
 ## [0.24.0-dev.16](https://github.com/dashpay/platform/compare/v0.24.0-dev.15...v0.24.0-dev.16) (2023-03-22)
 
 

@@ -1,12 +1,19 @@
 use thiserror::Error;
 
-use crate::consensus::signature::SignatureError;
+use crate::consensus::signature::signature_error::SignatureError;
 use crate::consensus::ConsensusError;
 use crate::identity::Purpose;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Invalid identity key purpose {public_key_purpose}. This state transition requires {key_purpose_requirement}")]
 pub struct WrongPublicKeyPurposeError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     public_key_purpose: Purpose,
     key_purpose_requirement: Purpose,
 }

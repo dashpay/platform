@@ -2,6 +2,8 @@ use platform_value::Value;
 use regex::Regex;
 
 use crate::consensus::basic::data_contract::IncompatibleRe2PatternError;
+use crate::consensus::basic::json_schema_compilation_error::JsonSchemaCompilationError;
+use crate::consensus::basic::value_error::ValueError;
 use crate::consensus::{basic::BasicError, ConsensusError};
 use crate::validation::SimpleValidationResult;
 
@@ -21,7 +23,10 @@ pub fn validate(raw_data_contract: &Value, validators: &[SubValidator]) -> Simpl
                             format!("{}/{}", path, key.non_qualified_string_representation());
                         values_queue.push((current_value, new_path))
                     }
-                    match key.to_str().map_err(ConsensusError::ValueError) {
+                    match key
+                        .to_str()
+                        .map_err(|err| BasicError::ValueError(ValueError::new(err)))
+                    {
                         Ok(key) => {
                             for validator in validators {
                                 validator(&path, key, value, current_value, &mut result);
@@ -55,21 +60,17 @@ pub fn pattern_is_valid_regex_validator(
     if key == "pattern" {
         if let Some(pattern) = value.as_str() {
             if let Err(err) = Regex::new(pattern) {
-                result.add_error(ConsensusError::IncompatibleRe2PatternError(
-                    IncompatibleRe2PatternError::new(
-                        String::from(pattern),
-                        path.to_string(),
-                        err.to_string(),
-                    ),
+                result.add_error(IncompatibleRe2PatternError::new(
+                    String::from(pattern),
+                    path.to_string(),
+                    err.to_string(),
                 ));
             }
         } else {
-            result.add_error(ConsensusError::IncompatibleRe2PatternError(
-                IncompatibleRe2PatternError::new(
-                    String::new(),
-                    path.to_string(),
-                    format!("{} is not a string", path),
-                ),
+            result.add_error(IncompatibleRe2PatternError::new(
+                String::new(),
+                path.to_string(),
+                format!("{} is not a string", path),
             ));
         }
     }
@@ -98,27 +99,33 @@ pub fn byte_array_has_no_items_as_parent_validator(
     if key == "byteArray"
         && value.is_bool()
         && (unwrap_error_to_result(
-            parent.get("items").map_err(ConsensusError::ValueError),
+            parent.get("items").map_err(|e| {
+                ConsensusError::BasicError(BasicError::ValueError(ValueError::new(e)))
+            }),
             result,
         )
         .is_some()
             || unwrap_error_to_result(
-                parent
-                    .get("prefixItems")
-                    .map_err(ConsensusError::ValueError),
+                parent.get("prefixItems").map_err(|e| {
+                    ConsensusError::BasicError(BasicError::ValueError(ValueError::new(e)))
+                }),
                 result,
             )
             .is_some())
     {
-        result.add_error(BasicError::JsonSchemaCompilationError(format!(
+        let compilation_error = format!(
             "invalid path: '{}': byteArray cannot be used with 'items' or 'prefixItems",
             path
-        )));
+        );
+        result.add_error(BasicError::JsonSchemaCompilationError(
+            JsonSchemaCompilationError::new(compilation_error),
+        ));
     }
 }
 
 #[cfg(test)]
 mod test {
+    use crate::consensus::codes::ErrorWithCode;
     use platform_value::platform_value;
 
     use super::*;
@@ -154,11 +161,11 @@ mod test {
 
         assert!(matches!(
             first_error,
-            BasicError::JsonSchemaCompilationError(msg) if msg.starts_with("invalid path: '/properties/bar': byteArray cannot"),
+            BasicError::JsonSchemaCompilationError(msg) if msg.compilation_error().starts_with("invalid path: '/properties/bar': byteArray cannot"),
         ));
         assert!(matches!(
             second_error,
-            BasicError::JsonSchemaCompilationError(msg) if msg.starts_with("invalid path: '/properties': byteArray cannot"),
+            BasicError::JsonSchemaCompilationError(msg) if msg.compilation_error().starts_with("invalid path: '/properties': byteArray cannot"),
         ));
     }
 
@@ -201,7 +208,7 @@ mod test {
         let consensus_error = result.errors.get(0).expect("the error should be returned");
 
         match consensus_error {
-            ConsensusError::IncompatibleRe2PatternError(err) => {
+            ConsensusError::BasicError(BasicError::IncompatibleRe2PatternError(err)) => {
                 assert_eq!(err.path(), "/properties/bar".to_string());
                 assert_eq!(
                     err.pattern(),
@@ -229,7 +236,7 @@ mod test {
         let consensus_error = result.errors.get(0).expect("the error should be returned");
 
         match consensus_error {
-            ConsensusError::IncompatibleRe2PatternError(err) => {
+            ConsensusError::BasicError(BasicError::IncompatibleRe2PatternError(err)) => {
                 assert_eq!(
                     err.path(),
                     "/properties/arrayOfObject/items/properties/simple".to_string()
@@ -254,7 +261,7 @@ mod test {
         let consensus_error = result.errors.get(0).expect("the error should be returned");
 
         match consensus_error {
-            ConsensusError::IncompatibleRe2PatternError(err) => {
+            ConsensusError::BasicError(BasicError::IncompatibleRe2PatternError(err)) => {
                 assert_eq!(
                     err.path(),
                     "/properties/arrayOfObjects/items/[0]/properties/simple".to_string()
@@ -351,7 +358,7 @@ mod test {
 
     fn get_basic_error(error: ConsensusError) -> BasicError {
         if let ConsensusError::BasicError(err) = error {
-            return *err;
+            return err;
         }
         panic!("the error: {:?} isn't a BasicError", error)
     }

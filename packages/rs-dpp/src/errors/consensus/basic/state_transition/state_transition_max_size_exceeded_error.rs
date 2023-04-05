@@ -1,9 +1,16 @@
 use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("State transition size {actual_size_kbytes} KB is more than maximum {max_size_kbytes} KB")]
 pub struct StateTransitionMaxSizeExceededError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     actual_size_kbytes: usize,
     max_size_kbytes: usize,
 }
@@ -24,8 +31,8 @@ impl StateTransitionMaxSizeExceededError {
     }
 }
 
-impl From<StateTransitionMaxSizeExceededError> for BasicError {
+impl From<StateTransitionMaxSizeExceededError> for ConsensusError {
     fn from(err: StateTransitionMaxSizeExceededError) -> Self {
-        Self::StateTransitionMaxSizeExceededError(err)
+        Self::BasicError(BasicError::StateTransitionMaxSizeExceededError(err))
     }
 }

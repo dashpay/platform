@@ -2,11 +2,11 @@ pub use data_trigger_execution_context::*;
 pub use data_trigger_execution_result::*;
 pub use reject_data_trigger::*;
 
+use crate::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
+use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
+use crate::consensus::state::data_trigger::data_trigger_execution_error::DataTriggerExecutionError;
 use crate::document::document_transition::{Action, DocumentCreateTransition, DocumentTransition};
-use crate::{
-    errors::DataTriggerError, get_from_transition, prelude::Identifier,
-    state_repository::StateRepositoryLike,
-};
+use crate::{get_from_transition, prelude::Identifier, state_repository::StateRepositoryLike};
 
 use self::dashpay_data_triggers::create_contact_request_data_trigger;
 use self::dpns_triggers::create_domain_data_trigger;
@@ -35,6 +35,7 @@ pub enum DataTriggerKind {
     CrateFeatureFlag,
     DeleteWithdrawal,
 }
+
 impl From<DataTriggerKind> for &str {
     fn from(value: DataTriggerKind) -> Self {
         match value {
@@ -97,14 +98,12 @@ impl DataTrigger {
 
         match maybe_execution_result {
             Err(err) => {
-                let consensus_error = DataTriggerError::DataTriggerExecutionError {
+                let consensus_error = DataTriggerExecutionError::new(
                     data_contract_id,
-                    document_transition_id: *get_from_transition!(document_transition, id),
-                    message: err.to_string(),
-                    execution_error: err,
-                    document_transition: None,
-                    owner_id: None,
-                };
+                    *get_from_transition!(document_transition, id),
+                    err.to_string(),
+                );
+
                 result.add_error(consensus_error.into());
                 result
             }
@@ -154,11 +153,5 @@ fn create_error<SR>(
 where
     SR: StateRepositoryLike,
 {
-    DataTriggerError::DataTriggerConditionError {
-        data_contract_id: context.data_contract.id,
-        document_transition_id: dt_create.base.id,
-        message: msg,
-        owner_id: Some(*context.owner_id),
-        document_transition: Some(DocumentTransition::Create(dt_create.clone())),
-    }
+    DataTriggerConditionError::new(context.data_contract.id, dt_create.base.id, msg).into()
 }

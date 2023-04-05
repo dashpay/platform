@@ -114,6 +114,7 @@ impl JsonSchemaValidator {
         data_contract_schema: &JsonValue,
     ) -> SimpleValidationResult {
         let mut validation_result = SimpleValidationResult::default();
+
         let res = meta_validators::DATA_CONTRACT_META_SCHEMA.validate(data_contract_schema);
 
         match res {
@@ -121,7 +122,9 @@ impl JsonSchemaValidator {
             Err(validation_errors) => {
                 let errors: Vec<ConsensusError> =
                     validation_errors.map(ConsensusError::from).collect();
+
                 validation_result.add_errors(errors);
+
                 validation_result
             }
         }
