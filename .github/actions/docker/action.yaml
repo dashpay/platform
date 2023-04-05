@@ -95,11 +95,13 @@ runs:
       with:
         context: .
         file: ${{ inputs.dockerfile }}
+        tags: ${{ steps.docker_meta.outputs.tags }}
+        labels: ${{ steps.docker_meta.outputs.labels }}
         build-args: |
           SCCACHE_GHA_ENABLED=true
           ACTIONS_CACHE_URL=${{ env.ACTIONS_CACHE_URL }}
           ACTIONS_RUNTIME_TOKEN=${{ env.ACTIONS_RUNTIME_TOKEN }}
-          CARGO_BUILD_PROFILE=release
+          CARGO_BUILD_PROFILE=dev
         platforms: ${{ env.build_platforms }}
         push: ${{ inputs.push }}
         cache-from: |
