@@ -17,6 +17,9 @@ inputs:
   dockerhub_token:
     description: Docker Hub token to use
     required: false
+  image_tag:
+    description: Docker image tag
+    default: ${{ github.ref_name }}
 
 runs:
   using: composite
@@ -39,23 +42,13 @@ runs:
         password: ${{ inputs.dockerhub_token }}
       if: inputs.dockerhub_token != ''
 
-    - name: Get tag
-      uses: actions/github-script@v6
-      id: tag
-      with:
-        result-encoding: string
-        script: |
-          return context.eventName === 'workflow_dispatch'
-            ? core.getInput('tag')
-            : context.payload.release.tag_name;
-
     - name: Set suffix
       uses: actions/github-script@v6
       id: suffix
       with:
         result-encoding: string
         script: |
-          const fullTag = '${{steps.tag.outputs.result}}';
+          const fullTag = '${{inputs.image_tag}}';
           if (fullTag.includes('-')) {
             const [, fullSuffix] = fullTag.split('-');
             const [suffix] = fullSuffix.split('.');
@@ -70,10 +63,10 @@ runs:
       with:
         images: ${{ inputs.image }}
         tags: |
-          type=match,pattern=v(\d+),group=1,value=${{steps.tag.outputs.result}}
-          type=match,pattern=v(\d+.\d+),group=1,value=${{steps.tag.outputs.result}}
-          type=match,pattern=v(\d+.\d+.\d+),group=1,value=${{steps.tag.outputs.result}}
-          type=match,pattern=v(.*),group=1,value=${{steps.tag.outputs.result}},suffix=
+          type=match,pattern=v(\d+),group=1,value=${{inputs.image_tag}}
+          type=match,pattern=v(\d+.\d+),group=1,value=${{inputs.image_tag}}
+          type=match,pattern=v(\d+.\d+.\d+),group=1,value=${{inputs.image_tag}}
+          type=match,pattern=v(.*),group=1,value=${{inputs.image_tag}},suffix=
         flavor: |
           suffix=${{ steps.suffix.outputs.result }},onlatest=true
           latest=${{ github.event_name == 'release' }}
