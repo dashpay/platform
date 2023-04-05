@@ -106,5 +106,7 @@ runs:
         push: ${{ inputs.push }}
         cache-from: |
           type=gha
+        # In practice, time spent preparing images is much lower than build.
+        # We minimize cached info to leave more space for sccache cache.
         cache-to: |
-          type=gha,mode=max
+          type=gha,mode=min

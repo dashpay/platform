@@ -102,17 +102,15 @@ RUN --mount=type=cache,sharing=private,target=/root/.cache/sccache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
-    export RUSTC=$(rustup which rustc) && \
     cargo build \
         --package dashcore-rpc \
-        --profile ${CARGO_BUILD_PROFILE} \
-        --config net.git-fetch-with-cli=true && \
+       --config net.git-fetch-with-cli=true && \
     cargo build \
         --package drive-abci \
-        --profile ${CARGO_BUILD_PROFILE} \
         --config net.git-fetch-with-cli=true && \
     cp /usr/src/platform/target/*/drive-abci /usr/src/platform/drive-abci && \
-    cargo clean
+    cargo clean && \
+    sccache --show-stats
 
 #
 # FINAL IMAGE
