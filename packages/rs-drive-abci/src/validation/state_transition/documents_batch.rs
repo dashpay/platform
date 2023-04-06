@@ -1,5 +1,6 @@
 use std::collections::{hash_map::Entry, HashMap};
 
+use dpp::identity::PartialIdentity;
 use dpp::{
     consensus::{basic::BasicError, ConsensusError},
     data_contract::{errors::DataContractNotPresentError, DataContract, DriveContractExt},
@@ -47,7 +48,7 @@ use super::{
 };
 
 impl StateTransitionValidation for DocumentsBatchTransition {
-    fn validate_type(
+    fn validate_structure(
         &self,
         drive: &Drive,
         tx: TransactionArg,
@@ -113,11 +114,10 @@ impl StateTransitionValidation for DocumentsBatchTransition {
         Ok(result)
     }
 
-    fn validate_signature(&self, drive: &Drive) -> Result<SimpleConsensusValidationResult, Error> {
-        todo!()
-    }
-
-    fn validate_key_signature(&self) -> Result<SimpleConsensusValidationResult, Error> {
+    fn validate_signatures(
+        &self,
+        drive: &Drive,
+    ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         todo!()
     }
 

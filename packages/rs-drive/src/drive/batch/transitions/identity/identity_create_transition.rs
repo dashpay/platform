@@ -9,10 +9,10 @@ use dpp::identity::state_transition::identity_create_transition::IdentityCreateT
 use dpp::prelude::Identity;
 
 impl DriveHighLevelOperationConverter for IdentityCreateTransitionAction {
-    fn into_high_level_drive_operations(
+    fn into_high_level_drive_operations<'a>(
         self,
         _epoch: &Epoch,
-    ) -> Result<Vec<DriveOperation>, Error> {
+    ) -> Result<Vec<DriveOperation<'a>>, Error> {
         let IdentityCreateTransitionAction {
             public_keys,
             initial_balance_amount,

@@ -40,7 +40,7 @@ use drive::drive::Drive;
 
 use drive::drive::defaults::PROTOCOL_VERSION;
 use std::path::Path;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 use crate::rpc::core::MockCoreRPCLike;
 use dashcore::hashes::hex::FromHex;
@@ -61,6 +61,18 @@ pub struct Platform<C> {
     pub block_execution_context: RwLock<Option<BlockExecutionContext>>,
     /// Core RPC Client
     pub core_rpc: C,
+}
+
+/// Platform Ref
+pub struct PlatformRef<'a, C> {
+    /// Drive
+    pub drive: &'a Drive,
+    /// State
+    pub state: &'a PlatformState,
+    /// Configuration
+    pub config: &'a PlatformConfig,
+    /// Core RPC Client
+    pub core_rpc: &'a C,
 }
 
 impl<C> std::fmt::Debug for Platform<C> {

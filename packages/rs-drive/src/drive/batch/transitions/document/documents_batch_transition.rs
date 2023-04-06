@@ -6,7 +6,10 @@ use crate::fee_pools::epochs::Epoch;
 use dpp::document::state_transition::documents_batch_transition::DocumentsBatchTransitionAction;
 
 impl DriveHighLevelOperationConverter for DocumentsBatchTransitionAction {
-    fn into_high_level_drive_operations(self, epoch: &Epoch) -> Result<Vec<DriveOperation>, Error> {
+    fn into_high_level_drive_operations<'a>(
+        self,
+        epoch: &Epoch,
+    ) -> Result<Vec<DriveOperation<'a>>, Error> {
         let DocumentsBatchTransitionAction {
             owner_id,
             transitions,

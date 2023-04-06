@@ -1,3 +1,4 @@
+use dpp::identity::PartialIdentity;
 use dpp::{
     identity::state_transition::identity_topup_transition::IdentityTopUpTransition,
     state_transition::StateTransitionAction,
@@ -11,7 +12,7 @@ use crate::error::Error;
 use super::StateTransitionValidation;
 
 impl StateTransitionValidation for IdentityTopUpTransition {
-    fn validate_type(
+    fn validate_structure(
         &self,
         drive: &Drive,
         tx: TransactionArg,
@@ -19,11 +20,10 @@ impl StateTransitionValidation for IdentityTopUpTransition {
         todo!()
     }
 
-    fn validate_signature(&self, drive: &Drive) -> Result<SimpleConsensusValidationResult, Error> {
-        todo!()
-    }
-
-    fn validate_key_signature(&self) -> Result<SimpleConsensusValidationResult, Error> {
+    fn validate_signatures(
+        &self,
+        drive: &Drive,
+    ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         todo!()
     }
 

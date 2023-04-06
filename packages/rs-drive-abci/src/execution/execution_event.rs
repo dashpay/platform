@@ -1,8 +1,17 @@
+use crate::error::Error;
+use crate::execution::execution_event::ExecutionEvent::{
+    FreeDriveEvent, PaidDriveEvent, PaidFromAssetLockDriveEvent,
+};
 use dpp::identity::PartialIdentity;
+use dpp::state_transition::StateTransitionAction;
 use dpp::validation::SimpleConsensusValidationResult;
+use drive::drive::batch::transitions::DriveHighLevelOperationConverter;
 use drive::drive::batch::DriveOperation;
+use drive::drive::Drive;
 use drive::fee::credits::SignedCredits;
 use drive::fee::result::FeeResult;
+use drive::fee_pools::epochs::Epoch;
+use mockall::predicate::le;
 use tenderdash_abci::proto::abci::ExecTxResult;
 
 /// The Fee Result for a Dry Run (without state)
@@ -92,6 +101,11 @@ pub enum ExecutionEvent<'a> {
         /// the operations that the identity is requesting to perform
         operations: Vec<DriveOperation<'a>>,
     },
+    /// A drive event that is paid from an asset lock
+    PaidFromAssetLockDriveEvent {
+        /// the operations that should be performed
+        operations: Vec<DriveOperation<'a>>,
+    },
     /// A drive event that is free
     FreeDriveEvent {
         /// the operations that should be performed
@@ -128,6 +142,24 @@ impl<'a> ExecutionEvent<'a> {
         Self::PaidDriveEvent {
             identity,
             operations,
+        }
+    }
+}
+
+impl<'a> TryFrom<(Option<PartialIdentity>, StateTransitionAction, &Epoch)> for ExecutionEvent<'a> {
+    type Error = Error;
+
+    fn try_from(
+        value: (Option<PartialIdentity>, StateTransitionAction, &Epoch),
+    ) -> Result<Self, Self::Error> {
+        let (maybe_identity, action, epoch) = value;
+        let operations = action.into_high_level_drive_operations(epoch)?;
+        match maybe_identity {
+            None => Ok(PaidFromAssetLockDriveEvent { operations }),
+            Some(identity) => Ok(PaidDriveEvent {
+                identity,
+                operations,
+            }),
         }
     }
 }

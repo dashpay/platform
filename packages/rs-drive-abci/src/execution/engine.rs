@@ -24,9 +24,9 @@ use crate::execution::execution_event::ExecutionResult::{
 };
 use crate::execution::execution_event::{ExecutionEvent, ExecutionResult};
 use crate::execution::fee_pools::epoch::EpochInfo;
-use crate::platform::Platform;
+use crate::platform::{Platform, PlatformRef};
 use crate::rpc::core::CoreRPCLike;
-use crate::validation::state_transition::validate_state_transition;
+use crate::validation::state_transition::process_state_transition;
 
 /// The outcome of the block execution, either by prepare proposal, or process proposal
 pub struct BlockExecutionOutcome {
@@ -91,7 +91,8 @@ where
                     ))
                 }
             }
-            ExecutionEvent::FreeDriveEvent { operations: _ } => Ok(
+            ExecutionEvent::FreeDriveEvent { .. }
+            | ExecutionEvent::PaidFromAssetLockDriveEvent { .. } => Ok(
                 ConsensusValidationResult::new_with_data(FeeResult::default()),
             ),
         }
@@ -144,7 +145,8 @@ where
                     ))
                 }
             }
-            ExecutionEvent::FreeDriveEvent { operations } => {
+            ExecutionEvent::PaidFromAssetLockDriveEvent { operations }
+            | ExecutionEvent::FreeDriveEvent { operations } => {
                 self.drive
                     .apply_drive_operations(operations, true, block_info, Some(transaction))
                     .map_err(Error::Drive)?;
@@ -160,13 +162,19 @@ where
         transaction: &Transaction,
     ) -> Result<(FeeResult, Vec<ExecTxResult>), Error> {
         let state_transitions = StateTransition::deserialize_many(raw_state_transitions)?;
-
         let mut aggregate_fee_result = FeeResult::default();
+        let state_read_guard = self.state.read().unwrap();
+        let platform_ref = PlatformRef {
+            drive: &self.drive,
+            state: &state_read_guard,
+            config: &self.config,
+            core_rpc: &self.core_rpc,
+        };
         let exec_tx_results = state_transitions
             .into_iter()
             .map(|state_transition| {
                 let state_transition_execution_event =
-                    validate_state_transition(self, state_transition, Some(transaction))?;
+                    process_state_transition(&platform_ref, state_transition, Some(transaction))?;
 
                 let execution_result = if state_transition_execution_event.is_valid() {
                     let execution_event = state_transition_execution_event.into_data()?;
@@ -442,7 +450,14 @@ where
     ) -> Result<ValidationResult<FeeResult, ConsensusError>, Error> {
         let state_transition =
             StateTransition::deserialize(raw_tx.as_slice()).map_err(Error::Protocol)?;
-        let execution_event = validate_state_transition(&self, state_transition, None)?;
+        let state_read_guard = self.state.read().unwrap();
+        let platform_ref = PlatformRef {
+            drive: &self.drive,
+            state: &state_read_guard,
+            config: &self.config,
+            core_rpc: &self.core_rpc,
+        };
+        let execution_event = process_state_transition(&platform_ref, state_transition, None)?;
 
         // We should run the execution event in dry run to see if we would have enough fees for the transaction
 

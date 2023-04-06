@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::{
     consensus::basic::{data_contract::InvalidDataContractIdError, BasicError},
@@ -30,7 +31,7 @@ use crate::validation::state_transition::StateTransitionValidation;
 use super::common::validate_schema;
 
 impl StateTransitionValidation for DataContractCreateTransition {
-    fn validate_type(
+    fn validate_structure(
         &self,
         drive: &Drive,
         tx: TransactionArg,
@@ -74,11 +75,10 @@ impl StateTransitionValidation for DataContractCreateTransition {
         Ok(validation_result)
     }
 
-    fn validate_signature(&self, drive: &Drive) -> Result<SimpleConsensusValidationResult, Error> {
-        todo!()
-    }
-
-    fn validate_key_signature(&self) -> Result<SimpleConsensusValidationResult, Error> {
+    fn validate_signatures(
+        &self,
+        drive: &Drive,
+    ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         todo!()
     }
 
