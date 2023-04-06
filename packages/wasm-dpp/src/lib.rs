@@ -31,3 +31,4 @@ mod decode_protocol_entity;
 mod entropy_generator;
 mod lodash;
 mod validation;
+mod generate_temporary_ecdsa_private_key;
