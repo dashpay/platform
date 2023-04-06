@@ -7,6 +7,7 @@ const { FeeResult } = require('@dashevo/rs-drive');
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 
@@ -44,9 +45,10 @@ describe('deliverTxFactory', () => {
   let DashPlatformProtocol;
   let StateTransitionExecutionContext;
   let ValidationResult;
+  let MissingStateTransitionTypeError;
 
   before(function before() {
-    ({ DashPlatformProtocol, StateTransitionExecutionContext, ValidationResult } = this.dppWasm);
+    ({ DashPlatformProtocol, StateTransitionExecutionContext, ValidationResult, MissingStateTransitionTypeError } = this.dppWasm);
   });
 
   beforeEach(async function beforeEach() {
@@ -54,7 +56,11 @@ describe('deliverTxFactory', () => {
     const dataContractFixture = await getDataContractFixture();
     const documentFixture = await getDocumentsFixture();
 
-    dpp = new DashPlatformProtocol();
+    const stateRepositoryMock = createStateRepositoryMock(this.sinon);
+
+    dpp = new DashPlatformProtocol(this.blsAdapter, stateRepositoryMock, {
+      generate: () => Buffer.alloc(32),
+    });
 
     documentsBatchTransitionFixture = dpp.document.createStateTransition({
       create: documentFixture,
@@ -67,16 +73,18 @@ describe('deliverTxFactory', () => {
 
     stateTransitionExecutionContextMock = new StateTransitionExecutionContext();
 
-    processingFee = 10;
-    storageFee = 100;
-    const totalRefunds = 15;
+    processingFee = BigInt(10);
+    storageFee = BigInt(100);
+    const totalRefunds = BigInt(15);
     refundsPerEpoch = {
       1: totalRefunds,
     };
     feeRefunds = [
       {
-        identifier: Buffer.alloc(32),
-        creditsPerEpoch: { 1: totalRefunds },
+        toObject: () => ({
+          identifier: Buffer.alloc(32),
+          creditsPerEpoch: { '1': totalRefunds },
+        }),
       },
     ];
 
@@ -281,9 +289,9 @@ describe('deliverTxFactory', () => {
   it('should throw DPPValidationAbciError if a state transition is invalid against state', async () => {
     unserializeStateTransitionMock.resolves(dataContractCreateTransitionFixture);
 
-    const error = new SomeConsensusError('Consensus error');
+    const error = new MissingStateTransitionTypeError();
 
-    validationResult.addError(error);
+    validationResult.addError(error.serialize());
 
     try {
       await deliverTx(documentTx, round, loggerMock);
@@ -293,7 +301,7 @@ describe('deliverTxFactory', () => {
       expect(e).to.be.instanceOf(DPPValidationAbciError);
       expect(e.getCode()).to.equal(error.getCode());
       expect(e.getData()).to.deep.equal({
-        arguments: ['Consensus error'],
+        serializedError: error.serialize(),
       });
     }
   });

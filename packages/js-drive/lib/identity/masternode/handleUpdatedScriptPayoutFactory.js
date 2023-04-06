@@ -47,7 +47,7 @@ function handleUpdatedScriptPayoutFactory(
     const identityPublicKeys = identity
       .getPublicKeys();
 
-    if (identityPublicKeys.length === identitySchema.properties.publicKeys.maxItems) {
+    if (identityPublicKeys.length > identitySchema.properties.publicKeys.maxItems) {
       // do not add new public key
       return result;
     }
