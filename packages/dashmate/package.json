@@ -58,7 +58,7 @@
     "@dashevo/masternode-reward-shares-contract": "workspace:*",
     "@dashevo/wallet-lib": "workspace:*",
     "@dashevo/withdrawals-contract": "workspace:*",
-    "@oclif/core": "^1.21.0",
+    "@oclif/core": "^2.8.0",
     "@oclif/plugin-help": "^5.1.20",
     "ajv": "^8.6.0",
     "ajv-formats": "^2.1.1",
