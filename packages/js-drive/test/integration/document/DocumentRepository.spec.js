@@ -1,7 +1,7 @@
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
+const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
 const createDocumentTypeTreePath = require('../../../lib/document/groveDB/createDocumentTreePath');
@@ -676,10 +676,10 @@ describe('DocumentRepository', function main() {
 
   beforeEach(async function beforeEach() {
     const now = 86400;
-    container = await createTestDIContainer(this.dppWasm);
+    container = await createTestDIContainer(this.blsAdapter, this.dppWasm);
 
-    dataContract = getDataContractFixture();
-    documents = getDocumentsFixture(dataContract).slice(0, 5);
+    dataContract = await getDataContractFixture();
+    documents = (await getDocumentsFixture(dataContract)).slice(0, 5);
 
     [document] = documents;
 
@@ -701,8 +701,8 @@ describe('DocumentRepository', function main() {
 
     [document] = documents;
 
-    dataContract.documents[document.getType()].properties = {
-      ...dataContract.documents[document.getType()].properties,
+    dataContract.getDocuments()[document.getType()].properties = {
+      ...dataContract.getDocuments()[document.getType()].properties,
       name: {
         type: 'string',
         maxLength: 63,

@@ -384,7 +384,7 @@ describe.skip('synchronizeMasternodeIdentitiesFactory', function main() {
     firstSyncAppHash = 'c55de453e3ea4481f20225efdc12d671f715f0618cf3084bb32e56e75123bfdd';
     blockInfo = new BlockInfo(10, 0, 1668702100799);
 
-    container = await createTestDIContainer(this.dppWasm);
+    container = await createTestDIContainer(this.blsAdapter, this.dppWasm);
 
     // Mock Core RPC
 

@@ -8,7 +8,7 @@ describe('createDIContainer', function describeContainer() {
   let container;
 
   beforeEach(async function beforeEach() {
-    container = await createTestDIContainer(this.dppWasm);
+    container = await createTestDIContainer(this.blsAdapter, this.dppWasm);
   });
 
   afterEach(async () => {

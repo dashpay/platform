@@ -16,7 +16,7 @@ describe('fetchDataContractFactory', () => {
   let blockInfo;
 
   beforeEach(async function beforeEach() {
-    container = await createTestDIContainer(this.dppWasm);
+    container = await createTestDIContainer(this.blsAdapter, this.dppWasm);
 
     dataContractRepository = container.resolve('dataContractRepository');
 

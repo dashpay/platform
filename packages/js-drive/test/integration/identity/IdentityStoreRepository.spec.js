@@ -3,8 +3,8 @@ const Drive = require('@dashevo/rs-drive');
 
 // TODO: should we take it from other place?
 const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
+const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 
 const GroveDBStore = require('../../../lib/storage/GroveDBStore');
 const IdentityStoreRepository = require('../../../lib/identity/IdentityStoreRepository');
@@ -22,14 +22,12 @@ describe('IdentityStoreRepository', () => {
   let publicKeyHashes;
   let Identity;
   let IdentityPublicKey;
-  let KeyType;
-  let KeySecurityLevel;
 
   before(function before() {
-    ({ Identity, IdentityPublicKey, KeyType, KeySecurityLevel } = this.dppWasm);
+    ({ Identity, IdentityPublicKey } = this.dppWasm);
   });
 
-  beforeEach(async () => {
+  beforeEach(async function beforeEach() {
     rsDrive = new Drive('./db/grovedb_test', {
       drive: {
         dataContractsGlobalCacheSize: 500,
@@ -42,7 +40,7 @@ describe('IdentityStoreRepository', () => {
           password: '',
         },
       },
-    });
+    }, this.dppWasm);
 
     await rsDrive.createInitialStateStructure();
 
@@ -50,8 +48,8 @@ describe('IdentityStoreRepository', () => {
 
     decodeProtocolEntity = decodeProtocolEntityFactory();
 
-    repository = new IdentityStoreRepository(store, decodeProtocolEntity);
-    identity = getIdentityFixture();
+    repository = new IdentityStoreRepository(store, decodeProtocolEntity, this.dppWasm);
+    identity = await getIdentityFixture();
 
     blockInfo = new BlockInfo(1, 1, Date.now());
 
@@ -308,7 +306,7 @@ describe('IdentityStoreRepository', () => {
         const fetchedIdentity = fetchedIdentities[i];
 
         expect(fetchedIdentity).to.be.instanceOf(Identity);
-        expect(fetchedIdentity).to.deep.equal(identity.toObject());
+        expect(fetchedIdentity).to.deep.equals(identity);
       }
     });
   });
@@ -460,13 +458,13 @@ describe('IdentityStoreRepository', () => {
 
       identity2 = new Identity({
         protocolVersion: 1,
-        id: generateRandomIdentifier().toBuffer(),
+        id: (await generateRandomIdentifier()).toBuffer(),
         publicKeys: [
           {
             id: 0,
-            type: KeyType.ECDSA_SECP256K1,
-            purpose: KeyPurpose.AUTHENTICATION,
-            securityLevel: KeySecurityLevel.MASTER,
+            type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+            purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+            securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
             readOnly: false,
             data,
           },
