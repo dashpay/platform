@@ -2,9 +2,7 @@ const dotenv = require('dotenv');
 const { asValue } = require('awilix');
 const createDIContainer = require('../src/createDIContainer');
 
-const httpApiFactory = require('../src/helper/api/httpApiFactory')
-
-(async function main() {
+const httpApiFactory = require('../src/helper/api/httpApiFactory')(async function main() {
   // Read environment variables from .env file
   dotenv.config();
 
@@ -36,7 +34,7 @@ const httpApiFactory = require('../src/helper/api/httpApiFactory')
     configFile: asValue(configFile),
     config: asValue(config),
     httpApi: asValue(httpApiFactory),
-    flags: asValue({format: 'json'})
+    flags: asValue({ format: 'json' }),
   });
 
   const provider = config.get('platform.dapi.envoy.ssl.provider');
@@ -50,5 +48,5 @@ const httpApiFactory = require('../src/helper/api/httpApiFactory')
   }
 
   const httpApi = container.resolve('httpApi');
-  httpApi(container)
+  httpApi(container);
 }());

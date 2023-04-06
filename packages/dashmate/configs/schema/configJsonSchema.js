@@ -673,7 +673,7 @@ module.exports = {
               type: 'object',
               properties: {
                 enabled: {
-                  type: 'boolean'
+                  type: 'boolean',
                 },
                 port: {
                   $ref: '#/definitions/port',

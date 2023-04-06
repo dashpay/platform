@@ -237,8 +237,8 @@ module.exports = {
       },
       jsonRpc: {
         enabled: false,
-        port: 9000
-      }
+        port: 9000,
+      },
     },
   },
   externalIp: null,

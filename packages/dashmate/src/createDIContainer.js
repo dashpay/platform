@@ -92,7 +92,7 @@ const scheduleRenewZeroSslCertificateFactory = require('./helper/scheduleRenewZe
 const registerMasternodeGuideTaskFactory = require('./listr/tasks/setup/regular/registerMasternodeGuideTaskFactory');
 const configureNodeTaskFactory = require('./listr/tasks/setup/regular/configureNodeTaskFactory');
 const configureSSLCertificateTaskFactory = require('./listr/tasks/setup/regular/configureSSLCertificateTaskFactory');
-const httpApiFactory = require("./helper/api/httpApiFactory");
+const httpApiFactory = require('./helper/api/httpApiFactory');
 
 async function createDIContainer() {
   const container = createAwilixContainer({
@@ -237,7 +237,7 @@ async function createDIContainer() {
    */
   container.register({
     scheduleRenewZeroSslCertificate: asFunction(scheduleRenewZeroSslCertificateFactory).singleton(),
-    httpApi: asFunction(httpApiFactory).singleton()
+    httpApi: asFunction(httpApiFactory).singleton(),
   });
 
   return container;
