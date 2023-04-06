@@ -34,7 +34,6 @@ describe('e2e', () => {
           properties: {
             avatarUrl: {
               type: 'string',
-              // TODO(wasm-dpp): update schema in other places that will be using rs-dpp
               format: 'uri',
               maxLength: 255,
             },
@@ -268,8 +267,7 @@ describe('e2e', () => {
         );
       });
 
-      // TODO(wasm-dpp): recover after issue with the document removal is fixed
-      it.skip('should be able to remove contact approval', async () => {
+      it('should be able to remove contact approval', async () => {
         // 1. Broadcast document deletion
         await aliceClient.platform.documents.broadcast({
           delete: [aliceContactAcceptance],
