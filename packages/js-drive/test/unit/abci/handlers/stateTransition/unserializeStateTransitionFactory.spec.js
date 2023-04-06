@@ -1,5 +1,5 @@
-const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const getIdentityCreateTransitionFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const unserializeStateTransitionFactory = require('../../../../../lib/abci/handlers/stateTransition/unserializeStateTransitionFactory');
@@ -15,7 +15,7 @@ describe('unserializeStateTransitionFactory', () => {
   let stateTransition;
   let InvalidStateTransitionTypeError;
   let InvalidStateTransitionError;
-  let BalanceNotEnoughError;
+  let BalanceIsNotEnoughError;
   let ValidationResult;
   let IdentityNotFoundError;
 
@@ -23,7 +23,7 @@ describe('unserializeStateTransitionFactory', () => {
     ({
       InvalidStateTransitionTypeError,
       InvalidStateTransitionError,
-      BalanceNotEnoughError,
+      BalanceIsNotEnoughError,
       ValidationResult,
       IdentityNotFoundError,
       ValidationResult,
@@ -31,7 +31,7 @@ describe('unserializeStateTransitionFactory', () => {
   });
 
   beforeEach(async function beforeEach() {
-    stateTransition = getIdentityCreateTransitionFixture();
+    stateTransition = await getIdentityCreateTransitionFixture();
     stateTransitionFixture = stateTransition.toBuffer();
 
     dppMock = {
@@ -49,7 +49,7 @@ describe('unserializeStateTransitionFactory', () => {
 
     noopLoggerMock = new LoggerMock(this.sinon);
 
-    unserializeStateTransition = unserializeStateTransitionFactory(dppMock, noopLoggerMock);
+    unserializeStateTransition = unserializeStateTransitionFactory(dppMock, noopLoggerMock, this.dppWasm);
   });
 
   it('should throw InvalidArgumentAbciError if State Transition is not specified', async () => {
@@ -69,7 +69,7 @@ describe('unserializeStateTransitionFactory', () => {
   it('should throw InvalidArgumentAbciError if State Transition is invalid', async () => {
     const dppError = new InvalidStateTransitionTypeError(-1);
     const error = new InvalidStateTransitionError(
-      [dppError],
+      [dppError.serialize()],
       stateTransitionFixture,
     );
 
@@ -83,7 +83,7 @@ describe('unserializeStateTransitionFactory', () => {
       expect(e).to.be.instanceOf(DPPValidationAbciError);
       expect(e.getCode()).to.equal(dppError.getCode());
       expect(e.getData()).to.deep.equal({
-        arguments: [-1],
+        serializedError: dppError.serialize()
       });
 
       expect(dppMock.stateTransition.createFromBuffer).to.be.calledOnce();
@@ -108,12 +108,12 @@ describe('unserializeStateTransitionFactory', () => {
   });
 
   it('should throw InsufficientFundsError in case if identity has not enough credits', async () => {
-    const balance = 1000;
-    const fee = 1;
-    const error = new BalanceNotEnoughError(balance, fee);
+    const balance = BigInt(1000);
+    const fee = BigInt(1);
+    const error = new BalanceIsNotEnoughError(balance, fee);
 
     dppMock.stateTransition.validateFee.resolves(
-      new ValidationResult([error]),
+      new ValidationResult([error.serialize()]),
     );
 
     dppMock.stateTransition.createFromBuffer.resolves(stateTransition);
@@ -126,7 +126,7 @@ describe('unserializeStateTransitionFactory', () => {
       expect(e).to.be.instanceOf(DPPValidationAbciError);
       expect(e.getCode()).to.equal(error.getCode());
       expect(e.getData()).to.deep.equal({
-        arguments: [balance, fee],
+        serializedError: error.serialize(),
       });
 
       expect(dppMock.stateTransition.createFromBuffer).to.be.calledOnce();
@@ -135,11 +135,11 @@ describe('unserializeStateTransitionFactory', () => {
   });
 
   it('should return invalid result if validateSignature failed', async () => {
-    const identity = getIdentityFixture();
+    const identity = await getIdentityFixture();
     const error = new IdentityNotFoundError(identity.getId());
 
     dppMock.stateTransition.validateSignature.resolves(
-      new ValidationResult([error]),
+      new ValidationResult([error.serialize()]),
     );
 
     try {
@@ -150,7 +150,7 @@ describe('unserializeStateTransitionFactory', () => {
       expect(e).to.be.instanceOf(DPPValidationAbciError);
       expect(e.getCode()).to.equal(error.getCode());
       expect(e.getData()).to.deep.equal({
-        arguments: [identity.getId()],
+        serializedError: error.serialize(),
       });
 
       expect(dppMock.stateTransition.createFromBuffer).to.be.calledOnce();
@@ -176,14 +176,14 @@ describe('unserializeStateTransitionFactory', () => {
   it('should use provided logger', async function it() {
     const loggerMock = new LoggerMock(this.sinon);
 
-    const balance = 1000;
-    const fee = 1000;
-    const error = new BalanceNotEnoughError(balance, fee);
+    const balance = BigInt(1000);
+    const fee = BigInt(1000);
+    const error = new BalanceIsNotEnoughError(balance, fee);
 
     dppMock.stateTransition.createFromBuffer.resolves(stateTransition);
 
     dppMock.stateTransition.validateFee.resolves(
-      new ValidationResult([error]),
+      new ValidationResult([error.serialize()]),
     );
 
     try {
@@ -194,7 +194,7 @@ describe('unserializeStateTransitionFactory', () => {
       expect(e).to.be.instanceOf(DPPValidationAbciError);
       expect(e.getCode()).to.equal(error.getCode());
       expect(e.getData()).to.deep.equal({
-        arguments: [balance, fee],
+        serializedError: error.serialize(),
       });
 
       expect(dppMock.stateTransition.createFromBuffer).to.be.calledOnce();

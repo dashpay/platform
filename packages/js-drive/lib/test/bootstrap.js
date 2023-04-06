@@ -32,13 +32,25 @@ use(async (chai, util) => {
       return argument.toBuffer();
     }
 
-    return argument.toJSON();
+    try {
+      return argument.toJSON();
+    } catch (e) {
+      try {
+        return argument.serialize();
+      } catch (se) {
+        try {
+          return argument.toBuffer();
+        } catch (oe) {}
+      }
+    }
+
+    return argument;
   };
 
-  const transformArguments = (args, basePath = '') => {
+  const transformArguments = (args, topLevelObject, basePath = '') => {
     lodash.forIn(args, function (value, key) {
       if (value !== undefined && value !== null && value.hasOwnProperty('ptr')) {
-        lodash.set(args, `${basePath}${basePath === '' ? '' : '.'}${key}`, getMofifiedArgument(value));
+        lodash.set(topLevelObject, `${basePath}${basePath === '' ? '' : '.'}${key}`, getMofifiedArgument(value));
         return;
       }
 
@@ -46,17 +58,17 @@ use(async (chai, util) => {
         value.forEach((item, index) => {
           if (lodash.isObject(item)) {
             if (item !== undefined && item !== null && item.hasOwnProperty('ptr')) {
-              lodash.set(args, `${basePath}${basePath === '' ? '' : '.'}${key}[${index}]`, getMofifiedArgument(item));
+              lodash.set(topLevelObject, `${basePath}${basePath === '' ? '' : '.'}${key}[${index}]`, getMofifiedArgument(item));
               return;
             }
 
-            transformArguments(item);
+            transformArguments(item, topLevelObject);
           }
         });
       }
 
       if (lodash.isObject(value)) {
-        transformArguments(value, `${basePath}${basePath === '' ? '' : '.'}${key}`);
+        transformArguments(value, topLevelObject, `${basePath}${basePath === '' ? '' : '.'}${key}`);
       }
     });
   };
@@ -67,8 +79,8 @@ use(async (chai, util) => {
         '0': this._obj,
       };
 
-      transformArguments(originalObject);
-      transformArguments(arguments);
+      transformArguments(originalObject, originalObject);
+      transformArguments(arguments, arguments);
 
       new chai.Assertion(originalObject['0']).to.deep.equal(arguments['0']);
     };
@@ -82,10 +94,10 @@ use(async (chai, util) => {
           [index]: next,
         }), {}),
       );
-      transformArguments(clonedCallArgs);
+      transformArguments(clonedCallArgs, clonedCallArgs);
 
       const clonedArgs = lodash.cloneDeep(arguments);
-      transformArguments(clonedArgs);
+      transformArguments(clonedArgs, clonedArgs);
 
       new chai.Assertion(this._obj.callCount).to.equal(1);
       new chai.Assertion(clonedCallArgs).to.deep.equal(clonedArgs);

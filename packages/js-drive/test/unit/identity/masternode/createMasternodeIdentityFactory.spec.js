@@ -18,9 +18,10 @@ describe('createMasternodeIdentityFactory', () => {
   let Identity;
   let IdentityPublicKey;
   let ValidationResult;
+  let MissingStateTranstionTypeError;
 
   before(function before() {
-    ({ Identity, IdentityPublicKey, ValidationResult } = this.dppWasm);
+    ({ Identity, IdentityPublicKey, ValidationResult, MissingStateTransitionTypeError } = this.dppWasm);
   });
 
   beforeEach(function beforeEach() {
@@ -122,13 +123,15 @@ describe('createMasternodeIdentityFactory', () => {
   });
 
   it('should throw DPPValidationAbciError if identity is not valid', async () => {
-    const validationError = new Error('Validation error');
+    const validationError = new MissingStateTransitionTypeError();
 
-    validationResult.addError(validationError);
+    validationResult.addError(validationError.serialize());
+
+    dppMock.identity.validate.resolves(validationResult);
 
     const identityId = generateRandomIdentifier();
-    const pubKeyData = Buffer.from([0]);
-    const pubKeyType = IdentityPublicKey.TYPES.ECDSA_HASH160;
+    const pubKeyData = Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64');
+    const pubKeyType = IdentityPublicKey.TYPES.ECDSA_SECP256K1;
 
     try {
       await createMasternodeIdentity(blockInfo, identityId, pubKeyData, pubKeyType);
@@ -137,7 +140,7 @@ describe('createMasternodeIdentityFactory', () => {
     } catch (e) {
       expect(e).to.be.an.instanceof(InvalidMasternodeIdentityError);
       expect(e.message).to.be.equal('Invalid masternode identity');
-      expect(e.getValidationError()).to.be.deep.equal(validationError);
+      expect(e.getValidationError()).to.be.deep.equals(validationError);
     }
   });
 

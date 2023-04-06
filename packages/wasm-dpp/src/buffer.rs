@@ -1,3 +1,4 @@
+use js_sys::ArrayBuffer;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -15,4 +16,13 @@ extern "C" {
 
     #[wasm_bindgen(constructor, js_name = "from")]
     pub fn from_string(js_sys: String) -> Buffer;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn buffer(this: &Buffer) -> ArrayBuffer;
+
+    #[wasm_bindgen(method, getter, js_name = byteOffset)]
+    pub fn byte_offset(this: &Buffer) -> u32;
+
+    #[wasm_bindgen(method, getter)]
+    pub fn length(this: &Buffer) -> u32;
 }

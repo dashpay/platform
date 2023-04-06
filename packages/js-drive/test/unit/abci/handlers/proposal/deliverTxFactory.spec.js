@@ -5,9 +5,8 @@ const crypto = require('crypto');
 const { FeeResult } = require('@dashevo/rs-drive');
 
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
-const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
+const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
 
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 
@@ -52,8 +51,8 @@ describe('deliverTxFactory', () => {
 
   beforeEach(async function beforeEach() {
     round = 42;
-    const dataContractFixture = getDataContractFixture();
-    const documentFixture = getDocumentsFixture();
+    const dataContractFixture = await getDataContractFixture();
+    const documentFixture = await getDocumentsFixture();
 
     dpp = new DashPlatformProtocol();
 
