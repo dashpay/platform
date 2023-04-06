@@ -100,7 +100,7 @@ class FeeResult {
       const { identifier, creditsPerEpoch } = refund.toObject();
       const refundsMap = new Map();
 
-      creditsPerEpoch.forEach((value, key) => {
+      Object.entries(creditsPerEpoch).forEach(([key, value]) => {
         const refundBuffer = Buffer.allocUnsafe(8);
         refundBuffer.writeBigInt64BE(value);
 
