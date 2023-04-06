@@ -86,7 +86,8 @@ where
             document_create_transition,
             format!("Identity '{}' doesn't exist", pay_to_identifier),
         );
-        result.add_error(err.into())
+        result.add_error(err.into());
+        return Ok(result);
     }
 
     let documents_data = context

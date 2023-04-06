@@ -841,7 +841,10 @@ class DriveStateRepository {
    * @return {Promise<SimplifiedMNListStore>}
    */
   async fetchSMLStore() {
-    return this.simplifiedMasternodeList.getStore();
+    console.log('DriveStateRepository.fetchSMLStore() start');
+    const store = this.simplifiedMasternodeList.getStore();
+    console.log('DriveStateRepository.fetchSMLStore() end');
+    return store;
   }
 
   /**

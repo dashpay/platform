@@ -223,6 +223,9 @@ extern "C" {
         execution_context: &JsValue,
     ) -> Result<(), JsValue>;
 
+    #[wasm_bindgen(catch, structural, method, js_name=fetchSMLStore)]
+    pub async fn fetch_sml_store(this: &ExternalStateRepositoryLike) -> Result<JsValue, JsValue>;
+
     #[wasm_bindgen(catch, structural, method, js_name=fetchLatestPlatformBlockHeader)]
     pub async fn fetch_latest_platform_block_header(
         this: &ExternalStateRepositoryLike,
@@ -647,6 +650,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         _amount: u64,
         _execution_context: Option<&'a StateTransitionExecutionContext>,
     ) -> anyhow::Result<()> {
+        // TODO(wasm-dpp): !!!Missing implementation will hang js-drive and no one will have a clue what's going on
         todo!()
     }
 
@@ -749,6 +753,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     }
 
     async fn fetch_latest_withdrawal_transaction_index(&self) -> anyhow::Result<u64> {
+        // TODO(wasm-dpp): !!!Missing implementation will hang js-drive and no one will have a clue what's going on
         todo!()
     }
 
@@ -757,6 +762,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         _index: u64,
         _transaction_bytes: Vec<u8>,
     ) -> anyhow::Result<()> {
+        // TODO(wasm-dpp): !!!Missing implementation will hang js-drive and no one will have a clue what's going on
         todo!()
     }
 
