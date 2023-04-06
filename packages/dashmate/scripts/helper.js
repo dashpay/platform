@@ -2,7 +2,7 @@ const dotenv = require('dotenv');
 const { asValue } = require('awilix');
 const createDIContainer = require('../src/createDIContainer');
 
-const httpApiFactory = require('../src/helper/api/httpApiFactory')(async function main() {
+(async function main() {
   // Read environment variables from .env file
   dotenv.config();
 
@@ -33,7 +33,6 @@ const httpApiFactory = require('../src/helper/api/httpApiFactory')(async functio
   container.register({
     configFile: asValue(configFile),
     config: asValue(config),
-    httpApi: asValue(httpApiFactory),
     flags: asValue({ format: 'json' }),
   });
 
@@ -47,6 +46,15 @@ const httpApiFactory = require('../src/helper/api/httpApiFactory')(async functio
     setInterval(() => {}, 60 * 1000);
   }
 
-  const httpApi = container.resolve('httpApi');
-  httpApi(container);
+  if (config.get('dashmate.helper.enable')) {
+    const createHttpApiServer = container.resolve('createHttpApiServer');
+
+    const httpAPIServier = createHttpApiServer();
+
+    const port = config.get('dashmate.helper.jsonRpc.port');
+
+    httpAPIServier
+      // eslint-disable-next-line no-console
+      .listen(port, () => console.log(`Dashmate JSON-RPC API started on port: ${port}`));
+  }
 }());
