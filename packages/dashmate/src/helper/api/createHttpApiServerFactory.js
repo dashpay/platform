@@ -1,8 +1,7 @@
 const jayson = require('jayson/promise');
 const oclif = require('@oclif/core');
 
-
-function createHttpApiServer() {
+function createHttpApiServerFactory() {
   /**
    * @return {HttpServer}
    */
@@ -33,8 +32,7 @@ function createHttpApiServer() {
     return server.http();
   }
 
-  return createHttpApiServer
+  return createHttpApiServer;
 }
 
-
-module.exports = createHttpApiServer;
+module.exports = createHttpApiServerFactory;
