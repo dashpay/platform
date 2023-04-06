@@ -15,9 +15,6 @@ const {
   Core: {
     PrivateKey,
   },
-  PlatformProtocol: {
-    // Identifier,
-  },
 } = Dash;
 
 function executeProof() {
@@ -100,7 +97,7 @@ describe('Platform', () => {
         it('should be able to verify proof that data contract does not exist', async () => {
           // The same as above, but for an identity id that doesn't exist
 
-          const dataContractId = generateRandomIdentifier();
+          const dataContractId = await generateRandomIdentifier();
 
           const dataContractWithProof = await dashClient.getDAPIClient().platform.getDataContract(
             dataContractId, { prove: true },
@@ -199,7 +196,7 @@ describe('Platform', () => {
 
           it('should be able to verify proof that identity does not exist', async () => {
             // The same as above, but for an identity id that doesn't exist
-            const fakeIdentityId = generateRandomIdentifier();
+            const fakeIdentityId = await generateRandomIdentifier();
 
             const identityProof = await dashClient.getDAPIClient().platform.getIdentity(
               fakeIdentityId, { prove: true },

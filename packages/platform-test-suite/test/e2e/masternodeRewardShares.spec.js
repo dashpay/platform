@@ -14,15 +14,17 @@ const { PlatformProtocol: { IdentityPublicKey } } = Dash;
 describe('Masternode Reward Shares', () => {
   let failed = false;
   let client;
-  let dpp;
+  // let dpp;
 
   before(async () => {
-    dpp = new Dash.PlatformProtocol();
-    await dpp.initialize();
+    // dpp = new Dash.PlatformProtocol();
+    // await dpp.initialize();
 
     client = await createClientWithFundedWallet(
       8000000,
     );
+
+    await client.platform.initialize();
 
     const masternodeRewardSharesContract = await client.platform.contracts.get(
       masternodeRewardSharesContractId,
@@ -107,9 +109,11 @@ describe('Masternode Reward Shares', () => {
           signaturePublicKeyId,
         ));
 
+      const { IdentityPublicKeyWithWitness } = client.platform.dppModule;
+
       const identityPublicKey = derivedPrivateKey.toPublicKey().toBuffer();
 
-      const newPublicKey = new IdentityPublicKey(
+      const newPublicKey = new IdentityPublicKeyWithWitness(
         {
           id: signaturePublicKeyId,
           type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
@@ -117,6 +121,7 @@ describe('Masternode Reward Shares', () => {
           securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
           data: identityPublicKey,
           readOnly: false,
+          signature: Buffer.alloc(0),
         },
       );
 
@@ -124,7 +129,7 @@ describe('Masternode Reward Shares', () => {
         add: [newPublicKey],
       };
 
-      const stateTransition = dpp.identity.createIdentityUpdateTransition(
+      const stateTransition = client.platform.wasmDpp.identity.createIdentityUpdateTransition(
         masternodeOwnerIdentity,
         update,
       );
@@ -134,7 +139,7 @@ describe('Masternode Reward Shares', () => {
       const promises = stateTransition.getPublicKeysToAdd().map(async (publicKey) => {
         stateTransition.setSignaturePublicKeyId(signerKey.getId());
 
-        await stateTransition.signByPrivateKey(derivedPrivateKey, publicKey.getType());
+        await stateTransition.signByPrivateKey(derivedPrivateKey.toBuffer(), publicKey.getType());
 
         publicKey.setSignature(stateTransition.getSignature());
 
@@ -168,7 +173,7 @@ describe('Masternode Reward Shares', () => {
         },
       );
 
-      const stateTransition = dpp.document.createStateTransition({
+      const stateTransition = client.platform.document.createStateTransition({
         create: [rewardShare],
       });
 
@@ -360,16 +365,15 @@ describe('Masternode Reward Shares', () => {
         'masternodeRewardShares.rewardShare',
         identity,
         {
-          payToId: generateRandomIdentifier(),
+          payToId: await generateRandomIdentifier(),
           percentage: 1,
         },
       );
-
-      const stateTransition = dpp.document.createStateTransition({
+      const stateTransition = client.platform.wasmDpp.document.createStateTransition({
         create: [rewardShare],
       });
 
-      stateTransition.setSignaturePublicKeyId(1);
+      stateTransition.setSignaturePublicKey(1);
 
       const account = await client.getWalletAccount();
 
