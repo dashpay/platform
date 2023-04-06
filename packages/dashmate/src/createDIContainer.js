@@ -237,7 +237,7 @@ async function createDIContainer() {
    */
   container.register({
     scheduleRenewZeroSslCertificate: asFunction(scheduleRenewZeroSslCertificateFactory).singleton(),
-    httpApi: asFunction(createHttpApiServerFactory).singleton(),
+    createHttpApiServer: asFunction(createHttpApiServerFactory).singleton(),
   });
 
   return container;
