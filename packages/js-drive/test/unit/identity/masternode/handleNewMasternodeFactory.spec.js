@@ -56,11 +56,11 @@ describe('handleNewMasternodeFactory', () => {
     fetchTransactionMock = this.sinon.stub().resolves(transactionFixture);
 
     handleNewMasternode = handleNewMasternodeFactory(
-      this.dpp,
       dppMock,
       createMasternodeIdentityMock,
       createRewardShareDocumentMock,
       fetchTransactionMock,
+      this.dppWasm,
     );
   });
 

@@ -16,7 +16,7 @@ use dpp::{platform_value, Convertible};
 use crate::errors::RustConversionError;
 use crate::identifier::identifier_from_js_value;
 use crate::metadata::MetadataWasm;
-use crate::utils::WithJsError;
+use crate::utils::{IntoWasm, WithJsError};
 use crate::{bail_js, with_js_error};
 use crate::{buffer::Buffer, identifier::IdentifierWrapper};
 
@@ -262,8 +262,15 @@ impl DataContractWasm {
     }
 
     #[wasm_bindgen(js_name=setMetadata)]
-    pub fn set_metadata(&mut self, metadata: MetadataWasm) {
-        self.0.metadata = Some(metadata.into());
+    pub fn set_metadata(&mut self, metadata: JsValue) -> Result<(), JsValue> {
+        self.0.metadata = if !metadata.is_falsy() {
+            let metadata = metadata.to_wasm::<MetadataWasm>("Metadata")?;
+            Some(metadata.to_owned().into())
+        } else {
+            None
+        };
+
+        Ok(())
     }
 
     #[wasm_bindgen(js_name=toObject)]

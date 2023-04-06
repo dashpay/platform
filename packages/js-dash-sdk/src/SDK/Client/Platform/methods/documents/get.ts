@@ -100,9 +100,14 @@ function convertIdentifierProperties(
  * @returns documents
  */
 export async function get(this: Platform, typeLocator: string, opts: FetchOpts): Promise<any> {
+  this.logger.debug(`[Documents#get] Get document(s) for "${typeLocator}"`);
   if (!typeLocator.includes('.')) throw new Error('Accessing to field is done using format: appName.fieldName');
 
   await this.initialize();
+
+  // TODO(wasm-dpp): remove when dppModule is typed
+  // @ts-ignore
+  ({ Identifier, Document, Metadata } = this.dppModule);
 
   // locator is of `dashpay.profile` with dashpay the app and profile the field.
   const [appName, fieldType] = typeLocator.split('.');
@@ -120,13 +125,10 @@ export async function get(this: Platform, typeLocator: string, opts: FetchOpts):
 
   // If not present, will fetch contract based on appName and contractId store in this.apps.
   await ensureAppContractFetched.call(this, appName);
+  this.logger.silly(`[Documents#get] Ensured app contract is fetched "${typeLocator}"`);
 
   if (opts.where) {
     const binaryProperties = appDefinition.contract.getBinaryProperties(fieldType);
-
-    // TODO(wasm-dpp): remove when dppModule is typed
-    // @ts-ignore
-    ({ Identifier, Document, Metadata } = this.dppModule);
 
     opts.where = opts.where
       .map((whereCondition) => convertIdentifierProperties(
@@ -155,7 +157,9 @@ export async function get(this: Platform, typeLocator: string, opts: FetchOpts):
 
   const rawDocuments = documentsResponse.getDocuments();
 
-  return Promise.all(
+  this.logger.silly(`[Documents#get] Obtained ${rawDocuments.length} raw document(s)"`);
+
+  const result = await Promise.all(
     rawDocuments.map(async (rawDocument) => {
       const document = await this.wasmDpp.document.createFromBuffer(rawDocument);
 
@@ -174,6 +178,10 @@ export async function get(this: Platform, typeLocator: string, opts: FetchOpts):
       return document;
     }),
   );
+
+  this.logger.debug(`[Documents#get] Obtained ${result.length} document(s) for "${typeLocator}"`);
+
+  return result;
 }
 
 export default get;

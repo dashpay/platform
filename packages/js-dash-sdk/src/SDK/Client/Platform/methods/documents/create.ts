@@ -18,6 +18,7 @@ export async function create(
   identity: any,
   data: CreateOpts = {},
 ): Promise<any> {
+  this.logger.debug(`[Document#create] Create document "${typeLocator}"`);
   await this.initialize();
 
   const { wasmDpp } = this;
@@ -31,17 +32,21 @@ export async function create(
   const { contractId } = this.client.getApps().get(appName);
 
   const dataContract = await this.contracts.get(contractId);
+  this.logger.silly(`[Document#create] Obtained data contract ${dataContract.getId()}`);
 
   if (dataContract === null) {
     throw new Error(`Contract ${appName} not found. Ensure contractId ${contractId} is correct.`);
   }
 
-  return wasmDpp.document.create(
+  const document = wasmDpp.document.create(
     dataContract,
     identity.getId(),
     fieldType,
     data,
   );
+
+  this.logger.debug(`[Document#create] Created document ${typeLocator} for data contract ${dataContract.getId()}}`);
+  return document;
 }
 
 export default create;

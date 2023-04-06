@@ -15,6 +15,7 @@ export default async function update(
   dataContract: any,
   identity: any,
 ): Promise<any> {
+  this.logger.debug(`[DataContract#update] Update data contract ${dataContract.getId()}`);
   await this.initialize();
 
   const { wasmDpp } = this;
@@ -29,55 +30,12 @@ export default async function update(
   const dataContractUpdateTransition = wasmDpp.dataContract
     .createDataContractUpdateTransition(updatedDataContract);
 
+  this.logger.silly(`[DataContract#update] Created data contract update transition ${dataContract.getId()}`);
+
   await signStateTransition(this, dataContractUpdateTransition, identity, 1);
-
-  console.log('Original');
-  console.log(dataContractUpdateTransition.toObject());
-  console.log(dataContractUpdateTransition.toBuffer().toString('hex'));
-
-  let validationResult = await wasmDpp.stateTransition.validateBasic(dataContractUpdateTransition);
-  console.log('Validation', validationResult.isValid(), validationResult.getErrors());
-
-  console.log('Recreated from objet');
-  let recreatedFromObject;
-  try {
-    recreatedFromObject = await wasmDpp
-      .stateTransition.createFromObject(dataContractUpdateTransition.toObject());
-  } catch (e) {
-    console.log(e);
-    // console.log();
-    e.getErrors().forEach((e) => {
-      console.log(e.getOperation());
-      console.log(e.getFieldPath());
-    });
-    throw e;
-  }
-
-  console.log(recreatedFromObject.toObject());
-  console.log(recreatedFromObject.toBuffer().toString('hex'));
-  validationResult = await wasmDpp.stateTransition.validateBasic(recreatedFromObject);
-  console.log('Validation', validationResult.isValid(), validationResult.getErrors());
-
-  console.log('Recreated from buffer');
-  let recreatedFromBuffer;
-  try {
-    recreatedFromBuffer = await wasmDpp.stateTransition.createFromBuffer(dataContractUpdateTransition.toBuffer());
-  } catch (e) {
-    console.log(e);
-    e.getErrors().forEach((e) => {
-      console.log(e);
-      // console.log(e.getFieldPath());
-    });
-    throw e;
-  }
-
-  console.log(recreatedFromBuffer.toObject());
-  console.log(recreatedFromBuffer.toBuffer().toString('hex'));
-  validationResult = await wasmDpp.stateTransition.validateBasic(recreatedFromBuffer);
-  console.log('Validation', validationResult.isValid(), validationResult.getErrors());
-
   await broadcastStateTransition(this, dataContractUpdateTransition);
 
+  this.logger.silly(`[DataContract#update] Broadcasted data contract update transition ${dataContract.getId()}`);
   // Update app with updated data contract if available
   // eslint-disable-next-line
   for (const appName of this.client.getApps().getNames()) {
@@ -87,5 +45,6 @@ export default async function update(
     }
   }
 
+  this.logger.debug(`[DataContract#updated] Update data contract ${dataContract.getId()}`);
   return dataContractUpdateTransition;
 }

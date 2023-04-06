@@ -67,8 +67,8 @@ impl IdentityPublicKeyWasm {
     }
 
     #[wasm_bindgen(js_name=getData)]
-    pub fn get_data(&self) -> Vec<u8> {
-        self.0.data.to_vec()
+    pub fn get_data(&self) -> Buffer {
+        Buffer::from_bytes_owned(self.0.data.to_vec())
     }
 
     #[wasm_bindgen(js_name=setPurpose)]

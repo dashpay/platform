@@ -16,7 +16,7 @@ describe('unserializeStateTransitionFactory', () => {
   let InvalidStateTransitionTypeError;
   let InvalidStateTransitionError;
   let BalanceNotEnoughError;
-  let ValidatorResult;
+  let ValidationResult;
   let IdentityNotFoundError;
 
   before(function before() {
@@ -24,8 +24,9 @@ describe('unserializeStateTransitionFactory', () => {
       InvalidStateTransitionTypeError,
       InvalidStateTransitionError,
       BalanceNotEnoughError,
-      ValidatorResult,
+      ValidationResult,
       IdentityNotFoundError,
+      ValidationResult,
     } = this.dppWasm);
   });
 
@@ -44,7 +45,7 @@ describe('unserializeStateTransitionFactory', () => {
       },
     };
 
-    dppMock.stateTransition.validateSignature.resolves(new ValidatorResult());
+    dppMock.stateTransition.validateSignature.resolves(new ValidationResult());
 
     noopLoggerMock = new LoggerMock(this.sinon);
 
@@ -112,7 +113,7 @@ describe('unserializeStateTransitionFactory', () => {
     const error = new BalanceNotEnoughError(balance, fee);
 
     dppMock.stateTransition.validateFee.resolves(
-      new ValidatorResult([error]),
+      new ValidationResult([error]),
     );
 
     dppMock.stateTransition.createFromBuffer.resolves(stateTransition);
@@ -138,7 +139,7 @@ describe('unserializeStateTransitionFactory', () => {
     const error = new IdentityNotFoundError(identity.getId());
 
     dppMock.stateTransition.validateSignature.resolves(
-      new ValidatorResult([error]),
+      new ValidationResult([error]),
     );
 
     try {
@@ -160,7 +161,7 @@ describe('unserializeStateTransitionFactory', () => {
   it('should return stateTransition', async () => {
     dppMock.stateTransition.createFromBuffer.resolves(stateTransition);
 
-    dppMock.stateTransition.validateFee.resolves(new ValidatorResult());
+    dppMock.stateTransition.validateFee.resolves(new ValidationResult());
 
     const result = await unserializeStateTransition(stateTransitionFixture);
 
@@ -182,7 +183,7 @@ describe('unserializeStateTransitionFactory', () => {
     dppMock.stateTransition.createFromBuffer.resolves(stateTransition);
 
     dppMock.stateTransition.validateFee.resolves(
-      new ValidatorResult([error]),
+      new ValidationResult([error]),
     );
 
     try {
