@@ -1,4 +1,3 @@
-const Dash = require('dash');
 const crypto = require('crypto');
 
 const { MerkleProof } = require('js-merkle');
@@ -10,7 +9,7 @@ const hashFunction = require('../../../lib/proofHashFunction');
 
 describe.skip('Platform', () => {
   describe('waitForStateTransitionResult', () => {
-    let dpp;
+    // let dpp;
     let client;
     let blake3;
 
