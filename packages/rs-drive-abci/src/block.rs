@@ -28,13 +28,12 @@
 //
 
 use crate::abci::AbciError;
-use drive::drive::block_info::BlockInfo;
-use drive::fee::epoch::EpochIndex;
-use drive::fee_pools::epochs::Epoch;
-
 use crate::error::Error;
 use crate::execution::block_proposal::BlockProposal;
 use crate::execution::fee_pools::epoch::EpochInfo;
+use drive::drive::block_info::BlockInfo;
+use drive::fee::epoch::EpochIndex;
+use drive::fee_pools::epochs::Epoch;
 
 /// Block info
 pub struct BlockStateInfo {
