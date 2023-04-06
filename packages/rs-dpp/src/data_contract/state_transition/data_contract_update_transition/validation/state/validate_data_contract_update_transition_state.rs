@@ -3,7 +3,8 @@ use std::convert::TryInto;
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::consensus::basic::invalid_data_contract_version_error::InvalidDataContractVersionError;
+use crate::consensus::basic::data_contract::InvalidDataContractVersionError;
+use crate::consensus::basic::document::DataContractNotPresentError;
 use crate::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransitionAction;
 use crate::validation::{AsyncDataValidator, ValidationResult};
 use crate::{
@@ -73,9 +74,7 @@ pub async fn validate_data_contract_update_transition_state(
 
     let existing_data_contract: DataContract = match maybe_existing_data_contract {
         None => {
-            let err = BasicError::DataContractNotPresent {
-                data_contract_id: state_transition.data_contract.id,
-            };
+            let err = DataContractNotPresentError::new(state_transition.data_contract.id);
             result.add_error(err);
             return Ok(result);
         }

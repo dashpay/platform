@@ -122,10 +122,10 @@ where
                 }
             }
             Err(err) => {
-                let mut error = InvalidIdentityAssetLockTransactionError::new(err.to_string());
-                error.set_validation_error(err);
+                let error = InvalidIdentityAssetLockTransactionError::new(err.to_string());
 
                 result.add_error(error);
+
                 Ok(result)
             }
         }

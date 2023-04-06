@@ -46,6 +46,10 @@ pub enum NonConsensusError {
 
     #[error(transparent)]
     Error(#[from] anyhow::Error),
+
+    /// Error
+    #[error("overflow error: {0}")]
+    Overflow(&'static str),
 }
 
 pub mod object_names {

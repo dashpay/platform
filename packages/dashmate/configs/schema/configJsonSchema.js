@@ -407,8 +407,8 @@ module.exports = {
                   properties: {
                     llmqType: {
                       type: 'number',
-                      // https://github.com/dashevo/dashcore-lib/blob/286c33a9d29d33f05d874c47a9b33764a0be0cf1/lib/constants/index.js#L42-L57
-                      enum: [1, 2, 3, 4, 100, 101, 102, 106, 107],
+                      // https://github.com/dashpay/dashcore-lib/blob/843176fed9fc81feae43ccf319d99e2dd942fe1f/lib/constants/index.js#L50-L99
+                      enum: [1, 2, 3, 4, 5, 6, 100, 101, 102, 103, 104, 105, 106, 107],
                     },
                   },
                   additionalProperties: false,

@@ -2,7 +2,9 @@ use std::{convert::TryInto, sync::Arc};
 
 use platform_value::Value;
 
-use crate::data_contract::state_transition::errors::MissingDataContractIdError;
+use crate::consensus::basic::document::{
+    DataContractNotPresentError, MissingDataContractIdBasicError,
+};
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     data_contract::DataContract,
@@ -64,11 +66,9 @@ pub async fn fetch_and_validate_data_contract(
     {
         id_bytes
     } else {
-        validation_result.add_error(ConsensusError::BasicError(Box::new(
-            BasicError::MissingDataContractIdError(MissingDataContractIdError::new(
-                raw_extended_document.clone(),
-            )),
-        )));
+        validation_result.add_error(ConsensusError::BasicError(
+            BasicError::MissingDataContractIdBasicError(MissingDataContractIdBasicError::new()),
+        ));
         return Ok(validation_result);
     };
 
@@ -84,11 +84,7 @@ pub async fn fetch_and_validate_data_contract(
     if let Some(data_contract) = maybe_data_contract {
         validation_result.set_data(data_contract);
     } else {
-        let consensus_error =
-            ConsensusError::BasicError(Box::new(BasicError::DataContractNotPresent {
-                data_contract_id,
-            }));
-        validation_result.add_error(consensus_error);
+        validation_result.add_error(DataContractNotPresentError::new(data_contract_id));
     }
 
     Ok(validation_result)

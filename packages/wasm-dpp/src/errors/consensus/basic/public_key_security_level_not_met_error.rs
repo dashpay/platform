@@ -1,26 +1,20 @@
+use crate::buffer::Buffer;
 use crate::Serialize;
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::signature::PublicKeySecurityLevelNotMetError;
+use dpp::consensus::ConsensusError;
 use dpp::identity::SecurityLevel;
 use wasm_bindgen::prelude::*;
 
 #[derive(Serialize)]
 #[wasm_bindgen(js_name=PublicKeySecurityLevelNotMetError)]
 pub struct PublicKeySecurityLevelNotMetErrorWasm {
-    public_key_security_level: SecurityLevel,
-    required_security_level: SecurityLevel,
-    code: u32,
+    inner: PublicKeySecurityLevelNotMetError,
 }
 
-impl PublicKeySecurityLevelNotMetErrorWasm {
-    pub fn new(
-        public_key_security_level: SecurityLevel,
-        required_security_level: SecurityLevel,
-        code: u32,
-    ) -> Self {
-        PublicKeySecurityLevelNotMetErrorWasm {
-            public_key_security_level,
-            required_security_level,
-            code,
-        }
+impl From<&PublicKeySecurityLevelNotMetError> for PublicKeySecurityLevelNotMetErrorWasm {
+    fn from(e: &PublicKeySecurityLevelNotMetError) -> Self {
+        Self { inner: e.clone() }
     }
 }
 
@@ -28,26 +22,30 @@ impl PublicKeySecurityLevelNotMetErrorWasm {
 impl PublicKeySecurityLevelNotMetErrorWasm {
     #[wasm_bindgen(js_name=getPublicKeySecurityLevel)]
     pub fn get_public_key_security_level(&self) -> u8 {
-        self.public_key_security_level as u8
+        self.inner.public_key_security_level() as u8
     }
 
     #[wasm_bindgen(js_name=getKeySecurityLevelRequirement)]
     pub fn get_key_security_level_requirement(&self) -> u8 {
-        self.required_security_level as u8
+        self.inner.required_security_level() as u8
     }
 
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {
-        self.code
+        ConsensusError::from(self.inner.clone()).code()
     }
 
-    #[wasm_bindgen(js_name=toString)]
-    pub fn to_string(&self) -> Result<JsValue, JsValue> {
-        let json_string =
-            serde_json::ser::to_string(self).map_err(|e| JsValue::from(e.to_string()))?;
-        Ok(JsValue::from(format!(
-            "PublicKeySecurityLevelNotMetError: {}",
-            json_string
-        )))
+    #[wasm_bindgen(getter)]
+    pub fn message(&self) -> String {
+        self.inner.to_string()
+    }
+
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+        let bytes = ConsensusError::from(self.inner.clone())
+            .serialize()
+            .map_err(|e| JsError::from(e))?;
+
+        Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }

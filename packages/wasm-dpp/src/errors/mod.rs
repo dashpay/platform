@@ -2,7 +2,6 @@ pub use from::*;
 pub use js_conversion::*;
 
 pub mod consensus;
-pub mod consensus_error;
 
 mod from;
 mod js_conversion;
