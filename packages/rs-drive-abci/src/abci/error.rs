@@ -8,7 +8,7 @@ pub enum AbciError {
     /// Bad request received from Tenderdash
     #[error("bad request received from Tenderdash: {0}")]
     BadRequest(String),
-    
+
     /// Error returned by tenderdash-abci library
     #[cfg(feature = "server")]
     #[error("tenderdash: {0}")]

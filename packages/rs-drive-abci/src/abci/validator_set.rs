@@ -80,15 +80,16 @@ impl ValidatorSet {
             QuorumType::Llmq400_60 => quorums.llmq_400_60,
             QuorumType::Llmq400_85 => quorums.llmq_400_85,
             QuorumType::Llmq100_67 => quorums.llmq_100_67,
-            QuorumType::Llmq60_75 => panic!("unsupported quorum type {:?}", quorum_type),
+            QuorumType::Llmq60_75 => quorums.llmq_60_75,
+            QuorumType::Llmq25_67 => quorums.llmq_25_67,
             QuorumType::LlmqTest => quorums.llmq_test,
-            QuorumType::LlmqDevnet => panic!("unsupported quorum type {:?}", quorum_type),
+            QuorumType::LlmqDevnet => quorums.llmq_devnet,
             QuorumType::LlmqTestV17 => quorums.llmq_test_v17,
             QuorumType::LlmqTestDip0024 => quorums.llmq_test_dip0024,
             QuorumType::LlmqTestInstantsend => quorums.llmq_test_instantsend,
-            QuorumType::LlmqDevnetDip0024 => panic!("unsupported quorum type {:?}", quorum_type),
+            QuorumType::LlmqDevnetDip0024 => quorums.llmq_devnet_dip0024,
             QuorumType::LlmqTestPlatform => quorums.llmq_test_platform,
-            QuorumType::LlmqDevnetPlatform => panic!("unsupported quorum type {:?}", quorum_type),
+            QuorumType::LlmqDevnetPlatform => quorums.llmq_devnet_platform,
             QuorumType::UNKNOWN => panic!("unsupported quorum type {:?}", quorum_type),
             // no default here, so if the list of quorums changes, we will detect it during build
         }
@@ -122,8 +123,8 @@ impl ValidatorSet {
     ) -> Result<Quorum, ValSetError> {
         // read some config
         let rotation_block_interval: CoreHeight = config.validator_set_quorum_rotation_block_count;
-        let min_valid_members = config.core.min_quorum_valid_members;
-        let dkg_interval = config.core.dkg_interval;
+        let min_valid_members = config.core.min_quorum_valid_members();
+        let dkg_interval = config.core.dkg_interval();
 
         let min_ttl: CoreHeight = rotation_block_interval * 3;
 
@@ -144,7 +145,8 @@ impl ValidatorSet {
             .iter()
             .filter(|item| {
                 item.num_valid_members >= min_valid_members
-                    && item.quorum_ttl(core_height, dkg_interval, number_of_quorums) > min_ttl
+                    && item.quorum_ttl(core_height, dkg_interval as u32, number_of_quorums)
+                        > min_ttl
             })
             .collect::<Vec<&Quorum>>();
 
