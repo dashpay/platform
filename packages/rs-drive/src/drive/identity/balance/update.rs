@@ -8,7 +8,7 @@ use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::credits::{Credits, MAX_CREDITS};
 use crate::fee::op::LowLevelDriveOperation;
-use crate::fee::result::{BalanceChange, BalanceChangeForIdentity, FeeResult};
+use crate::fee::result::{BalanceChangeType, FeeResult, IdentityBalanceChange};
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
@@ -260,7 +260,7 @@ impl Drive {
     /// Balances are stored in the balance tree under the identity's id
     pub fn apply_balance_change_from_fee_to_identity(
         &self,
-        balance_change: BalanceChangeForIdentity,
+        balance_change: IdentityBalanceChange,
         transaction: TransactionArg,
     ) -> Result<ApplyBalanceChangeOutcome, Error> {
         let (batch_operations, actual_fee_paid) =
@@ -278,18 +278,18 @@ impl Drive {
         Ok(ApplyBalanceChangeOutcome { actual_fee_paid })
     }
 
-    /// Applies a balance change based on Fee Result
+    /// Applies a balance change based on Balace
     /// If calculated balance is below 0 it will go to negative balance
     ///
     /// Balances are stored in the identity under key 0
     pub(crate) fn apply_balance_change_from_fee_to_identity_operations(
         &self,
-        balance_change: BalanceChangeForIdentity,
+        balance_change: IdentityBalanceChange,
         transaction: TransactionArg,
     ) -> Result<(Vec<LowLevelDriveOperation>, FeeResult), Error> {
         let mut drive_operations = vec![];
 
-        if matches!(balance_change.change(), BalanceChange::NoBalanceChange) {
+        if matches!(balance_change.change(), BalanceChangeType::NoBalanceChange) {
             return Ok((drive_operations, balance_change.into_fee_result()));
         }
 
@@ -309,7 +309,7 @@ impl Drive {
             balance_modified,
             negative_credit_balance_modified,
         } = match balance_change.change() {
-            BalanceChange::AddToBalance(balance_to_add) => self.add_to_previous_balance(
+            BalanceChangeType::AddToBalance(balance_to_add) => self.add_to_previous_balance(
                 balance_change.identity_id,
                 previous_balance,
                 *balance_to_add,
@@ -317,7 +317,7 @@ impl Drive {
                 transaction,
                 &mut drive_operations,
             )?,
-            BalanceChange::RemoveFromBalance {
+            BalanceChangeType::RemoveFromBalance {
                 required_removed_balance,
                 desired_removed_balance,
             } => {
@@ -343,7 +343,7 @@ impl Drive {
                     }
                 }
             }
-            BalanceChange::NoBalanceChange => unreachable!(),
+            BalanceChangeType::NoBalanceChange => unreachable!(),
         };
 
         if let Some(new_balance) = balance_modified {

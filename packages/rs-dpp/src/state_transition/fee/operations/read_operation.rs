@@ -1,11 +1,12 @@
+use crate::credits::Credits;
 use serde::{Deserialize, Serialize};
 
 use super::OperationLike;
 
-use crate::state_transition::fee::{
-    constants::{PROCESSING_CREDIT_PER_BYTE, READ_BASE_PROCESSING_COST},
-    Credits, Refunds,
+use crate::state_transition::fee::constants::{
+    PROCESSING_CREDIT_PER_BYTE, READ_BASE_PROCESSING_COST,
 };
+use crate::state_transition::fee::FeeRefunds;
 
 #[derive(Default, Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -20,15 +21,15 @@ impl ReadOperation {
 }
 
 impl OperationLike for ReadOperation {
-    fn get_processing_cost(&self) -> Credits {
+    fn processing_fee(&self) -> Credits {
         READ_BASE_PROCESSING_COST + (self.value_size * PROCESSING_CREDIT_PER_BYTE)
     }
 
-    fn get_storage_cost(&self) -> Credits {
+    fn storage_fee(&self) -> Credits {
         0
     }
 
-    fn get_refunds(&self) -> Option<&Vec<Refunds>> {
+    fn fee_refunds(&self) -> Option<&FeeRefunds> {
         None
     }
 }

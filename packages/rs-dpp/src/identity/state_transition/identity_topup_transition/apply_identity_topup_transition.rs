@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
+use crate::credits::converter::convert_satoshi_to_credits;
 use anyhow::{anyhow, Result};
 
-use crate::identity::convert_satoshi_to_credits;
 use crate::identity::state_transition::asset_lock_proof::AssetLockTransactionOutputFetcher;
 use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::state_repository::StateRepositoryLike;

@@ -41,6 +41,7 @@ mod bls;
 #[cfg(feature = "fixtures-and-mocks")]
 pub mod tests;
 
+pub mod credits;
 pub mod encoding;
 pub mod system_data_contracts;
 

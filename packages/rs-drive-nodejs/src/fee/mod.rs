@@ -3,8 +3,6 @@ use drive::fee::epoch::distribution::calculate_storage_fee_refund_amount_and_lef
 use drive::fee::epoch::EpochIndex;
 use neon::prelude::*;
 
-pub mod result;
-
 pub fn js_calculate_storage_fee_distribution_amount_and_leftovers(
     mut cx: FunctionContext,
 ) -> JsResult<JsArray> {

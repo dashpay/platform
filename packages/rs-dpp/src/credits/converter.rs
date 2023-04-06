@@ -1,10 +1,12 @@
-pub const RATIO: u64 = 1000;
+use crate::credits::Credits;
 
-pub fn convert_satoshi_to_credits(amount: u64) -> u64 {
+pub const RATIO: Credits = 1000;
+
+pub fn convert_satoshi_to_credits(amount: Credits) -> Credits {
     amount * RATIO
 }
 
-pub fn convert_credits_to_satoshi(amount: u64) -> u64 {
+pub fn convert_credits_to_satoshi(amount: Credits) -> Credits {
     amount / RATIO
 }
 

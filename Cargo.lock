@@ -946,6 +946,7 @@ dependencies = [
  "lazy_static",
  "log",
  "mockall",
+ "nohash-hasher",
  "num_enum",
  "platform-value",
  "pretty_assertions",

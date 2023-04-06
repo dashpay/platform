@@ -1,10 +1,9 @@
 use serde::{Deserialize, Serialize};
 
 use super::OperationLike;
-use crate::{
-    identity::KeyType,
-    state_transition::fee::{constants::signature_verify_cost, Credits, Refunds},
-};
+use crate::credits::Credits;
+use crate::state_transition::fee::FeeRefunds;
+use crate::{identity::KeyType, state_transition::fee::constants::signature_verify_cost};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -19,15 +18,15 @@ impl SignatureVerificationOperation {
 }
 
 impl OperationLike for SignatureVerificationOperation {
-    fn get_processing_cost(&self) -> Credits {
+    fn processing_fee(&self) -> Credits {
         signature_verify_cost(self.signature_type)
     }
 
-    fn get_storage_cost(&self) -> Credits {
+    fn storage_fee(&self) -> Credits {
         0
     }
 
-    fn get_refunds(&self) -> Option<&Vec<Refunds>> {
+    fn fee_refunds(&self) -> Option<FeeRefunds> {
         None
     }
 }

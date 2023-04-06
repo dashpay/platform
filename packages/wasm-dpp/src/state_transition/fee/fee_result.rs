@@ -1,4 +1,4 @@
-use dpp::state_transition::fee::{FeeResult, Refunds};
+use dpp::state_transition::fee::{ExecutionFees, Refunds};
 use js_sys::BigInt;
 use wasm_bindgen::prelude::*;
 
@@ -8,14 +8,14 @@ use crate::{
 };
 
 #[wasm_bindgen(js_name=FeeResult)]
-pub struct FeeResultWasm(FeeResult);
+pub struct FeeResultWasm(ExecutionFees);
 
 #[wasm_bindgen(js_class=FeeResult)]
 impl FeeResultWasm {
     #[allow(clippy::new_without_default)]
     #[wasm_bindgen(constructor)]
     pub fn new() -> FeeResultWasm {
-        FeeResultWasm(FeeResult::default())
+        FeeResultWasm(ExecutionFees::default())
     }
 
     #[wasm_bindgen(getter, js_name = "storageFee")]
@@ -102,14 +102,14 @@ impl FeeResultWasm {
     }
 }
 
-impl From<FeeResult> for FeeResultWasm {
-    fn from(value: FeeResult) -> Self {
+impl From<ExecutionFees> for FeeResultWasm {
+    fn from(value: ExecutionFees) -> Self {
         FeeResultWasm(value)
     }
 }
 
 impl Inner for FeeResultWasm {
-    type InnerItem = FeeResult;
+    type InnerItem = ExecutionFees;
 
     fn into_inner(self) -> Self::InnerItem {
         self.0

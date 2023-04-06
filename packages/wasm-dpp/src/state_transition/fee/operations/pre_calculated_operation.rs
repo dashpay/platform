@@ -90,18 +90,18 @@ impl PreCalculatedOperationWasm {
 
     #[wasm_bindgen(js_name = getProcessingCost)]
     pub fn processing_cost(&self) -> BigInt {
-        BigInt::from(self.0.get_processing_cost())
+        BigInt::from(self.0.processing_fee())
     }
 
     #[wasm_bindgen(js_name=getStorageCost)]
     pub fn storage_cost(&self) -> BigInt {
-        BigInt::from(self.0.get_storage_cost())
+        BigInt::from(self.0.storage_fee())
     }
 
     #[wasm_bindgen(getter)]
     pub fn refunds(&self) -> Option<Array> {
         let array_refunds = Array::new();
-        if let Some(refunds) = self.0.get_refunds() {
+        if let Some(refunds) = self.0.fee_refunds() {
             for refund in refunds {
                 let refund_wasm: RefundsWasm = refund.into();
                 array_refunds.push(&refund_wasm.into());
@@ -114,7 +114,7 @@ impl PreCalculatedOperationWasm {
 
     pub fn refunds_as_objects(&self) -> Result<Option<Array>, JsValue> {
         let array_refunds = Array::new();
-        if let Some(refunds) = self.0.get_refunds() {
+        if let Some(refunds) = self.0.fee_refunds() {
             for refund in refunds {
                 let refund_wasm: RefundsWasm = refund.into();
                 array_refunds.push(&refund_wasm.to_object()?);

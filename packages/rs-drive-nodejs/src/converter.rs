@@ -4,6 +4,7 @@ use drive::drive::block_info::BlockInfo;
 use drive::drive::flags::StorageFlags;
 use drive::fee::credits::Credits;
 use drive::fee::epoch::CreditsPerEpoch;
+use drive::fee::result::FeeResult;
 use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::reference_path::ReferencePathType;
 use drive::grovedb::{Element, PathQuery, Query, SizedQuery};
@@ -543,4 +544,10 @@ pub fn js_object_to_fee_refunds<'a, C: Context<'a>>(
     }
 
     Ok(fee_refunds)
+}
+
+pub fn js_object_to_identity_public_key<'a, C: Context<'a>>(
+    cx: &mut C,
+    fee_result: FeeResult,
+) -> NeonResult<JsValue> {
 }

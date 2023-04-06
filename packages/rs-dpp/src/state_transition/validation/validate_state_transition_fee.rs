@@ -4,15 +4,14 @@ use std::convert::TryInto;
 use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
 use crate::consensus::fee::balance_is_not_enough_error::BalanceIsNotEnoughError;
 use crate::consensus::fee::fee_error::FeeError;
+use crate::credits::converter::convert_satoshi_to_credits;
+use crate::credits::{Credits, SignedCredits};
 use crate::data_contract::errors::IdentityNotPresentError;
-use crate::state_transition::fee::calculate_state_transition_fee_factory::calculate_state_transition_fee;
-use crate::state_transition::fee::{Credits, FeeResult};
+use crate::identity::balance_change::IdentityBalanceChange;
+use crate::state_transition::fee::calculate::calculate_state_transition_fee;
 use crate::state_transition::StateTransitionType;
 use crate::{
-    identity::{
-        convert_satoshi_to_credits,
-        state_transition::asset_lock_proof::AssetLockTransactionOutputFetcher,
-    },
+    identity::state_transition::asset_lock_proof::AssetLockTransactionOutputFetcher,
     state_repository::StateRepositoryLike,
     state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionLike},
     validation::SimpleValidationResult,
@@ -49,12 +48,15 @@ where
     async fn validate_with_custom_calculator(
         &self,
         state_transition: &StateTransition,
-        calculate_state_transition_fee_fn: impl Fn(&StateTransition) -> FeeResult,
+        calculate_state_transition_fee_fn: impl Fn(
+            &StateTransition,
+        )
+            -> Result<IdentityBalanceChange, ProtocolError>,
     ) -> Result<SimpleValidationResult, ProtocolError> {
         let mut result = SimpleValidationResult::default();
 
         let execution_context = state_transition.get_execution_context();
-        let required_fee = calculate_state_transition_fee_fn(state_transition);
+        let balance_change = calculate_state_transition_fee_fn(state_transition)?;
 
         let balance = match state_transition {
             StateTransition::IdentityCreate(st) => {
@@ -68,6 +70,7 @@ where
                             st.get_asset_lock_proof()
                         )
                     })?;
+
                 convert_satoshi_to_credits(output.value)
             }
             StateTransition::IdentityTopUp(st) => {
@@ -81,9 +84,9 @@ where
                             st.get_asset_lock_proof()
                         )
                     })?;
-                let balance = convert_satoshi_to_credits(output.value);
+                let top_up_amount = convert_satoshi_to_credits(output.value);
                 let identity_id = st.get_owner_id();
-                let identity_balance: i64 = self
+                let identity_balance_with_debt = self
                     .state_repository
                     .fetch_identity_balance_with_debt(identity_id, Some(execution_context))
                     .await?
@@ -97,16 +100,21 @@ where
                     return Ok(result);
                 }
 
-                if identity_balance.is_negative() && identity_balance.unsigned_abs() > balance {
-                    result.add_error(BalanceIsNotEnoughError::new(0, required_fee.desired_amount));
+                if identity_balance_with_debt.is_negative()
+                    && identity_balance_with_debt.unsigned_abs() > top_up_amount
+                {
+                    result.add_error(BalanceIsNotEnoughError::new(
+                        0,
+                        balance_change.into_fee_result().total_base_fee(),
+                    ));
 
                     return Ok(result);
                 }
 
-                if identity_balance.is_negative() {
-                    balance - identity_balance.unsigned_abs()
+                if identity_balance_with_debt.is_negative() {
+                    topUpAmount - identity_balance_with_debt.unsigned_abs()
                 } else {
-                    balance + identity_balance as Credits
+                    topUpAmount + identity_balance_with_debt as Credits
                 }
             }
             StateTransition::DataContractCreate(st) => {
@@ -152,9 +160,9 @@ where
         }
 
         // ? make sure Fee cannot be negative and refunds are handled differently
-        if balance < required_fee.desired_amount {
+        if balance < balance_change.desired_amount {
             result.add_error(FeeError::BalanceIsNotEnoughError(
-                BalanceIsNotEnoughError::new(balance, required_fee.desired_amount),
+                BalanceIsNotEnoughError::new(balance, balance_change.desired_amount),
             ))
         }
 
@@ -193,8 +201,6 @@ mod test {
     use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
     use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;
     use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
-    use crate::identity::RATIO;
-    use crate::state_transition::fee::{Credits, FeeResult};
     use crate::state_transition::StateTransition;
     use crate::ProtocolError;
     use crate::{

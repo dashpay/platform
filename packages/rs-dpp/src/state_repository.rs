@@ -14,6 +14,9 @@ use crate::{
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
 };
 
+use crate::credits::Credits;
+use crate::credits::SignedCredits;
+
 impl From<Infallible> for ProtocolError {
     fn from(_: Infallible) -> Self {
         unreachable!()
@@ -164,20 +167,20 @@ pub trait StateRepositoryLike: Sync {
         &self,
         identity_id: &Identifier,
         execution_context: Option<&'a StateTransitionExecutionContext>,
-    ) -> AnyResult<Option<u64>>; // TODO we should use Credits type
+    ) -> AnyResult<Option<Credits>>;
 
     /// Fetch identity balance including debt by identity ID
     async fn fetch_identity_balance_with_debt<'a>(
         &self,
         identity_id: &Identifier,
         execution_context: Option<&'a StateTransitionExecutionContext>,
-    ) -> AnyResult<Option<i64>>; // TODO we should use SignedCredits type
+    ) -> AnyResult<Option<SignedCredits>>;
 
     /// Add to identity balance
     async fn add_to_identity_balance<'a>(
         &self,
         identity_id: &Identifier,
-        amount: u64, // TODO we should use Credits type
+        amount: Credits,
         execution_context: Option<&'a StateTransitionExecutionContext>,
     ) -> AnyResult<()>;
 
@@ -185,21 +188,21 @@ pub trait StateRepositoryLike: Sync {
     async fn remove_from_identity_balance<'a>(
         &self,
         identity_id: &Identifier,
-        amount: u64, // TODO we should use Credits type
+        amount: Credits,
         execution_context: Option<&'a StateTransitionExecutionContext>,
     ) -> AnyResult<()>;
 
     /// Add to system credits
     async fn add_to_system_credits<'a>(
         &self,
-        amount: u64, // TODO we should use Credits type
+        amount: Credits,
         execution_context: Option<&'a StateTransitionExecutionContext>,
     ) -> AnyResult<()>;
 
     /// Remove from system credits
     async fn remove_from_system_credits<'a>(
         &self,
-        amount: u64, // TODO we should use Credits type
+        amount: Credits,
         execution_context: Option<&'a StateTransitionExecutionContext>,
     ) -> AnyResult<()>;
 

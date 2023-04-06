@@ -1,4 +1,5 @@
 mod precalculated_operation;
+
 pub use precalculated_operation::*;
 
 mod read_operation;
@@ -7,10 +8,12 @@ pub use read_operation::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub mod aggregate_operation_fees;
 mod signature_verification_operation;
-pub use signature_verification_operation::*;
 
-use super::{Credits, Refunds};
+use crate::credits::Credits;
+use crate::state_transition::fee::{ExecutionFees, FeeRefunds};
+pub use signature_verification_operation::*;
 
 pub const STORAGE_CREDIT_PER_BYTE: i64 = 5000;
 pub const STORAGE_PROCESSING_CREDIT_PER_BYTE: i64 = 5000;
@@ -24,13 +27,14 @@ pub enum Operation {
 }
 
 pub trait OperationLike {
+    // TODO: Rename to fee
     /// Get CPU cost of the operation
-    fn get_processing_cost(&self) -> Credits;
+    fn processing_fee(&self) -> Credits;
     /// Get storage cost of the operation
-    fn get_storage_cost(&self) -> Credits;
+    fn storage_fee(&self) -> Credits;
 
     /// Get refunds
-    fn get_refunds(&self) -> Option<&Vec<Refunds>>;
+    fn fee_refunds(&self) -> Option<&FeeRefunds>;
 }
 
 macro_rules! call_method {
@@ -44,16 +48,29 @@ macro_rules! call_method {
 }
 
 impl OperationLike for Operation {
-    fn get_processing_cost(&self) -> Credits {
-        call_method!(self, get_processing_cost)
+    fn processing_fee(&self) -> Credits {
+        call_method!(self, processing_fee)
     }
 
-    fn get_storage_cost(&self) -> Credits {
-        call_method!(self, get_storage_cost)
+    fn storage_fee(&self) -> Credits {
+        call_method!(self, storage_fee)
     }
 
-    fn get_refunds(&self) -> Option<&Vec<Refunds>> {
-        call_method!(self, get_refunds)
+    fn fee_refunds(&self) -> Option<&FeeRefunds> {
+        call_method!(self, fee_refunds)
+    }
+}
+
+impl Into<ExecutionFees> for &Operation {
+    fn into(self) -> ExecutionFees {
+        ExecutionFees {
+            processing_fee: call_method!(self, processing_fee),
+            storage_fee: call_method!(self, storage_fee),
+            fee_refunds: call_method!(self, fee_refunds)
+                .map(|r| r.to_owned())
+                .unwrap_or_default(),
+            ..Default::default()
+        }
     }
 }
 
@@ -83,6 +100,7 @@ impl Operation {
 mod test {
     use super::{Operation, PreCalculatedOperation, ReadOperation, SignatureVerificationOperation};
     use crate::identity::KeyType;
+    use crate::state_transition::fee::ExecutionFees;
     use serde_json::json;
 
     struct TestCase {
@@ -113,11 +131,9 @@ mod test {
                     "processingCost" : 468910,
                     "feeRefunds" :  [],
                 }),
-                operation: Operation::PreCalculated(PreCalculatedOperation {
-                    storage_cost: 12357,
-                    processing_cost: 468910,
-                    fee_refunds: vec![],
-                }),
+                operation: Operation::PreCalculated(PreCalculatedOperation(
+                    ExecutionFees::new_with_fees(100, 10),
+                )),
             },
             TestCase {
                 json_str: json_string!({

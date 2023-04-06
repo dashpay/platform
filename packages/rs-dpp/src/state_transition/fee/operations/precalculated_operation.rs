@@ -1,49 +1,23 @@
+use crate::credits::Credits;
+use crate::state_transition::fee::{ExecutionFees, FeeRefunds};
 use serde::{Deserialize, Serialize};
-
-use crate::state_transition::fee::{Credits, DummyFeesResult, Refunds};
 
 use super::OperationLike;
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub struct PreCalculatedOperation {
-    pub storage_cost: Credits,
-    pub processing_cost: Credits,
-    pub fee_refunds: Vec<Refunds>,
-}
-
-impl PreCalculatedOperation {
-    pub fn from_fee(fee: DummyFeesResult) -> Self {
-        Self {
-            fee_refunds: fee.fee_refunds,
-            processing_cost: fee.processing,
-            storage_cost: fee.storage,
-        }
-    }
-
-    pub fn new(
-        storage_cost: Credits,
-        processing_cost: Credits,
-        fee_refunds: impl IntoIterator<Item = Refunds>,
-    ) -> Self {
-        Self {
-            storage_cost,
-            processing_cost,
-            fee_refunds: fee_refunds.into_iter().collect(),
-        }
-    }
-}
+pub struct PreCalculatedOperation(ExecutionFees);
 
 impl OperationLike for PreCalculatedOperation {
-    fn get_processing_cost(&self) -> Credits {
-        self.processing_cost
+    fn processing_fee(&self) -> Credits {
+        self.0.processing_fee
     }
 
-    fn get_storage_cost(&self) -> Credits {
-        self.storage_cost
+    fn storage_fee(&self) -> Credits {
+        self.0.storage_fee
     }
 
-    fn get_refunds(&self) -> Option<&Vec<Refunds>> {
-        Some(&self.fee_refunds)
+    fn fee_refunds(&self) -> Option<&FeeRefunds> {
+        Some(&self.0.fee_refunds)
     }
 }

@@ -39,6 +39,7 @@ thiserror = { version = "1.0"}
 mockall = { version="0.11.3", optional=true}
 data-contracts = { path = "../data-contracts" }
 platform-value = { path = "../rs-platform-value" }
+nohash-hasher = { version = "0.2.0" }
 
 [dev-dependencies]
 test-case = { version ="2.0"}

@@ -38,7 +38,6 @@ const {
   abciBlockBegin,
   abciBlockEnd,
   abciAfterFinalizeBlock,
-  calculateStorageFeeDistributionAmountAndLeftovers,
   driveFetchIdentitiesByPublicKeyHashes,
   driveProveIdentitiesByPublicKeyHashes,
   driveAddToSystemCredits,
@@ -47,11 +46,8 @@ const {
 });
 
 const GroveDB = require('./GroveDB');
-const FeeResult = require('./FeeResult');
 
 const { appendStackAsync, appendStack } = require('./appendStack');
-
-const decodeProtocolEntity = decodeProtocolEntityFactory();
 
 // Convert the Drive methods from using callbacks to returning promises
 const driveCloseAsync = appendStackAsync(promisify(driveClose));
@@ -315,7 +311,6 @@ class Drive {
     useTransaction = false,
     extended = false,
   ) {
-    console.log('[Drive] Querying documents for type', documentType);
     const encodedQuery = await cbor.encodeAsync(query);
 
     const [encodedDocuments, , processingFee] = await driveQueryDocumentsAsync.call(
@@ -326,7 +321,7 @@ class Drive {
       epochIndex,
       useTransaction,
     );
-    console.log('[Drive] Found documents for type', documentType);
+
     const documents = encodedDocuments.map((encodedDocument) => {
       const [protocolVersion, rawDocument] = this.dppWasm.decodeProtocolEntity(encodedDocument);
 
@@ -338,7 +333,6 @@ class Drive {
         ? new ExtendedDocument(rawDocument, dataContract)
         : new Document(rawDocument, dataContract, documentType);
     });
-    console.log('[Drive] Parsed documents for type', documentType);
 
     return [
       documents,
@@ -855,10 +849,6 @@ class Drive {
     };
   }
 }
-
-// eslint-disable-next-line max-len
-Drive.calculateStorageFeeDistributionAmountAndLeftovers = calculateStorageFeeDistributionAmountAndLeftoversWithStack;
-Drive.FeeResult = FeeResult;
 
 /**
  * @typedef RawBlockInfo

@@ -2,6 +2,7 @@ use platform_value::Value;
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
+use crate::state_transition::fee::errors::FeeError;
 
 #[derive(Error, Debug)]
 pub enum StateTransitionError {
@@ -10,4 +11,6 @@ pub enum StateTransitionError {
         errors: Vec<ConsensusError>,
         raw_state_transition: Value,
     },
+    #[error(transparent)]
+    FeeError(FeeError),
 }
