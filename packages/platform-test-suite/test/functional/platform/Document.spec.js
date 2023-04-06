@@ -173,10 +173,7 @@ describe('Platform', () => {
 
       expect(broadcastError).to.exist();
       expect(broadcastError.code).to.be.equal(4009);
-      // TODO(wasm-dpp): fix this after createConsensusError is ported to wasm-dpp
-      // eslint-disable-next-line
-      // expect(broadcastError.message).to.match(/Document \w* has duplicate unique properties \$ownerId, firstName with other documents/);
-      expect(broadcastError.message).to.equal('DPP consensus error with code "4009" has been thrown');
+      expect(broadcastError.message).to.match(/Document \w* has duplicate unique properties \["\$ownerId", "firstName"] with other documents/);
     });
 
     it('should be able to create new document', async () => {
@@ -326,13 +323,10 @@ describe('Platform', () => {
 
       expect(broadcastError).to.exist();
       expect(broadcastError.code).to.be.equal(4008);
-      expect(broadcastError.message).to.equal('DPP consensus error with code "4008" has been thrown');
-      // TODO(wasm-dpp): fix this after createConsensusError is ported to wasm-dpp
-      // eslint-disable-next-line
-      // expect(broadcastError.message).to.match(/Document \w* updatedAt timestamp .* are out of block time window from .* and .*/);
+      expect(broadcastError.message).to.match(/Document \w* updatedAt timestamp .* are out of block time window from .* and .*/);
     });
 
-    it.skip('should be able to delete a document', async () => {
+    it('should be able to delete a document', async () => {
       await client.platform.documents.broadcast({
         delete: [document],
       }, identity);
@@ -347,7 +341,7 @@ describe('Platform', () => {
       expect(storedDocument).to.not.exist();
     });
 
-    it.skip('should fail to create a new document with timestamp in violated time frame', async () => {
+    it('should fail to create a new document with timestamp in violated time frame', async () => {
       document = await client.platform.documents.create(
         'customContracts.indexedDocument',
         identity,
@@ -357,11 +351,12 @@ describe('Platform', () => {
         },
       );
 
-      const createdAt = document.getCreatedAt();
+      const timestamp = new Date(document.getCreatedAt());
 
-      createdAt.setMinutes(createdAt.getMinutes() - 10);
+      timestamp.setMinutes(timestamp.getMinutes() - 10);
 
-      document.setUpdatedAt(createdAt);
+      document.setCreatedAt(timestamp.getTime());
+      document.setUpdatedAt(timestamp.getTime());
 
       let broadcastError;
 

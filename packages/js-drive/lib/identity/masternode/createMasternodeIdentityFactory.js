@@ -34,8 +34,8 @@ function createMasternodeIdentityFactory(
     const publicKeys = [{
       id: 0,
       type: pubKeyType,
-      purpose: dppWasm.KeyPurpose.AUTHENTICATION,
-      securityLevel: dppWasm.KeySecurityLevel.MASTER,
+      purpose: dppWasm.IdentityPublicKey.PURPOSES.AUTHENTICATION,
+      securityLevel: dppWasm.IdentityPublicKey.SECURITY_LEVELS.MASTER,
       readOnly: true,
       // Copy data buffer
       data: Buffer.from(pubKeyData),
@@ -57,7 +57,7 @@ function createMasternodeIdentityFactory(
 
     const identity = new dppWasm.Identity({
       protocolVersion: dpp.getProtocolVersion(),
-      id: identifier.toBuffer(),
+      id: identifier,
       publicKeys,
       balance: 0,
       revision: 0,

@@ -18,6 +18,11 @@ where
 
 #[wasm_bindgen(js_class=ValidationResult)]
 impl ValidationResultWasm {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+      Self(ValidationResult::new_with_errors(vec![]))
+    }
+
     /// This is just a test method - doesn't need to be in the resulted binding. Please
     /// remove before shipping
     #[wasm_bindgen(js_name=errorsText)]

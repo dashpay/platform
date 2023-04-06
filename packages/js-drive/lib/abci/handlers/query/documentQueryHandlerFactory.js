@@ -70,7 +70,7 @@ function documentQueryHandlerFactory(
 
         response.getProof().setMerkleProof(proof.getValue());
       } else {
-        const documentsResult = await fetchDocuments(contractId, type, options);
+        const documentsResult = await fetchDocuments(contractId, type, options, true);
 
         const documents = documentsResult.getValue();
 

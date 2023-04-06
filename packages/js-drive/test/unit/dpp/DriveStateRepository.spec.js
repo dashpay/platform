@@ -1,7 +1,10 @@
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const { InstantLock } = require('@dashevo/dashcore-lib');
+
+const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
+const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
+const getInstantLockFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getInstantLockFixture');
 
 const Long = require('long');
 
@@ -41,11 +44,11 @@ describe('DriveStateRepository', () => {
     ({ ReadOperation, StateTransitionExecutionContext } = this.dppWasm);
   });
 
-  beforeEach(function beforeEach() {
-    identity = getIdentityFixture();
-    documents = getDocumentsFixture();
-    dataContract = getDataContractFixture();
-    id = generateRandomIdentifier();
+  beforeEach(async function beforeEach() {
+    identity = await getIdentityFixture();
+    documents = await getDocumentsFixture();
+    dataContract = await getDataContractFixture();
+    id = await generateRandomIdentifier();
 
     coreRpcClientMock = {
       getRawTransaction: this.sinon.stub(),
@@ -130,15 +133,11 @@ describe('DriveStateRepository', () => {
       blockExecutionContextMock,
       simplifiedMasternodeListMock,
       rsDriveMock,
+      this.dppWasm,
       repositoryOptions,
     );
 
-    instantLockMock = {
-      getRequestId: () => 'someRequestId',
-      txid: 'someTxId',
-      signature: 'signature',
-      verify: this.sinon.stub(),
-    };
+    instantLockMock = getInstantLockFixture();
 
     executionContext = new StateTransitionExecutionContext();
     operations = [new ReadOperation(1)];
@@ -294,7 +293,7 @@ describe('DriveStateRepository', () => {
 
       expect(identityPublicKeyRepositoryMock.add).to.be.calledOnceWith(
         identity.getId(),
-        identity.getPublicKeys(),
+        identity.getPublicKeys().map((key) => key.toObject()),
         blockInfo,
         {
           useTransaction: repositoryOptions.useTransaction,
@@ -356,13 +355,13 @@ describe('DriveStateRepository', () => {
     });
   });
 
-  describe('#createDataContract', () => {
+  describe('#storeDataContract', () => {
     it('should create data contract to repository', async () => {
       dataContractRepositoryMock.create.resolves(
         new StorageResult(undefined, operations),
       );
 
-      await stateRepository.createDataContract(dataContract, executionContext);
+      await stateRepository.storeDataContract(dataContract, executionContext);
 
       expect(dataContractRepositoryMock.create).to.be.calledOnceWith(
         dataContract,
@@ -613,16 +612,15 @@ describe('DriveStateRepository', () => {
     it('it should verify instant lock using Core', async () => {
       coreRpcClientMock.verifyIsLock.resolves({ result: true });
 
-      const result = await stateRepository.verifyInstantLock(instantLockMock);
+      const result = await stateRepository.verifyInstantLock(instantLockMock.toBuffer());
 
       expect(result).to.equal(true);
       expect(coreRpcClientMock.verifyIsLock).to.have.been.calledOnceWithExactly(
-        'someRequestId',
-        'someTxId',
-        'signature',
+        instantLockMock.getRequestId().toString('hex'),
+        instantLockMock.txid,
+        instantLockMock.signature,
         42,
       );
-      expect(instantLockMock.verify).to.have.not.been.called();
     });
 
     it('should return false if core throws Invalid address or key error', async () => {
@@ -631,16 +629,15 @@ describe('DriveStateRepository', () => {
 
       coreRpcClientMock.verifyIsLock.throws(error);
 
-      const result = await stateRepository.verifyInstantLock(instantLockMock);
+      const result = await stateRepository.verifyInstantLock(instantLockMock.toBuffer());
 
       expect(result).to.equal(false);
       expect(coreRpcClientMock.verifyIsLock).to.have.been.calledOnceWithExactly(
-        'someRequestId',
-        'someTxId',
-        'signature',
+        instantLockMock.getRequestId().toString('hex'),
+        instantLockMock.txid,
+        instantLockMock.signature,
         42,
       );
-      expect(instantLockMock.verify).to.have.not.been.called();
     });
 
     it('should return false if core throws Invalid parameter', async () => {
@@ -649,32 +646,26 @@ describe('DriveStateRepository', () => {
 
       coreRpcClientMock.verifyIsLock.throws(error);
 
-      const result = await stateRepository.verifyInstantLock(instantLockMock);
+      const result = await stateRepository.verifyInstantLock(instantLockMock.toBuffer());
 
       expect(result).to.equal(false);
       expect(coreRpcClientMock.verifyIsLock).to.have.been.calledOnceWithExactly(
-        'someRequestId',
-        'someTxId',
-        'signature',
+        instantLockMock.getRequestId().toString('hex'),
+        instantLockMock.txid,
+        instantLockMock.signature,
         42,
       );
-      expect(instantLockMock.verify).to.have.not.been.called();
     });
 
     it('should return false if coreChainLockedHeight is null', async () => {
       blockExecutionContextMock.getCoreChainLockedHeight.returns(null);
 
-      const result = await stateRepository.verifyInstantLock(instantLockMock);
+      const result = await stateRepository.verifyInstantLock(instantLockMock.toBuffer());
 
       expect(result).to.be.false();
     });
 
     it('should return true on dry run', async () => {
-      const error = new Error('Some error');
-      error.code = -5;
-
-      coreRpcClientMock.verifyIsLock.throws(error);
-
       executionContext.enableDryRun();
 
       const result = await stateRepository.verifyInstantLock(instantLockMock, executionContext);
@@ -682,7 +673,6 @@ describe('DriveStateRepository', () => {
       executionContext.disableDryRun();
 
       expect(result).to.be.true();
-      expect(instantLockMock.verify).to.have.not.been.called();
       expect(coreRpcClientMock.verifyIsLock).to.have.not.been.called();
     });
   });

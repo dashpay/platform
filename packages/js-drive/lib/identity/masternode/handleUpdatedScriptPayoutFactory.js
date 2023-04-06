@@ -83,13 +83,14 @@ function handleUpdatedScriptPayoutFactory(
     const pubKeyData = getPublicKeyFromPayoutScript(newPayoutScript, withdrawPubKeyType, dppWasm);
 
     // TODO wasm-dpp doesn' use fluent api
-    const newWithdrawalIdentityPublicKey = new dppWasm.IdentityPublicKey()
-      .setId(identity.getPublicKeyMaxId() + 1)
-      .setType(withdrawPubKeyType)
-      .setData(pubKeyData)
-      .setPurpose(dppWasm.KeyPurpose.WITHDRAW)
-      .setReadOnly(true)
-      .setSecurityLevel(dppWasm.KeySecurityLevel.MASTER);
+    const newWithdrawalIdentityPublicKey = new dppWasm.IdentityPublicKey({
+      id: identity.getPublicKeyMaxId() + 1,
+      'type': withdrawPubKeyType,
+      data: pubKeyData,
+      purpose: dppWasm.KeyPurpose.WITHDRAW,
+      readOnly: true,
+      securityLevel: dppWasm.KeySecurityLevel.MASTER,
+    });
 
     await identityPublicKeyRepository.add(
       identityId,

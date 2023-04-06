@@ -1074,7 +1074,7 @@ describe('validateDataContractFactory', () => {
           properties: {
             something: {
               type: 'string',
-              format: 'url',
+              format: 'uri',
             },
           },
           additionalProperties: false,
@@ -1098,7 +1098,7 @@ describe('validateDataContractFactory', () => {
           properties: {
             something: {
               type: 'string',
-              format: 'url',
+              format: 'uri',
               maxLength: 60000,
             },
           },

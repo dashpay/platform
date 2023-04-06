@@ -17,7 +17,7 @@ use crate::document::BinaryType;
 use crate::errors::RustConversionError;
 use crate::identifier::{identifier_from_js_value, IdentifierWrapper};
 use crate::lodash::lodash_set;
-use crate::utils::{with_serde_to_platform_value, ToSerdeJSONExt, WithJsError};
+use crate::utils::{with_serde_to_platform_value, IntoWasm, ToSerdeJSONExt, WithJsError};
 use crate::{with_js_error, ConversionOptions, DocumentWasm};
 use crate::{DataContractWasm, MetadataWasm};
 
@@ -242,8 +242,15 @@ impl ExtendedDocumentWasm {
     }
 
     #[wasm_bindgen(js_name=setMetadata)]
-    pub fn set_metadata(&mut self, metadata: &MetadataWasm) {
-        self.0.metadata = Some(metadata.to_owned().into());
+    pub fn set_metadata(&mut self, metadata: JsValue) -> Result<(), JsValue> {
+        self.0.metadata = if !metadata.is_falsy() {
+            let metadata = metadata.to_wasm::<MetadataWasm>("Metadata")?;
+            Some(metadata.to_owned().into())
+        } else {
+            None
+        };
+
+        Ok(())
     }
 
     #[wasm_bindgen(js_name=toObject)]
