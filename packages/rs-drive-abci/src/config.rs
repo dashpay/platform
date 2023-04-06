@@ -225,7 +225,6 @@ mod tests {
 
     #[test]
     fn test_config_from_env() {
-        // let envfile = format!("{}/.env.example", env!("CARGO_MANIFEST_DIR"));
         let envfile = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".env.example");
 
         dotenvy::from_path(envfile.as_path()).expect("cannot load .env file");

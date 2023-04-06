@@ -152,8 +152,7 @@ impl ValidatorSet {
             .iter()
             .filter(|item| {
                 item.num_valid_members >= min_valid_members
-                    && item.quorum_ttl(core_height, dkg_interval as u32, number_of_quorums)
-                        > min_ttl
+                    && item.quorum_ttl(core_height, dkg_interval, number_of_quorums) > min_ttl
             })
             .collect::<Vec<&Quorum>>();
 
