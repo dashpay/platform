@@ -65,7 +65,8 @@ pub fn create_test_identity_with_rng(
     rng: &mut StdRng,
     transaction: TransactionArg,
 ) -> Identity {
-    let (identity_key, _) = IdentityPublicKey::random_ecdsa_master_authentication_key_with_rng(1, rng);
+    let (identity_key, _) =
+        IdentityPublicKey::random_ecdsa_master_authentication_key_with_rng(1, rng);
 
     let mut public_keys = BTreeMap::new();
 

@@ -12,11 +12,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::errors::ProtocolError;
+use crate::identity::signer::Signer;
 use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
 use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
 use crate::util::serializer;
 use crate::{BlsModule, Convertible, SerdeParsingError};
-use crate::identity::signer::Signer;
 
 pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
 
@@ -109,7 +109,7 @@ impl IdentityPublicKeyWithWitness {
 
     pub fn from_public_key_signed_external<S: Signer>(
         public_key: IdentityPublicKey,
-        signer : &S,
+        signer: &S,
     ) -> Result<Self, ProtocolError> {
         let mut public_key_with_witness: IdentityPublicKeyWithWitness = public_key.clone().into();
         let data = public_key_with_witness.to_buffer()?;

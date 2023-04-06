@@ -347,16 +347,6 @@ impl DocumentsBatchTransitionWasm {
         self.0.is_identity_state_transition()
     }
 
-    #[wasm_bindgen(js_name=setExecutionContext)]
-    pub fn set_execution_context(&mut self, context: StateTransitionExecutionContextWasm) {
-        self.0.set_execution_context(context.into())
-    }
-
-    #[wasm_bindgen(js_name=getExecutionContext)]
-    pub fn get_execution_context(&mut self) -> StateTransitionExecutionContextWasm {
-        self.0.get_execution_context().clone().into()
-    }
-
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self, options: &JsValue) -> Result<Buffer, JsValue> {
         let skip_signature = if options.is_object() {

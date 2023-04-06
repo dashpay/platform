@@ -1,5 +1,5 @@
 use dpp::{
-    identity::state_transition::identity_create_transition::validation::basic::INDENTITY_CREATE_TRANSITION_SCHEMA,
+    identity::state_transition::identity_create_transition::validation::basic::IDENTITY_CREATE_TRANSITION_SCHEMA,
     validation::ConsensusValidationResult,
 };
 use dpp::{
@@ -22,7 +22,7 @@ impl StateTransitionValidation for IdentityCreateTransition {
         drive: &Drive,
         tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let result = validate_schema(INDENTITY_CREATE_TRANSITION_SCHEMA.clone(), self);
+        let result = validate_schema(IDENTITY_CREATE_TRANSITION_SCHEMA.clone(), self);
         if !result.is_valid() {
             return Ok(result);
         }

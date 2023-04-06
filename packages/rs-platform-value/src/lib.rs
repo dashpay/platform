@@ -43,8 +43,8 @@ pub use types::identifier::{Identifier, IDENTIFIER_MEDIA_TYPE};
 
 pub use value_serialization::{from_value, to_value};
 
+use bincode::{Decode, Encode};
 pub use patch::{patch, Patch};
-use bincode::{Encode, Decode};
 
 /// A representation of a dynamic value that can handled dynamically
 #[non_exhaustive]

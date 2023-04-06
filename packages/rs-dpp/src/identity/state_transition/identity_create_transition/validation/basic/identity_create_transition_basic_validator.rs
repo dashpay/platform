@@ -15,7 +15,7 @@ use crate::version::ProtocolVersionValidator;
 use crate::{BlsModule, DashPlatformProtocolInitError, NonConsensusError};
 
 lazy_static! {
-    pub static ref INDENTITY_CREATE_TRANSITION_SCHEMA: JsonValue = serde_json::from_str(
+    pub static ref IDENTITY_CREATE_TRANSITION_SCHEMA: JsonValue = serde_json::from_str(
         include_str!("../../../../../schema/identity/stateTransition/identityCreate.json")
     )
     .unwrap();
@@ -51,7 +51,7 @@ impl<
         public_keys_signatures_validator: Arc<SV>,
     ) -> Result<Self, DashPlatformProtocolInitError> {
         let json_schema_validator =
-            JsonSchemaValidator::new(INDENTITY_CREATE_TRANSITION_SCHEMA.clone())?;
+            JsonSchemaValidator::new(IDENTITY_CREATE_TRANSITION_SCHEMA.clone())?;
 
         let identity_validator = Self {
             protocol_version_validator,

@@ -1,8 +1,8 @@
+use bincode::{Decode, Encode};
 use rand::rngs::StdRng;
 use rand::Rng;
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
-use bincode::{Encode, Decode};
 
 use serde::de::{Error as SerdeDeError, Visitor};
 use serde::{Deserialize, Serialize};
@@ -18,7 +18,19 @@ pub const IDENTIFIER_MEDIA_TYPE: &str = "application/x.dash.dpp.identifier";
 pub struct IdentifierBytes32(pub [u8; 32]);
 
 #[derive(
-    Default, Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Copy, Serialize, Deserialize, Encode, Decode
+    Default,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    Ord,
+    PartialOrd,
+    Copy,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct Identifier(pub IdentifierBytes32);
 

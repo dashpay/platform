@@ -3,6 +3,7 @@ use dashcore::secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey};
 
 use crate::consensus::signature::InvalidSignaturePublicKeySecurityLevelError;
 use crate::data_contract::state_transition::errors::PublicKeyIsDisabledError;
+use crate::identity::signer::Signer;
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError,
     PublicKeySecurityLevelNotMetError, StateTransitionIsNotSignedError, WrongPublicKeyPurposeError,
@@ -13,7 +14,6 @@ use crate::{
     util::hash::ripemd160_sha256,
     BlsModule,
 };
-use crate::identity::signer::Signer;
 
 use super::StateTransitionLike;
 
@@ -25,7 +25,11 @@ where
     fn get_signature_public_key_id(&self) -> Option<KeyID>;
     fn set_signature_public_key_id(&mut self, key_id: KeyID);
 
-    fn sign_external<S: Signer>(&mut self, identity_public_key: &IdentityPublicKey, signer : &S) -> Result<(), ProtocolError> {
+    fn sign_external<S: Signer>(
+        &mut self,
+        identity_public_key: &IdentityPublicKey,
+        signer: &S,
+    ) -> Result<(), ProtocolError> {
         self.verify_public_key_level_and_purpose(identity_public_key)?;
         self.verify_public_key_is_enabled(identity_public_key)?;
         let data = self.to_cbor_buffer(true)?;

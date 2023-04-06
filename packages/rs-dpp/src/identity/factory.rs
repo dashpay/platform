@@ -122,10 +122,11 @@ impl Identity {
         key_count: KeyCount,
         rng: &mut StdRng,
     ) -> Result<(Vec<Self>, I), ProtocolError>
-        where
-            I: Default
+    where
+        I: Default
             + FromIterator<(IdentityPublicKey, Vec<u8>)>
-            + Extend<(IdentityPublicKey, Vec<u8>)> {
+            + Extend<(IdentityPublicKey, Vec<u8>)>,
+    {
         let mut vec: Vec<Identity> = vec![];
         let mut private_key_map: Vec<(IdentityPublicKey, Vec<u8>)> = vec![];
         for _i in 0..count {

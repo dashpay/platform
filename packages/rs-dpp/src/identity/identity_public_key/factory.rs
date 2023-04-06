@@ -222,39 +222,51 @@ impl IdentityPublicKey {
     }
 
     // TODO: Move to a separate module under a feature
-    pub fn random_ecdsa_master_authentication_key_with_rng(id: KeyID, rng: &mut StdRng) -> (Self, Vec<u8>) {
+    pub fn random_ecdsa_master_authentication_key_with_rng(
+        id: KeyID,
+        rng: &mut StdRng,
+    ) -> (Self, Vec<u8>) {
         let key_type = ECDSA_SECP256K1;
         let purpose = AUTHENTICATION;
         let security_level = MASTER;
         let read_only = false;
         let (data, private_data) = key_type.random_public_and_private_key_data(rng);
-        (IdentityPublicKey {
-            id,
-            key_type,
-            purpose,
-            security_level,
-            read_only,
-            disabled_at: None,
-            data: data.into(),
-        }, private_data)
+        (
+            IdentityPublicKey {
+                id,
+                key_type,
+                purpose,
+                security_level,
+                read_only,
+                disabled_at: None,
+                data: data.into(),
+            },
+            private_data,
+        )
     }
 
     // TODO: Move to a separate module under a feature
-    pub fn random_ecdsa_high_level_authentication_key_with_rng(id: KeyID, rng: &mut StdRng) -> (Self, Vec<u8>) {
+    pub fn random_ecdsa_high_level_authentication_key_with_rng(
+        id: KeyID,
+        rng: &mut StdRng,
+    ) -> (Self, Vec<u8>) {
         let key_type = ECDSA_SECP256K1;
         let purpose = AUTHENTICATION;
         let security_level = HIGH;
         let read_only = false;
         let (data, private_data) = key_type.random_public_and_private_key_data(rng);
-        (IdentityPublicKey {
-            id,
-            key_type,
-            purpose,
-            security_level,
-            read_only,
-            disabled_at: None,
-            data: data.into(),
-        }, private_data)
+        (
+            IdentityPublicKey {
+                id,
+                key_type,
+                purpose,
+                security_level,
+                read_only,
+                disabled_at: None,
+                data: data.into(),
+            },
+            private_data,
+        )
     }
 
     // TODO: Move to a separate module under a feature
@@ -296,19 +308,21 @@ impl IdentityPublicKey {
             ));
         }
         //create a master and a high level key
-        let mut main_keys = vec![Self::random_ecdsa_master_authentication_key_with_rng(0, rng), Self::random_ecdsa_high_level_authentication_key_with_rng(1, rng)];
+        let mut main_keys = vec![
+            Self::random_ecdsa_master_authentication_key_with_rng(0, rng),
+            Self::random_ecdsa_high_level_authentication_key_with_rng(1, rng),
+        ];
         let mut used_key_matrix = [false; 16].to_vec();
         used_key_matrix[0] = true;
         used_key_matrix[2] = true;
-        main_keys.extend((2..key_count)
-            .map(|i| {
-                Self::random_authentication_key_with_private_key_with_rng(
-                    i,
-                    rng,
-                    Some((i, &mut used_key_matrix)),
-                )
-                    .unwrap()
-            }));
+        main_keys.extend((2..key_count).map(|i| {
+            Self::random_authentication_key_with_private_key_with_rng(
+                i,
+                rng,
+                Some((i, &mut used_key_matrix)),
+            )
+            .unwrap()
+        }));
         Ok(main_keys)
     }
 

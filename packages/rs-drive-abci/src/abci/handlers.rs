@@ -36,7 +36,9 @@ use crate::abci::server::AbciApplication;
 use crate::rpc::core::CoreRPCLike;
 use drive::fee::credits::SignedCredits;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
-use tenderdash_abci::proto::abci::{self as proto, ResponseException};
+use tenderdash_abci::proto::abci::{
+    self as proto, RequestExtendVote, ResponseException, ResponseExtendVote,
+};
 use tenderdash_abci::proto::abci::{
     ExecTxResult, RequestCheckTx, RequestFinalizeBlock, RequestInitChain, RequestPrepareProposal,
     RequestProcessProposal, RequestQuery, ResponseCheckTx, ResponseFinalizeBlock,

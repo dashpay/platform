@@ -19,7 +19,7 @@ use crate::utils::WithJsError;
 use crate::validation::ValidationResultWasm;
 use crate::{
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
-    DataContractCreateTransitionWasm,
+    DataContractCreateTransitionWasm, StateTransitionExecutionContextWasm,
 };
 
 use super::DataContractCreateTransitionParameters;
@@ -28,11 +28,13 @@ use super::DataContractCreateTransitionParameters;
 pub async fn validate_data_contract_create_transition_state(
     state_repository: ExternalStateRepositoryLike,
     state_transition: DataContractCreateTransitionWasm,
+    execution_context: StateTransitionExecutionContextWasm,
 ) -> Result<ValidationResultWasm, JsValue> {
     let wrapped_state_repository = ExternalStateRepositoryLikeWrapper::new(state_repository);
     let validation_result = dpp_validate_data_contract_create_transition_state(
         &wrapped_state_repository,
         &state_transition.into(),
+        &execution_context.into(),
     )
     .await
     .with_js_error()?;

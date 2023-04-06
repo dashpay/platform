@@ -56,12 +56,12 @@ use crate::fee::epoch::EpochIndex;
 use crate::fee::get_overflow_error;
 #[cfg(feature = "full")]
 use crate::fee_pools::epochs::Epoch;
-#[cfg(feature = "full")]
-use dpp::{bincode, bincode::config};
 #[cfg(any(feature = "full", feature = "verify"))]
 use costs::storage_cost::removal::Identifier;
 #[cfg(feature = "full")]
 use costs::storage_cost::removal::StorageRemovalPerEpochByIdentifier;
+#[cfg(feature = "full")]
+use dpp::{bincode, bincode::config};
 #[cfg(any(feature = "full", feature = "verify"))]
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "full")]
@@ -212,7 +212,7 @@ impl FeeRefunds {
     /// Serialize the structure
     pub fn serialize(&self) -> Result<Vec<u8>, Error> {
         let config = config::standard().with_big_endian().with_no_limit();
-        bincode::encode_to_vec(&self.0, config)            .map_err(|_| {
+        bincode::encode_to_vec(&self.0, config).map_err(|_| {
             Error::Fee(FeeError::CorruptedRemovedBytesFromIdentitiesSerialization(
                 "unable to serialize",
             ))
@@ -227,9 +227,13 @@ impl FeeRefunds {
     /// Deserialized struct from bytes
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
         let config = config::standard().with_big_endian().with_limit::<15000>();
-        let refund = bincode::decode_from_slice(bytes, config).map_err(|e| Error::Fee(FeeError::CorruptedRemovedBytesFromIdentitiesSerialization(
-            "unable to deserialize",
-        ))).map(|(a, _)| a)?;
+        let refund = bincode::decode_from_slice(bytes, config)
+            .map_err(|e| {
+                Error::Fee(FeeError::CorruptedRemovedBytesFromIdentitiesSerialization(
+                    "unable to deserialize",
+                ))
+            })
+            .map(|(a, _)| a)?;
         Ok(FeeRefunds(refund))
     }
 }

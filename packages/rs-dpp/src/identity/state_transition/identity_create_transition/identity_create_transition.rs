@@ -5,9 +5,11 @@ use platform_value::{BinaryData, IntegerReplacementType, ReplacementType, Value}
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
+use crate::identity::signer::Signer;
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
 use crate::identity::Identity;
+use crate::identity::KeyType::ECDSA_HASH160;
 use crate::prelude::Identifier;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::state_transition::{
@@ -15,8 +17,6 @@ use crate::state_transition::{
 };
 use crate::{BlsModule, NativeBlsModule, NonConsensusError, ProtocolError};
 use platform_value::btreemap_extensions::BTreeValueRemoveInnerValueFromMapHelper;
-use crate::identity::KeyType::ECDSA_HASH160;
-use crate::identity::signer::Signer;
 
 pub const IDENTIFIER_FIELDS: [&str; 1] = [property_names::IDENTITY_ID];
 pub const BINARY_FIELDS: [&str; 3] = [
@@ -137,14 +137,25 @@ impl TryFrom<Identity> for IdentityCreateTransition {
 
 /// Main state transition functionality implementation
 impl IdentityCreateTransition {
-    pub fn try_from_identity_with_signer<S: Signer>(identity: Identity, asset_lock_proof: AssetLockProof, asset_lock_proof_private_key: &[u8], signer: &S, bls: &impl BlsModule) -> Result<Self, ProtocolError>  {
+    pub fn try_from_identity_with_signer<S: Signer>(
+        identity: Identity,
+        asset_lock_proof: AssetLockProof,
+        asset_lock_proof_private_key: &[u8],
+        signer: &S,
+        bls: &impl BlsModule,
+    ) -> Result<Self, ProtocolError> {
         let mut identity_create_transition = IdentityCreateTransition::default();
         identity_create_transition.set_protocol_version(identity.protocol_version);
 
         let public_keys = identity
             .get_public_keys()
             .iter()
-            .map(|(_, public_key)| IdentityPublicKeyWithWitness::from_public_key_signed_external(public_key.clone(), signer))
+            .map(|(_, public_key)| {
+                IdentityPublicKeyWithWitness::from_public_key_signed_external(
+                    public_key.clone(),
+                    signer,
+                )
+            })
             .collect::<Result<Vec<IdentityPublicKeyWithWitness>, ProtocolError>>()?;
         identity_create_transition.set_public_keys(public_keys);
 
@@ -152,7 +163,11 @@ impl IdentityCreateTransition {
             .set_asset_lock_proof(asset_lock_proof)
             .map_err(ProtocolError::from)?;
 
-        identity_create_transition.sign_by_private_key(asset_lock_proof_private_key, ECDSA_HASH160, bls)?;
+        identity_create_transition.sign_by_private_key(
+            asset_lock_proof_private_key,
+            ECDSA_HASH160,
+            bls,
+        )?;
 
         Ok(identity_create_transition)
     }

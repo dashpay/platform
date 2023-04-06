@@ -40,7 +40,7 @@ where
         apply_documents_batch_transition(
             &self.state_repository,
             state_transition,
-            execution_context,
+            &execution_context,
         )
         .await
     }
@@ -49,7 +49,7 @@ where
 pub async fn apply_documents_batch_transition(
     state_repository: &impl StateRepositoryLike,
     state_transition: &DocumentsBatchTransition,
-    execution_context: StateTransitionExecutionContext,
+    execution_context: &StateTransitionExecutionContext,
 ) -> Result<(), ProtocolError> {
     let replace_transitions: Vec<_> = state_transition
         .get_transitions_slice()
@@ -60,7 +60,7 @@ pub async fn apply_documents_batch_transition(
     let fetched_documents = fetch_extended_documents(
         state_repository,
         replace_transitions.as_slice(),
-        &execution_context,
+        execution_context,
     )
     .await?;
 
@@ -78,7 +78,7 @@ pub async fn apply_documents_batch_transition(
                     document_create_transition.to_extended_document(state_transition.owner_id)?;
                 //todo: eventually we should use Cow instead
                 state_repository
-                    .create_document(&document, Some(&execution_context))
+                    .create_document(&document, Some(execution_context))
                     .await?;
             }
             DocumentTransition::Replace(document_replace_transition) => {
@@ -86,7 +86,7 @@ pub async fn apply_documents_batch_transition(
                     let document = document_replace_transition
                         .to_extended_document_for_dry_run(state_transition.owner_id)?;
                     state_repository
-                        .update_document(&document, Some(&execution_context))
+                        .update_document(&document, Some(execution_context))
                         .await?;
                 } else {
                     let document = fetched_documents_by_id
@@ -96,7 +96,7 @@ pub async fn apply_documents_batch_transition(
                         })?;
                     document_replace_transition.replace_extended_document(document)?;
                     state_repository
-                        .update_document(document, Some(&execution_context))
+                        .update_document(document, Some(execution_context))
                         .await?;
                 };
             }
@@ -106,7 +106,7 @@ pub async fn apply_documents_batch_transition(
                         &document_delete_transition.base.data_contract,
                         &document_delete_transition.base.document_type_name,
                         &document_delete_transition.base.id,
-                        Some(&execution_context.clone()),
+                        Some(execution_context),
                     )
                     .await?;
             }
@@ -208,7 +208,7 @@ mod test {
         let result = apply_documents_batch_transition(
             &state_repository,
             &state_transition,
-            execution_context,
+            &execution_context,
         )
         .await;
         assert!(result.is_ok());
