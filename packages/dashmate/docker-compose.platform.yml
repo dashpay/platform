@@ -121,6 +121,8 @@ services:
       - DASHMATE_HOME_DIR=/home/dashmate/.dashmate
       - LOCAL_UID=${LOCAL_UID:?err}
       - LOCAL_GID=${LOCAL_GID:?err}
+    ports:
+      - ${PLATFORM_DASHMATE_HELPER_JSON_RPC_PORT:?err}:${PLATFORM_DASHMATE_HELPER_JSON_RPC_PORT:?err}
     command: yarn workspace dashmate helper ${CONFIG_NAME:?err}
     volumes:
       - ${DASHMATE_HOME_DIR:?err}:/home/dashmate/.dashmate

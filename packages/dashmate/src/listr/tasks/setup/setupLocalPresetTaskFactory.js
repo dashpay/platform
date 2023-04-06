@@ -244,6 +244,8 @@ function setupLocalPresetTaskFactory(
                     masternodeRewardSharesDerivedSecondPrivateKey.privateKey
                       .toPublicKey().toString(),
                   );
+
+                  config.set('dashmate.helper.jsonRpc.port', config.get('dashmate.helper.jsonRpc.port') + (i * 100));
                 }
               },
               options: {

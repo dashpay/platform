@@ -512,4 +512,26 @@ module.exports = {
 
     return configFile;
   },
+  '0.24.0-dev.18': (configFile) => {
+    let groupJsonRpcPort = systemConfigs.local.dashmate.helper.jsonRpc.port
+
+    Object.entries(configFile.configs)
+      .forEach(([name, config]) => {
+        if (config.group === 'local') {
+          config.dashmate.helper.jsonRpc = {
+            enabled: false,
+            port: groupJsonRpcPort
+          }
+
+          groupJsonRpcPort+= 100
+        } else {
+          config.dashmate.helper.jsonRpc = {
+            enabled: false,
+            port: systemConfigs.base.dashmate.helper.jsonRpc.port
+          }
+        }
+      });
+
+    return configFile;
+  }
 };

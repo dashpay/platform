@@ -669,6 +669,19 @@ module.exports = {
             docker: {
               $ref: '#/definitions/docker',
             },
+            jsonRpc: {
+              type: 'object',
+              properties: {
+                enabled: {
+                  type: 'boolean'
+                },
+                port: {
+                  $ref: '#/definitions/port',
+                },
+              },
+              required: ['enabled', 'port'],
+              additionalProperties: false,
+            },
           },
           required: ['docker'],
           additionalProperties: false,
