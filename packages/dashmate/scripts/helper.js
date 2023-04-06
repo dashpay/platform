@@ -29,13 +29,6 @@ const createDIContainer = require('../src/createDIContainer');
 
   const config = configFile.getConfig(configName);
 
-  // Register config collection in the container
-  container.register({
-    configFile: asValue(configFile),
-    config: asValue(config),
-    flags: asValue({ format: 'json' }),
-  });
-
   const provider = config.get('platform.dapi.envoy.ssl.provider');
 
   if (provider === 'zerossl') {
@@ -55,6 +48,6 @@ const createDIContainer = require('../src/createDIContainer');
 
     httpAPIServer
       // eslint-disable-next-line no-console
-      .listen(port, () => console.log(`Dashmate JSON-RPC API started on port: ${port}`));
+      .listen(port, () => console.log(`Dashmate JSON-RPC API started on port ${port}`));
   }
 }());
