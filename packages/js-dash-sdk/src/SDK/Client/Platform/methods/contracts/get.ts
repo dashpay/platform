@@ -17,6 +17,7 @@ declare type ContractIdentifier = string | typeof Identifier;
  * @returns contracts
  */
 export async function get(this: Platform, identifier: ContractIdentifier): Promise<any> {
+  this.logger.debug(`[Contracts#get] Get Data Contract "${identifier}"`);
   await this.initialize();
 
   // TODO(wasm): expose Metadata from dedicated module that handles all WASM-DPP types
@@ -38,6 +39,7 @@ export async function get(this: Platform, identifier: ContractIdentifier): Promi
   try {
     dataContractResponse = await this.client.getDAPIClient()
       .platform.getDataContract(contractId);
+    this.logger.silly(`[Contracts#get] Fetched Data Contract "${identifier}"`);
   } catch (e) {
     if (e instanceof NotFoundError) {
       return null;
@@ -69,6 +71,8 @@ export async function get(this: Platform, identifier: ContractIdentifier): Promi
       appDefinition.contract = contract;
     }
   }
+
+  this.logger.debug(`[Contracts#get] Obtained Data Contract "${identifier}"`);
 
   return contract;
 }

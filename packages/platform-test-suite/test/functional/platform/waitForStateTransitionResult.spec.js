@@ -15,13 +15,14 @@ describe.skip('Platform', () => {
     let blake3;
 
     before(async () => {
-      dpp = new Dash.PlatformProtocol();
-      await dpp.initialize();
+      // dpp = new Dash.PlatformProtocol();
+      // await dpp.initialize();
 
       await hashFunction.init();
       blake3 = hashFunction.hashFunction;
 
       client = await createClientWithFundedWallet(20000);
+      await client.platform.initialize();
     });
 
     after(async () => {
@@ -83,7 +84,7 @@ describe.skip('Platform', () => {
           identityProof.calculateRoot([1], [identityLeafRoot], 6),
         )
         .toString('hex');
-      const parsedIdentity = client.platform.dpp
+      const parsedIdentity = client.platform.wasmDpp
         .identity.createFromBuffer(parsedStoreTreeProof.values[0]);
 
       expect(identity.getId()).to.be.deep.equal(parsedIdentity.getId());
