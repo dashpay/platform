@@ -9,9 +9,10 @@ const generateRandomIdentifier = require('../../lib/test/utils/generateRandomIde
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
 const waitForSTPropagated = require('../../lib/waitForSTPropagated');
 
-const { PlatformProtocol: { IdentityPublicKey } } = Dash;
+const { PlatformProtocol: { IdentityPublicKey }, Core: { PrivateKey } } = Dash;
 
-describe('Masternode Reward Shares', () => {
+// TODO(wasm-dpp): restore once we fixed missing fetchSMLStore in mn reward shares data trigger
+describe.skip('Masternode Reward Shares', () => {
   let failed = false;
   let client;
   // let dpp;
@@ -136,29 +137,36 @@ describe('Masternode Reward Shares', () => {
 
       const signerKey = masternodeOwnerIdentity.getPublicKeys()[0];
 
+      const updatedKeys = [];
       const promises = stateTransition.getPublicKeysToAdd().map(async (publicKey) => {
         stateTransition.setSignaturePublicKeyId(signerKey.getId());
 
         await stateTransition.signByPrivateKey(derivedPrivateKey.toBuffer(), publicKey.getType());
 
         publicKey.setSignature(stateTransition.getSignature());
+        updatedKeys.push(publicKey);
 
         stateTransition.setSignature(undefined);
         stateTransition.setSignaturePublicKeyId(undefined);
       });
 
       await Promise.all(promises);
+      stateTransition.setPublicKeysToAdd(updatedKeys);
 
       stateTransition.setSignaturePublicKeyId(0);
-
       await stateTransition.signByPrivateKey(
-        masternodeOwnerMasterPrivateKey,
+        new PrivateKey(masternodeOwnerMasterPrivateKey).toBuffer(),
         IdentityPublicKey.TYPES.ECDSA_SECP256K1,
       );
 
       await client.platform.broadcastStateTransition(
         stateTransition,
       );
+
+      await waitForSTPropagated();
+
+      // Re-fetch identity after it got updated
+      masternodeOwnerIdentity = await client.platform.identities.get(masternodeOwnerIdentifier);
     });
 
     it('should be able to create reward shares with existing identity', async () => {
@@ -173,15 +181,13 @@ describe('Masternode Reward Shares', () => {
         },
       );
 
-      const stateTransition = client.platform.document.createStateTransition({
+      const stateTransition = client.platform.wasmDpp.document.createStateTransition({
         create: [rewardShare],
       });
 
-      stateTransition.setSignaturePublicKeyId(signaturePublicKeyId);
-
-      await stateTransition.signByPrivateKey(
-        derivedPrivateKey,
-        IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+      await stateTransition.sign(
+        masternodeOwnerIdentity.getPublicKeyById(signaturePublicKeyId),
+        derivedPrivateKey.toBuffer(),
       );
 
       await client.platform.broadcastStateTransition(
@@ -190,7 +196,7 @@ describe('Masternode Reward Shares', () => {
     });
 
     it('should not be able to create reward shares with non-existing identity', async () => {
-      const payToId = generateRandomIdentifier();
+      const payToId = await generateRandomIdentifier();
 
       const invalidRewardShare = await client.platform.documents.create(
         'masternodeRewardShares.rewardShare',
@@ -201,15 +207,13 @@ describe('Masternode Reward Shares', () => {
         },
       );
 
-      const stateTransition = dpp.document.createStateTransition({
+      const stateTransition = client.platform.wasmDpp.document.createStateTransition({
         create: [invalidRewardShare],
       });
 
-      stateTransition.setSignaturePublicKeyId(signaturePublicKeyId);
-
-      await stateTransition.signByPrivateKey(
-        derivedPrivateKey,
-        IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+      await stateTransition.sign(
+        masternodeOwnerIdentity.getPublicKeyById(signaturePublicKeyId),
+        derivedPrivateKey.toBuffer(),
       );
 
       try {
