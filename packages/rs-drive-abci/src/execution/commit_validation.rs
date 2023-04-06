@@ -1,13 +1,10 @@
 use crate::abci::AbciError;
-use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
-use dashcore_rpc::dashcore_rpc_json::QuorumHash;
 use dpp::bls_signatures;
 use dpp::bls_signatures::Serialize;
 use dpp::validation::SimpleValidationResult;
-use drive::grovedb::Transaction;
 use tenderdash_abci::proto::abci::CommitInfo;
 use tenderdash_abci::proto::types::BlockId;
 
@@ -31,28 +28,18 @@ where
         &self,
         commit: CommitInfo,
         block_id: BlockId,
+        quorum_public_key: bls_signatures::PublicKey,
     ) -> Result<SimpleValidationResult<AbciError>, Error> {
         let signature = commit.block_signature;
         // We could have received a fake commit, so signature validation needs to be returned if error as a simple validation result
         let signature = match bls_signatures::Signature::from_bytes(signature.as_slice()) {
             Ok(signature) => signature,
-            Err(e) => return Ok(SimpleValidationResult::new_with_error(e.into())),
+            Err(e) => {
+                return Ok(SimpleValidationResult::new_with_error(
+                    AbciError::SignatureError(e.into()),
+                ))
+            }
         };
-        let public_key = self
-            .core_rpc
-            .get_quorum_info(
-                self.config.quorum_type.clone(),
-                &QuorumHash {
-                    0: commit.quorum_hash,
-                },
-                Some(false),
-            )?
-            .quorum_public_key;
-        let public_key = match bls_signatures::PublicKey::from_bytes(public_key.as_slice()) {
-            Ok(public_key) => public_key,
-            Err(e) => return Ok(SimpleValidationResult::new_with_error(e.into())),
-        };
-
         // todo: public_key.verify(signature, )
 
         Ok(SimpleValidationResult::default())
