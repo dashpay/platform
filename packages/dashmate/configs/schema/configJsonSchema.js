@@ -683,7 +683,7 @@ module.exports = {
               additionalProperties: false,
             },
           },
-          required: ['docker'],
+          required: ['docker', 'api'],
           additionalProperties: false,
         },
       },
