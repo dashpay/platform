@@ -516,7 +516,7 @@ module.exports = {
     let groupJsonRpcPort = systemConfigs.local.dashmate.helper.jsonRpc.port;
 
     Object.entries(configFile.configs)
-      .forEach(([name, config]) => {
+      .forEach(([, config]) => {
         if (config.group === 'local') {
           config.dashmate.helper.jsonRpc = {
             enabled: false,
