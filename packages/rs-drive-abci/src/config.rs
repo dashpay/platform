@@ -134,7 +134,7 @@ pub struct PlatformConfig {
     pub verify_sum_trees: bool,
 
     /// The default quorum type
-    pub quorum_type: QuorumType,
+    pub quorum_type: String,
 
     /// The default quorum size
     pub quorum_size: u16,
@@ -150,6 +150,21 @@ impl PlatformConfig {
     // #[allow(unused)]
     fn default_verify_sum_trees() -> bool {
         true
+    }
+
+    /// Return type of quorum
+    pub fn quorum_type(&self) -> QuorumType {
+        let found = if let Ok(t) = self.quorum_type.trim().parse::<u32>() {
+            QuorumType::from(t)
+        } else {
+            QuorumType::from(self.quorum_type.as_str())
+        };
+
+        if found == QuorumType::UNKNOWN {
+            panic!("config: unsupported QUORUM_TYPE: {}", self.quorum_type);
+        }
+
+        found
     }
 }
 /// create new object using values from environment variables
@@ -169,7 +184,7 @@ impl Default for PlatformConfig {
     fn default() -> Self {
         Self {
             verify_sum_trees: true,
-            quorum_type: QuorumType::Llmq100_67,
+            quorum_type: "llmq_100_67".to_string(),
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 15,
             drive: Default::default(),
@@ -188,6 +203,8 @@ impl Default for PlatformConfig {
 mod tests {
     use std::env;
 
+    use dashcore_rpc::dashcore_rpc_json::QuorumType;
+
     use super::FromEnv;
 
     #[test]
@@ -200,5 +217,6 @@ mod tests {
 
         let config = super::PlatformConfig::from_env().unwrap();
         assert_eq!(config.verify_sum_trees, true);
+        assert_ne!(config.quorum_type(), QuorumType::UNKNOWN);
     }
 }
