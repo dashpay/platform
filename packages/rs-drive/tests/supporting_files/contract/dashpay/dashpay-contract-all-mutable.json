@@ -28,7 +28,7 @@
       "properties": {
         "avatarUrl": {
           "type": "string",
-          "format": "url",
+          "format": "uri",
           "maxLength": 2048
         },
         "publicMessage": {
