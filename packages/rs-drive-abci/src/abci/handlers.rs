@@ -35,6 +35,7 @@
 use crate::abci::server::AbciApplication;
 use crate::rpc::core::CoreRPCLike;
 use drive::fee::credits::SignedCredits;
+use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 use tenderdash_abci::proto::abci::{
     self as proto, RequestExtendVote, ResponseException, ResponseExtendVote,
@@ -48,6 +49,9 @@ use tenderdash_abci::proto::abci::{
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::engine::BlockExecutionOutcome;
+
+use super::withdrawal::WithdrawalTxs;
+use super::AbciError;
 
 impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>
 where
@@ -181,10 +185,57 @@ where
         let response = ResponseProcessProposal {
             app_hash: app_hash.to_vec(),
             tx_results,
+            status: proto::response_process_proposal::ProposalStatus::Accept.into(),
             ..Default::default()
         };
 
         Ok(response)
+    }
+
+    fn extend_vote(
+        &self,
+        request: proto::RequestExtendVote,
+    ) -> Result<proto::ResponseExtendVote, proto::ResponseException> {
+        let transaction_guard = self.transaction.read().unwrap();
+        let transaction = transaction_guard.as_ref().unwrap();
+
+        self.must_match(request.height, request.round, request.hash)?;
+
+        let withdrawals = WithdrawalTxs::load(Some(transaction), &self.platform.drive)?;
+
+        Ok(proto::ResponseExtendVote {
+            vote_extensions: withdrawals.to_vec(),
+        })
+    }
+
+    fn verify_vote_extension(
+        &self,
+        request: proto::RequestVerifyVoteExtension,
+    ) -> Result<proto::ResponseVerifyVoteExtension, proto::ResponseException> {
+        let transaction_guard = self.transaction.read().unwrap();
+        let transaction = transaction_guard.as_ref().unwrap();
+
+        self.must_match(request.height, request.round, request.hash)?;
+
+        let got: WithdrawalTxs = request.vote_extensions.into();
+        let expected = WithdrawalTxs::load(Some(transaction), &self.platform.drive)?;
+
+        if let Err(err) = self.platform.check_withdrawals(&got, &expected, None) {
+            tracing::error!(
+                method = "verify_vote_extension",
+                ?got,
+                ?expected,
+                ?err,
+                "vote extension mismatch"
+            );
+            Ok(proto::ResponseVerifyVoteExtension {
+                status: VerifyStatus::Reject.into(),
+            })
+        } else {
+            Ok(proto::ResponseVerifyVoteExtension {
+                status: VerifyStatus::Accept.into(),
+            })
+        }
     }
 
     fn finalize_block(
@@ -198,6 +249,7 @@ where
                 "trying to finalize block without a current transaction",
             ),
         ))?;
+
         self.platform
             .finalize_block_proposal(request, transaction)?;
 
@@ -798,3 +850,28 @@ where
 //         }
 //     }
 // }
+impl<'a, C> AbciApplication<'a, C> {
+    /// Check if current state (round/height/hash) matches received message.
+    fn must_match(&self, height: i64, round: i32, hash: Vec<u8>) -> Result<(), Error> {
+        let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
+        let block_execution_context =
+            guarded_block_execution_context
+                .as_ref()
+                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "block execution context must be set in block begin handler",
+                )))?;
+
+        let block_state_info = &block_execution_context.block_state_info;
+
+        if !block_state_info.matches(height as u64, round as u32, hash)? {
+            Err(Error::from(AbciError::RequestForWrongBlockReceived(
+                format!(
+                    "received request for height: {} rount: {}, expected height: {} round: {}",
+                    height, round, block_state_info.height, block_state_info.round
+                ),
+            )))
+        } else {
+            Ok(())
+        }
+    }
+}
