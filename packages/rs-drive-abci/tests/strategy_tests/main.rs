@@ -34,7 +34,10 @@ use crate::DocumentAction::{DocumentActionDelete, DocumentActionInsert};
 use anyhow::anyhow;
 use dashcore::secp256k1::SecretKey;
 use dashcore::{signer, Network, PrivateKey};
-use dpp::bls_signatures::Serialize;
+use dashcore_rpc::dashcore_rpc_json::{
+    QuorumHash as QuorumHashObject, QuorumInfoResult, QuorumType,
+};
+use dpp::bls_signatures::{PrivateKey as BlsPrivateKey, PublicKey as BlsPublicKey, Serialize};
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::document::document_transition::document_base_transition::DocumentBaseTransition;
 use dpp::document::document_transition::{
@@ -55,7 +58,7 @@ use dpp::tests::fixtures::{
     instant_asset_lock_proof_fixture, instant_asset_lock_proof_transaction_fixture,
 };
 use dpp::version::LATEST_VERSION;
-use dpp::{NativeBlsModule, ProtocolError};
+use dpp::{bls_signatures, NativeBlsModule, ProtocolError};
 use drive::common::helpers::identities::create_test_masternode_identities_with_rng;
 use drive::contract::{Contract, CreateRandomDocument, DocumentType};
 use drive::dpp::document::Document;
@@ -86,6 +89,38 @@ use std::str::FromStr;
 mod upgrade_fork_tests;
 
 pub type QuorumHash = [u8; 32];
+pub type ProTxHash = [u8; 32];
+
+#[derive(Clone)]
+pub struct TestQuorumInfo {
+    quorum_hash: QuorumHash,
+    validator_set: Vec<ProTxHash>,
+    // in reality quorums don't have a private key,
+    // however for these tests, we can just sign with a private key to mimic threshold signing
+    private_key: BlsPrivateKey,
+    public_key: BlsPublicKey,
+}
+
+impl From<&TestQuorumInfo> for QuorumInfoResult {
+    fn from(value: &TestQuorumInfo) -> Self {
+        let TestQuorumInfo {
+            quorum_hash,
+            validator_set,
+            private_key,
+            public_key,
+        } = value;
+        QuorumInfoResult {
+            height: 0,
+            quorum_type: QuorumType::Llmq25_67,
+            quorum_hash: QuorumHashObject(quorum_hash.to_vec()),
+            quorum_index: 0,
+            mined_block: vec![],
+            members: vec![],
+            quorum_public_key: public_key.as_bytes(),
+            secret_key_share: None,
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct Frequency {
@@ -122,8 +157,6 @@ pub struct DocumentOp {
     pub document_type: DocumentType,
     pub action: DocumentAction,
 }
-
-pub type ProTxHash = [u8; 32];
 
 /// This simple signer is only to be used in tests
 #[derive(Default, Debug)]
@@ -482,7 +515,7 @@ pub struct ChainExecutionOutcome<'a> {
     pub masternode_identity_balances: BTreeMap<[u8; 32], Credits>,
     pub identities: Vec<Identity>,
     pub proposers: Vec<ProTxHash>,
-    pub quorums: BTreeMap<QuorumHash, Vec<ProTxHash>>,
+    pub quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
     pub current_quorum_hash: QuorumHash,
     pub current_proposer_versions: Option<HashMap<ProTxHash, ValidatorVersionMigration>>,
     pub end_epoch_index: u16,
@@ -494,7 +527,7 @@ pub struct ChainExecutionParameters {
     pub block_count: u64,
     pub block_spacing_ms: u64,
     pub proposers: Vec<[u8; 32]>,
-    pub quorums: BTreeMap<QuorumHash, Vec<ProTxHash>>,
+    pub quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
     pub current_quorum_hash: QuorumHash,
     // the first option is if it is set
     // the second option is if we are even upgrading
@@ -508,17 +541,13 @@ pub enum StrategyRandomness {
 }
 
 pub(crate) fn run_chain_for_strategy(
-    platform: &TempPlatform<MockCoreRPCLike>,
+    platform: &mut TempPlatform<MockCoreRPCLike>,
     block_count: u64,
     block_spacing_ms: u64,
     strategy: Strategy,
     config: PlatformConfig,
     seed: u64,
 ) -> ChainExecutionOutcome {
-    let quorum_count = 24; // We assume 24 quorums
-    let quorum_size = config.quorum_size;
-    let abci_application = AbciApplication::new(&platform).expect("expected new abci application");
-    let mut rng = StdRng::seed_from_u64(seed);
     // init chain
     let init_chain_request = static_init_chain_request();
 
@@ -528,6 +557,11 @@ pub(crate) fn run_chain_for_strategy(
 
     platform.create_mn_shares_contract(None);
 
+    let quorum_count = 24; // We assume 24 quorums
+    let quorum_size = config.quorum_size;
+
+    let mut rng = StdRng::seed_from_u64(seed);
+
     let proposers = create_test_masternode_identities_with_rng(
         &platform.drive,
         strategy.total_hpmns,
@@ -535,19 +569,69 @@ pub(crate) fn run_chain_for_strategy(
         None,
     );
 
-    let quorums: BTreeMap<QuorumHash, Vec<[u8; 32]>> = (0..quorum_count)
+    let quorums: BTreeMap<QuorumHash, TestQuorumInfo> = (0..quorum_count)
         .into_iter()
         .map(|_| {
             let quorum_hash: [u8; 32] = rng.gen();
+            let validator_set = proposers
+                .choose_multiple(&mut rng, quorum_size as usize)
+                .cloned()
+                .collect();
+            let private_key = bls_signatures::PrivateKey::generate(&mut rng);
+            let public_key = private_key.public_key();
+
             (
                 quorum_hash,
-                proposers
-                    .choose_multiple(&mut rng, quorum_size as usize)
-                    .cloned()
-                    .collect(),
+                TestQuorumInfo {
+                    quorum_hash,
+                    validator_set,
+                    private_key,
+                    public_key,
+                },
             )
         })
         .collect();
+
+    let quorums_clone = quorums.clone();
+
+    platform.core_rpc.expect_get_quorum_info().returning(
+        move |_, quorum_hash: &QuorumHashObject, _| {
+            Ok(quorums_clone
+                .get(quorum_hash.0.as_slice())
+                .expect(
+                    format!(
+                        "expected to get quorum {}",
+                        hex::encode(quorum_hash.0.as_slice())
+                    )
+                    .as_str(),
+                )
+                .into())
+        },
+    );
+
+    start_chain_for_strategy(
+        platform,
+        block_count,
+        block_spacing_ms,
+        proposers,
+        quorums,
+        strategy,
+        config,
+        rng,
+    )
+}
+
+pub(crate) fn start_chain_for_strategy(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    block_count: u64,
+    block_spacing_ms: u64,
+    proposers: Vec<[u8; 32]>,
+    quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
+    strategy: Strategy,
+    config: PlatformConfig,
+    mut rng: StdRng,
+) -> ChainExecutionOutcome {
+    let abci_application = AbciApplication::new(&platform).expect("expected new abci application");
 
     let quorum_hashes: Vec<&QuorumHash> = quorums.keys().collect();
 
@@ -634,6 +718,7 @@ pub(crate) fn continue_chain_for_strategy(
         let proposer = quorums
             .get(current_quorum_hash.as_slice())
             .unwrap()
+            .validator_set
             .get(i as usize)
             .unwrap();
         let state_transitions = strategy.state_transitions_for_block_with_new_identities(
@@ -750,7 +835,7 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
-        run_chain_for_strategy(&platform, 1000, 3000, strategy, config, 15);
+        run_chain_for_strategy(&mut platform, 1000, 3000, strategy, config, 15);
     }
 
     #[test]
@@ -784,7 +869,7 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
-        let outcome = run_chain_for_strategy(&platform, 100, 3000, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 100, 3000, strategy, config, 15);
 
         assert_eq!(outcome.identities.len(), 100);
     }
@@ -821,7 +906,7 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
-        let outcome = run_chain_for_strategy(&platform, 150, day_in_ms, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 150, day_in_ms, strategy, config, 15);
         assert_eq!(outcome.identities.len(), 150);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -870,7 +955,7 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
-        run_chain_for_strategy(&platform, 1, 3000, strategy, config, 15);
+        run_chain_for_strategy(&mut platform, 1, 3000, strategy, config, 15);
     }
 
     #[test]
@@ -927,7 +1012,7 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
-        run_chain_for_strategy(&platform, 100, 3000, strategy, config, 15);
+        run_chain_for_strategy(&mut platform, 100, 3000, strategy, config, 15);
     }
 
     #[test]
@@ -987,7 +1072,7 @@ mod tests {
                 })
             });
         let outcome =
-            run_chain_for_strategy(&platform, block_count, day_in_ms, strategy, config, 15);
+            run_chain_for_strategy(&mut platform, block_count, day_in_ms, strategy, config, 15);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -1073,7 +1158,7 @@ mod tests {
                 })
             });
         let outcome =
-            run_chain_for_strategy(&platform, block_count, day_in_ms, strategy, config, 15);
+            run_chain_for_strategy(&mut platform, block_count, day_in_ms, strategy, config, 15);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -1159,7 +1244,7 @@ mod tests {
                 })
             });
         let outcome =
-            run_chain_for_strategy(&platform, block_count, day_in_ms, strategy, config, 15);
+            run_chain_for_strategy(&mut platform, block_count, day_in_ms, strategy, config, 15);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -1245,7 +1330,7 @@ mod tests {
                 })
             });
         let outcome =
-            run_chain_for_strategy(&platform, block_count, day_in_ms, strategy, config, 15);
+            run_chain_for_strategy(&mut platform, block_count, day_in_ms, strategy, config, 15);
         assert_eq!(outcome.identities.len() as u64, 357);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome

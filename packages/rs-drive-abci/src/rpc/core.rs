@@ -45,7 +45,7 @@ pub trait CoreRPCLike {
         &self,
         quorum_type: QuorumType,
         hash: &QuorumHash,
-        o: Option<bool>,
+        include_secret_key_share: Option<bool>,
     ) -> Result<QuorumInfoResult, Error>;
 }
 
@@ -99,10 +99,10 @@ impl CoreRPCLike for DefaultCoreRPC {
     fn get_quorum_info(
         &self,
         quorum_type: QuorumType,
-        quorum_hash: &QuorumHash,
-        include_sk_share: Option<bool>,
+        hash: &QuorumHash,
+        include_secret_key_share: Option<bool>,
     ) -> Result<QuorumInfoResult, Error> {
         self.inner
-            .get_quorum_info(quorum_type, quorum_hash, include_sk_share)
+            .get_quorum_info(quorum_type, hash, include_secret_key_share)
     }
 }

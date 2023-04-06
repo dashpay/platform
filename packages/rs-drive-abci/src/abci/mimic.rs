@@ -87,7 +87,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         let request_finalize_block = RequestFinalizeBlock {
             commit: Some(CommitInfo {
                 round: 0,
-                quorum_hash: vec![],
+                quorum_hash: quorum_hash.to_vec(),
                 block_signature: vec![],
                 threshold_vote_extensions: vec![],
             }),

@@ -54,7 +54,7 @@ mod tests {
             end_time_ms,
             ..
         } = run_chain_for_strategy(
-            &platform,
+            &mut platform,
             1300,
             twenty_minutes_in_ms,
             strategy.clone(),
@@ -277,7 +277,7 @@ mod tests {
             end_time_ms,
             ..
         } = run_chain_for_strategy(
-            &platform,
+            &mut platform,
             2000,
             hour_in_ms,
             strategy.clone(),
@@ -492,7 +492,7 @@ mod tests {
             end_time_ms,
             ..
         } = run_chain_for_strategy(
-            &platform,
+            &mut platform,
             2000,
             hour_in_ms,
             strategy.clone(),
@@ -784,7 +784,14 @@ mod tests {
             current_quorum_hash,
             end_time_ms,
             ..
-        } = run_chain_for_strategy(&platform, 1400, hour_in_ms, strategy, config.clone(), 15);
+        } = run_chain_for_strategy(
+            &mut platform,
+            1400,
+            hour_in_ms,
+            strategy,
+            config.clone(),
+            15,
+        );
         {
             let platform = abci_app.platform;
             let drive_cache = platform.drive.cache.read().unwrap();

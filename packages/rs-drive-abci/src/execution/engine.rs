@@ -432,18 +432,18 @@ where
 
         let quorum_public_key = self.get_quorum_key(commit.quorum_hash.clone())?;
 
-        if let Some(block_id) = block_id {
-            let result = self.validate_commit(commit.clone(), block_id, quorum_public_key)?;
-            if !result.is_valid() {
-                return Ok(validation_result.into());
-            }
-        } else {
-            validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
-                "received a block for h: {} r: {} without a block id",
-                height, round
-            )));
-            return Ok(validation_result.into());
-        }
+        // if let Some(block_id) = block_id {
+        //     let result = self.validate_commit(commit.clone(), block_id, quorum_public_key)?;
+        //     if !result.is_valid() {
+        //         return Ok(validation_result.into());
+        //     }
+        // } else {
+        //     validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
+        //         "received a block for h: {} r: {} without a block id",
+        //         height, round
+        //     )));
+        //     return Ok(validation_result.into());
+        // }
 
         // Verify vote extensions
         let received_withdrawals = WithdrawalTxs::from(&commit.threshold_vote_extensions);
