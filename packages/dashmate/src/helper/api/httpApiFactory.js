@@ -32,10 +32,11 @@ function httpApiFactory() {
       },
     });
 
-    const port = config.get('dashmate.helper.jsonRpc.port')
+    const port = config.get('dashmate.helper.jsonRpc.port');
 
     server
       .http()
+      // eslint-disable-next-line no-console
       .listen(port, () => console.log(`Dashmate JSON-RPC API started on port: ${port}`));
   }
 
