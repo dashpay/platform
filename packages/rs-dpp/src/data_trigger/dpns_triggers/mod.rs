@@ -77,7 +77,7 @@ where
         .map_err(ProtocolError::ValueError)?;
 
     let mut result = DataTriggerExecutionResult::default();
-    let full_domain_name = normalized_label;
+    let mut full_domain_name = normalized_label.to_string();
 
     if !is_dry_run {
         if full_domain_name.len() > MAX_PRINTABLE_DOMAIN_NAME_LENGTH {
@@ -147,6 +147,8 @@ where
     }
 
     if !normalized_parent_domain_name.is_empty() {
+        full_domain_name = format!("{full_domain_name}.{normalized_parent_domain_name}");
+
         //? What is the `normalized_parent_name`. Are we sure the content is a valid dot-separated data
         let mut parent_domain_segments = normalized_parent_domain_name.split('.');
         let parent_domain_label = parent_domain_segments.next().unwrap().to_string();

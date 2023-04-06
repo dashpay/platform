@@ -238,8 +238,7 @@ describe('Platform', () => {
 
       expect(fetchedDocument.get('firstName')).to.equal('updatedName');
       expect(fetchedDocument.getUpdatedAt())
-        // TODO(wasm-dpp): originally it was greaterThan, is it okay?
-        .to.be.greaterThanOrEqual(fetchedDocument.getCreatedAt());
+        .to.be.greaterThan(fetchedDocument.getCreatedAt());
     });
 
     it.skip('should be able to prove that a document was updated', async () => {
