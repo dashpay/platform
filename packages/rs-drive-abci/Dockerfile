@@ -108,8 +108,13 @@ ENV DB_PATH=/var/lib/platform/rs-drive-abci/db
 #
 WORKDIR /var/lib/platform
 
+RUN apk add --no-cache libgcc libstdc++
+
 COPY --from=build /usr/src/platform/drive-abci /usr/bin/drive-abci
 COPY --from=build /usr/src/platform/packages/rs-drive-abci/.env.example /var/lib/platform/rs-drive-abci/.env
+
+# Double-check that we don't have missing deps
+RUN ldd /usr/bin/drive-abci
 
 #
 # Create new non-root user
