@@ -135,7 +135,7 @@ pub fn data_triggers() -> Result<Vec<DataTrigger>, ProtocolError> {
         },
         DataTrigger {
             data_contract_id: master_node_reward_shares_contract_id,
-            document_type: feature_flags_contract::types::UPDATE_CONSENSUS_PARAMS.to_string(),
+            document_type: "rewardShare".to_string(),
             transition_action: Action::Create,
             data_trigger_kind: DataTriggerKind::DataTriggerRewardShare,
             top_level_identity: None,
