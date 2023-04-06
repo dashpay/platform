@@ -24,7 +24,7 @@ function httpApiFactory() {
 
         return new jayson.Method(async () => {
           try {
-            return await oclif.run([...argv, `--config=${config.name}`])
+            return await oclif.run([...argv])
           } catch (e) {
             throw server.error(501, e.message);
           }
