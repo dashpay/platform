@@ -236,7 +236,7 @@ module.exports = {
         image: 'dashpay/dashmate-helper:0.24-dev',
       },
       api: {
-        enabled: false,
+        enable: false,
         port: 9000,
       },
     },

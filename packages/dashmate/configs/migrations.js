@@ -519,14 +519,14 @@ module.exports = {
       .forEach(([, config]) => {
         if (config.group === 'local') {
           config.dashmate.helper.api = {
-            enabled: false,
+            enable: false,
             port: groupJsonApiPort,
           };
 
           groupJsonApiPort += 100;
         } else {
           config.dashmate.helper.api = {
-            enabled: false,
+            enable: false,
             port: systemConfigs.base.dashmate.helper.api.port,
           };
         }
