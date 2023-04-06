@@ -513,21 +513,21 @@ module.exports = {
     return configFile;
   },
   '0.24.0-dev.18': (configFile) => {
-    let groupJsonRpcPort = systemConfigs.local.dashmate.helper.jsonRpc.port;
+    let groupJsonApiPort = systemConfigs.local.dashmate.helper.api.port;
 
     Object.entries(configFile.configs)
       .forEach(([, config]) => {
         if (config.group === 'local') {
-          config.dashmate.helper.jsonRpc = {
+          config.dashmate.helper.api = {
             enabled: false,
-            port: groupJsonRpcPort,
+            port: groupJsonApiPort,
           };
 
-          groupJsonRpcPort += 100;
+          groupJsonApiPort += 100;
         } else {
-          config.dashmate.helper.jsonRpc = {
+          config.dashmate.helper.api = {
             enabled: false,
-            port: systemConfigs.base.dashmate.helper.jsonRpc.port,
+            port: systemConfigs.base.dashmate.helper.api.port,
           };
         }
       });

@@ -46,14 +46,14 @@ const createDIContainer = require('../src/createDIContainer');
     setInterval(() => {}, 60 * 1000);
   }
 
-  if (config.get('dashmate.helper.enable')) {
+  if (config.get('dashmate.helper.api.enable')) {
     const createHttpApiServer = container.resolve('createHttpApiServer');
 
-    const httpAPIServier = createHttpApiServer();
+    const httpAPIServer = createHttpApiServer();
 
-    const port = config.get('dashmate.helper.jsonRpc.port');
+    const port = config.get('dashmate.helper.api.port');
 
-    httpAPIServier
+    httpAPIServer
       // eslint-disable-next-line no-console
       .listen(port, () => console.log(`Dashmate JSON-RPC API started on port: ${port}`));
   }

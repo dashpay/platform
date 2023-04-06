@@ -245,7 +245,7 @@ function setupLocalPresetTaskFactory(
                       .toPublicKey().toString(),
                   );
 
-                  config.set('dashmate.helper.jsonRpc.port', config.get('dashmate.helper.jsonRpc.port') + (i * 100));
+                  config.set('dashmate.helper.api.port', config.get('dashmate.helper.api.port') + (i * 100));
                 }
               },
               options: {

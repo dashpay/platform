@@ -50,7 +50,7 @@ module.exports = lodashMerge({}, baseConfig, {
   },
   dashmate: {
     helper: {
-      jsonRpc: {
+      api: {
         port: 9100,
       },
     },
