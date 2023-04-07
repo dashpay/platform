@@ -1618,7 +1618,8 @@ impl Drive {
                     allow_deleting_non_empty_trees: false,
                     deleting_non_empty_trees_returns_error: true,
                     disable_operation_consistency_check: false,
-                    base_root_storage_is_free: true
+                    base_root_storage_is_free: true,
+                    batch_pause_height: None,
                 }),
                 |cost, old_flags, new_flags| {
 
@@ -1741,6 +1742,7 @@ impl Drive {
                 deleting_non_empty_trees_returns_error: true,
                 disable_operation_consistency_check: false,
                 base_root_storage_is_free: true,
+                batch_pause_height: None,
             }),
             |_, _, _| Ok(false),
             |_, _, _| Err(GroveError::InternalError("not implemented")),

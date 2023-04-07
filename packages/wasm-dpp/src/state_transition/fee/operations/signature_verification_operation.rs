@@ -4,6 +4,7 @@ use anyhow::anyhow;
 use dpp::{
     identity::KeyType,
     state_transition::fee::operations::{OperationLike, SignatureVerificationOperation},
+    ProtocolError,
 };
 use js_sys::{Array, BigInt};
 use wasm_bindgen::prelude::*;
@@ -41,13 +42,23 @@ impl SignatureVerificationOperationWasm {
     }
 
     #[wasm_bindgen(js_name = getProcessingCost)]
-    pub fn get_processing_cost(&self) -> BigInt {
-        BigInt::from(self.0.get_processing_cost())
+    pub fn get_processing_cost(&self) -> Result<BigInt, JsValue> {
+        Ok(BigInt::from(
+            self.0
+                .get_processing_cost()
+                .map_err(ProtocolError::from)
+                .with_js_error()?,
+        ))
     }
 
     #[wasm_bindgen(js_name=getStorageCost)]
-    pub fn get_storage_cost(&self) -> BigInt {
-        BigInt::from(self.0.get_storage_cost())
+    pub fn get_storage_cost(&self) -> Result<BigInt, JsValue> {
+        Ok(BigInt::from(
+            self.0
+                .get_storage_cost()
+                .map_err(ProtocolError::from)
+                .with_js_error()?,
+        ))
     }
 
     #[wasm_bindgen(getter)]

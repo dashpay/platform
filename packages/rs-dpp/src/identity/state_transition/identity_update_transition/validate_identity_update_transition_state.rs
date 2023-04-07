@@ -82,7 +82,11 @@ where
         let mut identity = stored_identity.clone();
 
         // Check revision
-        if identity.get_revision() != (state_transition.get_revision() - 1) {
+        if identity.get_revision()
+            != (state_transition.get_revision().checked_sub(1).ok_or(
+                NonConsensusError::Overflow("unable subtract 1 from revision"),
+            )?)
+        {
             validation_result.add_error(StateError::InvalidIdentityRevisionError(
                 InvalidIdentityRevisionError::new(
                     state_transition.get_identity_id().to_owned(),
@@ -135,7 +139,7 @@ where
                 },
             )?;
             let window_validation_result =
-                validate_time_in_block_time_window(last_block_header_time, disabled_at_ms);
+                validate_time_in_block_time_window(last_block_header_time, disabled_at_ms)?;
 
             if !window_validation_result.is_valid() {
                 validation_result.add_error(
