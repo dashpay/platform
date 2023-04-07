@@ -33,19 +33,19 @@ COPY packages/rs-dpp packages/rs-dpp
 COPY packages/wasm-dpp packages/wasm-dpp
 
 # Build WASM DPP
-RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
-    yarn workspace @dashevo/wasm-dpp build && \
-    cargo clean
+#RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
+#    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
+#    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
+#    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
+#    yarn workspace @dashevo/wasm-dpp build && \
+#    cargo clean
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN --mount=type=cache,target=/tmp/unplugged \
-    cp -R /tmp/unplugged /platform/.yarn/ && \
-    yarn workspaces focus --production @dashevo/platform-test-suite && \
-    cp -R /platform/.yarn/unplugged /tmp/
+#RUN --mount=type=cache,target=/tmp/unplugged \
+#    cp -R /tmp/unplugged /platform/.yarn/ && \
+#    yarn workspaces focus --production @dashevo/platform-test-suite && \
+#    cp -R /platform/.yarn/unplugged /tmp/
 
 FROM node:16-alpine3.16
 
@@ -56,16 +56,16 @@ LABEL maintainer="Dash Developers <dev@dash.org>"
 LABEL description="DAPI Node.JS"
 
 # Install required deps
-RUN apk add --no-cache bash
+#RUN apk add --no-cache bash
 
 WORKDIR /platform
 
 COPY --from=builder /platform /platform
 
 # Remove Rust sources
-RUN rm -rf packages/rs-dpp packages/rs-platform-value
+#RUN rm -rf packages/rs-dpp packages/rs-platform-value
 
-RUN cp /platform/packages/platform-test-suite/.env.example /platform/packages/platform-test-suite/.env
+#RUN cp /platform/packages/platform-test-suite/.env.example /platform/packages/platform-test-suite/.env
 
 EXPOSE 2500 2501 2510
 

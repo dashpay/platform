@@ -32,20 +32,20 @@ COPY packages/data-contracts packages/data-contracts
 COPY packages/rs-dpp packages/rs-dpp
 COPY packages/wasm-dpp packages/wasm-dpp
 
-# Build WASM DPP
-RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
-    yarn workspace @dashevo/wasm-dpp build && \
-    cargo clean
+## Build WASM DPP
+#RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
+#    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
+#    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
+#    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
+#    yarn workspace @dashevo/wasm-dpp build && \
+#    cargo clean
 
-# Install Test Suite specific dependencies using previous
-# node_modules directory to reuse built binaries
-RUN --mount=type=cache,target=/tmp/unplugged \
-    cp -R /tmp/unplugged /platform/.yarn/ && \
-    yarn workspaces focus --production dashmate && \
-    cp -R /platform/.yarn/unplugged /tmp/
+## Install Test Suite specific dependencies using previous
+## node_modules directory to reuse built binaries
+#RUN --mount=type=cache,target=/tmp/unplugged \
+#    cp -R /tmp/unplugged /platform/.yarn/ && \
+#    yarn workspaces focus --production dashmate && \
+#    cp -R /platform/.yarn/unplugged /tmp/
 
 FROM node:16-alpine3.16
 
@@ -53,9 +53,9 @@ ARG NODE_ENV=production
 ENV NODE_ENV ${NODE_ENV}
 ENV DASHMATE_HELPER=1
 
-RUN apk update && \
-    apk --no-cache upgrade && \
-    apk add --no-cache docker-cli docker-cli-compose curl
+#RUN apk update && \
+#    apk --no-cache upgrade && \
+#    apk add --no-cache docker-cli docker-cli-compose curl
 
 LABEL maintainer="Dash Developers <dev@dash.org>"
 LABEL description="Dashmate Helper Node.JS"

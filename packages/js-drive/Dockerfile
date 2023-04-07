@@ -29,28 +29,28 @@ COPY packages/feature-flags-contract packages/feature-flags-contract
 COPY packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
 COPY packages/withdrawals-contract packages/withdrawals-contract
 COPY packages/data-contracts packages/data-contracts
-
-# Build RS Drive Node.JS binding
-RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
-    yarn workspace @dashevo/rs-drive build
+#
+## Build RS Drive Node.JS binding
+#RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
+#    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
+#    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
+#    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
+#    yarn workspace @dashevo/rs-drive build
 
 # Build WASM DPP
-RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
-    yarn workspace @dashevo/wasm-dpp build && \
-    cargo clean
+#RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
+#    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
+#    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
+#    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
+#    yarn workspace @dashevo/wasm-dpp build && \
+#    cargo clean
 
-# Install Drive-specific dependencies using previous
-# node_modules directory to reuse built binaries
-RUN --mount=type=cache,target=/tmp/unplugged \
-    cp -R /tmp/unplugged /platform/.yarn/ && \
-    yarn workspaces focus --production @dashevo/drive && \
-    cp -R /platform/.yarn/unplugged /tmp/
+## Install Drive-specific dependencies using previous
+## node_modules directory to reuse built binaries
+#RUN --mount=type=cache,target=/tmp/unplugged \
+#    cp -R /tmp/unplugged /platform/.yarn/ && \
+#    yarn workspaces focus --production @dashevo/drive && \
+#    cp -R /platform/.yarn/unplugged /tmp/
 
 FROM node:16-alpine3.16
 
@@ -61,14 +61,14 @@ LABEL maintainer="Dash Developers <dev@dash.org>"
 LABEL description="Drive Node.JS"
 
 # Install ZMQ shared library
-RUN apk update && apk add --no-cache zeromq-dev
+#RUN apk update && apk add --no-cache zeromq-dev
 
 WORKDIR /platform
 
 COPY --from=builder /platform /platform
 
 # Remove Rust sources
-RUN rm -rf packages/rs-drive packages/rs-drive-abci packages/rs-dpp packages/rs-platform-value
+#RUN rm -rf packages/rs-drive packages/rs-drive-abci packages/rs-dpp packages/rs-platform-value
 
 RUN cp /platform/packages/js-drive/.env.example /platform/packages/js-drive/.env
 
