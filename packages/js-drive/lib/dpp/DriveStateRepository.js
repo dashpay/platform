@@ -883,6 +883,21 @@ class DriveStateRepository {
   }
 
   /**
+   * Verifies that a given masternode id is in the current valid masternode list
+   *
+   * @param {Buffer} masternodeId
+   * @returns {Promise<boolean>}
+   */
+  async isInTheValidMasterNodesList(masternodeId) {
+    const smlStore = await this.fetchSMLStore();
+    const validMasternodesList = smlStore.getCurrentSML().getValidMasternodesList();
+
+    return !!validMasternodesList.find(
+      (smlEntry) => Buffer.compare(masternodeId, Buffer.from(smlEntry.proRegTxHash, 'hex')) === 0,
+    );
+  }
+
+  /**
    * @private
    * @param {StateTransitionExecutionContext} [executionContext]
    * @return {{dryRun: boolean, useTransaction: boolean}}

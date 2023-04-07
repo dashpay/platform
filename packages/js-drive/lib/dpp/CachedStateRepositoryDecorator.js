@@ -353,6 +353,16 @@ class CachedStateRepositoryDecorator {
   async fetchLatestPlatformBlockTime() {
     return this.stateRepository.fetchLatestPlatformBlockTime();
   }
+
+  /**
+   * Verifies that a given masternode id is in the current valid masternode list
+   *
+   * @param {Buffer} masternodeId
+   * @returns {Promise<boolean>}
+   */
+  async isInTheValidMasterNodesList(masternodeId) {
+    return this.stateRepository.isInTheValidMasterNodesList(masternodeId);
+  }
 }
 
 module.exports = CachedStateRepositoryDecorator;

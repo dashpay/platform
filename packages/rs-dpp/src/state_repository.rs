@@ -232,6 +232,12 @@ pub trait StateRepositoryLike: Sync {
     where
         T: for<'de> serde::de::Deserialize<'de> + 'static;
 
+    /// Check if AssetLock Transaction outPoint exists in spent list
+    async fn is_in_the_valid_master_nodes_list(
+        &self,
+        out_point_buffer: [u8; 32],
+    ) -> AnyResult<bool>;
+
     // Get latest (in a queue) withdrawal transaction index
     async fn fetch_latest_withdrawal_transaction_index(&self) -> AnyResult<u64>;
 

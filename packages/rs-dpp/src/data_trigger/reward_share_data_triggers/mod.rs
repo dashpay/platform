@@ -50,17 +50,22 @@ where
     let percentage = properties.get_integer(PROPERTY_PERCENTAGE)?;
 
     if !is_dry_run {
-        // Do not allow creating document if ownerId is not in SML
-        let sml_store: SMLStore = context.state_repository.fetch_sml_store().await?;
+        let is_valid_master_node = context
+            .state_repository
+            .is_in_the_valid_master_nodes_list(context.owner_id.to_buffer())
+            .await?;
 
-        let valid_master_nodes_list = sml_store.get_current_sml()?.get_valid_master_nodes();
+        // // Do not allow creating document if ownerId is not in SML
+        // let sml_store: SMLStore = context.state_repository.fetch_sml_store().await?;
+        //
+        // let valid_master_nodes_list = sml_store.get_current_sml()?.get_valid_master_nodes();
+        //
+        // let owner_id_in_sml = valid_master_nodes_list.iter().any(|entry| {
+        //     hex::decode(&entry.pro_reg_tx_hash).expect("invalid hex value")
+        //         == context.owner_id.to_buffer()
+        // });
 
-        let owner_id_in_sml = valid_master_nodes_list.iter().any(|entry| {
-            hex::decode(&entry.pro_reg_tx_hash).expect("invalid hex value")
-                == context.owner_id.to_buffer()
-        });
-
-        if !owner_id_in_sml {
+        if !is_valid_master_node {
             let err = create_error(
                 context,
                 document_create_transition,

@@ -706,6 +706,16 @@ class LoggedStateRepositoryDecorator {
       this.log('enqueueWithdrawalTransaction', { index, transactionBytes }, response);
     }
   }
+
+  /**
+   * Verifies that a given masternode id is in the current valid masternode list
+   *
+   * @param {Buffer} masternodeId
+   * @returns {Promise<boolean>}
+   */
+  async isInTheValidMasterNodesList(masternodeId) {
+    return this.stateRepository.isInTheValidMasterNodesList(masternodeId);
+  }
 }
 
 module.exports = LoggedStateRepositoryDecorator;

@@ -226,6 +226,12 @@ extern "C" {
     #[wasm_bindgen(catch, structural, method, js_name=fetchSMLStore)]
     pub async fn fetch_sml_store(this: &ExternalStateRepositoryLike) -> Result<JsValue, JsValue>;
 
+    #[wasm_bindgen(catch, structural, method, js_name=isInTheValidMasterNodesList)]
+    async fn is_in_the_valid_master_nodes_list(
+        this: &ExternalStateRepositoryLike,
+        id: Buffer,
+    ) -> Result<JsValue, JsValue>;
+
     #[wasm_bindgen(catch, structural, method, js_name=fetchLatestPlatformBlockHeader)]
     pub async fn fetch_latest_platform_block_header(
         this: &ExternalStateRepositoryLike,
@@ -750,6 +756,18 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         T: for<'de> serde::de::Deserialize<'de> + 'static,
     {
         todo!()
+    }
+
+    async fn is_in_the_valid_master_nodes_list(&self, id: [u8; 32]) -> anyhow::Result<bool> {
+        let is_valid = self
+            .0
+            .is_in_the_valid_master_nodes_list(Buffer::from_bytes(&id))
+            .await
+            .map_err(from_js_error)?;
+
+        is_valid
+            .as_bool()
+            .ok_or_else(|| anyhow!("Value is not a bool"))
     }
 
     async fn fetch_latest_withdrawal_transaction_index(&self) -> anyhow::Result<u64> {

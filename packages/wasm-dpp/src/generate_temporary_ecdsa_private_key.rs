@@ -1,4 +1,3 @@
-use wasm_bindgen::prelude::wasm_bindgen;
 use crate::buffer::Buffer;
 use dpp::dashcore::secp256k1::rand::thread_rng;
 use dpp::dashcore::secp256k1::Secp256k1;
@@ -6,6 +5,7 @@ use dpp::dashcore::{
     secp256k1::SecretKey, InstantLock, Network, OutPoint, PrivateKey, Script, Transaction, TxIn,
     TxOut, Txid,
 };
+use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name = generateTemporaryEcdsaPrivateKey)]
 pub fn generate_temporary_ecdsa_private_key() -> Buffer {
