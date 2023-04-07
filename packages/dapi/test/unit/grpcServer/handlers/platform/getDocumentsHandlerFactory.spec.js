@@ -91,7 +91,7 @@ describe('getDocumentsHandlerFactory', () => {
     );
   });
 
-  it('should return valid result', async function () {
+  it('should return valid result', async () => {
     response.setProof(null);
 
     driveStateRepositoryMock.fetchDocuments.resolves(response.serializeBinary());
@@ -124,7 +124,7 @@ describe('getDocumentsHandlerFactory', () => {
     expect(proof).to.be.undefined();
   });
 
-  it('should return proof', async function () {
+  it('should return proof', async () => {
     request.getProve.returns(true);
 
     const result = await getDocumentsHandler(call);

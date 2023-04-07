@@ -5,17 +5,18 @@ const InternalGrpcError = require('@dashevo/grpc-common/lib/server/error/Interna
 const InvalidArgumentGrpcError = require('@dashevo/grpc-common/lib/server/error/InvalidArgumentGrpcError');
 const FailedPreconditionGrpcError = require('@dashevo/grpc-common/lib/server/error/FailedPreconditionGrpcError');
 const generateRandomIdentifierAsync = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
-const createGrpcErrorFromDriveResponse = require(
-  '../../../../lib/grpcServer/handlers/createGrpcErrorFromDriveResponse',
-);
 
 let {
   ProtocolVersionParsingError,
   IdentityNotFoundError,
   BalanceIsNotEnoughError,
   DataContractAlreadyPresentError,
-  default: loadWasmDpp,
 } = require('@dashevo/wasm-dpp');
+
+const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
+const createGrpcErrorFromDriveResponse = require(
+  '../../../../lib/grpcServer/handlers/createGrpcErrorFromDriveResponse',
+);
 
 describe('createGrpcErrorFromDriveResponse', () => {
   let message;
@@ -111,7 +112,7 @@ describe('createGrpcErrorFromDriveResponse', () => {
   });
 
   it('should throw fee consensus error if error code = 3000', async () => {
-    const consensusError = new BalanceIsNotEnoughError(20n, 10n);
+    const consensusError = new BalanceIsNotEnoughError(BigInt(20), BigInt(10));
 
     const data = { serializedError: consensusError.serialize() };
     info = { data };
