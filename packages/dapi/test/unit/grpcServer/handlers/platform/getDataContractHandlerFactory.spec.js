@@ -66,7 +66,7 @@ describe('getDataContractHandlerFactory', () => {
     );
   });
 
-  it('should return valid data', async function () {
+  it('should return valid data', async function it(){
     const result = await getDataContractHandler(call);
 
     expect(result).to.be.an.instanceOf(GetDataContractResponse);
@@ -89,7 +89,7 @@ describe('getDataContractHandlerFactory', () => {
     );
   });
 
-  it('should not include proof', async function () {
+  it('should not include proof', async function it() {
     request.getProve.returns(false);
     response.setProof(null);
     driveStateRepositoryMock.fetchDataContract.resolves(response.serializeBinary());

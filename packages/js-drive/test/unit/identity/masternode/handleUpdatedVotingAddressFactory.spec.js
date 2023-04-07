@@ -13,12 +13,11 @@ describe('handleUpdatedVotingAddressFactory', () => {
   let transactionFixture;
   let identityRepositoryMock;
   let blockInfo;
-  let IdentityPublicKey;
   let Identifier;
   let KeyType;
 
   before(function before() {
-    ({ Identifier, IdentityPublicKey, KeyType } = this.dppWasm);
+    ({ Identifier, KeyType } = this.dppWasm);
   });
 
   beforeEach(function beforeEach() {

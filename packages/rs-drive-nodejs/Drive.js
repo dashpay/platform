@@ -3,7 +3,6 @@ const cbor = require('cbor');
 // const Document = require('@dashevo/dpp/lib/document/Document');
 // const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
 // const Identity = require('@dashevo/dpp/lib/identity/Identity');
-const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
 
 // This file is crated when run `npm run build`. The actual source file that
 // exports those functions is ./src/lib.rs
@@ -50,8 +49,6 @@ const GroveDB = require('./GroveDB');
 const FeeResult = require('./FeeResult');
 
 const { appendStackAsync, appendStack } = require('./appendStack');
-
-const decodeProtocolEntity = decodeProtocolEntityFactory();
 
 // Convert the Drive methods from using callbacks to returning promises
 const driveCloseAsync = appendStackAsync(promisify(driveClose));

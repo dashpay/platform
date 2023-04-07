@@ -22,11 +22,10 @@ describe('handleNewMasternodeFactory', () => {
   let blockInfo;
   let identityFixture;
   let Identifier;
-  let IdentityPublicKey;
   let KeyType;
 
   before(function before() {
-    ({ Identifier, IdentityPublicKey, KeyType } = this.dppWasm);
+    ({ Identifier, KeyType } = this.dppWasm);
   });
 
   beforeEach(function beforeEach() {

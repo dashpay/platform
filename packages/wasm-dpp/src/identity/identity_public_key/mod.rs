@@ -6,7 +6,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::utils::{Inner, WithJsError};
 use crate::{buffer::Buffer, utils, with_js_error};
-use dpp::identity::{IdentityPublicKey, KeyID};
+use dpp::identity::{IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::platform_value::BinaryData;
 use dpp::Convertible;
 
@@ -107,17 +107,17 @@ impl IdentityPublicKeyWasm {
         self.0.read_only
     }
 
-    // TODO(wasm-dpp): js_sys::Date - provide as date
     #[wasm_bindgen(js_name=setDisabledAt)]
-    pub fn set_disabled_at(&mut self, timestamp: u32) {
-        // TODO: It's not gonna work, must be BigInt
-        self.0.set_disabled_at(timestamp as u64);
+    pub fn set_disabled_at(&mut self, timestamp: js_sys::Date) {
+        self.0
+            .set_disabled_at(timestamp.get_time() as TimestampMillis);
     }
 
-    // TODO(wasm-dpp): js_sys::Date - return as date
     #[wasm_bindgen(js_name=getDisabledAt)]
-    pub fn get_disabled_at(&self) -> Option<f64> {
-        self.0.disabled_at.map(|timestamp| timestamp as f64)
+    pub fn get_disabled_at(&self) -> Option<js_sys::Date> {
+        self.0
+            .disabled_at
+            .map(|timestamp| js_sys::Date::new(&JsValue::from_f64(timestamp as f64)))
     }
 
     #[wasm_bindgen(js_name=hash)]

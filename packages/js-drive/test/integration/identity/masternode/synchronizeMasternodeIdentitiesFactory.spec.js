@@ -42,11 +42,9 @@ function expectOperatorIdentityFactory(
     previousPayoutAddress,
     payoutAddress,
   ) {
-    const { IdentityPublicKey } = dppWasm;
     // Validate operator identity
 
     const operatorIdentifier = createOperatorIdentifier(dppWasm, smlEntry);
-
 
     const operatorIdentityResult = await identityRepository.fetch(
       operatorIdentifier,
@@ -165,9 +163,7 @@ function expectVotingIdentityFactory(
     proRegTx,
   ) {
     // Validate voting identity
-    const { IdentityPublicKey } = dppWasm;
-
-    const votingIdentifier = createVotingIdentifier(smlEntry, dppWas);
+    const votingIdentifier = createVotingIdentifier(smlEntry, dppWasm);
 
     const votingIdentityResult = await identityRepository.fetch(votingIdentifier, {
       useTransaction: true,
@@ -236,7 +232,7 @@ function expectMasternodeIdentityFactory(
     previousPayoutAddress,
     payoutAddress,
   ) {
-    const { Identifier, IdentityPublicKey } = dppWasm;
+    const { Identifier } = dppWasm;
 
     const masternodeIdentifier = Identifier.from(
       Buffer.from(smlEntry.proRegTxHash, 'hex'),

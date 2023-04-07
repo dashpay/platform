@@ -125,7 +125,7 @@ describe('feesPrediction', () => {
 
   before(function before() {
     ({
-      IdentityPublicKey, Identity, BlsSignatures, KeyPurpose, KeyType, KeySecurityLevel
+      IdentityPublicKey, Identity, BlsSignatures, KeyPurpose, KeyType, KeySecurityLevel,
     } = this.dppWasm);
 
     expectPredictedFeeHigherOrEqualThanActual = expectPredictedFeeHigherOrEqualThanActualFactory(

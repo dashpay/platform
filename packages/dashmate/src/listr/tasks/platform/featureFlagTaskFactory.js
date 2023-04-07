@@ -1,5 +1,7 @@
 const { Listr } = require('listr2');
 
+const Dash = require('dash');
+
 const Identifier = require('@dashevo/dpp/lib/Identifier');
 
 /**
@@ -15,9 +17,6 @@ function featureFlagTaskFactory() {
   function featureFlagTask(
     config,
   ) {
-    // TODO(wasm-dpp): move it up when we enable yarn build and rust deps on devnet nodes
-    const Dash = require('dash');
-
     return new Listr([
       {
         title: 'Initialize SDK',

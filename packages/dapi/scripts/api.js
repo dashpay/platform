@@ -14,7 +14,6 @@ const {
   getPlatformDefinition,
 } = require('@dashevo/dapi-grpc');
 
-const DashPlatformProtocolJS = require('@dashevo/dpp');
 const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
 
 const { client: RpcClient } = require('jayson/promise');

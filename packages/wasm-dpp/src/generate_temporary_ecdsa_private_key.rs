@@ -6,13 +6,14 @@ use dpp::dashcore::{
     TxOut, Txid,
 };
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(js_name = generateTemporaryEcdsaPrivateKey)]
-pub fn generate_temporary_ecdsa_private_key() -> Buffer {
+pub fn generate_temporary_ecdsa_private_key() -> JsValue {
     let mut rng = thread_rng();
 
     let secret_key = SecretKey::new(&mut rng);
-    let one_time_private_key = PrivateKey::new(secret_key, Network::Testnet);
+    let one_time_private_key = PrivateKey::new(secret_key, Network::Testnet).to_string();
 
-    Buffer::from_bytes_owned(one_time_private_key.to_bytes())
+    JsValue::from_str(&one_time_private_key)
 }

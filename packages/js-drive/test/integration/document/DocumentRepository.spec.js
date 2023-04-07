@@ -2395,34 +2395,34 @@ describe('DocumentRepository', function main() {
 
               it('should return invalid result if "contains" operator used with an array which has '
                 + ' more than 100 elements', async () => {
-                  const arr = [];
-                  for (let i = 0; i < 100; i++) {
-                    arr.push(i);
-                  }
+                const arr = [];
+                for (let i = 0; i < 100; i++) {
+                  arr.push(i);
+                }
 
-                  const result = await documentRepository.find(queryDataContract, 'document', {
+                const result = await documentRepository.find(queryDataContract, 'document', {
+                  where: [
+                    ['arr', 'contains', arr],
+                  ],
+                });
+
+                expect(result).to.be.instanceOf(StorageResult);
+
+                arr.push(101);
+
+                try {
+                  await documentRepository.find(queryDataContract, 'document', {
                     where: [
                       ['arr', 'contains', arr],
                     ],
                   });
 
-                  expect(result).to.be.instanceOf(StorageResult);
-
-                  arr.push(101);
-
-                  try {
-                    await documentRepository.find(queryDataContract, 'document', {
-                      where: [
-                        ['arr', 'contains', arr],
-                      ],
-                    });
-
-                    expect.fail('should throw an error');
-                  } catch (e) {
-                    expect(e).to.be.instanceOf(InvalidQueryError);
-                    expect(e.message).to.equal('');
-                  }
-                });
+                  expect.fail('should throw an error');
+                } catch (e) {
+                  expect(e).to.be.instanceOf(InvalidQueryError);
+                  expect(e.message).to.equal('');
+                }
+              });
 
               it('should return invalid result if "contains" operator used with an empty array', async () => {
                 try {
@@ -2441,19 +2441,19 @@ describe('DocumentRepository', function main() {
 
               it('should return invalid result if "contains" operator used with an array which contains not unique'
                 + ' elements', async () => {
-                  try {
-                    await documentRepository.find(queryDataContract, 'document', {
-                      where: [
-                        ['arr', 'contains', [1, 1]],
-                      ],
-                    });
+                try {
+                  await documentRepository.find(queryDataContract, 'document', {
+                    where: [
+                      ['arr', 'contains', [1, 1]],
+                    ],
+                  });
 
-                    expect.fail('should throw an error');
-                  } catch (e) {
-                    expect(e).to.be.instanceOf(InvalidQueryError);
-                    expect(e.message).to.equal('');
-                  }
-                });
+                  expect.fail('should throw an error');
+                } catch (e) {
+                  expect(e).to.be.instanceOf(InvalidQueryError);
+                  expect(e.message).to.equal('');
+                }
+              });
 
               nonScalarTestCases.forEach(({ type, value }) => {
                 it(`should return invalid result if used with non-scalar value ${type}`, async () => {

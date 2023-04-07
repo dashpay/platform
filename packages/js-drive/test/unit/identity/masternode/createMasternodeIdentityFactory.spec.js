@@ -18,10 +18,12 @@ describe('createMasternodeIdentityFactory', () => {
   let Identity;
   let IdentityPublicKey;
   let ValidationResult;
-  let MissingStateTranstionTypeError;
+  let MissingStateTransitionTypeError;
 
   before(function before() {
-    ({ Identity, IdentityPublicKey, ValidationResult, MissingStateTransitionTypeError } = this.dppWasm);
+    ({
+      Identity, IdentityPublicKey, ValidationResult, MissingStateTransitionTypeError,
+    } = this.dppWasm);
   });
 
   beforeEach(function beforeEach() {
