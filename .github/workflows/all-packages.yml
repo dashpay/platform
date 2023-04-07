@@ -75,8 +75,8 @@ jobs:
       - name: Install dependencies
         run: yarn install
 
-      - name: Build SDK
-        run: yarn build --filter "+dash"
+#      - name: Build SDK
+#        run: yarn build --filter "+dash"
 
       - name: Set up Docker BuildX
         id: buildx
