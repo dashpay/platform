@@ -8,11 +8,11 @@ use crate::types::{
     PublicKeyHashIdentityMap,
 };
 use crate::util::{build_c_identity_struct, extract_vector_from_pointer, vec_to_pointer};
+use drive::drive::verify::AssetLockProof as DppAssetLockProof;
 use drive::drive::verify::Identity as DppIdentity;
-use drive::drive::verify::{AssetLockProof as DppAssetLockProof};
 use drive::drive::Drive;
 use std::collections::BTreeMap;
-use std::{slice};
+use std::slice;
 
 #[no_mangle]
 pub unsafe extern "C" fn verify_full_identity_by_public_key_hash(
@@ -216,6 +216,7 @@ pub unsafe extern "C" fn verify_identity_ids_by_public_key_hashes(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use drive::drive::verify::RootHash;
     use drive::drive::Drive;
     use std::collections::BTreeMap;
 

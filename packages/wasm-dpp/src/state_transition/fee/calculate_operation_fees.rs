@@ -6,14 +6,9 @@ use dpp::{
 };
 use wasm_bindgen::prelude::*;
 
-use crate::{
-    fee::dummy_fee_result::DummyFeesResultWasm,
-    utils::{Inner, IntoWasm, WithJsError},
-};
+use crate::{fee::dummy_fee_result::DummyFeesResultWasm, utils::WithJsError};
 
-use super::OperationWasm;
 use crate::state_transition::conversion::create_operation_from_wasm_instance;
-
 
 #[wasm_bindgen(js_name=calculateOperationFees)]
 pub fn calculate_operation_fees_wasm(

@@ -3,7 +3,8 @@ use dpp::platform_value::Error as PlatformValueError;
 use dpp::{
     state_transition::fee::{
         operations::{OperationLike, PreCalculatedOperation},
-        Credits, Refunds,},
+        Credits, Refunds,
+    },
     ProtocolError,
 };
 use js_sys::{Array, BigInt};
@@ -150,13 +151,13 @@ impl PreCalculatedOperationWasm {
         js_sys::Reflect::set(
             &json,
             &JsValue::from_str("storageCost"),
-            &JsValue::from(self.storage_cost()),
+            &JsValue::from(self.storage_cost()?),
         )?;
 
         js_sys::Reflect::set(
             &json,
             &JsValue::from_str("processingCost"),
-            &JsValue::from(self.processing_cost()),
+            &JsValue::from(self.processing_cost()?),
         )?;
 
         js_sys::Reflect::set(

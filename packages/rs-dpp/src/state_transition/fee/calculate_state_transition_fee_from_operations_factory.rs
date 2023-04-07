@@ -1,6 +1,4 @@
 use crate::{prelude::Identifier, NonConsensusError};
-use crate::prelude::Identifier;
-use crate::state_transition::fee::Credits;
 
 use super::{
     calculate_operation_fees::calculate_operation_fees, constants::DEFAULT_USER_TIP,
@@ -179,10 +177,10 @@ mod test {
             calculate_operation_fees,
         );
 
-        assert!(matches!(result, FeeResult {
+        assert!(matches!(result, Ok(FeeResult {
             desired_amount,
             required_amount,
             ..
-        } if desired_amount == 0 && required_amount == 0));
+        }) if desired_amount == 0 && required_amount == 0));
     }
 }
