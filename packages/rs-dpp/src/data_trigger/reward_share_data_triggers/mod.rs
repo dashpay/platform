@@ -252,6 +252,7 @@ mod test {
             sml_store,
             data_contract,
             top_level_identifier,
+            identity,
             ..
         } = setup_test();
 
@@ -263,11 +264,11 @@ mod test {
 
         let mut state_repository_mock = MockStateRepositoryLike::new();
         state_repository_mock
-            .expect_fetch_sml_store()
-            .returning(move || Ok(sml_store.clone()));
+            .expect_is_in_the_valid_master_nodes_list()
+            .returning(move |_| Ok(true));
         state_repository_mock
             .expect_fetch_identity()
-            .returning(|_, _| Ok(None));
+            .returning(move |_, _| Ok(Some(identity.clone())));
         state_repository_mock
             .expect_fetch_documents()
             .returning(move |_, _, _, _| Ok(documents.clone()));
@@ -287,7 +288,7 @@ mod test {
             create_masternode_reward_shares_data_trigger(&document_transition, &context, None)
                 .await;
 
-        let percentage_error = get_data_trigger_error(&result, 1);
+        let percentage_error = get_data_trigger_error(&result, 0);
         assert_eq!(
             "Percentage can not be more than 10000",
             percentage_error.to_string()
@@ -306,8 +307,8 @@ mod test {
 
         let mut state_repository_mock = MockStateRepositoryLike::new();
         state_repository_mock
-            .expect_fetch_sml_store()
-            .returning(move || Ok(sml_store.clone()));
+            .expect_is_in_the_valid_master_nodes_list()
+            .returning(move |_| Ok(true));
         state_repository_mock
             .expect_fetch_identity()
             .returning(move |_, _| Ok(None));
@@ -351,8 +352,8 @@ mod test {
 
         let mut state_repository_mock = MockStateRepositoryLike::new();
         state_repository_mock
-            .expect_fetch_sml_store()
-            .returning(move || Ok(sml_store.clone()));
+            .expect_is_in_the_valid_master_nodes_list()
+            .returning(move |_| Ok(false));
         state_repository_mock
             .expect_fetch_identity()
             .returning(move |_, _| Ok(None));
@@ -391,8 +392,8 @@ mod test {
 
         let mut state_repository_mock = MockStateRepositoryLike::new();
         state_repository_mock
-            .expect_fetch_sml_store()
-            .returning(move || Ok(sml_store.clone()));
+            .expect_is_in_the_valid_master_nodes_list()
+            .returning(move |_| Ok(true));
         state_repository_mock
             .expect_fetch_identity()
             .returning(move |_, _| Ok(Some(identity.clone())));
@@ -427,8 +428,8 @@ mod test {
 
         let mut state_repository_mock = MockStateRepositoryLike::new();
         state_repository_mock
-            .expect_fetch_sml_store()
-            .returning(move || Ok(sml_store.clone()));
+            .expect_is_in_the_valid_master_nodes_list()
+            .returning(move |_| Ok(true));
         state_repository_mock
             .expect_fetch_identity()
             .returning(move |_, _| Ok(Some(identity.clone())));
