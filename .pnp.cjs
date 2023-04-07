@@ -3620,6 +3620,41 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["wrap-ansi", "npm:7.0.0"]\
           ],\
           "linkType": "HARD"\
+        }],\
+        ["npm:1.26.2", {\
+          "packageLocation": "./.yarn/cache/@oclif-core-npm-1.26.2-6e8f4423c3-1da7f22fff.zip/node_modules/@oclif/core/",\
+          "packageDependencies": [\
+            ["@oclif/core", "npm:1.26.2"],\
+            ["@oclif/linewrap", "npm:1.0.0"],\
+            ["@oclif/screen", "npm:3.0.4"],\
+            ["ansi-escapes", "npm:4.3.2"],\
+            ["ansi-styles", "npm:4.3.0"],\
+            ["cardinal", "npm:2.1.1"],\
+            ["chalk", "npm:4.1.2"],\
+            ["clean-stack", "npm:3.0.1"],\
+            ["cli-progress", "npm:3.10.0"],\
+            ["debug", "virtual:da6319fb8ee6999f0780eb633cb928f5c3591495496bf4772d10fe1fe1a6bdb4d9da75848709ecbee87ebbe810b9042e34151e541b86413683541ebf018679fa#npm:4.3.4"],\
+            ["ejs", "npm:3.1.8"],\
+            ["fs-extra", "npm:9.1.0"],\
+            ["get-package-type", "npm:0.1.0"],\
+            ["globby", "npm:11.1.0"],\
+            ["hyperlinker", "npm:1.0.0"],\
+            ["indent-string", "npm:4.0.0"],\
+            ["is-wsl", "npm:2.2.0"],\
+            ["js-yaml", "npm:3.14.1"],\
+            ["natural-orderby", "npm:2.0.3"],\
+            ["object-treeify", "npm:1.1.33"],\
+            ["password-prompt", "npm:1.1.2"],\
+            ["semver", "npm:7.3.8"],\
+            ["string-width", "npm:4.2.3"],\
+            ["strip-ansi", "npm:6.0.1"],\
+            ["supports-color", "npm:8.1.1"],\
+            ["supports-hyperlinks", "npm:2.2.0"],\
+            ["tslib", "npm:2.4.1"],\
+            ["widest-line", "npm:3.1.0"],\
+            ["wrap-ansi", "npm:7.0.0"]\
+          ],\
+          "linkType": "HARD"\
         }]\
       ]],\
       ["@oclif/linewrap", [\
@@ -3675,6 +3710,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/@oclif-screen-npm-3.0.3-0254453e26-c40650869b.zip/node_modules/@oclif/screen/",\
           "packageDependencies": [\
             ["@oclif/screen", "npm:3.0.3"]\
+          ],\
+          "linkType": "HARD"\
+        }],\
+        ["npm:3.0.4", {\
+          "packageLocation": "./.yarn/cache/@oclif-screen-npm-3.0.4-d372fa56f8-6d662c81ed.zip/node_modules/@oclif/screen/",\
+          "packageDependencies": [\
+            ["@oclif/screen", "npm:3.0.4"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -8024,7 +8066,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/oclif", "npm:1.0.2"],\
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
             ["@dashevo/withdrawals-contract", "workspace:packages/withdrawals-contract"],\
-            ["@oclif/core", "npm:1.22.0"],\
+            ["@oclif/core", "npm:1.26.2"],\
             ["@oclif/plugin-help", "npm:5.1.20"],\
             ["ajv", "npm:8.8.1"],\
             ["ajv-formats", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.1"],\
