@@ -73,6 +73,7 @@ use(async (chai, util) => {
     });
   };
 
+  // eslint-disable-next-line
   chai.Assertion.overwriteMethod('equals', function (_super) {
     return function (other) {
       const originalObject = {
@@ -86,6 +87,7 @@ use(async (chai, util) => {
     };
   });
 
+  // elslint-disable-next-line
   chai.Assertion.overwriteMethod('calledOnceWithExactly', function (_super) {
     return function () {
       const clonedCallArgs = lodash.cloneDeep(

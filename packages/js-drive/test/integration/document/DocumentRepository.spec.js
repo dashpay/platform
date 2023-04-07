@@ -644,35 +644,35 @@ describe('DocumentRepository', function main() {
         ],
       },
       {
-    where: [
-      ['a', '==', 1],
-      ['b', '==', 2],
-      ['c', '==', 3],
-      ['d', 'in', [1, 2]],
-      ['e', '>', 3],
-    ],
-    orderBy: [
-      ['d', 'desc'],
-      ['e', 'asc'],
-    ],
-  },
-  {
-    where: [
-      ['firstName', '>', 'Chris'],
-      ['firstName', '<=', 'Noellyn'],
-    ],
-    orderBy: [
-      ['firstName', 'asc'],
-    ],
-  },
-  {
-    where: [
-      ['firstName', '==', '1'],
-      ['lastName', '==', '2'],
-    ],
-    limit: 1,
-  },
-];
+        where: [
+          ['a', '==', 1],
+          ['b', '==', 2],
+          ['c', '==', 3],
+          ['d', 'in', [1, 2]],
+          ['e', '>', 3],
+        ],
+        orderBy: [
+          ['d', 'desc'],
+          ['e', 'asc'],
+        ],
+      },
+      {
+        where: [
+          ['firstName', '>', 'Chris'],
+          ['firstName', '<=', 'Noellyn'],
+        ],
+        orderBy: [
+          ['firstName', 'asc'],
+        ],
+      },
+      {
+        where: [
+          ['firstName', '==', '1'],
+          ['lastName', '==', '2'],
+        ],
+        limit: 1,
+      },
+    ];
   });
 
   beforeEach(async function beforeEach() {
