@@ -32,17 +32,24 @@ where
     let is_dry_run = context.state_transition_execution_context.is_dry_run();
     let owner_id = context.owner_id.to_string(Encoding::Base58);
 
-    let document_create_transition = match document_transition {
-        DocumentTransition::Create(document_create_transition) => document_create_transition,
+    let (transition_data, transition_base) = match document_transition {
+        DocumentTransition::Create(document_create_transition) => (
+            document_create_transition.data.as_ref(),
+            &document_create_transition.base,
+        ),
+        DocumentTransition::Replace(document_replace_transition) => (
+            document_replace_transition.data.as_ref(),
+            &document_replace_transition.base,
+        ),
         _ => bail!(
-            "the Document Transition {} isn't 'CREATE'",
+            "the Document Transition {} isn't 'CREATE or REPLACE'",
             get_from_transition!(document_transition, id)
         ),
     };
-    let properties = document_create_transition.data.as_ref().ok_or_else(|| {
+    let properties = transition_data.ok_or_else(|| {
         anyhow!(
             "data isn't defined in Data Transition '{}'",
-            document_create_transition.base.id
+            transition_base.id
         )
     })?;
 
@@ -68,7 +75,7 @@ where
         if !is_valid_master_node {
             let err = create_error(
                 context,
-                document_create_transition,
+                transition_base.id,
                 "Only masternode identities can share rewards".to_string(),
             );
             result.add_error(err.into());
@@ -88,7 +95,7 @@ where
     if !is_dry_run && maybe_identity.is_none() {
         let err = create_error(
             context,
-            document_create_transition,
+            transition_base.id,
             format!("Identity '{}' doesn't exist", pay_to_identifier),
         );
         result.add_error(err.into());
@@ -99,9 +106,9 @@ where
         .state_repository
         .fetch_documents(
             &context.data_contract.id,
-            &document_create_transition.base.document_type_name,
+            &transition_base.document_type_name,
             json!({
-                "where" : [ [ "$owner_id", "==", owner_id ]]
+                "where" : [ [ "$ownerId", "==", owner_id ]]
             }),
             Some(context.state_transition_execution_context),
         )
@@ -118,7 +125,7 @@ where
     if documents.len() >= MAX_DOCUMENTS {
         let err = create_error(
             context,
-            document_create_transition,
+            transition_base.id,
             format!(
                 "Reward shares cannot contain more than {} identities",
                 MAX_DOCUMENTS
@@ -136,7 +143,7 @@ where
     if total_percent > MAX_PERCENTAGE {
         let err = create_error(
             context,
-            document_create_transition,
+            transition_base.id,
             format!("Percentage can not be more than {}", MAX_PERCENTAGE),
         );
         result.add_error(err.into());
