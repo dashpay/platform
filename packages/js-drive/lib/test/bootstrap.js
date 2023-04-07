@@ -48,7 +48,7 @@ use(async (chai, util) => {
   };
 
   const transformArguments = (args, topLevelObject, basePath = '') => {
-    lodash.forIn(args, function (value, key) {
+    lodash.forIn(args, (value, key) => {
       if (value !== undefined && value !== null && value.hasOwnProperty('ptr')) {
         lodash.set(topLevelObject, `${basePath}${basePath === '' ? '' : '.'}${key}`, getMofifiedArgument(value));
         return;
@@ -77,7 +77,7 @@ use(async (chai, util) => {
   chai.Assertion.overwriteMethod('equals', function (_super) {
     return function (other) {
       const originalObject = {
-        '0': this._obj,
+        0: this._obj,
       };
 
       transformArguments(originalObject, originalObject);
@@ -87,7 +87,7 @@ use(async (chai, util) => {
     };
   });
 
-  // elslint-disable-next-line
+  // eslint-disable-next-line
   chai.Assertion.overwriteMethod('calledOnceWithExactly', function (_super) {
     return function () {
       const clonedCallArgs = lodash.cloneDeep(
