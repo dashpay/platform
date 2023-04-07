@@ -5,19 +5,24 @@
 # and also have `node` and `yarn` to build JS part of wasm-dpp
 FROM rust as builder
 
-RUN --mount=type=cache,target=/var/cache/apt \
-    apt-get update && apt-get install -y clang
+RUN apt-get update && apt-get install -y clang
+
+#RUN --mount=type=cache,target=/var/cache/apt \
+#    apt-get update && apt-get install -y clang
 
 WORKDIR /platform
 
 COPY .cargo /platform/.cargo
 COPY Cargo.lock rust-toolchain.toml ./
 
-RUN --mount=type=cache,target=target \
-    --mount=type=cache,target=$CARGO_HOME/git \
-    --mount=type=cache,target=$CARGO_HOME/registry \
-    rustup target add wasm32-unknown-unknown && \
+RUN rustup target add wasm32-unknown-unknown && \
     cargo install -f wasm-bindgen-cli
+
+#RUN --mount=type=cache,target=target \
+#    --mount=type=cache,target=$CARGO_HOME/git \
+#    --mount=type=cache,target=$CARGO_HOME/registry \
+#    rustup target add wasm32-unknown-unknown && \
+#    cargo install -f wasm-bindgen-cli
 
 # Use Cargo.toml.template instead of Cargo.toml from project root to avoid copying unnecessary Rust packages
 COPY packages/js-drive/Cargo.toml.template ./Cargo.toml
