@@ -31,21 +31,31 @@ COPY packages/withdrawals-contract packages/withdrawals-contract
 COPY packages/data-contracts packages/data-contracts
 
 # Build RS Drive Node.JS binding
-RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
-#    TODO(wasm-dpp): revisit. This cache seem to be breaking installation of CI hosted dependencies
+# TODO(wasm-dpp): revisit. This cache seem to be breaking installation of GitHub hosted dependencies
+#RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
+#    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
+#    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
 #    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
+#    yarn workspace @dashevo/rs-drive build
+
+RUN --mount=type=cache,target=target \
+    --mount=type=cache,target=$CARGO_HOME/git \
+    --mount=type=cache,target=$CARGO_HOME/registry \
     yarn workspace @dashevo/rs-drive build
 
 # Build WASM DPP
-RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
-#    TODO(wasm-dpp): revisit. This cache seem to be breaking installation of CI hosted dependencies
+# TODO(wasm-dpp): revisit. This cache seem to be breaking installation of GitHub hosed dependencies
+#RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
+#    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
+#    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
 #    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
-    yarn workspace @dashevo/wasm-dpp build && \
-    cargo clean
+#    yarn workspace @dashevo/wasm-dpp build && \
+#    cargo clean
+
+RUN --mount=type=cache,target=target \
+    --mount=type=cache,target=$CARGO_HOME/git \
+    --mount=type=cache,target=$CARGO_HOME/registry \
+    yarn workspace @dashevo/wasm-dpp build
 
 # Install Drive-specific dependencies using previous
 # node_modules directory to reuse built binaries
