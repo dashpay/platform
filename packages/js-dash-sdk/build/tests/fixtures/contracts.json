@@ -1,0 +1,31 @@
+{
+    "ratePlatform": {
+        "$id": "ATU1EJjKhWZzhmuRdCvuNbpos7nwpbDqtrZ3yvxxjpKL",
+        "ownerId": "2ThFDAUqVp3PvHudj8xWUNL7rAdAVfHnmWyWp2AzSFQ8",
+        "$schema": "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
+        "documents": {
+            "rate": {
+                "properties": {
+                    "rating": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 10
+                    }
+                },
+                "indices": [
+                    {
+                        "name": "rating",
+                        "properties": [
+                            {
+                                "rating": "asc"
+                            }
+                        ]
+                    }
+                ],
+                "additionalProperties": false
+            }
+        },
+        "protocolVersion": 0,
+        "version": 1
+    }
+}
