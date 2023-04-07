@@ -127,8 +127,8 @@ impl ValidatorSet {
     ) -> Result<Quorum, ValidatorSetError> {
         // read some config
         let rotation_block_interval: CoreHeight = config.validator_set_quorum_rotation_block_count;
-        let min_valid_members = config.core.min_quorum_valid_members;
-        let dkg_interval = config.core.dkg_interval;
+        let min_valid_members = config.core.min_quorum_valid_members();
+        let dkg_interval = config.core.dkg_interval();
 
         let min_ttl: CoreHeight = rotation_block_interval * 3;
 
