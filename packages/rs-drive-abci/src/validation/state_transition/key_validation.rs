@@ -1,14 +1,16 @@
 use crate::error::Error;
+use dpp::identity::PartialIdentity;
 use dpp::state_transition::fee::operations::{Operation, SignatureVerificationOperation};
 use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use dpp::state_transition::StateTransitionIdentitySigned;
-use dpp::validation::SimpleConsensusValidationResult;
+use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::{
     consensus::signature::{
         InvalidIdentityPublicKeyTypeError, MissingPublicKeyError, PublicKeyIsDisabledError,
         SignatureError,
     },
     state_transition::validation::validate_state_transition_identity_signature::convert_to_consensus_signature_error,
+    NativeBlsModule,
 };
 use dpp::{BlsModule, ProtocolError};
 use drive::dpp::identity::KeyType;
@@ -16,7 +18,7 @@ use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, OptionalSingleIdentityPublicKeyOutcome,
 };
 use drive::drive::Drive;
-use drive::grovedb::Transaction;
+use drive::grovedb::{Transaction, TransactionArg};
 use lazy_static::lazy_static;
 use std::collections::HashSet;
 lazy_static! {
@@ -32,11 +34,10 @@ lazy_static! {
 pub fn validate_state_transition_identity_signature(
     drive: &Drive,
     state_transition: &impl StateTransitionIdentitySigned,
-    transaction: &Transaction,
-    bls: &impl BlsModule,
+    transaction: TransactionArg,
     execution_context: &StateTransitionExecutionContext,
-) -> Result<SimpleConsensusValidationResult, Error> {
-    let mut validation_result = SimpleConsensusValidationResult::default();
+) -> Result<ConsensusValidationResult<PartialIdentity>, Error> {
+    let mut validation_result = ConsensusValidationResult::<PartialIdentity>::default();
 
     let key_id = state_transition.get_signature_public_key_id().ok_or(
         ProtocolError::CorruptedCodeExecution(format!(
@@ -50,7 +51,7 @@ pub fn validate_state_transition_identity_signature(
     );
 
     let maybe_public_key: OptionalSingleIdentityPublicKeyOutcome =
-        drive.fetch_identity_keys(key_request, Some(transaction))?;
+        drive.fetch_identity_keys(key_request, transaction)?;
 
     let public_key = match maybe_public_key {
         None => {
@@ -83,7 +84,8 @@ pub fn validate_state_transition_identity_signature(
         return Ok(validation_result);
     }
 
-    let signature_is_valid = state_transition.verify_signature(&public_key, bls);
+    let signature_is_valid =
+        state_transition.verify_signature(&public_key, &NativeBlsModule::default());
 
     if let Err(err) = signature_is_valid {
         let consensus_error = convert_to_consensus_signature_error(err)?;
@@ -91,5 +93,5 @@ pub fn validate_state_transition_identity_signature(
         return Ok(validation_result);
     }
 
-    Ok(validation_result)
+    validation_result.Ok(validation_result)
 }

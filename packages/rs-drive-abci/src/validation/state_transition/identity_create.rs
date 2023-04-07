@@ -39,6 +39,7 @@ impl StateTransitionValidation for IdentityCreateTransition {
     fn validate_signatures(
         &self,
         drive: &Drive,
+        tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         todo!()
     }

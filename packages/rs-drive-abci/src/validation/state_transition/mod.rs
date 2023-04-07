@@ -19,6 +19,7 @@ use crate::error::Error;
 use crate::execution::execution_event::ExecutionEvent;
 use crate::platform::{Platform, PlatformRef};
 use crate::state::PlatformState;
+use crate::validation::state_transition::key_validation::validate_state_transition_identity_signature;
 
 pub fn process_state_transition<'a, C>(
     platform: &'a PlatformRef<C>,
@@ -32,7 +33,7 @@ pub fn process_state_transition<'a, C>(
     if !result.is_valid() {
         return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
     }
-    let result = state_transition.validate_signatures(&platform.drive)?;
+    let result = state_transition.validate_signatures(&platform.drive, transaction)?;
     if !result.is_valid() {
         return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
     }
@@ -54,6 +55,7 @@ pub trait StateTransitionValidation {
     fn validate_signatures(
         &self,
         drive: &Drive,
+        tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error>;
 
     fn validate_state(
@@ -83,15 +85,16 @@ impl StateTransitionValidation for StateTransition {
     fn validate_signatures(
         &self,
         drive: &Drive,
+        tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         match self {
-            StateTransition::DataContractCreate(st) => st.validate_signatures(drive),
-            StateTransition::DataContractUpdate(st) => st.validate_signatures(drive),
-            StateTransition::IdentityCreate(st) => st.validate_signatures(drive),
-            StateTransition::IdentityUpdate(st) => st.validate_signatures(drive),
-            StateTransition::IdentityTopUp(st) => st.validate_signatures(drive),
-            StateTransition::IdentityCreditWithdrawal(st) => st.validate_signatures(drive),
-            StateTransition::DocumentsBatch(st) => st.validate_signatures(drive),
+            StateTransition::DataContractCreate(st) => st.validate_signatures(drive, tx),
+            StateTransition::DataContractUpdate(st) => st.validate_signatures(drive, tx),
+            StateTransition::IdentityCreate(st) => st.validate_signatures(drive, tx),
+            StateTransition::IdentityUpdate(st) => st.validate_signatures(drive, tx),
+            StateTransition::IdentityTopUp(st) => st.validate_signatures(drive, tx),
+            StateTransition::IdentityCreditWithdrawal(st) => st.validate_signatures(drive, tx),
+            StateTransition::DocumentsBatch(st) => st.validate_signatures(drive, tx),
         }
     }
 
