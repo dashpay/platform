@@ -37,6 +37,7 @@ use drive::grovedb::TransactionArg;
 use drive::{drive::Drive, grovedb::Transaction};
 use serde_json::Value as JsonValue;
 
+use crate::rpc::core::CoreRPCLike;
 use crate::validation::state_transition::key_validation::validate_state_transition_identity_signature;
 use crate::{error::Error, validation::state_transition::common::validate_schema};
 
@@ -215,9 +216,10 @@ impl StateTransitionValidation for DataContractUpdateTransition {
         )
     }
 
-    fn validate_state(
+    fn validate_state<C: CoreRPCLike>(
         &self,
         drive: &Drive,
+        core: &C,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let mut validation_result = ConsensusValidationResult::default();

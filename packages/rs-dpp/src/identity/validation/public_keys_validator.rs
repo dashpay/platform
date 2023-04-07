@@ -14,7 +14,7 @@ use crate::{
 };
 
 use crate::identity::security_level::ALLOWED_SECURITY_LEVELS;
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
 #[cfg(test)]
 use mockall::{automock, predicate::*};
 use platform_value::Value;
@@ -203,7 +203,9 @@ pub(crate) fn duplicated_keys(public_keys: &[IdentityPublicKey]) -> Vec<KeyID> {
     duplicated_key_ids
 }
 
-pub fn duplicated_keys_witness(public_keys: &[IdentityPublicKeyWithWitness]) -> Vec<KeyID> {
+pub fn duplicated_keys_witness(
+    public_keys: &[IdentityPublicKeyInCreationWithWitness],
+) -> Vec<KeyID> {
     let mut keys_count = HashMap::<Vec<u8>, usize>::new();
     let mut duplicated_key_ids = vec![];
 
@@ -239,7 +241,9 @@ pub(crate) fn duplicated_key_ids(public_keys: &[IdentityPublicKey]) -> Vec<KeyID
     duplicated_ids
 }
 
-pub fn duplicated_key_ids_witness(public_keys: &[IdentityPublicKeyWithWitness]) -> Vec<KeyID> {
+pub fn duplicated_key_ids_witness(
+    public_keys: &[IdentityPublicKeyInCreationWithWitness],
+) -> Vec<KeyID> {
     let mut duplicated_ids = Vec::<KeyID>::new();
     let mut ids_count = HashMap::<KeyID, usize>::new();
 

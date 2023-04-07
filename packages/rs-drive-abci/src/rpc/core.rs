@@ -1,10 +1,14 @@
-use dashcore::{Block, BlockHash};
+use dashcore::hashes::sha256d;
+use dashcore::hashes::sha256d::Hash;
+use dashcore::{Block, BlockHash, Transaction, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
     ExtendedQuorumDetails, GetBestChainLockResult, QuorumHash, QuorumInfoResult, QuorumListResult,
     QuorumType,
 };
+use dashcore_rpc::json::GetTransactionResult;
 use dashcore_rpc::Error;
 use dashcore_rpc::{Auth, Client, RpcApi};
+use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use mockall::{automock, predicate::*};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -23,6 +27,12 @@ pub trait CoreRPCLike {
 
     /// Get block hash by height
     fn get_best_chain_lock(&self) -> Result<CoreChainLock, Error>;
+
+    /// Get transaction
+    fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, Error>;
+
+    /// Get transaction
+    fn get_transaction_extended_info(&self, tx_id: &Txid) -> Result<GetTransactionResult, Error>;
 
     /// Get block by hash
     fn get_block(&self, block_hash: &BlockHash) -> Result<Block, Error>;
@@ -80,6 +90,14 @@ impl CoreRPCLike for DefaultCoreRPC {
             core_block_hash: blockhash.to_vec(),
             signature,
         })
+    }
+
+    fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, Error> {
+        self.inner.get_raw_transaction(tx_id, None)
+    }
+
+    fn get_transaction_extended_info(&self, tx_id: &Txid) -> Result<GetTransactionResult, Error> {
+        self.inner.get_transaction(tx_id, None)
     }
 
     fn get_block(&self, block_hash: &BlockHash) -> Result<Block, Error> {

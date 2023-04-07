@@ -39,6 +39,7 @@ impl ErrorWithCode for ConsensusError {
             Self::InvalidIdentityPublicKeyDataError(_) => 1040,
             Self::InvalidInstantAssetLockProofError(_) => 1041,
             Self::InvalidInstantAssetLockProofSignatureError(_) => 1042,
+            Self::InvalidIdentityAssetLockProofChainLockValidationError(_) => 1043,
             Self::MissingMasterPublicKeyError(_) => 1046,
             Self::InvalidIdentityPublicKeySecurityLevelError(_) => 1047,
             Self::IdentityInsufficientBalanceError(_) => 4024,

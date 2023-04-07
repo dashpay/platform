@@ -18,6 +18,7 @@ use drive::{drive::Drive, grovedb::Transaction};
 use crate::error::Error;
 use crate::execution::execution_event::ExecutionEvent;
 use crate::platform::{Platform, PlatformRef};
+use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformState;
 use crate::validation::state_transition::key_validation::validate_state_transition_identity_signature;
 
@@ -34,26 +35,26 @@ use crate::validation::state_transition::key_validation::validate_state_transiti
 /// Validate state verifies that there are no state based conflicts, for example that a document
 /// with a unique index isn't already taken.
 ///
-pub fn process_state_transition<'a, C>(
+pub fn process_state_transition<'a, C: CoreRPCLike>(
     platform: &'a PlatformRef<C>,
     state_transition: StateTransition,
     transaction: TransactionArg,
 ) -> Result<ConsensusValidationResult<ExecutionEvent<'a>>, Error> {
     // Validating structure
-    let result = state_transition.validate_structure(&platform.drive, transaction)?;
+    let result = state_transition.validate_structure(platform.drive, transaction)?;
     if !result.is_valid() {
         return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
     }
 
     // Validating signatures
-    let result = state_transition.validate_signatures(&platform.drive, transaction)?;
+    let result = state_transition.validate_signatures(platform.drive, transaction)?;
     if !result.is_valid() {
         return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
     }
     let maybe_identity = result.into_data()?;
 
     // Validating state
-    let result = state_transition.validate_state(&platform.drive, transaction)?;
+    let result = state_transition.validate_state(platform.drive, platform.core_rpc, transaction)?;
 
     result.map_result(|action| (maybe_identity, action, &platform.state.current_epoch).try_into())
 }
@@ -71,9 +72,10 @@ pub trait StateTransitionValidation {
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error>;
 
-    fn validate_state(
+    fn validate_state<C: CoreRPCLike>(
         &self,
         drive: &Drive,
+        core_rpc: &C,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
@@ -111,19 +113,20 @@ impl StateTransitionValidation for StateTransition {
         }
     }
 
-    fn validate_state(
+    fn validate_state<C: CoreRPCLike>(
         &self,
         drive: &Drive,
+        core_rpc: &C,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         match self {
-            StateTransition::DataContractCreate(st) => st.validate_state(drive, tx),
-            StateTransition::DataContractUpdate(st) => st.validate_state(drive, tx),
-            StateTransition::IdentityCreate(st) => st.validate_state(drive, tx),
-            StateTransition::IdentityUpdate(st) => st.validate_state(drive, tx),
-            StateTransition::IdentityTopUp(st) => st.validate_state(drive, tx),
-            StateTransition::IdentityCreditWithdrawal(st) => st.validate_state(drive, tx),
-            StateTransition::DocumentsBatch(st) => st.validate_state(drive, tx),
+            StateTransition::DataContractCreate(st) => st.validate_state(drive, core_rpc, tx),
+            StateTransition::DataContractUpdate(st) => st.validate_state(drive, core_rpc, tx),
+            StateTransition::IdentityCreate(st) => st.validate_state(drive, core_rpc, tx),
+            StateTransition::IdentityUpdate(st) => st.validate_state(drive, core_rpc, tx),
+            StateTransition::IdentityTopUp(st) => st.validate_state(drive, core_rpc, tx),
+            StateTransition::IdentityCreditWithdrawal(st) => st.validate_state(drive, core_rpc, tx),
+            StateTransition::DocumentsBatch(st) => st.validate_state(drive, core_rpc, tx),
         }
     }
 }

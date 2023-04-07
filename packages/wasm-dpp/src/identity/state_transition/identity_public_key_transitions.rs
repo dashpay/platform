@@ -1,7 +1,7 @@
 //todo: move this file to transition
 use dpp::dashcore::anyhow;
 use dpp::document::document_transition::document_base_transition::JsonValue;
-use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
+use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
 use dpp::platform_value::BinaryData;
 use dpp::Convertible;
 pub use serde::{Deserialize, Serialize};
@@ -20,7 +20,7 @@ struct ToObjectOptions {
 
 #[wasm_bindgen(js_name=IdentityPublicKeyWithWitness)]
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct IdentityPublicKeyWithWitnessWasm(IdentityPublicKeyWithWitness);
+pub struct IdentityPublicKeyWithWitnessWasm(IdentityPublicKeyInCreationWithWitness);
 
 #[wasm_bindgen(js_class = IdentityPublicKeyWithWitness)]
 impl IdentityPublicKeyWithWitnessWasm {
@@ -29,7 +29,7 @@ impl IdentityPublicKeyWithWitnessWasm {
         let data_string = utils::stringify(&raw_public_key)?;
         let value: JsonValue = serde_json::from_str(&data_string).map_err(|e| e.to_string())?;
 
-        let pk = IdentityPublicKeyWithWitness::from_json_object(value).with_js_error()?;
+        let pk = IdentityPublicKeyInCreationWithWitness::from_json_object(value).with_js_error()?;
 
         Ok(IdentityPublicKeyWithWitnessWasm(pk))
     }
@@ -174,21 +174,21 @@ impl IdentityPublicKeyWithWitnessWasm {
 }
 
 impl IdentityPublicKeyWithWitnessWasm {
-    pub fn into_inner(self) -> IdentityPublicKeyWithWitness {
+    pub fn into_inner(self) -> IdentityPublicKeyInCreationWithWitness {
         self.0
     }
 
-    pub fn inner(&self) -> &IdentityPublicKeyWithWitness {
+    pub fn inner(&self) -> &IdentityPublicKeyInCreationWithWitness {
         &self.0
     }
 
-    pub fn inner_mut(&mut self) -> &mut IdentityPublicKeyWithWitness {
+    pub fn inner_mut(&mut self) -> &mut IdentityPublicKeyInCreationWithWitness {
         &mut self.0
     }
 }
 
-impl From<IdentityPublicKeyWithWitness> for IdentityPublicKeyWithWitnessWasm {
-    fn from(v: IdentityPublicKeyWithWitness) -> Self {
+impl From<IdentityPublicKeyInCreationWithWitness> for IdentityPublicKeyWithWitnessWasm {
+    fn from(v: IdentityPublicKeyInCreationWithWitness) -> Self {
         IdentityPublicKeyWithWitnessWasm(v)
     }
 }
@@ -200,12 +200,12 @@ impl TryFrom<JsValue> for IdentityPublicKeyWithWitnessWasm {
         let str = String::from(js_sys::JSON::stringify(&value)?);
         let val = serde_json::from_str(&str).map_err(|e| from_dpp_err(e.into()))?;
         Ok(Self(
-            IdentityPublicKeyWithWitness::from_raw_json_object(val).with_js_error()?,
+            IdentityPublicKeyInCreationWithWitness::from_raw_json_object(val).with_js_error()?,
         ))
     }
 }
 
-impl From<IdentityPublicKeyWithWitnessWasm> for IdentityPublicKeyWithWitness {
+impl From<IdentityPublicKeyWithWitnessWasm> for IdentityPublicKeyInCreationWithWitness {
     fn from(pk: IdentityPublicKeyWithWitnessWasm) -> Self {
         pk.0
     }

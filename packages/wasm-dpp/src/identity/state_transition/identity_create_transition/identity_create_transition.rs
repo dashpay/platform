@@ -29,7 +29,7 @@ use dpp::{
     identifier::Identifier,
     identity::state_transition::{
         asset_lock_proof::AssetLockProof, identity_create_transition::IdentityCreateTransition,
-        identity_public_key_transitions::IdentityPublicKeyWithWitness,
+        identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness,
     },
     state_transition::StateTransitionLike,
 };
@@ -105,7 +105,7 @@ impl IdentityCreateTransitionWasm {
                     )?;
                 Ok(public_key.clone().into())
             })
-            .collect::<Result<Vec<IdentityPublicKeyWithWitness>, JsValue>>()?;
+            .collect::<Result<Vec<IdentityPublicKeyInCreationWithWitness>, JsValue>>()?;
 
         self.0.set_public_keys(public_keys);
 
@@ -124,7 +124,7 @@ impl IdentityCreateTransitionWasm {
                     )?;
                 Ok(public_key.clone().into())
             })
-            .collect::<Result<Vec<IdentityPublicKeyWithWitness>, JsValue>>()?;
+            .collect::<Result<Vec<IdentityPublicKeyInCreationWithWitness>, JsValue>>()?;
 
         self.0.add_public_keys(&mut public_keys);
 
@@ -136,7 +136,7 @@ impl IdentityCreateTransitionWasm {
         self.0
             .get_public_keys()
             .iter()
-            .map(IdentityPublicKeyWithWitness::to_owned)
+            .map(IdentityPublicKeyInCreationWithWitness::to_owned)
             .map(IdentityPublicKeyWithWitnessWasm::from)
             .map(JsValue::from)
             .collect()

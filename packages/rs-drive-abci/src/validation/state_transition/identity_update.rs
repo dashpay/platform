@@ -8,6 +8,7 @@ use drive::grovedb::TransactionArg;
 use drive::{drive::Drive, grovedb::Transaction};
 
 use crate::error::Error;
+use crate::rpc::core::CoreRPCLike;
 use crate::validation::state_transition::key_validation::validate_state_transition_identity_signature;
 
 use super::StateTransitionValidation;
@@ -32,9 +33,10 @@ impl StateTransitionValidation for IdentityUpdateTransition {
         )
     }
 
-    fn validate_state(
+    fn validate_state<C: CoreRPCLike>(
         &self,
         drive: &Drive,
+        core: &C,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         todo!()

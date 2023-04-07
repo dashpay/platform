@@ -1,3 +1,4 @@
+use dashcore::consensus::encode::Error as DashCoreConsensusEncodeError;
 use drive::error::Error as DriveError;
 
 /// Execution errors
@@ -51,4 +52,8 @@ pub enum ExecutionError {
     /// For example we asked for 2 items and it returned 3
     #[error("corrupted drive response error: {0}")]
     CorruptedDriveResponse(String),
+
+    /// An error received from DashCore
+    #[error("dash core consensus encode error: {0}")]
+    DashCoreConsensusEncodeError(#[from] DashCoreConsensusEncodeError),
 }

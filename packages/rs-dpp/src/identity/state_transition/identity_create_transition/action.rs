@@ -1,6 +1,6 @@
 use crate::identifier::Identifier;
 use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
 use crate::identity::IdentityPublicKey;
 use serde::{Deserialize, Serialize};
 
@@ -30,7 +30,7 @@ impl IdentityCreateTransitionAction {
             version: IDENTITY_CREATE_TRANSITION_ACTION_VERSION,
             public_keys: public_keys
                 .into_iter()
-                .map(IdentityPublicKeyWithWitness::to_identity_public_key)
+                .map(IdentityPublicKeyInCreationWithWitness::to_identity_public_key)
                 .collect(),
             initial_balance_amount,
             identity_id,

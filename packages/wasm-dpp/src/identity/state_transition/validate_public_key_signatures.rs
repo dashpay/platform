@@ -10,7 +10,7 @@ use dpp::identity::state_transition::validate_public_key_signatures::{
     PublicKeysSignaturesValidator, TPublicKeysSignaturesValidator,
 };
 
-use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
+use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
 
 use crate::errors::from_dpp_err;
 use dpp::platform_value::Value;
@@ -44,7 +44,7 @@ impl PublicKeysSignaturesValidatorWasm {
         let public_keys = raw_public_keys
             .into_iter()
             .map(|raw_key| {
-                let parsed_key: IdentityPublicKeyWithWitness =
+                let parsed_key: IdentityPublicKeyInCreationWithWitness =
                     IdentityPublicKeyWithWitnessWasm::new(raw_key)?.into();
                 parsed_key.to_raw_object(false).with_js_error()
             })

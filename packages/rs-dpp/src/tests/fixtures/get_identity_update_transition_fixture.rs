@@ -1,4 +1,4 @@
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
 use crate::{
     identity::{
         state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition,
@@ -19,7 +19,7 @@ pub fn get_identity_update_transition_fixture() -> IdentityUpdateTransition {
         signature_public_key_id: 0,
         identity_id: generate_random_identifier_struct(),
         revision: 0,
-        add_public_keys: vec![IdentityPublicKeyWithWitness {
+        add_public_keys: vec![IdentityPublicKeyInCreationWithWitness {
             id: 3,
             key_type: KeyType::ECDSA_SECP256K1,
             purpose: Purpose::AUTHENTICATION,

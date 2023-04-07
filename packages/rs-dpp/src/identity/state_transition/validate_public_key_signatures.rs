@@ -2,7 +2,7 @@ use platform_value::Value;
 
 use crate::consensus::basic::identity::InvalidIdentityKeySignatureError;
 use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     object_names,
@@ -86,10 +86,10 @@ pub fn validate_public_key_signatures<'a, T: BlsModule>(
             }
         };
 
-    let add_public_key_transitions: Vec<IdentityPublicKeyWithWitness> = raw_public_keys
+    let add_public_key_transitions: Vec<IdentityPublicKeyInCreationWithWitness> = raw_public_keys
         .into_iter()
         .map(|k| {
-            IdentityPublicKeyWithWitness::from_raw_object(k.to_owned())
+            IdentityPublicKeyInCreationWithWitness::from_raw_object(k.to_owned())
                 .map_err(|e| NonConsensusError::IdentityPublicKeyCreateError(format!("{:#}", e)))
         })
         .collect::<Result<_, _>>()?;
@@ -115,9 +115,9 @@ fn invalid_state_transition_type_error(transition_type: u8) -> ProtocolError {
 
 fn find_invalid_public_key<T: BlsModule>(
     state_transition: &mut impl StateTransitionLike,
-    public_keys: impl IntoIterator<Item = IdentityPublicKeyWithWitness>,
+    public_keys: impl IntoIterator<Item = IdentityPublicKeyInCreationWithWitness>,
     bls: &T,
-) -> Option<IdentityPublicKeyWithWitness> {
+) -> Option<IdentityPublicKeyInCreationWithWitness> {
     for public_key in public_keys {
         state_transition.set_signature(public_key.signature.clone());
         if state_transition

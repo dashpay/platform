@@ -1,7 +1,7 @@
 use chrono::Utc;
 use platform_value::{platform_value, BinaryData, Value};
 
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
 use crate::prelude::Revision;
 use crate::{
     identity::{
@@ -76,7 +76,7 @@ fn get_public_keys_to_add() {
 fn set_public_keys_to_add() {
     let TestData { mut transition, .. } = setup_test();
 
-    let id_public_key = IdentityPublicKeyWithWitness {
+    let id_public_key = IdentityPublicKeyInCreationWithWitness {
         id: 0,
         key_type: KeyType::BLS12_381,
         purpose: Purpose::AUTHENTICATION,

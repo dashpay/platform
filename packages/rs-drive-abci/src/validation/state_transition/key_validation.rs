@@ -7,7 +7,7 @@ use dpp::consensus::basic::identity::{
 };
 use dpp::consensus::ConsensusError;
 use dpp::identity::security_level::ALLOWED_SECURITY_LEVELS;
-use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
+use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
 use dpp::identity::state_transition::identity_update_transition::validate_public_keys::{
     IDENTITY_JSON_SCHEMA, IDENTITY_PLATFORM_VALUE_SCHEMA,
 };
@@ -116,7 +116,7 @@ pub fn validate_state_transition_identity_signature(
 /// id or by data. This is done before signature and state validation to remove potential
 /// attack vectors.
 pub fn validate_identity_public_keys_structure(
-    identity_public_keys_with_witness: &[IdentityPublicKeyWithWitness],
+    identity_public_keys_with_witness: &[IdentityPublicKeyInCreationWithWitness],
 ) -> Result<SimpleConsensusValidationResult, Error> {
     let max_items: usize = IDENTITY_PLATFORM_VALUE_SCHEMA
         .get_integer_at_path("properties.publicKeys.maxItems")
@@ -186,8 +186,8 @@ pub fn validate_identity_public_keys_structure(
 
 /// This validation will validate that all keys are valid for their type and that all signatures
 /// are also valid.
-fn validate_identity_public_keys_signatures(
-    identity_public_keys_with_witness: &[IdentityPublicKeyWithWitness],
+pub fn validate_identity_public_keys_signatures(
+    identity_public_keys_with_witness: &[IdentityPublicKeyInCreationWithWitness],
 ) -> Result<SimpleConsensusValidationResult, Error> {
     let validation_errors = identity_public_keys_with_witness
         .into_iter()
@@ -204,9 +204,9 @@ fn validate_identity_public_keys_signatures(
 }
 
 /// This will validate that all keys are valid against the state
-fn validate_add_identity_public_keys_state(
+pub fn validate_identity_public_key_ids_state(
     identity_id: Identifier,
-    identity_public_keys_with_witness: &[IdentityPublicKeyWithWitness],
+    identity_public_keys_with_witness: &[IdentityPublicKeyInCreationWithWitness],
     drive: &Drive,
     transaction: TransactionArg,
 ) -> Result<SimpleConsensusValidationResult, Error> {
@@ -224,14 +224,23 @@ fn validate_add_identity_public_keys_state(
     let keys = drive.fetch_identity_keys::<KeyIDVec>(identity_key_request, transaction)?;
     if !keys.is_empty() {
         // keys should all be empty
-        return Ok(SimpleConsensusValidationResult::new_with_error(
+        Ok(SimpleConsensusValidationResult::new_with_error(
             ConsensusError::DuplicatedIdentityPublicKeyBasicIdError(
                 DuplicatedIdentityPublicKeyIdError::new(keys),
             ),
-        ));
+        ))
+    } else {
+        Ok(SimpleConsensusValidationResult::default())
     }
+}
 
-    // next we should check that the public key is unique among all unique public keys
+/// This will validate that all keys are valid against the state
+pub fn validate_unique_identity_public_key_hashes_state(
+    identity_public_keys_with_witness: &[IdentityPublicKeyInCreationWithWitness],
+    drive: &Drive,
+    transaction: TransactionArg,
+) -> Result<SimpleConsensusValidationResult, Error> {
+    // we should check that the public key is unique among all unique public keys
 
     let key_ids_map = identity_public_keys_with_witness
         .iter()

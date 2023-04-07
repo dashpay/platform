@@ -25,7 +25,7 @@ use crate::util::{serializer, vec};
 use crate::Convertible;
 use bincode::{Decode, Encode};
 
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
 
 pub type KeyID = u32;
 pub type TimestampMillis = u64;
@@ -48,9 +48,9 @@ pub struct IdentityPublicKey {
     pub disabled_at: Option<TimestampMillis>,
 }
 
-impl Into<IdentityPublicKeyWithWitness> for &IdentityPublicKey {
-    fn into(self) -> IdentityPublicKeyWithWitness {
-        IdentityPublicKeyWithWitness {
+impl Into<IdentityPublicKeyInCreationWithWitness> for &IdentityPublicKey {
+    fn into(self) -> IdentityPublicKeyInCreationWithWitness {
+        IdentityPublicKeyInCreationWithWitness {
             id: self.id,
             purpose: self.purpose,
             security_level: self.security_level,
