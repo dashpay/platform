@@ -1,4 +1,3 @@
-# Workspace template with Rust packages required for Test suite (needed for Docker build)
 [workspace]
 
 members = [

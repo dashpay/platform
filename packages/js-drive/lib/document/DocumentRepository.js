@@ -2,6 +2,7 @@ const { createHash } = require('crypto');
 
 const lodashCloneDeep = require('lodash/cloneDeep');
 
+const DummyFeeResult = require('@dashevo/dpp/lib/stateTransition/fee/DummyFeeResult');
 const InvalidQueryError = require('./errors/InvalidQueryError');
 const StorageResult = require('../storage/StorageResult');
 const DataContractStoreRepository = require('../dataContract/DataContractStoreRepository');
