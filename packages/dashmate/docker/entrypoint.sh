@@ -31,6 +31,4 @@ fi
 
 echo "Starting with: USERNAME: $USERNAME, UID: $USER_ID, GID: $GROUP_ID, USER: $USERNAME, GROUP: $GROUP"
 
-su $USERNAME
-
-exec "$@"
+exec su - $USERNAME -c "cd /platform;$*"
