@@ -9,12 +9,9 @@ describe('generateTemporaryEcdsaPrivateKey', () => {
   });
 
   it('should generate a valid private key', () => {
-    const keyBuffer = generateTemporaryEcdsaPrivateKey();
+    const keyBase64 = generateTemporaryEcdsaPrivateKey();
 
-    expect(keyBuffer.length).to.be.equal(32);
-
-    const privateKey = new PrivateKey(keyBuffer);
-
-    expect(privateKey).to.be.instanceOf(PrivateKey);
+    // eslint-disable-next-line
+    const _key = new PrivateKey(keyBase64);
   });
 });
