@@ -13,11 +13,6 @@ const {
   Errors: {
     StateTransitionBroadcastError,
   },
-  PlatformProtocol: {
-    ConsensusErrors: {
-      InvalidDocumentTypeError,
-    },
-  },
 } = Dash;
 
 describe('Platform', () => {
@@ -60,12 +55,11 @@ describe('Platform', () => {
       }
     });
 
-    // TODO(wasm-dpp): fix later when figure out how to create document with invalid document type
-    it.skip('should fail to create new document with an unknown type', async function it() {
+    it('should fail to create new document with an unknown type', async () => {
       const { InvalidDocumentTypeError } = client.platform.dppModule;
 
       // Add undefined document type for
-      client.getApps().get('customContracts').contract.documents.undefinedType = {
+      client.getApps().get('customContracts').contract.setDocumentSchema('undefinedType', {
         type: 'object',
         properties: {
           name: {
@@ -73,7 +67,7 @@ describe('Platform', () => {
           },
         },
         additionalProperties: false,
-      };
+      });
 
       const newDocument = await client.platform.documents.create(
         'customContracts.undefinedType',
@@ -82,13 +76,6 @@ describe('Platform', () => {
           name: 'anotherName',
         },
       );
-
-      // mock validateBasic to skip validation in SDK
-      this.sinon.stub(client.platform.dpp.stateTransition, 'validateBasic');
-
-      client.platform.dpp.stateTransition.validateBasic.returns({
-        isValid: () => true,
-      });
 
       let broadcastError;
 
