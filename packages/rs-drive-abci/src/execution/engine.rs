@@ -363,7 +363,7 @@ where
         let public_key = self
             .core_rpc
             .get_quorum_info(
-                self.config.quorum_type.clone(),
+                self.config.quorum_type(),
                 &QuorumHash { 0: quorum_hash },
                 Some(false),
             )?
