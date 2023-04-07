@@ -416,8 +416,8 @@ describe('DataContractStoreRepository', () => {
 
       const notFoundDataContractResult = await repository.prove(
         [dataContract.getId(), dataContract2.getId()], {
-        useTransaction: false,
-      },
+          useTransaction: false,
+        },
       );
 
       expect(notFoundDataContractResult.getValue()).to.be.null();

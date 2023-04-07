@@ -48,7 +48,9 @@ describe('deliverTxFactory', () => {
   let MissingStateTransitionTypeError;
 
   before(function before() {
-    ({ DashPlatformProtocol, StateTransitionExecutionContext, ValidationResult, MissingStateTransitionTypeError } = this.dppWasm);
+    ({
+      DashPlatformProtocol, StateTransitionExecutionContext, ValidationResult, MissingStateTransitionTypeError,
+    } = this.dppWasm);
   });
 
   beforeEach(async function beforeEach() {
@@ -83,7 +85,7 @@ describe('deliverTxFactory', () => {
       {
         toObject: () => ({
           identifier: Buffer.alloc(32),
-          creditsPerEpoch: { '1': totalRefunds },
+          creditsPerEpoch: { 1: totalRefunds },
         }),
       },
     ];

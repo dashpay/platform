@@ -33,7 +33,7 @@
     "all": true
   },
   "dependencies": {
-    "@dashevo/bls": "~1.2.7",
+    "@dashevo/bls": "~1.2.9",
     "@dashevo/dapi-grpc": "workspace:*",
     "@dashevo/dashcore-lib": "~0.20.0",
     "@dashevo/dashd-rpc": "^18.2.0",

@@ -83,7 +83,7 @@ describe('unserializeStateTransitionFactory', () => {
       expect(e).to.be.instanceOf(DPPValidationAbciError);
       expect(e.getCode()).to.equal(dppError.getCode());
       expect(e.getData()).to.deep.equal({
-        serializedError: dppError.serialize()
+        serializedError: dppError.serialize(),
       });
 
       expect(dppMock.stateTransition.createFromBuffer).to.be.calledOnce();

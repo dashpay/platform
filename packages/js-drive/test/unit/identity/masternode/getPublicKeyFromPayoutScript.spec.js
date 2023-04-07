@@ -5,11 +5,9 @@ const getPublicKeyFromPayoutScript = require('../../../../lib/identity/masternod
 
 describe('getPublicKeyFromPayoutScript', () => {
   let IdentityPublicKey;
-  let InvalidIdentityPublicKeyTypeError;
-  let KeyType;
 
   before(function before() {
-    ({ IdentityPublicKey, InvalidIdentityPublicKeyTypeError } = this.dppWasm);
+    ({ IdentityPublicKey } = this.dppWasm);
   });
 
   it('should return public key for ECDSA_HASH160 script', function test() {

@@ -1,6 +1,6 @@
 const createOperatorIdentifier = require('../../../../lib/identity/masternode/createOperatorIdentifier');
 
-describe('createOperatorIdentifier', function test() {
+describe('createOperatorIdentifier', () => {
   let smlEntry;
   let Identifier;
 

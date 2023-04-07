@@ -32,8 +32,6 @@ console.log(chalk.hex('#008de4')(banner));
 
   const container = createDIContainer(blsSignatures, dppWasm, process.env);
   const logger = container.resolve('logger');
-  const dpp = container.resolve('dpp');
-  const transactionalDpp = container.resolve('transactionalDpp');
   const errorHandler = container.resolve('errorHandler');
   const latestProtocolVersion = container.resolve('latestProtocolVersion');
   const closeAbciServer = container.resolve('closeAbciServer');

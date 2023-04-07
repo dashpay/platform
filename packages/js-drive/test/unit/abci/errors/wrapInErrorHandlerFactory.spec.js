@@ -14,7 +14,7 @@ describe('wrapInErrorHandlerFactory', () => {
   let MissingStateTransitionTypeError;
 
   before(function before() {
-      MissingStateTransitionTypeError = this.dppWasm.MissingStateTransitionTypeError;
+    MissingStateTransitionTypeError = this.dppWasm.MissingStateTransitionTypeError;
   });
 
   beforeEach(function beforeEach() {

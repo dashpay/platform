@@ -6,11 +6,10 @@ const InvalidPayoutScriptError = require('../../../../lib/identity/masternode/er
 describe('getWithdrawPubKeyTypeFromPayoutScriptFactory', () => {
   let getWithdrawPubKeyTypeFromPayoutScript;
   let network;
-  let IdentityPublicKey;
   let KeyType;
 
   before(function before() {
-    ({ IdentityPublicKey, KeyType } = this.dppWasm);
+    ({ KeyType } = this.dppWasm);
   });
 
   beforeEach(function beforeEach() {

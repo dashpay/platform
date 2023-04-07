@@ -231,7 +231,7 @@ describe.skip('Masternode Reward Shares', () => {
     it('should be able to update reward shares with existing identity', async () => {
       rewardShare.set('percentage', 2);
 
-      const stateTransition = dpp.document.createStateTransition({
+      const stateTransition = client.platform.wasmDpp.document.createStateTransition({
         replace: [rewardShare],
       });
 
@@ -268,7 +268,7 @@ describe.skip('Masternode Reward Shares', () => {
 
       rewardShare.set('payToId', payToId);
 
-      const stateTransition = dpp.document.createStateTransition({
+      const stateTransition = client.platform.wasmDpp.document.createStateTransition({
         replace: [rewardShare],
       });
 
@@ -305,7 +305,7 @@ describe.skip('Masternode Reward Shares', () => {
         },
       );
 
-      const stateTransition = dpp.document.createStateTransition({
+      const stateTransition = client.platform.wasmDpp.document.createStateTransition({
         create: [anotherRewardShare],
       });
 
@@ -329,7 +329,7 @@ describe.skip('Masternode Reward Shares', () => {
     });
 
     it('should be able to remove reward shares', async () => {
-      const stateTransition = dpp.document.createStateTransition({
+      const stateTransition = client.platform.wasmDpp.document.createStateTransition({
         delete: [rewardShare],
       });
 

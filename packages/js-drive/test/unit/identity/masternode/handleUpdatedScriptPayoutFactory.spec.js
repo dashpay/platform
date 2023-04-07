@@ -23,7 +23,9 @@ describe('handleUpdatedScriptPayoutFactory', () => {
   let KeySecurityLevel;
 
   before(function before() {
-    ({ Identity, IdentityPublicKey, KeyPurpose, KeyType, KeySecurityLevel } = this.dppWasm);
+    ({
+      Identity, IdentityPublicKey, KeyPurpose, KeyType, KeySecurityLevel,
+    } = this.dppWasm);
   });
 
   beforeEach(async function beforeEach() {
