@@ -11,7 +11,8 @@ RUN apk update && \
                        alpine-sdk \
                        make \
                        cmake \
-                       g++
+§                       g++ \
+                       curl
 
 # Enable corepack https://github.com/nodejs/corepack
 RUN corepack enable
@@ -59,7 +60,6 @@ RUN apk update && \
 
 LABEL maintainer="Dash Developers <dev@dash.org>"
 LABEL description="Dashmate Helper Node.JS"
-
 
 WORKDIR /platform
 
