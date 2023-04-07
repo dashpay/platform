@@ -1,5 +1,5 @@
 # syntax = docker/dockerfile:1.5
-FROM fuzz1986/builder:latest as builder
+FROM fuzz1986/builder:debian as builder
 
 WORKDIR /platform
 
