@@ -34,14 +34,16 @@ COPY packages/data-contracts packages/data-contracts
 RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
+#    TODO(wasm-dpp): revisit. This cache seem to be breaking installation of CI hosted dependencies
+#    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
     yarn workspace @dashevo/rs-drive build
 
 # Build WASM DPP
 RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
+#    TODO(wasm-dpp): revisit. This cache seem to be breaking installation of CI hosted dependencies
+#    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
     yarn workspace @dashevo/wasm-dpp build && \
     cargo clean
 
