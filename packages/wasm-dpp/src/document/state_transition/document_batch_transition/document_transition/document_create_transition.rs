@@ -80,11 +80,13 @@ impl DocumentCreateTransitionWasm {
         self.inner.entropy.to_vec()
     }
 
+    // TODO(wasm-dpp): js_sys::Date - return as date
     #[wasm_bindgen(js_name=getCreatedAt)]
     pub fn created_at(&self) -> Option<TimestampMillis> {
         self.inner.created_at
     }
 
+    // TODO(wasm-dpp): js_sys::Date - return as date
     #[wasm_bindgen(js_name=getUpdatedAt)]
     pub fn updated_at(&self) -> Option<TimestampMillis> {
         self.inner.updated_at

@@ -216,21 +216,25 @@ impl ExtendedDocumentWasm {
         JsValue::undefined()
     }
 
+    // TODO(wasm-dpp): js_sys::Date - provide as date
     #[wasm_bindgen(js_name=setCreatedAt)]
     pub fn set_created_at(&mut self, ts: f64) {
         self.0.document.created_at = Some(ts as u64);
     }
 
+    // TODO(wasm-dpp): js_sys::Date - provide as date
     #[wasm_bindgen(js_name=setUpdatedAt)]
     pub fn set_updated_at(&mut self, ts: f64) {
         self.0.document.updated_at = Some(ts as u64);
     }
 
+    // TODO(wasm-dpp): js_sys::Date - return as date
     #[wasm_bindgen(js_name=getCreatedAt)]
     pub fn get_created_at(&self) -> Option<f64> {
         self.0.document.created_at.map(|v| v as f64)
     }
 
+    // TODO(wasm-dpp): js_sys::Date - return as date
     #[wasm_bindgen(js_name=getUpdatedAt)]
     pub fn get_updated_at(&self) -> Option<f64> {
         self.0.document.updated_at.map(|v| v as f64)
