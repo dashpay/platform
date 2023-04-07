@@ -55,7 +55,7 @@ where
     if enable_at_height < block_height {
         let err = create_error(
             context,
-            dt_create,
+            dt_create.base.id,
             "This identity can't activate selected feature flag".to_string(),
         );
         result.add_error(err.into());
@@ -65,7 +65,7 @@ where
     if context.owner_id != top_level_identity {
         let err = create_error(
             context,
-            dt_create,
+            dt_create.base.id,
             "This Identity can't activate selected feature flag".to_string(),
         );
         result.add_error(err.into());
