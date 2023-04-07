@@ -244,6 +244,8 @@ function setupLocalPresetTaskFactory(
                     masternodeRewardSharesDerivedSecondPrivateKey.privateKey
                       .toPublicKey().toString(),
                   );
+
+                  config.set('dashmate.helper.api.port', config.get('dashmate.helper.api.port') + (i * 100));
                 }
               },
               options: {

@@ -2,8 +2,8 @@ use anyhow::bail;
 use serde_json::json;
 use std::convert::TryInto;
 
+use crate::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
 use crate::contracts::withdrawals_contract;
-use crate::data_trigger::DataTriggerError;
 use crate::data_trigger::DataTriggerExecutionContext;
 use crate::data_trigger::DataTriggerExecutionResult;
 use crate::document::Document;
@@ -51,15 +51,11 @@ where
         .collect::<Result<Vec<Document>, ProtocolError>>()?;
 
     let Some(withdrawal) = withdrawals.get(0) else {
-        let err = DataTriggerError::DataTriggerConditionError {
-            data_contract_id: context.data_contract.id,
-            document_transition_id: dt_delete.base.id,
-            message: "Withdrawal document was not found".to_string(),
-            owner_id: Some(*context.owner_id),
-            document_transition: Some(DocumentTransition::Delete(dt_delete.clone())),
-        };
-
-        result.add_error(err.into());
+        result.add_error(DataTriggerConditionError::new(
+            context.data_contract.id,
+            dt_delete.base.id,
+            "Withdrawal document was not found".to_string(),
+        ).into());
 
         return Ok(result);
     };
@@ -69,16 +65,14 @@ where
     if status != withdrawals_contract::WithdrawalStatus::COMPLETE as u8
         || status != withdrawals_contract::WithdrawalStatus::EXPIRED as u8
     {
-        let err = DataTriggerError::DataTriggerConditionError {
-            data_contract_id: context.data_contract.id,
-            document_transition_id: dt_delete.base.id,
-            message: "withdrawal deletion is allowed only for COMPLETE and EXPIRED statuses"
-                .to_string(),
-            owner_id: Some(*context.owner_id),
-            document_transition: Some(DocumentTransition::Delete(dt_delete.clone())),
-        };
-
-        result.add_error(err.into());
+        result.add_error(
+            DataTriggerConditionError::new(
+                context.data_contract.id,
+                dt_delete.base.id,
+                "withdrawal deletion is allowed only for COMPLETE and EXPIRED statuses".to_string(),
+            )
+            .into(),
+        );
 
         return Ok(result);
     }

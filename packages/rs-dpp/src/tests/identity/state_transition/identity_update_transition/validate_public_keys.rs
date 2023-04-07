@@ -1,10 +1,11 @@
+use crate::consensus::codes::ErrorWithCode;
+use crate::errors::consensus::state::state_error::StateError;
 use crate::{
     identity::state_transition::identity_update_transition::validate_public_keys::{
         validate_public_keys, IDENTITY_JSON_SCHEMA,
     },
     prelude::Identity,
     tests::{fixtures::identity_fixture, utils::get_state_error_from_result},
-    StateError,
 };
 use platform_value::Value;
 use std::convert::TryInto;
@@ -44,8 +45,8 @@ fn should_return_invalid_result_if_there_are_duplicate_key_ids() {
 
     assert!(matches!(
         state_error,
-        StateError::DuplicatedIdentityPublicKeyIdError { duplicated_ids }
-        if duplicated_ids == &vec![0]
+        StateError::DuplicatedIdentityPublicKeyIdStateError(e)
+        if e.duplicated_ids() == &vec![0]
     ));
     assert_eq!(4022, result.errors[0].code());
 }
@@ -65,8 +66,10 @@ fn should_return_invalid_result_if_there_are_duplicate_keys() {
 
     assert!(matches!(
         state_error,
-        StateError::DuplicatedIdentityPublicKeyError { duplicated_public_key_ids }
-        if duplicated_public_key_ids == &vec![1]
+        StateError::DuplicatedIdentityPublicKeyStateError(
+            e
+        )
+        if e.duplicated_public_key_ids() == &vec![1]
     ));
     assert_eq!(4021, result.errors[0].code());
 }
@@ -104,8 +107,8 @@ fn should_return_invalid_result_if_number_of_public_keys_is_bigger_than_32() {
 
     assert!(matches!(
         state_error,
-        StateError::MaxIdentityPublicKeyLimitReachedError { max_items }
-        if max_items == &32
+        StateError::MaxIdentityPublicKeyLimitReachedError(e)
+        if e.max_items() == 32
     ));
     assert_eq!(4020, result.errors[0].code());
 }

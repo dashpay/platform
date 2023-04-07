@@ -1,21 +1,28 @@
 use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error(
     "Unique compound index properties {:?} are partially set for {document_type}",
     index_properties
 )]
 pub struct InconsistentCompoundIndexDataError {
-    index_properties: Vec<String>,
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     document_type: String,
+    index_properties: Vec<String>,
 }
 
 impl InconsistentCompoundIndexDataError {
-    pub fn new(index_properties: Vec<String>, document_type: String) -> Self {
+    pub fn new(document_type: String, index_properties: Vec<String>) -> Self {
         Self {
-            index_properties,
             document_type,
+            index_properties,
         }
     }
 
@@ -27,8 +34,8 @@ impl InconsistentCompoundIndexDataError {
     }
 }
 
-impl From<InconsistentCompoundIndexDataError> for BasicError {
+impl From<InconsistentCompoundIndexDataError> for ConsensusError {
     fn from(err: InconsistentCompoundIndexDataError) -> Self {
-        Self::InconsistentCompoundIndexDataError(err)
+        Self::BasicError(BasicError::InconsistentCompoundIndexDataError(err))
     }
 }

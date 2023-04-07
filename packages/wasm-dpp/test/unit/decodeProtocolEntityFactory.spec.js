@@ -38,7 +38,7 @@ describe('decodeProtocolEntityFactory', () => {
     } catch (e) {
       expect(e).to.be.an.instanceOf(ProtocolVersionParsingError);
 
-      expect(e.getParsingError()).to.be.instanceOf(Error);
+      expect(e.getParsingError()).to.equals('protocol version could not be decoded as a varint');
       expect(e.getCode()).to.equal(1000);
     }
   });
@@ -55,7 +55,7 @@ describe('decodeProtocolEntityFactory', () => {
     } catch (e) {
       expect(e).to.be.an.instanceOf(SerializedObjectParsingError);
 
-      expect(e.getParsingError()).to.be.an.instanceOf(Error);
+      expect(e.getParsingError()).to.equals('Io(Error { kind: UnexpectedEof, message: "failed to fill whole buffer" })');
       expect(e.getCode()).to.equal(1001);
     }
   });

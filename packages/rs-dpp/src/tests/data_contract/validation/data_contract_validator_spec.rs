@@ -1,16 +1,17 @@
 use std::sync::Arc;
 
-use jsonschema::error::ValidationErrorKind;
 use log::trace;
 use platform_value::{platform_value, Value};
 use serde_json::Value as JsonValue;
 use test_case::test_case;
 
+use crate::consensus::basic::value_error::ValueError;
+use crate::consensus::basic::BasicError;
+use crate::errors::consensus::codes::ErrorWithCode;
+use crate::tests::utils::{json_schema_error, value_error};
 use crate::{
-    codes::ErrorWithCode,
-    consensus::{basic::JsonSchemaError, ConsensusError},
+    consensus::{basic::json_schema_error::JsonSchemaError, ConsensusError},
     data_contract::validation::data_contract_validator::DataContractValidator,
-    errors::consensus::basic::{BasicError, IndexError},
     prelude::*,
     tests::fixtures::get_data_contract_fixture,
     version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
@@ -50,24 +51,21 @@ fn get_schema_error<TData: Clone>(
     result: &ValidationResult<TData>,
     number: usize,
 ) -> &JsonSchemaError {
-    result
-        .errors
-        .get(number)
-        .expect("the error should be returned in validation result")
-        .json_schema_error()
-        .expect("the error should be json schema error")
+    json_schema_error(
+        result
+            .errors
+            .get(number)
+            .expect("the error should be returned in validation result"),
+    )
 }
 
-fn get_value_error<TData: Clone>(
-    result: &ValidationResult<TData>,
-    number: usize,
-) -> &platform_value::Error {
-    result
-        .errors
-        .get(number)
-        .expect("the error should be returned in validation result")
-        .value_error()
-        .expect("the error should be a value error")
+fn get_value_error<TData: Clone>(result: &ValidationResult<TData>, number: usize) -> &ValueError {
+    value_error(
+        result
+            .errors
+            .get(number)
+            .expect("the error should be returned in validation result"),
+    )
 }
 
 fn get_basic_error(consensus_error: &ConsensusError) -> &BasicError {
@@ -77,25 +75,16 @@ fn get_basic_error(consensus_error: &ConsensusError) -> &BasicError {
     }
 }
 
-fn get_index_error(consensus_error: &ConsensusError) -> &IndexError {
-    match consensus_error {
-        ConsensusError::BasicError(basic_error) => match &**basic_error {
-            BasicError::IndexError(index_error) => index_error,
-            _ => panic!("error '{:?}' isn't a index error", consensus_error),
-        },
-        _ => panic!("error '{:?}' isn't a basic error", consensus_error),
-    }
-}
-
 fn print_json_schema_errors<TData: Clone>(result: &ValidationResult<TData>) {
     for (i, e) in result.errors.iter().enumerate() {
-        let schema_error = e.json_schema_error().unwrap();
+        let schema_error = json_schema_error(e);
         println!(
-            "error_{}:  {:>30} -({:>20?}-{:>20?}) -  {}",
+            "error_{}:  {:>30} {:>20} {:>30} -({:>30? }) -  {}",
             i,
             schema_error.schema_path(),
             schema_error.keyword(),
-            schema_error.kind(),
+            schema_error.property_name(),
+            schema_error.params(),
             schema_error.instance_path()
         )
     }
@@ -122,13 +111,11 @@ fn property_should_be_present(property: &str) {
         .expect("validation result should be returned");
 
     let schema_error = get_schema_error(&result, 0);
-    assert!(matches!(
-        schema_error.kind(),
-        ValidationErrorKind::Required {
-            property: JsonValue::String(missing_property)
-        } if missing_property == property
-    ));
+
+    assert_eq!(schema_error.keyword(), "required");
+    assert_eq!(schema_error.property_name(), property);
 }
+
 mod protocol {
     use super::*;
 
@@ -149,8 +136,8 @@ mod protocol {
             .expect("validation result should be returned");
 
         let schema_error = get_schema_error(&result, 0);
-        assert_eq!("/protocolVersion", schema_error.instance_path().to_string());
-        assert_eq!(Some("type"), schema_error.keyword(),);
+        assert_eq!("/protocolVersion", schema_error.instance_path());
+        assert_eq!("type", schema_error.keyword());
     }
 
     #[test]
@@ -171,8 +158,8 @@ mod protocol {
         trace!("The validation result is: {:#?}", result);
 
         let schema_error = get_schema_error(&result, 0);
-        assert_eq!("/protocolVersion", schema_error.instance_path().to_string());
-        assert_eq!(Some("minimum"), schema_error.keyword(),);
+        assert_eq!("/protocolVersion", schema_error.instance_path());
+        assert_eq!("minimum", schema_error.keyword());
     }
 }
 
@@ -194,8 +181,8 @@ fn defs_should_be_object() {
     trace!("The validation result is: {:#?}", result);
 
     let schema_error = get_schema_error(&result, 0);
-    assert_eq!("/$defs", schema_error.instance_path().to_string());
-    assert_eq!(Some("type"), schema_error.keyword(),);
+    assert_eq!("/$defs", schema_error.instance_path());
+    assert_eq!("type", schema_error.keyword());
 }
 
 mod defs {
@@ -219,8 +206,8 @@ mod defs {
         trace!("The validation result is: {:#?}", result);
 
         let schema_error = get_schema_error(&result, 0);
-        assert_eq!("/$defs", schema_error.instance_path().to_string());
-        assert_eq!(Some("minProperties"), schema_error.keyword(),);
+        assert_eq!("/$defs", schema_error.instance_path());
+        assert_eq!("minProperties", schema_error.keyword());
     }
 
     #[test]
@@ -246,8 +233,8 @@ mod defs {
         trace!("The validation result is: {:#?}", result);
 
         let schema_error = get_schema_error(&result, 0);
-        assert_eq!("/$defs", schema_error.instance_path().to_string());
-        assert_eq!(Some("pattern"), schema_error.keyword(),);
+        assert_eq!("/$defs", schema_error.instance_path());
+        assert_eq!("propertyNames", schema_error.keyword());
     }
 
     #[test]
@@ -324,8 +311,8 @@ mod defs {
             .expect("validation result should be returned");
         let schema_error = get_schema_error(&result, 0);
 
-        assert_eq!("/$defs", schema_error.instance_path().to_string());
-        assert_eq!(Some("pattern"), schema_error.keyword(),);
+        assert_eq!("/$defs", schema_error.instance_path());
+        assert_eq!("propertyNames", schema_error.keyword());
     }
 
     #[test]
@@ -352,7 +339,7 @@ mod defs {
         let schema_error = get_schema_error(&result, 0);
 
         assert_eq!("/$defs", schema_error.instance_path().to_string());
-        assert_eq!(Some("maxProperties"), schema_error.keyword(),);
+        assert_eq!("maxProperties", schema_error.keyword());
     }
 }
 
@@ -377,7 +364,7 @@ mod schema {
 
         let schema_error = get_schema_error(&result, 0);
         assert_eq!("/$schema", schema_error.instance_path().to_string());
-        assert_eq!(Some("type"), schema_error.keyword(),);
+        assert_eq!("type", schema_error.keyword());
     }
 
     #[test]
@@ -399,7 +386,7 @@ mod schema {
 
         let schema_error = get_schema_error(&result, 0);
         assert_eq!("/$schema", schema_error.instance_path().to_string());
-        assert_eq!(Some("const"), schema_error.keyword(),);
+        assert_eq!("const", schema_error.keyword());
     }
 }
 
@@ -428,7 +415,7 @@ fn owner_id_should_be_byte_array(property_name: &str) {
         format!("/{}/0", property_name),
         schema_error.instance_path().to_string()
     );
-    assert_eq!(Some("type"), schema_error.keyword(),);
+    assert_eq!("type", schema_error.keyword());
     assert_eq!(
         format!("/properties/{}/byteArray/items/type", property_name),
         byte_array_schema_error.schema_path().to_string()
@@ -458,7 +445,7 @@ fn owner_id_should_be_no_less_32_bytes(property_name: &str) {
         format!("/{}", property_name),
         schema_error.instance_path().to_string()
     );
-    assert_eq!(Some("minItems"), schema_error.keyword(),);
+    assert_eq!("minItems", schema_error.keyword());
 }
 
 #[test_case("ownerId")]
@@ -485,7 +472,7 @@ fn owner_id_should_be_no_longer_32_bytes(property_name: &str) {
         format!("/{}", property_name),
         schema_error.instance_path().to_string()
     );
-    assert_eq!(Some("maxItems"), schema_error.keyword(),);
+    assert_eq!("maxItems", schema_error.keyword());
 }
 
 mod documents {
@@ -510,7 +497,7 @@ mod documents {
 
         let schema_error = get_schema_error(&result, 0);
         assert_eq!("/documents", schema_error.instance_path().to_string());
-        assert_eq!(Some("type"), schema_error.keyword(),);
+        assert_eq!("type", schema_error.keyword());
     }
 
     #[test]
@@ -533,7 +520,7 @@ mod documents {
 
         let schema_error = get_schema_error(&result, 0);
         assert_eq!("/documents", schema_error.instance_path().to_string());
-        assert_eq!(Some("minProperties"), schema_error.keyword(),);
+        assert_eq!("minProperties", schema_error.keyword());
     }
 
     #[test]
@@ -601,7 +588,7 @@ mod documents {
         let schema_error = get_schema_error(&result, 0);
 
         assert_eq!("/documents", schema_error.instance_path().to_string());
-        assert_eq!(Some("pattern"), schema_error.keyword(),);
+        assert_eq!("propertyNames", schema_error.keyword());
     }
 
     #[test]
@@ -625,7 +612,7 @@ mod documents {
         let schema_error = get_schema_error(&result, 0);
 
         assert_eq!("/documents", schema_error.instance_path().to_string());
-        assert_eq!(Some("maxProperties"), schema_error.keyword(),);
+        assert_eq!("maxProperties", schema_error.keyword());
     }
 
     #[test]
@@ -647,7 +634,7 @@ mod documents {
             "/documents/niceDocument/properties",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("minProperties"), schema_error.keyword(),);
+        assert_eq!("minProperties", schema_error.keyword());
     }
 
     #[test]
@@ -669,7 +656,7 @@ mod documents {
             "/documents/niceDocument/type",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("const"), schema_error.keyword(),);
+        assert_eq!("const", schema_error.keyword());
     }
 
     #[test]
@@ -693,13 +680,8 @@ mod documents {
             "/documents/niceDocument",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("required"), schema_error.keyword(),);
-        assert!(matches!(
-            schema_error.kind(),
-            ValidationErrorKind::Required {
-                property: JsonValue::String(missing_property)
-            } if missing_property == "properties"
-        ));
+        assert_eq!(schema_error.keyword(), "required");
+        assert_eq!(schema_error.property_name(), "properties");
     }
 
     #[test]
@@ -735,13 +717,9 @@ mod documents {
             "/documents/niceDocument/properties/object/prefixItems/0/properties/something",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("required"), schema_error.keyword(),);
-        assert!(matches!(
-            schema_error.kind(),
-            ValidationErrorKind::Required {
-                property: JsonValue::String(missing_property)
-            } if missing_property == "properties"
-        ));
+
+        assert_eq!(schema_error.keyword(), "required");
+        assert_eq!(schema_error.property_name(), "properties");
     }
 
     #[test]
@@ -836,7 +814,7 @@ mod documents {
             "/documents/niceDocument/properties",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("pattern"), schema_error.keyword(),);
+        assert_eq!("propertyNames", schema_error.keyword());
     }
 
     #[test]
@@ -852,7 +830,6 @@ mod documents {
         raw_data_contract["documents"]["niceDocument"]["properties"]["something"] = platform_value!({
             "properties" :   platform_value!({}),
             "additionalProperties" :  false,
-
         });
 
         for property_name in invalid_names {
@@ -869,7 +846,7 @@ mod documents {
                 "/documents/niceDocument/properties/something/properties",
                 schema_error.instance_path().to_string()
             );
-            assert_eq!(Some("pattern"), schema_error.keyword());
+            assert_eq!("propertyNames", schema_error.keyword());
 
             raw_data_contract["documents"]["niceDocument"]["properties"]["something"]["properties"]
                 .remove(property_name)
@@ -899,13 +876,9 @@ mod documents {
             "/documents/niceDocument",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("required"), schema_error.keyword());
-        assert!(matches!(
-            schema_error.kind(),
-            ValidationErrorKind::Required {
-                property: JsonValue::String(missing_property)
-            } if missing_property == "additionalProperties"
-        ));
+
+        assert_eq!(schema_error.keyword(), "required");
+        assert_eq!(schema_error.property_name(), "additionalProperties");
     }
 
     #[test]
@@ -929,7 +902,7 @@ mod documents {
             "/documents/niceDocument/additionalProperties",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("const"), schema_error.keyword());
+        assert_eq!("const", schema_error.keyword());
     }
 
     #[test]
@@ -948,7 +921,7 @@ mod documents {
 
         let schema_error = get_schema_error(&result, 0);
         assert_eq!("", schema_error.instance_path().to_string());
-        assert_eq!(Some("additionalProperties"), schema_error.keyword());
+        assert_eq!("additionalProperties", schema_error.keyword());
     }
 
     #[test]
@@ -981,7 +954,7 @@ mod documents {
             "/documents/niceDocument/properties",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("maxProperties"), schema_error.keyword());
+        assert_eq!("maxProperties", schema_error.keyword());
     }
 
     #[test]
@@ -1018,7 +991,7 @@ mod documents {
             "/documents/new/properties/something/items",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("type"), schema_error.keyword());
+        assert_eq!("type", schema_error.keyword());
     }
 
     #[test]
@@ -1057,13 +1030,10 @@ mod documents {
             "/documents/new/properties/something",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("required"), schema_error.keyword());
-        assert!(matches!(
-            schema_error.kind(),
-            ValidationErrorKind::Required {
-                property: JsonValue::String(missing_property)
-            } if missing_property == "items"
-        ));
+        assert_eq!("required", schema_error.keyword());
+
+        assert_eq!(schema_error.keyword(), "required");
+        assert_eq!(schema_error.property_name(), "items");
     }
 
     #[test]
@@ -1101,7 +1071,7 @@ mod documents {
             "/documents/new/properties/something/items",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("const"), schema_error.keyword());
+        assert_eq!("const", schema_error.keyword());
     }
 
     #[test]
@@ -1126,7 +1096,7 @@ mod documents {
             "/documents/indexedDocument/properties/firstName/default",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("unevaluatedProperties"), schema_error.keyword());
+        assert_eq!("unevaluatedProperties", schema_error.keyword());
     }
 
     #[test]
@@ -1149,7 +1119,7 @@ mod documents {
             "/documents/indexedDocument/$ref",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("pattern"), schema_error.keyword());
+        assert_eq!("pattern", schema_error.keyword());
     }
 
     #[test]
@@ -1183,7 +1153,7 @@ mod documents {
             "/documents/indexedDocument/propertyNames",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("unevaluatedProperties"), schema_error.keyword());
+        assert_eq!("unevaluatedProperties", schema_error.keyword());
     }
 
     #[test]
@@ -1214,13 +1184,9 @@ mod documents {
             "/documents/indexedDocument/properties/something",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("required"), schema_error.keyword());
-        assert!(matches!(
-            schema_error.kind(),
-            ValidationErrorKind::Required {
-                property: JsonValue::String(missing_property)
-            } if missing_property == "maxItems"
-        ));
+
+        assert_eq!(schema_error.keyword(), "required");
+        assert_eq!(schema_error.property_name(), "maxItems");
     }
 
     #[test]
@@ -1263,7 +1229,7 @@ mod documents {
             "/documents/indexedDocument/properties/something/maxItems",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("maximum"), schema_error.keyword());
+        assert_eq!("maximum", schema_error.keyword());
     }
 
     #[test]
@@ -1297,10 +1263,14 @@ mod documents {
             "/properties/something",
             schema_error.instance_path().to_string()
         );
-        assert!(matches!(
-            schema_error.kind(),
-            ValidationErrorKind::Format {format}  if format == &"unknown format"
-        ));
+
+        let param_type = schema_error
+            .params()
+            .get_str("format")
+            .expect("should get type");
+
+        assert_eq!(schema_error.keyword(), "format");
+        assert_eq!(param_type, "unknown format");
     }
 
     #[test]
@@ -1332,13 +1302,9 @@ mod documents {
             "/documents/indexedDocument/properties/something",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("required"), schema_error.keyword());
-        assert!(matches!(
-            schema_error.kind(),
-            ValidationErrorKind::Required {
-                property: JsonValue::String(missing_property)
-            } if missing_property == "maxLength"
-        ));
+
+        assert_eq!(schema_error.keyword(), "required");
+        assert_eq!(schema_error.property_name(), "maxLength");
     }
 
     #[test]
@@ -1371,7 +1337,7 @@ mod documents {
             "/documents/indexedDocument/properties/something/maxLength",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("maximum"), schema_error.keyword());
+        assert_eq!("maximum", schema_error.keyword());
     }
 
     #[test]
@@ -1402,10 +1368,10 @@ mod documents {
             .get(0)
             .expect("the error in result should exist");
 
-        assert_eq!(1009, pattern_error.get_code());
+        assert_eq!(1009, pattern_error.code());
 
         match pattern_error {
-            ConsensusError::IncompatibleRe2PatternError(err) => {
+            ConsensusError::BasicError(BasicError::IncompatibleRe2PatternError(err)) => {
                 assert_eq!(
                     err.path(),
                     "/documents/indexedDocument/properties/something".to_string()
@@ -1446,7 +1412,7 @@ mod byte_array {
             "/documents/withByteArrays/properties/byteArrayField/byteArray",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("type"), schema_error.keyword());
+        assert_eq!("type", schema_error.keyword());
     }
 
     #[test]
@@ -1469,7 +1435,7 @@ mod byte_array {
             "/documents/withByteArrays/properties/byteArrayField/byteArray",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("const"), schema_error.keyword());
+        assert_eq!("const", schema_error.keyword());
     }
 
     #[test]
@@ -1492,7 +1458,7 @@ mod byte_array {
             "/documents/withByteArrays/properties/byteArrayField/type",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("const"), schema_error.keyword());
+        assert_eq!("const", schema_error.keyword());
     }
 
     #[test]
@@ -1539,7 +1505,7 @@ mod identifier {
             "/documents/withByteArrays/properties/identifierField",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("required"), schema_error.keyword());
+        assert_eq!("required", schema_error.keyword());
     }
 
     #[test]
@@ -1562,7 +1528,7 @@ mod identifier {
             "/documents/withByteArrays/properties/identifierField/minItems",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("const"), schema_error.keyword());
+        assert_eq!("const", schema_error.keyword());
     }
 
     #[test]
@@ -1585,12 +1551,11 @@ mod identifier {
             "/documents/withByteArrays/properties/identifierField/maxItems",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("const"), schema_error.keyword());
+        assert_eq!("const", schema_error.keyword());
     }
 }
 
 mod indices {
-
     use super::*;
 
     #[test]
@@ -1613,7 +1578,7 @@ mod indices {
             "/documents/indexedDocument/indices",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("type"), schema_error.keyword(),);
+        assert_eq!("type", schema_error.keyword());
     }
 
     #[test]
@@ -1635,7 +1600,7 @@ mod indices {
             "/documents/indexedDocument/indices",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("minItems"), schema_error.keyword(),);
+        assert_eq!("minItems", schema_error.keyword());
     }
 
     #[test]
@@ -1666,13 +1631,14 @@ mod indices {
             .errors
             .get(0)
             .expect("the validation error should be returned");
-        let index_error = get_index_error(validation_error);
 
-        match index_error {
-            IndexError::DuplicateIndexError(err) => {
+        let basic_error = get_basic_error(validation_error);
+
+        match basic_error {
+            BasicError::DuplicateIndexError(err) => {
                 assert_eq!(err.document_type(), "indexedDocument".to_string());
             }
-            _ => panic!("Expected DuplicateIndexError, got {}", index_error),
+            _ => panic!("Expected DuplicateIndexError, got {}", basic_error),
         }
     }
 
@@ -1705,7 +1671,7 @@ mod indices {
             .expect("the validation error should be returned");
         let basic_error = get_basic_error(validation_error);
 
-        assert_eq!(1048, basic_error.get_code());
+        assert_eq!(1048, basic_error.code());
         match basic_error {
             BasicError::DuplicateIndexNameError(err) => {
                 assert_eq!(err.document_type(), "indexedDocument".to_string());
@@ -1735,7 +1701,7 @@ mod indices {
             "/documents/indexedDocument/indices/0",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("type"), schema_error.keyword(),);
+        assert_eq!("type", schema_error.keyword());
     }
 
     #[test]
@@ -1757,13 +1723,9 @@ mod indices {
             "/documents/indexedDocument/indices/0",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("required"), schema_error.keyword(),);
-        assert!(matches!(
-            schema_error.kind(),
-            ValidationErrorKind::Required {
-                property: JsonValue::String(missing_property)
-            } if missing_property == "properties"
-        ));
+
+        assert_eq!(schema_error.keyword(), "required");
+        assert_eq!(schema_error.property_name(), "properties");
     }
 
     #[test]
@@ -1786,7 +1748,7 @@ mod indices {
             "/documents/indexedDocument/indices/0/properties",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("type"), schema_error.keyword(),);
+        assert_eq!("type", schema_error.keyword());
     }
 
     #[test]
@@ -1809,7 +1771,7 @@ mod indices {
             "/documents/indexedDocument/indices/0/properties",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("minItems"), schema_error.keyword(),);
+        assert_eq!("minItems", schema_error.keyword());
     }
 
     #[test]
@@ -1842,7 +1804,7 @@ mod indices {
             "/documents/indexedDocument/indices/0/properties",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("maxItems"), schema_error.keyword(),);
+        assert_eq!("maxItems", schema_error.keyword());
     }
 
     #[test]
@@ -1865,7 +1827,7 @@ mod indices {
             "/documents/indexedDocument/indices/0/properties/0",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("type"), schema_error.keyword(),);
+        assert_eq!("type", schema_error.keyword());
     }
 
     #[test]
@@ -1888,7 +1850,7 @@ mod indices {
             "/documents/indexedDocument/indices/0/properties",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("minItems"), schema_error.keyword(),);
+        assert_eq!("minItems", schema_error.keyword());
     }
 
     #[test]
@@ -1912,7 +1874,7 @@ mod indices {
             "/documents/indexedDocument/indices/0/properties/0",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("maxProperties"), schema_error.keyword(),);
+        assert_eq!("maxProperties", schema_error.keyword());
     }
 
     #[test]
@@ -1935,7 +1897,7 @@ mod indices {
             "/documents/indexedDocument/indices/0/properties/0/$ownerId",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("enum"), schema_error.keyword(),);
+        assert_eq!("enum", schema_error.keyword());
     }
 
     #[test]
@@ -1958,7 +1920,7 @@ mod indices {
             "/documents/indexedDocument/indices/0/unique",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("type"), schema_error.keyword(),);
+        assert_eq!("type", schema_error.keyword());
     }
 
     #[test]
@@ -1996,7 +1958,7 @@ mod indices {
             "/documents/indexedDocument/indices",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("maxItems"), schema_error.keyword(),);
+        assert_eq!("maxItems", schema_error.keyword());
     }
 
     #[test]
@@ -2033,18 +1995,19 @@ mod indices {
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
         let error = result.errors.get(0).expect("the error should be present");
-        let index_error = get_index_error(error);
+        let basic_error = get_basic_error(error);
 
-        assert_eq!(1017, index_error.get_code());
-        match index_error {
-            IndexError::UniqueIndicesLimitReachedError(err) => {
+        assert_eq!(1017, basic_error.code());
+
+        match basic_error {
+            BasicError::UniqueIndicesLimitReachedError(err) => {
                 assert_eq!(err.document_type(), "indexedDocument".to_string());
                 assert_eq!(err.index_limit(), 3);
                 // assert_eq!(err.property_type(), "array".to_string());
             }
             _ => panic!(
                 "Expected UniqueIndicesLimitReachedError, got {}",
-                index_error
+                basic_error
             ),
         }
     }
@@ -2077,17 +2040,17 @@ mod indices {
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
         let error = result.errors.get(0).expect("the error should be present");
-        let index_error = get_index_error(error);
+        let basic_error = get_basic_error(error);
 
-        assert_eq!(1015, index_error.get_code());
-        match index_error {
-            IndexError::SystemPropertyIndexAlreadyPresentError(err) => {
+        assert_eq!(1015, basic_error.code());
+        match basic_error {
+            BasicError::SystemPropertyIndexAlreadyPresentError(err) => {
                 assert_eq!(err.document_type(), "indexedDocument".to_string());
                 assert_eq!(err.property_name(), "$id".to_string());
             }
             _ => panic!(
                 "Expected SystemPropertyIndexAlreadyPresentError, got {}",
-                index_error
+                basic_error
             ),
         }
     }
@@ -2114,15 +2077,16 @@ mod indices {
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
         let error = result.errors.get(0).expect("the error should be present");
-        let index_error = get_index_error(error);
+        let basic_error = get_basic_error(error);
 
-        assert_eq!(1016, index_error.get_code());
-        match index_error {
-            IndexError::UndefinedIndexPropertyError(err) => {
+        assert_eq!(1016, basic_error.code());
+
+        match basic_error {
+            BasicError::UndefinedIndexPropertyError(err) => {
                 assert_eq!(err.document_type(), "indexedDocument".to_string());
                 assert_eq!(err.property_name(), "missingProperty".to_string());
             }
-            _ => panic!("Expected UndefinedIndexPropertyError, got {}", index_error),
+            _ => panic!("Expected UndefinedIndexPropertyError, got {}", basic_error),
         }
     }
 
@@ -2165,18 +2129,19 @@ mod indices {
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
         let error = result.errors.get(0).expect("the error should be present");
-        let index_error = get_index_error(error);
+        let basic_error = get_basic_error(error);
 
-        assert_eq!(1013, index_error.get_code());
-        match index_error {
-            IndexError::InvalidIndexPropertyTypeError(err) => {
+        assert_eq!(1013, basic_error.code());
+
+        match basic_error {
+            BasicError::InvalidIndexPropertyTypeError(err) => {
                 assert_eq!(err.document_type(), "indexedDocument".to_string());
                 assert_eq!(err.property_name(), "objectProperty".to_string());
                 assert_eq!(err.property_type(), "object".to_string());
             }
             _ => panic!(
                 "Expected InvalidIndexPropertyTypeError, got {}",
-                index_error
+                basic_error
             ),
         }
     }
@@ -2220,18 +2185,19 @@ mod indices {
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
         let error = result.errors.get(0).expect("the error should be present");
-        let index_error = get_index_error(error);
+        let basic_error = get_basic_error(error);
 
-        assert_eq!(1013, index_error.get_code());
-        match index_error {
-            IndexError::InvalidIndexPropertyTypeError(err) => {
+        assert_eq!(1013, basic_error.code());
+
+        match basic_error {
+            BasicError::InvalidIndexPropertyTypeError(err) => {
                 assert_eq!(err.document_type(), "indexedArray".to_string());
                 assert_eq!(err.property_name(), "mentions".to_string());
                 assert_eq!(err.property_type(), "array".to_string());
             }
             _ => panic!(
                 "Expected InvalidIndexPropertyTypeError, got {}",
-                index_error
+                basic_error
             ),
         }
     }
@@ -2430,11 +2396,12 @@ mod indices {
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
         let error = result.errors.get(0).expect("the error should be present");
-        let index_error = get_index_error(error);
+        let index_error = get_basic_error(error);
 
-        assert_eq!(1013, index_error.get_code());
+        assert_eq!(1013, index_error.code());
+
         match index_error {
-            IndexError::InvalidIndexPropertyTypeError(err) => {
+            BasicError::InvalidIndexPropertyTypeError(err) => {
                 assert_eq!(err.document_type(), "indexedDocument".to_string());
                 assert_eq!(err.property_name(), "arrayProperty");
                 assert_eq!(err.property_type(), "array".to_string());
@@ -2466,11 +2433,13 @@ mod indices {
             .validate(&raw_data_contract)
             .expect("validation result should be returned");
         let error = result.errors.get(0).expect("the error should be present");
-        let index_error = get_index_error(error);
 
-        assert_eq!(1010, index_error.get_code());
+        let index_error = get_basic_error(error);
+
+        assert_eq!(1010, index_error.code());
+
         match index_error {
-            IndexError::InvalidCompoundIndexError(err) => {
+            BasicError::InvalidCompoundIndexError(err) => {
                 assert_eq!(
                     err.document_type(),
                     "optionalUniqueIndexedDocument".to_string()
@@ -2563,10 +2532,12 @@ mod indices {
                 .validate(&cloned_data_contract)
                 .expect("should return validation result");
 
-            let index_error = get_index_error(&result.errors[0]);
-            assert_eq!(1016, index_error.get_code());
+            let index_error = get_basic_error(&result.errors[0]);
+
+            assert_eq!(1016, index_error.code());
+
             match index_error {
-                IndexError::UndefinedIndexPropertyError(err) => {
+                BasicError::UndefinedIndexPropertyError(err) => {
                     assert_eq!(err.property_name(), invalid_name.to_string());
                 }
                 _ => panic!("Expected UndefinedIndexPropertyError, got {}", index_error),
@@ -2608,7 +2579,7 @@ mod indices {
             "/documents/indexedDocument/indices/6/properties/0/$id",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("enum"), schema_error.keyword(),);
+        assert_eq!("enum", schema_error.keyword());
     }
 }
 
@@ -2635,7 +2606,7 @@ mod signature_level {
             "/documents/indexedDocument/signatureSecurityLevelRequirement",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("type"), schema_error.keyword(),);
+        assert_eq!("type", schema_error.keyword());
     }
 
     #[test]
@@ -2658,7 +2629,7 @@ mod signature_level {
             "/documents/indexedDocument/signatureSecurityLevelRequirement",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("enum"), schema_error.keyword(),);
+        assert_eq!("enum", schema_error.keyword());
     }
 }
 
@@ -2693,7 +2664,7 @@ mod dependent_schemas {
             "/documents/indexedDocument/dependentSchemas",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("type"), schema_error.keyword(),);
+        assert_eq!("type", schema_error.keyword());
     }
 
     #[test]
@@ -2724,7 +2695,7 @@ mod dependent_schemas {
             "/documents/indexedDocument/dependentRequired",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("type"), schema_error.keyword(),);
+        assert_eq!("type", schema_error.keyword());
     }
 
     #[test]
@@ -2758,7 +2729,7 @@ mod dependent_schemas {
             "/documents/indexedDocument/dependentRequired/zxy",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("type"), schema_error.keyword(),);
+        assert_eq!("type", schema_error.keyword());
     }
 
     #[test]
@@ -2791,7 +2762,7 @@ mod dependent_schemas {
             "/documents/indexedDocument/dependentRequired/zxy/0",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("type"), schema_error.keyword(),);
+        assert_eq!("type", schema_error.keyword());
     }
 
     #[test]
@@ -2824,7 +2795,7 @@ mod dependent_schemas {
             "/documents/indexedDocument/dependentRequired/zxy",
             schema_error.instance_path().to_string()
         );
-        assert_eq!(Some("uniqueItems"), schema_error.keyword(),);
+        assert_eq!("uniqueItems", schema_error.keyword());
     }
 }
 
@@ -2847,11 +2818,11 @@ fn should_return_invalid_result_with_circular_ref_pointer() {
         .expect("the validation error should exist");
     let basic_error = get_basic_error(validation_error);
 
-    assert_eq!(1014, validation_error.get_code());
+    assert_eq!(1014, validation_error.code());
     match basic_error {
         BasicError::InvalidJsonSchemaRefError(err) => {
             assert_eq!(
-                err.ref_error(),
+                err.message(),
                 "the ref '#/$defs/object' contains cycles".to_string()
             );
         }
@@ -2879,11 +2850,12 @@ fn should_return_invalid_result_if_indexed_string_property_missing_max_length_co
         .errors
         .get(0)
         .expect("the validation error should exist");
-    let index_error = get_index_error(validation_error);
+    let index_error = get_basic_error(validation_error);
 
-    assert_eq!(1012, index_error.get_code());
+    assert_eq!(1012, index_error.code());
+
     match index_error {
-        IndexError::InvalidIndexedPropertyConstraintError(err) => {
+        BasicError::InvalidIndexedPropertyConstraintError(err) => {
             assert_eq!(err.property_name(), "firstName".to_string());
             assert_eq!(err.constraint_name(), "maxLength".to_string());
             assert_eq!(err.reason(), "should be less or equal than 63".to_string());
@@ -2983,11 +2955,12 @@ mod indexed_array {
             .errors
             .get(0)
             .expect("the validation error should exist");
-        let index_error = get_index_error(validation_error);
+        let index_error = get_basic_error(validation_error);
 
-        assert_eq!(1012, index_error.get_code());
+        assert_eq!(1012, index_error.code());
+
         match index_error {
-            IndexError::InvalidIndexedPropertyConstraintError(err) => {
+            BasicError::InvalidIndexedPropertyConstraintError(err) => {
                 assert_eq!(err.property_name(), "byteArrayField".to_string());
                 assert_eq!(err.constraint_name(), "maxItems".to_string());
                 assert_eq!(err.reason(), "should be less or equal 255".to_string());
@@ -3017,11 +2990,11 @@ mod indexed_array {
             .errors
             .get(0)
             .expect("the validation error should exist");
-        let index_error = get_index_error(validation_error);
+        let index_error = get_basic_error(validation_error);
 
-        assert_eq!(1012, index_error.get_code());
+        assert_eq!(1012, index_error.code());
         match index_error {
-            IndexError::InvalidIndexedPropertyConstraintError(err) => {
+            BasicError::InvalidIndexedPropertyConstraintError(err) => {
                 assert_eq!(err.property_name(), "byteArrayField".to_string());
                 assert_eq!(err.constraint_name(), "maxItems".to_string());
                 assert_eq!(err.reason(), "should be less or equal 255".to_string());

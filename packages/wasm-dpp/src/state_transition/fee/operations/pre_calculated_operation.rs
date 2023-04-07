@@ -1,7 +1,10 @@
 use crate::{fee::dummy_fee_result::DummyFeesResultWasm, utils::Inner};
-use dpp::state_transition::fee::{
-    operations::{OperationLike, PreCalculatedOperation},
-    Refunds,
+use dpp::{
+    state_transition::fee::{
+        operations::{OperationLike, PreCalculatedOperation},
+        Refunds,
+    },
+    ProtocolError,
 };
 use js_sys::{Array, BigInt};
 use wasm_bindgen::prelude::*;
@@ -57,13 +60,23 @@ impl PreCalculatedOperationWasm {
     }
 
     #[wasm_bindgen(js_name = getProcessingCost)]
-    pub fn processing_cost(&self) -> BigInt {
-        BigInt::from(self.0.get_processing_cost())
+    pub fn processing_cost(&self) -> Result<BigInt, JsValue> {
+        Ok(BigInt::from(
+            self.0
+                .get_processing_cost()
+                .map_err(ProtocolError::from)
+                .with_js_error()?,
+        ))
     }
 
     #[wasm_bindgen(js_name=getStorageCost)]
-    pub fn storage_cost(&self) -> BigInt {
-        BigInt::from(self.0.get_storage_cost())
+    pub fn storage_cost(&self) -> Result<BigInt, JsValue> {
+        Ok(BigInt::from(
+            self.0
+                .get_storage_cost()
+                .map_err(ProtocolError::from)
+                .with_js_error()?,
+        ))
     }
 
     #[wasm_bindgen(getter)]

@@ -1,14 +1,17 @@
+use crate::buffer::Buffer;
+use dpp::consensus::basic::data_contract::InvalidJsonSchemaRefError;
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::ConsensusError;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=InvalidJsonSchemaRefError)]
 pub struct InvalidJsonSchemaRefErrorWasm {
-    ref_error: String,
-    code: u32,
+    inner: InvalidJsonSchemaRefError,
 }
 
-impl InvalidJsonSchemaRefErrorWasm {
-    pub fn new(ref_error: String, code: u32) -> Self {
-        InvalidJsonSchemaRefErrorWasm { ref_error, code }
+impl From<&InvalidJsonSchemaRefError> for InvalidJsonSchemaRefErrorWasm {
+    fn from(e: &InvalidJsonSchemaRefError) -> Self {
+        Self { inner: e.clone() }
     }
 }
 
@@ -16,11 +19,25 @@ impl InvalidJsonSchemaRefErrorWasm {
 impl InvalidJsonSchemaRefErrorWasm {
     #[wasm_bindgen(js_name=getRefError)]
     pub fn get_ref_error(&self) -> String {
-        self.ref_error.clone()
+        self.inner.message().to_string()
     }
 
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {
-        self.code
+        ConsensusError::from(self.inner.clone()).code()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn message(&self) -> String {
+        self.inner.to_string()
+    }
+
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+        let bytes = ConsensusError::from(self.inner.clone())
+            .serialize()
+            .map_err(|e| JsError::from(e))?;
+
+        Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }

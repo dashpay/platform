@@ -19,7 +19,7 @@ use crate::identity::TimestampMillis;
 use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
 use crate::{
     data_contract::{errors::DataContractError, DataContract},
-    decode_protocol_entity_factory::DecodeProtocolEntity,
+    encoding::decode_protocol_entity_factory::DecodeProtocolEntity,
     prelude::Identifier,
     state_repository::StateRepositoryLike,
     ProtocolError,
@@ -276,13 +276,11 @@ where
         let result = DecodeProtocolEntity::decode_protocol_entity(buffer);
 
         match result {
-            Err(ProtocolError::AbstractConsensusError(err)) => {
-                Err(DocumentError::InvalidDocumentError {
-                    errors: vec![*err],
-                    raw_document: Value::Null,
-                }
-                .into())
+            Err(ProtocolError::ConsensusError(err)) => Err(DocumentError::InvalidDocumentError {
+                errors: vec![*err],
+                raw_document: Value::Null,
             }
+            .into()),
             Err(err) => Err(err),
             Ok((version, mut raw_document)) => {
                 raw_document.set_value(property_names::PROTOCOL_VERSION, Value::U32(version))?;

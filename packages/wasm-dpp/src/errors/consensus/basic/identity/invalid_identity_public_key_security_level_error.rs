@@ -1,6 +1,8 @@
-use dpp::codes::ErrorWithCode;
 use dpp::consensus::basic::identity::InvalidIdentityPublicKeySecurityLevelError;
+use dpp::errors::consensus::codes::ErrorWithCode;
 
+use crate::buffer::Buffer;
+use dpp::consensus::ConsensusError;
 use dpp::errors::consensus::ConsensusError as DPPConsensusError;
 use wasm_bindgen::prelude::*;
 
@@ -37,6 +39,20 @@ impl InvalidIdentityPublicKeySecurityLevelErrorWasm {
 
     #[wasm_bindgen(js_name=getCode)]
     pub fn code(&self) -> u32 {
-        DPPConsensusError::from(self.inner.clone()).get_code()
+        DPPConsensusError::from(self.inner.clone()).code()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn message(&self) -> String {
+        self.inner.to_string()
+    }
+
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+        let bytes = ConsensusError::from(self.inner.clone())
+            .serialize()
+            .map_err(|e| JsError::from(e))?;
+
+        Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }

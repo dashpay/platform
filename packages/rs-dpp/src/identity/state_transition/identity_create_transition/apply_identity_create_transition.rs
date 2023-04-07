@@ -44,7 +44,7 @@ where
             )
             .await?;
 
-        let credits_amount = convert_satoshi_to_credits(output.value);
+        let credits_amount = convert_satoshi_to_credits(output.value)?;
 
         let identity = Identity {
             protocol_version: state_transition.get_protocol_version(),
