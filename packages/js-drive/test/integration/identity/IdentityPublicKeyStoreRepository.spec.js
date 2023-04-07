@@ -1,6 +1,6 @@
 const fs = require('fs');
 const Drive = require('@dashevo/rs-drive');
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 
 // TODO: should we take it from other place?
 const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
@@ -19,7 +19,7 @@ describe('IdentityPublicKeyStoreRepository', () => {
   let identity;
   let blockInfo;
 
-  beforeEach(async () => {
+  beforeEach(async function beforeEach() {
     rsDrive = new Drive('./db/grovedb_test', {
       drive: {
         dataContractsGlobalCacheSize: 500,
@@ -32,7 +32,7 @@ describe('IdentityPublicKeyStoreRepository', () => {
           password: '',
         },
       },
-    });
+    }, this.dppWasm);
 
     store = new GroveDBStore(rsDrive, logger);
 
@@ -40,11 +40,11 @@ describe('IdentityPublicKeyStoreRepository', () => {
 
     const decodeProtocolEntity = decodeProtocolEntityFactory();
 
-    identityRepository = new IdentityStoreRepository(store, decodeProtocolEntity);
+    identityRepository = new IdentityStoreRepository(store, decodeProtocolEntity, this.dppWasm);
 
-    publicKeyRepository = new IdentityPublicKeyStoreRepository(store, decodeProtocolEntity);
+    publicKeyRepository = new IdentityPublicKeyStoreRepository(store, decodeProtocolEntity, this.dppWasm);
 
-    identity = getIdentityFixture();
+    identity = await getIdentityFixture();
 
     blockInfo = new BlockInfo(1, 1, Date.now());
   });
