@@ -33,12 +33,13 @@ COPY packages/rs-dpp packages/rs-dpp
 COPY packages/wasm-dpp packages/wasm-dpp
 
 # Build WASM DPP
-RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
-    yarn workspace @dashevo/wasm-dpp build && \
-    cargo clean
+#RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
+#    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
+#    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
+#    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
+#    yarn workspace @dashevo/wasm-dpp build && \
+#    cargo clean
+RUN yarn workspace @dashevo/wasm-dpp build
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
