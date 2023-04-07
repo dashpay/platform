@@ -3,8 +3,8 @@ const Drive = require('@dashevo/rs-drive');
 // TODO: What should we do with it?
 const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
 
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
+const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 
 const GroveDBStore = require('../../../lib/storage/GroveDBStore');
 const DataContractStoreRepository = require('../../../lib/dataContract/DataContractStoreRepository');
@@ -25,7 +25,7 @@ describe('DataContractStoreRepository', () => {
     ({ DataContract } = this.dppWasm);
   });
 
-  beforeEach(async () => {
+  beforeEach(async function beforeEach() {
     rsDrive = new Drive('./db/grovedb_test', {
       drive: {
         dataContractsGlobalCacheSize: 500,
@@ -38,7 +38,7 @@ describe('DataContractStoreRepository', () => {
           password: '',
         },
       },
-    });
+    }, this.dppWasm);
 
     store = new GroveDBStore(rsDrive, noopLogger);
 
@@ -46,9 +46,9 @@ describe('DataContractStoreRepository', () => {
 
     decodeProtocolEntity = decodeProtocolEntityFactory();
 
-    repository = new DataContractStoreRepository(store, decodeProtocolEntity, noopLogger);
+    repository = new DataContractStoreRepository(store, decodeProtocolEntity, this.dppWasm, noopLogger);
 
-    dataContract = getDataContractFixture();
+    dataContract = await getDataContractFixture();
 
     blockInfo = new BlockInfo(1, 1, Date.now());
   });
@@ -375,7 +375,7 @@ describe('DataContractStoreRepository', () => {
 
     beforeEach(async () => {
       dataContract2 = new DataContract(dataContract.toObject());
-      dataContract2.id = generateRandomIdentifier();
+      dataContract2.id = await generateRandomIdentifier();
     });
 
     it('should should return proof if Data Contract not found', async () => {
