@@ -6,8 +6,7 @@ WORKDIR /platform
 # Copy yarn and Cargo files
 COPY .yarn /platform/.yarn
 COPY .cargo /platform/.cargo
-COPY package.json yarn.lock .yarnrc.yml .pnp.* Cargo.lock rust-toolchain.toml ./
-COPY packages/js-drive/Cargo.toml.template ./Cargo.toml
+COPY package.json yarn.lock .yarnrc.yml .pnp.* Cargo.toml Cargo.lock rust-toolchain.toml ./
 
 # Print build output
 RUN yarn config set enableInlineBuilds true
