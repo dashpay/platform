@@ -11,7 +11,7 @@ RUN apk update && \
                        alpine-sdk \
                        make \
                        cmake \
-§                       g++ \
+                       g++ \
                        curl
 
 # Enable corepack https://github.com/nodejs/corepack
