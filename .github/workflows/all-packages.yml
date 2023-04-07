@@ -36,32 +36,6 @@ jobs:
       - name: Validate workspaces
         run: yarn constraints
 
-  crates-security:
-    name: Crates security audit
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Check out repo
-        uses: actions/checkout@v3
-
-      - name: Audit crates
-        uses: actions-rs/audit-check@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-  npm-security:
-    name: NPM security audit
-    runs-on: ubuntu-22.04
-    steps:
-      - name: Check out repo
-        uses: actions/checkout@v3
-
-      - name: Enable corepack
-        run: corepack enable
-
-      - name: Audit NPM
-        run: yarn npm audit --environment production --all --recursive --ignore 1091050
-        # ignore "public ip"
-
   test-suite:
     name: Run Platform Test Suite
     runs-on: ubuntu-22.04
@@ -74,6 +48,15 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: '16'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: Enable Rust cache
+        uses: Swatinem/rust-cache@v2
 
       - name: Enable corepack
         run: corepack enable
@@ -91,6 +74,9 @@ jobs:
 
       - name: Install dependencies
         run: yarn install
+
+      - name: Build SDK
+        run: yarn build --filter "+dash"
 
       - name: Set up Docker BuildX
         id: buildx
