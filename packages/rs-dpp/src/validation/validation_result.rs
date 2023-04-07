@@ -1,5 +1,6 @@
 use crate::errors::consensus::ConsensusError;
 use crate::ProtocolError;
+use futures::StreamExt;
 use std::fmt::Debug;
 
 pub type SimpleConsensusValidationResult = ConsensusValidationResult<()>;
@@ -129,6 +130,17 @@ impl<TData: Clone, E: Debug> ValidationResult<TData, E> {
 
     pub fn merge<TOtherData: Clone>(&mut self, mut other: ValidationResult<TOtherData, E>) {
         self.errors.append(&mut other.errors);
+    }
+
+    pub fn merge_many<I: IntoIterator<Item = ValidationResult<TData, E>>>(
+        items: I,
+    ) -> ValidationResult<TData, E> {
+        let errors = items
+            .into_iter()
+            .map(|single_validation_result| single_validation_result.errors)
+            .flatten()
+            .collect();
+        ValidationResult::new_with_errors(errors)
     }
 
     pub fn is_valid(&self) -> bool {

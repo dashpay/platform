@@ -7,9 +7,11 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::query::QueryResultEncoding;
-use dpp::identity::Identity;
+use dpp::identity::{Identity, KeyID};
 use dpp::platform_value::Value;
 use dpp::Convertible;
+use grovedb::query_result_type::QueryResultType;
+use grovedb::query_result_type::QueryResultType::QueryElementResultType;
 use grovedb::Element::Item;
 use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
 use std::collections::BTreeMap;
@@ -152,6 +154,57 @@ impl Drive {
             transaction,
             drive_operations,
         )
+    }
+
+    /// Do any keys with given public key hashes already exist in the unique tree?
+    /// Will return public key hashes that already exist
+    pub fn has_any_of_unique_public_key_hashes(
+        &self,
+        public_key_hashes: Vec<[u8; 20]>,
+        transaction: TransactionArg,
+    ) -> Result<Vec<[u8; 20]>, Error> {
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+        self.has_any_of_unique_public_key_hashes_operations(
+            public_key_hashes,
+            transaction,
+            &mut drive_operations,
+        )
+    }
+
+    /// Operations for if any keys with given public key hashes already exist in the unique tree.
+    /// Will return public key hashes that already exist
+    pub(crate) fn has_any_of_unique_public_key_hashes_operations(
+        &self,
+        public_key_hashes: Vec<[u8; 20]>,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+    ) -> Result<Vec<[u8; 20]>, Error> {
+        let unique_key_hashes = unique_key_hashes_tree_path_vec();
+        let mut query = Query::new();
+        query.insert_keys(
+            public_key_hashes
+                .into_iter()
+                .map(|key_hash| key_hash.to_vec())
+                .collect(),
+        );
+        let path_query = PathQuery::new(unique_key_hashes, SizedQuery::new(query, None, None));
+        let (results, _) = self.grove_get_raw_path_query(
+            &path_query,
+            transaction,
+            QueryResultType::QueryKeyElementPairResultType,
+            drive_operations,
+        )?;
+        results
+            .to_keys()
+            .into_iter()
+            .map(|key| {
+                key.try_into().map_err(|_| {
+                    Error::Drive(DriveError::CorruptedElementType(
+                        "as we pass 20 byte values we should get back 20 byte values",
+                    ))
+                })
+            })
+            .collect()
     }
 
     /// Does a key with that public key hash already exist in the non unique set?

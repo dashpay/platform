@@ -37,6 +37,7 @@ use drive::grovedb::TransactionArg;
 use drive::{drive::Drive, grovedb::Transaction};
 use serde_json::Value as JsonValue;
 
+use crate::validation::state_transition::key_validation::validate_state_transition_identity_signature;
 use crate::{error::Error, validation::state_transition::common::validate_schema};
 
 use super::StateTransitionValidation;
@@ -206,9 +207,12 @@ impl StateTransitionValidation for DataContractUpdateTransition {
     fn validate_signatures(
         &self,
         drive: &Drive,
-        tx: TransactionArg,
+        transaction: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
-        todo!()
+        Ok(
+            validate_state_transition_identity_signature(drive, self, transaction)?
+                .map(|partial_identity| Some(partial_identity)),
+        )
     }
 
     fn validate_state(

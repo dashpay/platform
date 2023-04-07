@@ -5,18 +5,29 @@ use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 
 use bincode::{Decode, Encode};
+use bls_signatures::Serialize as BlsSerialize;
+use dashcore::secp256k1::ecdsa::Signature;
+use dashcore::secp256k1::PublicKey;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{BinaryData, ReplacementType, Value, ValueMapHelper};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
+use crate::consensus::signature::SignatureError;
+use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use crate::identity::signer::Signer;
 use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
 use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
-use crate::util::serializer;
-use crate::{BlsModule, Convertible, SerdeParsingError};
+use crate::util::{serializer, vec};
+use crate::validation::{
+    ConsensusValidationResult, SimpleConsensusValidationResult, SimpleValidationResult,
+    ValidationResult,
+};
+use crate::{
+    BlsModule, Convertible, InvalidVectorSizeError, PublicKeyValidationError, SerdeParsingError,
+};
 
 pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
 
@@ -230,9 +241,25 @@ impl IdentityPublicKeyWithWitness {
         self.security_level == SecurityLevel::MASTER
     }
 
+    pub fn to_ecdsa_array(&self) -> Result<[u8; 33], InvalidVectorSizeError> {
+        vec::vec_to_array::<33>(self.data.as_slice())
+    }
+
     /// Get the original public key hash
-    pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
+    pub fn hash_as_vec(&self) -> Result<Vec<u8>, ProtocolError> {
         Into::<IdentityPublicKey>::into(self).hash()
+    }
+
+    /// Get the original public key hash
+    pub fn hash(&self) -> Result<[u8; 20], ProtocolError> {
+        Into::<IdentityPublicKey>::into(self)
+            .hash()?
+            .try_into()
+            .map_err(|_| {
+                ProtocolError::CorruptedCodeExecution(
+                    "hash should always output 20 bytes".to_string(),
+                )
+            })
     }
 
     pub fn from_cbor_value(cbor_value: &CborValue) -> Result<Self, ProtocolError> {
@@ -281,6 +308,77 @@ impl IdentityPublicKeyWithWitness {
         }
 
         pk_map.to_value_sorted()
+    }
+
+    pub fn verify_signature(&self) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        match self.key_type {
+            KeyType::ECDSA_SECP256K1 => {
+                let signable_data = self.to_buffer()?;
+                if let Err(e) = signer::verify_data_signature(
+                    &signable_data,
+                    self.signature.as_slice(),
+                    self.data.as_slice(),
+                ) {
+                    Ok(SimpleConsensusValidationResult::new_with_error(
+                        ConsensusError::SignatureError(SignatureError::BasicECDSAError(
+                            e.to_string(),
+                        )),
+                    ))
+                } else {
+                    Ok(SimpleConsensusValidationResult::default())
+                }
+            }
+            KeyType::BLS12_381 => {
+                let signable_data = self.to_buffer()?;
+                let public_key = match bls_signatures::PublicKey::from_bytes(self.data.as_slice()) {
+                    Ok(public_key) => public_key,
+                    Err(e) => {
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            ConsensusError::SignatureError(SignatureError::BasicBLSError(
+                                e.to_string(),
+                            )),
+                        ))
+                    }
+                };
+                let signature = match bls_signatures::Signature::from_bytes(self.data.as_slice()) {
+                    Ok(public_key) => public_key,
+                    Err(e) => {
+                        return Ok(SimpleConsensusValidationResult::new_with_error(
+                            ConsensusError::SignatureError(SignatureError::BasicBLSError(
+                                e.to_string(),
+                            )),
+                        ))
+                    }
+                };
+                if !public_key.verify(signature, signable_data) {
+                    Ok(SimpleConsensusValidationResult::new_with_error(
+                        ConsensusError::SignatureError(SignatureError::BasicBLSError(
+                            "bls signature was incorrect".to_string(),
+                        )),
+                    ))
+                } else {
+                    Ok(SimpleConsensusValidationResult::default())
+                }
+            }
+            KeyType::ECDSA_HASH160 => {
+                if !self.signature.is_empty() {
+                    Ok(SimpleConsensusValidationResult::new_with_error(ConsensusError::SignatureError(
+                        SignatureError::SignatureShouldNotBePresent("ecdsa_hash160 keys should not have a signature as that would reveal the public key".to_string()),
+                    )))
+                } else {
+                    Ok(SimpleConsensusValidationResult::default())
+                }
+            }
+            KeyType::BIP13_SCRIPT_HASH => {
+                if !self.signature.is_empty() {
+                    Ok(SimpleConsensusValidationResult::new_with_error(ConsensusError::SignatureError(
+                        SignatureError::SignatureShouldNotBePresent("script hash keys should not have a signature as that would reveal the script".to_string()),
+                    )))
+                } else {
+                    Ok(SimpleConsensusValidationResult::default())
+                }
+            }
+        }
     }
 }
 

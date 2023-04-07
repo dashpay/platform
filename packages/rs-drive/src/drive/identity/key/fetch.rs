@@ -49,6 +49,7 @@ use grovedb::{PathQuery, SizedQuery};
 use integer_encoding::VarInt;
 #[cfg(any(feature = "full", feature = "verify"))]
 use std::collections::BTreeMap;
+use std::collections::HashSet;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 /// The kind of keys you are requesting
@@ -79,6 +80,14 @@ pub enum KeyRequestType {
 type PurposeU8 = u8;
 #[cfg(any(feature = "full", feature = "verify"))]
 type SecurityLevelU8 = u8;
+
+#[cfg(feature = "full")]
+/// Type alias for a hashset of IdentityPublicKey Ids as the outcome of the query.
+pub type KeyIDHashSet = HashSet<KeyID>;
+
+#[cfg(feature = "full")]
+/// Type alias for a vec of IdentityPublicKey Ids as the outcome of the query.
+pub type KeyIDVec = Vec<KeyID>;
 
 #[cfg(feature = "full")]
 /// Type alias for a single IdentityPublicKey as the outcome of the query.
@@ -138,6 +147,13 @@ fn element_to_identity_public_key(element: Element) -> Result<IdentityPublicKey,
 }
 
 #[cfg(feature = "full")]
+fn element_to_identity_public_key_id(element: Element) -> Result<KeyID, Error> {
+    let public_key = element_to_identity_public_key(element)?;
+
+    Ok(public_key.id)
+}
+
+#[cfg(feature = "full")]
 fn element_to_identity_public_key_id_and_object_pair(
     element: Element,
 ) -> Result<(KeyID, IdentityPublicKey), Error> {
@@ -171,6 +187,19 @@ fn supported_query_result_element_to_identity_public_key(
         | QueryResultElement::KeyElementPairResultItem((_, element))
         | QueryResultElement::PathKeyElementTrioResultItem((_, _, element)) => {
             element_to_identity_public_key(element)
+        }
+    }
+}
+
+#[cfg(feature = "full")]
+fn supported_query_result_element_to_identity_public_key_id(
+    query_result_element: QueryResultElement,
+) -> Result<KeyID, Error> {
+    match query_result_element {
+        QueryResultElement::ElementResultItem(element)
+        | QueryResultElement::KeyElementPairResultItem((_, element))
+        | QueryResultElement::PathKeyElementTrioResultItem((_, _, element)) => {
+            element_to_identity_public_key_id(element)
         }
     }
 }
@@ -277,6 +306,46 @@ impl IdentityPublicKeyResult for OptionalSingleIdentityPublicKeyOutcome {
         }
 
         Ok(Some(keys.remove(0)))
+    }
+}
+
+#[cfg(feature = "full")]
+impl IdentityPublicKeyResult for KeyIDHashSet {
+    fn try_from_path_key_optional(value: Vec<PathKeyOptionalElementTrio>) -> Result<Self, Error> {
+        // We do not care about non existence
+        value
+            .into_iter()
+            .filter_map(|(_, _, maybe_element)| maybe_element)
+            .map(element_to_identity_public_key_id)
+            .collect()
+    }
+
+    fn try_from_query_results(value: QueryResultElements) -> Result<Self, Error> {
+        value
+            .elements
+            .into_iter()
+            .map(supported_query_result_element_to_identity_public_key_id)
+            .collect()
+    }
+}
+
+#[cfg(feature = "full")]
+impl IdentityPublicKeyResult for KeyIDVec {
+    fn try_from_path_key_optional(value: Vec<PathKeyOptionalElementTrio>) -> Result<Self, Error> {
+        // We do not care about non existence
+        value
+            .into_iter()
+            .filter_map(|(_, _, maybe_element)| maybe_element)
+            .map(element_to_identity_public_key_id)
+            .collect()
+    }
+
+    fn try_from_query_results(value: QueryResultElements) -> Result<Self, Error> {
+        value
+            .elements
+            .into_iter()
+            .map(supported_query_result_element_to_identity_public_key_id)
+            .collect()
     }
 }
 

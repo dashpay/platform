@@ -41,6 +41,7 @@ use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
 use crate::error::Error;
+use crate::validation::state_transition::key_validation::validate_state_transition_identity_signature;
 
 use super::{
     common::{validate_protocol_version, validate_schema},
@@ -117,9 +118,12 @@ impl StateTransitionValidation for DocumentsBatchTransition {
     fn validate_signatures(
         &self,
         drive: &Drive,
-        tx: TransactionArg,
+        transaction: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
-        todo!()
+        Ok(
+            validate_state_transition_identity_signature(drive, self, transaction)?
+                .map(|partial_identity| Some(partial_identity)),
+        )
     }
 
     fn validate_state(

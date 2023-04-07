@@ -21,25 +21,38 @@ use crate::platform::{Platform, PlatformRef};
 use crate::state::PlatformState;
 use crate::validation::state_transition::key_validation::validate_state_transition_identity_signature;
 
+/// There are 3 stages in a state transition processing:
+/// Structure, Signature and State validation,
+///
+/// The structure validation verifies that the form of the state transition is good, for example
+/// that a contract is well formed, or that a document is valid against the contract.
+///
+/// Signature validation verifies signatures of a state transition, it will also verify
+/// signatures of keys for identity create and identity update. At this stage we will get back
+/// a partial identity.
+///
+/// Validate state verifies that there are no state based conflicts, for example that a document
+/// with a unique index isn't already taken.
+///
 pub fn process_state_transition<'a, C>(
     platform: &'a PlatformRef<C>,
     state_transition: StateTransition,
     transaction: TransactionArg,
 ) -> Result<ConsensusValidationResult<ExecutionEvent<'a>>, Error> {
-    // I still insist on better specifying function arguments, that won't allow us to have
-    // None for execution context here what Platform in general permits
-
+    // Validating structure
     let result = state_transition.validate_structure(&platform.drive, transaction)?;
     if !result.is_valid() {
         return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
     }
+
+    // Validating signatures
     let result = state_transition.validate_signatures(&platform.drive, transaction)?;
     if !result.is_valid() {
         return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
     }
-
     let maybe_identity = result.into_data()?;
 
+    // Validating state
     let result = state_transition.validate_state(&platform.drive, transaction)?;
 
     result.map_result(|action| (maybe_identity, action, &platform.state.current_epoch).try_into())

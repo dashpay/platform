@@ -46,4 +46,9 @@ pub enum ExecutionError {
     /// Error
     #[error("cannot update proposed app version: {0}")]
     UpdateValidatorProposedAppVersionError(#[from] DriveError),
+
+    /// Drive responded in a way that was impossible
+    /// For example we asked for 2 items and it returned 3
+    #[error("corrupted drive response error: {0}")]
+    CorruptedDriveResponse(String),
 }

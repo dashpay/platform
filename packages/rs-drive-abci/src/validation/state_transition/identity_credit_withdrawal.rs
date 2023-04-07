@@ -23,7 +23,7 @@ impl StateTransitionValidation for IdentityCreditWithdrawalTransition {
     fn validate_signatures(
         &self,
         drive: &Drive,
-        tx: TransactionArg,
+        transaction: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         todo!()
     }
