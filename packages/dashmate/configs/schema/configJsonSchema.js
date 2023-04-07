@@ -669,8 +669,21 @@ module.exports = {
             docker: {
               $ref: '#/definitions/docker',
             },
+            api: {
+              type: 'object',
+              properties: {
+                enable: {
+                  type: 'boolean',
+                },
+                port: {
+                  $ref: '#/definitions/port',
+                },
+              },
+              required: ['enable', 'port'],
+              additionalProperties: false,
+            },
           },
-          required: ['docker'],
+          required: ['docker', 'api'],
           additionalProperties: false,
         },
       },

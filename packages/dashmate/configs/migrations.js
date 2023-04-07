@@ -512,4 +512,26 @@ module.exports = {
 
     return configFile;
   },
+  '0.24.0-dev.18': (configFile) => {
+    let groupJsonApiPort = systemConfigs.local.dashmate.helper.api.port;
+
+    Object.entries(configFile.configs)
+      .forEach(([, config]) => {
+        if (config.group === 'local') {
+          config.dashmate.helper.api = {
+            enable: false,
+            port: groupJsonApiPort,
+          };
+
+          groupJsonApiPort += 100;
+        } else {
+          config.dashmate.helper.api = {
+            enable: false,
+            port: systemConfigs.base.dashmate.helper.api.port,
+          };
+        }
+      });
+
+    return configFile;
+  },
 };
