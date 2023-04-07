@@ -46,7 +46,9 @@ describe('DataContractStoreRepository', () => {
 
     decodeProtocolEntity = decodeProtocolEntityFactory();
 
-    repository = new DataContractStoreRepository(store, decodeProtocolEntity, this.dppWasm, noopLogger);
+    repository = new DataContractStoreRepository(
+      store, decodeProtocolEntity, this.dppWasm, noopLogger,
+    );
 
     dataContract = await getDataContractFixture();
 

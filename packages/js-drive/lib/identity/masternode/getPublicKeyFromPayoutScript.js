@@ -12,7 +12,6 @@ function getPublicKeyFromPayoutScript(payoutScript, type, dppWasm) {
     case dppWasm.IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH:
       return payoutScript.toBuffer().slice(2, 22);
     default: {
-      console.log('setting type', type);
       throw new dppWasm.InvalidIdentityPublicKeyTypeError(type);
     }
   }

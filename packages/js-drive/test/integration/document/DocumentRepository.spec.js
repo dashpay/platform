@@ -620,7 +620,7 @@ describe('DocumentRepository', function main() {
 
   before(async function before() {
     ({ Identifier, Document, DataContractFactory } = this.dppWasm);
-    console.log('setting valid queries ');
+
     validQueries = [
       {},
       {
@@ -785,7 +785,9 @@ describe('DocumentRepository', function main() {
     ]);
 
     const dpp = container.resolve('dpp');
-    queryDataContract = dpp.dataContract.create(await generateRandomIdentifier(), queryDocumentSchema);
+    queryDataContract = dpp.dataContract.create(
+      await generateRandomIdentifier(), queryDocumentSchema,
+    );
 
     documentRepository = container.resolve('documentRepository');
     documentRepository.logger = {

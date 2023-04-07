@@ -42,7 +42,9 @@ describe('IdentityPublicKeyStoreRepository', () => {
 
     identityRepository = new IdentityStoreRepository(store, decodeProtocolEntity, this.dppWasm);
 
-    publicKeyRepository = new IdentityPublicKeyStoreRepository(store, decodeProtocolEntity, this.dppWasm);
+    publicKeyRepository = new IdentityPublicKeyStoreRepository(
+      store, decodeProtocolEntity, this.dppWasm,
+    );
 
     identity = await getIdentityFixture();
 

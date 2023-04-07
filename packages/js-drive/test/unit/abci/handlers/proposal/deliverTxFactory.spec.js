@@ -49,7 +49,10 @@ describe('deliverTxFactory', () => {
 
   before(function before() {
     ({
-      DashPlatformProtocol, StateTransitionExecutionContext, ValidationResult, MissingStateTransitionTypeError,
+      DashPlatformProtocol,
+      StateTransitionExecutionContext,
+      ValidationResult,
+      MissingStateTransitionTypeError,
     } = this.dppWasm);
   });
 

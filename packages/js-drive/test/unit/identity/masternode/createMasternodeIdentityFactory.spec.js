@@ -174,7 +174,7 @@ describe('createMasternodeIdentityFactory', () => {
       }, {
         id: 1,
         type: IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH,
-        purpose: KeyPurpose.WITHDRAW,
+        purpose: IdentityPublicKey.PURPOSES.WITHDRAW,
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.CRITICAL,
         readOnly: false,
         data: Buffer.alloc(20, 1),

@@ -30,11 +30,6 @@ describe('dataContractQueryHandlerFactory', () => {
   let createQueryResponseMock;
   let responseMock;
   let dataContractRepositoryMock;
-  let Identifier;
-
-  before(function before() {
-    ({ Identifier } = this.dppWasm);
-  });
 
   beforeEach(function beforeEach() {
     dataContract = getDataContractFixture();

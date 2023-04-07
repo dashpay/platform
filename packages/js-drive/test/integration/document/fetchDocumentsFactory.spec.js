@@ -62,7 +62,7 @@ describe('fetchDocumentsFactory', () => {
   it('should fetch Documents for specified contract ID and document type', async () => {
     await documentRepository.create(document, blockInfo);
 
-    const result = await fetchDocuments(contractId, documentType, extended = true);
+    const result = await fetchDocuments(contractId, documentType, true);
 
     expect(result).to.be.instanceOf(StorageResult);
     expect(result.getOperations().length).to.be.greaterThan(0);
@@ -73,7 +73,6 @@ describe('fetchDocumentsFactory', () => {
     expect(foundDocuments).to.have.lengthOf(1);
 
     const [actualDocument] = foundDocuments;
-    console.log(document);
 
     expect(actualDocument).to.deep.equals(document);
   });

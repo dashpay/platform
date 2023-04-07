@@ -49,7 +49,9 @@ describe('unserializeStateTransitionFactory', () => {
 
     noopLoggerMock = new LoggerMock(this.sinon);
 
-    unserializeStateTransition = unserializeStateTransitionFactory(dppMock, noopLoggerMock, this.dppWasm);
+    unserializeStateTransition = unserializeStateTransitionFactory(
+      dppMock, noopLoggerMock, this.dppWasm,
+    );
   });
 
   it('should throw InvalidArgumentAbciError if State Transition is not specified', async () => {

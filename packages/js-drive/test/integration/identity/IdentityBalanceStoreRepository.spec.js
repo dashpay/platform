@@ -43,7 +43,9 @@ describe('IdentityBalanceStoreRepository', () => {
 
     decodeProtocolEntity = decodeProtocolEntityFactory();
 
-    balanceRepository = new IdentityBalanceStoreRepository(store, decodeProtocolEntity, this.dppWasm);
+    balanceRepository = new IdentityBalanceStoreRepository(
+      store, decodeProtocolEntity, this.dppWasm,
+    );
     identityRepository = new IdentityStoreRepository(store, decodeProtocolEntity, this.dppWasm);
     identity = await getIdentityFixture();
 

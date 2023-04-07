@@ -40,7 +40,7 @@ use(async (chai, util) => {
       } catch (se) {
         try {
           return argument.toBuffer();
-        } catch (oe) {}
+        } catch (e) {}
       }
     }
 
