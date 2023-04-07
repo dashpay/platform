@@ -473,59 +473,6 @@ queryDocumentSchema.documentBig = {
   })),
 };
 
-const validQueries = [
-  {},
-  {
-    where: [['$id', 'in', [
-      generateRandomIdentifier(),
-      generateRandomIdentifier(),
-      generateRandomIdentifier(),
-    ]]],
-    orderBy: [['$id', 'asc']],
-  },
-  {
-    where: [
-      ['a', '==', 1],
-      ['b', '==', 2],
-      ['c', '==', 3],
-      ['d', 'in', [1, 2]],
-    ],
-    orderBy: [
-      ['d', 'desc'],
-      ['e', 'asc'],
-    ],
-  },
-  {
-    where: [
-      ['a', '==', 1],
-      ['b', '==', 2],
-      ['c', '==', 3],
-      ['d', 'in', [1, 2]],
-      ['e', '>', 3],
-    ],
-    orderBy: [
-      ['d', 'desc'],
-      ['e', 'asc'],
-    ],
-  },
-  {
-    where: [
-      ['firstName', '>', 'Chris'],
-      ['firstName', '<=', 'Noellyn'],
-    ],
-    orderBy: [
-      ['firstName', 'asc'],
-    ],
-  },
-  {
-    where: [
-      ['firstName', '==', '1'],
-      ['lastName', '==', '2'],
-    ],
-    limit: 1,
-  },
-];
-
 const invalidQueries = [
   {
     query: {
@@ -669,9 +616,63 @@ describe('DocumentRepository', function main() {
   let Identifier;
   let Document;
   let DataContractFactory;
+  let validQueries = [];
 
-  before(function before() {
+  before(async function before() {
     ({ Identifier, Document, DataContractFactory } = this.dppWasm);
+    console.log('setting valid queries ');
+    validQueries = [
+      {},
+      {
+        where: [['$id', 'in', [
+          (await generateRandomIdentifier()),
+          (await generateRandomIdentifier()),
+          (await generateRandomIdentifier()),
+        ]]],
+        orderBy: [['$id', 'asc']],
+      },
+      {
+        where: [
+          ['a', '==', 1],
+          ['b', '==', 2],
+          ['c', '==', 3],
+          ['d', 'in', [1, 2]],
+        ],
+        orderBy: [
+          ['d', 'desc'],
+          ['e', 'asc'],
+        ],
+      },
+      {
+    where: [
+      ['a', '==', 1],
+      ['b', '==', 2],
+      ['c', '==', 3],
+      ['d', 'in', [1, 2]],
+      ['e', '>', 3],
+    ],
+    orderBy: [
+      ['d', 'desc'],
+      ['e', 'asc'],
+    ],
+  },
+  {
+    where: [
+      ['firstName', '>', 'Chris'],
+      ['firstName', '<=', 'Noellyn'],
+    ],
+    orderBy: [
+      ['firstName', 'asc'],
+    ],
+  },
+  {
+    where: [
+      ['firstName', '==', '1'],
+      ['lastName', '==', '2'],
+    ],
+    limit: 1,
+  },
+];
   });
 
   beforeEach(async function beforeEach() {
@@ -784,7 +785,7 @@ describe('DocumentRepository', function main() {
     ]);
 
     const dpp = container.resolve('dpp');
-    queryDataContract = dpp.dataContract.create(generateRandomIdentifier(), queryDocumentSchema);
+    queryDataContract = dpp.dataContract.create(await generateRandomIdentifier(), queryDocumentSchema);
 
     documentRepository = container.resolve('documentRepository');
     documentRepository.logger = {
@@ -1133,7 +1134,7 @@ describe('DocumentRepository', function main() {
           };
 
           const factory = new DataContractFactory(createDPPMock(), () => { });
-          const ownerId = generateRandomIdentifier();
+          const ownerId = await generateRandomIdentifier();
           const myDataContract = factory.create(ownerId, schema);
           await dataContractRepository.create(myDataContract, blockInfo);
 
@@ -1178,7 +1179,7 @@ describe('DocumentRepository', function main() {
           };
 
           const factory = new DataContractFactory(createDPPMock(), () => { });
-          const ownerId = generateRandomIdentifier();
+          const ownerId = await generateRandomIdentifier();
           const myDataContract = factory.create(ownerId, schema);
           await dataContractRepository.create(myDataContract, blockInfo);
 
@@ -1345,7 +1346,7 @@ describe('DocumentRepository', function main() {
             it('should return valid result if condition contains "$id" field', async () => {
               const result = await documentRepository.find(queryDataContract, 'documentB', {
                 where:
-                  [['$id', '==', generateRandomIdentifier()]],
+                  [['$id', '==', await generateRandomIdentifier()]],
               });
 
               expect(result).to.be.instanceOf(StorageResult);
@@ -3019,7 +3020,7 @@ describe('DocumentRepository', function main() {
           it(`should return valid result if "orderBy" has valid field format, ${fieldName}`, async () => {
             const result = await documentRepository.find(queryDataContract, `document${fieldName}`, {
               where: [
-                [fieldName, '>', fieldName.startsWith('$') && !fieldName.endsWith('At') ? generateRandomIdentifier() : 1],
+                [fieldName, '>', fieldName.startsWith('$') && !fieldName.endsWith('At') ? await generateRandomIdentifier() : 1],
               ],
               orderBy: [[fieldName, 'asc']],
             });
@@ -3366,8 +3367,8 @@ describe('DocumentRepository', function main() {
 
     it('should return proof non existing documents', async () => {
       const documentsToProve = [{
-        dataContractId: generateRandomIdentifier().toBuffer(),
-        documentId: generateRandomIdentifier().toBuffer(),
+        dataContractId: await generateRandomIdentifier().toBuffer(),
+        documentId: await generateRandomIdentifier().toBuffer(),
         type: 'unknownType',
       }];
 
@@ -3392,8 +3393,8 @@ describe('DocumentRepository', function main() {
       }));
 
       documentsToProve.push({
-        dataContractId: generateRandomIdentifier().toBuffer(),
-        documentId: generateRandomIdentifier().toBuffer(),
+        dataContractId: await generateRandomIdentifier().toBuffer(),
+        documentId: await generateRandomIdentifier().toBuffer(),
         type: 'unknownType',
       });
 
