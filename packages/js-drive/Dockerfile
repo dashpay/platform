@@ -20,6 +20,7 @@ COPY packages/rs-drive packages/rs-drive
 COPY packages/rs-drive-abci packages/rs-drive-abci
 COPY packages/rs-platform-value packages/rs-platform-value
 COPY packages/rs-drive-nodejs packages/rs-drive-nodejs
+COPY packages/rs-drive-verify-c-binding packages/rs-drive-verify-c-binding
 COPY packages/dapi-grpc packages/dapi-grpc
 COPY packages/js-dpp packages/js-dpp
 COPY packages/js-grpc-common packages/js-grpc-common

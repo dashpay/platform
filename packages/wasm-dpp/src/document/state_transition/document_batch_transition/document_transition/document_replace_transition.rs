@@ -83,6 +83,7 @@ impl DocumentReplaceTransitionWasm {
         self.inner.revision
     }
 
+    // TODO(wasm-dpp): js_sys::Date - return as date
     #[wasm_bindgen(js_name=getUpdatedAt)]
     pub fn updated_at(&self) -> Option<TimestampMillis> {
         self.inner.updated_at

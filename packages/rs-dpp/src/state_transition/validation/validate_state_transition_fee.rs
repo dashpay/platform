@@ -8,6 +8,7 @@ use crate::data_contract::errors::IdentityNotPresentError;
 use crate::state_transition::fee::calculate_state_transition_fee_factory::calculate_state_transition_fee;
 use crate::state_transition::fee::{Credits, FeeResult};
 use crate::state_transition::StateTransitionType;
+use crate::NonConsensusError;
 use crate::{
     identity::{
         convert_satoshi_to_credits,
@@ -49,12 +50,14 @@ where
     async fn validate_with_custom_calculator(
         &self,
         state_transition: &StateTransition,
-        calculate_state_transition_fee_fn: impl Fn(&StateTransition) -> FeeResult,
+        calculate_state_transition_fee_fn: impl Fn(
+            &StateTransition,
+        ) -> Result<FeeResult, NonConsensusError>,
     ) -> Result<SimpleValidationResult, ProtocolError> {
         let mut result = SimpleValidationResult::default();
 
         let execution_context = state_transition.get_execution_context();
-        let required_fee = calculate_state_transition_fee_fn(state_transition);
+        let required_fee = calculate_state_transition_fee_fn(state_transition)?;
 
         let balance = match state_transition {
             StateTransition::IdentityCreate(st) => {
@@ -68,7 +71,7 @@ where
                             st.get_asset_lock_proof()
                         )
                     })?;
-                convert_satoshi_to_credits(output.value)
+                convert_satoshi_to_credits(output.value)?
             }
             StateTransition::IdentityTopUp(st) => {
                 let output = self
@@ -81,7 +84,7 @@ where
                             st.get_asset_lock_proof()
                         )
                     })?;
-                let balance = convert_satoshi_to_credits(output.value);
+                let balance = convert_satoshi_to_credits(output.value)?;
                 let identity_id = st.get_owner_id();
                 let identity_balance: i64 = self
                     .state_repository
@@ -104,9 +107,17 @@ where
                 }
 
                 if identity_balance.is_negative() {
-                    balance - identity_balance.unsigned_abs()
+                    balance.checked_sub(identity_balance.unsigned_abs()).ok_or(
+                        ProtocolError::Overflow(
+                            "can't subtract identity balance from the state transition balance",
+                        ),
+                    )?
                 } else {
-                    balance + identity_balance as Credits
+                    balance.checked_add(identity_balance as Credits).ok_or(
+                        ProtocolError::Overflow(
+                            "can't add identity balance to state transition balance",
+                        ),
+                    )?
                 }
             }
             StateTransition::DataContractCreate(st) => {
@@ -396,9 +407,11 @@ mod test {
             IdentityCreateTransition::new(identity_create_transition_fixture(None)).unwrap();
         let output_amount = get_output_amount_from_identity_transition!(identity_create_transition);
         let state_repository_mock = MockStateRepositoryLike::new();
-        let calculate_state_transition_fee_mock = |_: &StateTransition| FeeResult {
-            desired_amount: output_amount + 1,
-            ..Default::default()
+        let calculate_state_transition_fee_mock = |_: &StateTransition| {
+            Ok(FeeResult {
+                desired_amount: output_amount + 1,
+                ..Default::default()
+            })
         };
 
         let validator = StateTransitionFeeValidator::new(Arc::new(state_repository_mock));
@@ -422,9 +435,11 @@ mod test {
             IdentityCreateTransition::new(identity_create_transition_fixture(None)).unwrap();
         let output_amount = get_output_amount_from_identity_transition!(identity_create_transition);
         let state_repository_mock = MockStateRepositoryLike::new();
-        let calculate_state_transition_fee_mock = |_: &StateTransition| FeeResult {
-            desired_amount: output_amount,
-            ..Default::default()
+        let calculate_state_transition_fee_mock = |_: &StateTransition| {
+            Ok(FeeResult {
+                desired_amount: output_amount,
+                ..Default::default()
+            })
         };
         let validator = StateTransitionFeeValidator::new(Arc::new(state_repository_mock));
         let result = validator
@@ -448,9 +463,11 @@ mod test {
             IdentityTopUpTransition::new(identity_topup_transition_fixture(None)).unwrap();
         let output_amount = get_output_amount_from_identity_transition!(identity_topup_transition);
 
-        let calculate_state_transition_fee_mock = |_: &StateTransition| FeeResult {
-            desired_amount: output_amount + 2,
-            ..Default::default()
+        let calculate_state_transition_fee_mock = |_: &StateTransition| {
+            Ok(FeeResult {
+                desired_amount: output_amount + 2,
+                ..Default::default()
+            })
         };
 
         let validator = StateTransitionFeeValidator::new(Arc::new(state_repository_mock));
@@ -480,9 +497,11 @@ mod test {
             IdentityTopUpTransition::new(identity_topup_transition_fixture(None)).unwrap();
         let output_amount = get_output_amount_from_identity_transition!(identity_topup_transition);
 
-        let calculation_mock = |_: &StateTransition| FeeResult {
-            desired_amount: output_amount - 1,
-            ..Default::default()
+        let calculation_mock = |_: &StateTransition| {
+            Ok(FeeResult {
+                desired_amount: output_amount - 1,
+                ..Default::default()
+            })
         };
 
         let validator = StateTransitionFeeValidator::new(Arc::new(state_repository_mock));

@@ -193,6 +193,7 @@ impl DocumentWasm {
         Ok(JsValue::undefined())
     }
 
+    // TODO(wasm-dpp): js_sys::Date - provide as date
     #[wasm_bindgen(js_name=setCreatedAt)]
     pub fn set_created_at(&mut self, number: JsValue) -> Result<(), JsValue> {
         let ts = try_to_u64(number)
@@ -203,6 +204,7 @@ impl DocumentWasm {
         Ok(())
     }
 
+    // TODO(wasm-dpp): js_sys::Date - provide as date
     #[wasm_bindgen(js_name=setUpdatedAt)]
     pub fn set_updated_at(&mut self, number: JsValue) -> Result<(), JsValue> {
         let ts = try_to_u64(number)
@@ -212,13 +214,13 @@ impl DocumentWasm {
         Ok(())
     }
 
-    // TODO(wasm-dpp): return as js_sys::Date
+    // TODO(wasm-dpp): js_sys::Date - return as date
     #[wasm_bindgen(js_name=getCreatedAt)]
     pub fn get_created_at(&self) -> Option<f64> {
         self.0.created_at.map(|v| v as f64)
     }
 
-    // TODO(wasm-dpp): return as js_sys::Date
+    // TODO(wasm-dpp): js_sys::Date - return as date
     #[wasm_bindgen(js_name=getUpdatedAt)]
     pub fn get_updated_at(&self) -> Option<f64> {
         self.0.updated_at.map(|v| v as f64)

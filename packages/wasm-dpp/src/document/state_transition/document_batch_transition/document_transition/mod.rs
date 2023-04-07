@@ -76,6 +76,7 @@ impl DocumentTransitionWasm {
         }
     }
 
+    // TODO(wasm-dpp): js_sys::Date - return as date
     #[wasm_bindgen(js_name=getCreatedAt)]
     pub fn get_created_at(&self) -> JsValue {
         if let Some(created_at) = self.0.get_created_at() {
@@ -84,6 +85,7 @@ impl DocumentTransitionWasm {
             JsValue::NULL
         }
     }
+    // TODO(wasm-dpp): js_sys::Date - return as date
     #[wasm_bindgen(js_name=getUpdatedAt)]
     pub fn get_updated_at(&self) -> JsValue {
         if let Some(updated_at) = self.0.get_updated_at() {
@@ -93,6 +95,7 @@ impl DocumentTransitionWasm {
         }
     }
 
+    // TODO(wasm-dpp): js_sys::Date - provide as date
     #[wasm_bindgen(js_name=setUpdatedAt)]
     pub fn set_updated_at(&mut self, js_timestamp_millis: JsValue) -> Result<(), JsValue> {
         if js_timestamp_millis.is_undefined() || js_timestamp_millis.is_null() {
@@ -107,6 +110,7 @@ impl DocumentTransitionWasm {
         Ok(())
     }
 
+    // TODO(wasm-dpp): js_sys::Date - provide as date
     #[wasm_bindgen(js_name=setCreatedAt)]
     pub fn set_created_at(&mut self, js_timestamp_millis: JsValue) -> Result<(), JsValue> {
         if js_timestamp_millis.is_undefined() || js_timestamp_millis.is_null() {
