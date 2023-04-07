@@ -34,8 +34,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::drive::config::DriveEncoding::DriveCbor;
 
-/// Boolean if GroveDB batching is enabled by default
-pub const DEFAULT_GROVE_BATCHING_ENABLED: bool = true;
 /// Boolean if GroveDB batching consistency verification is enabled by default
 pub const DEFAULT_GROVE_BATCHING_CONSISTENCY_VERIFICATION_ENABLED: bool = true;
 /// Boolean if GroveDB has_raw in enabled by default
@@ -55,9 +53,6 @@ pub enum DriveEncoding {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 /// Drive configuration struct
 pub struct DriveConfig {
-    /// Boolean if batching is enabled
-    pub batching_enabled: bool,
-
     /// Boolean if batching consistency verification is enabled
     pub batching_consistency_verification: bool,
 
@@ -80,7 +75,6 @@ pub struct DriveConfig {
 impl Default for DriveConfig {
     fn default() -> Self {
         DriveConfig {
-            batching_enabled: DEFAULT_GROVE_BATCHING_ENABLED,
             batching_consistency_verification:
                 DEFAULT_GROVE_BATCHING_CONSISTENCY_VERIFICATION_ENABLED,
             has_raw_enabled: DEFAULT_GROVE_HAS_RAW_ENABLED,
@@ -88,24 +82,6 @@ impl Default for DriveConfig {
             encoding: DriveCbor,
             data_contracts_global_cache_size: DEFAULT_DATA_CONTRACTS_CACHE_SIZE,
             data_contracts_block_cache_size: DEFAULT_DATA_CONTRACTS_CACHE_SIZE,
-        }
-    }
-}
-
-impl DriveConfig {
-    /// Default `DriveConfig` settings with batching enabled
-    pub fn default_with_batches() -> Self {
-        DriveConfig {
-            batching_enabled: true,
-            ..Default::default()
-        }
-    }
-
-    /// Default `DriveConfig` settings with batching disabled
-    pub fn default_without_batches() -> Self {
-        DriveConfig {
-            batching_enabled: false,
-            ..Default::default()
         }
     }
 }

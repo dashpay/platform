@@ -184,14 +184,9 @@ impl Person {
 pub fn setup(
     count: usize,
     restrict_to_inserts: Option<Vec<usize>>,
-    with_batching: bool,
     seed: u64,
 ) -> (Drive, Contract) {
-    let drive_config = if with_batching {
-        DriveConfig::default_with_batches()
-    } else {
-        DriveConfig::default_without_batches()
-    };
+    let drive_config = DriveConfig::default();
 
     let drive = setup_drive(Some(drive_config));
 

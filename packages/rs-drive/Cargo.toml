@@ -37,17 +37,17 @@ mockall= { version ="0.11", optional = true }
 
 [dependencies.grovedb]
 git = "https://github.com/dashpay/grovedb"
-rev = "dd98b50f12ef2d0eb5b6392256c620195b4120f0"
+branch = "develop"
 optional = true
 
 [dependencies.storage]
 git = "https://github.com/dashpay/grovedb"
-rev = "dd98b50f12ef2d0eb5b6392256c620195b4120f0"
+branch = "develop"
 optional = true
 
 [dependencies.costs]
 git = "https://github.com/dashpay/grovedb"
-rev = "dd98b50f12ef2d0eb5b6392256c620195b4120f0"
+branch = "develop"
 optional = true
 
 [dev-dependencies]

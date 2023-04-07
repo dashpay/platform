@@ -27,6 +27,8 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
+use costs::storage_cost::StorageCost;
+use costs::OperationCost;
 #[cfg(feature = "full")]
 use std::collections::HashMap;
 #[cfg(feature = "full")]
@@ -39,6 +41,7 @@ use dpp::data_contract::DriveContractExt;
 
 #[cfg(feature = "full")]
 use grovedb::batch::KeyInfoPath;
+use grovedb::batch::{GroveDbOp, OpsByLevelPath};
 #[cfg(any(feature = "full", feature = "verify"))]
 use grovedb::GroveDb;
 #[cfg(feature = "full")]
@@ -131,6 +134,7 @@ use crate::drive::system_contracts_cache::SystemContracts;
 use crate::fee::result::FeeResult;
 #[cfg(feature = "full")]
 use crate::fee_pools::epochs::Epoch;
+use crate::query::GroveError;
 
 /// Drive struct
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -373,6 +377,43 @@ impl Drive {
         Ok(())
     }
 
+    /// Applies a batch of Drive operations to groveDB.
+    fn apply_partial_batch_low_level_drive_operations(
+        &self,
+        estimated_costs_only_with_layer_info: Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+        batch_operations: Vec<LowLevelDriveOperation>,
+        mut add_on_operations: impl FnMut(
+            &OperationCost,
+            &Option<OpsByLevelPath>,
+        ) -> Result<Vec<LowLevelDriveOperation>, GroveError>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+    ) -> Result<(), Error> {
+        let grove_db_operations =
+            LowLevelDriveOperation::grovedb_operations_batch(&batch_operations);
+        self.apply_partial_batch_grovedb_operations(
+            estimated_costs_only_with_layer_info,
+            transaction,
+            grove_db_operations,
+            |cost, left_over_ops| {
+                let additional_low_level_drive_operations = add_on_operations(cost, left_over_ops)?;
+                let new_grove_db_operations = LowLevelDriveOperation::grovedb_operations_batch(
+                    &additional_low_level_drive_operations,
+                )
+                .operations;
+                Ok(new_grove_db_operations)
+            },
+            drive_operations,
+        )?;
+        batch_operations.into_iter().for_each(|op| match op {
+            GroveOperation(_) => (),
+            _ => drive_operations.push(op),
+        });
+        Ok(())
+    }
+
     /// Applies a batch of groveDB operations if apply is True, otherwise gets the cost of the operations.
     fn apply_batch_grovedb_operations(
         &self,
@@ -404,6 +445,63 @@ impl Drive {
                 batch_operations,
                 false,
                 transaction,
+                drive_operations,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Applies a partial batch of groveDB operations if apply is True, otherwise gets the cost of the operations.
+    fn apply_partial_batch_grovedb_operations(
+        &self,
+        estimated_costs_only_with_layer_info: Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+        mut batch_operations: GroveDbOpBatch,
+        mut add_on_operations: impl FnMut(
+            &OperationCost,
+            &Option<OpsByLevelPath>,
+        ) -> Result<Vec<GroveDbOp>, GroveError>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+    ) -> Result<(), Error> {
+        if let Some(estimated_layer_info) = estimated_costs_only_with_layer_info {
+            // Leave this for future debugging
+            // for (k, v) in estimated_layer_info.iter() {
+            //     let path = k
+            //         .to_path()
+            //         .iter()
+            //         .map(|k| hex::encode(k.as_slice()))
+            //         .join("/");
+            //     dbg!(path, v);
+            // }
+            // the estimated fees are the same for partial batches
+            let additional_operations = add_on_operations(
+                &OperationCost {
+                    seek_count: 1,
+                    storage_cost: StorageCost {
+                        added_bytes: 1,
+                        replaced_bytes: 1,
+                        removed_bytes: Default::default(),
+                    },
+                    storage_loaded_bytes: 1,
+                    hash_node_calls: 1,
+                },
+                &None,
+            )?;
+            batch_operations.extend(additional_operations);
+            self.grove_batch_operations_costs(
+                batch_operations,
+                estimated_layer_info,
+                false,
+                drive_operations,
+            )?;
+        } else {
+            self.grove_apply_partial_batch_with_add_costs(
+                batch_operations,
+                false,
+                transaction,
+                add_on_operations,
                 drive_operations,
             )?;
         }

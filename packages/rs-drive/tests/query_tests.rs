@@ -208,12 +208,8 @@ impl PersonWithOptionalValues {
 
 #[cfg(feature = "full")]
 /// Inserts the test "family" contract and adds `count` documents containing randomly named people to it.
-pub fn setup_family_tests(count: u32, with_batching: bool, seed: u64) -> (Drive, Contract) {
-    let drive_config = if with_batching {
-        DriveConfig::default_with_batches()
-    } else {
-        DriveConfig::default_without_batches()
-    };
+pub fn setup_family_tests(count: u32, seed: u64) -> (Drive, Contract) {
+    let drive_config = DriveConfig::default();
 
     let drive = setup_drive(Some(drive_config));
 
@@ -285,16 +281,8 @@ pub fn setup_family_tests(count: u32, with_batching: bool, seed: u64) -> (Drive,
 
 #[cfg(feature = "full")]
 /// Same as `setup_family_tests` but with null values in the documents.
-pub fn setup_family_tests_with_nulls(
-    count: u32,
-    with_batching: bool,
-    seed: u64,
-) -> (Drive, Contract) {
-    let drive_config = if with_batching {
-        DriveConfig::default_with_batches()
-    } else {
-        DriveConfig::default_without_batches()
-    };
+pub fn setup_family_tests_with_nulls(count: u32, seed: u64) -> (Drive, Contract) {
+    let drive_config = DriveConfig::default();
 
     let drive = setup_drive(Some(drive_config));
 
@@ -365,16 +353,8 @@ pub fn setup_family_tests_with_nulls(
 
 #[cfg(feature = "full")]
 /// Inserts the test "family" contract and adds `count` documents containing randomly named people to it.
-pub fn setup_family_tests_only_first_name_index(
-    count: u32,
-    with_batching: bool,
-    seed: u64,
-) -> (Drive, Contract) {
-    let drive_config = if with_batching {
-        DriveConfig::default_with_batches()
-    } else {
-        DriveConfig::default_without_batches()
-    };
+pub fn setup_family_tests_only_first_name_index(count: u32, seed: u64) -> (Drive, Contract) {
+    let drive_config = DriveConfig::default();
 
     let drive = setup_drive(Some(drive_config));
 
@@ -553,7 +533,7 @@ pub fn add_domains_to_contract(
 #[cfg(feature = "full")]
 /// Sets up and inserts random domain name data to the DPNS contract to test queries on.
 pub fn setup_dpns_tests_with_batches(count: u32, seed: u64) -> (Drive, Contract) {
-    let drive = setup_drive(Some(DriveConfig::default_with_batches()));
+    let drive = setup_drive(Some(DriveConfig::default()));
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -662,7 +642,7 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, Contract) {
 #[test]
 #[ignore]
 fn test_query_many() {
-    let (drive, contract) = setup_family_tests(1600, true, 73509);
+    let (drive, contract) = setup_family_tests(1600, 73509);
     let db_transaction = drive.grove.start_transaction();
 
     let people = Person::random_people(10, 73409);
@@ -712,7 +692,7 @@ fn test_query_many() {
 #[cfg(feature = "full")]
 #[test]
 fn test_reference_proof_single_index() {
-    let (drive, contract) = setup_family_tests_only_first_name_index(1, true, 73509);
+    let (drive, contract) = setup_family_tests_only_first_name_index(1, 73509);
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -754,7 +734,7 @@ fn test_reference_proof_single_index() {
 #[cfg(feature = "full")]
 #[test]
 fn test_non_existence_reference_proof_single_index() {
-    let (drive, contract) = setup_family_tests_only_first_name_index(0, true, 73509);
+    let (drive, contract) = setup_family_tests_only_first_name_index(0, 73509);
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -796,7 +776,7 @@ fn test_non_existence_reference_proof_single_index() {
 #[cfg(feature = "full")]
 #[test]
 fn test_family_basic_queries() {
-    let (drive, contract) = setup_family_tests(10, true, 73509);
+    let (drive, contract) = setup_family_tests(10, 73509);
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -2073,7 +2053,7 @@ fn test_family_basic_queries() {
 #[cfg(feature = "full")]
 #[test]
 fn test_family_starts_at_queries() {
-    let (drive, contract) = setup_family_tests(10, true, 73509);
+    let (drive, contract) = setup_family_tests(10, 73509);
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -2321,7 +2301,7 @@ fn test_family_sql_query() {
     // These helpers confirm that sql statements produce the same drive query
     // as their json counterparts, helpers above confirm that the json queries
     // produce the correct result set
-    let (_, contract) = setup_family_tests(10, true, 73509);
+    let (_, contract) = setup_family_tests(10, 73509);
     let person_document_type = contract
         .document_types()
         .get("person")
@@ -2462,7 +2442,7 @@ fn test_family_sql_query() {
 #[cfg(feature = "full")]
 #[test]
 fn test_family_with_nulls_query() {
-    let (drive, contract) = setup_family_tests_with_nulls(10, true, 30004);
+    let (drive, contract) = setup_family_tests_with_nulls(10, 30004);
 
     let db_transaction = drive.grove.start_transaction();
 
@@ -2578,7 +2558,7 @@ fn test_family_with_nulls_query() {
 #[cfg(feature = "full")]
 #[test]
 fn test_query_with_cached_contract() {
-    let (drive, contract) = setup_family_tests(10, true, 73509);
+    let (drive, contract) = setup_family_tests(10, 73509);
 
     let db_transaction = drive.grove.start_transaction();
 
