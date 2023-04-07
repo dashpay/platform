@@ -190,13 +190,13 @@ describe('Platform', () => {
       expect(fetchedDocument).to.exist();
       expect(document.toObject()).to.deep.equal(fetchedDocument.toObject());
       expect(fetchedDocument.getUpdatedAt())
-        .to.be.equal(fetchedDocument.getCreatedAt());
+        .to.be.deep.equal(fetchedDocument.getCreatedAt());
     });
 
     it('should be able to fetch created document by created timestamp', async () => {
       const [fetchedDocument] = await client.platform.documents.get(
         'customContracts.indexedDocument',
-        { where: [['$createdAt', '==', document.getCreatedAt()]] },
+        { where: [['$createdAt', '==', document.getCreatedAt().getTime()]] },
       );
 
       expect(fetchedDocument).to.exist();
@@ -292,7 +292,7 @@ describe('Platform', () => {
       await waitForSTPropagated();
 
       const transitions = documentsBatchTransition.getTransitions();
-      transitions[0].setUpdatedAt(updatedAt.getTime());
+      transitions[0].setUpdatedAt(updatedAt);
       // TODO(wasm-dpp): revisit - removed because there's no such API,
       // and tests pass without it
       // transitions[0].setRevision(transitions[0].getRevision() + 1);
@@ -341,8 +341,8 @@ describe('Platform', () => {
 
       timestamp.setMinutes(timestamp.getMinutes() - 10);
 
-      document.setCreatedAt(timestamp.getTime());
-      document.setUpdatedAt(timestamp.getTime());
+      document.setCreatedAt(timestamp);
+      document.setUpdatedAt(timestamp);
 
       let broadcastError;
 

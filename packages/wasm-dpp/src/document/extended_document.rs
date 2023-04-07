@@ -2,7 +2,7 @@ use dpp::document::document_transition::document_base_transition::JsonValue;
 use dpp::document::{ExtendedDocument, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS};
 
 use dpp::platform_value::{Bytes32, Value};
-use dpp::prelude::{Identifier, Revision};
+use dpp::prelude::{Identifier, Revision, TimestampMillis};
 use dpp::util::json_schema::JsonSchemaExt;
 use dpp::util::json_value::JsonValueExt;
 
@@ -216,28 +216,38 @@ impl ExtendedDocumentWasm {
         JsValue::undefined()
     }
 
-    // TODO(wasm-dpp): js_sys::Date - provide as date
     #[wasm_bindgen(js_name=setCreatedAt)]
-    pub fn set_created_at(&mut self, ts: f64) {
-        self.0.document.created_at = Some(ts as u64);
+    pub fn set_created_at(&mut self, ts: Option<js_sys::Date>) {
+        if let Some(ts) = ts {
+            self.0.document.created_at = Some(ts.get_time() as TimestampMillis);
+        } else {
+            self.0.document.created_at = None;
+        }
     }
 
-    // TODO(wasm-dpp): js_sys::Date - provide as date
     #[wasm_bindgen(js_name=setUpdatedAt)]
-    pub fn set_updated_at(&mut self, ts: f64) {
-        self.0.document.updated_at = Some(ts as u64);
+    pub fn set_updated_at(&mut self, ts: Option<js_sys::Date>) {
+        if let Some(ts) = ts {
+            self.0.document.updated_at = Some(ts.get_time() as TimestampMillis);
+        } else {
+            self.0.document.updated_at = None;
+        }
     }
 
-    // TODO(wasm-dpp): js_sys::Date - return as date
     #[wasm_bindgen(js_name=getCreatedAt)]
-    pub fn get_created_at(&self) -> Option<f64> {
-        self.0.document.created_at.map(|v| v as f64)
+    pub fn get_created_at(&self) -> Option<js_sys::Date> {
+        self.0
+            .document
+            .created_at
+            .map(|v| js_sys::Date::new(&JsValue::from_f64(v as f64)))
     }
 
-    // TODO(wasm-dpp): js_sys::Date - return as date
     #[wasm_bindgen(js_name=getUpdatedAt)]
-    pub fn get_updated_at(&self) -> Option<f64> {
-        self.0.document.updated_at.map(|v| v as f64)
+    pub fn get_updated_at(&self) -> Option<js_sys::Date> {
+        self.0
+            .document
+            .updated_at
+            .map(|v| js_sys::Date::new(&JsValue::from_f64(v as f64)))
     }
 
     #[wasm_bindgen(js_name=getMetadata)]
