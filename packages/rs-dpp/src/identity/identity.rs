@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::convert::{TryFrom, TryInto};
 
 use ciborium::value::Value as CborValue;
@@ -58,6 +58,8 @@ pub struct PartialIdentity {
     pub loaded_public_keys: BTreeMap<KeyID, IdentityPublicKey>,
     pub balance: Option<u64>,
     pub revision: Option<Revision>,
+    /// These are keys that were requested but didn't exist
+    pub not_found_public_keys: BTreeSet<KeyID>,
 }
 
 mod public_key_serialization {
@@ -373,6 +375,7 @@ impl Identity {
             loaded_public_keys: public_keys,
             balance: Some(balance),
             revision: Some(revision),
+            not_found_public_keys: Default::default(),
         }
     }
 }

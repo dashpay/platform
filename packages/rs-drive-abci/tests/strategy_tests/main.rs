@@ -53,7 +53,7 @@ use dpp::platform_value::{BinaryData, Value};
 use dpp::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError,
 };
-use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned};
+use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionType};
 use dpp::tests::fixtures::{
     instant_asset_lock_proof_fixture, instant_asset_lock_proof_transaction_fixture,
 };
@@ -322,7 +322,7 @@ impl Strategy {
                 let state_transition = DataContractCreateTransition::new_from_data_contract(
                     contract.clone(),
                     &identity,
-                    0,
+                    1, //key id 1 should always be a high or critical auth key in these tests
                     signer,
                 )
                 .expect("expected to create a create state transition from a data contract");
@@ -347,11 +347,8 @@ impl Strategy {
                     DocumentActionInsert => {
                         let documents = op
                             .document_type
-                            .random_documents_with_rng(count as u32, rng);
-                        documents.into_iter().for_each(|mut document| {
-                            let identity_num = rng.gen_range(0..current_identities.len());
-                            let identity = current_identities.get(identity_num).unwrap().clone();
-
+                            .random_documents_with_params(count as u32, current_identities, rng);
+                        documents.into_iter().for_each(|(mut document, identity, entropy)| {
                             let document_create_transition = DocumentCreateTransition {
                                 base: DocumentBaseTransition {
                                     id: document.id,
@@ -360,7 +357,7 @@ impl Strategy {
                                     data_contract_id: op.contract.id,
                                     data_contract: op.contract.clone(),
                                 },
-                                entropy: [0; 32],
+                                entropy: entropy.to_buffer(),
                                 created_at: document.created_at,
                                 updated_at: document.created_at,
                                 data: document.properties.into(),
@@ -368,7 +365,7 @@ impl Strategy {
 
                             let mut document_batch_transition = DocumentsBatchTransition {
                                 protocol_version: LATEST_VERSION,
-                                transition_type: Default::default(),
+                                transition_type: StateTransitionType::DocumentsBatch,
                                 owner_id: identity.id,
                                 transitions: vec![document_create_transition.into()],
                                 signature_public_key_id: None,
@@ -425,7 +422,7 @@ impl Strategy {
 
                             let document_batch_transition = DocumentsBatchTransition {
                                 protocol_version: LATEST_VERSION,
-                                transition_type: Default::default(),
+                                transition_type: StateTransitionType::DocumentsBatch,
                                 owner_id: identity.id,
                                 transitions: vec![document_delete_transition.into()],
                                 signature_public_key_id: None,
@@ -490,7 +487,7 @@ fn create_identities_state_transitions(
     signer.add_keys(keys);
     identities
         .into_iter()
-        .map(|identity| {
+        .map(|mut identity| {
             let (_, pk) = ECDSA_SECP256K1.random_public_and_private_key_data(rng);
             let sk: [u8; 32] = pk.clone().try_into().unwrap();
             let secret_key = SecretKey::from_str(hex::encode(sk).as_str()).unwrap();
@@ -505,6 +502,7 @@ fn create_identities_state_transitions(
                     &NativeBlsModule::default(),
                 )
                 .expect("expected to transform identity into identity create transition");
+            identity.id = *identity_create_transition.get_identity_id();
             (identity, identity_create_transition.into())
         })
         .collect()

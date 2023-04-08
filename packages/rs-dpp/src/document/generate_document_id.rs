@@ -1,3 +1,4 @@
+use integer_encoding::FixedInt;
 use crate::{prelude::Identifier, util::hash::hash};
 
 /// Generates the document ID

@@ -1,4 +1,7 @@
-use crate::drive::identity::key::fetch::{IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap};
+use crate::drive::identity::key::fetch::{
+    IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap,
+    KeyIDOptionalIdentityPublicKeyPairBTreeMap,
+};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::default_costs::KnownCostItem::FetchIdentityBalanceProcessingCost;
@@ -6,8 +9,10 @@ use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::result::FeeResult;
 use crate::fee_pools::epochs::Epoch;
 use dpp::identifier::Identifier;
-use dpp::identity::PartialIdentity;
+use dpp::identity::{IdentityPublicKey, PartialIdentity};
 use grovedb::TransactionArg;
+use itertools::Itertools;
+use std::collections::{BTreeMap, BTreeSet};
 
 impl Drive {
     /// Fetches the Identity's balance as PartialIdentityInfo from the backing store
@@ -30,6 +35,7 @@ impl Drive {
                 loaded_public_keys: Default::default(),
                 balance: Some(balance),
                 revision: None,
+                not_found_public_keys: Default::default(),
             }))
     }
 
@@ -59,6 +65,7 @@ impl Drive {
                 loaded_public_keys: Default::default(),
                 balance: Some(balance),
                 revision: None,
+                not_found_public_keys: Default::default(),
             }),
             FeeResult::new_from_processing_fee(balance_cost),
         ))
@@ -77,15 +84,33 @@ impl Drive {
             return Ok(None);
         };
 
-        let loaded_public_keys = self.fetch_identity_keys::<KeyIDIdentityPublicKeyPairBTreeMap>(
-            identity_key_request,
-            transaction,
-        )?;
+        let public_keys_with_optionals = self
+            .fetch_identity_keys::<KeyIDOptionalIdentityPublicKeyPairBTreeMap>(
+                identity_key_request,
+                transaction,
+            )?;
+
+        let mut loaded_public_keys = BTreeMap::new();
+        let mut not_found_public_keys = BTreeSet::new();
+
+        public_keys_with_optionals
+            .into_iter()
+            .for_each(|(key, value)| {
+                match value {
+                    None => {
+                        not_found_public_keys.insert(key);
+                    }
+                    Some(value) => {
+                        loaded_public_keys.insert(key, value);
+                    }
+                };
+            });
         Ok(Some(PartialIdentity {
             id,
             loaded_public_keys,
             balance: Some(balance),
             revision: None,
+            not_found_public_keys,
         }))
     }
 
@@ -125,6 +150,7 @@ impl Drive {
                 loaded_public_keys,
                 balance: Some(balance),
                 revision: None,
+                not_found_public_keys: Default::default(),
             }),
             FeeResult::new_from_processing_fee(balance_cost + keys_cost),
         ))

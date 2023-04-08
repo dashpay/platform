@@ -48,6 +48,7 @@ impl DataContract {
             .map_err(|e| ProtocolError::ParsingError(e.to_string()))?;
         let definition_references = data_contract::get_definitions(&data_contract_map)?;
         let document_types = data_contract::get_document_types_from_contract(
+            contract_id,
             &data_contract_map,
             &definition_references,
             mutability.documents_keep_history_contract_default,

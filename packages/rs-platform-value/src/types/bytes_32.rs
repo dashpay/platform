@@ -5,6 +5,8 @@ use bincode::{Decode, Encode};
 use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use rand::Rng;
+use rand::rngs::StdRng;
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Copy, Encode, Decode)]
 pub struct Bytes32(pub [u8; 32]);
@@ -25,6 +27,10 @@ impl Bytes32 {
             Error::ByteLengthNot32BytesError("buffer was not 32 bytes long".to_string())
         })?;
         Ok(Bytes32::new(buffer))
+    }
+
+    pub fn random_with_rng(rng: &mut StdRng) -> Self {
+        Bytes32(rng.gen())
     }
 
     pub fn as_slice(&self) -> &[u8] {

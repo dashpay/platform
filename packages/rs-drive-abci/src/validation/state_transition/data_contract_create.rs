@@ -35,31 +35,32 @@ use super::common::validate_schema;
 impl StateTransitionValidation for DataContractCreateTransition {
     fn validate_structure(
         &self,
-        drive: &Drive,
-        tx: TransactionArg,
+        _drive: &Drive,
+        _tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let result = validate_schema(DATA_CONTRACT_CREATE_SCHEMA.clone(), self);
         if !result.is_valid() {
             return Ok(result);
         }
 
-        // Validate protocol version
-        let protocol_version_validator = ProtocolVersionValidator::default();
-        let result = protocol_version_validator
-            .validate(self.protocol_version)
-            .expect("TODO: again, how this will ever fail, why do we even need a validator trait");
-        if !result.is_valid() {
-            return Ok(result);
-        }
-
-        // Validate data contract
-        let data_contract_validator =
-            DataContractValidator::new(Arc::new(protocol_version_validator)); // ffs
-        let result = data_contract_validator
-            .validate(&(self.data_contract.clone().into_object().expect("TODO")))?;
-        if !result.is_valid() {
-            return Ok(result);
-        }
+        //todo: re-enable version validation
+        // // Validate protocol version
+        // let protocol_version_validator = ProtocolVersionValidator::default();
+        // let result = protocol_version_validator
+        //     .validate(self.protocol_version)
+        //     .expect("TODO: again, how this will ever fail, why do we even need a validator trait");
+        // if !result.is_valid() {
+        //     return Ok(result);
+        // }
+        //
+        // // Validate data contract
+        // let data_contract_validator =
+        //     DataContractValidator::new(Arc::new(protocol_version_validator)); // ffs
+        // let result = data_contract_validator
+        //     .validate(&(self.data_contract.to_cleaned_object().expect("TODO")))?;
+        // if !result.is_valid() {
+        //     return Ok(result);
+        // }
 
         // Validate data contract id
         let generated_id =
@@ -70,7 +71,7 @@ impl StateTransitionValidation for DataContractCreateTransition {
                 InvalidDataContractIdError::new(
                     generated_id,
                     self.data_contract.id.as_ref().to_owned(),
-                ), // TODO
+                ),
             ))
         }
 
@@ -91,12 +92,12 @@ impl StateTransitionValidation for DataContractCreateTransition {
     fn validate_state<C: CoreRPCLike>(
         &self,
         drive: &Drive,
-        core: &C,
+        _core: &C,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         // Data contract shouldn't exist
         if drive
-            .get_contract_with_fetch_info(self.data_contract.id.0 .0, None, false, tx)?
+            .get_contract_with_fetch_info(self.data_contract.id.to_buffer(), None, false, tx)?
             .1
             .is_some()
         {

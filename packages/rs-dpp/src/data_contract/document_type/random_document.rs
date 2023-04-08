@@ -37,9 +37,11 @@ use crate::data_contract::document_type::property_names::{CREATED_AT, UPDATED_AT
 use crate::data_contract::document_type::DocumentType;
 use crate::document::Document;
 use crate::ProtocolError;
-use platform_value::Identifier;
+use platform_value::{Bytes32, Identifier};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use crate::document::generate_document_id::generate_document_id;
+use crate::identity::Identity;
 
 // TODO The factory is used in benchmark and tests. Probably it should be available under the test feature
 /// Functions for creating various types of random documents.
@@ -48,12 +50,16 @@ pub trait CreateRandomDocument {
     fn random_documents(&self, count: u32, seed: Option<u64>) -> Vec<Document>;
     /// Random documents with rng
     fn random_documents_with_rng(&self, count: u32, rng: &mut StdRng) -> Vec<Document>;
+    /// Creates `count` Documents with random data using the random number generator given.
+    fn random_documents_with_params(&self, count: u32, identities: &Vec<Identity>, rng: &mut StdRng) -> Vec<(Document, Identity, Bytes32)>;
     /// Document from bytes
     fn document_from_bytes(&self, bytes: &[u8]) -> Result<Document, ProtocolError>;
     /// Random document
     fn random_document(&self, seed: Option<u64>) -> Document;
     /// Random document with rng
     fn random_document_with_rng(&self, rng: &mut StdRng) -> Document;
+    /// Creates a document with a random id, owner id, and properties using StdRng.
+    fn random_document_with_params(&self, owner_id: Identifier, entropy: Bytes32, rng: &mut StdRng) -> Document;
     /// Random filled documents
     fn random_filled_documents(&self, count: u32, seed: Option<u64>) -> Vec<Document>;
     /// Random filled document
@@ -81,6 +87,18 @@ impl CreateRandomDocument for DocumentType {
         vec
     }
 
+    /// Creates `count` Documents with random data using the random number generator given.
+    fn random_documents_with_params(&self, count: u32, identities: &Vec<Identity>, rng: &mut StdRng) -> Vec<(Document, Identity, Bytes32)> {
+        let mut vec= vec![];
+        for _i in 0..count {
+            let identity_num = rng.gen_range(0..identities.len());
+            let identity = identities.get(identity_num).unwrap().clone();
+            let entropy = Bytes32::random_with_rng(rng);
+            vec.push((self.random_document_with_params(identity.id, entropy, rng), identity, entropy));
+        }
+        vec
+    }
+
     /// Creates a Document from a serialized Document.
     fn document_from_bytes(&self, bytes: &[u8]) -> Result<Document, ProtocolError> {
         Document::from_bytes(bytes, self)
@@ -97,8 +115,15 @@ impl CreateRandomDocument for DocumentType {
 
     /// Creates a document with a random id, owner id, and properties using StdRng.
     fn random_document_with_rng(&self, rng: &mut StdRng) -> Document {
-        let id = Identifier::random_with_rng(rng);
         let owner_id = Identifier::random_with_rng(rng);
+        let entropy = Bytes32::random_with_rng(rng);
+        self.random_document_with_params(owner_id, entropy, rng)
+    }
+
+    /// Creates a document with a given owner id and entropy, and properties using StdRng.
+    fn random_document_with_params(&self, owner_id: Identifier, entropy: Bytes32, rng: &mut StdRng) -> Document {
+        let id =
+            generate_document_id(&self.data_contract_id, &owner_id, self.name.as_str(), entropy.as_slice());
         let mut created_at = None;
         let mut updated_at = None;
         let properties = self

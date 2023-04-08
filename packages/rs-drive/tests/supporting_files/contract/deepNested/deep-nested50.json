@@ -1,7 +1,7 @@
 {
   "$id": "GmpYy6DYrvqqrHfbAUibWBeVKjAz8Xte5t5ZZ5Cyw6Br",
   "ownerId": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
-  "$schema": "http://json-schema.org/draft-07/schema",
+  "$schema": "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
   "version": 1,
   "documents": {
     "nest": {

@@ -9,11 +9,12 @@ use crate::{NonConsensusError, ProtocolError};
 
 impl DataContractCreateTransition {
     pub fn new_from_data_contract<S: Signer>(
-        data_contract: DataContract,
+        mut data_contract: DataContract,
         identity: &PartialIdentity,
         key_id: KeyID,
         signer: &S,
     ) -> Result<Self, ProtocolError> {
+        data_contract.owner_id = identity.id;
         let mut transition = DataContractCreateTransition {
             protocol_version: LATEST_VERSION,
             transition_type: DataContractCreate,

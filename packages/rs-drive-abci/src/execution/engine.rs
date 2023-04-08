@@ -64,7 +64,12 @@ where
         transaction: TransactionArg,
     ) -> Result<ConsensusValidationResult<FeeResult>, Error> {
         match event {
-            ExecutionEvent::PaidDriveEvent {
+
+            ExecutionEvent::PaidFromAssetLockDriveEvent {
+                identity,
+                operations,
+            }
+            | ExecutionEvent::PaidDriveEvent {
                 identity,
                 operations,
             } => {
@@ -93,8 +98,7 @@ where
                     ))
                 }
             }
-            ExecutionEvent::FreeDriveEvent { .. }
-            | ExecutionEvent::PaidFromAssetLockDriveEvent { .. } => Ok(
+            ExecutionEvent::FreeDriveEvent { .. } => Ok(
                 ConsensusValidationResult::new_with_data(FeeResult::default()),
             ),
         }
@@ -120,6 +124,7 @@ where
                 operations,
             } => {
                 if validation_result.is_valid_with_data() {
+                    //todo: make this into an atomic event with partial batches
                     let individual_fee_result = self
                         .drive
                         .apply_drive_operations(operations, true, block_info, Some(transaction))

@@ -37,6 +37,7 @@ use drive::drive::Drive;
 use drive::grovedb::{Transaction, TransactionArg};
 use lazy_static::lazy_static;
 use std::collections::{HashMap, HashSet};
+use dpp::consensus::signature::IdentityNotFoundError;
 
 lazy_static! {
     static ref SUPPORTED_KEY_TYPES: HashSet<KeyType> = {
@@ -66,17 +67,29 @@ pub fn validate_state_transition_identity_signature(
         key_id,
     );
 
-    let maybe_public_key: OptionalSingleIdentityPublicKeyOutcome =
-        drive.fetch_identity_keys(key_request, transaction)?;
+    let maybe_partial_identity = drive.fetch_identity_balance_with_keys(key_request, transaction)?;
 
-    let public_key = match maybe_public_key {
+    let partial_identity = match maybe_partial_identity {
         None => {
-            validation_result.add_error(SignatureError::MissingPublicKeyError(
-                MissingPublicKeyError::new(key_id),
-            ));
+            dbg!(bs58::encode(&state_transition.get_owner_id()).into_string());
+            validation_result.add_error(SignatureError::IdentityNotFoundError(IdentityNotFoundError::new(*state_transition.get_owner_id())));
             return Ok(validation_result);
         }
         Some(pk) => pk,
+    };
+
+    if !partial_identity.not_found_public_keys.is_empty() {
+        validation_result.add_error(SignatureError::MissingPublicKeyError(
+            MissingPublicKeyError::new(key_id),
+        ));
+        return Ok(validation_result);
+    }
+
+    let Some(public_key) = partial_identity.loaded_public_keys.get(&key_id) else {
+        validation_result.add_error(SignatureError::MissingPublicKeyError(
+            MissingPublicKeyError::new(key_id),
+        ));
+        return Ok(validation_result);
     };
 
     if !SUPPORTED_KEY_TYPES.contains(&public_key.key_type) {
@@ -108,6 +121,8 @@ pub fn validate_state_transition_identity_signature(
         validation_result.add_error(consensus_error);
         return Ok(validation_result);
     }
+
+    validation_result.set_data(partial_identity);
 
     Ok(validation_result)
 }

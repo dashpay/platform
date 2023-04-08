@@ -273,13 +273,13 @@ pub fn setup(
 #[test]
 fn test_setup() {
     let range_inserts = vec![0, 2];
-    setup(10, Some(range_inserts), true, 73509);
+    setup(10, Some(range_inserts), 73509);
 }
 
 #[cfg(feature = "full")]
 #[test]
 fn test_query_historical() {
-    let (drive, contract) = setup(10, None, true, 73509);
+    let (drive, contract) = setup(10, None, 73509);
 
     let db_transaction = drive.grove.start_transaction();
 

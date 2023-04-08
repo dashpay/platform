@@ -12,7 +12,7 @@ use crate::document::document_transition::INITIAL_REVISION;
 use crate::prelude::Revision;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
-use platform_value::Value;
+use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
 
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -40,6 +40,8 @@ pub struct DocumentType {
     pub required_fields: BTreeSet<String>,
     pub documents_keep_history: bool,
     pub documents_mutable: bool,
+    #[serde(skip)]
+    pub data_contract_id: Identifier,
 }
 
 #[derive(Debug, PartialEq, Default, Clone)]
@@ -54,6 +56,7 @@ pub struct IndexLevel {
 
 impl DocumentType {
     pub fn new(
+        data_contract_id: Identifier,
         name: String,
         indices: Vec<Index>,
         properties: BTreeMap<String, DocumentField>,
@@ -70,6 +73,7 @@ impl DocumentType {
             required_fields,
             documents_keep_history,
             documents_mutable,
+            data_contract_id
         }
     }
     // index_names can be in any order
@@ -176,6 +180,7 @@ impl DocumentType {
     }
 
     pub fn from_platform_value(
+        data_contract_id: Identifier,
         name: &str,
         document_type_value_map: &[(Value, Value)],
         definition_references: &BTreeMap<String, &Value>,
@@ -274,6 +279,7 @@ impl DocumentType {
             required_fields,
             documents_keep_history,
             documents_mutable,
+            data_contract_id,
         })
     }
 

@@ -1,4 +1,4 @@
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::{BTreeMap, btree_map::Entry, HashMap};
 
 use dpp::identity::PartialIdentity;
 use dpp::{
@@ -57,6 +57,7 @@ impl StateTransitionValidation for DocumentsBatchTransition {
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let result = validate_schema(DOCUMENTS_BATCH_TRANSITIONS_SCHEMA.clone(), self);
         if !result.is_valid() {
+            dbg!(&result);
             return Ok(result);
         }
 
@@ -65,8 +66,8 @@ impl StateTransitionValidation for DocumentsBatchTransition {
             return Ok(result);
         }
 
-        let mut document_transitions_by_contracts: HashMap<Identifier, Vec<&DocumentTransition>> =
-            HashMap::new();
+        let mut document_transitions_by_contracts: BTreeMap<Identifier, Vec<&DocumentTransition>> =
+            BTreeMap::new();
 
         for document_transition in self.get_transitions() {
             let contract_identifier = document_transition.get_data_contract_id();
@@ -354,8 +355,8 @@ fn fetch_documents<'a>(
     execution_context: &StateTransitionExecutionContext,
     data_contract: &DataContract,
 ) -> Result<Vec<Document>, Error> {
-    let mut transitions_by_contracts_and_types: HashMap<String, Vec<&DocumentTransition>> =
-        HashMap::new();
+    let mut transitions_by_contracts_and_types: BTreeMap<String, Vec<&DocumentTransition>> =
+        BTreeMap::new();
 
     for document_transition in document_transitions {
         let document_type = get_from_transition!(document_transition, document_type_name);

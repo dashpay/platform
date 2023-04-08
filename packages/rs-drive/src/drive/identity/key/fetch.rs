@@ -522,7 +522,7 @@ impl IdentityKeysRequest {
         IdentityKeysRequest {
             identity_id: *identity_id,
             request_type: AllKeys,
-            limit: None,
+            limit: Some(10000),
             offset: None,
         }
     }
@@ -530,10 +530,11 @@ impl IdentityKeysRequest {
     #[cfg(any(feature = "full", feature = "verify"))]
     /// Make a request for specific keys for the identity
     pub fn new_specific_keys_query(identity_id: &[u8; 32], key_ids: Vec<KeyID>) -> Self {
+        let limit = key_ids.len() as u16;
         IdentityKeysRequest {
             identity_id: *identity_id,
             request_type: SpecificKeys(key_ids),
-            limit: None,
+            limit: Some(limit),
             offset: None,
         }
     }
@@ -544,7 +545,7 @@ impl IdentityKeysRequest {
         IdentityKeysRequest {
             identity_id: *identity_id,
             request_type: SpecificKeys(vec![key_id]),
-            limit: None,
+            limit: Some(1),
             offset: None,
         }
     }

@@ -217,9 +217,14 @@ impl DataContract {
             .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
 
+        let id = data_contract_map
+            .remove_identifier(property_names::ID)
+            .map_err(ProtocolError::ValueError)?;
+
         let mutability = get_contract_configuration_properties(&data_contract_map)?;
         let definition_references = get_definitions(&data_contract_map)?;
         let document_types = get_document_types_from_contract(
+            id,
             &data_contract_map,
             &definition_references,
             mutability.documents_keep_history_contract_default,
@@ -248,9 +253,7 @@ impl DataContract {
 
         let data_contract = DataContract {
             protocol_version,
-            id: data_contract_map
-                .remove_identifier(property_names::ID)
-                .map_err(ProtocolError::ValueError)?,
+            id,
             schema: data_contract_map
                 .remove_string(property_names::SCHEMA)
                 .map_err(ProtocolError::ValueError)?,
@@ -534,6 +537,7 @@ pub fn get_contract_configuration_properties(
 }
 
 pub fn get_document_types_from_value(
+    data_contract_id: Identifier,
     documents_value: &Value,
     definition_references: &BTreeMap<String, &Value>,
     documents_keep_history_contract_default: bool,
@@ -561,6 +565,7 @@ pub fn get_document_types_from_value(
         };
 
         let document_type = DocumentType::from_platform_value(
+            data_contract_id,
             type_key_str,
             document_type_value_map,
             definition_references,
@@ -573,6 +578,7 @@ pub fn get_document_types_from_value(
 }
 
 pub fn get_document_types_from_contract(
+    data_contract_id: Identifier,
     contract: &BTreeMap<String, Value>,
     definition_references: &BTreeMap<String, &Value>,
     documents_keep_history_contract_default: bool,
@@ -584,6 +590,7 @@ pub fn get_document_types_from_contract(
         return Ok(BTreeMap::new());
     };
     get_document_types_from_value(
+        data_contract_id,
         documents_value,
         definition_references,
         documents_keep_history_contract_default,
