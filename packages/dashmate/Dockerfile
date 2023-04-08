@@ -11,7 +11,7 @@ COPY package.json yarn.lock .yarnrc.yml .pnp.* Cargo.lock rust-toolchain.toml ./
 COPY packages/dashmate/Cargo.toml.template ./Cargo.toml
 
 # Print build output
-RUN yarn config set enableInlineBuilds true
+#RUN yarn config set enableInlineBuilds true
 
 # Copy only necessary packages from monorepo
 COPY packages/dashmate packages/dashmate
