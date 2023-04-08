@@ -31,6 +31,7 @@
 use std::collections::BTreeMap;
 #[cfg(any(feature = "full", feature = "verify"))]
 use std::ops::BitXor;
+use std::sync::Arc;
 
 #[cfg(feature = "full")]
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
@@ -98,6 +99,7 @@ use crate::fee::op::LowLevelDriveOperation;
 
 #[cfg(feature = "full")]
 use crate::drive::contract::paths::ContractPaths;
+use crate::drive::contract::ContractFetchInfo;
 use crate::fee::result::FeeResult;
 use crate::fee_pools::epochs::Epoch;
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -274,36 +276,12 @@ impl QueryResultEncoding {
 
 #[cfg(any(feature = "full", feature = "verify"))]
 /// Drive query struct
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct DriveQuery<'a> {
     /// Contract
     pub contract: &'a Contract,
     /// Document type
     pub document_type: &'a DocumentType,
-    /// Internal clauses
-    pub internal_clauses: InternalClauses,
-    /// Offset
-    pub offset: u16,
-    /// Limit
-    pub limit: u16,
-    /// Order by
-    pub order_by: IndexMap<String, OrderClause>,
-    /// Start at
-    pub start_at: Option<Vec<u8>>,
-    /// Start at included
-    pub start_at_included: bool,
-    /// Block time
-    pub block_time: Option<f64>,
-}
-
-#[cfg(any(feature = "full", feature = "verify"))]
-/// Drive query struct
-#[derive(Debug, PartialEq)]
-pub struct StatelessDriveQuery<'a> {
-    /// Contract identifier
-    pub contract_id: &'a Identifier,
-    /// Document type name
-    pub document_type_name: &'a str,
     /// Internal clauses
     pub internal_clauses: InternalClauses,
     /// Offset
@@ -337,57 +315,6 @@ impl<'a> DriveQuery<'a> {
             start_at_included: true,
             block_time: None,
         }
-    }
-
-    #[cfg(feature = "full")]
-    /// New drive query that fetches information from the state for the contract
-    pub fn new_from_stateless_with_consensus_validation<'a>(
-        stateless_drive_query: StatelessDriveQuery<'a>,
-        drive: &Drive,
-        epoch: Option<&Epoch>,
-        add_to_cache_if_pulled: bool,
-        transaction: TransactionArg,
-    ) -> Result<(Option<FeeResult>, ConsensusValidationResult<Self<'a>>), Error> {
-        let StatelessDriveQuery {
-            contract_id,
-            document_type_name,
-            internal_clauses,
-            offset,
-            limit,
-            order_by,
-            start_at,
-            start_at_included,
-            block_time,
-        } = stateless_drive_query;
-        let (fee_result, contract_fetch_info) = drive.get_contract_with_fetch_info(
-            contract_id.to_buffer(),
-            epoch,
-            add_to_cache_if_pulled,
-            transaction,
-        )?;
-
-        let Some(contract_fetch_info) = contract_fetch_info else {
-            return Ok((fee_result, ConsensusValidationResult::new_with_error(BasicError::DataContractNotPresent { data_contract_id: contract_id.clone()}.into())));
-        };
-
-        let Some(document_type) = contract_fetch_info.contract.optional_document_type_for_name(document_type_name) else {
-            return Ok((fee_result, ConsensusValidationResult::new_with_error(BasicError::InvalidDocumentTypeError(InvalidDocumentTypeError::new(document_type_name.to_string(), *contract_id)).into())));
-        };
-
-        Ok((
-            fee_result,
-            ConsensusValidationResult::new_with_data(DriveQuery {
-                contract: &contract_fetch_info.contract,
-                document_type,
-                internal_clauses,
-                offset,
-                limit,
-                order_by,
-                start_at,
-                start_at_included,
-                block_time,
-            }),
-        ))
     }
 
     #[cfg(feature = "full")]

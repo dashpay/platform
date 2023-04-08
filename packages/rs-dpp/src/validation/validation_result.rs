@@ -24,6 +24,27 @@ impl<T: Clone, E: Debug> Default for ValidationResult<T, E> {
     }
 }
 
+impl<TData: Clone, E: Debug> ValidationResult<Vec<TData>, E> {
+    pub fn flatten<I: IntoIterator<Item = ValidationResult<Vec<TData>, E>>>(
+        items: I,
+    ) -> ValidationResult<Vec<TData>, E> {
+        let mut aggregate_errors = vec![];
+        let mut aggregate_data = vec![];
+        items
+            .into_iter()
+            .for_each(|single_validation_result| {
+                let ValidationResult {
+                    mut errors, data
+                } = single_validation_result;
+                aggregate_errors.append(&mut errors);
+                if let Some(mut data) = data {
+                    aggregate_data.append(&mut data);
+                }
+            });
+        ValidationResult::new_with_data_and_errors(aggregate_data, aggregate_errors)
+    }
+}
+
 impl<TData: Clone, E: Debug> ValidationResult<TData, E> {
     pub fn new_with_data(data: TData) -> Self {
         Self {

@@ -1,9 +1,5 @@
 use std::convert::TryInto;
 
-use futures::future::join_all;
-use itertools::Itertools;
-use serde_json::{json, Value as JsonValue};
-
 use dpp::document::Document;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::{
@@ -11,27 +7,26 @@ use dpp::{
     prelude::{DataContract, Identifier},
     state_repository::StateRepositoryLike,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
-    util::json_schema::{Index, JsonSchemaExt},
     ProtocolError, StateError,
 };
-use dpp::platform_value::platform_value;
+use dpp::data_contract::document_type::Index;
+use dpp::platform_value::{platform_value, Value};
+use drive::drive::Drive;
 
 struct QueryDefinition<'a> {
     document_type: &'a str,
-    where_query: Vec<JsonValue>,
+    where_query: Vec<Value>,
     index_definition: &'a Index,
     document_transition: &'a DocumentTransition,
 }
 
-pub async fn validate_documents_uniqueness_by_indices<SR>(
-    state_repository: &SR,
+pub fn validate_documents_uniqueness_by_indices(
+    drive: &Drive,
     owner_id: &Identifier,
     document_transitions: impl Iterator<Item = &DocumentTransition>,
     data_contract: &DataContract,
     execution_context: &StateTransitionExecutionContext,
 ) -> Result<SimpleConsensusValidationResult, ProtocolError>
-where
-    SR: StateRepositoryLike,
 {
     let mut validation_result = SimpleConsensusValidationResult::default();
 
@@ -40,7 +35,7 @@ where
     }
 
     // 1. Prepare fetchDocuments queries from indexed properties
-    for t in document_transitions {
+    for document_transition in document_transitions {
         let transition = t.as_ref();
         let document_schema =
             data_contract.get_document_schema(&transition.base().document_type_name)?;
@@ -52,11 +47,11 @@ where
         // 2. Fetch Document by indexed properties
         let document_index_queries =
             generate_document_index_queries(&document_indices, transition, owner_id);
-        let (futures, futures_meta) : (Vec<_>, Vec<_>) = document_index_queries
+        let (results, futures_meta) : (Vec<_>, Vec<_>) = document_index_queries
             .filter(|query| !query.where_query.is_empty())
             .map(|query| {
                 (
-                    state_repository.fetch_documents(
+                    drive.query_documents(
                         &data_contract.id,
                         query.document_type,
                         platform_value!( { "where": query.where_query}),
@@ -65,7 +60,6 @@ where
                     (query.index_definition, query.document_transition),
                 )
             }).unzip();
-        let results = join_all(futures).await;
 
         // 3. Create errors if duplicates found
         let result = validate_uniqueness(futures_meta, results)?;
@@ -83,7 +77,7 @@ fn generate_document_index_queries<'a>(
     indices
         .iter()
         .filter(|index| index.unique)
-        .map(move |index| {
+        .map(|index| {
             let where_query = build_query_for_index_definition(index, transition, owner_id);
             QueryDefinition {
                 document_type: &transition.base().document_type_name,
@@ -98,36 +92,35 @@ fn build_query_for_index_definition(
     index_definition: &Index,
     transition: &DocumentTransition,
     owner_id: &Identifier,
-) -> Vec<JsonValue> {
+) -> Vec<Value> {
     let mut query = vec![];
     for index_property in index_definition.properties.iter() {
         let property_name = &index_property.name;
 
         match property_name.as_str() {
             "$ownerId" => {
-                let id = owner_id.to_string(Encoding::Base58);
-                query.push(json!([property_name, "==", id]))
+                query.push(platform_value!([property_name, "==", owner_id]))
             }
             "$createdAt" => {
                 if transition.base().action == Action::Create {
                     if let Some(transition_create) = transition.as_transition_create() {
-                        if let Some(created_at) = transition_create.created_at.map(|v| json!(v)) {
-                            query.push(json!([property_name, "==", created_at]));
+                        if let Some(created_at) = transition_create.created_at.map(|v| platform_value!(v)) {
+                            query.push(platform_value!([property_name, "==", created_at]));
                         }
                     }
                 }
             }
             "$updatedAt" => {
                 if transition.base().action == Action::Create {
-                    if let Some(updated_at) = transition.get_created_at().map(|v| json!(v)) {
-                        query.push(json!([property_name, "==", updated_at]))
+                    if let Some(updated_at) = transition.get_created_at().map(|v| platform_value!(v)) {
+                        query.push(platform_value!([property_name, "==", updated_at]))
                     }
                 }
             }
 
             _ => {
                 if let Some(value) = transition.get_dynamic_property(property_name) {
-                    query.push(json!([property_name, "==", value]))
+                    query.push(platform_value!([property_name, "==", value]))
                 }
             }
         }

@@ -1,6 +1,5 @@
 use dpp::prelude::DocumentTransition;
 use dpp::ProtocolError;
-use dpp::state_repository::StateRepositoryLike;
 use drive::drive::Drive;
 use crate::execution::data_trigger::{DataTrigger, DataTriggerExecutionContext, DataTriggerExecutionResult};
 use crate::execution::data_trigger::get_data_triggers_factory::{data_triggers, get_data_triggers};
