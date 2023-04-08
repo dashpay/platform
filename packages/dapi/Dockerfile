@@ -1,5 +1,5 @@
 # syntax = docker/dockerfile:1.5
-FROM fuzz1986/builder:debian as builder
+FROM strophy/buildbase:0.0.4 as builder
 
 WORKDIR /platform
 
