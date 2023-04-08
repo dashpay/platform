@@ -29,6 +29,7 @@ use crate::fee_pools::epochs::Epoch;
 use crate::query::{Query, QueryItem};
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::identity::KeyID;
+use dpp::identity::IDENTITY_MAX_KEYS;
 #[cfg(feature = "full")]
 use dpp::identity::{Purpose, SecurityLevel};
 #[cfg(feature = "full")]
@@ -518,11 +519,11 @@ impl IdentityKeysRequest {
 
     #[cfg(any(feature = "full", feature = "verify"))]
     /// Make a request for all current keys for the identity
-    pub fn new_all_keys_query(identity_id: &[u8; 32]) -> Self {
+    pub fn new_all_keys_query(identity_id: &[u8; 32], limit: Option<u16>) -> Self {
         IdentityKeysRequest {
             identity_id: *identity_id,
             request_type: AllKeys,
-            limit: Some(10000),
+            limit,
             offset: None,
         }
     }
@@ -535,6 +536,32 @@ impl IdentityKeysRequest {
             identity_id: *identity_id,
             request_type: SpecificKeys(key_ids),
             limit: Some(limit),
+            offset: None,
+        }
+    }
+
+    #[cfg(any(feature = "full", feature = "verify"))]
+    /// Make a request for specific keys for the identity
+    pub fn new_specific_keys_query_without_limit(
+        identity_id: &[u8; 32],
+        key_ids: Vec<KeyID>,
+    ) -> Self {
+        IdentityKeysRequest {
+            identity_id: *identity_id,
+            request_type: SpecificKeys(key_ids),
+            limit: None,
+            offset: None,
+        }
+    }
+
+    #[cfg(any(feature = "full", feature = "verify"))]
+    /// Make a request for a specific key for the identity without a limit
+    /// Not have a limit is needed if you want to merge path queries
+    pub fn new_specific_key_query_without_limit(identity_id: &[u8; 32], key_id: KeyID) -> Self {
+        IdentityKeysRequest {
+            identity_id: *identity_id,
+            request_type: SpecificKeys(vec![key_id]),
+            limit: None,
             offset: None,
         }
     }
@@ -707,7 +734,8 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<BTreeMap<KeyID, IdentityPublicKey>, Error> {
-        let key_request = IdentityKeysRequest::new_all_keys_query(&identity_id);
+        let key_request =
+            IdentityKeysRequest::new_all_keys_query(&identity_id, Some(IDENTITY_MAX_KEYS));
         self.fetch_identity_keys_operations(key_request, transaction, drive_operations)
     }
 

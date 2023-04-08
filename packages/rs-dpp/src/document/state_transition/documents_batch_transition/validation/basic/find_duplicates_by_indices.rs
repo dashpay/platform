@@ -178,6 +178,7 @@ mod test {
         let document_def_value: Value = document_def.clone().into();
 
         let document_type = DocumentType::from_platform_value(
+            Default::default(),
             "indexedDocument",
             document_def_value.to_map().expect("expected a map"),
             &BTreeMap::new(),
@@ -303,6 +304,7 @@ mod test {
         let document_def_value: Value = document_def.clone().into();
 
         let document_type = DocumentType::from_platform_value(
+            Default::default(),
             "indexedDocument",
             document_def_value.to_map().expect("expected a map"),
             &BTreeMap::new(),
@@ -429,6 +431,7 @@ mod test {
         let document_def_value: Value = document_def.clone().into();
 
         let document_type = DocumentType::from_platform_value(
+            Default::default(),
             "indexedDocument",
             document_def_value.to_map().expect("expected a map"),
             &BTreeMap::new(),

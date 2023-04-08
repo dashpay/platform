@@ -7,6 +7,7 @@ mod identity_credit_withdrawal;
 mod identity_top_up;
 mod identity_update;
 mod key_validation;
+mod document_state_validation;
 
 use dpp::identity::PartialIdentity;
 use dpp::state_transition::{StateTransition, StateTransitionAction};

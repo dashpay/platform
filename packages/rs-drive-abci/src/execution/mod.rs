@@ -14,3 +14,5 @@ pub mod helpers;
 pub mod initialization;
 /// Protocol upgrade
 pub mod protocol_upgrade;
+/// Data triggers
+pub mod data_trigger;

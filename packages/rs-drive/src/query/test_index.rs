@@ -2,6 +2,7 @@
 #[cfg(test)]
 mod tests {
     use dpp::data_contract::document_type::{DocumentType, Index, IndexProperty};
+    use dpp::platform_value::Identifier;
     use dpp::util::serializer;
     use serde_json::json;
 
@@ -11,6 +12,7 @@ mod tests {
 
     fn construct_indexed_document_type() -> DocumentType {
         DocumentType::new(
+            Identifier::default(),
             "a".to_string(),
             vec![
                 Index {

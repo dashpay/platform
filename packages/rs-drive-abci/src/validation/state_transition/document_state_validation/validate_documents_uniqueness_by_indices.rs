@@ -2,13 +2,11 @@ use std::convert::TryInto;
 
 use futures::future::join_all;
 use itertools::Itertools;
-use platform_value::platform_value;
-use platform_value::string_encoding::Encoding;
 use serde_json::{json, Value as JsonValue};
 
-use crate::document::Document;
-use crate::validation::SimpleConsensusValidationResult;
-use crate::{
+use dpp::document::Document;
+use dpp::validation::SimpleConsensusValidationResult;
+use dpp::{
     document::document_transition::{Action, DocumentTransition, DocumentTransitionExt},
     prelude::{DataContract, Identifier},
     state_repository::StateRepositoryLike,
@@ -16,6 +14,7 @@ use crate::{
     util::json_schema::{Index, JsonSchemaExt},
     ProtocolError, StateError,
 };
+use dpp::platform_value::platform_value;
 
 struct QueryDefinition<'a> {
     document_type: &'a str,
