@@ -35,15 +35,19 @@ RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
-    yarn workspace @dashevo/rs-drive build
+    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
+    yarn workspace @dashevo/rs-drive build && \
+    sccache --show-stats
 
 # Build WASM DPP
 RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
+    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     yarn workspace @dashevo/wasm-dpp build && \
-    cargo clean
+    cargo clean && \
+    sccache --show-stats
 
 # Install Drive-specific dependencies using previous
 # node_modules directory to reuse built binaries
