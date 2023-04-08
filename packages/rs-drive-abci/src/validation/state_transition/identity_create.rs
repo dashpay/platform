@@ -103,8 +103,9 @@ impl StateTransitionValidation for IdentityCreateTransition {
         }
 
         let tx_out = tx_out_validation.into_data()?;
-        validation_result
-            .set_data(IdentityCreateTransitionAction::from_borrowed(self, tx_out.value).into());
+        validation_result.set_data(
+            IdentityCreateTransitionAction::from_borrowed(self, tx_out.value * 1000).into(),
+        );
         return Ok(validation_result);
     }
 }

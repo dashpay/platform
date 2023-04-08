@@ -1,3 +1,4 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::execution_event::ExecutionEvent::{
     FreeDriveEvent, PaidDriveEvent, PaidFromAssetLockDriveEvent,
@@ -102,6 +103,8 @@ pub enum ExecutionEvent<'a> {
     },
     /// A drive event that is paid from an asset lock
     PaidFromAssetLockDriveEvent {
+        /// The identity requesting the event
+        identity: PartialIdentity,
         /// the operations that should be performed
         operations: Vec<DriveOperation<'a>>,
     },
@@ -151,14 +154,42 @@ impl<'a> TryFrom<(Option<PartialIdentity>, StateTransitionAction, &Epoch)> for E
     fn try_from(
         value: (Option<PartialIdentity>, StateTransitionAction, &Epoch),
     ) -> Result<Self, Self::Error> {
-        let (maybe_identity, action, epoch) = value;
-        let operations = action.into_high_level_drive_operations(epoch)?;
-        match maybe_identity {
-            None => Ok(PaidFromAssetLockDriveEvent { operations }),
-            Some(identity) => Ok(PaidDriveEvent {
-                identity,
-                operations,
-            }),
+        let (identity, action, epoch) = value;
+        match &action {
+            StateTransitionAction::IdentityCreateAction(identity_create_action) => {
+                let identity = identity_create_action.into();
+                let operations = action.into_high_level_drive_operations(epoch)?;
+                Ok(PaidFromAssetLockDriveEvent {
+                    identity,
+                    operations,
+                })
+            }
+            StateTransitionAction::IdentityTopUpAction(_) => {
+                let operations = action.into_high_level_drive_operations(epoch)?;
+                if let Some(identity) = identity {
+                    Ok(PaidFromAssetLockDriveEvent {
+                        identity,
+                        operations,
+                    })
+                } else {
+                    Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "partial identity should be present",
+                    )))
+                }
+            }
+            _ => {
+                let operations = action.into_high_level_drive_operations(epoch)?;
+                if let Some(identity) = identity {
+                    Ok(PaidDriveEvent {
+                        identity,
+                        operations,
+                    })
+                } else {
+                    Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "partial identity should be present",
+                    )))
+                }
+            }
         }
     }
 }

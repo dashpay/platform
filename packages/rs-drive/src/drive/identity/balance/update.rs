@@ -326,7 +326,10 @@ impl Drive {
                     // there is a part we absolutely need to pay for
                     if *required_removed_balance > previous_balance {
                         return Err(Error::Identity(IdentityError::IdentityInsufficientBalance(
-                            "identity does not have the required balance",
+                            format!(
+                                "identity with balance {} does not have the required balance {}",
+                                previous_balance, *required_removed_balance
+                            ),
                         )));
                     }
                     AddToPreviousBalanceOutcome {
@@ -453,7 +456,10 @@ impl Drive {
         // there is a part we absolutely need to pay for
         if balance_to_remove > previous_balance {
             return Err(Error::Identity(IdentityError::IdentityInsufficientBalance(
-                "identity does not have the required balance",
+                format!(
+                    "identity with balance {} does not have the required balance to remove {}",
+                    previous_balance, balance_to_remove
+                ),
             )));
         }
 

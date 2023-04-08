@@ -39,7 +39,7 @@ pub enum IdentityError {
 
     /// Identity insufficient balance error
     #[error("identity insufficient balance error: {0}")]
-    IdentityInsufficientBalance(&'static str),
+    IdentityInsufficientBalance(String),
 
     /// Critical balance overflow error
     #[error("critical balance overflow error: {0}")]

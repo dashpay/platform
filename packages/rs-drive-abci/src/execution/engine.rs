@@ -111,7 +111,11 @@ where
         let validation_result =
             self.validate_fees_of_event(&event, block_info, Some(&transaction))?;
         match event {
-            ExecutionEvent::PaidDriveEvent {
+            ExecutionEvent::PaidFromAssetLockDriveEvent {
+                identity,
+                operations,
+            }
+            | ExecutionEvent::PaidDriveEvent {
                 identity,
                 operations,
             } => {
@@ -147,8 +151,7 @@ where
                     ))
                 }
             }
-            ExecutionEvent::PaidFromAssetLockDriveEvent { operations }
-            | ExecutionEvent::FreeDriveEvent { operations } => {
+            ExecutionEvent::FreeDriveEvent { operations } => {
                 self.drive
                     .apply_drive_operations(operations, true, block_info, Some(transaction))
                     .map_err(Error::Drive)?;
