@@ -1,8 +1,8 @@
+use dpp::validation::SimpleValidationResult;
 use dpp::{
     document::document_transition::DocumentTransition, errors::DataTriggerError,
     get_from_transition, prelude::Identifier, state_repository::StateRepositoryLike,
 };
-use dpp::validation::SimpleValidationResult;
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
@@ -10,8 +10,7 @@ pub fn reject_data_trigger<'a>(
     document_transition: &DocumentTransition,
     context: &DataTriggerExecutionContext<'a>,
     _top_level_identity: Option<&Identifier>,
-) -> Result<SimpleValidationResult<DataTriggerError>, DataTriggerError>
-{
+) -> Result<SimpleValidationResult<DataTriggerError>, DataTriggerError> {
     let mut result = SimpleValidationResult::<DataTriggerError>::default();
 
     result.add_error(

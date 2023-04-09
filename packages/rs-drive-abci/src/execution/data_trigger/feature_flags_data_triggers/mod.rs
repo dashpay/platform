@@ -16,8 +16,7 @@ pub fn create_feature_flag_data_trigger<'a>(
     document_transition: &DocumentTransition,
     context: &DataTriggerExecutionContext<'a>,
     top_level_identity: Option<&Identifier>,
-) -> Result<DataTriggerExecutionResult, anyhow::Error>
-{
+) -> Result<DataTriggerExecutionResult, anyhow::Error> {
     let mut result = DataTriggerExecutionResult::default();
     if context.state_transition_execution_context.is_dry_run() {
         return Ok(result);
@@ -74,10 +73,8 @@ pub fn create_feature_flag_data_trigger<'a>(
 
 #[cfg(test)]
 mod test {
-    use dpp::prelude::DocumentTransition;
-    use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-    use dpp::tests::fixtures::get_data_contract_fixture;
     use super::create_feature_flag_data_trigger;
+    use crate::execution::data_trigger::DataTriggerExecutionContext;
     use crate::{
         data_trigger::DataTriggerExecutionContext,
         document::document_transition::DocumentTransition,
@@ -85,7 +82,9 @@ mod test {
         state_transition::state_transition_execution_context::StateTransitionExecutionContext,
         tests::fixtures::get_data_contract_fixture,
     };
-    use crate::execution::data_trigger::DataTriggerExecutionContext;
+    use dpp::prelude::DocumentTransition;
+    use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
+    use dpp::tests::fixtures::get_data_contract_fixture;
 
     fn should_successfully_execute_on_dry_run() {
         let transition_execution_context = StateTransitionExecutionContext::default();

@@ -2,6 +2,8 @@
 pub mod block_proposal;
 /// Commit validation
 pub mod commit_validation;
+/// Data triggers
+pub mod data_trigger;
 /// Engine module
 pub mod engine;
 /// An execution event
@@ -14,5 +16,3 @@ pub mod helpers;
 pub mod initialization;
 /// Protocol upgrade
 pub mod protocol_upgrade;
-/// Data triggers
-pub mod data_trigger;

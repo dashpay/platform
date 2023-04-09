@@ -5,6 +5,7 @@ use dpp::consensus::basic::identity::{
     DuplicatedIdentityPublicKeyError, DuplicatedIdentityPublicKeyIdError,
     InvalidIdentityPublicKeySecurityLevelError,
 };
+use dpp::consensus::signature::IdentityNotFoundError;
 use dpp::consensus::ConsensusError;
 use dpp::identity::security_level::ALLOWED_SECURITY_LEVELS;
 use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
@@ -37,7 +38,6 @@ use drive::drive::Drive;
 use drive::grovedb::{Transaction, TransactionArg};
 use lazy_static::lazy_static;
 use std::collections::{HashMap, HashSet};
-use dpp::consensus::signature::IdentityNotFoundError;
 
 lazy_static! {
     static ref SUPPORTED_KEY_TYPES: HashSet<KeyType> = {
@@ -67,12 +67,15 @@ pub fn validate_state_transition_identity_signature(
         key_id,
     );
 
-    let maybe_partial_identity = drive.fetch_identity_balance_with_keys(key_request, transaction)?;
+    let maybe_partial_identity =
+        drive.fetch_identity_balance_with_keys(key_request, transaction)?;
 
     let partial_identity = match maybe_partial_identity {
         None => {
             dbg!(bs58::encode(&state_transition.get_owner_id()).into_string());
-            validation_result.add_error(SignatureError::IdentityNotFoundError(IdentityNotFoundError::new(*state_transition.get_owner_id())));
+            validation_result.add_error(SignatureError::IdentityNotFoundError(
+                IdentityNotFoundError::new(*state_transition.get_owner_id()),
+            ));
             return Ok(validation_result);
         }
         Some(pk) => pk,

@@ -33,5 +33,4 @@ pub enum DataTriggerError {
         document_transition: Option<DocumentTransition>,
         owner_id: Option<Identifier>,
     },
-
 }

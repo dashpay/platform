@@ -1,35 +1,37 @@
+use std::collections::BTreeMap;
 use std::{
     collections::hash_map::{Entry, HashMap},
     convert::TryInto,
 };
-use std::collections::BTreeMap;
 
-use dpp::document::{Document, ExtendedDocument};
-use dpp::{get_from_transition, ProtocolError};
+use crate::error::Error;
 use dpp::block_time_window::validation_result;
-use dpp::consensus::basic::BasicError;
 use dpp::consensus::basic::document::InvalidDocumentTypeError;
+use dpp::consensus::basic::BasicError;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::DriveContractExt;
-use dpp::platform_value::{Identifier, platform_value, Value};
+use dpp::document::{Document, ExtendedDocument};
+use dpp::platform_value::string_encoding::Encoding;
+use dpp::platform_value::{platform_value, Identifier, Value};
 use dpp::prelude::{DataContract, DocumentTransition};
 use dpp::state_repository::StateRepositoryLike;
 use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use dpp::platform_value::string_encoding::Encoding;
 use dpp::validation::ConsensusValidationResult;
+use dpp::{get_from_transition, ProtocolError};
 use drive::contract::Contract;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
-use crate::error::Error;
 
 pub(super) fn fetch_documents_for_transitions(
     drive: &Drive,
     document_transitions: &[&DocumentTransition],
-    transaction: TransactionArg
+    transaction: TransactionArg,
 ) -> Result<ConsensusValidationResult<Vec<Document>>, Error> {
-    let mut transitions_by_contracts_and_types: BTreeMap<(&Identifier, &String), Vec<&DocumentTransition>> =
-        BTreeMap::new();
+    let mut transitions_by_contracts_and_types: BTreeMap<
+        (&Identifier, &String),
+        Vec<&DocumentTransition>,
+    > = BTreeMap::new();
 
     for document_transition in document_transitions {
         let document_type = &document_transition.base().document_type_name;
@@ -43,10 +45,18 @@ pub(super) fn fetch_documents_for_transitions(
         }
     }
 
-    let validation_results_of_documents = transitions_by_contracts_and_types.into_iter()
+    let validation_results_of_documents = transitions_by_contracts_and_types
+        .into_iter()
         .map(|((contract_id, document_type_name), transitions)| {
-            fetch_documents_for_transitions_knowing_contract_id_and_document_type_name(drive, contract_id, document_type_name, transitions.as_slice(), transaction)
-    }).collect::<Result<Vec<ConsensusValidationResult<Vec<Document>>>, Error>>()?;
+            fetch_documents_for_transitions_knowing_contract_id_and_document_type_name(
+                drive,
+                contract_id,
+                document_type_name,
+                transitions.as_slice(),
+                transaction,
+            )
+        })
+        .collect::<Result<Vec<ConsensusValidationResult<Vec<Document>>>, Error>>()?;
 
     let validation_result = ConsensusValidationResult::flatten(validation_results_of_documents);
 
@@ -58,9 +68,8 @@ pub(super) fn fetch_documents_for_transitions_knowing_contract_id_and_document_t
     contract_id: &Identifier,
     document_type_name: &str,
     transitions: &[&DocumentTransition],
-    transaction: TransactionArg
+    transaction: TransactionArg,
 ) -> Result<ConsensusValidationResult<Vec<Document>>, Error> {
-
     //todo: deal with fee result
     let (_, contract_fetch_info) = drive.get_contract_with_fetch_info(
         contract_id.to_buffer(),
@@ -78,7 +87,13 @@ pub(super) fn fetch_documents_for_transitions_knowing_contract_id_and_document_t
     let Some(document_type) = contract_fetch_info.contract.optional_document_type_for_name(document_type_name) else {
         return Ok(ConsensusValidationResult::new_with_error(BasicError::InvalidDocumentTypeError(InvalidDocumentTypeError::new(document_type_name.to_string(), *contract_id)).into()));
     };
-    fetch_documents_for_transitions_knowing_contract_and_document_type(drive, &contract_fetch_info.contract, document_type, transitions, transaction)
+    fetch_documents_for_transitions_knowing_contract_and_document_type(
+        drive,
+        &contract_fetch_info.contract,
+        document_type,
+        transitions,
+        transaction,
+    )
 }
 
 pub(super) fn fetch_documents_for_transitions_knowing_contract_and_document_type(
@@ -86,7 +101,7 @@ pub(super) fn fetch_documents_for_transitions_knowing_contract_and_document_type
     contract: &Contract,
     document_type: &DocumentType,
     transitions: &[&DocumentTransition],
-    transaction: TransactionArg
+    transaction: TransactionArg,
 ) -> Result<ConsensusValidationResult<Vec<Document>>, Error> {
     let ids: Vec<Value> = transitions
         .iter()
@@ -117,11 +132,7 @@ pub(super) fn fetch_documents_for_transitions_knowing_contract_and_document_type
 
     //todo: deal with cost of this operation
     let documents = drive
-        .query_documents(
-            drive_query,
-            None,
-            transaction,
-        )?
+        .query_documents(drive_query, None, transaction)?
         .documents;
 
     Ok(ConsensusValidationResult::new_with_data(documents))

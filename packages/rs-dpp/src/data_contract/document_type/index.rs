@@ -35,7 +35,10 @@ impl Index {
 
     /// The fields of the index
     pub fn fields(&self) -> Vec<String> {
-        self.properties.iter().map(|property| property.name.clone()).collect()
+        self.properties
+            .iter()
+            .map(|property| property.name.clone())
+            .collect()
     }
 }
 

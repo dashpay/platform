@@ -1,9 +1,9 @@
+use crate::error::data_trigger::DataTriggerError;
+use crate::execution::data_trigger::dashpay_data_triggers::property_names::CORE_HEIGHT_CREATED_AT;
+use crate::execution::data_trigger::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::Identifier;
 use dpp::prelude::DocumentTransition;
-use crate::error::data_trigger::DataTriggerError;
-use crate::execution::data_trigger::{DataTriggerExecutionContext, DataTriggerExecutionResult};
-use crate::execution::data_trigger::dashpay_data_triggers::property_names::CORE_HEIGHT_CREATED_AT;
 
 const BLOCKS_SIZE_WINDOW: u32 = 8;
 mod property_names {
@@ -16,8 +16,7 @@ pub fn create_contact_request_data_trigger<'a>(
     document_transition: &DocumentTransition,
     context: &DataTriggerExecutionContext<'a>,
     _: Option<&Identifier>,
-) -> Result<DataTriggerExecutionResult, anyhow::Error>
-{
+) -> Result<DataTriggerExecutionResult, anyhow::Error> {
     let mut result = DataTriggerExecutionResult::default();
     let is_dry_run = context.state_transition_execution_context.is_dry_run();
     let owner_id = context.owner_id;
@@ -89,12 +88,10 @@ pub fn create_contact_request_data_trigger<'a>(
     }
 
     //  toUserId identity exits
-    let identity = context
-        .state_repository
-        .fetch_identity(
-            &to_user_id.into(),
-            Some(context.state_transition_execution_context),
-        )?;
+    let identity = context.state_repository.fetch_identity(
+        &to_user_id.into(),
+        Some(context.state_transition_execution_context),
+    )?;
 
     if !is_dry_run && identity.is_none() {
         let err = DataTriggerError::DataTriggerConditionError {
@@ -115,16 +112,18 @@ pub fn create_contact_request_data_trigger<'a>(
 
 #[cfg(test)]
 mod test {
+    use crate::execution::data_trigger::dashpay_data_triggers::create_contact_request_data_trigger;
+    use crate::execution::data_trigger::DataTriggerExecutionContext;
     use dpp::document::document_transition::Action;
     use dpp::platform_value;
     use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
     use dpp::platform_value::platform_value;
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-    use dpp::tests::fixtures::{get_contact_request_document_fixture, get_dashpay_contract_fixture, get_document_transitions_fixture, identity_fixture};
+    use dpp::tests::fixtures::{
+        get_contact_request_document_fixture, get_dashpay_contract_fixture,
+        get_document_transitions_fixture, identity_fixture,
+    };
     use dpp::tests::utils::get_data_trigger_error_from_execution_result;
-    use crate::execution::data_trigger::dashpay_data_triggers::create_contact_request_data_trigger;
-    use crate::execution::data_trigger::DataTriggerExecutionContext;
-
 
     fn should_successfully_execute_on_dry_run() {
         let mut contact_request_document = get_contact_request_document_fixture(None, None);

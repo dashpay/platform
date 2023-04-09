@@ -13,8 +13,7 @@ pub(super) fn validate_schema(
 ) -> SimpleConsensusValidationResult {
     let json_schema_validator =
         JsonSchemaValidator::new(schema).expect("unable to compile jsonschema");
-    dbg!(&(state_transition
-                .to_object(false)));
+    dbg!(&(state_transition.to_object(false)));
     json_schema_validator
         .validate(
             &(state_transition

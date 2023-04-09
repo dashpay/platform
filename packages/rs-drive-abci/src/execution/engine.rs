@@ -64,7 +64,6 @@ where
         transaction: TransactionArg,
     ) -> Result<ConsensusValidationResult<FeeResult>, Error> {
         match event {
-
             ExecutionEvent::PaidFromAssetLockDriveEvent {
                 identity,
                 operations,
@@ -98,9 +97,9 @@ where
                     ))
                 }
             }
-            ExecutionEvent::FreeDriveEvent { .. } => Ok(
-                ConsensusValidationResult::new_with_data(FeeResult::default()),
-            ),
+            ExecutionEvent::FreeDriveEvent { .. } => Ok(ConsensusValidationResult::new_with_data(
+                FeeResult::default(),
+            )),
         }
     }
 

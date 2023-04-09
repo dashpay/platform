@@ -2,11 +2,11 @@ use crate::string_encoding::Encoding;
 use crate::types::encoding_string_to_encoding;
 use crate::{string_encoding, Error, Value};
 use bincode::{Decode, Encode};
+use rand::rngs::StdRng;
+use rand::Rng;
 use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use rand::Rng;
-use rand::rngs::StdRng;
 
 #[derive(Default, Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Copy, Encode, Decode)]
 pub struct Bytes32(pub [u8; 32]);

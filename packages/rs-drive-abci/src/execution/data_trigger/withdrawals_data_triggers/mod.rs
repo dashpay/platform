@@ -1,11 +1,11 @@
-use std::convert::TryInto;
+use crate::error::data_trigger::DataTriggerError;
+use crate::error::Error;
 use dpp::contracts::withdrawals_contract;
 use dpp::document::Document;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-use dpp::platform_value::{Identifier, platform_value};
+use dpp::platform_value::{platform_value, Identifier};
 use dpp::prelude::DocumentTransition;
-use crate::error::data_trigger::DataTriggerError;
-use crate::error::Error;
+use std::convert::TryInto;
 
 use crate::execution::data_trigger::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
@@ -13,8 +13,7 @@ pub fn delete_withdrawal_data_trigger<'a>(
     document_transition: &DocumentTransition,
     context: &DataTriggerExecutionContext<'a>,
     _top_level_identity: Option<&Identifier>,
-) -> Result<DataTriggerExecutionResult, Error>
-{
+) -> Result<DataTriggerExecutionResult, Error> {
     let mut result = DataTriggerExecutionResult::default();
 
     let DocumentTransition::Delete(dt_delete) = document_transition else {
@@ -81,16 +80,16 @@ pub fn delete_withdrawal_data_trigger<'a>(
 
 #[cfg(test)]
 mod tests {
-    use dpp::platform_value::platform_value;
-    use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-    use dpp::system_data_contracts::load_system_data_contract;
-    use dpp::tests::fixtures::get_data_contract_fixture;
     use super::*;
     use crate::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
     use crate::state_repository::MockStateRepositoryLike;
     use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use crate::system_data_contracts::load_system_data_contract;
     use crate::tests::fixtures::{get_data_contract_fixture, get_withdrawal_document_fixture};
+    use dpp::platform_value::platform_value;
+    use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
+    use dpp::system_data_contracts::load_system_data_contract;
+    use dpp::tests::fixtures::get_data_contract_fixture;
     use platform_value::platform_value;
 
     fn should_throw_error_if_withdrawal_not_found() {

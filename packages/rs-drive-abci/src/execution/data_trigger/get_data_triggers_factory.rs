@@ -1,6 +1,7 @@
 use lazy_static::__Deref;
 use platform_value::string_encoding::Encoding;
 
+use dpp::platform_value::string_encoding::Encoding;
 use dpp::{
     contracts::{
         dashpay_contract, dpns_contract, feature_flags_contract, masternode_reward_shares_contract,
@@ -10,7 +11,6 @@ use dpp::{
     errors::ProtocolError,
     prelude::Identifier,
 };
-use dpp::platform_value::string_encoding::Encoding;
 
 use super::{DataTrigger, DataTriggerKind};
 

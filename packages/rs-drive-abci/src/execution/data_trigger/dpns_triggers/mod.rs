@@ -1,12 +1,12 @@
 use dpp::document::Document;
 use dpp::util::hash::hash;
 
+use dpp::platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueMapPathHelper};
+use dpp::platform_value::platform_value;
 use dpp::ProtocolError;
 use dpp::{
     document::document_transition::DocumentTransition, get_from_transition, prelude::Identifier,
 };
-use dpp::platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueMapPathHelper};
-use dpp::platform_value::platform_value;
 
 use super::{create_error, DataTriggerExecutionContext, DataTriggerExecutionResult};
 
@@ -24,8 +24,7 @@ pub async fn create_domain_data_trigger<'a>(
     document_transition: &DocumentTransition,
     context: &DataTriggerExecutionContext<'a>,
     top_level_identity: Option<&Identifier>,
-) -> Result<DataTriggerExecutionResult, anyhow::Error>
-{
+) -> Result<DataTriggerExecutionResult, anyhow::Error> {
     let is_dry_run = context.state_transition_execution_context.is_dry_run();
     let dt_create = match document_transition {
         DocumentTransition::Create(d) => d,
@@ -240,10 +239,7 @@ pub async fn create_domain_data_trigger<'a>(
 
 #[cfg(test)]
 mod test {
-    use dpp::document::document_transition::Action;
-    use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-    use dpp::tests::fixtures::{get_document_transitions_fixture, get_dpns_data_contract_fixture, get_dpns_parent_document_fixture, ParentDocumentOptions};
-    use dpp::tests::utils::generate_random_identifier_struct;
+    use crate::execution::data_trigger::DataTriggerExecutionContext;
     use crate::{
         data_trigger::DataTriggerExecutionContext,
         document::document_transition::Action,
@@ -257,7 +253,13 @@ mod test {
             utils::generate_random_identifier_struct,
         },
     };
-    use crate::execution::data_trigger::DataTriggerExecutionContext;
+    use dpp::document::document_transition::Action;
+    use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
+    use dpp::tests::fixtures::{
+        get_document_transitions_fixture, get_dpns_data_contract_fixture,
+        get_dpns_parent_document_fixture, ParentDocumentOptions,
+    };
+    use dpp::tests::utils::generate_random_identifier_struct;
 
     use super::create_domain_data_trigger;
 

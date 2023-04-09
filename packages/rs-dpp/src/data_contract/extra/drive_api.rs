@@ -53,10 +53,7 @@ pub trait DriveContractExt {
         Self: Sized;
 
     fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError>;
-    fn optional_document_type_for_name(
-        &self,
-        document_type_name: &str,
-    ) -> Option<&DocumentType>;
+    fn optional_document_type_for_name(&self, document_type_name: &str) -> Option<&DocumentType>;
 
     fn document_type_for_name(
         &self,
@@ -176,10 +173,7 @@ impl DriveContractExt for DataContract {
         Ok(buf)
     }
 
-    fn optional_document_type_for_name(
-        &self,
-        document_type_name: &str,
-    ) -> Option<&DocumentType> {
+    fn optional_document_type_for_name(&self, document_type_name: &str) -> Option<&DocumentType> {
         self.document_types.get(document_type_name)
     }
 

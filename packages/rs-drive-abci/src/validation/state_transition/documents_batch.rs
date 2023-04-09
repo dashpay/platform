@@ -1,5 +1,6 @@
-use std::collections::{BTreeMap, btree_map::Entry, HashMap};
+use std::collections::{btree_map::Entry, BTreeMap, HashMap};
 
+use dpp::block_time_window::validation_result;
 use dpp::identity::PartialIdentity;
 use dpp::{
     consensus::{basic::BasicError, ConsensusError},
@@ -32,7 +33,6 @@ use dpp::{
     validation::{ConsensusValidationResult, SimpleConsensusValidationResult, ValidationResult},
     ProtocolError,
 };
-use dpp::block_time_window::validation_result;
 use drive::{
     grovedb::Transaction,
     query::{DriveQuery, InternalClauses, WhereClause, WhereOperator},
@@ -70,18 +70,20 @@ impl StateTransitionValidation for DocumentsBatchTransition {
         let mut document_transitions_by_contracts: BTreeMap<Identifier, Vec<&DocumentTransition>> =
             BTreeMap::new();
 
-        self.get_transitions().iter().for_each(|document_transition| {
-            let contract_identifier = document_transition.get_data_contract_id();
+        self.get_transitions()
+            .iter()
+            .for_each(|document_transition| {
+                let contract_identifier = document_transition.get_data_contract_id();
 
-            match document_transitions_by_contracts.entry(contract_identifier.clone()) {
-                Entry::Vacant(vacant) => {
-                    vacant.insert(vec![&document_transition]);
-                }
-                Entry::Occupied(mut identifiers) => {
-                    identifiers.get_mut().push(&document_transition);
-                }
-            };
-        });
+                match document_transitions_by_contracts.entry(contract_identifier.clone()) {
+                    Entry::Vacant(vacant) => {
+                        vacant.insert(vec![&document_transition]);
+                    }
+                    Entry::Occupied(mut identifiers) => {
+                        identifiers.get_mut().push(&document_transition);
+                    }
+                };
+            });
 
         let mut result = ValidationResult::default();
 
@@ -135,7 +137,12 @@ impl StateTransitionValidation for DocumentsBatchTransition {
         _core: &C,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let validation_result = validate_document_batch_transition_state(drive,self, tx, &StateTransitionExecutionContext::default())?;
+        let validation_result = validate_document_batch_transition_state(
+            drive,
+            self,
+            tx,
+            &StateTransitionExecutionContext::default(),
+        )?;
         Ok(validation_result.map(Into::into))
     }
 }

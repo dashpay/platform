@@ -73,7 +73,7 @@ impl DocumentType {
             required_fields,
             documents_keep_history,
             documents_mutable,
-            data_contract_id
+            data_contract_id,
         }
     }
     // index_names can be in any order

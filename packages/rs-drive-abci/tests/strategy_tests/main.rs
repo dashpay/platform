@@ -345,47 +345,57 @@ impl Strategy {
                 let count = rng.gen_range(frequency.times_per_block_range.clone());
                 match op.action {
                     DocumentActionInsert => {
-                        let documents = op
-                            .document_type
-                            .random_documents_with_params(count as u32, current_identities, rng);
-                        documents.into_iter().for_each(|(mut document, identity, entropy)| {
-                            let document_create_transition = DocumentCreateTransition {
-                                base: DocumentBaseTransition {
-                                    id: document.id,
-                                    document_type_name: op.document_type.name.clone(),
-                                    action: Action::Create,
-                                    data_contract_id: op.contract.id,
-                                    data_contract: op.contract.clone(),
-                                },
-                                entropy: entropy.to_buffer(),
-                                created_at: document.created_at,
-                                updated_at: document.created_at,
-                                data: document.properties.into(),
-                            };
+                        let documents = op.document_type.random_documents_with_params(
+                            count as u32,
+                            current_identities,
+                            rng,
+                        );
+                        documents
+                            .into_iter()
+                            .for_each(|(mut document, identity, entropy)| {
+                                let document_create_transition = DocumentCreateTransition {
+                                    base: DocumentBaseTransition {
+                                        id: document.id,
+                                        document_type_name: op.document_type.name.clone(),
+                                        action: Action::Create,
+                                        data_contract_id: op.contract.id,
+                                        data_contract: op.contract.clone(),
+                                    },
+                                    entropy: entropy.to_buffer(),
+                                    created_at: document.created_at,
+                                    updated_at: document.created_at,
+                                    data: document.properties.into(),
+                                };
 
-                            let mut document_batch_transition = DocumentsBatchTransition {
-                                protocol_version: LATEST_VERSION,
-                                transition_type: StateTransitionType::DocumentsBatch,
-                                owner_id: identity.id,
-                                transitions: vec![document_create_transition.into()],
-                                signature_public_key_id: None,
-                                signature: None,
-                            };
+                                let mut document_batch_transition = DocumentsBatchTransition {
+                                    protocol_version: LATEST_VERSION,
+                                    transition_type: StateTransitionType::DocumentsBatch,
+                                    owner_id: identity.id,
+                                    transitions: vec![document_create_transition.into()],
+                                    signature_public_key_id: None,
+                                    signature: None,
+                                };
 
-                            let identity_public_key = identity
-                                .get_first_public_key_matching(
-                                    Purpose::AUTHENTICATION,
-                                    HashSet::from([SecurityLevel::HIGH, SecurityLevel::CRITICAL]),
-                                    HashSet::from([KeyType::ECDSA_SECP256K1, KeyType::BLS12_381]),
-                                )
-                                .expect("expected to get a signing key");
+                                let identity_public_key = identity
+                                    .get_first_public_key_matching(
+                                        Purpose::AUTHENTICATION,
+                                        HashSet::from([
+                                            SecurityLevel::HIGH,
+                                            SecurityLevel::CRITICAL,
+                                        ]),
+                                        HashSet::from([
+                                            KeyType::ECDSA_SECP256K1,
+                                            KeyType::BLS12_381,
+                                        ]),
+                                    )
+                                    .expect("expected to get a signing key");
 
-                            document_batch_transition
-                                .sign_external(identity_public_key, signer)
-                                .expect("expected to sign");
+                                document_batch_transition
+                                    .sign_external(identity_public_key, signer)
+                                    .expect("expected to sign");
 
-                            operations.push(document_batch_transition.into());
-                        });
+                                operations.push(document_batch_transition.into());
+                            });
                     }
                     DocumentActionDelete => {
                         let any_item_query =

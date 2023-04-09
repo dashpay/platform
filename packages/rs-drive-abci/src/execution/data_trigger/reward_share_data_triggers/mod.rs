@@ -1,7 +1,7 @@
 use dpp::document::Document;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-use dpp::platform_value::{Identifier, platform_value};
 use dpp::platform_value::string_encoding::Encoding;
+use dpp::platform_value::{platform_value, Identifier};
 use dpp::prelude::DocumentTransition;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 
@@ -26,8 +26,7 @@ pub fn create_masternode_reward_shares_data_trigger<'a>(
     document_transition: &DocumentTransition,
     context: &DataTriggerExecutionContext<'a>,
     _top_level_identifier: Option<&Identifier>,
-) -> Result<DataTriggerExecutionResult, anyhow::Error>
-{
+) -> Result<DataTriggerExecutionResult, anyhow::Error> {
     let mut result = DataTriggerExecutionResult::default();
     let is_dry_run = context.state_transition_execution_context.is_dry_run();
     let owner_id = context.owner_id.to_string(Encoding::Base58);
@@ -72,12 +71,10 @@ pub fn create_masternode_reward_shares_data_trigger<'a>(
 
     // payToId identity exists
     let pay_to_identifier = Identifier::from(pay_to_id);
-    let maybe_identity = context
-        .state_repository
-        .fetch_identity(
-            &pay_to_identifier,
-            Some(context.state_transition_execution_context),
-        )?;
+    let maybe_identity = context.state_repository.fetch_identity(
+        &pay_to_identifier,
+        Some(context.state_transition_execution_context),
+    )?;
 
     if !is_dry_run && maybe_identity.is_none() {
         let err = create_error(
@@ -88,16 +85,14 @@ pub fn create_masternode_reward_shares_data_trigger<'a>(
         result.add_error(err.into())
     }
 
-    let documents_data = context
-        .state_repository
-        .fetch_documents(
-            &context.data_contract.id,
-            &document_create_transition.base.document_type_name,
-            platform_value!({
-                "where" : [ [ "$owner_id", "==", owner_id ]]
-            }),
-            Some(context.state_transition_execution_context),
-        )?;
+    let documents_data = context.state_repository.fetch_documents(
+        &context.data_contract.id,
+        &document_create_transition.base.document_type_name,
+        platform_value!({
+            "where" : [ [ "$owner_id", "==", owner_id ]]
+        }),
+        Some(context.state_transition_execution_context),
+    )?;
     let documents: Vec<Document> = documents_data
         .into_iter()
         .map(|d| d.try_into().map_err(Into::<ProtocolError>::into))
@@ -139,18 +134,21 @@ pub fn create_masternode_reward_shares_data_trigger<'a>(
 
 #[cfg(test)]
 mod test {
+    use super::*;
     use dpp::data_contract::DataContract;
     use dpp::document::document_transition::{Action, DocumentTransitionExt};
     use dpp::document::ExtendedDocument;
     use dpp::identity::Identity;
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-    use dpp::tests::fixtures::{get_document_transitions_fixture, get_masternode_reward_shares_documents_fixture};
+    use dpp::tests::fixtures::{
+        get_document_transitions_fixture, get_masternode_reward_shares_documents_fixture,
+    };
     use dpp::tests::utils::generate_random_identifier_struct;
-    use super::*;
 
     use platform_value::Value;
 
     use crate::document::{Document, ExtendedDocument};
+    use crate::error::data_trigger::DataTriggerError;
     use crate::identity::Identity;
     use crate::{
         data_contract::DataContract,
@@ -168,7 +166,6 @@ mod test {
         },
         DataTriggerError, StateError,
     };
-    use crate::error::data_trigger::DataTriggerError;
 
     struct TestData {
         top_level_identifier: Identifier,

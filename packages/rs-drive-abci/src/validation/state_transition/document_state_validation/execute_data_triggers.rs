@@ -1,14 +1,15 @@
+use crate::execution::data_trigger::get_data_triggers_factory::{data_triggers, get_data_triggers};
+use crate::execution::data_trigger::{
+    DataTrigger, DataTriggerExecutionContext, DataTriggerExecutionResult,
+};
 use dpp::prelude::DocumentTransition;
 use dpp::ProtocolError;
 use drive::drive::Drive;
-use crate::execution::data_trigger::{DataTrigger, DataTriggerExecutionContext, DataTriggerExecutionResult};
-use crate::execution::data_trigger::get_data_triggers_factory::{data_triggers, get_data_triggers};
 
 pub fn execute_data_triggers<'a>(
     document_transitions: &[&DocumentTransition],
     context: &DataTriggerExecutionContext<'a>,
-) -> Result<Vec<DataTriggerExecutionResult>, ProtocolError>
-{
+) -> Result<Vec<DataTriggerExecutionResult>, ProtocolError> {
     let data_triggers_list = data_triggers()?;
     execute_data_triggers_with_custom_list(document_transitions, context, data_triggers_list)
 }
@@ -17,8 +18,7 @@ pub fn execute_data_triggers_with_custom_list<'a>(
     document_transitions: &[&DocumentTransition],
     context: &DataTriggerExecutionContext<'a>,
     data_triggers_list: impl IntoIterator<Item = DataTrigger>,
-) -> Result<Vec<DataTriggerExecutionResult>, ProtocolError>
-{
+) -> Result<Vec<DataTriggerExecutionResult>, ProtocolError> {
     let data_contract_id = &context.data_contract.id;
     let mut execution_results: Vec<DataTriggerExecutionResult> = vec![];
     let data_triggers: Vec<DataTrigger> = data_triggers_list.into_iter().collect();
@@ -55,7 +55,10 @@ fn execute_data_triggers_sequentially<'a>(
     data_triggers: &[&DataTrigger],
     context: &DataTriggerExecutionContext<'a>,
     results: &'a mut Vec<DataTriggerExecutionResult>,
-)
-{
-    results.extend(data_triggers.iter().map(|data_trigger| data_trigger.execute(document_transition, context)));
+) {
+    results.extend(
+        data_triggers
+            .iter()
+            .map(|data_trigger| data_trigger.execute(document_transition, context)),
+    );
 }

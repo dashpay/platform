@@ -1,3 +1,5 @@
+use crate::error::data_trigger::DataTriggerError;
+use crate::error::Error;
 pub use data_trigger_execution_context::*;
 pub use data_trigger_execution_result::*;
 use dpp::document::document_transition::{Action, DocumentCreateTransition};
@@ -6,8 +8,6 @@ use dpp::platform_value::Identifier;
 use dpp::prelude::DocumentTransition;
 use dpp::validation::SimpleValidationResult;
 pub use reject_data_trigger::*;
-use crate::error::data_trigger::DataTriggerError;
-use crate::error::Error;
 
 use self::dashpay_data_triggers::create_contact_request_data_trigger;
 use self::dpns_triggers::create_domain_data_trigger;
@@ -81,8 +81,7 @@ impl DataTrigger {
         &self,
         document_transition: &DocumentTransition,
         context: &DataTriggerExecutionContext<'a>,
-    ) -> DataTriggerExecutionResult
-    {
+    ) -> DataTriggerExecutionResult {
         let mut result = DataTriggerExecutionResult::default();
         // TODO remove the clone
         let data_contract_id = context.data_contract.id.to_owned();
@@ -118,8 +117,7 @@ fn execute_trigger<'a>(
     document_transition: &DocumentTransition,
     context: &DataTriggerExecutionContext<'a>,
     identifier: Option<&Identifier>,
-) -> Result<DataTriggerExecutionResult, Error>
-{
+) -> Result<DataTriggerExecutionResult, Error> {
     match trigger_kind {
         DataTriggerKind::CreateDataContractRequest => {
             create_contact_request_data_trigger(document_transition, context, identifier)
@@ -135,7 +133,6 @@ fn execute_trigger<'a>(
         }
         DataTriggerKind::DataTriggerRewardShare => {
             create_masternode_reward_shares_data_trigger(document_transition, context, identifier)
-
         }
         DataTriggerKind::DeleteWithdrawal => {
             delete_withdrawal_data_trigger(document_transition, context, identifier)
@@ -147,8 +144,7 @@ fn create_error(
     context: &DataTriggerExecutionContext,
     dt_create: &DocumentCreateTransition,
     msg: String,
-) -> DataTriggerError
-{
+) -> DataTriggerError {
     DataTriggerError::DataTriggerConditionError {
         data_contract_id: context.data_contract.id,
         document_transition_id: dt_create.base.id,
