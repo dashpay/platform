@@ -8,6 +8,7 @@ use drive::grovedb::TransactionArg;
 use drive::{drive::Drive, grovedb::Transaction};
 
 use crate::error::Error;
+use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
 use super::StateTransitionValidation;
@@ -29,12 +30,11 @@ impl StateTransitionValidation for IdentityCreditWithdrawalTransition {
         todo!()
     }
 
-    fn validate_state<C: CoreRPCLike>(
+    fn validate_state<'a, C: CoreRPCLike>(
         &self,
-        drive: &Drive,
-        core: &C,
+        platform: &'a PlatformRef<C>,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        todo!()
+        let drive = platform.drive;
     }
 }

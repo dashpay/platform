@@ -75,6 +75,30 @@ pub struct PlatformRef<'a, C> {
     pub core_rpc: &'a C,
 }
 
+/// Platform State Ref
+pub struct PlatformStateRef<'a> {
+    /// Drive
+    pub drive: &'a Drive,
+    /// State
+    pub state: &'a PlatformState,
+    /// Configuration
+    pub config: &'a PlatformConfig,
+}
+
+impl<'a, C> From<&PlatformRef<'a, C>> for PlatformStateRef<'a> {
+    fn from(value: &PlatformRef<'a, C>) -> Self {
+        let PlatformRef {
+            drive, state, config, ..
+        } = value;
+
+        PlatformStateRef {
+            drive,
+            state,
+            config,
+        }
+    }
+}
+
 impl<C> std::fmt::Debug for Platform<C> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Platform").finish()

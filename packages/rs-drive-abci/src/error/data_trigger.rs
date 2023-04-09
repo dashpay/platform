@@ -1,5 +1,6 @@
 use dpp::platform_value::Identifier;
 use dpp::prelude::DocumentTransition;
+use dpp::platform_value::Error as ValueError;
 
 /// Data trigger  errors
 #[derive(Debug, thiserror::Error)]
@@ -33,4 +34,7 @@ pub enum DataTriggerError {
         document_transition: Option<DocumentTransition>,
         owner_id: Option<Identifier>,
     },
+    /// Value error
+    #[error("value error: {0}")]
+    ValueError(#[from] ValueError),
 }

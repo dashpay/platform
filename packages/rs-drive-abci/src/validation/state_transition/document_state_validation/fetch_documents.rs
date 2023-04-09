@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 use std::{
-    collections::hash_map::{Entry, HashMap},
     convert::TryInto,
 };
+use std::collections::btree_map::Entry;
 
 use crate::error::Error;
 use dpp::block_time_window::validation_result;
@@ -20,11 +20,13 @@ use dpp::validation::ConsensusValidationResult;
 use dpp::{get_from_transition, ProtocolError};
 use drive::contract::Contract;
 use drive::drive::Drive;
+use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::TransactionArg;
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
+use crate::platform::PlatformStateRef;
 
 pub(super) fn fetch_documents_for_transitions(
-    drive: &Drive,
+    platform: &PlatformStateRef,
     document_transitions: &[&DocumentTransition],
     transaction: TransactionArg,
 ) -> Result<ConsensusValidationResult<Vec<Document>>, Error> {
@@ -49,7 +51,7 @@ pub(super) fn fetch_documents_for_transitions(
         .into_iter()
         .map(|((contract_id, document_type_name), transitions)| {
             fetch_documents_for_transitions_knowing_contract_id_and_document_type_name(
-                drive,
+                platform,
                 contract_id,
                 document_type_name,
                 transitions.as_slice(),
@@ -64,16 +66,19 @@ pub(super) fn fetch_documents_for_transitions(
 }
 
 pub(super) fn fetch_documents_for_transitions_knowing_contract_id_and_document_type_name(
-    drive: &Drive,
+    platform: &PlatformStateRef,
     contract_id: &Identifier,
     document_type_name: &str,
     transitions: &[&DocumentTransition],
     transaction: TransactionArg,
 ) -> Result<ConsensusValidationResult<Vec<Document>>, Error> {
+    let drive = platform.drive;
     //todo: deal with fee result
+    //we only want to add to the cache if we are validating in a transaction
+    let add_to_cache_if_pulled = transaction.is_some();
     let (_, contract_fetch_info) = drive.get_contract_with_fetch_info(
         contract_id.to_buffer(),
-        epoch,
+        Some(&platform.state.current_epoch),
         add_to_cache_if_pulled,
         transaction,
     )?;

@@ -1,11 +1,9 @@
+use dpp::document::document_transition::DocumentCreateTransitionAction;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::Identifier;
 use dpp::prelude::DocumentTransition;
-
-use crate::{
-    data_trigger::create_error, get_from_transition, prelude::Identifier,
-    state_repository::StateRepositoryLike,
-};
+use crate::error::data_trigger::DataTriggerError;
+use crate::error::Error;
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
@@ -13,43 +11,19 @@ const PROPERTY_BLOCK_HEIGHT: &str = "height";
 const PROPERTY_ENABLE_AT_HEIGHT: &str = "enableAtHeight";
 
 pub fn create_feature_flag_data_trigger<'a>(
-    document_transition: &DocumentTransition,
+    document_create_transition: &DocumentCreateTransitionAction,
+    latest_block_height: u64,
     context: &DataTriggerExecutionContext<'a>,
-    top_level_identity: Option<&Identifier>,
-) -> Result<DataTriggerExecutionResult, anyhow::Error> {
+    top_level_identity: &Identifier,
+) -> Result<DataTriggerExecutionResult, DataTriggerError> {
     let mut result = DataTriggerExecutionResult::default();
     if context.state_transition_execution_context.is_dry_run() {
         return Ok(result);
     }
 
-    let top_level_identity = top_level_identity.context("Top Level Identity must be defined")?;
+    let enable_at_height: u64 = check_data_trigger_validation_result(document_create_transition.data.get_integer(PROPERTY_ENABLE_AT_HEIGHT));
 
-    let dt_create = match document_transition {
-        DocumentTransition::Create(d) => d,
-        _ => bail!(
-            "the Document Transition {} isn't 'CREATE'",
-            get_from_transition!(document_transition, id)
-        ),
-    };
-    let data = dt_create.data.as_ref().ok_or_else(|| {
-        anyhow!(
-            "data isn't defined in Data Transition '{}'",
-            dt_create.base.id
-        )
-    })?;
-
-    let block_height = context
-        .state_repository
-        .fetch_latest_platform_block_height()?;
-
-    let enable_at_height: u64 = data.get_integer(PROPERTY_ENABLE_AT_HEIGHT).map_err(|_| {
-        anyhow!(
-            "property missing for create_feature_flag_data_trigger '{}'",
-            PROPERTY_ENABLE_AT_HEIGHT
-        )
-    })?;
-
-    if enable_at_height < block_height {
+    if enable_at_height < latest_block_height {
         let err = create_error(
             context,
             dt_create,

@@ -42,6 +42,7 @@ use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
 use crate::error::Error;
+use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use crate::validation::state_transition::document_state_validation::validate_documents_batch_transition_state::validate_document_batch_transition_state;
 use crate::validation::state_transition::key_validation::validate_state_transition_identity_signature;
@@ -131,12 +132,12 @@ impl StateTransitionValidation for DocumentsBatchTransition {
         )
     }
 
-    fn validate_state<C: CoreRPCLike>(
+    fn validate_state<'a, C: CoreRPCLike>(
         &self,
-        drive: &Drive,
-        _core: &C,
+        platform: &'a PlatformRef<C>,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        let drive = platform.drive;
         let validation_result = validate_document_batch_transition_state(
             drive,
             self,

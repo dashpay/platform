@@ -24,6 +24,7 @@ use crate::{
     error::Error,
     validation::state_transition::common::{validate_protocol_version, validate_schema},
 };
+use crate::platform::PlatformRef;
 
 use super::StateTransitionValidation;
 
@@ -61,12 +62,12 @@ impl StateTransitionValidation for IdentityCreateTransition {
         Ok(validation_result)
     }
 
-    fn validate_state<C: CoreRPCLike>(
+    fn validate_state<'a, C: CoreRPCLike>(
         &self,
-        drive: &Drive,
-        core_rpc: &C,
+        platform: &'a PlatformRef<C>,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        let drive = platform.drive;
         let mut validation_result = ConsensusValidationResult::<StateTransitionAction>::default();
 
         let identity_id = self.get_identity_id();
@@ -95,7 +96,7 @@ impl StateTransitionValidation for IdentityCreateTransition {
 
         let tx_out_validation = self
             .asset_lock_proof
-            .fetch_asset_lock_transaction_output_sync(core_rpc)?;
+            .fetch_asset_lock_transaction_output_sync(platform.core_rpc)?;
         if !tx_out_validation.is_valid_with_data() {
             return Ok(ConsensusValidationResult::new_with_errors(
                 tx_out_validation.errors,

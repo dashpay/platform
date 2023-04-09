@@ -1,7 +1,6 @@
 use crate::error::data_trigger::DataTriggerError;
 use crate::error::Error;
 pub use data_trigger_execution_context::*;
-pub use data_trigger_execution_result::*;
 use dpp::document::document_transition::{Action, DocumentCreateTransition};
 use dpp::get_from_transition;
 use dpp::platform_value::Identifier;
@@ -25,6 +24,15 @@ pub mod reward_share_data_triggers;
 pub mod withdrawals_data_triggers;
 
 mod reject_data_trigger;
+
+macro_rules! check_data_trigger_validation_result {
+    ($expr:expr) => {
+        match $expr {
+            Ok(value) => value,
+            Err(e) => return Ok(DataTriggerExecutionResult::new_with_error(e)),
+        }
+    };
+}
 
 pub type DataTriggerExecutionResult = SimpleValidationResult<DataTriggerError>;
 

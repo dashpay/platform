@@ -73,10 +73,9 @@ pub trait StateTransitionValidation {
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error>;
 
-    fn validate_state<C: CoreRPCLike>(
+    fn validate_state<'a, C: CoreRPCLike>(
         &self,
-        drive: &Drive,
-        core_rpc: &C,
+        platform: &'a PlatformRef<C>,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
@@ -114,20 +113,19 @@ impl StateTransitionValidation for StateTransition {
         }
     }
 
-    fn validate_state<C: CoreRPCLike>(
+    fn validate_state<'a, C: CoreRPCLike>(
         &self,
-        drive: &Drive,
-        core_rpc: &C,
+        platform: &'a PlatformRef<C>,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         match self {
-            StateTransition::DataContractCreate(st) => st.validate_state(drive, core_rpc, tx),
-            StateTransition::DataContractUpdate(st) => st.validate_state(drive, core_rpc, tx),
-            StateTransition::IdentityCreate(st) => st.validate_state(drive, core_rpc, tx),
-            StateTransition::IdentityUpdate(st) => st.validate_state(drive, core_rpc, tx),
-            StateTransition::IdentityTopUp(st) => st.validate_state(drive, core_rpc, tx),
-            StateTransition::IdentityCreditWithdrawal(st) => st.validate_state(drive, core_rpc, tx),
-            StateTransition::DocumentsBatch(st) => st.validate_state(drive, core_rpc, tx),
+            StateTransition::DataContractCreate(st) => st.validate_state(platform, tx),
+            StateTransition::DataContractUpdate(st) => st.validate_state(platform, tx),
+            StateTransition::IdentityCreate(st) => st.validate_state(platform, tx),
+            StateTransition::IdentityUpdate(st) => st.validate_state(platform, tx),
+            StateTransition::IdentityTopUp(st) => st.validate_state(platform, tx),
+            StateTransition::IdentityCreditWithdrawal(st) => st.validate_state(platform, tx),
+            StateTransition::DocumentsBatch(st) => st.validate_state(platform, tx),
         }
     }
 }

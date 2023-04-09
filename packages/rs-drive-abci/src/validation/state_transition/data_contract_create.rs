@@ -26,6 +26,7 @@ use drive::grovedb::TransactionArg;
 use drive::{drive::Drive, grovedb::Transaction};
 
 use crate::error::Error;
+use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use crate::validation::state_transition::key_validation::validate_state_transition_identity_signature;
 use crate::validation::state_transition::StateTransitionValidation;
@@ -89,12 +90,12 @@ impl StateTransitionValidation for DataContractCreateTransition {
         )
     }
 
-    fn validate_state<C: CoreRPCLike>(
+    fn validate_state<'a, C: CoreRPCLike>(
         &self,
-        drive: &Drive,
-        _core: &C,
+        platform: &'a PlatformRef<C>,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        let drive = platform.drive;
         // Data contract shouldn't exist
         if drive
             .get_contract_with_fetch_info(self.data_contract.id.to_buffer(), None, false, tx)?
