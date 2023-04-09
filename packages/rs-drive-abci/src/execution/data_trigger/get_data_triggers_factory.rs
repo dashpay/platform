@@ -1,5 +1,4 @@
 use lazy_static::__Deref;
-use platform_value::string_encoding::Encoding;
 
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::{

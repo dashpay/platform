@@ -3,8 +3,8 @@ use dpp::platform_value::Identifier;
 use dpp::prelude::DocumentTransition;
 
 use crate::{
-    data_trigger::create_error, document::document_transition::DocumentTransition,
-    get_from_transition, prelude::Identifier, state_repository::StateRepositoryLike,
+    data_trigger::create_error, get_from_transition, prelude::Identifier,
+    state_repository::StateRepositoryLike,
 };
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
