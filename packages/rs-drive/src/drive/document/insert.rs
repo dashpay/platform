@@ -635,11 +635,11 @@ impl Drive {
         override_document: bool,
         block_info: &BlockInfo,
         document_is_unique_for_document_type_in_batch: bool,
-        apply: bool,
+        stateful: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
-        let mut estimated_costs_only_with_layer_info = if apply {
+        let mut estimated_costs_only_with_layer_info = if stateful {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
         } else {
             Some(HashMap::new())

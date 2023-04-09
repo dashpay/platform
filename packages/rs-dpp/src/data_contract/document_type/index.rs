@@ -32,6 +32,11 @@ impl Index {
             value1 == value2
         })
     }
+
+    /// The fields of the index
+    pub fn fields(&self) -> Vec<String> {
+        self.properties.iter().map(|property| property.name.clone()).collect()
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq, Hash)]
