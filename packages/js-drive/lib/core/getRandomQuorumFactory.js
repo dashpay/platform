@@ -72,10 +72,6 @@ function getRandomQuorumFactory(coreRpcClient) {
 
     // filter quorum by the number of valid members to choose the most vital ones
     let filteredValidatorQuorums = validatorQuorums
-      // TODO(wasm): Remove this hack
-      .filter(
-        (validatorQuorum) => validatorQuorum.creationHeight !== 4200,
-      )
       .filter(
         (validatorQuorum) => validatorQuorum.validMembersCount >= MIN_QUORUM_VALID_MEMBERS,
       )
