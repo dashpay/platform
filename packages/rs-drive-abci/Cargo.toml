@@ -55,8 +55,6 @@ tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", branc
 # tenderdash-abci = { path = "/home/lklimek/git/lklimek/tenderdash-abci-rs/abci", optional = true }
 anyhow = { version = "1.0.70" }
 lazy_static = "1.4.0"
-
-[dev-dependencies]
 itertools = { version = "0.10.5" }
 
 [features]

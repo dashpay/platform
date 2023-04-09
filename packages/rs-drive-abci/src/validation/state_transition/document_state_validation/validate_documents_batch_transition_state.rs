@@ -1,14 +1,10 @@
+use std::collections::btree_map::Entry;
+use std::collections::BTreeMap;
 use std::convert::TryInto;
-
-use async_trait::async_trait;
-use futures::future::join_all;
 use itertools::Itertools;
 
 use dpp::data_contract::errors::DataContractNotPresentError;
-use dpp::document::document_transition::{
-    DocumentCreateTransitionAction, DocumentDeleteTransitionAction,
-    DocumentReplaceTransitionAction, DocumentTransitionAction,
-};
+use dpp::document::document_transition::{DocumentCreateTransitionAction, DocumentDeleteTransitionAction, DocumentReplaceTransition, DocumentReplaceTransitionAction, DocumentTransitionAction};
 use dpp::document::state_transition::documents_batch_transition::{
     DocumentsBatchTransitionAction, DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION,
 };
@@ -17,7 +13,6 @@ use dpp::validation::{AsyncDataValidator, SimpleConsensusValidationResult};
 use dpp::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
     consensus::ConsensusError,
-    data_trigger::DataTriggerExecutionContext,
     document::{
         document_transition::{DocumentTransition, DocumentTransitionExt},
         DocumentsBatchTransition,
@@ -31,110 +26,113 @@ use dpp::{
     validation::ConsensusValidationResult,
     ProtocolError, StateError,
 };
+use dpp::data_contract::{DataContract, DriveContractExt};
+use drive::drive::Drive;
+use drive::grovedb::TransactionArg;
+use crate::error::Error;
+use crate::execution::data_trigger::DataTriggerExecutionContext;
+use crate::rpc::core::CoreRPCLike;
+use crate::validation::state_transition::document_state_validation::fetch_documents::fetch_documents_for_transitions_knowing_contract_and_document_type;
 
 use super::{
     execute_data_triggers::execute_data_triggers, fetch_documents::fetch_documents,
     validate_documents_uniqueness_by_indices::validate_documents_uniqueness_by_indices,
 };
 
-pub struct DocumentsBatchTransitionStateValidator<SR>
-where
-    SR: StateRepositoryLike,
-{
-    state_repository: SR,
-}
-
-#[async_trait(?Send)]
-impl<SR> AsyncDataValidator for DocumentsBatchTransitionStateValidator<SR>
-where
-    SR: StateRepositoryLike,
-{
-    type Item = DocumentsBatchTransition;
-    type ResultItem = DocumentsBatchTransitionAction;
-
-    async fn validate(
-        &self,
-        data: &Self::Item,
-        execution_context: &StateTransitionExecutionContext,
-    ) -> Result<ConsensusValidationResult<Self::ResultItem>, ProtocolError> {
-        validate_document_batch_transition_state(&self.state_repository, data, execution_context)
-            .await
-    }
-}
-
-impl<SR> DocumentsBatchTransitionStateValidator<SR>
-where
-    SR: StateRepositoryLike,
-{
-    pub fn new(state_repository: SR) -> DocumentsBatchTransitionStateValidator<SR>
-    where
-        SR: StateRepositoryLike,
-    {
-        DocumentsBatchTransitionStateValidator { state_repository }
-    }
-}
-
-pub async fn validate_document_batch_transition_state(
-    state_repository: &impl StateRepositoryLike,
-    state_transition: &DocumentsBatchTransition,
+pub fn validate_document_batch_transition_state(
+    drive: &Drive,
+    batch_state_transition: &DocumentsBatchTransition,
+    transaction: TransactionArg,
     execution_context: &StateTransitionExecutionContext,
 ) -> Result<ConsensusValidationResult<DocumentsBatchTransitionAction>, ProtocolError> {
-    let mut result = ConsensusValidationResult::<DocumentsBatchTransitionAction>::default();
-    let owner_id = *state_transition.get_owner_id();
+    let owner_id = *batch_state_transition.get_owner_id();
+    let mut transitions_by_contracts_and_types: BTreeMap<&Identifier, BTreeMap<&String, Vec<&DocumentTransition>>> =
+        BTreeMap::new();
 
-    let transitions_by_data_contract_id = state_transition
-        .get_transitions_slice()
-        .iter()
-        .into_group_map_by(|t| &t.base().data_contract_id);
+    // We want to validate by contract, and then for each document type within a contract
+    for document_transition in batch_state_transition.transitions.iter() {
+        let document_type = &document_transition.base().document_type_name;
+        let data_contract_id = &document_transition.base().data_contract_id;
 
-    let mut futures = vec![];
-    for (data_contract_id, transitions) in transitions_by_data_contract_id.iter() {
-        futures.push(validate_document_transitions(
-            state_repository,
-            data_contract_id,
-            owner_id,
-            transitions,
-            execution_context,
-        ))
+        match transitions_by_contracts_and_types.entry(data_contract_id) {
+            Entry::Vacant(v) => {
+                v.insert(BTreeMap::from([(document_type, vec![document_transition])]));
+            }
+            Entry::Occupied(mut transitions_by_types_in_contract) => {
+                match transitions_by_types_in_contract.entry(document_type) {
+                    Entry::Vacant(v) => {
+                        v.insert(vec![document_transition]);
+                    }
+                    Entry::Occupied(mut o) => {
+                        o.get_mut().push(document_transition)
+                    },
+                }
+            },
+        }
     }
 
-    let state_transition_actions = join_all(futures)
-        .await
-        .into_iter()
-        .collect::<Result<Vec<ConsensusValidationResult<Vec<DocumentTransitionAction>>>, ProtocolError>>()?
-        .into_iter()
-        .filter_map(|validation_result| {
-            if validation_result.has_data() {
-                Some(validation_result.into_data().unwrap())
-            } else {
-                result.add_errors(validation_result.errors);
-                None
-            }
-        })
-        .flatten()
-        .collect();
+    let validation_result = transitions_by_contracts_and_types.iter().map(|(data_contract_id, document_transitions_by_document_type)| {
+        validate_document_transitions_within_contract(
+            drive,
+            data_contract_id,
+            owner_id,
+            document_transitions_by_document_type,
+            execution_context,
+            transaction
+        )
+    }).collect::<Result<Vec<ConsensusValidationResult<Vec<DocumentTransitionAction>>>, Error>>()?;
+    let validation_result = ConsensusValidationResult::flatten(validation_result);
 
-    if result.is_valid() {
+    if validation_result.is_valid() {
         let batch_transition_action = DocumentsBatchTransitionAction {
             version: DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION,
             owner_id,
-            transitions: state_transition_actions,
+            transitions: validation_result.into_data()?,
         };
         Ok(ConsensusValidationResult::new_with_data(
             batch_transition_action,
         ))
     } else {
-        Ok(result)
+        Ok(ConsensusValidationResult::new_with_errors(validation_result.errors))
     }
 }
 
-pub async fn validate_document_transitions(
-    state_repository: &impl StateRepositoryLike,
+fn validate_document_transitions_within_contract(
+    drive: &Drive,
     data_contract_id: &Identifier,
+    owner_id: Identifier,
+    document_transitions: &BTreeMap<&String, Vec<&DocumentTransition>>,
+    execution_context: &StateTransitionExecutionContext,
+    transaction: TransactionArg,
+) -> Result<ConsensusValidationResult<Vec<DocumentTransitionAction>>, Error> {
+    // Data Contract must exist
+    let Some(contract_fetch_info) =
+        drive
+            .get_contract_with_fetch_info(data_contract_id.0 .0, None, false, transaction)?
+            .1
+        else {
+            return Err(ProtocolError::DataContractNotPresentError(
+                DataContractNotPresentError::new(data_contract_id.clone())).into())
+        };
+
+    let data_contract = &contract_fetch_info.contract;
+
+    let validation_result = document_transitions.iter().map(|(document_type_name, document_transitions)| {
+        validate_document_transitions_within_document_type(drive, data_contract, document_type_name, owner_id, document_transitions, execution_context, transaction)
+    }).collect::<Result<Vec<ConsensusValidationResult<Vec<DocumentTransitionAction>>>, Error>>()?;
+    Ok(ConsensusValidationResult::flatten(validation_result))
+}
+
+
+fn validate_document_transitions_within_document_type(
+    drive: &Drive,
+    data_contract: &DataContract,
+    document_type_name: &String,
     owner_id: Identifier,
     document_transitions: &[&DocumentTransition],
     execution_context: &StateTransitionExecutionContext,
-) -> Result<ConsensusValidationResult<Vec<DocumentTransitionAction>>, ProtocolError> {
+    transaction: TransactionArg,
+) -> Result<ConsensusValidationResult<Vec<DocumentTransitionAction>>, Error> {
     let mut result = ConsensusValidationResult::<Vec<DocumentTransitionAction>>::default();
 
     // We use temporary execution context without dry run,
@@ -142,26 +140,20 @@ pub async fn validate_document_transitions(
     // data contract to proceed with following logic
     let tmp_execution_context = StateTransitionExecutionContext::default();
 
-    // Data Contract must exist
-    let data_contract = state_repository
-        .fetch_data_contract(data_contract_id, None)
-        .await?
-        .map(TryInto::try_into)
-        .transpose()
-        .map_err(Into::into)?
-        .ok_or_else(|| {
-            ProtocolError::DataContractNotPresentError(DataContractNotPresentError::new(
-                *data_contract_id,
-            ))
-        })?;
-
     execution_context.add_operations(tmp_execution_context.get_operations());
 
-    let fetched_documents =
-        fetch_documents(state_repository, document_transitions, execution_context).await?;
+    let document_type = data_contract.document_type_for_name(document_type_name)?;
+
+    let fetched_documents = fetch_documents_for_transitions_knowing_contract_and_document_type(
+        drive,
+        data_contract,
+        document_type,
+        document_transitions,
+        transaction,
+    )?;
 
     // Calculate time window for timestamp
-    let last_header_time_millis = state_repository.fetch_latest_platform_block_time().await?;
+    let last_header_time_millis =  state_repository.fetch_latest_platform_block_time()?;
 
     let document_transition_actions = if !execution_context.is_dry_run() {
         let document_transition_actions = document_transitions
@@ -194,30 +186,14 @@ pub async fn validate_document_transitions(
         vec![]
     };
 
-    let validation_uniqueness_by_indices_result = validate_documents_uniqueness_by_indices(
-        state_repository,
-        &owner_id,
-        document_transitions
-            .iter()
-            .filter(|d| d.as_transition_delete().is_none())
-            .cloned(),
-        &data_contract,
-        execution_context,
-    )
-    .await?;
-
-    if !validation_uniqueness_by_indices_result.is_valid() {
-        result.add_errors(validation_uniqueness_by_indices_result.errors)
-    }
-
     let data_trigger_execution_context = DataTriggerExecutionContext {
-        state_repository: state_repository.to_owned(),
+        drive,
         owner_id: &owner_id,
         data_contract: &data_contract,
         state_transition_execution_context: execution_context,
     };
     let data_trigger_execution_results =
-        execute_data_triggers(document_transitions, &data_trigger_execution_context).await?;
+        execute_data_triggers(document_transitions, &data_trigger_execution_context)?;
 
     for execution_result in data_trigger_execution_results.into_iter() {
         if !execution_result.is_ok() {
@@ -239,12 +215,13 @@ pub async fn validate_document_transitions(
 }
 
 fn validate_transition(
+    drive: &Drive,
     transition: &DocumentTransition,
     fetched_documents: &[Document],
     last_header_block_time_millis: u64,
     owner_id: &Identifier,
 ) -> Result<ConsensusValidationResult<DocumentTransitionAction>, ProtocolError> {
-    match transition {
+    let validation_result : ConsensusValidationResult<DocumentTransitionAction> = match transition {
         DocumentTransition::Create(document_create_transition) => {
             let mut result = ConsensusValidationResult::<DocumentTransitionAction>::new_with_data(
                 DocumentTransitionAction::CreateAction(DocumentCreateTransitionAction::default()),
@@ -252,25 +229,43 @@ fn validate_transition(
             let validation_result = check_if_timestamps_are_equal(transition);
             result.merge(validation_result);
 
+            if !validation_result.is_valid() {
+                return Ok(result);
+            }
+
             let validation_result =
                 check_created_inside_time_window(transition, last_header_block_time_millis);
             result.merge(validation_result);
+
+            if !validation_result.is_valid() {
+                return Ok(result);
+            }
 
             let validation_result =
                 check_updated_inside_time_window(transition, last_header_block_time_millis);
             result.merge(validation_result);
 
+            if !validation_result.is_valid() {
+                return Ok(result);
+            }
+
             let validation_result =
-                check_if_document_is_already_present(transition, fetched_documents);
+                check_if_document_is_not_already_present(transition, fetched_documents);
             result.merge(validation_result);
 
+            if !validation_result.is_valid() {
+                return Ok(result);
+            }
+
+            let create_action : DocumentCreateTransitionAction = document_create_transition.into();
+
+            drive.validate_document_create_transition_action_uniqueness()
+
             if result.is_valid() {
-                Ok(
-                    DocumentTransitionAction::CreateAction(document_create_transition.into())
-                        .into(),
-                )
+                DocumentTransitionAction::CreateAction()
+                    .into()
             } else {
-                Ok(result)
+                return Ok(result);
             }
         }
         DocumentTransition::Replace(document_replace_transition) => {
@@ -281,11 +276,22 @@ fn validate_transition(
                 check_updated_inside_time_window(transition, last_header_block_time_millis);
             result.merge(validation_result);
 
-            let validation_result = check_revision(transition, fetched_documents);
+            if !validation_result.is_valid() {
+                return Ok(result);
+            }
+
+            // we check the revision first because it is a more common issue
+            let validation_result = check_revision_is_bumped_by_one(document_replace_transition, fetched_documents);
             result.merge(validation_result);
 
+            if !validation_result.is_valid() {
+                return Ok(result);
+            }
+
             let validation_result = check_if_document_can_be_found(transition, fetched_documents);
-            let original_document = if validation_result.has_data() {
+            // we only do is_valid on purpose because it would be a system error if it didn't have
+            // data
+            let original_document = if validation_result.is_valid() {
                 validation_result.into_data()?
             } else {
                 result.add_errors(validation_result.errors);
@@ -295,16 +301,20 @@ fn validate_transition(
             let validation_result = check_ownership(transition, original_document, owner_id);
             result.merge(validation_result);
 
+            if !validation_result.is_valid() {
+                return Ok(result);
+            }
+
             if result.is_valid() {
-                Ok(DocumentTransitionAction::ReplaceAction(
+                DocumentTransitionAction::ReplaceAction(
                     DocumentReplaceTransitionAction::from_document_replace_transition(
                         document_replace_transition,
                         original_document.created_at,
                     ),
                 )
-                .into())
+                    .into()
             } else {
-                Ok(result)
+                return Ok(result);
             }
         }
         DocumentTransition::Delete(document_delete_transition) => {
@@ -312,7 +322,10 @@ fn validate_transition(
                 DocumentTransitionAction::DeleteAction(DocumentDeleteTransitionAction::default()),
             );
             let validation_result = check_if_document_can_be_found(transition, fetched_documents);
-            let original_document = if validation_result.has_data() {
+
+            // we only do is_valid on purpose because it would be a system error if it didn't have
+            // data
+            let original_document = if validation_result.is_valid() {
                 validation_result.into_data()?
             } else {
                 result.add_errors(validation_result.errors);
@@ -324,7 +337,7 @@ fn validate_transition(
                 result.add_errors(validation_result.errors);
             }
 
-            if result.is_valid() {
+            return if result.is_valid() {
                 Ok(
                     DocumentTransitionAction::DeleteAction(document_delete_transition.into())
                         .into(),
@@ -333,7 +346,7 @@ fn validate_transition(
                 Ok(result)
             }
         }
-    }
+    };
 }
 
 pub fn check_ownership(
@@ -354,8 +367,8 @@ pub fn check_ownership(
     result
 }
 
-pub fn check_revision(
-    document_transition: &DocumentTransition,
+pub fn check_revision_is_bumped_by_one(
+    document_transition: &DocumentReplaceTransition,
     fetched_documents: &[Document],
 ) -> SimpleConsensusValidationResult {
     let mut result = SimpleConsensusValidationResult::default();
@@ -366,10 +379,9 @@ pub fn check_revision(
         Some(d) => d,
         None => return result,
     };
-    let revision = match document_transition.as_transition_replace() {
-        Some(d) => d.revision,
-        None => return result,
-    };
+
+    let revision = document_transition.revision;
+
     let Some(previous_revision) =  fetched_document.revision else {
         result.add_error(ConsensusError::StateError(Box::new(
             StateError::InvalidDocumentRevisionError {
@@ -379,6 +391,7 @@ pub fn check_revision(
         )));
         return result;
     };
+    // no need to check bounds here, because it would be impossible to hit the end on a u64
     let expected_revision = previous_revision + 1;
     if revision != expected_revision {
         result.add_error(ConsensusError::StateError(Box::new(
@@ -391,7 +404,8 @@ pub fn check_revision(
     result
 }
 
-pub fn check_if_document_is_already_present(
+/// We don't want the document id to already be present in the state
+pub fn check_if_document_is_not_already_present(
     document_transition: &DocumentTransition,
     fetched_documents: &[Document],
 ) -> SimpleConsensusValidationResult {
@@ -421,11 +435,11 @@ pub fn check_if_document_can_be_found<'a>(
     if let Some(document) = maybe_fetched_document {
         ConsensusValidationResult::new_with_data(document)
     } else {
-        ConsensusValidationResult::new_with_errors(vec![ConsensusError::StateError(Box::new(
+        ConsensusValidationResult::new_with_error(ConsensusError::StateError(Box::new(
             StateError::DocumentNotFoundError {
                 document_id: document_transition.base().id,
             },
-        ))])
+        )))
     }
 }
 
