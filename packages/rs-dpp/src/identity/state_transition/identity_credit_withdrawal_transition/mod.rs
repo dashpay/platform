@@ -25,6 +25,8 @@ use super::properties::{
 mod action;
 pub mod apply_identity_credit_withdrawal_transition_factory;
 pub mod validation;
+use crate::identity::SecurityLevel;
+use crate::identity::SecurityLevel::{CRITICAL, HIGH, MEDIUM};
 pub use action::{
     IdentityCreditWithdrawalTransitionAction, IDENTITY_CREDIT_WITHDRAWAL_TRANSITION_VERSION,
 };
@@ -125,6 +127,10 @@ impl StateTransitionIdentitySigned for IdentityCreditWithdrawalTransition {
 
     fn set_signature_public_key_id(&mut self, key_id: crate::identity::KeyID) {
         self.signature_public_key_id = key_id
+    }
+
+    fn get_security_level_requirement(&self) -> Vec<SecurityLevel> {
+        vec![CRITICAL, HIGH, MEDIUM]
     }
 }
 

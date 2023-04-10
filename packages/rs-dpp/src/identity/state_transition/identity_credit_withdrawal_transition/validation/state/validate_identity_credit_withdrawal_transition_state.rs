@@ -128,6 +128,7 @@ where
         Ok(IdentityCreditWithdrawalTransitionAction {
             version: IdentityCreditWithdrawalTransitionAction::current_version(),
             identity_id: state_transition.identity_id,
+            revision: state_transition.revision,
             prepared_withdrawal_document: withdrawal_document,
         }
         .into())
