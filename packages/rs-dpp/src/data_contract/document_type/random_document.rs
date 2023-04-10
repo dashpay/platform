@@ -56,6 +56,7 @@ pub trait CreateRandomDocument {
         &self,
         count: u32,
         identities: &Vec<Identity>,
+        time_ms: u64,
         rng: &mut StdRng,
     ) -> Vec<(Document, Identity, Bytes32)>;
     /// Document from bytes
@@ -69,6 +70,7 @@ pub trait CreateRandomDocument {
         &self,
         owner_id: Identifier,
         entropy: Bytes32,
+        time_ms: u64,
         rng: &mut StdRng,
     ) -> Document;
     /// Random filled documents
@@ -103,6 +105,7 @@ impl CreateRandomDocument for DocumentType {
         &self,
         count: u32,
         identities: &Vec<Identity>,
+        time_ms: u64,
         rng: &mut StdRng,
     ) -> Vec<(Document, Identity, Bytes32)> {
         let mut vec = vec![];
@@ -111,7 +114,7 @@ impl CreateRandomDocument for DocumentType {
             let identity = identities.get(identity_num).unwrap().clone();
             let entropy = Bytes32::random_with_rng(rng);
             vec.push((
-                self.random_document_with_params(identity.id, entropy, rng),
+                self.random_document_with_params(identity.id, entropy, time_ms, rng),
                 identity,
                 entropy,
             ));
@@ -137,7 +140,10 @@ impl CreateRandomDocument for DocumentType {
     fn random_document_with_rng(&self, rng: &mut StdRng) -> Document {
         let owner_id = Identifier::random_with_rng(rng);
         let entropy = Bytes32::random_with_rng(rng);
-        self.random_document_with_params(owner_id, entropy, rng)
+        let now = SystemTime::now();
+        let duration_since_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
+        let milliseconds = duration_since_epoch.as_millis() as u64;
+        self.random_document_with_params(owner_id, entropy, milliseconds, rng)
     }
 
     /// Creates a document with a given owner id and entropy, and properties using StdRng.
@@ -145,6 +151,7 @@ impl CreateRandomDocument for DocumentType {
         &self,
         owner_id: Identifier,
         entropy: Bytes32,
+        time_ms: u64,
         rng: &mut StdRng,
     ) -> Document {
         let id = generate_document_id(
@@ -154,9 +161,6 @@ impl CreateRandomDocument for DocumentType {
             entropy.as_slice(),
         );
         // dbg!("gen", hex::encode(id), hex::encode(&self.data_contract_id), hex::encode(&owner_id), self.name.as_str(), hex::encode(entropy.as_slice()));
-        let now = SystemTime::now();
-        let duration_since_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
-        let milliseconds = duration_since_epoch.as_millis() as u64;
         let mut created_at = None;
         let mut updated_at = None;
         let properties = self
@@ -164,10 +168,10 @@ impl CreateRandomDocument for DocumentType {
             .iter()
             .filter_map(|(key, document_field)| {
                 if key == CREATED_AT {
-                    created_at = Some(milliseconds);
+                    created_at = Some(time_ms);
                     None
                 } else if key == UPDATED_AT {
-                    updated_at = Some(milliseconds);
+                    updated_at = Some(time_ms);
                     None
                 } else {
                     Some((key.clone(), document_field.document_type.random_value(rng)))

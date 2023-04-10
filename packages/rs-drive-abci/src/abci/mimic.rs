@@ -5,23 +5,12 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;
 use drive::drive::block_info::BlockInfo;
-use std::time::{SystemTime, UNIX_EPOCH};
 use tenderdash_abci::proto::abci::{
     CommitInfo, RequestFinalizeBlock, RequestPrepareProposal, ResponsePrepareProposal,
 };
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::types::{Block, Header};
 use tenderdash_abci::Application;
-
-fn get_current_timestamp() -> Timestamp {
-    let now = SystemTime::now();
-    let duration_since_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
-
-    let seconds = duration_since_epoch.as_secs() as i64;
-    let nanos = duration_since_epoch.subsec_nanos() as i32;
-
-    Timestamp { seconds, nanos }
-}
 
 impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
     /// Execute a block with various state transitions
@@ -112,7 +101,10 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                     version: None,
                     chain_id: "strategy_tests".to_string(),
                     height: height as i64,
-                    time: Some(get_current_timestamp()),
+                    time: Some(Timestamp {
+                        seconds: (time_ms / 1000) as i64,
+                        nanos: ((time_ms % 1000) * 1000) as i32,
+                    }),
                     last_block_id: None,
                     last_commit_hash: vec![],
                     data_hash: vec![],

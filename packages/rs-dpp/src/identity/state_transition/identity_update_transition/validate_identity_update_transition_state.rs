@@ -123,8 +123,9 @@ where
                     property_name: property_names::PUBLIC_KEYS_DISABLED_AT.to_owned(),
                 },
             )?;
+            //todo: add block spacing ms
             let window_validation_result =
-                validate_time_in_block_time_window(last_block_header_time, disabled_at_ms);
+                validate_time_in_block_time_window(last_block_header_time, disabled_at_ms, 0);
 
             if !window_validation_result.is_valid() {
                 validation_result.add_error(

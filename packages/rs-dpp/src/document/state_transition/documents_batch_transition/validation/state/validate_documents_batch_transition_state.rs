@@ -457,7 +457,8 @@ pub fn check_created_inside_time_window(
         None => return result,
     };
 
-    let window_validation = validate_time_in_block_time_window(last_block_ts_millis, created_at);
+    //todo: deal with block spacing
+    let window_validation = validate_time_in_block_time_window(last_block_ts_millis, created_at, 0);
     if !window_validation.is_valid() {
         result.add_error(ConsensusError::StateError(Box::new(
             StateError::DocumentTimestampWindowViolationError {
@@ -482,7 +483,8 @@ pub fn check_updated_inside_time_window(
         None => return result,
     };
 
-    let window_validation = validate_time_in_block_time_window(last_block_ts_millis, updated_at);
+    //todo: deal with block spacing
+    let window_validation = validate_time_in_block_time_window(last_block_ts_millis, updated_at, 0);
     if !window_validation.is_valid() {
         result.add_error(ConsensusError::StateError(Box::new(
             StateError::DocumentTimestampWindowViolationError {

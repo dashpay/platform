@@ -247,6 +247,7 @@ fn validate_transition(
     transaction: TransactionArg,
 ) -> Result<ConsensusValidationResult<DocumentTransitionAction>, Error> {
     let latest_block_time_ms = platform.state.last_block_time_ms();
+    let average_block_spacing_ms = platform.config.block_spacing_ms;
     match transition {
         DocumentTransition::Create(document_create_transition) => {
             let mut result = ConsensusValidationResult::<DocumentTransitionAction>::new_with_data(
@@ -261,15 +262,21 @@ fn validate_transition(
 
             // We do not need to perform these checks on genesis
             if let Some(latest_block_time_ms) = latest_block_time_ms {
-                let validation_result =
-                    check_created_inside_time_window(transition, latest_block_time_ms);
+                let validation_result = check_created_inside_time_window(
+                    transition,
+                    latest_block_time_ms,
+                    average_block_spacing_ms,
+                );
                 result.merge(validation_result);
 
                 if !result.is_valid() {
                     return Ok(result);
                 }
-                let validation_result =
-                    check_updated_inside_time_window(transition, latest_block_time_ms);
+                let validation_result = check_updated_inside_time_window(
+                    transition,
+                    latest_block_time_ms,
+                    average_block_spacing_ms,
+                );
                 result.merge(validation_result);
 
                 if !result.is_valid() {
@@ -311,8 +318,11 @@ fn validate_transition(
             );
             // We do not need to perform this check on genesis
             if let Some(latest_block_time_ms) = latest_block_time_ms {
-                let validation_result =
-                    check_updated_inside_time_window(transition, latest_block_time_ms);
+                let validation_result = check_updated_inside_time_window(
+                    transition,
+                    latest_block_time_ms,
+                    average_block_spacing_ms,
+                );
                 result.merge(validation_result);
 
                 if !result.is_valid() {
@@ -511,6 +521,7 @@ pub fn check_if_timestamps_are_equal(
 pub fn check_created_inside_time_window(
     document_transition: &DocumentTransition,
     last_block_ts_millis: TimestampMillis,
+    average_block_spacing_ms: u64,
 ) -> SimpleConsensusValidationResult {
     let mut result = SimpleConsensusValidationResult::default();
     let created_at = match document_transition.get_created_at() {
@@ -518,7 +529,11 @@ pub fn check_created_inside_time_window(
         None => return result,
     };
 
-    let window_validation = validate_time_in_block_time_window(last_block_ts_millis, created_at);
+    let window_validation = validate_time_in_block_time_window(
+        last_block_ts_millis,
+        created_at,
+        average_block_spacing_ms,
+    );
     if !window_validation.is_valid() {
         result.add_error(ConsensusError::StateError(Box::new(
             StateError::DocumentTimestampWindowViolationError {
@@ -536,6 +551,7 @@ pub fn check_created_inside_time_window(
 pub fn check_updated_inside_time_window(
     document_transition: &DocumentTransition,
     last_block_ts_millis: TimestampMillis,
+    average_block_spacing_ms: u64,
 ) -> SimpleConsensusValidationResult {
     let mut result = SimpleConsensusValidationResult::default();
     let updated_at = match document_transition.get_updated_at() {
@@ -543,7 +559,11 @@ pub fn check_updated_inside_time_window(
         None => return result,
     };
 
-    let window_validation = validate_time_in_block_time_window(last_block_ts_millis, updated_at);
+    let window_validation = validate_time_in_block_time_window(
+        last_block_ts_millis,
+        updated_at,
+        average_block_spacing_ms,
+    );
     if !window_validation.is_valid() {
         result.add_error(ConsensusError::StateError(Box::new(
             StateError::DocumentTimestampWindowViolationError {

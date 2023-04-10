@@ -350,6 +350,7 @@ impl Strategy {
                         let documents = op.document_type.random_documents_with_params(
                             count as u32,
                             current_identities,
+                            block_info.time_ms,
                             rng,
                         );
                         documents
@@ -552,7 +553,6 @@ pub struct ChainExecutionOutcome<'a> {
 pub struct ChainExecutionParameters {
     pub block_start: u64,
     pub block_count: u64,
-    pub block_spacing_ms: u64,
     pub proposers: Vec<[u8; 32]>,
     pub quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
     pub current_quorum_hash: QuorumHash,
@@ -570,7 +570,6 @@ pub enum StrategyRandomness {
 pub(crate) fn run_chain_for_strategy(
     platform: &mut TempPlatform<MockCoreRPCLike>,
     block_count: u64,
-    block_spacing_ms: u64,
     strategy: Strategy,
     config: PlatformConfig,
     seed: u64,
@@ -639,7 +638,6 @@ pub(crate) fn run_chain_for_strategy(
     start_chain_for_strategy(
         platform,
         block_count,
-        block_spacing_ms,
         proposers,
         quorums,
         strategy,
@@ -651,7 +649,6 @@ pub(crate) fn run_chain_for_strategy(
 pub(crate) fn start_chain_for_strategy(
     platform: &TempPlatform<MockCoreRPCLike>,
     block_count: u64,
-    block_spacing_ms: u64,
     proposers: Vec<[u8; 32]>,
     quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
     strategy: Strategy,
@@ -669,12 +666,11 @@ pub(crate) fn start_chain_for_strategy(
         ChainExecutionParameters {
             block_start: 1,
             block_count,
-            block_spacing_ms,
             proposers,
             quorums,
             current_quorum_hash,
             current_proposer_versions: None,
-            current_time_ms: 0,
+            current_time_ms: 1681094380000,
         },
         strategy,
         config,
@@ -693,7 +689,6 @@ pub(crate) fn continue_chain_for_strategy(
     let ChainExecutionParameters {
         block_start,
         block_count,
-        block_spacing_ms,
         proposers,
         quorums,
         mut current_quorum_hash,
@@ -711,7 +706,7 @@ pub(crate) fn continue_chain_for_strategy(
     let mut signer = SimpleSigner::default();
     let mut i = 0;
 
-    let blocks_per_epoch = EPOCH_CHANGE_TIME_MS / block_spacing_ms;
+    let blocks_per_epoch = EPOCH_CHANGE_TIME_MS / config.block_spacing_ms;
 
     let proposer_count = proposers.len() as u32;
 
@@ -786,7 +781,7 @@ pub(crate) fn continue_chain_for_strategy(
             )
             .expect("expected to execute a block");
 
-        current_time_ms += block_spacing_ms;
+        current_time_ms += config.block_spacing_ms;
         i += 1;
         i %= quorum_size;
         let needs_rotation = block_height % quorum_rotation_block_count == 0;
@@ -846,6 +841,7 @@ mod tests {
             verify_sum_trees: true,
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 25,
+            block_spacing_ms: 3000,
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -862,7 +858,7 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
-        run_chain_for_strategy(&mut platform, 1000, 3000, strategy, config, 15);
+        run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
     }
 
     #[test]
@@ -881,6 +877,7 @@ mod tests {
             verify_sum_trees: true,
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 25,
+            block_spacing_ms: 3000,
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -896,7 +893,7 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
-        let outcome = run_chain_for_strategy(&mut platform, 100, 3000, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
 
         assert_eq!(outcome.identities.len(), 100);
     }
@@ -913,13 +910,15 @@ mod tests {
             total_hpmns: 100,
             upgrading_info: None,
         };
+        let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
             verify_sum_trees: true,
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 100,
+            block_spacing_ms: day_in_ms,
             ..Default::default()
         };
-        let day_in_ms = 1000 * 60 * 60 * 24;
+
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
@@ -933,7 +932,7 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
-        let outcome = run_chain_for_strategy(&mut platform, 150, day_in_ms, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 150, strategy, config, 15);
         assert_eq!(outcome.identities.len(), 150);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -967,6 +966,7 @@ mod tests {
             verify_sum_trees: true,
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 25,
+            block_spacing_ms: 3000,
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -982,7 +982,7 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
-        run_chain_for_strategy(&mut platform, 1, 3000, strategy, config, 15);
+        run_chain_for_strategy(&mut platform, 1, strategy, config, 15);
     }
 
     #[test]
@@ -1024,6 +1024,7 @@ mod tests {
             verify_sum_trees: true,
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 25,
+            block_spacing_ms: 3000,
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -1039,7 +1040,7 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
-        run_chain_for_strategy(&mut platform, 100, 3000, strategy, config, 15);
+        run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
     }
 
     #[test]
@@ -1077,13 +1078,14 @@ mod tests {
             total_hpmns: 100,
             upgrading_info: None,
         };
+        let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
             verify_sum_trees: true,
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 100,
+            block_spacing_ms: day_in_ms,
             ..Default::default()
         };
-        let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 120;
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
@@ -1098,8 +1100,7 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
-        let outcome =
-            run_chain_for_strategy(&mut platform, block_count, day_in_ms, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -1163,13 +1164,14 @@ mod tests {
             total_hpmns: 100,
             upgrading_info: None,
         };
+        let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
             verify_sum_trees: true,
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 100,
+            block_spacing_ms: day_in_ms,
             ..Default::default()
         };
-        let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 120;
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
@@ -1184,8 +1186,7 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
-        let outcome =
-            run_chain_for_strategy(&mut platform, block_count, day_in_ms, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -1249,13 +1250,15 @@ mod tests {
             total_hpmns: 100,
             upgrading_info: None,
         };
+        let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
             verify_sum_trees: true,
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 100,
+            block_spacing_ms: day_in_ms,
             ..Default::default()
         };
-        let day_in_ms = 1000 * 60 * 60 * 24;
+
         let block_count = 120;
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
@@ -1270,8 +1273,7 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
-        let outcome =
-            run_chain_for_strategy(&mut platform, block_count, day_in_ms, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -1335,13 +1337,16 @@ mod tests {
             total_hpmns: 100,
             upgrading_info: None,
         };
+
+        let day_in_ms = 1000 * 60 * 60 * 24;
+
         let config = PlatformConfig {
             verify_sum_trees: true,
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 100,
+            block_spacing_ms: day_in_ms,
             ..Default::default()
         };
-        let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 30;
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
@@ -1356,9 +1361,8 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
-        let outcome =
-            run_chain_for_strategy(&mut platform, block_count, day_in_ms, strategy, config, 15);
-        assert_eq!(outcome.identities.len() as u64, 357);
+        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        assert_eq!(outcome.identities.len() as u64, 363);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances

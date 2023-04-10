@@ -155,6 +155,10 @@ pub struct PlatformConfig {
     /// The default quorum size
     pub quorum_size: u16,
 
+    // todo: this should probably be coming from Tenderdash config
+    /// Approximately how often are blocks produced
+    pub block_spacing_ms: u64,
+
     /// How often should quorums change?
     pub validator_set_quorum_rotation_block_count: u32,
 
@@ -202,6 +206,7 @@ impl Default for PlatformConfig {
             verify_sum_trees: true,
             quorum_type: "llmq_100_67".to_string(),
             quorum_size: 100,
+            block_spacing_ms: 5000,
             validator_set_quorum_rotation_block_count: 15,
             drive: Default::default(),
             abci: AbciConfig {

@@ -25,13 +25,14 @@ mod tests {
                 upgrade_three_quarters_life: 0.1,
             }),
         };
-        let config = PlatformConfig {
+        let twenty_minutes_in_ms = 1000 * 60 * 20;
+        let mut config = PlatformConfig {
             verify_sum_trees: true,
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 125,
+            block_spacing_ms: twenty_minutes_in_ms,
             ..Default::default()
         };
-        let twenty_minutes_in_ms = 1000 * 60 * 20;
         let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
@@ -53,14 +54,7 @@ mod tests {
             current_proposer_versions,
             end_time_ms,
             ..
-        } = run_chain_for_strategy(
-            &mut platform,
-            1300,
-            twenty_minutes_in_ms,
-            strategy.clone(),
-            config.clone(),
-            15,
-        );
+        } = run_chain_for_strategy(&mut platform, 1300, strategy.clone(), config.clone(), 15);
         {
             let platform = abci_app.platform;
             let drive_cache = platform.drive.cache.read().unwrap();
@@ -112,6 +106,10 @@ mod tests {
             .unwrap()
             .height
             + 1;
+
+        //speed things up
+        config.block_spacing_ms = hour_in_ms;
+
         let ChainExecutionOutcome {
             abci_app,
             proposers,
@@ -124,7 +122,6 @@ mod tests {
             ChainExecutionParameters {
                 block_start,
                 block_count: 200,
-                block_spacing_ms: hour_in_ms,
                 proposers,
                 quorums,
                 current_quorum_hash,
@@ -186,7 +183,6 @@ mod tests {
             ChainExecutionParameters {
                 block_start,
                 block_count: 400,
-                block_spacing_ms: hour_in_ms,
                 proposers,
                 quorums,
                 current_quorum_hash,
@@ -248,10 +244,12 @@ mod tests {
                 upgrade_three_quarters_life: 5.0, //it will take an epoch before we get enough nodes
             }),
         };
+        let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
             verify_sum_trees: true,
             quorum_size: 40,
             validator_set_quorum_rotation_block_count: 50,
+            block_spacing_ms: hour_in_ms,
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -267,7 +265,7 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
-        let hour_in_ms = 1000 * 60 * 60;
+
         let ChainExecutionOutcome {
             abci_app,
             proposers,
@@ -276,14 +274,7 @@ mod tests {
             current_proposer_versions,
             end_time_ms,
             ..
-        } = run_chain_for_strategy(
-            &mut platform,
-            2000,
-            hour_in_ms,
-            strategy.clone(),
-            config.clone(),
-            15,
-        );
+        } = run_chain_for_strategy(&mut platform, 2000, strategy.clone(), config.clone(), 15);
         {
             let platform = abci_app.platform;
             let drive_cache = platform.drive.cache.read().unwrap();
@@ -342,7 +333,6 @@ mod tests {
             ChainExecutionParameters {
                 block_start,
                 block_count: 1600,
-                block_spacing_ms: hour_in_ms,
                 proposers,
                 quorums,
                 current_quorum_hash,
@@ -403,7 +393,6 @@ mod tests {
             ChainExecutionParameters {
                 block_start,
                 block_count: 400,
-                block_spacing_ms: hour_in_ms,
                 proposers,
                 quorums,
                 current_quorum_hash,
@@ -463,10 +452,12 @@ mod tests {
                 upgrade_three_quarters_life: 5.0,
             }),
         };
-        let config = PlatformConfig {
+        let hour_in_ms = 1000 * 60 * 60;
+        let mut config = PlatformConfig {
             verify_sum_trees: true,
             quorum_size: 50,
             validator_set_quorum_rotation_block_count: 60,
+            block_spacing_ms: hour_in_ms,
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -482,7 +473,6 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
-        let hour_in_ms = 1000 * 60 * 60;
         let ChainExecutionOutcome {
             abci_app,
             proposers,
@@ -491,14 +481,7 @@ mod tests {
             current_proposer_versions,
             end_time_ms,
             ..
-        } = run_chain_for_strategy(
-            &mut platform,
-            2000,
-            hour_in_ms,
-            strategy.clone(),
-            config.clone(),
-            15,
-        );
+        } = run_chain_for_strategy(&mut platform, 2000, strategy.clone(), config.clone(), 15);
         {
             let platform = abci_app.platform;
             let drive_cache = platform.drive.cache.read().unwrap();
@@ -552,7 +535,6 @@ mod tests {
             ChainExecutionParameters {
                 block_start,
                 block_count: 3000,
-                block_spacing_ms: hour_in_ms,
                 proposers,
                 quorums,
                 current_quorum_hash,
@@ -624,6 +606,7 @@ mod tests {
             .unwrap()
             .height
             + 1;
+        config.block_spacing_ms = hour_in_ms / 5; //speed things up
         let ChainExecutionOutcome {
             abci_app,
             proposers,
@@ -637,7 +620,6 @@ mod tests {
             ChainExecutionParameters {
                 block_start,
                 block_count: 2000,
-                block_spacing_ms: hour_in_ms / 5, //speed things up
                 proposers,
                 quorums,
                 current_quorum_hash,
@@ -691,12 +673,12 @@ mod tests {
             .unwrap()
             .height
             + 1;
+        config.block_spacing_ms = hour_in_ms * 4; //let's try to move to next epoch
         let ChainExecutionOutcome { abci_app, .. } = continue_chain_for_strategy(
             abci_app,
             ChainExecutionParameters {
                 block_start,
                 block_count: 100,
-                block_spacing_ms: hour_in_ms * 4, //let's try to move to next epoch
                 proposers,
                 quorums,
                 current_quorum_hash,
@@ -757,10 +739,12 @@ mod tests {
                 upgrade_three_quarters_life: 0.75,
             }),
         };
+        let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
             verify_sum_trees: true,
             quorum_size: 50,
             validator_set_quorum_rotation_block_count: 60,
+            block_spacing_ms: hour_in_ms,
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -776,7 +760,6 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
-        let hour_in_ms = 1000 * 60 * 60;
         let ChainExecutionOutcome {
             abci_app,
             proposers,
@@ -784,14 +767,7 @@ mod tests {
             current_quorum_hash,
             end_time_ms,
             ..
-        } = run_chain_for_strategy(
-            &mut platform,
-            1400,
-            hour_in_ms,
-            strategy,
-            config.clone(),
-            15,
-        );
+        } = run_chain_for_strategy(&mut platform, 1400, strategy, config.clone(), 15);
         {
             let platform = abci_app.platform;
             let drive_cache = platform.drive.cache.read().unwrap();
@@ -862,7 +838,6 @@ mod tests {
             ChainExecutionParameters {
                 block_start,
                 block_count: 700,
-                block_spacing_ms: hour_in_ms,
                 proposers,
                 quorums,
                 current_quorum_hash,
