@@ -28,7 +28,6 @@ where
     ) -> Result<ValidationResult<IdentityTopUpTransitionAction>, ProtocolError> {
         validate_identity_topup_transition_state(&self.state_repository, data)
             .await
-            .map(|result| result)
             .map_err(|err| err.into())
     }
 }

@@ -46,9 +46,7 @@ where
                 state_repository.clone(),
                 asset_lock_transaction_output_fetcher,
             ),
-            apply_identity_update_transition: ApplyIdentityUpdateTransition::new(
-                state_repository.clone(),
-            ),
+            apply_identity_update_transition: ApplyIdentityUpdateTransition::new(state_repository),
         }
     }
 

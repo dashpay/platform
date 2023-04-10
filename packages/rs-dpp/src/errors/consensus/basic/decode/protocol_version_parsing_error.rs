@@ -31,8 +31,8 @@ impl From<ProtocolVersionParsingError> for ConsensusError {
     }
 }
 
-impl Into<u32> for ProtocolVersionParsingError {
-    fn into(self) -> u32 {
+impl From<ProtocolVersionParsingError> for u32 {
+    fn from(val: ProtocolVersionParsingError) -> Self {
         0
     }
 }

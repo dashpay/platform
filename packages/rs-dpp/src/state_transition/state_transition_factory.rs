@@ -128,8 +128,7 @@ where
                         errors: vec![consensus_error],
                         raw_state_transition,
                     },
-                )
-                .into());
+                ));
             }
         };
 

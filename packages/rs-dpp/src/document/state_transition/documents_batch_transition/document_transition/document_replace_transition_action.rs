@@ -35,7 +35,7 @@ impl DocumentReplaceTransitionAction {
             base: base.into(),
             revision: *revision,
             created_at: originally_created_at,
-            updated_at: updated_at.clone(),
+            updated_at: *updated_at,
             data: data.clone().unwrap_or_default(),
         }
     }
