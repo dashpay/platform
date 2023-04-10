@@ -56,7 +56,7 @@ FEATURE_FLAGS_OWNER_PRIVATE_KEY=$(yq .feature_flags_hd_private_key "$CONFIG")
 MASTERNODE_NAME=$(grep "$DAPI_SEED" "$INVENTORY" | awk '{print $1;}')
 
 MASTERNODE_OWNER_PRO_REG_TX_HASH=$(grep "$DAPI_SEED" "$INVENTORY" | awk -F "=" '{print $6;}')
-MASTERNODE_OWNER_MASTER_PRIVATE_KEY=$(yq .masternodes."$MASTERNODE_NAME".owner.private_key "$CONFIG")
+MASTERNODE_OWNER_MASTER_PRIVATE_KEY=$(yq .hp_masternodes."$MASTERNODE_NAME".owner.private_key "$CONFIG")
 
 if [[ "$NETWORK_STRING" == "devnet"* ]]; then
   NETWORK=devnet
