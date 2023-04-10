@@ -36,7 +36,6 @@ use dashcore::{signer, Network, PrivateKey};
 use dashcore_rpc::dashcore_rpc_json::{
     QuorumHash as QuorumHashObject, QuorumInfoResult, QuorumType,
 };
-use dpp::bls_signatures::{PrivateKey as BlsPrivateKey, PublicKey as BlsPublicKey, Serialize};
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::document::document_transition::document_base_transition::DocumentBaseTransition;
 use dpp::document::document_transition::{
@@ -58,6 +57,10 @@ use dpp::tests::fixtures::{
 };
 use dpp::version::LATEST_VERSION;
 use dpp::{bls_signatures, NativeBlsModule, ProtocolError};
+use dpp::{
+    bls_signatures::{PrivateKey as BlsPrivateKey, PublicKey as BlsPublicKey, Serialize},
+    identity::state_transition::identity_topup_transition::IdentityTopUpTransition,
+};
 use drive::common::helpers::identities::create_test_masternode_identities_with_rng;
 use drive::contract::{Contract, CreateRandomDocument, DocumentType};
 use drive::dpp::document::Document;
@@ -79,8 +82,8 @@ use drive_abci::rpc::core::MockCoreRPCLike;
 use drive_abci::test::fixture::abci::static_init_chain_request;
 use drive_abci::test::helpers::setup::TestPlatformBuilder;
 use drive_abci::{config::PlatformConfig, test::helpers::setup::TempPlatform};
-use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
+use rand::{rngs::StdRng, RngCore};
 use rand::{Rng, SeedableRng};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -169,6 +172,7 @@ pub struct Operation {
 #[derive(Clone, Debug)]
 pub enum OperationType {
     Document(DocumentOp),
+    IdentityTopUp,
 }
 
 /// This simple signer is only to be used in tests
@@ -304,6 +308,7 @@ impl Strategy {
                         )
                         .expect("expected to be able to add contract");
                 }
+                _ => {}
             }
         }
     }
@@ -564,6 +569,7 @@ impl Strategy {
                             operations.push(document_batch_transition.into());
                         }
                     }
+                    _ => {}
                 }
             }
         }
@@ -598,10 +604,35 @@ impl Strategy {
                 signer,
                 rng,
             );
-
         state_transitions.append(&mut document_state_transitions);
+
+        state_transitions.extend(self.operations.iter().filter_map(|op| match op.op_type {
+            OperationType::IdentityTopUp if op.frequency.check_hit(rng) => {
+                let identity_idx = (rng.next_u32() as usize) % identities.len();
+                let random_identity = &identities[identity_idx];
+                Some(create_identity_top_up_transition(rng, random_identity))
+            }
+            _ => None,
+        }));
+
         state_transitions
     }
+}
+
+fn create_identity_top_up_transition(rng: &mut StdRng, identity: &Identity) -> StateTransition {
+    let (_, pk) = ECDSA_SECP256K1.random_public_and_private_key_data(rng);
+    let sk: [u8; 32] = pk.clone().try_into().unwrap();
+    let secret_key = SecretKey::from_str(hex::encode(sk).as_str()).unwrap();
+    let asset_lock_proof =
+        instant_asset_lock_proof_fixture(Some(PrivateKey::new(secret_key, Network::Dash)));
+
+    StateTransition::IdentityTopUp(IdentityTopUpTransition {
+        transition_type: StateTransitionType::IdentityTopUp, // why it has this field
+        asset_lock_proof,
+        identity_id: identity.id,
+        protocol_version: PROTOCOL_VERSION,
+        signature: todo!(),
+    })
 }
 
 fn create_identities_state_transitions(
