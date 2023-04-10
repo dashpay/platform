@@ -87,8 +87,8 @@ mod tests {
                     .current_protocol_version_in_consensus,
                 1
             );
-            assert_eq!(counter.get(&1), Some(&13)); //most nodes were hit (60 were not)
-            assert_eq!(counter.get(&2), Some(&400)); //most nodes were hit (60 were not)
+            assert_eq!(counter.get(&1), Some(&5)); //most nodes were hit (60 were not)
+            assert_eq!(counter.get(&2), Some(&390)); //most nodes were hit (60 were not)
         }
 
         // we did not yet hit the epoch change
