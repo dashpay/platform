@@ -55,7 +55,7 @@ pub fn process_state_transition<'a, C: CoreRPCLike>(
     let maybe_identity = result.into_data()?;
 
     // Validating state
-    let result = state_transition.validate_state(platform.drive, platform.core_rpc, transaction)?;
+    let result = state_transition.validate_state(platform, transaction)?;
 
     result.map_result(|action| (maybe_identity, action, &platform.state.current_epoch).try_into())
 }

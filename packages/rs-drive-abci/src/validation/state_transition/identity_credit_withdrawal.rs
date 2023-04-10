@@ -36,5 +36,6 @@ impl StateTransitionValidation for IdentityCreditWithdrawalTransition {
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let drive = platform.drive;
+        todo!()
     }
 }

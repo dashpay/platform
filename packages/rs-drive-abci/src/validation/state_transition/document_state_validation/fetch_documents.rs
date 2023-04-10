@@ -1,10 +1,9 @@
-use std::collections::BTreeMap;
-use std::{
-    convert::TryInto,
-};
 use std::collections::btree_map::Entry;
+use std::collections::BTreeMap;
+use std::convert::TryInto;
 
 use crate::error::Error;
+use crate::platform::PlatformStateRef;
 use dpp::block_time_window::validation_result;
 use dpp::consensus::basic::document::InvalidDocumentTypeError;
 use dpp::consensus::basic::BasicError;
@@ -23,7 +22,6 @@ use drive::drive::Drive;
 use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::TransactionArg;
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
-use crate::platform::PlatformStateRef;
 
 pub(super) fn fetch_documents_for_transitions(
     platform: &PlatformStateRef,

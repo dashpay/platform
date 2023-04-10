@@ -20,11 +20,11 @@ use crate::validation::state_transition::key_validation::{
 
 use crate::asset_lock::fetch_tx_out::FetchAssetLockProofTxOut;
 
+use crate::platform::PlatformRef;
 use crate::{
     error::Error,
     validation::state_transition::common::{validate_protocol_version, validate_schema},
 };
-use crate::platform::PlatformRef;
 
 use super::StateTransitionValidation;
 

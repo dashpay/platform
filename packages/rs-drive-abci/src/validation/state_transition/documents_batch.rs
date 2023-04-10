@@ -137,9 +137,8 @@ impl StateTransitionValidation for DocumentsBatchTransition {
         platform: &'a PlatformRef<C>,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let drive = platform.drive;
         let validation_result = validate_document_batch_transition_state(
-            drive,
+            &platform.into(),
             self,
             tx,
             &StateTransitionExecutionContext::default(),

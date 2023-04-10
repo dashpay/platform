@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::convert::TryInto;
 
 use crate::error::Error;
+use crate::platform::{PlatformRef, PlatformStateRef};
 use crate::rpc::core::CoreRPCLike;
 use crate::validation::state_transition::document_state_validation::fetch_documents::fetch_documents_for_transitions_knowing_contract_and_document_type;
 use dpp::consensus::basic::BasicError;
@@ -37,7 +38,6 @@ use dpp::{
 };
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
-use crate::platform::{PlatformRef, PlatformStateRef};
 
 pub fn validate_document_batch_transition_state(
     platform: &PlatformStateRef,
@@ -203,7 +203,7 @@ fn validate_document_transitions_within_document_type(
             .collect::<Result<Vec<ConsensusValidationResult<DocumentTransitionAction>>, Error>>()?;
 
         let result =
-            ConsensusValidationResult::flatten(document_transition_actions_validation_result);
+            ConsensusValidationResult::merge_many(document_transition_actions_validation_result);
 
         if !result.is_valid() {
             return Ok(result);
@@ -247,7 +247,7 @@ fn validate_transition(
     transaction: TransactionArg,
 ) -> Result<ConsensusValidationResult<DocumentTransitionAction>, Error> {
     let latest_block_time_ms = platform.state.last_block_time_ms();
-    let validation_result: ConsensusValidationResult<DocumentTransitionAction> = match transition {
+    match transition {
         DocumentTransition::Create(document_create_transition) => {
             let mut result = ConsensusValidationResult::<DocumentTransitionAction>::new_with_data(
                 DocumentTransitionAction::CreateAction(DocumentCreateTransitionAction::default()),
@@ -255,7 +255,7 @@ fn validate_transition(
             let validation_result = check_if_timestamps_are_equal(transition);
             result.merge(validation_result);
 
-            if !validation_result.is_valid() {
+            if !result.is_valid() {
                 return Ok(result);
             }
 
@@ -263,7 +263,7 @@ fn validate_transition(
                 check_created_inside_time_window(transition, latest_block_time_ms);
             result.merge(validation_result);
 
-            if !validation_result.is_valid() {
+            if !result.is_valid() {
                 return Ok(result);
             }
 
@@ -271,7 +271,7 @@ fn validate_transition(
                 check_updated_inside_time_window(transition, latest_block_time_ms);
             result.merge(validation_result);
 
-            if !validation_result.is_valid() {
+            if !result.is_valid() {
                 return Ok(result);
             }
 
@@ -279,26 +279,28 @@ fn validate_transition(
                 check_if_document_is_not_already_present(transition, fetched_documents);
             result.merge(validation_result);
 
-            if !validation_result.is_valid() {
+            if !result.is_valid() {
                 return Ok(result);
             }
 
             let document_create_action: DocumentCreateTransitionAction =
                 document_create_transition.into();
 
-            let validation_result = platform.drive.validate_document_create_transition_action_uniqueness(
-                contract,
-                document_type,
-                &document_create_action,
-                owner_id,
-                transaction,
-            )?;
+            let validation_result = platform
+                .drive
+                .validate_document_create_transition_action_uniqueness(
+                    contract,
+                    document_type,
+                    &document_create_action,
+                    owner_id,
+                    transaction,
+                )?;
             result.merge(validation_result);
 
             if result.is_valid() {
-                DocumentTransitionAction::CreateAction(document_create_action).into()
+                Ok(DocumentTransitionAction::CreateAction(document_create_action).into())
             } else {
-                return Ok(result);
+                Ok(result)
             }
         }
         DocumentTransition::Replace(document_replace_transition) => {
@@ -309,16 +311,7 @@ fn validate_transition(
                 check_updated_inside_time_window(transition, latest_block_time_ms);
             result.merge(validation_result);
 
-            if !validation_result.is_valid() {
-                return Ok(result);
-            }
-
-            // we check the revision first because it is a more common issue
-            let validation_result =
-                check_revision_is_bumped_by_one(document_replace_transition, fetched_documents);
-            result.merge(validation_result);
-
-            if !validation_result.is_valid() {
+            if !result.is_valid() {
                 return Ok(result);
             }
 
@@ -332,29 +325,43 @@ fn validate_transition(
                 return Ok(result);
             };
 
+            // we check the revision first because it is a more common issue
+            let validation_result =
+                check_revision_is_bumped_by_one(document_replace_transition, original_document);
+            result.merge(validation_result);
+
+            if !result.is_valid() {
+                return Ok(result);
+            }
+
             let validation_result = check_ownership(transition, original_document, owner_id);
             result.merge(validation_result);
 
-            if !validation_result.is_valid() {
+            if !result.is_valid() {
                 return Ok(result);
             }
 
             let document_replace_action: DocumentReplaceTransitionAction =
-                document_replace_transition.into();
+                DocumentReplaceTransitionAction::from_document_replace_transition(
+                    document_replace_transition,
+                    original_document.created_at,
+                );
 
-            let validation_result = platform.drive.validate_document_replace_transition_action_uniqueness(
-                contract,
-                document_type,
-                &document_replace_action,
-                owner_id,
-                transaction,
-            )?;
+            let validation_result = platform
+                .drive
+                .validate_document_replace_transition_action_uniqueness(
+                    contract,
+                    document_type,
+                    &document_replace_action,
+                    owner_id,
+                    transaction,
+                )?;
             result.merge(validation_result);
 
             if result.is_valid() {
-                DocumentTransitionAction::ReplaceAction(document_replace_action).into()
+                Ok(DocumentTransitionAction::ReplaceAction(document_replace_action).into())
             } else {
-                return Ok(result);
+                Ok(result)
             }
         }
         DocumentTransition::Delete(document_delete_transition) => {
@@ -377,16 +384,16 @@ fn validate_transition(
                 result.add_errors(validation_result.errors);
             }
 
-            return if result.is_valid() {
+            if result.is_valid() {
                 Ok(
                     DocumentTransitionAction::DeleteAction(document_delete_transition.into())
                         .into(),
                 )
             } else {
                 Ok(result)
-            };
+            }
         }
-    };
+    }
 }
 
 pub fn check_ownership(
@@ -409,20 +416,15 @@ pub fn check_ownership(
 
 pub fn check_revision_is_bumped_by_one(
     document_transition: &DocumentReplaceTransition,
-    fetched_documents: &[Document],
+    original_document: &Document,
 ) -> SimpleConsensusValidationResult {
     let mut result = SimpleConsensusValidationResult::default();
-    let fetched_document = match fetched_documents
-        .iter()
-        .find(|d| d.id == document_transition.base.id)
-    {
-        Some(d) => d,
-        None => return result,
-    };
 
     let revision = document_transition.revision;
 
-    let Some(previous_revision) =  fetched_document.revision else {
+    // If there was no previous revision this means that the document_type is not update-able
+    // However this should have been caught earlier
+    let Some(previous_revision) =  original_document.revision else {
         result.add_error(ConsensusError::StateError(Box::new(
             StateError::InvalidDocumentRevisionError {
                 document_id: document_transition.base.id,

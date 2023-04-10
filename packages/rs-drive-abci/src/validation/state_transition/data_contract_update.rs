@@ -37,10 +37,10 @@ use drive::grovedb::TransactionArg;
 use drive::{drive::Drive, grovedb::Transaction};
 use serde_json::Value as JsonValue;
 
+use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use crate::validation::state_transition::key_validation::validate_state_transition_identity_signature;
 use crate::{error::Error, validation::state_transition::common::validate_schema};
-use crate::platform::PlatformRef;
 
 use super::StateTransitionValidation;
 

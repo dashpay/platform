@@ -247,7 +247,7 @@ impl Drive {
             })
             .collect::<Result<Vec<SimpleConsensusValidationResult>, Error>>()?;
 
-        Ok(SimpleConsensusValidationResult::merge_many(
+        Ok(SimpleConsensusValidationResult::merge_many_errors(
             validation_results,
         ))
     }

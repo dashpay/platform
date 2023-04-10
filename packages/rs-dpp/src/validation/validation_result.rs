@@ -42,6 +42,36 @@ impl<TData: Clone, E: Debug> ValidationResult<Vec<TData>, E> {
 }
 
 impl<TData: Clone, E: Debug> ValidationResult<TData, E> {
+    pub fn merge_many<I: IntoIterator<Item = ValidationResult<TData, E>>>(
+        items: I,
+    ) -> ValidationResult<Vec<TData>, E> {
+        let mut aggregate_errors = vec![];
+        let mut aggregate_data = vec![];
+        items.into_iter().for_each(|single_validation_result| {
+            let ValidationResult { mut errors, data } = single_validation_result;
+            aggregate_errors.append(&mut errors);
+            if let Some(data) = data {
+                aggregate_data.push(data);
+            }
+        });
+        ValidationResult::new_with_data_and_errors(aggregate_data, aggregate_errors)
+    }
+}
+
+impl<E: Debug> SimpleValidationResult<E> {
+    pub fn merge_many_errors<I: IntoIterator<Item = SimpleValidationResult<E>>>(
+        items: I,
+    ) -> SimpleValidationResult<E> {
+        let errors = items
+            .into_iter()
+            .map(|single_validation_result| single_validation_result.errors)
+            .flatten()
+            .collect();
+        SimpleValidationResult::new_with_errors(errors)
+    }
+}
+
+impl<TData: Clone, E: Debug> ValidationResult<TData, E> {
     pub fn new_with_data(data: TData) -> Self {
         Self {
             errors: vec![],
@@ -147,17 +177,6 @@ impl<TData: Clone, E: Debug> ValidationResult<TData, E> {
 
     pub fn merge<TOtherData: Clone>(&mut self, mut other: ValidationResult<TOtherData, E>) {
         self.errors.append(&mut other.errors);
-    }
-
-    pub fn merge_many<I: IntoIterator<Item = ValidationResult<TData, E>>>(
-        items: I,
-    ) -> ValidationResult<TData, E> {
-        let errors = items
-            .into_iter()
-            .map(|single_validation_result| single_validation_result.errors)
-            .flatten()
-            .collect();
-        ValidationResult::new_with_errors(errors)
     }
 
     pub fn is_valid(&self) -> bool {

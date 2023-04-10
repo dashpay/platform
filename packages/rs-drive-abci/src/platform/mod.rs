@@ -88,7 +88,10 @@ pub struct PlatformStateRef<'a> {
 impl<'a, C> From<&PlatformRef<'a, C>> for PlatformStateRef<'a> {
     fn from(value: &PlatformRef<'a, C>) -> Self {
         let PlatformRef {
-            drive, state, config, ..
+            drive,
+            state,
+            config,
+            ..
         } = value;
 
         PlatformStateRef {
