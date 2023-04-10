@@ -19,10 +19,15 @@ class SimplifiedMasternodeListDAPIAddressProvider {
    */
   async getLiveAddress() {
     const sml = await this.smlProvider.getSimplifiedMNList();
-    const validMasternodeList = sml.getValidMasternodesList();
+    const validMasternodeList = sml.getValidMasternodesList()
+      // Keep only HP masternodes
+      .filter((smlEntry) => smlEntry.nType === 1);
 
     const addressesByRegProTxHashes = {};
+    let allowSelfSignedCertificate;
     this.listDAPIAddressProvider.getAllAddresses().forEach((address) => {
+      allowSelfSignedCertificate = address.isSelfSignedCertificateAllowed();
+
       if (!address.getProRegTxHash()) {
         return;
       }
@@ -36,6 +41,8 @@ class SimplifiedMasternodeListDAPIAddressProvider {
       if (!address) {
         address = new DAPIAddress({
           host: smlEntry.getIp(),
+          port: smlEntry.platformHTTPPort,
+          allowSelfSignedCertificate,
           proRegTxHash: smlEntry.proRegTxHash,
         });
       } else {
