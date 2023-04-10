@@ -364,14 +364,8 @@ impl Drive {
 
         let old_document_info = if let Some(old_document_element) = old_document_element {
             if let Element::Item(old_serialized_document, element_flags) = old_document_element {
-                let document_result =
-                    Document::from_cbor(old_serialized_document.as_slice(), None, owner_id);
-                let document = match document_result {
-                    Ok(document_result) => Ok(document_result),
-                    Err(_) => {
-                        Document::from_bytes(old_serialized_document.as_slice(), document_type)
-                    }
-                }?;
+                let document =
+                    Document::from_bytes(old_serialized_document.as_slice(), document_type)?;
                 let storage_flags = StorageFlags::map_some_element_flags_ref(&element_flags)?;
                 Ok(DocumentWithoutSerialization((
                     document,

@@ -34,7 +34,6 @@ pub struct DocumentReplaceTransition {
     #[serde(skip_serializing_if = "Option::is_none", rename = "$updatedAt")]
     pub updated_at: Option<TimestampMillis>,
     #[serde(flatten, skip_serializing_if = "Option::is_none")]
-    #[bincode(with_serde)]
     pub data: Option<BTreeMap<String, Value>>,
 }
 

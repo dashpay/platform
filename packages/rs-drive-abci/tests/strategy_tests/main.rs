@@ -41,7 +41,7 @@ use dpp::bls_signatures::{PrivateKey as BlsPrivateKey, PublicKey as BlsPublicKey
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::document::document_transition::document_base_transition::DocumentBaseTransition;
 use dpp::document::document_transition::{
-    Action, DocumentCreateTransition, DocumentDeleteTransition,
+    Action, DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
 };
 use dpp::document::DocumentsBatchTransition;
 use dpp::identity::signer::Signer;
@@ -151,6 +151,7 @@ impl Frequency {
 pub enum DocumentAction {
     DocumentActionInsert,
     DocumentActionDelete,
+    DocumentActionReplace,
 }
 
 #[derive(Clone, Debug)]
@@ -448,6 +449,77 @@ impl Strategy {
                                 transition_type: StateTransitionType::DocumentsBatch,
                                 owner_id: identity.id,
                                 transitions: vec![document_delete_transition.into()],
+                                signature_public_key_id: None,
+                                signature: None,
+                            };
+
+                            let identity_public_key = identity
+                                .loaded_public_keys
+                                .values()
+                                .next()
+                                .expect("expected a key");
+
+                            document_batch_transition
+                                .sign_external(identity_public_key, signer)
+                                .expect("expected to sign");
+
+                            operations.push(document_batch_transition.into());
+                        }
+                    }
+                    DocumentAction::DocumentActionReplace => {
+                        let any_item_query =
+                            DriveQuery::any_item_query(&op.contract, &op.document_type);
+                        let mut items = platform
+                            .drive
+                            .query_documents_as_serialized(
+                                any_item_query,
+                                Some(&block_info.epoch),
+                                None,
+                            )
+                            .expect("expect to execute query")
+                            .items;
+
+                        if !items.is_empty() {
+                            let first_item = items.remove(0);
+                            let mut document =
+                                Document::from_bytes(first_item.as_slice(), &op.document_type)
+                                    .expect("expected to deserialize document");
+
+                            //todo: fix this into a search key request for the following
+                            //let search_key_request = BTreeMap::from([(Purpose::AUTHENTICATION as u8, BTreeMap::from([(SecurityLevel::HIGH as u8, AllKeysOfKindRequest)]))]);
+
+                            let random_new_document =
+                                op.document_type.random_document_with_rng(rng);
+                            let request = IdentityKeysRequest {
+                                identity_id: document.owner_id.to_buffer(),
+                                request_type: KeyRequestType::SpecificKeys(vec![1]),
+                                limit: Some(1),
+                                offset: None,
+                            };
+                            let identity = platform
+                                .drive
+                                .fetch_identity_balance_with_keys(request, None)
+                                .expect("expected to be able to get identity")
+                                .expect("expected to get an identity");
+                            let document_replace_transition = DocumentReplaceTransition {
+                                base: DocumentBaseTransition {
+                                    id: document.id,
+                                    document_type_name: op.document_type.name.clone(),
+                                    action: Action::Replace,
+                                    data_contract_id: op.contract.id,
+                                    data_contract: op.contract.clone(),
+                                },
+                                revision: document.revision.expect("expected to unwrap revision")
+                                    + 1,
+                                updated_at: Some(block_info.time_ms),
+                                data: Some(random_new_document.properties),
+                            };
+
+                            let mut document_batch_transition = DocumentsBatchTransition {
+                                protocol_version: LATEST_VERSION,
+                                transition_type: StateTransitionType::DocumentsBatch,
+                                owner_id: identity.id,
+                                transitions: vec![document_replace_transition.into()],
                                 signature_public_key_id: None,
                                 signature: None,
                             };
@@ -822,9 +894,11 @@ pub(crate) fn continue_chain_for_strategy(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::DocumentAction::DocumentActionReplace;
     use drive::dpp::data_contract::extra::common::json_document_to_cbor;
     use drive::dpp::data_contract::DriveContractExt;
     use tenderdash_abci::proto::types::CoreChainLock;
+
     #[test]
     fn run_chain_nothing_happening() {
         let strategy = Strategy {
@@ -1363,6 +1437,111 @@ mod tests {
             });
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
         assert_eq!(outcome.identities.len() as u64, 363);
+        assert_eq!(outcome.masternode_identity_balances.len(), 100);
+        let balance_count = outcome
+            .masternode_identity_balances
+            .into_iter()
+            .filter(|(_, balance)| *balance != 0)
+            .count();
+        assert_eq!(balance_count, 19); // 1 epoch worth of proposers
+    }
+
+    #[test]
+    fn run_chain_insert_many_new_identity_per_block_many_document_insertions_updates_and_deletions_with_epoch_change(
+    ) {
+        let contract_cbor = json_document_to_cbor(
+            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            Some(PROTOCOL_VERSION),
+        )
+        .expect("expected to get cbor from a json document");
+        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
+            .expect("contract should be deserialized");
+
+        let document_insertion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentActionInsert,
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .clone(),
+        };
+
+        let document_replace_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentActionReplace,
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .clone(),
+        };
+
+        let document_deletion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentActionDelete,
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .clone(),
+        };
+
+        let strategy = Strategy {
+            contracts: vec![contract],
+            operations: vec![
+                (
+                    document_insertion_op,
+                    Frequency {
+                        times_per_block_range: 1..40,
+                        chance_per_block: None,
+                    },
+                ),
+                (
+                    document_replace_op,
+                    Frequency {
+                        times_per_block_range: 1..5,
+                        chance_per_block: None,
+                    },
+                ),
+                (
+                    document_deletion_op,
+                    Frequency {
+                        times_per_block_range: 1..5,
+                        chance_per_block: None,
+                    },
+                ),
+            ],
+            identities_inserts: Frequency {
+                times_per_block_range: 1..6,
+                chance_per_block: None,
+            },
+            total_hpmns: 100,
+            upgrading_info: None,
+        };
+
+        let day_in_ms = 1000 * 60 * 60 * 24;
+
+        let config = PlatformConfig {
+            verify_sum_trees: true,
+            quorum_size: 100,
+            validator_set_quorum_rotation_block_count: 100,
+            block_spacing_ms: day_in_ms,
+            ..Default::default()
+        };
+        let block_count = 30;
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        assert_eq!(outcome.identities.len() as u64, 84);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
