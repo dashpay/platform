@@ -12,9 +12,9 @@ use crate::version::ProtocolVersionValidator;
 use crate::{DashPlatformProtocolInitError, NonConsensusError};
 
 lazy_static! {
-    static ref INDENTITY_CREATE_TRANSITION_SCHEMA: JsonValue = serde_json::from_str(include_str!(
-        "../../../../../schema/identity/stateTransition/identityTopUp.json"
-    ))
+    pub static ref IDENTITY_TOP_UP_TRANSITION_SCHEMA: JsonValue = serde_json::from_str(
+        include_str!("../../../../../schema/identity/stateTransition/identityTopUp.json")
+    )
     .unwrap();
 }
 
@@ -32,7 +32,7 @@ impl<SR: StateRepositoryLike> IdentityTopUpTransitionBasicValidator<SR> {
         asset_lock_proof_validator: Arc<AssetLockProofValidator<SR>>,
     ) -> Result<Self, DashPlatformProtocolInitError> {
         let json_schema_validator =
-            JsonSchemaValidator::new(INDENTITY_CREATE_TRANSITION_SCHEMA.clone())?;
+            JsonSchemaValidator::new(IDENTITY_TOP_UP_TRANSITION_SCHEMA.clone())?;
 
         let identity_validator = Self {
             protocol_version_validator,

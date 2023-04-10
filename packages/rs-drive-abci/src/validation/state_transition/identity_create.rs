@@ -47,7 +47,7 @@ impl StateTransitionValidation for IdentityCreateTransition {
         validate_identity_public_keys_structure(self.public_keys.as_slice())
     }
 
-    fn validate_signatures(
+    fn validate_identity_and_signatures(
         &self,
         _drive: &Drive,
         _tx: TransactionArg,

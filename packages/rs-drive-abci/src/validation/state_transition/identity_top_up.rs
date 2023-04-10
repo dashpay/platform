@@ -1,3 +1,7 @@
+use crate::asset_lock::fetch_tx_out::FetchAssetLockProofTxOut;
+use dpp::consensus::signature::{IdentityNotFoundError, SignatureError};
+use dpp::identity::state_transition::identity_topup_transition::validation::basic::IDENTITY_TOP_UP_TRANSITION_SCHEMA;
+use dpp::identity::state_transition::identity_topup_transition::IdentityTopUpTransitionAction;
 use dpp::identity::PartialIdentity;
 use dpp::{
     identity::state_transition::identity_topup_transition::IdentityTopUpTransition,
@@ -10,32 +14,69 @@ use drive::{drive::Drive, grovedb::Transaction};
 use crate::error::Error;
 use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
+use crate::validation::state_transition::common::{validate_protocol_version, validate_schema};
 
 use super::StateTransitionValidation;
 
 impl StateTransitionValidation for IdentityTopUpTransition {
     fn validate_structure(
         &self,
-        drive: &Drive,
-        tx: TransactionArg,
+        _drive: &Drive,
+        _tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        todo!()
+        let result = validate_schema(IDENTITY_TOP_UP_TRANSITION_SCHEMA.clone(), self);
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
+        Ok(validate_protocol_version(self.protocol_version))
     }
 
-    fn validate_signatures(
+    fn validate_identity_and_signatures(
         &self,
         drive: &Drive,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
-        todo!()
+        let mut validation_result = ConsensusValidationResult::<Option<PartialIdentity>>::default();
+
+        let maybe_partial_identity =
+            drive.fetch_identity_with_balance(self.identity_id.to_buffer(), tx)?;
+
+        let partial_identity = match maybe_partial_identity {
+            None => {
+                //slightly weird to have a signature error, maybe should be changed
+                validation_result.add_error(SignatureError::IdentityNotFoundError(
+                    IdentityNotFoundError::new(self.identity_id),
+                ));
+                return Ok(validation_result);
+            }
+            Some(pk) => pk,
+        };
+
+        validation_result.set_data(Some(partial_identity));
+        Ok(validation_result)
     }
 
     fn validate_state<'a, C: CoreRPCLike>(
         &self,
         platform: &'a PlatformRef<C>,
-        tx: TransactionArg,
+        _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let drive = platform.drive;
-        todo!()
+        let mut validation_result = ConsensusValidationResult::<StateTransitionAction>::default();
+
+        let tx_out_validation = self
+            .asset_lock_proof
+            .fetch_asset_lock_transaction_output_sync(platform.core_rpc)?;
+        if !tx_out_validation.is_valid_with_data() {
+            return Ok(ConsensusValidationResult::new_with_errors(
+                tx_out_validation.errors,
+            ));
+        }
+
+        let tx_out = tx_out_validation.into_data()?;
+        validation_result.set_data(
+            IdentityTopUpTransitionAction::from_borrowed(self, tx_out.value * 1000).into(),
+        );
+        return Ok(validation_result);
     }
 }

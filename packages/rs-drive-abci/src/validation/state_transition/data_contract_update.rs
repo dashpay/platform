@@ -206,7 +206,7 @@ impl StateTransitionValidation for DataContractUpdateTransition {
         Ok(validation_result)
     }
 
-    fn validate_signatures(
+    fn validate_identity_and_signatures(
         &self,
         drive: &Drive,
         transaction: TransactionArg,
