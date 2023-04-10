@@ -39,6 +39,9 @@ lazy_static! {
     ))
     .expect("schema for Data Contract Update should be a valid json");
     pub static ref EMPTY_JSON: JsonValue = json!({});
+    pub static ref DATA_CONTRACT_UPDATE_SCHEMA_VALIDATOR: JsonSchemaValidator =
+        JsonSchemaValidator::new(DATA_CONTRACT_UPDATE_SCHEMA.clone())
+            .expect("unable to compile jsonschema");
 }
 
 pub struct DataContractUpdateTransitionBasicValidator<SR> {

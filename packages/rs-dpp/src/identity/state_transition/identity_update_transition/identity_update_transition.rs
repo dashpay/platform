@@ -341,8 +341,8 @@ impl StateTransitionIdentitySigned for IdentityUpdateTransition {
         &self.identity_id
     }
 
-    fn get_security_level_requirement(&self) -> SecurityLevel {
-        SecurityLevel::MASTER
+    fn get_security_level_requirement(&self) -> Vec<SecurityLevel> {
+        vec![SecurityLevel::MASTER]
     }
 
     fn get_signature_public_key_id(&self) -> Option<KeyID> {

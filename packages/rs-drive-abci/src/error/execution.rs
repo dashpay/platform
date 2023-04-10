@@ -10,6 +10,10 @@ pub enum ExecutionError {
     MissingRequiredKey(&'static str),
 
     /// Error
+    #[error("state not initialized: {0}")]
+    StateNotInitialized(&'static str),
+
+    /// Error
     #[error("overflow error: {0}")]
     Overflow(&'static str),
 

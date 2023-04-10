@@ -1,6 +1,6 @@
 use bincode::{Decode, Encode};
 use std::collections::{BTreeMap, HashMap};
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 
 use anyhow::{anyhow, Context};
 use ciborium::value::Value as CborValue;
@@ -275,7 +275,7 @@ impl StateTransitionIdentitySigned for DocumentsBatchTransition {
         &self.owner_id
     }
 
-    fn get_security_level_requirement(&self) -> crate::identity::SecurityLevel {
+    fn get_security_level_requirement(&self) -> Vec<crate::identity::SecurityLevel> {
         // Step 1: Get all document types for the ST
         // Step 2: Get document schema for every type
         // If schema has security level, use that, if not, use the default security level
@@ -298,7 +298,13 @@ impl StateTransitionIdentitySigned for DocumentsBatchTransition {
                 }
             }
         }
-        highest_security_level
+        if highest_security_level == SecurityLevel::MASTER {
+            vec![SecurityLevel::MASTER]
+        } else {
+            (SecurityLevel::CRITICAL as u8..=highest_security_level as u8)
+                .map(|security_level| SecurityLevel::try_from(security_level).unwrap())
+                .collect()
+        }
     }
 
     fn get_signature_public_key_id(&self) -> Option<KeyID> {

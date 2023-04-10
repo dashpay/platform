@@ -243,7 +243,7 @@ mod test {
                         return Err(ProtocolError::InvalidSignaturePublicKeySecurityLevelError(
                             InvalidSignaturePublicKeySecurityLevelError::new(
                                 SecurityLevel::CRITICAL,
-                                SecurityLevel::MASTER,
+                                vec![SecurityLevel::MASTER],
                             ),
                         ))
                     }

@@ -8,6 +8,7 @@ use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError,
     PublicKeySecurityLevelNotMetError, StateTransitionIsNotSignedError, WrongPublicKeyPurposeError,
 };
+use crate::util::vec;
 use crate::{
     identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel},
     prelude::*,
@@ -139,22 +140,13 @@ where
         &self,
         public_key: &IdentityPublicKey,
     ) -> Result<(), ProtocolError> {
-        // If state transition requires MASTER security level it must be signed only with
-        // a MASTER key
-        if public_key.is_master() && self.get_security_level_requirement() != SecurityLevel::MASTER
+        // Otherwise, key security level should be less than MASTER but more or equal than required
+        if !self
+            .get_security_level_requirement()
+            .contains(&public_key.security_level)
         {
             return Err(ProtocolError::InvalidSignaturePublicKeySecurityLevelError(
                 InvalidSignaturePublicKeySecurityLevelError::new(
-                    public_key.security_level,
-                    self.get_security_level_requirement(),
-                ),
-            ));
-        }
-
-        // Otherwise, key security level should be less than MASTER but more or equal than required
-        if self.get_security_level_requirement() < public_key.security_level {
-            return Err(ProtocolError::PublicKeySecurityLevelNotMetError(
-                PublicKeySecurityLevelNotMetError::new(
                     public_key.security_level,
                     self.get_security_level_requirement(),
                 ),
@@ -183,8 +175,8 @@ where
 
     /// Returns minimal key security level that can be used to sign this ST.
     /// Override this method if the ST requires a different security level.
-    fn get_security_level_requirement(&self) -> SecurityLevel {
-        SecurityLevel::HIGH
+    fn get_security_level_requirement(&self) -> Vec<SecurityLevel> {
+        vec![SecurityLevel::HIGH]
     }
 }
 

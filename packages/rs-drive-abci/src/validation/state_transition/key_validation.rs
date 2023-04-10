@@ -5,7 +5,9 @@ use dpp::consensus::basic::identity::{
     DuplicatedIdentityPublicKeyError, DuplicatedIdentityPublicKeyIdError,
     InvalidIdentityPublicKeySecurityLevelError,
 };
-use dpp::consensus::signature::IdentityNotFoundError;
+use dpp::consensus::signature::{
+    IdentityNotFoundError, InvalidSignaturePublicKeySecurityLevelError,
+};
 use dpp::consensus::ConsensusError;
 use dpp::identity::security_level::ALLOWED_SECURITY_LEVELS;
 use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
@@ -13,13 +15,14 @@ use dpp::identity::state_transition::identity_update_transition::validate_public
     IDENTITY_JSON_SCHEMA, IDENTITY_PLATFORM_VALUE_SCHEMA,
 };
 use dpp::identity::validation::{duplicated_key_ids_witness, duplicated_keys_witness};
-use dpp::identity::{KeyID, PartialIdentity};
+use dpp::identity::{KeyID, PartialIdentity, SecurityLevel};
 use dpp::platform_value::Identifier;
 use dpp::prelude::IdentityPublicKey;
 use dpp::state_transition::fee::operations::{Operation, SignatureVerificationOperation};
 use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use dpp::state_transition::StateTransitionIdentitySigned;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
+use dpp::StateError::{InvalidIdentityPublicKeyIdError, MissingIdentityPublicKeyIdsError};
 use dpp::{
     consensus::signature::{
         InvalidIdentityPublicKeyTypeError, MissingPublicKeyError, PublicKeyIsDisabledError,
@@ -37,7 +40,7 @@ use drive::drive::identity::key::fetch::{
 use drive::drive::Drive;
 use drive::grovedb::{Transaction, TransactionArg};
 use lazy_static::lazy_static;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 lazy_static! {
     static ref SUPPORTED_KEY_TYPES: HashSet<KeyType> = {
@@ -52,6 +55,7 @@ lazy_static! {
 pub fn validate_state_transition_identity_signature(
     drive: &Drive,
     state_transition: &impl StateTransitionIdentitySigned,
+    request_revision: bool,
     transaction: TransactionArg,
 ) -> Result<ConsensusValidationResult<PartialIdentity>, Error> {
     let mut validation_result = ConsensusValidationResult::<PartialIdentity>::default();
@@ -67,8 +71,11 @@ pub fn validate_state_transition_identity_signature(
         key_id,
     );
 
-    let maybe_partial_identity =
-        drive.fetch_identity_balance_with_keys(key_request, transaction)?;
+    let maybe_partial_identity = if request_revision {
+        drive.fetch_identity_balance_with_keys_and_revision(key_request, transaction)?
+    } else {
+        drive.fetch_identity_balance_with_keys(key_request, transaction)?
+    };
 
     let partial_identity = match maybe_partial_identity {
         None => {
@@ -98,6 +105,18 @@ pub fn validate_state_transition_identity_signature(
     if !SUPPORTED_KEY_TYPES.contains(&public_key.key_type) {
         validation_result.add_error(SignatureError::InvalidIdentityPublicKeyTypeError(
             InvalidIdentityPublicKeyTypeError::new(public_key.key_type),
+        ));
+        return Ok(validation_result);
+    }
+
+    let security_levels = state_transition.get_security_level_requirement();
+
+    if !security_levels.contains(&public_key.security_level) {
+        validation_result.add_error(SignatureError::InvalidSignaturePublicKeySecurityLevelError(
+            InvalidSignaturePublicKeySecurityLevelError::new(
+                public_key.security_level,
+                security_levels,
+            ),
         ));
         return Ok(validation_result);
     }
@@ -222,7 +241,7 @@ pub fn validate_identity_public_keys_signatures(
 }
 
 /// This will validate that all keys are valid against the state
-pub fn validate_identity_public_key_ids_state(
+pub fn validate_identity_public_key_ids_dont_exist_in_state(
     identity_id: Identifier,
     identity_public_keys_with_witness: &[IdentityPublicKeyInCreationWithWitness],
     drive: &Drive,
@@ -246,6 +265,32 @@ pub fn validate_identity_public_key_ids_state(
             ConsensusError::DuplicatedIdentityPublicKeyBasicIdError(
                 DuplicatedIdentityPublicKeyIdError::new(keys),
             ),
+        ))
+    } else {
+        Ok(SimpleConsensusValidationResult::default())
+    }
+}
+
+/// This will validate that all keys are valid against the state
+pub fn validate_identity_public_key_ids_exist_in_state(
+    identity_id: Identifier,
+    mut key_ids: Vec<KeyID>,
+    drive: &Drive,
+    transaction: TransactionArg,
+) -> Result<SimpleConsensusValidationResult, Error> {
+    let identity_key_request = IdentityKeysRequest {
+        identity_id: identity_id.to_buffer(),
+        request_type: KeyRequestType::SpecificKeys(key_ids.clone()),
+        limit: None,
+        offset: None,
+    };
+    let keys = drive.fetch_identity_keys::<KeyIDVec>(identity_key_request, transaction)?;
+    if keys.len() != key_ids.len() {
+        let to_remove = BTreeSet::from_iter(keys);
+        key_ids.retain(|found_key| !to_remove.contains(found_key));
+        // keys should all exist
+        Ok(SimpleConsensusValidationResult::new_with_error(
+            MissingIdentityPublicKeyIdsError { ids: key_ids }.into(),
         ))
     } else {
         Ok(SimpleConsensusValidationResult::default())

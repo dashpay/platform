@@ -19,6 +19,9 @@ lazy_static! {
         include_str!("../../../../../schema/identity/stateTransition/identityCreate.json")
     )
     .unwrap();
+    pub static ref IDENTITY_CREATE_TRANSITION_SCHEMA_VALIDATOR: JsonSchemaValidator =
+        JsonSchemaValidator::new(IDENTITY_CREATE_TRANSITION_SCHEMA.clone())
+            .expect("unable to compile jsonschema");
 }
 
 const ASSET_LOCK_PROOF_PROPERTY_NAME: &str = "assetLockProof";

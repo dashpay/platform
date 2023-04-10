@@ -1,6 +1,8 @@
 use crate::asset_lock::fetch_tx_out::FetchAssetLockProofTxOut;
 use dpp::consensus::signature::{IdentityNotFoundError, SignatureError};
-use dpp::identity::state_transition::identity_topup_transition::validation::basic::IDENTITY_TOP_UP_TRANSITION_SCHEMA;
+use dpp::identity::state_transition::identity_topup_transition::validation::basic::{
+    IDENTITY_TOP_UP_TRANSITION_SCHEMA, IDENTITY_TOP_UP_TRANSITION_SCHEMA_VALIDATOR,
+};
 use dpp::identity::state_transition::identity_topup_transition::IdentityTopUpTransitionAction;
 use dpp::identity::PartialIdentity;
 use dpp::{
@@ -24,7 +26,7 @@ impl StateTransitionValidation for IdentityTopUpTransition {
         _drive: &Drive,
         _tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let result = validate_schema(IDENTITY_TOP_UP_TRANSITION_SCHEMA.clone(), self);
+        let result = validate_schema(&IDENTITY_TOP_UP_TRANSITION_SCHEMA_VALIDATOR, self);
         if !result.is_valid() {
             return Ok(result);
         }

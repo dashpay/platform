@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use dpp::data_contract::state_transition::data_contract_update_transition::validation::basic::DATA_CONTRACT_UPDATE_SCHEMA_VALIDATOR;
 use dpp::identity::PartialIdentity;
 use dpp::{
     consensus::basic::{
@@ -50,7 +51,7 @@ impl StateTransitionValidation for DataContractUpdateTransition {
         drive: &Drive,
         tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let result = validate_schema(DATA_CONTRACT_UPDATE_SCHEMA.clone(), self);
+        let result = validate_schema(&DATA_CONTRACT_UPDATE_SCHEMA_VALIDATOR, self);
         if !result.is_valid() {
             return Ok(result);
         }
@@ -212,7 +213,7 @@ impl StateTransitionValidation for DataContractUpdateTransition {
         transaction: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         Ok(
-            validate_state_transition_identity_signature(drive, self, transaction)?
+            validate_state_transition_identity_signature(drive, self, false, transaction)?
                 .map(|partial_identity| Some(partial_identity)),
         )
     }

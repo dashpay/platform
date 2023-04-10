@@ -23,6 +23,8 @@ use dpp::{
     Convertible,
 };
 use dpp::{state_transition::StateTransitionAction, version::ProtocolVersionValidator};
+use dpp::data_contract::state_transition::data_contract_create_transition::validation::state::validate_data_contract_create_transition_basic::DATA_CONTRACT_CREATE_SCHEMA_VALIDATOR;
+use dpp::identity::SecurityLevel::{CRITICAL, HIGH};
 use drive::grovedb::TransactionArg;
 use drive::{drive::Drive, grovedb::Transaction};
 
@@ -40,7 +42,7 @@ impl StateTransitionValidation for DataContractCreateTransition {
         _drive: &Drive,
         _tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let result = validate_schema(DATA_CONTRACT_CREATE_SCHEMA.clone(), self);
+        let result = validate_schema(&DATA_CONTRACT_CREATE_SCHEMA_VALIDATOR, self);
         if !result.is_valid() {
             return Ok(result);
         }
@@ -86,7 +88,7 @@ impl StateTransitionValidation for DataContractCreateTransition {
         transaction: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         Ok(
-            validate_state_transition_identity_signature(drive, self, transaction)?
+            validate_state_transition_identity_signature(drive, self, false, transaction)?
                 .map(|partial_identity| Some(partial_identity)),
         )
     }

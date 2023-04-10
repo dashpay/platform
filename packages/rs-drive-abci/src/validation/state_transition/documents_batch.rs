@@ -1,6 +1,7 @@
 use std::collections::{btree_map::Entry, BTreeMap, HashMap};
 
 use dpp::block_time_window::validation_result;
+use dpp::document::validation::basic::validate_documents_batch_transition_basic::DOCUMENTS_BATCH_TRANSITIONS_SCHEMA_VALIDATOR;
 use dpp::identity::PartialIdentity;
 use dpp::{
     consensus::{basic::BasicError, ConsensusError},
@@ -58,9 +59,8 @@ impl StateTransitionValidation for DocumentsBatchTransition {
         drive: &Drive,
         tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let result = validate_schema(DOCUMENTS_BATCH_TRANSITIONS_SCHEMA.clone(), self);
+        let result = validate_schema(&DOCUMENTS_BATCH_TRANSITIONS_SCHEMA_VALIDATOR, self);
         if !result.is_valid() {
-            dbg!(&result);
             return Ok(result);
         }
 
@@ -128,7 +128,7 @@ impl StateTransitionValidation for DocumentsBatchTransition {
         transaction: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         Ok(
-            validate_state_transition_identity_signature(drive, self, transaction)?
+            validate_state_transition_identity_signature(drive, self, false, transaction)?
                 .map(|partial_identity| Some(partial_identity)),
         )
     }

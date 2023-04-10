@@ -60,6 +60,9 @@ lazy_static! {
         include_str!("../../../../../schema/document/stateTransition/documentsBatch.json")
     )
     .unwrap();
+    pub static ref DOCUMENTS_BATCH_TRANSITIONS_SCHEMA_VALIDATOR: JsonSchemaValidator =
+        JsonSchemaValidator::new(DOCUMENTS_BATCH_TRANSITIONS_SCHEMA.clone())
+            .expect("unable to compile jsonschema");
 }
 
 pub trait Validator {

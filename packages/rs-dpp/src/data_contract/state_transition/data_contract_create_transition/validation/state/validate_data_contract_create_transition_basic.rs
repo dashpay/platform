@@ -28,6 +28,9 @@ lazy_static! {
         "../../../../../schema/data_contract/stateTransition/dataContractCreate.json"
     ))
     .unwrap();
+    pub static ref DATA_CONTRACT_CREATE_SCHEMA_VALIDATOR: JsonSchemaValidator =
+        JsonSchemaValidator::new(DATA_CONTRACT_CREATE_SCHEMA.clone())
+            .expect("unable to compile jsonschema");
 }
 
 pub struct DataContractCreateTransitionBasicValidator {

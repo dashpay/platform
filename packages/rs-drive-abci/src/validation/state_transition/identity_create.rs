@@ -1,4 +1,5 @@
 use dpp::consensus::state::identity::IdentityAlreadyExistsError;
+use dpp::identity::state_transition::identity_create_transition::validation::basic::IDENTITY_CREATE_TRANSITION_SCHEMA_VALIDATOR;
 use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransitionAction;
 use dpp::identity::PartialIdentity;
 use dpp::{
@@ -34,7 +35,7 @@ impl StateTransitionValidation for IdentityCreateTransition {
         _drive: &Drive,
         _tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let result = validate_schema(IDENTITY_CREATE_TRANSITION_SCHEMA.clone(), self);
+        let result = validate_schema(&IDENTITY_CREATE_TRANSITION_SCHEMA_VALIDATOR, self);
         if !result.is_valid() {
             return Ok(result);
         }

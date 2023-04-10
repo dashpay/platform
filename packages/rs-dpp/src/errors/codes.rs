@@ -86,6 +86,7 @@ impl ErrorWithCode for StateError {
             Self::DuplicatedIdentityPublicKeyError { .. } => 4021,
             Self::DuplicatedIdentityPublicKeyIdError { .. } => 4022,
             Self::IdentityPublicKeyIsDisabledError { .. } => 4023,
+            Self::MissingIdentityPublicKeyIdsError { .. } => 4024,
         }
     }
 }
