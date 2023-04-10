@@ -31,4 +31,4 @@ fi
 
 echo "Starting with: USERNAME: $USERNAME, UID: $USER_ID, GID: $GROUP_ID, USER: $USERNAME, GROUP: $GROUP"
 
-exec su - $USERNAME -c "cd /platform;$*"
+exec su - $USERNAME -c "cd /platform;DASHMATE_HELPER=1 $*"
