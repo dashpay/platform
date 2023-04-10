@@ -30,7 +30,6 @@
 //! Execution Tests
 //!
 
-use crate::DocumentAction::{DocumentActionDelete, DocumentActionInsert};
 use anyhow::anyhow;
 use dashcore::secp256k1::SecretKey;
 use dashcore::{signer, Network, PrivateKey};
@@ -161,6 +160,17 @@ pub struct DocumentOp {
     pub action: DocumentAction,
 }
 
+#[derive(Clone, Debug)]
+pub struct Operation {
+    op_type: OperationType,
+    frequency: Frequency,
+}
+
+#[derive(Clone, Debug)]
+pub enum OperationType {
+    Document(DocumentOp),
+}
+
 /// This simple signer is only to be used in tests
 #[derive(Default, Debug)]
 pub struct SimpleSigner {
@@ -217,7 +227,7 @@ pub type BlockHeight = u64;
 #[derive(Clone, Debug)]
 pub(crate) struct Strategy {
     contracts: Vec<Contract>,
-    operations: Vec<(DocumentOp, Frequency)>,
+    operations: Vec<Operation>,
     identities_inserts: Frequency,
     total_hpmns: u16,
     upgrading_info: Option<UpgradingInfo>,
@@ -277,21 +287,27 @@ impl UpgradingInfo {
 }
 
 impl Strategy {
+    // TODO: This belongs to `DocumentOp`
     fn add_strategy_contracts_into_drive(&mut self, drive: &Drive) {
-        for (op, _) in &self.operations {
-            let serialize = op.contract.to_cbor().expect("expected to serialize");
-            drive
-                .apply_contract(
-                    &op.contract,
-                    serialize,
-                    BlockInfo::default(),
-                    true,
-                    Some(Cow::Owned(SingleEpoch(0))),
-                    None,
-                )
-                .expect("expected to be able to add contract");
+        for op in &self.operations {
+            match &op.op_type {
+                OperationType::Document(doc_op) => {
+                    let serialize = doc_op.contract.to_cbor().expect("expected to serialize");
+                    drive
+                        .apply_contract(
+                            &doc_op.contract,
+                            serialize,
+                            BlockInfo::default(),
+                            true,
+                            Some(Cow::Owned(SingleEpoch(0))),
+                            None,
+                        )
+                        .expect("expected to be able to add contract");
+                }
+            }
         }
     }
+
     fn identity_state_transitions_for_block(
         &self,
         signer: &mut SimpleSigner,
@@ -334,6 +350,8 @@ impl Strategy {
             .collect()
     }
 
+    // TODO: this belongs to `DocumentOp`, also randomization details are common for all operations
+    // and could be moved out of here
     fn document_state_transitions_for_block(
         &self,
         platform: &Platform<MockCoreRPCLike>,
@@ -343,12 +361,16 @@ impl Strategy {
         rng: &mut StdRng,
     ) -> Vec<StateTransition> {
         let mut operations = vec![];
-        for (op, frequency) in &self.operations {
-            if frequency.check_hit(rng) {
-                let count = rng.gen_range(frequency.times_per_block_range.clone());
-                match op.action {
-                    DocumentActionInsert => {
-                        let documents = op.document_type.random_documents_with_params(
+        for op in &self.operations {
+            if op.frequency.check_hit(rng) {
+                let count = rng.gen_range(op.frequency.times_per_block_range.clone());
+                match &op.op_type {
+                    OperationType::Document(DocumentOp {
+                        action: DocumentAction::DocumentActionInsert,
+                        document_type,
+                        contract,
+                    }) => {
+                        let documents = document_type.random_documents_with_params(
                             count as u32,
                             current_identities,
                             block_info.time_ms,
@@ -360,10 +382,10 @@ impl Strategy {
                                 let document_create_transition = DocumentCreateTransition {
                                     base: DocumentBaseTransition {
                                         id: document.id,
-                                        document_type_name: op.document_type.name.clone(),
+                                        document_type_name: document_type.name.clone(),
                                         action: Action::Create,
-                                        data_contract_id: op.contract.id,
-                                        data_contract: op.contract.clone(),
+                                        data_contract_id: contract.id,
+                                        data_contract: contract.clone(),
                                     },
                                     entropy: entropy.to_buffer(),
                                     created_at: document.created_at,
@@ -401,9 +423,12 @@ impl Strategy {
                                 operations.push(document_batch_transition.into());
                             });
                     }
-                    DocumentActionDelete => {
-                        let any_item_query =
-                            DriveQuery::any_item_query(&op.contract, &op.document_type);
+                    OperationType::Document(DocumentOp {
+                        action: DocumentAction::DocumentActionDelete,
+                        document_type,
+                        contract,
+                    }) => {
+                        let any_item_query = DriveQuery::any_item_query(&contract, &document_type);
                         let mut items = platform
                             .drive
                             .query_documents_as_serialized(
@@ -417,7 +442,7 @@ impl Strategy {
                         if !items.is_empty() {
                             let first_item = items.remove(0);
                             let document =
-                                Document::from_bytes(first_item.as_slice(), &op.document_type)
+                                Document::from_bytes(first_item.as_slice(), &document_type)
                                     .expect("expected to deserialize document");
 
                             //todo: fix this into a search key request for the following
@@ -437,10 +462,10 @@ impl Strategy {
                             let document_delete_transition = DocumentDeleteTransition {
                                 base: DocumentBaseTransition {
                                     id: document.id,
-                                    document_type_name: op.document_type.name.clone(),
+                                    document_type_name: document_type.name.clone(),
                                     action: Action::Delete,
-                                    data_contract_id: op.contract.id,
-                                    data_contract: op.contract.clone(),
+                                    data_contract_id: contract.id,
+                                    data_contract: contract.clone(),
                                 },
                             };
 
@@ -466,9 +491,12 @@ impl Strategy {
                             operations.push(document_batch_transition.into());
                         }
                     }
-                    DocumentAction::DocumentActionReplace => {
-                        let any_item_query =
-                            DriveQuery::any_item_query(&op.contract, &op.document_type);
+                    OperationType::Document(DocumentOp {
+                        action: DocumentAction::DocumentActionReplace,
+                        document_type,
+                        contract,
+                    }) => {
+                        let any_item_query = DriveQuery::any_item_query(&contract, &document_type);
                         let mut items = platform
                             .drive
                             .query_documents_as_serialized(
@@ -482,14 +510,13 @@ impl Strategy {
                         if !items.is_empty() {
                             let first_item = items.remove(0);
                             let mut document =
-                                Document::from_bytes(first_item.as_slice(), &op.document_type)
+                                Document::from_bytes(first_item.as_slice(), &document_type)
                                     .expect("expected to deserialize document");
 
                             //todo: fix this into a search key request for the following
                             //let search_key_request = BTreeMap::from([(Purpose::AUTHENTICATION as u8, BTreeMap::from([(SecurityLevel::HIGH as u8, AllKeysOfKindRequest)]))]);
 
-                            let random_new_document =
-                                op.document_type.random_document_with_rng(rng);
+                            let random_new_document = document_type.random_document_with_rng(rng);
                             let request = IdentityKeysRequest {
                                 identity_id: document.owner_id.to_buffer(),
                                 request_type: KeyRequestType::SpecificKeys(vec![1]),
@@ -504,10 +531,10 @@ impl Strategy {
                             let document_replace_transition = DocumentReplaceTransition {
                                 base: DocumentBaseTransition {
                                     id: document.id,
-                                    document_type_name: op.document_type.name.clone(),
+                                    document_type_name: document_type.name.clone(),
                                     action: Action::Replace,
-                                    data_contract_id: op.contract.id,
-                                    data_contract: op.contract.clone(),
+                                    data_contract_id: contract.id,
+                                    data_contract: contract.clone(),
                                 },
                                 revision: document.revision.expect("expected to unwrap revision")
                                     + 1,
@@ -1071,7 +1098,7 @@ mod tests {
 
         let document_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentActionInsert,
+            action: DocumentAction::DocumentActionInsert,
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1080,13 +1107,13 @@ mod tests {
 
         let strategy = Strategy {
             contracts: vec![contract],
-            operations: vec![(
-                document_op,
-                Frequency {
+            operations: vec![Operation {
+                op_type: OperationType::Document(document_op),
+                frequency: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
                 },
-            )],
+            }],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -1129,7 +1156,7 @@ mod tests {
 
         let document_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentActionInsert,
+            action: DocumentAction::DocumentActionInsert,
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1138,13 +1165,13 @@ mod tests {
 
         let strategy = Strategy {
             contracts: vec![contract],
-            operations: vec![(
-                document_op,
-                Frequency {
+            operations: vec![Operation {
+                op_type: OperationType::Document(document_op),
+                frequency: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
                 },
-            )],
+            }],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
@@ -1197,7 +1224,7 @@ mod tests {
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentActionInsert,
+            action: DocumentAction::DocumentActionInsert,
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1206,7 +1233,7 @@ mod tests {
 
         let document_deletion_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentActionDelete,
+            action: DocumentAction::DocumentActionDelete,
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1216,20 +1243,20 @@ mod tests {
         let strategy = Strategy {
             contracts: vec![contract],
             operations: vec![
-                (
-                    document_insertion_op,
-                    Frequency {
+                Operation {
+                    op_type: OperationType::Document(document_insertion_op),
+                    frequency: Frequency {
                         times_per_block_range: 1..2,
                         chance_per_block: None,
                     },
-                ),
-                (
-                    document_deletion_op,
-                    Frequency {
+                },
+                Operation {
+                    op_type: OperationType::Document(document_deletion_op),
+                    frequency: Frequency {
                         times_per_block_range: 1..2,
                         chance_per_block: None,
                     },
-                ),
+                },
             ],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
@@ -1283,7 +1310,7 @@ mod tests {
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentActionInsert,
+            action: DocumentAction::DocumentActionInsert,
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1292,7 +1319,7 @@ mod tests {
 
         let document_deletion_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentActionDelete,
+            action: DocumentAction::DocumentActionDelete,
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1302,20 +1329,20 @@ mod tests {
         let strategy = Strategy {
             contracts: vec![contract],
             operations: vec![
-                (
-                    document_insertion_op,
-                    Frequency {
+                Operation {
+                    op_type: OperationType::Document(document_insertion_op),
+                    frequency: Frequency {
                         times_per_block_range: 1..10,
                         chance_per_block: None,
                     },
-                ),
-                (
-                    document_deletion_op,
-                    Frequency {
-                        times_per_block_range: 1..4,
+                },
+                Operation {
+                    op_type: OperationType::Document(document_deletion_op),
+                    frequency: Frequency {
+                        times_per_block_range: 1..10,
                         chance_per_block: None,
                     },
-                ),
+                },
             ],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
@@ -1370,7 +1397,7 @@ mod tests {
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentActionInsert,
+            action: DocumentAction::DocumentActionInsert,
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1379,7 +1406,7 @@ mod tests {
 
         let document_deletion_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentActionDelete,
+            action: DocumentAction::DocumentActionDelete,
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1389,20 +1416,20 @@ mod tests {
         let strategy = Strategy {
             contracts: vec![contract],
             operations: vec![
-                (
-                    document_insertion_op,
-                    Frequency {
+                Operation {
+                    op_type: OperationType::Document(document_insertion_op),
+                    frequency: Frequency {
                         times_per_block_range: 1..40,
                         chance_per_block: None,
                     },
-                ),
-                (
-                    document_deletion_op,
-                    Frequency {
+                },
+                Operation {
+                    op_type: OperationType::Document(document_deletion_op),
+                    frequency: Frequency {
                         times_per_block_range: 1..15,
                         chance_per_block: None,
                     },
-                ),
+                },
             ],
             identities_inserts: Frequency {
                 times_per_block_range: 1..30,
@@ -1459,7 +1486,7 @@ mod tests {
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentActionInsert,
+            action: DocumentAction::DocumentActionInsert,
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1477,7 +1504,7 @@ mod tests {
 
         let document_deletion_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentActionDelete,
+            action: DocumentAction::DocumentActionDelete,
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1487,27 +1514,27 @@ mod tests {
         let strategy = Strategy {
             contracts: vec![contract],
             operations: vec![
-                (
-                    document_insertion_op,
-                    Frequency {
+                Operation {
+                    op_type: OperationType::Document(document_insertion_op),
+                    frequency: Frequency {
                         times_per_block_range: 1..40,
                         chance_per_block: None,
                     },
-                ),
-                (
-                    document_replace_op,
-                    Frequency {
+                },
+                Operation {
+                    op_type: OperationType::Document(document_replace_op),
+                    frequency: Frequency {
                         times_per_block_range: 1..5,
                         chance_per_block: None,
                     },
-                ),
-                (
-                    document_deletion_op,
-                    Frequency {
+                },
+                Operation {
+                    op_type: OperationType::Document(document_deletion_op),
+                    frequency: Frequency {
                         times_per_block_range: 1..5,
                         chance_per_block: None,
                     },
-                ),
+                },
             ],
             identities_inserts: Frequency {
                 times_per_block_range: 1..6,
