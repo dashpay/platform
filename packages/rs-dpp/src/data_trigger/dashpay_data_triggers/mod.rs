@@ -121,7 +121,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use super::*;
+    use super::super::DataTriggerError;
 
     use platform_value::btreemap_extensions::BTreeValueMapHelper;
     use platform_value::platform_value;

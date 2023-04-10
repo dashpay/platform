@@ -218,6 +218,7 @@ mod tests {
     use super::*;
     use drive::drive::Drive;
     use std::collections::BTreeMap;
+    use drive::drive::verify::RootHash;
 
     fn single_identity_proof() -> &'static [u8] {
         &[
