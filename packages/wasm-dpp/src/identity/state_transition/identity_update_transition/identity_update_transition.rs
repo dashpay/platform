@@ -20,8 +20,6 @@ use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 use crate::errors::from_dpp_err;
 use crate::utils::{generic_of_js_val, WithJsError};
 
-use dpp::consensus::ConsensusError::SignatureError as ConsensusSignatureErrorVariant;
-
 use dpp::consensus::ConsensusError;
 use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
 use dpp::identity::{KeyID, TimestampMillis};

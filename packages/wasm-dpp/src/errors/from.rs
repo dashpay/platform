@@ -1,4 +1,3 @@
-use dpp::consensus::basic::value_error::ValueError;
 use dpp::DashPlatformProtocolInitError;
 use wasm_bindgen::JsValue;
 

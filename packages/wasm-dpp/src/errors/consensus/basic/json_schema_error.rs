@@ -5,8 +5,6 @@ use dpp::errors::consensus::codes::ErrorWithCode;
 
 use dpp::errors::consensus::ConsensusError;
 
-use serde_json::Value;
-
 use crate::buffer::Buffer;
 use wasm_bindgen::prelude::*;
 

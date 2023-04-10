@@ -46,7 +46,7 @@ use dpp::consensus::fee::fee_error::FeeError;
 use dpp::consensus::signature::SignatureError;
 use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 use dpp::consensus::state::state_error::StateError;
-use dpp::errors::consensus::codes::ErrorWithCode;
+
 use wasm_bindgen::JsValue;
 
 use crate::errors::consensus::basic::data_contract::{
@@ -79,7 +79,6 @@ use crate::errors::consensus::state::identity::{
     InvalidIdentityPublicKeyIdErrorWasm, InvalidIdentityRevisionErrorWasm,
     MaxIdentityPublicKeyLimitReachedErrorWasm,
 };
-use crate::errors::value_error::PlatformValueErrorWasm;
 
 use crate::errors::consensus::basic::data_contract::{
     DataContractMaxDepthExceedErrorWasm, DuplicateIndexErrorWasm, DuplicateIndexNameErrorWasm,

@@ -6,8 +6,6 @@ use std::collections::HashMap;
 pub use apply::*;
 pub use validation::*;
 
-use dpp::consensus::ConsensusError::SignatureError as ConsensusSignatureErrorVariant;
-
 use dpp::consensus::ConsensusError;
 use dpp::{
     consensus::signature::SignatureError,

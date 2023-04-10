@@ -9,8 +9,7 @@ use serde_json::json;
 use crate::document::Document;
 use crate::{
     data_trigger::create_error, document::document_transition::DocumentTransition,
-    get_from_transition, mocks::SMLStore, prelude::Identifier,
-    state_repository::StateRepositoryLike, ProtocolError,
+    get_from_transition, prelude::Identifier, state_repository::StateRepositoryLike, ProtocolError,
 };
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};

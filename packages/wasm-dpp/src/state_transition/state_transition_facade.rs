@@ -17,8 +17,7 @@ use serde::Deserialize;
 use crate::errors::protocol_error::from_protocol_error;
 use crate::errors::value_error::PlatformValueErrorWasm;
 use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::document::DocumentsBatchTransition;
-use dpp::ProtocolError;
+
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
