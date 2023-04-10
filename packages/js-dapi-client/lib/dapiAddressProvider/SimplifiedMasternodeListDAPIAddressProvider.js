@@ -19,7 +19,9 @@ class SimplifiedMasternodeListDAPIAddressProvider {
    */
   async getLiveAddress() {
     const sml = await this.smlProvider.getSimplifiedMNList();
-    const validMasternodeList = sml.getValidMasternodesList();
+    const validMasternodeList = sml.getValidMasternodesList()
+      // Keep only HP masternodes
+      .filter((smlEntry) => smlEntry.nType === 1);
 
     const addressesByRegProTxHashes = {};
     let allowSelfSignedCertificate;
