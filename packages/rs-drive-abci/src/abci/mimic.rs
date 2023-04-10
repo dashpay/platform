@@ -5,11 +5,23 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;
 use drive::drive::block_info::BlockInfo;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tenderdash_abci::proto::abci::{
     CommitInfo, RequestFinalizeBlock, RequestPrepareProposal, ResponsePrepareProposal,
 };
 use tenderdash_abci::proto::google::protobuf::Timestamp;
+use tenderdash_abci::proto::types::{Block, Header};
 use tenderdash_abci::Application;
+
+fn get_current_timestamp() -> Timestamp {
+    let now = SystemTime::now();
+    let duration_since_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
+
+    let seconds = duration_since_epoch.as_secs() as i64;
+    let nanos = duration_since_epoch.subsec_nanos() as i32;
+
+    Timestamp { seconds, nanos }
+}
 
 impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
     /// Execute a block with various state transitions
@@ -92,10 +104,34 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                 threshold_vote_extensions: vec![],
             }),
             misbehavior: vec![],
-            hash: app_hash,
+            hash: app_hash.clone(),
             height: height as i64,
             round: 0,
-            block: None,
+            block: Some(Block {
+                header: Some(Header {
+                    version: None,
+                    chain_id: "strategy_tests".to_string(),
+                    height: height as i64,
+                    time: Some(get_current_timestamp()),
+                    last_block_id: None,
+                    last_commit_hash: vec![],
+                    data_hash: vec![],
+                    validators_hash: vec![],
+                    next_validators_hash: vec![],
+                    consensus_hash: vec![],
+                    next_consensus_hash: vec![],
+                    app_hash,
+                    results_hash: vec![],
+                    evidence_hash: vec![],
+                    proposed_app_version: 0,
+                    proposer_pro_tx_hash: vec![],
+                    core_chain_locked_height: 0,
+                }),
+                data: None,
+                evidence: None,
+                last_commit: None,
+                core_chain_lock: None,
+            }),
             block_id: None,
         };
 

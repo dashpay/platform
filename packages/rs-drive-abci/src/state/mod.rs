@@ -40,11 +40,10 @@ impl PlatformState {
     }
 
     /// The last block time in milliseconds
-    pub fn last_block_time_ms(&self) -> u64 {
+    pub fn last_block_time_ms(&self) -> Option<u64> {
         self.last_committed_block_info
             .as_ref()
             .map(|block_info| block_info.time_ms)
-            .unwrap_or_default()
     }
 
     /// The current epoch

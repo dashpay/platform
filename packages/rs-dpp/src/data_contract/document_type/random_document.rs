@@ -42,6 +42,7 @@ use crate::ProtocolError;
 use platform_value::{Bytes32, Identifier};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 // TODO The factory is used in benchmark and tests. Probably it should be available under the test feature
 /// Functions for creating various types of random documents.
@@ -152,6 +153,10 @@ impl CreateRandomDocument for DocumentType {
             self.name.as_str(),
             entropy.as_slice(),
         );
+        // dbg!("gen", hex::encode(id), hex::encode(&self.data_contract_id), hex::encode(&owner_id), self.name.as_str(), hex::encode(entropy.as_slice()));
+        let now = SystemTime::now();
+        let duration_since_epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
+        let milliseconds = duration_since_epoch.as_millis() as u64;
         let mut created_at = None;
         let mut updated_at = None;
         let properties = self
@@ -159,10 +164,10 @@ impl CreateRandomDocument for DocumentType {
             .iter()
             .filter_map(|(key, document_field)| {
                 if key == CREATED_AT {
-                    created_at = Some(rng.gen_range(1575072000000..1890691200000));
+                    created_at = Some(milliseconds);
                     None
                 } else if key == UPDATED_AT {
-                    updated_at = Some(0);
+                    updated_at = Some(milliseconds);
                     None
                 } else {
                     Some((key.clone(), document_field.document_type.random_value(rng)))
@@ -170,13 +175,6 @@ impl CreateRandomDocument for DocumentType {
             })
             .collect();
 
-        if updated_at.is_some() {
-            if let Some(created_at) = created_at {
-                updated_at = Some(rng.gen_range(created_at..1990691200000));
-            } else {
-                updated_at = Some(rng.gen_range(1575072000000..1890691200000));
-            }
-        }
         let revision = if self.documents_mutable {
             Some(1)
         } else {

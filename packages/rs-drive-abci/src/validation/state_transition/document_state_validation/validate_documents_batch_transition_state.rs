@@ -259,20 +259,22 @@ fn validate_transition(
                 return Ok(result);
             }
 
-            let validation_result =
-                check_created_inside_time_window(transition, latest_block_time_ms);
-            result.merge(validation_result);
+            // We do not need to perform these checks on genesis
+            if let Some(latest_block_time_ms) = latest_block_time_ms {
+                let validation_result =
+                    check_created_inside_time_window(transition, latest_block_time_ms);
+                result.merge(validation_result);
 
-            if !result.is_valid() {
-                return Ok(result);
-            }
+                if !result.is_valid() {
+                    return Ok(result);
+                }
+                let validation_result =
+                    check_updated_inside_time_window(transition, latest_block_time_ms);
+                result.merge(validation_result);
 
-            let validation_result =
-                check_updated_inside_time_window(transition, latest_block_time_ms);
-            result.merge(validation_result);
-
-            if !result.is_valid() {
-                return Ok(result);
+                if !result.is_valid() {
+                    return Ok(result);
+                }
             }
 
             let validation_result =
@@ -307,12 +309,15 @@ fn validate_transition(
             let mut result = ConsensusValidationResult::<DocumentTransitionAction>::new_with_data(
                 DocumentTransitionAction::ReplaceAction(DocumentReplaceTransitionAction::default()),
             );
-            let validation_result =
-                check_updated_inside_time_window(transition, latest_block_time_ms);
-            result.merge(validation_result);
+            // We do not need to perform this check on genesis
+            if let Some(latest_block_time_ms) = latest_block_time_ms {
+                let validation_result =
+                    check_updated_inside_time_window(transition, latest_block_time_ms);
+                result.merge(validation_result);
 
-            if !result.is_valid() {
-                return Ok(result);
+                if !result.is_valid() {
+                    return Ok(result);
+                }
             }
 
             let validation_result = check_if_document_can_be_found(transition, fetched_documents);

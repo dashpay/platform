@@ -13,6 +13,7 @@ use drive::error::Error::GroveDB;
 use drive::fee::result::FeeResult;
 use drive::grovedb::{Transaction, TransactionArg};
 use tenderdash_abci::proto::abci::{ExecTxResult, RequestFinalizeBlock};
+use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 
 use crate::abci::signature_verifier::{SignatureError, SignatureVerifier};
 use crate::abci::withdrawal::WithdrawalTxs;
@@ -492,13 +493,21 @@ where
             None
         };
 
-        let block_info = block_state_info.to_block_info(epoch_info.current_epoch_index);
+        //todo: block and header should not be optional
+        let block_header = block.unwrap().header.unwrap();
+
+        let mut to_commit_block_info =
+            block_state_info.to_block_info(epoch_info.current_epoch_index);
+
+        // we need to add the block time
+        to_commit_block_info.time_ms = block_header.time.unwrap().to_milis() as u64;
+
         // Finalize withdrawal processing
-        our_withdrawals.finalize(Some(transaction), &self.drive, &block_info)?;
+        our_withdrawals.finalize(Some(transaction), &self.drive, &to_commit_block_info)?;
 
         // At the end we update the state cache
 
-        self.update_state_cache_and_quorums(block_info);
+        self.update_state_cache_and_quorums(to_commit_block_info);
 
         let mut drive_cache = self.drive.cache.write().unwrap();
 

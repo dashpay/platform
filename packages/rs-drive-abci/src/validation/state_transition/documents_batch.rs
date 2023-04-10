@@ -110,7 +110,7 @@ impl StateTransitionValidation for DocumentsBatchTransition {
                 .collect();
             let validation_result = validate_document_transitions_basic(
                 &existing_data_contract,
-                existing_data_contract.owner_id,
+                self.owner_id,
                 transitions_as_objects
                     .iter()
                     .map(|t| t.to_btree_ref_string_map().unwrap()),
