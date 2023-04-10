@@ -13,6 +13,12 @@ pub struct PublicKeysValidatorMock {
     called_with: Mutex<Vec<Value>>,
 }
 
+impl Default for PublicKeysValidatorMock {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PublicKeysValidatorMock {
     pub fn new() -> Self {
         Self {

@@ -27,9 +27,7 @@ where
         &self,
         data: &IdentityCreateTransition,
     ) -> Result<ValidationResult<Self::ResultItem>, ProtocolError> {
-        validate_identity_create_transition_state(&self.state_repository, data)
-            .await
-            .map_err(|err| err)
+        validate_identity_create_transition_state(&self.state_repository, data).await
     }
 }
 

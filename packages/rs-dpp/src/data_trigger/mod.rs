@@ -71,7 +71,7 @@ impl DataTrigger {
         document_type: &str,
         transition_action: Action,
     ) -> bool {
-        &self.data_contract_id == data_contract_id
+        self.data_contract_id == data_contract_id
             && self.document_type == document_type
             && self.transition_action == transition_action
     }

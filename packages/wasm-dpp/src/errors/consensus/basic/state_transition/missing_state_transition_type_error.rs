@@ -15,6 +15,12 @@ impl From<&MissingStateTransitionTypeError> for MissingStateTransitionTypeErrorW
     }
 }
 
+impl Default for MissingStateTransitionTypeErrorWasm {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[wasm_bindgen(js_class=MissingStateTransitionTypeError)]
 impl MissingStateTransitionTypeErrorWasm {
     #[wasm_bindgen(constructor)]

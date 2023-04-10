@@ -94,8 +94,8 @@ pub struct Document {
 
 impl Document {
     /// Return a value given the path to its key for a document type.
-    pub fn get_raw_for_document_type<'a>(
-        &'a self,
+    pub fn get_raw_for_document_type(
+        &self,
         key_path: &str,
         document_type: &DocumentType,
         owner_id: Option<[u8; 32]>,
@@ -130,8 +130,8 @@ impl Document {
     }
 
     /// Return a value given the path to its key and the document type for a contract.
-    pub fn get_raw_for_contract<'a>(
-        &'a self,
+    pub fn get_raw_for_contract(
+        &self,
         key: &str,
         document_type_name: &str,
         contract: &DataContract,

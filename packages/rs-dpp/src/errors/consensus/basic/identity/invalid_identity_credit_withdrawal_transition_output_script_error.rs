@@ -14,6 +14,12 @@ DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
 */
 
+impl Default for InvalidIdentityCreditWithdrawalTransitionOutputScriptError {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl InvalidIdentityCreditWithdrawalTransitionOutputScriptError {
     pub fn new() -> Self {
         Self {}

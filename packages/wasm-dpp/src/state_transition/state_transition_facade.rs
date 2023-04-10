@@ -69,12 +69,9 @@ impl StateTransitionFacadeWasm {
             .map_err(|_| JsValue::from_str("Invalid state transition type"))?;
 
         // TODO(wasm-dpp): clean values of other transitions as well?
-        match state_transition_type {
-            StateTransitionType::DataContractUpdate => {
-                DataContractUpdateTransition::clean_value(&mut raw_state_transition)
-                    .map_err(PlatformValueErrorWasm::from)?;
-            }
-            _ => {}
+        if state_transition_type == StateTransitionType::DataContractUpdate {
+            DataContractUpdateTransition::clean_value(&mut raw_state_transition)
+                .map_err(PlatformValueErrorWasm::from)?;
         }
 
         let result = self

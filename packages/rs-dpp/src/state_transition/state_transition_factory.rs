@@ -146,11 +146,8 @@ where
                     raw_state_transition: raw_state_transition.clone(),
                 })?;
 
-            match state_transition_type {
-                StateTransitionType::DataContractUpdate => {
-                    DataContractUpdateTransition::clean_value(&mut raw_state_transition)?;
-                }
-                _ => {}
+            if state_transition_type == StateTransitionType::DataContractUpdate {
+                DataContractUpdateTransition::clean_value(&mut raw_state_transition)?;
             }
         } else {
             return Err(StateTransitionError::InvalidStateTransitionError {
