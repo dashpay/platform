@@ -141,6 +141,8 @@ fn to_object() {
         "signaturePublicKeyId": 0u32,
         "identityId" : transition.identity_id,
         "revision": 0 as Revision,
+        "disablePublicKeys" : [0u32],
+        "publicKeysDisabledAt" : 1234567u64,
         "addPublicKeys" : [
             {
 
@@ -152,9 +154,7 @@ fn to_object() {
                 "readOnly" : false,
                 "signature" : BinaryData::new(vec![0u8;65])
             }
-        ],
-        "disablePublicKeys" : [0u32],
-        "publicKeysDisabledAt" : 1234567u64,
+        ]
     });
 
     assert_eq!(expected_raw_state_transition, result);
@@ -172,6 +172,8 @@ fn to_object_with_signature_skipped() {
         "type" : 5u8,
         "identityId" : transition.identity_id,
         "revision": 0 as Revision,
+        "disablePublicKeys" : [0u32],
+        "publicKeysDisabledAt" : 1234567u64,
         "addPublicKeys" : [
             {
 
@@ -182,9 +184,7 @@ fn to_object_with_signature_skipped() {
                 "data" :BinaryData::new(base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap()),
                 "readOnly" : false,
             }
-        ],
-        "disablePublicKeys" : [0u32],
-        "publicKeysDisabledAt" : 1234567u64,
+        ]
     });
 
     assert_eq!(expected_raw_state_transition, result);
@@ -204,6 +204,8 @@ fn to_json() {
         "signaturePublicKeyId": 0u32,
         "identityId" : transition.identity_id,
         "revision": 0 as Revision,
+        "disablePublicKeys" : [0u32],
+        "publicKeysDisabledAt" : 1234567u64,
         "addPublicKeys" : [
             {
 
@@ -215,9 +217,7 @@ fn to_json() {
                 "readOnly" : false,
                 "signature" : BinaryData::new(vec![0;65]),
             }
-        ],
-        "disablePublicKeys" : [0u32],
-        "publicKeysDisabledAt" : 1234567u64,
+        ]
     });
 
     assert_eq!(expected_raw_state_transition, result);

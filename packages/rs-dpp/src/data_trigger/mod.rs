@@ -147,11 +147,11 @@ where
 
 fn create_error<SR>(
     context: &DataTriggerExecutionContext<SR>,
-    dt_create: &DocumentCreateTransition,
+    transition_id: Identifier,
     msg: String,
 ) -> DataTriggerError
 where
     SR: StateRepositoryLike,
 {
-    DataTriggerConditionError::new(context.data_contract.id, dt_create.base.id, msg).into()
+    DataTriggerConditionError::new(context.data_contract.id, transition_id, msg).into()
 }

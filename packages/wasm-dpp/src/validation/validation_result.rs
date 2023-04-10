@@ -1,6 +1,10 @@
-use crate::errors::consensus::consensus_error::from_consensus_error_ref;
+use crate::{
+    buffer::Buffer,
+    errors::consensus::consensus_error::from_consensus_error_ref,
+    utils::{consensus_errors_from_buffers, WithJsError},
+};
 use dpp::{consensus::ConsensusError, validation::ValidationResult};
-use js_sys::JsString;
+use js_sys::{JsString, Uint8Array};
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=ValidationResult)]
@@ -18,6 +22,17 @@ where
 
 #[wasm_bindgen(js_class=ValidationResult)]
 impl ValidationResultWasm {
+    #[wasm_bindgen(constructor)]
+    pub fn new(errors_option: Option<Vec<Buffer>>) -> Result<ValidationResultWasm, JsValue> {
+        if let Some(errors) = errors_option {
+            let consensus_errors: Vec<ConsensusError> = consensus_errors_from_buffers(errors)?;
+
+            return Ok(Self(ValidationResult::new_with_errors(consensus_errors)));
+        }
+
+        Ok(Self(ValidationResult::new_with_errors(vec![])))
+    }
+
     /// This is just a test method - doesn't need to be in the resulted binding. Please
     /// remove before shipping
     #[wasm_bindgen(js_name=errorsText)]
@@ -47,6 +62,22 @@ impl ValidationResultWasm {
         } else {
             JsValue::undefined()
         }
+    }
+
+    #[wasm_bindgen(js_name = addError)]
+    pub fn add_error_wasm(&mut self, error_buffer: Buffer) -> Result<JsValue, JsValue> {
+        let error_bytes: Vec<u8> = Uint8Array::new_with_byte_offset_and_length(
+            &error_buffer.buffer(),
+            error_buffer.byte_offset(),
+            error_buffer.length(),
+        )
+        .to_vec();
+
+        let consensus_error = ConsensusError::deserialize(&error_bytes).with_js_error()?;
+
+        self.0.add_error(consensus_error);
+
+        Ok(JsValue::undefined())
     }
 }
 

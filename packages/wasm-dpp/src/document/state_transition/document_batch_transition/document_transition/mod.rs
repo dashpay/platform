@@ -8,6 +8,7 @@ pub use document_delete_transition::*;
 pub use document_replace_transition::*;
 
 use dpp::platform_value::Value;
+use dpp::prelude::TimestampMillis;
 use dpp::{
     document::document_transition::{
         DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
@@ -79,46 +80,33 @@ impl DocumentTransitionWasm {
     #[wasm_bindgen(js_name=getCreatedAt)]
     pub fn get_created_at(&self) -> JsValue {
         if let Some(created_at) = self.0.get_created_at() {
-            (created_at as f64).into()
+            js_sys::Date::new(&JsValue::from_f64(created_at as f64)).into()
         } else {
             JsValue::NULL
         }
     }
+
     #[wasm_bindgen(js_name=getUpdatedAt)]
     pub fn get_updated_at(&self) -> JsValue {
         if let Some(updated_at) = self.0.get_updated_at() {
-            (updated_at as f64).into()
+            js_sys::Date::new(&JsValue::from_f64(updated_at as f64)).into()
         } else {
             JsValue::NULL
         }
     }
 
     #[wasm_bindgen(js_name=setUpdatedAt)]
-    pub fn set_updated_at(&mut self, js_timestamp_millis: JsValue) -> Result<(), JsValue> {
-        if js_timestamp_millis.is_undefined() || js_timestamp_millis.is_null() {
-            self.0.set_updated_at(None);
-            return Ok(());
-        }
-        let timestamp_millis = try_to_u64(js_timestamp_millis)
-            .context("setting updatedAt in DocumentsBatchTransition")
-            .with_js_error()?;
-        self.0.set_updated_at(Some(timestamp_millis));
+    pub fn set_updated_at(&mut self, updated_at: Option<js_sys::Date>) -> Result<(), JsValue> {
+        self.0
+            .set_updated_at(updated_at.map(|timestamp| timestamp.get_time() as TimestampMillis));
 
         Ok(())
     }
 
     #[wasm_bindgen(js_name=setCreatedAt)]
-    pub fn set_created_at(&mut self, js_timestamp_millis: JsValue) -> Result<(), JsValue> {
-        if js_timestamp_millis.is_undefined() || js_timestamp_millis.is_null() {
-            self.0.set_created_at(None);
-            return Ok(());
-        }
-        let timestamp_millis = try_to_u64(js_timestamp_millis)
-            .context("setting createdAt in DocumentsBatchTransition")
-            .with_js_error()?;
-        self.0.set_created_at(Some(timestamp_millis));
-
-        Ok(())
+    pub fn set_created_at(&mut self, created_at: Option<js_sys::Date>) {
+        self.0
+            .set_created_at(created_at.map(|timestamp| timestamp.get_time() as TimestampMillis));
     }
 
     #[wasm_bindgen(js_name=getData)]

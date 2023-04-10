@@ -1320,7 +1320,7 @@ mod documents {
             "properties": {
               "something": {
                 "type": "string",
-                "format": "url",
+                "format": "uri",
                 "maxLength": 60000,
               },
             },

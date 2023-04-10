@@ -77,13 +77,13 @@ where
         .map_err(ProtocolError::ValueError)?;
 
     let mut result = DataTriggerExecutionResult::default();
-    let full_domain_name = normalized_label;
+    let mut full_domain_name = normalized_label.to_string();
 
     if !is_dry_run {
         if full_domain_name.len() > MAX_PRINTABLE_DOMAIN_NAME_LENGTH {
             let err = create_error(
                 context,
-                dt_create,
+                dt_create.base.id,
                 format!(
                     "Full domain name length can not be more than {} characters long but got {}",
                     MAX_PRINTABLE_DOMAIN_NAME_LENGTH,
@@ -96,7 +96,7 @@ where
         if normalized_label != label.to_lowercase() {
             let err = create_error(
                 context,
-                dt_create,
+                dt_create.base.id,
                 "Normalized label doesn't match label".to_string(),
             );
             result.add_error(err.into());
@@ -109,7 +109,7 @@ where
             if id != owner_id {
                 let err = create_error(
                     context,
-                    dt_create,
+                    dt_create.base.id,
                     format!(
                         "ownerId {} doesn't match {} {}",
                         owner_id, PROPERTY_DASH_UNIQUE_IDENTITY_ID, id
@@ -126,7 +126,7 @@ where
             if id != owner_id {
                 let err = create_error(
                     context,
-                    dt_create,
+                    dt_create.base.id,
                     format!(
                         "ownerId {} doesn't match {} {}",
                         owner_id, PROPERTY_DASH_ALIAS_IDENTITY_ID, id
@@ -139,7 +139,7 @@ where
         if normalized_parent_domain_name.is_empty() && context.owner_id != top_level_identity {
             let err = create_error(
                 context,
-                dt_create,
+                dt_create.base.id,
                 "Can't create top level domain for this identity".to_string(),
             );
             result.add_error(err.into())
@@ -147,6 +147,8 @@ where
     }
 
     if !normalized_parent_domain_name.is_empty() {
+        full_domain_name = format!("{full_domain_name}.{normalized_parent_domain_name}");
+
         //? What is the `normalized_parent_name`. Are we sure the content is a valid dot-separated data
         let mut parent_domain_segments = normalized_parent_domain_name.split('.');
         let parent_domain_label = parent_domain_segments.next().unwrap().to_string();
@@ -175,7 +177,7 @@ where
             if documents.is_empty() {
                 let err = create_error(
                     context,
-                    dt_create,
+                    dt_create.base.id,
                     "Parent domain is not present".to_string(),
                 );
                 result.add_error(err.into());
@@ -186,7 +188,7 @@ where
             if rule_allow_subdomains {
                 let err = create_error(
                     context,
-                    dt_create,
+                    dt_create.base.id,
                     "Allowing subdomains registration is forbidden for non top level domains"
                         .to_string(),
                 );
@@ -200,7 +202,7 @@ where
             {
                 let err = create_error(
                     context,
-                    dt_create,
+                    dt_create.base.id,
                     "The subdomain can be created only by the parent domain owner".to_string(),
                 );
                 result.add_error(err.into());
@@ -238,7 +240,7 @@ where
     if preorder_documents.is_empty() {
         let err = create_error(
             context,
-            dt_create,
+            dt_create.base.id,
             "preorderDocument was not found".to_string(),
         );
         result.add_error(err.into())
