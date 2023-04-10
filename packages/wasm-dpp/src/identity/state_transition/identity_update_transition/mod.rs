@@ -518,7 +518,6 @@ impl IdentityUpdateTransitionWasm {
                 _ => Err(protocol_error),
             },
         }
-            .with_js_error()
+        .with_js_error()
     }
 }
-

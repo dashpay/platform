@@ -304,4 +304,3 @@ impl IdentityTopUpTransitionWasm {
         self.0.signature = BinaryData::new(signature.unwrap_or(vec![]))
     }
 }
-

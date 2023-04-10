@@ -96,7 +96,7 @@ impl DataContractFactoryWasm {
         } else {
             DataContractFactory::new(protocol_version, Arc::new(validate_data_contract.into()))
         }
-            .into()
+        .into()
     }
 
     #[wasm_bindgen(js_name=create)]
