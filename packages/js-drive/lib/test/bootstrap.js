@@ -14,6 +14,8 @@ const DashCoreOptions = require('@dashevo/dp-services-ctl/lib/services/dashCore/
 
 const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
 
+const getBlsAdapter = require('../bls/getBlsAdapter');
+
 use(sinonChai);
 use(chaiAsPromised);
 use(chaiString);
@@ -40,7 +42,7 @@ use(async (chai, util) => {
       } catch (se) {
         try {
           return argument.toBuffer();
-        } catch (e) {}
+        } catch (e) { }
       }
     }
 
@@ -157,6 +159,7 @@ DashCoreOptions.setDefaultCustomOptions({
 });
 
 before(async function before() {
+  this.blsAdapter = await getBlsAdapter();
   this.dppWasm = await loadWasmDpp();
 });
 
