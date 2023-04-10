@@ -49,7 +49,7 @@ impl BalanceIsNotEnoughErrorWasm {
     pub fn serialize(&self) -> Result<Buffer, JsError> {
         let bytes = ConsensusError::from(self.inner.clone())
             .serialize()
-            .map_err(|e| JsError::from(e))?;
+            .map_err(JsError::from)?;
 
         Ok(Buffer::from_bytes(bytes.as_slice()))
     }

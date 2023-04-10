@@ -64,7 +64,7 @@ impl StateTransitionFacadeWasm {
         let mut raw_state_transition = raw_state_transition.with_serde_to_platform_value()?;
         let state_transition_type: StateTransitionType = raw_state_transition
             .get_integer::<u8>("type")
-            .map_err(|e| PlatformValueErrorWasm::from(e))?
+            .map_err(PlatformValueErrorWasm::from)?
             .try_into()
             .map_err(|_| JsValue::from_str("Invalid state transition type"))?;
 
@@ -72,7 +72,7 @@ impl StateTransitionFacadeWasm {
         match state_transition_type {
             StateTransitionType::DataContractUpdate => {
                 DataContractUpdateTransition::clean_value(&mut raw_state_transition)
-                    .map_err(|e| PlatformValueErrorWasm::from(e))?;
+                    .map_err(PlatformValueErrorWasm::from)?;
             }
             _ => {}
         }
