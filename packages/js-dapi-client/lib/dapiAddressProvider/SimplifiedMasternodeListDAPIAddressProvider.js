@@ -22,7 +22,10 @@ class SimplifiedMasternodeListDAPIAddressProvider {
     const validMasternodeList = sml.getValidMasternodesList();
 
     const addressesByRegProTxHashes = {};
+    let allowSelfSignedCertificate;
     this.listDAPIAddressProvider.getAllAddresses().forEach((address) => {
+      allowSelfSignedCertificate = address.isSelfSignedCertificateAllowed();
+
       if (!address.getProRegTxHash()) {
         return;
       }
@@ -36,6 +39,8 @@ class SimplifiedMasternodeListDAPIAddressProvider {
       if (!address) {
         address = new DAPIAddress({
           host: smlEntry.getIp(),
+          port: smlEntry.platformHTTPPort,
+          allowSelfSignedCertificate,
           proRegTxHash: smlEntry.proRegTxHash,
         });
       } else {
