@@ -113,7 +113,7 @@ describe('fetchDocumentsFactory', () => {
     expect(foundDocuments).to.deep.equal([]);
   });
 
-  it.only('should fetch documents by an equal date', async () => {
+  it('should fetch documents by an equal date', async () => {
     const indexedDocument = (await getDocumentsFixture(dataContract))[3];
 
     await documentRepository.create(indexedDocument, blockInfo);
