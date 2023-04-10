@@ -32,7 +32,6 @@ pub use extended_document::ExtendedDocumentWasm;
 
 use dpp::document::extended_document::property_names;
 use dpp::identity::TimestampMillis;
-use dpp::platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
 use dpp::platform_value::ReplacementType;
 use dpp::platform_value::Value;
