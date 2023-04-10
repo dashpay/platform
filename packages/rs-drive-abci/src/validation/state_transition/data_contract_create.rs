@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use dpp::identity::PartialIdentity;
+use dpp::platform_value::string_encoding::Encoding::Base58;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::{
     consensus::basic::{data_contract::InvalidDataContractIdError, BasicError},

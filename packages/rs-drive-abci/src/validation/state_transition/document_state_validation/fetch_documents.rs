@@ -126,7 +126,7 @@ pub(super) fn fetch_documents_for_transitions_knowing_contract_and_document_type
             equal_clauses: Default::default(),
         },
         offset: 0,
-        limit: 0,
+        limit: transitions.len() as u16,
         order_by: Default::default(),
         start_at: None,
         start_at_included: false,

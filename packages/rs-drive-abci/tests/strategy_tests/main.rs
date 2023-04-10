@@ -67,6 +67,8 @@ use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::drive::block_info::BlockInfo;
 use drive::drive::defaults::PROTOCOL_VERSION;
 use drive::drive::flags::StorageFlags::SingleEpoch;
+use drive::drive::identity::key::fetch::KeyKindRequestType::AllKeysOfKindRequest;
+use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 use drive::drive::Drive;
 use drive::fee::credits::Credits;
 use drive::fee_pools::epochs::Epoch;
@@ -415,22 +417,32 @@ impl Strategy {
                             let document =
                                 Document::from_bytes(first_item.as_slice(), &op.document_type)
                                     .expect("expected to deserialize document");
+
+                            //todo: fix this into a search key request for the following
+                            //let search_key_request = BTreeMap::from([(Purpose::AUTHENTICATION as u8, BTreeMap::from([(SecurityLevel::HIGH as u8, AllKeysOfKindRequest)]))]);
+
+                            let request = IdentityKeysRequest {
+                                identity_id: document.owner_id.to_buffer(),
+                                request_type: KeyRequestType::SpecificKeys(vec![1]),
+                                limit: Some(1),
+                                offset: None,
+                            };
                             let identity = platform
                                 .drive
-                                .fetch_identity_with_balance(document.owner_id.to_buffer(), None)
+                                .fetch_identity_balance_with_keys(request, None)
                                 .expect("expected to be able to get identity")
                                 .expect("expected to get an identity");
                             let document_delete_transition = DocumentDeleteTransition {
                                 base: DocumentBaseTransition {
                                     id: document.id,
                                     document_type_name: op.document_type.name.clone(),
-                                    action: Action::Create,
+                                    action: Action::Delete,
                                     data_contract_id: op.contract.id,
                                     data_contract: op.contract.clone(),
                                 },
                             };
 
-                            let document_batch_transition = DocumentsBatchTransition {
+                            let mut document_batch_transition = DocumentsBatchTransition {
                                 protocol_version: LATEST_VERSION,
                                 transition_type: StateTransitionType::DocumentsBatch,
                                 owner_id: identity.id,
@@ -439,8 +451,15 @@ impl Strategy {
                                 signature: None,
                             };
 
-                            //todo: signing
-                            //document_batch_transition.sign()
+                            let identity_public_key = identity
+                                .loaded_public_keys
+                                .values()
+                                .next()
+                                .expect("expected a key");
+
+                            document_batch_transition
+                                .sign_external(identity_public_key, signer)
+                                .expect("expected to sign");
 
                             operations.push(document_batch_transition.into());
                         }

@@ -209,7 +209,7 @@ impl Drive {
         )?;
         let documents = items
             .into_iter()
-            .map(|serialized| Document::from_cbor(serialized.as_slice(), None, None))
+            .map(|serialized| Document::from_bytes(serialized.as_slice(), query.document_type))
             .collect::<Result<Vec<Document>, ProtocolError>>()?;
         let cost = if let Some(epoch) = epoch {
             let fee_result = calculate_fee(None, Some(drive_operations), epoch)?;

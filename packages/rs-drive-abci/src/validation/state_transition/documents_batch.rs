@@ -60,6 +60,7 @@ impl StateTransitionValidation for DocumentsBatchTransition {
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let result = validate_schema(DOCUMENTS_BATCH_TRANSITIONS_SCHEMA.clone(), self);
         if !result.is_valid() {
+            dbg!(&result);
             return Ok(result);
         }
 

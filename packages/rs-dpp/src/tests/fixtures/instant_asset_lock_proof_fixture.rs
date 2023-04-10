@@ -62,7 +62,7 @@ pub fn instant_asset_lock_proof_transaction_fixture(
     };
     let one_time_key_hash = one_time_public_key.pubkey_hash().to_vec();
     let burn_output = TxOut {
-        value: 1000000, // 0.1 Dash
+        value: 10000000, // 1 Dash
         script_pubkey: Script::new_op_return(&one_time_key_hash),
     };
     let change_output = TxOut {
