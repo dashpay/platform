@@ -146,12 +146,8 @@ impl DocumentValidator {
 mod test {
     use std::sync::Arc;
 
-    use jsonschema::{
-        error::{TypeKind, ValidationErrorKind},
-        primitive_type::PrimitiveType,
-    };
     use platform_value::Value;
-    use serde_json::Value as JsonValue;
+
     use test_case::test_case;
 
     use crate::errors::consensus::codes::ErrorWithCode;

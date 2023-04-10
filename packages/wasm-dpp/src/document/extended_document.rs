@@ -3,7 +3,7 @@ use dpp::document::{ExtendedDocument, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS};
 
 use dpp::platform_value::{Bytes32, Value};
 use dpp::prelude::{Identifier, Revision, TimestampMillis};
-use dpp::util::json_schema::JsonSchemaExt;
+
 use dpp::util::json_value::JsonValueExt;
 
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
@@ -13,7 +13,7 @@ use std::convert::TryInto;
 use wasm_bindgen::prelude::*;
 
 use crate::buffer::Buffer;
-use crate::document::BinaryType;
+
 use crate::errors::RustConversionError;
 use crate::identifier::{identifier_from_js_value, IdentifierWrapper};
 use crate::lodash::lodash_set;

@@ -1,5 +1,4 @@
 use dpp::prelude::{DataContract, Identifier};
-use dpp::util::json_schema::JsonSchemaExt;
 
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};

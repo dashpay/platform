@@ -24,7 +24,6 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
     use crate::errors::consensus::ConsensusError;
 
     use crate::NonConsensusError;
-    use jsonschema::error::ValidationErrorKind;
 
     mod protocol_version {
         use super::*;
@@ -444,7 +443,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
     mod output_script {
         use crate::consensus::ConsensusError;
-        use crate::identity::core_script::CoreScript;
+
         use crate::identity::state_transition::properties::PROPERTY_OUTPUT_SCRIPT;
 
         use super::*;
@@ -529,7 +528,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_basic_consensus_errors!(
+            let _errors = assert_basic_consensus_errors!(
                 result,
                 BasicError::InvalidIdentityCreditWithdrawalTransitionOutputScriptError,
                 1

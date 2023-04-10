@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use log::trace;
 use platform_value::{platform_value, Value};
-use serde_json::Value as JsonValue;
+
 use test_case::test_case;
 
 use crate::consensus::basic::value_error::ValueError;
