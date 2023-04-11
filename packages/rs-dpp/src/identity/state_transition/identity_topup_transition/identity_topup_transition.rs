@@ -6,14 +6,17 @@ use platform_value::{BinaryData, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
+use crate::identity::signer::Signer;
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
+use crate::identity::Identity;
+use crate::identity::KeyType::ECDSA_HASH160;
 use crate::prelude::Identifier;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::state_transition::{
     StateTransition, StateTransitionConvert, StateTransitionLike, StateTransitionType,
 };
 use crate::version::LATEST_VERSION;
-use crate::{NonConsensusError, ProtocolError};
+use crate::{BlsModule, NonConsensusError, ProtocolError};
 
 mod property_names {
     pub const ASSET_LOCK_PROOF: &str = "assetLockProof";
@@ -50,6 +53,28 @@ impl Default for IdentityTopUpTransition {
 
 /// Main state transition functionality implementation
 impl IdentityTopUpTransition {
+    pub fn try_from_identity(
+        identity: Identity,
+        asset_lock_proof: AssetLockProof,
+        asset_lock_proof_private_key: &[u8],
+        bls: &impl BlsModule,
+    ) -> Result<Self, ProtocolError> {
+        let mut identity_top_up_transition = IdentityTopUpTransition {
+            transition_type: StateTransitionType::IdentityTopUp,
+            asset_lock_proof,
+            identity_id: identity.id,
+            protocol_version: identity.protocol_version,
+            signature: Default::default(),
+        };
+
+        identity_top_up_transition.sign_by_private_key(
+            asset_lock_proof_private_key,
+            ECDSA_HASH160,
+            bls,
+        )?;
+
+        Ok(identity_top_up_transition)
+    }
     pub fn new(raw_state_transition: Value) -> Result<Self, ProtocolError> {
         Self::from_raw_object(raw_state_transition)
     }
