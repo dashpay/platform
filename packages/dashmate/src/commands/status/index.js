@@ -89,7 +89,7 @@ class StatusCommand extends ConfigBaseCommand {
 
         if (platform.tenderdash.serviceStatus === ServiceStatusEnum.up) {
           plain['Platform Version'] = platform.tenderdash.version;
-          plain['Platform Block Height'] = platform.tenderdash.lastBlockHeight;
+          plain['Platform Block Height'] = platform.tenderdash.latestBlockHeight;
           plain['Platform Peers'] = platform.tenderdash.peers;
           plain['Platform Network'] = platform.tenderdash.network;
         }
