@@ -18,9 +18,7 @@ use crate::validation::SimpleConsensusValidationResult;
 use crate::{
     consensus::basic::BasicError,
     data_contract::{
-        enrich_data_contract_with_base_schema::{
-            enrich_data_contract_with_base_schema, PREFIX_BYTE_1, PREFIX_BYTE_2, PREFIX_BYTE_3,
-        },
+        enrich_with_base_schema::{PREFIX_BYTE_1, PREFIX_BYTE_2, PREFIX_BYTE_3},
         DataContract,
     },
     document::{document_transition::Action, generate_document_id::generate_document_id},
@@ -227,20 +225,14 @@ pub fn validate_document_transitions<'a>(
 fn get_enriched_contracts_by_action(
     data_contract: &DataContract,
 ) -> Result<HashMap<Action, DataContract>, ProtocolError> {
-    let enriched_base_contract = enrich_data_contract_with_base_schema(
-        data_contract,
-        &BASE_TRANSITION_SCHEMA,
-        PREFIX_BYTE_1,
-        &[],
-    )?;
-    let enriched_create_contract = enrich_data_contract_with_base_schema(
-        &enriched_base_contract,
+    let enriched_base_contract =
+        data_contract.enrich_with_base_schema(&BASE_TRANSITION_SCHEMA, PREFIX_BYTE_1, &[])?;
+    let enriched_create_contract = enriched_base_contract.enrich_with_base_schema(
         &CREATE_TRANSITION_SCHEMA,
         PREFIX_BYTE_2,
         &[],
     )?;
-    let enriched_replace_contract = enrich_data_contract_with_base_schema(
-        &enriched_base_contract,
+    let enriched_replace_contract = enriched_base_contract.enrich_with_base_schema(
         &REPLACE_TRANSITION_SCHEMA,
         PREFIX_BYTE_3,
         &["$createdAt"],

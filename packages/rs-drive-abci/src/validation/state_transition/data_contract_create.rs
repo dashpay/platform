@@ -69,17 +69,19 @@ impl StateTransitionValidation for DataContractCreateTransition {
         // Validate data contract id
         let generated_id =
             generate_data_contract_id(self.data_contract.owner_id, self.data_contract.entropy);
-        let mut validation_result = SimpleConsensusValidationResult::default();
         if generated_id != self.data_contract.id.as_ref() {
-            validation_result.add_error(BasicError::InvalidDataContractIdError(
-                InvalidDataContractIdError::new(
+            return Ok(SimpleConsensusValidationResult::new_with_error(
+                BasicError::InvalidDataContractIdError(InvalidDataContractIdError::new(
                     generated_id,
                     self.data_contract.id.as_ref().to_owned(),
-                ),
-            ))
+                ))
+                .into(),
+            ));
         }
 
-        Ok(validation_result)
+        self.data_contract
+            .validate_structure()
+            .map_err(Error::Protocol)
     }
 
     fn validate_identity_and_signatures(

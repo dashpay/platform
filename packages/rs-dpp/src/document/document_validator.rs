@@ -11,10 +11,7 @@ use crate::data_contract::DriveContractExt;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::{
     consensus::basic::BasicError,
-    data_contract::{
-        enrich_data_contract_with_base_schema::enrich_data_contract_with_base_schema,
-        enrich_data_contract_with_base_schema::PREFIX_BYTE_0, DataContract,
-    },
+    data_contract::{enrich_with_base_schema::PREFIX_BYTE_0, DataContract},
     validation::JsonSchemaValidator,
     version::ProtocolVersionValidator,
     ProtocolError,
@@ -24,12 +21,12 @@ const PROPERTY_PROTOCOL_VERSION: &str = "$protocolVersion";
 const PROPERTY_DOCUMENT_TYPE: &str = "$type";
 
 lazy_static! {
-    static ref BASE_DOCUMENT_SCHEMA: JsonValue =
+    pub static ref BASE_DOCUMENT_SCHEMA: JsonValue =
         serde_json::from_str(include_str!("../../schema/document/documentBase.json")).unwrap();
 }
 
 lazy_static! {
-    static ref EXTENDED_DOCUMENT_SCHEMA: JsonValue =
+    pub static ref EXTENDED_DOCUMENT_SCHEMA: JsonValue =
         serde_json::from_str(include_str!("../../schema/document/documentExtended.json")).unwrap();
 }
 
@@ -52,12 +49,8 @@ impl DocumentValidator {
         document_type: &DocumentType,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         let mut result = SimpleConsensusValidationResult::default();
-        let enriched_data_contract = enrich_data_contract_with_base_schema(
-            data_contract,
-            &BASE_DOCUMENT_SCHEMA,
-            PREFIX_BYTE_0,
-            &[],
-        )?;
+        let enriched_data_contract =
+            data_contract.enrich_with_base_schema(&BASE_DOCUMENT_SCHEMA, PREFIX_BYTE_0, &[])?;
 
         //todo: maybe we should validate on the document type instead as it already has all the
         //information needed
@@ -106,12 +99,8 @@ impl DocumentValidator {
             return Ok(result);
         }
 
-        let enriched_data_contract = enrich_data_contract_with_base_schema(
-            data_contract,
-            &EXTENDED_DOCUMENT_SCHEMA,
-            PREFIX_BYTE_0,
-            &[],
-        )?;
+        let enriched_data_contract =
+            data_contract.enrich_with_base_schema(&EXTENDED_DOCUMENT_SCHEMA, PREFIX_BYTE_0, &[])?;
         let document_schema = enriched_data_contract
             .get_document_schema(document_type_name)?
             .to_owned();

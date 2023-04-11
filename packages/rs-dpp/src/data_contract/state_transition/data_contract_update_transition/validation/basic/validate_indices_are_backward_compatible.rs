@@ -18,6 +18,7 @@ type IndexName = String;
 type DocumentType = String;
 type JsonSchema = serde_json::Value;
 
+//todo: change this to use Platform value and document types
 pub fn validate_indices_are_backward_compatible<'a>(
     existing_documents: impl IntoIterator<Item = (&'a DocumentType, &'a JsonSchema)>,
     new_documents: impl IntoIterator<Item = (&'a DocumentType, &'a JsonSchema)>,

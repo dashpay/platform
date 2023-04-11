@@ -15,8 +15,7 @@ use crate::validation::{ConsensusValidationResult, SimpleConsensusValidationResu
 use crate::{
     consensus::basic::{BasicError, IndexError},
     data_contract::{
-        enrich_data_contract_with_base_schema::enrich_data_contract_with_base_schema,
-        enrich_data_contract_with_base_schema::PREFIX_BYTE_0,
+        enrich_with_base_schema::PREFIX_BYTE_0,
         get_property_definition_by_path::get_property_definition_by_path, DataContract,
     },
     util::{
@@ -116,12 +115,8 @@ impl DataContractValidator {
         }
 
         let data_contract = DataContract::from_raw_object(raw_data_contract.clone())?;
-        let enriched_data_contract = enrich_data_contract_with_base_schema(
-            &data_contract,
-            &BASE_DOCUMENT_SCHEMA,
-            PREFIX_BYTE_0,
-            &[],
-        )?;
+        let enriched_data_contract =
+            data_contract.enrich_with_base_schema(&BASE_DOCUMENT_SCHEMA, PREFIX_BYTE_0, &[])?;
 
         trace!("validating the documents");
         for (document_type, document_schema) in enriched_data_contract.documents.iter() {
@@ -215,12 +210,8 @@ impl DataContract {
         }
 
         let data_contract = Self::from_raw_object(raw_data_contract.clone())?;
-        let enriched_data_contract = enrich_data_contract_with_base_schema(
-            &data_contract,
-            &BASE_DOCUMENT_SCHEMA,
-            PREFIX_BYTE_0,
-            &[],
-        )?;
+        let enriched_data_contract =
+            data_contract.enrich_with_base_schema(&BASE_DOCUMENT_SCHEMA, PREFIX_BYTE_0, &[])?;
 
         trace!("validating the documents");
         for (document_type, document_schema) in enriched_data_contract.documents.iter() {
@@ -318,29 +309,29 @@ impl DataContract {
 
             // Make sure that compound unique indices contain all fields
             if index_definition.unique && index_definition.properties.len() > 1 {
-                let required_fields = document_schema
-                    .get_schema_required_fields()
-                    .unwrap_or_default();
-                let all_are_required = index_definition
-                    .properties
-                    .iter()
-                    .map(|property| &property.name)
-                    .all(|field| required_fields.contains(&field.as_str()));
-
-                let all_are_not_required = index_definition
-                    .properties
-                    .iter()
-                    .map(|property| &property.name)
-                    .all(|field| !required_fields.contains(&field.as_str()));
-
-                if !all_are_required && !all_are_not_required {
-                    result.add_error(BasicError::IndexError(
-                        IndexError::InvalidCompoundIndexError(InvalidCompoundIndexError::new(
-                            document_type.to_owned(),
-                            index_definition.clone(),
-                        )),
-                    ));
-                }
+                // let required_fields = document_schema
+                //     .get_schema_required_fields()
+                //     .unwrap_or_default();
+                // let all_are_required = index_definition
+                //     .properties
+                //     .iter()
+                //     .map(|property| &property.name)
+                //     .all(|field| required_fields.contains(&field.as_str()));
+                //
+                // let all_are_not_required = index_definition
+                //     .properties
+                //     .iter()
+                //     .map(|property| &property.name)
+                //     .all(|field| !required_fields.contains(&field.as_str()));
+                //
+                // if !all_are_required && !all_are_not_required {
+                //     result.add_error(BasicError::IndexError(
+                //         IndexError::InvalidCompoundIndexError(InvalidCompoundIndexError::new(
+                //             document_type.to_owned(),
+                //             index_definition.clone(),
+                //         )),
+                //     ));
+                // }
 
                 // Ensure index definition uniqueness
                 let indices_fingerprint = serde_json::to_string(&index_definition.properties)
@@ -504,7 +495,7 @@ impl DataContract {
     }
 
     /// checks if names of indices are not duplicated
-    fn validate_index_naming_duplicates(
+    pub fn validate_index_naming_duplicates(
         indices: &[Index],
         document_type: &str,
     ) -> SimpleConsensusValidationResult {
@@ -518,7 +509,7 @@ impl DataContract {
     }
 
     /// checks the limit of unique indexes defined in the data contract
-    fn validate_max_unique_indices(
+    pub fn validate_max_unique_indices(
         indices: &[Index],
         document_type: &str,
     ) -> SimpleConsensusValidationResult {
