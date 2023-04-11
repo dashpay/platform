@@ -1,11 +1,9 @@
-// @ts-ignore
-const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
-const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
+import loadWasmDpp, { IdentityPublicKey } from '@dashevo/wasm-dpp';
 
-let IdentityPublicKey;
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 
 export async function createIdentityFixtureInAccount(account) {
-  ({ IdentityPublicKey } = await loadWasmDpp());
+  await loadWasmDpp();
 
   const identityFixture = await getIdentityFixture();
   const identityFixtureIndex = 0;

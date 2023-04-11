@@ -1,9 +1,5 @@
+import { Identifier, Document, Metadata } from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
-
-// TODO(wasm-dpp): provide type definitions from wasm-dpp
-let Identifier;
-let Document;
-let Metadata;
 
 /**
  * @param {WhereCondition[]} [where] - where
@@ -16,8 +12,8 @@ declare interface FetchOpts {
   where?: WhereCondition[];
   orderBy?: OrderByCondition[];
   limit?: number;
-  startAt?: string | Buffer | typeof Document | typeof Identifier;
-  startAfter?: string | Buffer | typeof Document | typeof Identifier;
+  startAt?: string | Buffer | Document | Identifier;
+  startAfter?: string | Buffer | Document | Identifier;
 }
 
 type OrderByCondition = [
@@ -105,10 +101,6 @@ export async function get(this: Platform, typeLocator: string, opts: FetchOpts):
 
   await this.initialize();
 
-  // TODO(wasm-dpp): remove when dppModule is typed
-  // @ts-ignore
-  ({ Identifier, Document, Metadata } = this.dppModule);
-
   // locator is of `dashpay.profile` with dashpay the app and profile the field.
   const [appName, fieldType] = typeLocator.split('.');
   // FIXME: we may later want a hashmap of schemas and contract IDs
@@ -163,7 +155,7 @@ export async function get(this: Platform, typeLocator: string, opts: FetchOpts):
     rawDocuments.map(async (rawDocument) => {
       const document = await this.wasmDpp.document.createFromBuffer(rawDocument);
 
-      let metadata = null;
+      let metadata;
       const responseMetadata = documentsResponse.getMetadata();
       if (responseMetadata) {
         metadata = new Metadata({

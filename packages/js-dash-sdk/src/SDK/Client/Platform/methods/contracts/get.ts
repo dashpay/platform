@@ -1,13 +1,10 @@
 // @ts-ignore
-import loadWasmDpp from '@dashevo/wasm-dpp';
+import { Identifier, Metadata } from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
 
 const NotFoundError = require('@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError');
 
-let Identifier;
-let Metadata;
-
-declare type ContractIdentifier = string | typeof Identifier;
+declare type ContractIdentifier = string | Identifier;
 
 /**
  * Get contracts from the platform
@@ -20,10 +17,7 @@ export async function get(this: Platform, identifier: ContractIdentifier): Promi
   this.logger.debug(`[Contracts#get] Get Data Contract "${identifier}"`);
   await this.initialize();
 
-  // TODO(wasm): expose Metadata from dedicated module that handles all WASM-DPP types
-  ({ Metadata, Identifier } = await loadWasmDpp());
-
-  const contractId : typeof Identifier = Identifier.from(identifier);
+  const contractId : Identifier = Identifier.from(identifier);
 
   // Try to get contract from the cache
   // eslint-disable-next-line
@@ -51,7 +45,7 @@ export async function get(this: Platform, identifier: ContractIdentifier): Promi
   const contract = await this.wasmDpp.dataContract
     .createFromBuffer(dataContractResponse.getDataContract());
 
-  let metadata = null;
+  let metadata;
   const responseMetadata = dataContractResponse.getMetadata();
   if (responseMetadata) {
     metadata = new Metadata({

@@ -102,6 +102,7 @@ class IdentitySyncWorker extends Worker {
 
       rawIdentity.protocolVersion = protocolVersion;
 
+      // TODO(wasm-dpp): use Identity from wasm dpp
       const identity = new Identity(rawIdentity);
 
       // eslint-disable-next-line no-await-in-loop

@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import { Transaction, BlockHeader, PrivateKey } from '@dashevo/dashcore-lib';
 import stateTransitionTypes from '@dashevo/dpp/lib/stateTransition/stateTransitionTypes';
-import loadWasmDpp from '@dashevo/wasm-dpp';
+import { IdentityPublicKey, IdentityPublicKeyWithWitness } from '@dashevo/wasm-dpp';
 import getResponseMetadataFixture from '../../test/fixtures/getResponseMetadataFixture';
 import { Client } from './index';
 import 'mocha';
@@ -24,9 +24,6 @@ const GetDataContractResponse = require('@dashevo/dapi-client/lib/methods/platfo
 const blockHeaderFixture = '00000020e2bddfb998d7be4cc4c6b126f04d6e4bd201687523ded527987431707e0200005520320b4e263bec33e08944656f7ce17efbc2c60caab7c8ed8a73d413d02d3a169d555ecdd6021e56d000000203000500010000000000000000000000000000000000000000000000000000000000000000ffffffff050219250102ffffffff0240c3609a010000001976a914ecfd5aaebcbb8f4791e716e188b20d4f0183265c88ac40c3609a010000001976a914ecfd5aaebcbb8f4791e716e188b20d4f0183265c88ac0000000046020019250000476416132511031b71167f4bb7658eab5c3957d79636767f83e0e18e2b9ed7f8000000000000000000000000000000000000000000000000000000000000000003000600000000000000fd4901010019250000010001d02e9ee1b14c022ad6895450f3375a8e9a87f214912d4332fa997996d2000000320000000000000032000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000';
 const privateKeyFixture = '9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2';
 
-let IdentityPublicKey;
-let IdentityPublicKeyWithWitness;
-
 describe('Dash - Client', function suite() {
   this.timeout(30000);
 
@@ -39,11 +36,6 @@ describe('Dash - Client', function suite() {
   let identityFixture;
   let documentsFixture;
   let dataContractFixture;
-
-  before(async () => {
-    // TODO(wasm): expose primitives by dedicated module?
-    ({ IdentityPublicKey, IdentityPublicKeyWithWitness } = await loadWasmDpp());
-  });
 
   beforeEach(async function beforeEach() {
     testMnemonic = 'agree country attract master mimic ball load beauty join gentle turtle hover';

@@ -1,7 +1,7 @@
 import { Transaction } from '@dashevo/dashcore-lib';
 import DAPIClient from '@dashevo/dapi-client';
 import stateTransitionTypes from '@dashevo/dpp/lib/stateTransition/stateTransitionTypes';
-import loadWasmDpp from '@dashevo/wasm-dpp';
+import { Identity } from '@dashevo/wasm-dpp';
 
 import { createFakeInstantLock } from '../../utils/createFakeIntantLock';
 import getResponseMetadataFixture from '../fixtures/getResponseMetadataFixture';
@@ -51,9 +51,6 @@ function makeTxStreamEmitISLocksForTransactions(transportMock, txStreamMock) {
  * @param dapiClientMock
  */
 async function makeGetIdentityRespondWithIdentity(client, dapiClientMock, sinon) {
-  // TODO(wasm): expose Identity from dedicated module that handles all WASM-DPP types
-  const { Identity } = await loadWasmDpp();
-
   dapiClientMock.platform.broadcastStateTransition.callsFake(async (stBuffer) => {
     const interceptedIdentityStateTransition = await client
       .platform.wasmDpp.stateTransition.createFromBuffer(stBuffer);
@@ -81,6 +78,8 @@ async function makeGetIdentityRespondWithIdentity(client, dapiClientMock, sinon)
 }
 
 export async function createAndAttachTransportMocksToClient(client, sinon) {
+  await client.platform.initialize();
+
   const txStreamMock = new TxStreamMock();
   const transportMock = new TransportMock(sinon, txStreamMock);
   const dapiClientMock = createDapiClientMock(sinon);

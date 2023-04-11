@@ -1,10 +1,8 @@
+import { Identifier } from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
 
 const { hash } = require('@dashevo/dpp/lib/util/hash');
 const crypto = require('crypto');
-
-// TODO(wasm-dpp): use identifier from ts types
-let Identifier;
 
 /**
  * Register names to the platform
@@ -21,17 +19,14 @@ let Identifier;
 export async function register(this: Platform,
   name: string,
   records: {
-    dashUniqueIdentityId?: typeof Identifier | string,
-    dashAliasIdentityId?: typeof Identifier | string,
+    dashUniqueIdentityId?: Identifier | string,
+    dashAliasIdentityId?: Identifier | string,
   },
   identity: {
-    getId(): typeof Identifier;
+    getId(): Identifier;
     getPublicKeyById(number: number):any;
   }): Promise<any> {
   await this.initialize();
-
-  // @ts-ignore
-  ({ Identifier } = this.dppModule);
 
   if (records.dashUniqueIdentityId) {
     records.dashUniqueIdentityId = Identifier.from(records.dashUniqueIdentityId);

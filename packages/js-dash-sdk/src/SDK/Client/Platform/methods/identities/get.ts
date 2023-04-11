@@ -1,12 +1,8 @@
 // @ts-ignore
-import loadWasmDpp from '@dashevo/wasm-dpp';
+import { Identifier, Metadata } from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
 
 const NotFoundError = require('@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError');
-
-// TODO(wasm): import Identifier from wasm-dpp to use as a type
-let Identifier;
-let Metadata;
 
 /**
  * Get an identity from the platform
@@ -15,11 +11,8 @@ let Metadata;
  * @param {string|Identifier} id - id
  * @returns Identity
  */
-export async function get(this: Platform, id: typeof Identifier | string): Promise<any> {
+export async function get(this: Platform, id: Identifier | string): Promise<any> {
   await this.initialize();
-
-  // TODO(wasm): expose Metadata from dedicated module that handles all WASM-DPP types
-  ({ Metadata, Identifier } = await loadWasmDpp());
 
   const identifier = Identifier.from(id);
 

@@ -1,6 +1,6 @@
 // @ts-ignore
-import DashPlatformProtocol from '@dashevo/dpp';
-import loadWasmDpp from '@dashevo/wasm-dpp';
+import DashPlatformProtocolJS from '@dashevo/dpp';
+import loadWasmDpp, { DPPModule, DashPlatformProtocol } from '@dashevo/wasm-dpp';
 import crypto from 'crypto';
 
 import { latestVersion as latestProtocolVersion } from '@dashevo/dpp/lib/version/protocolVersion';
@@ -104,11 +104,17 @@ interface DataContracts {
  * @param contracts - contracts
  */
 export class Platform {
-  // TODO(wasm-dpp): provide type definitions from wasm-dpp
-  dppModule: unknown;
+  // TODO: revisit this. Do we want to refactor all methods to check
+  //  whether dppModule is initialized?
 
-  dpp: DashPlatformProtocol;
+  // @ts-ignore
+  dppModule: DPPModule;
 
+  dpp: DashPlatformProtocolJS;
+
+  // TODO: revisit this. Do we want to refactor all methods to check
+  //  whether dppModule is initialized?
+  // @ts-ignore
   wasmDpp: DashPlatformProtocol;
 
   options: PlatformOpts;
@@ -207,7 +213,7 @@ export class Platform {
 
     const stateRepository = new StateRepository(this.client);
 
-    this.dpp = new DashPlatformProtocol({
+    this.dpp = new DashPlatformProtocolJS({
       stateRepository,
       protocolVersion: driveProtocolVersion,
       ...options,
@@ -218,9 +224,6 @@ export class Platform {
     await this.dpp.initialize();
 
     this.dppModule = await Platform.initializeDppModule();
-    // TODO(wasm-dpp): properly type wasm-dpp
-    // @ts-ignore
-    const { DashPlatformProtocol: DashPlatformProtocolWasm } = this.dppModule;
 
     if (!this.wasmDpp) {
       const bls = await getBlsAdapter();
@@ -228,7 +231,7 @@ export class Platform {
       const protocolVersion = this.dpp.getProtocolVersion();
       const stateRepository = this.dpp.getStateRepository();
 
-      this.wasmDpp = new DashPlatformProtocolWasm(
+      this.wasmDpp = new DashPlatformProtocol(
         bls,
         stateRepository,
         {
