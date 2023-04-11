@@ -85,6 +85,7 @@ class FeeResult {
    *
    * @param {BigInt} storageFee
    * @param {BigInt} processingFee
+   * @param {FeeRefund[]} feeRefunds
    *
    * @returns {FeeResult}
    */

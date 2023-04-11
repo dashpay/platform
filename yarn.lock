@@ -2989,12 +2989,17 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@dashevo/rs-drive@workspace:packages/rs-drive-nodejs"
   dependencies:
+    "@dashevo/bls": ~1.2.9
     "@dashevo/dashcore-lib": ~0.20.0
     "@dashevo/dpp": "workspace:*"
+    "@dashevo/wasm-dpp": "workspace:*"
     "@dashevo/withdrawals-contract": "workspace:*"
     cargo-cp-artifact: ^0.1.6
     cbor: ^8.0.0
     chai: ^4.3.4
+    chai-as-promised: ^7.1.1
+    chai-exclude: ^2.1.0
+    chai-string: ^1.5.0
     dirty-chai: ^2.0.1
     eslint: ^7.32.0
     eslint-config-airbnb-base: ^14.2.1
@@ -3003,6 +3008,8 @@ __metadata:
     neon-cli: ^0.10.1
     neon-load-or-build: ^2.2.2
     neon-tag-prebuild: "github:shumkov/neon-tag-prebuild#patch-1"
+    sinon: ^11.1.2
+    sinon-chai: ^3.7.0
     ultra-runner: ^3.10.5
   languageName: unknown
   linkType: soft

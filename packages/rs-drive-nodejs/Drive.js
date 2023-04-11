@@ -114,6 +114,7 @@ class Drive {
    * @param {Object} config
    * @param {number} config.dataContractsGlobalCacheSize
    * @param {number} config.dataContractsBlockCacheSize
+   * @param {Object} dppWasm
    */
   constructor(dbPath, config, dppWasm) {
     this.drive = driveOpen(dbPath, config);

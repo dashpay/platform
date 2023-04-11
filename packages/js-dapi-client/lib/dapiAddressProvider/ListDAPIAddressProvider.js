@@ -30,7 +30,7 @@ class ListDAPIAddressProvider {
     }
 
     // This is a temporary fix for a localhost masternode.
-    // On mac os, internal docker IP is used to register masternode, and it's
+    // On macOS, internal docker IP is used to register masternode, and it's
     // not really possible to bind to that address, so that workaround is introduced.
     const network = networks.get(this.options.network);
     if (network && network.regtestEnabled) {

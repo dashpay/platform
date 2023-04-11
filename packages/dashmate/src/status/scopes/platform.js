@@ -72,8 +72,9 @@ function getPlatformScopeFactory(dockerCompose,
         version: null,
         listening: null,
         catchingUp: null,
-        lastBlockHash: null,
-        lastBlockHeight: null,
+        latestBlockHash: null,
+        latestBlockHeight: null,
+        latestBlockTime: null,
         latestAppHash: null,
         peers: null,
         moniker: null,
@@ -109,17 +110,19 @@ function getPlatformScopeFactory(dockerCompose,
         const { version, network, moniker } = tenderdashStatus.node_info;
 
         const catchingUp = tenderdashStatus.sync_info.catching_up;
-        const lastBlockHeight = tenderdashStatus.sync_info.latest_block_height;
-        const lastBlockHash = tenderdashStatus.sync_info.latest_block_hash;
+        const latestBlockHeight = tenderdashStatus.sync_info.latest_block_height;
+        const latestBlockHash = tenderdashStatus.sync_info.latest_block_hash;
         const latestAppHash = tenderdashStatus.sync_info.latest_app_hash;
+        const latestBlockTime = tenderdashStatus.sync_info.latest_block_time;
 
         const platformPeers = parseInt(tenderdashNetInfo.n_peers, 10);
         const { listening } = tenderdashNetInfo;
 
         platform.tenderdash.version = version;
         platform.tenderdash.listening = listening;
-        platform.tenderdash.lastBlockHeight = lastBlockHeight;
-        platform.tenderdash.lastBlockHash = lastBlockHash;
+        platform.tenderdash.latestBlockHeight = latestBlockHeight;
+        platform.tenderdash.latestBlockHash = latestBlockHash;
+        platform.tenderdash.latestBlockTime = latestBlockTime;
         platform.tenderdash.catchingUp = catchingUp;
         platform.tenderdash.peers = platformPeers;
         platform.tenderdash.moniker = moniker;

@@ -4833,12 +4833,17 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./packages/rs-drive-nodejs/",\
           "packageDependencies": [\
             ["@dashevo/rs-drive", "workspace:packages/rs-drive-nodejs"],\
+            ["@dashevo/bls", "npm:1.2.9"],\
             ["@dashevo/dashcore-lib", "npm:0.20.0"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
+            ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
             ["@dashevo/withdrawals-contract", "workspace:packages/withdrawals-contract"],\
             ["cargo-cp-artifact", "npm:0.1.6"],\
             ["cbor", "npm:8.1.0"],\
             ["chai", "npm:4.3.4"],\
+            ["chai-as-promised", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.1.1"],\
+            ["chai-exclude", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:2.1.0"],\
+            ["chai-string", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:1.5.0"],\
             ["dirty-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.0.1"],\
             ["eslint", "npm:7.32.0"],\
             ["eslint-config-airbnb-base", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:14.2.1"],\
@@ -4847,6 +4852,8 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["neon-cli", "npm:0.10.1"],\
             ["neon-load-or-build", "npm:2.2.2"],\
             ["neon-tag-prebuild", "https://github.com/shumkov/neon-tag-prebuild.git#commit=a429834da27432b129eceb737e4d2b3f03fa5496"],\
+            ["sinon", "npm:11.1.2"],\
+            ["sinon-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:3.7.0"],\
             ["ultra-runner", "npm:3.10.5"]\
           ],\
           "linkType": "SOFT"\
