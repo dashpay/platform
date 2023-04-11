@@ -1,5 +1,5 @@
 import { PrivateKey } from '@dashevo/dashcore-lib';
-import IdentityPublicKey from '@dashevo/dpp/lib/identity/IdentityPublicKey';
+import { IdentityPublicKey } from '@dashevo/wasm-dpp';
 import { Platform } from '../../../Platform';
 
 /**

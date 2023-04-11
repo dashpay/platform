@@ -1,5 +1,4 @@
-import Identity from '@dashevo/dpp/lib/identity/Identity';
-import IdentityPublicKey from '@dashevo/dpp/lib/identity/IdentityPublicKey';
+import { Identity, IdentityPublicKey } from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
 import { signStateTransition } from '../../signStateTransition';
 

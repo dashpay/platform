@@ -85,6 +85,15 @@ export class Identifier {
   }
 
   /**
+   * Compare to another Identifier
+   * @param other
+   */
+  equals(other: Identifier | Buffer): boolean {
+    // @ts-ignore
+    return this.toBuffer().equals(Buffer.from(other));
+  }
+
+  /**
    * Create Identifier from buffer or encoded string
    *
    * @param {string|Buffer|Identifier} value

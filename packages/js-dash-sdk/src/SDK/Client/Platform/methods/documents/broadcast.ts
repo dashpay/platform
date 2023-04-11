@@ -1,4 +1,4 @@
-import Document from '@dashevo/dpp/lib/document/Document';
+import { Document } from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
 import broadcastStateTransition from '../../broadcastStateTransition';
 import { signStateTransition } from '../../signStateTransition';

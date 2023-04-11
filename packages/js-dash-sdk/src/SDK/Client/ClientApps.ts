@@ -1,4 +1,4 @@
-import Identifier from '@dashevo/dpp/lib/Identifier';
+import { Identifier } from '@dashevo/wasm-dpp';
 
 /**
  * Interface for ClientApps
@@ -30,10 +30,12 @@ export class ClientApps {
      * Set app
      *
      * @param {string} name
-     * @param {ClientAppDefinitionOptions} definition
+     * @param {ClientAppDefinitionOptions} options
      */
-  set(name: string, definition: ClientAppDefinitionOptions) {
-    definition.contractId = Identifier.from(definition.contractId);
+  set(name: string, options: ClientAppDefinitionOptions) {
+    const definition: ClientAppDefinition = {
+      contractId: Identifier.from(options.contractId),
+    };
 
     this.apps[name] = definition;
   }
