@@ -32,13 +32,17 @@ describe('fetchDocumentsFactory', () => {
 
     documentType = document.getType();
 
-    dataContract.getDocuments()[documentType].indices = [
+    const documentSchamas = dataContract.getDocuments();
+
+    documentSchamas[documentType].indices = [
       {
         properties: [
           { name: 'asc' },
         ],
       },
     ];
+
+    dataContract.setDocuments(documentSchamas);
 
     blockInfo = new BlockInfo(1, 0, Date.now());
 
@@ -62,7 +66,7 @@ describe('fetchDocumentsFactory', () => {
   it('should fetch Documents for specified contract ID and document type', async () => {
     await documentRepository.create(document, blockInfo);
 
-    const result = await fetchDocuments(contractId, documentType, true);
+    const result = await fetchDocuments(contractId, documentType, undefined, true);
 
     expect(result).to.be.instanceOf(StorageResult);
     expect(result.getOperations().length).to.be.greaterThan(0);
@@ -82,7 +86,7 @@ describe('fetchDocumentsFactory', () => {
 
     const query = { where: [['name', '==', document.get('name')]] };
 
-    const result = await fetchDocuments(contractId, documentType, query);
+    const result = await fetchDocuments(contractId, documentType, query, true);
 
     const foundDocuments = result.getValue();
 
@@ -99,7 +103,7 @@ describe('fetchDocumentsFactory', () => {
 
     const query = { where: [['name', '==', 'unknown']] };
 
-    const result = await fetchDocuments(contractId, documentType, query);
+    const result = await fetchDocuments(contractId, documentType, query, true);
 
     expect(result).to.be.instanceOf(StorageResult);
     expect(result.getOperations().length).to.be.greaterThan(0);
@@ -110,7 +114,7 @@ describe('fetchDocumentsFactory', () => {
   });
 
   it('should fetch documents by an equal date', async () => {
-    const indexedDocument = await getDocumentsFixture(dataContract)[3];
+    const indexedDocument = (await getDocumentsFixture(dataContract))[3];
 
     await documentRepository.create(indexedDocument, blockInfo);
 
@@ -120,7 +124,7 @@ describe('fetchDocumentsFactory', () => {
       ],
     };
 
-    const result = await fetchDocuments(contractId, 'indexedDocument', query);
+    const result = await fetchDocuments(contractId, 'indexedDocument', query, true);
 
     expect(result).to.be.instanceOf(StorageResult);
     expect(result.getOperations().length).to.be.greaterThan(0);
@@ -151,7 +155,7 @@ describe('fetchDocumentsFactory', () => {
       orderBy: [['$createdAt', 'asc']],
     };
 
-    const result = await fetchDocuments(contractId, 'indexedDocument', query);
+    const result = await fetchDocuments(contractId, 'indexedDocument', query, true);
 
     expect(result).to.be.instanceOf(StorageResult);
     expect(result.getOperations().length).to.be.greaterThan(0);
@@ -182,7 +186,7 @@ describe('fetchDocumentsFactory', () => {
       orderBy: [['$createdAt', 'asc']],
     };
 
-    const result = await fetchDocuments(contractId, 'indexedDocument', query);
+    const result = await fetchDocuments(contractId, 'indexedDocument', query, true);
 
     expect(result).to.be.instanceOf(StorageResult);
     expect(result.getOperations().length).to.be.greaterThan(0);
@@ -198,7 +202,7 @@ describe('fetchDocumentsFactory', () => {
     const query = { where: [['lastName', '==', 'unknown']] };
 
     try {
-      await fetchDocuments(contractId, documentType, blockInfo, query);
+      await fetchDocuments(contractId, documentType, query, true);
 
       expect.fail('should throw InvalidQueryError');
     } catch (e) {
@@ -210,7 +214,7 @@ describe('fetchDocumentsFactory', () => {
     documentType = 'Unknown';
 
     try {
-      await fetchDocuments(contractId, documentType);
+      await fetchDocuments(contractId, documentType, undefined, true);
 
       expect.fail('should throw InvalidQueryError');
     } catch (e) {
