@@ -44,17 +44,11 @@ impl DataContractFacadeWasm {
         &self,
         owner_id: Vec<u8>,
         documents: JsValue,
-        definitions: JsValue,
+        definitions: Option<js_sys::Object>,
     ) -> Result<DataContractWasm, JsValue> {
         let id = Identifier::from_bytes(&owner_id)
             .map_err(ProtocolError::ValueError)
             .with_js_error()?;
-
-        let definitions: Option<Value> = if definitions.is_object() {
-            Some(serde_wasm_bindgen::from_value(definitions)?)
-        } else {
-            None
-        };
 
         //todo: contract config
         self.0
@@ -62,7 +56,9 @@ impl DataContractFacadeWasm {
                 id,
                 serde_wasm_bindgen::from_value(documents)?,
                 None,
-                definitions,
+                definitions
+                    .map(|definitions| serde_wasm_bindgen::from_value(definitions.into()))
+                    .transpose()?,
             )
             .map(Into::into)
             .map_err(from_protocol_error)
