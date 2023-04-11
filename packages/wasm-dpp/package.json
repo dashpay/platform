@@ -3,16 +3,17 @@
   "version": "0.24.0-dev.17",
   "description": "The JavaScript implementation of the Dash Platform Protocol",
   "main": "dist/index.js",
-  "types": "dist/lib/index.d.ts",
+  "types": "dist/index.d.ts",
   "scripts": {
-    "build": "yarn exec scripts/build.sh && tsc",
+    "build": "yarn run build:wasm && yarn run build:js",
+    "build:wasm": "yarn exec scripts/build-wasm.sh",
+    "build:js": "yarn exec scripts/build-js.sh",
     "test": "yarn run test:node && yarn run test:browsers",
     "test:browsers": "karma start ./karma.conf.js --single-run",
     "test:node": "NODE_ENV=test mocha",
-    "tsc": "tsc",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "clean": "yarn exec scripts/clean.sh"
+    "clean": "yarn exec build/clean.sh"
   },
   "ultra": {
     "concurrent": [
@@ -37,6 +38,9 @@
   },
   "devDependencies": {
     "@apidevtools/json-schema-ref-parser": "^8.0.0",
+    "@babel/cli": "^7.21.0",
+    "@babel/core": "^7.21.4",
+    "@babel/preset-env": "^7.21.4",
     "@dashevo/dashcore-lib": "~0.20.0",
     "@dashevo/dpns-contract": "workspace:*",
     "@dashevo/dpp": "workspace:*",

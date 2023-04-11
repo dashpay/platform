@@ -1,12 +1,18 @@
-import init from '../wasm/wasm_dpp';
-import * as dpp_module from './dpp';
+import init from './wasm/wasm_dpp';
+// Ignore the following line, it's not present in the lib/wasm,
+// but added to the dist/wasm by the build process
 // @ts-ignore
-import wasmBase from '../wasm/wasm_dpp_bg.js';
+import wasmBase from './wasm/wasm_dpp_bg';
+import * as dpp_module from './dpp';
+
+// TODO(wasm-dpp): add tests for types with tsd tool
+export * from './dpp';
+export type DPPModule = typeof dpp_module;
 
 let isInitialized = false;
 let loadingPromise: Promise<void> | null = null;
 
-export default async function loadDpp() {
+export default async function loadDpp(): Promise<DPPModule> {
   if (isInitialized) {
     return dpp_module
   }

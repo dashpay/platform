@@ -11,7 +11,7 @@ use crate::utils::WithJsError;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::ProtocolError;
 
-#[wasm_bindgen(raw_module = "../lib/identifier/Identifier.js")]
+#[wasm_bindgen(raw_module = "../identifier/Identifier.js")]
 extern "C" {
     #[derive(Debug, Clone)]
     #[wasm_bindgen(js_name = default)]
