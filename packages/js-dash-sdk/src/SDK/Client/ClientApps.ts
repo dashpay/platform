@@ -33,11 +33,10 @@ export class ClientApps {
      * @param {ClientAppDefinitionOptions} options
      */
   set(name: string, options: ClientAppDefinitionOptions) {
-    const definition: ClientAppDefinition = {
+    this.apps[name] = {
       contractId: Identifier.from(options.contractId),
+      contract: options.contract,
     };
-
-    this.apps[name] = definition;
   }
 
   /**
