@@ -128,9 +128,8 @@ mod test {
         assert_eq!(expected, result);
     }
 
-    // TODO(wasm-dpp): remove this test if we don't need id
     #[test]
-    fn failing_test_with_negative_credits() {
+    fn test_with_negative_credits() {
         // Set of operations that produced by Document Remove Transition
         let operations = vec![
             Operation::PreCalculated(PreCalculatedOperation {
