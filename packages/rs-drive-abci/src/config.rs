@@ -150,7 +150,7 @@ pub struct PlatformConfig {
     pub verify_sum_trees: bool,
 
     /// The default quorum type
-    pub quorum_type: String,
+    pub quorum_type: QuorumType,
 
     /// The default quorum size
     pub quorum_size: u16,
@@ -171,21 +171,6 @@ impl PlatformConfig {
     fn default_verify_sum_trees() -> bool {
         true
     }
-
-    /// Return type of quorum
-    pub fn quorum_type(&self) -> QuorumType {
-        let found = if let Ok(t) = self.quorum_type.trim().parse::<u32>() {
-            QuorumType::from(t)
-        } else {
-            QuorumType::from(self.quorum_type.as_str())
-        };
-
-        if found == QuorumType::UNKNOWN {
-            panic!("config: unsupported QUORUM_TYPE: {}", self.quorum_type);
-        }
-
-        found
-    }
 }
 /// create new object using values from environment variables
 pub trait FromEnv {
@@ -204,7 +189,7 @@ impl Default for PlatformConfig {
     fn default() -> Self {
         Self {
             verify_sum_trees: true,
-            quorum_type: "llmq_100_67".to_string(),
+            quorum_type: QuorumType::Llmq100_67,
             quorum_size: 100,
             block_spacing_ms: 5000,
             validator_set_quorum_rotation_block_count: 15,
@@ -213,6 +198,7 @@ impl Default for PlatformConfig {
                 bind_address: "tcp://127.0.0.1:1234".to_string(),
                 keys: Keys::new_random_keys_with_seed(18012014), //Dash genesis day
                 genesis_height: 1,
+                genesis_core_height: 0,
             },
             core: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
@@ -237,6 +223,6 @@ mod tests {
 
         let config = super::PlatformConfig::from_env().unwrap();
         assert_eq!(config.verify_sum_trees, true);
-        assert_ne!(config.quorum_type(), QuorumType::UNKNOWN);
+        assert_ne!(config.quorum_type, QuorumType::UNKNOWN);
     }
 }

@@ -1,4 +1,5 @@
 use crate::rpc::core::QuorumListExtendedInfo;
+use dashcore_rpc::dashcore_rpc_json::{QuorumHash, QuorumInfoResult};
 use dashcore_rpc::json::QuorumType;
 use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::drive::block_info::BlockInfo;
@@ -19,7 +20,11 @@ pub struct PlatformState {
     /// upcoming protocol version
     pub next_epoch_protocol_version: ProtocolVersion,
     /// current quorums
-    pub quorums: HashMap<QuorumType, QuorumListExtendedInfo>,
+    pub quorums_extended_info: HashMap<QuorumType, QuorumListExtendedInfo>,
+    /// current validator set quorums
+    /// The validator set quorums are a subset of the quorums, but they also contain the list of
+    /// all members
+    pub validator_sets: HashMap<QuorumHash, QuorumInfoResult>,
 }
 
 impl PlatformState {
@@ -31,12 +36,28 @@ impl PlatformState {
             .unwrap_or_default()
     }
 
+    /// The height of the platform, only committed blocks increase height
+    pub fn known_height_or(&self, default: u64) -> u64 {
+        self.last_committed_block_info
+            .as_ref()
+            .map(|block_info| block_info.height)
+            .unwrap_or(default)
+    }
+
     /// The height of the core blockchain that Platform knows about through chain locks
     pub fn core_height(&self) -> u32 {
         self.last_committed_block_info
             .as_ref()
             .map(|block_info| block_info.core_height)
             .unwrap_or_default()
+    }
+
+    /// The height of the core blockchain that Platform knows about through chain locks
+    pub fn known_core_height_or(&self, default: u32) -> u32 {
+        self.last_committed_block_info
+            .as_ref()
+            .map(|block_info| block_info.core_height)
+            .unwrap_or(default)
     }
 
     /// The last block time in milliseconds

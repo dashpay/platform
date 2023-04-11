@@ -79,28 +79,14 @@ impl ValidatorSet {
         seed: Option<Vec<u8>>,
     ) -> Result<Self, ValidatorSetError> {
         let quorums = client.get_quorum_listextended(Some(core_height))?;
-        let quorums = match quorum_type {
-            QuorumType::Llmq50_60 => quorums.llmq_50_60,
-            QuorumType::Llmq400_60 => quorums.llmq_400_60,
-            QuorumType::Llmq400_85 => quorums.llmq_400_85,
-            QuorumType::Llmq100_67 => quorums.llmq_100_67,
-            QuorumType::Llmq25_67 => quorums.llmq_25_67,
-            QuorumType::Llmq60_75 => panic!("unsupported quorum type {:?}", quorum_type),
-            QuorumType::LlmqTest => quorums.llmq_test,
-            QuorumType::LlmqDevnet => panic!("unsupported quorum type {:?}", quorum_type),
-            QuorumType::LlmqTestV17 => quorums.llmq_test_v17,
-            QuorumType::LlmqTestDip0024 => quorums.llmq_test_dip0024,
-            QuorumType::LlmqTestInstantsend => quorums.llmq_test_instantsend,
-            QuorumType::LlmqDevnetDip0024 => panic!("unsupported quorum type {:?}", quorum_type),
-            QuorumType::LlmqTestPlatform => quorums.llmq_test_platform,
-            QuorumType::LlmqDevnetPlatform => panic!("unsupported quorum type {:?}", quorum_type),
-            QuorumType::UNKNOWN => panic!("unsupported quorum type {:?}", quorum_type),
-            // no default here, so if the list of quorums changes, we will detect it during build
-        }
-        .ok_or(ValidatorSetError::NoQuorumAtHeight(
-            Some(core_height),
-            quorum_type.to_owned(),
-        ))?;
+        let quorums =
+            quorums
+                .quorums_by_type
+                .get(quorum_type)
+                .ok_or(ValidatorSetError::NoQuorumAtHeight(
+                    Some(core_height),
+                    quorum_type.to_owned(),
+                ))?;
 
         let entropy = if seed.is_none() {
             Vec::new()
@@ -122,7 +108,7 @@ impl ValidatorSet {
         config: &PlatformConfig,
         core_height: CoreHeight,
         quorum_type: &QuorumType,
-        quorums_extended_info: &Vec<QuorumListExtendedInfo>,
+        quorums_extended_info: &QuorumListExtendedInfo,
         entropy: &Vec<u8>,
     ) -> Result<Quorum, ValidatorSetError> {
         // read some config
@@ -143,7 +129,6 @@ impl ValidatorSet {
         // First, convert dashcore rpc quorum info into our Quorum struct
         let quorums = quorums_extended_info
             .into_iter()
-            .flatten()
             .map(|(hash, details)| Quorum::new(hash, details, entropy))
             .collect::<Vec<Quorum>>();
 
@@ -247,6 +232,8 @@ impl Quorum {
 mod tests {
     use dashcore_rpc::dashcore::{hashes::Hash, BlockHash};
     use dashcore_rpc::dashcore_rpc_json::{ExtendedQuorumDetails, QuorumHash, QuorumInfoResult};
+    use dashcore_rpc::json::QuorumType;
+    use std::collections::HashMap;
     use tenderdash_abci::proto::abci::ValidatorSetUpdate;
 
     use crate::{config::PlatformConfig, rpc::core::QuorumListExtendedInfo};
@@ -277,7 +264,7 @@ mod tests {
     #[test]
     fn test_new_random_at_height() {
         const CORE_HEIGHT: u32 = 2000;
-        let quorum_type = dashcore_rpc::dashcore_rpc_json::QuorumType::Llmq50_60;
+        let quorum_type = QuorumType::Llmq100_67;
 
         let config = PlatformConfig::default();
         let mut client = crate::rpc::core::MockCoreRPCLike::new();
@@ -285,24 +272,10 @@ mod tests {
             .expect_get_quorum_listextended()
             .returning(move |_| {
                 Ok(dashcore_rpc::dashcore_rpc_json::QuorumListResult {
-                    llmq_50_60: Some(vec![generate_quorums_extended_info(100)]),
-                    llmq_400_60: None,
-                    llmq_400_85: None,
-                    llmq_100_67: None,
-                    llmq_60_75: None,
-                    llmq_25_67: None,
-                    // for devnets only
-                    llmq_devnet: None,
-                    llmq_devnet_platform: None,
-                    // for devnets only. rotated version (v2) for devnets
-                    llmq_devnet_dip0024: None,
-                    // for testing only
-                    llmq_test: None,
-                    llmq_test_instantsend: None,
-                    llmq_test_v17: None,
-                    llmq_test_dip0024: None,
-                    llmq_test_platform: None,
-                    // TODO: simplify with ..Default::default() when it's implemented by dashcore_rpc
+                    quorums_by_type: HashMap::from([(
+                        QuorumType::Llmq100_67,
+                        generate_quorums_extended_info(100),
+                    )]),
                 })
             })
             .once();

@@ -93,7 +93,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                 threshold_vote_extensions: vec![],
             }),
             misbehavior: vec![],
-            hash: app_hash.clone(),
+            hash: app_hash.clone(), //todo: change this to block hash
             height: height as i64,
             round: 0,
             block: Some(Block {
@@ -116,7 +116,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                     results_hash: vec![],
                     evidence_hash: vec![],
                     proposed_app_version: 0,
-                    proposer_pro_tx_hash: vec![],
+                    proposer_pro_tx_hash: proposer_pro_tx_hash.to_vec(),
                     core_chain_locked_height: 0,
                 }),
                 data: None,

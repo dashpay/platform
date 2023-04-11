@@ -29,9 +29,11 @@ use crate::execution::execution_event::{ExecutionEvent, ExecutionResult};
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::platform::{Platform, PlatformRef};
 use crate::rpc::core::CoreRPCLike;
+use crate::state::PlatformState;
 use crate::validation::state_transition::process_state_transition;
 
 /// The outcome of the block execution, either by prepare proposal, or process proposal
+#[derive(Clone)]
 pub struct BlockExecutionOutcome {
     /// The app hash, also known as the commit hash, this is the root hash of grovedb
     /// after the block has been executed
@@ -219,12 +221,39 @@ where
     }
 
     /// Run a block proposal, either from process proposal, or prepare proposal
+    /// Errors returned in the validation result are consensus errors, any error here means that
+    /// the block should be rejected
+    /// Errors returned in the result are critical system errors
     pub fn run_block_proposal(
         &self,
         block_proposal: BlockProposal,
         transaction: &Transaction,
-    ) -> Result<BlockExecutionOutcome, Error> {
+    ) -> Result<ValidationResult<BlockExecutionOutcome, Error>, Error> {
+        // Start by getting information from the state
+        let state = self.state.read().unwrap();
+        let last_block_time_ms = state.last_block_time_ms();
+        let last_block_height =
+            state.known_height_or((self.config.abci.genesis_height as u64).saturating_sub(1));
+        let last_block_core_height =
+            state.known_core_height_or(self.config.abci.genesis_core_height);
+        drop(state);
+
+        // Init block execution context
+        let block_state_info =
+            BlockStateInfo::from_block_proposal(&block_proposal, last_block_time_ms);
+
+        // First let's check that this is the follower to a previous block
+        if !block_state_info.next_block_to(last_block_height, last_block_core_height)? {
+            // we are on the wrong height or round
+            return Ok(ValidationResult::new_with_error(AbciError::WrongFinalizeBlockReceived(format!(
+                "received a block proposal for height: {} core height: {}, current height: {} core height: {}",
+                block_state_info.height, block_state_info.core_chain_locked_height, last_block_height, last_block_core_height
+            )).into()));
+        }
+
+        // destructure the block proposal
         let BlockProposal {
+            block_hash,
             height,
             round,
             core_chain_locked_height,
@@ -236,17 +265,6 @@ where
         } = block_proposal;
         // We start by getting the epoch we are in
         let genesis_time_ms = self.get_genesis_time(height, block_time_ms, &transaction)?;
-
-        let state = self.state.read().unwrap();
-        let previous_core_height = state.core_height();
-        let previous_block_time_ms = state
-            .last_committed_block_info
-            .as_ref()
-            .map(|block_info| block_info.time_ms);
-        drop(state);
-        // Init block execution context
-        let block_state_info =
-            BlockStateInfo::from_block_proposal(&block_proposal, previous_block_time_ms);
 
         let epoch_info =
             EpochInfo::from_genesis_time_and_block_info(genesis_time_ms, &block_state_info)?;
@@ -260,7 +278,7 @@ where
             )
             .map_err(|e| {
                 Error::Execution(ExecutionError::UpdateValidatorProposedAppVersionError(e))
-            })?;
+            })?; // This is a system error
 
         let block_info = block_state_info.to_block_info(epoch_info.current_epoch_index);
         // FIXME: we need to calculate total hpmns based on masternode list (or remove hpmn_count if not needed)
@@ -312,14 +330,14 @@ where
             transaction,
         )?;
 
-        self.update_masternode_identities(previous_core_height, core_chain_locked_height)?;
+        self.update_masternode_identities(last_block_core_height, core_chain_locked_height)?;
 
         let root_hash = self
             .drive
             .grove
             .root_hash(Some(transaction))
             .unwrap()
-            .map_err(|e| Error::Drive(GroveDB(e)))?;
+            .map_err(|e| Error::Drive(GroveDB(e)))?; //GroveDb errors are system errors
 
         block_execution_context.block_state_info.commit_hash = Some(root_hash);
 
@@ -328,15 +346,17 @@ where
             .unwrap()
             .replace(block_execution_context);
 
-        Ok(BlockExecutionOutcome {
+        Ok(ValidationResult::new_with_data(BlockExecutionOutcome {
             app_hash: root_hash,
             tx_results,
-        })
+        }))
     }
 
     /// Update the current quorums if the core_height changes
     pub fn update_state_cache_and_quorums(&self, block_info: BlockInfo) {
         let mut state_cache = self.state.write().unwrap();
+
+        self.update_quorum_info(&mut state_cache, block_info.core_height);
 
         state_cache.last_committed_block_info = Some(block_info.clone());
     }
@@ -371,7 +391,7 @@ where
         let public_key = self
             .core_rpc
             .get_quorum_info(
-                self.config.quorum_type(),
+                self.config.quorum_type,
                 &QuorumHash { 0: quorum_hash },
                 Some(false),
             )?
@@ -387,17 +407,9 @@ where
         request_finalize_block: RequestFinalizeBlock,
         transaction: &Transaction,
     ) -> Result<BlockFinalizationOutcome, Error> {
-        let RequestFinalizeBlock {
-            commit,
-            misbehavior,
-            hash,
-            height,
-            round,
-            block,
-            block_id,
-        } = request_finalize_block;
+        let mut validation_result = SimpleValidationResult::<AbciError>::new_with_errors(vec![]);
 
-        // Retrieve block execution context before we do anything else
+        // Retrieve block execution context before we do anything at all
         let mut guarded_block_execution_context = self.block_execution_context.write().unwrap();
         let block_execution_context =
             guarded_block_execution_context
@@ -412,13 +424,39 @@ where
             hpmn_count,
         } = &block_execution_context;
 
-        let mut validation_result = SimpleValidationResult::<AbciError>::new_with_errors(vec![]);
+        // Let's decompose the request
+        let RequestFinalizeBlock {
+            commit,
+            misbehavior,
+            hash,
+            height,
+            round,
+            block,
+            block_id,
+        } = request_finalize_block;
+
+        //todo: block and header should not be optional
+        let block_header = block.unwrap().header.unwrap();
+
+        let Ok(proposer_protx_hash) = block_header.proposer_pro_tx_hash.try_into() else {
+            validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
+                "received a block for h: {} r: {}, expected h: {} r: {}",
+                height, round, block_state_info.height, block_state_info.round
+            )));
+            return Ok(validation_result.into());
+        };
 
         //// Verification that commit is for our current executed block
         // When receiving the finalized block, we need to make sure that info matches our current block
 
         // First let's check the basics, height, round and hash
-        if !block_state_info.matches(height as u64, round as u32, hash)? {
+        if !block_state_info.matches_expected_block_info(
+            height as u64,
+            round as u32,
+            block_header.core_chain_locked_height,
+            proposer_protx_hash,
+            hash,
+        )? {
             // we are on the wrong height or round
             validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
                 "received a block for h: {} r: {}, expected h: {} r: {}",
@@ -440,6 +478,7 @@ where
 
         let quorum_public_key = self.get_quorum_key(commit.quorum_hash.clone())?;
 
+        //todo: verify commit
         // if let Some(block_id) = block_id {
         //     let result = self.validate_commit(commit.clone(), block_id, quorum_public_key)?;
         //     if !result.is_valid() {
@@ -488,13 +527,13 @@ where
                 state.next_epoch_protocol_version = state.current_protocol_version_in_consensus;
             }
 
-            Some(state.current_protocol_version_in_consensus)
+            let current_protocol_version_in_consensus = state.current_protocol_version_in_consensus;
+            drop(state);
+
+            Some(current_protocol_version_in_consensus)
         } else {
             None
         };
-
-        //todo: block and header should not be optional
-        let block_header = block.unwrap().header.unwrap();
 
         let mut to_commit_block_info =
             block_state_info.to_block_info(epoch_info.current_epoch_index);

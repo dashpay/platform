@@ -49,6 +49,8 @@ pub struct BlockStateInfo {
     pub proposer_pro_tx_hash: [u8; 32],
     /// Core chain locked height
     pub core_chain_locked_height: u32,
+    /// Block hash
+    pub block_hash: [u8; 32],
     /// Block commit hash after processing
     pub commit_hash: Option<[u8; 32]>,
 }
@@ -75,23 +77,53 @@ impl BlockStateInfo {
             previous_block_time_ms,
             proposer_pro_tx_hash: proposal.proposer_pro_tx_hash,
             core_chain_locked_height: proposal.core_chain_locked_height,
+            block_hash: proposal.block_hash.unwrap_or_default(), // we will set it later
             commit_hash: None,
         }
     }
+
     /// Does this match a height and round?
-    pub fn matches<I: TryInto<[u8; 32]>>(
+    pub fn next_block_to(
+        &self,
+        previous_height: u64,
+        previous_core_block_height: u32,
+    ) -> Result<bool, Error> {
+        Ok(self.height == previous_height + 1
+            && self.core_chain_locked_height >= previous_core_block_height)
+    }
+
+    /// Does this match a height and round?
+    pub fn matches_current_block<I: TryInto<[u8; 32]>>(
         &self,
         height: u64,
         round: u32,
-        hash: I,
+        block_hash: I,
     ) -> Result<bool, Error> {
-        let received_hash = hash.try_into().map_err(|_| {
+        let received_hash = block_hash.try_into().map_err(|_| {
             Error::Abci(AbciError::BadRequestDataSize(
                 "can't convert hash as vec to [u8;32]".to_string(),
             ))
         })?;
         // the order is important here, don't verify commit hash before height and round
-        Ok(self.height == height && self.round == round && self.commit_hash.ok_or(Error::Abci(AbciError::FinalizeBlockReceivedBeforeProcessing(format!("we received a block with hash {}, but don't have a current block being processed", hex::encode(received_hash)))))? == received_hash)
+        Ok(self.height == height && self.round == round && self.block_hash == received_hash)
+    }
+
+    /// Does this match a height and round?
+    pub fn matches_expected_block_info<I: TryInto<[u8; 32]>>(
+        &self,
+        height: u64,
+        round: u32,
+        core_block_height: u32,
+        proposer_pro_tx_hash: [u8; 32],
+        commit_hash: I,
+    ) -> Result<bool, Error> {
+        let received_hash = commit_hash.try_into().map_err(|_| {
+            Error::Abci(AbciError::BadRequestDataSize(
+                "can't convert hash as vec to [u8;32]".to_string(),
+            ))
+        })?;
+        // the order is important here, don't verify commit hash before height and round
+        Ok(self.height == height && self.round == round && self.core_chain_locked_height == core_block_height && self.proposer_pro_tx_hash == proposer_pro_tx_hash && self.commit_hash.ok_or(Error::Abci(AbciError::FinalizeBlockReceivedBeforeProcessing(format!("we received a block with hash {}, but don't have a current block being processed", hex::encode(received_hash)))))? == received_hash)
     }
 }
 /// Block execution context

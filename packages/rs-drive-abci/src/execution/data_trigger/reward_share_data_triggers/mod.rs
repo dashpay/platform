@@ -1,12 +1,10 @@
 use dpp::document::Document;
+use dpp::document::document_transition::DocumentCreateTransition;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{platform_value, Identifier};
 use dpp::prelude::DocumentTransition;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
-
-use platform_value::platform_value;
-use platform_value::string_encoding::Encoding;
 
 use crate::document::Document;
 use crate::{
@@ -14,6 +12,7 @@ use crate::{
     get_from_transition, mocks::SMLStore, prelude::Identifier,
     state_repository::StateRepositoryLike, ProtocolError,
 };
+use crate::error::Error;
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
@@ -23,21 +22,14 @@ const PROPERTY_PERCENTAGE: &str = "percentage";
 const MAX_DOCUMENTS: usize = 16;
 
 pub fn create_masternode_reward_shares_data_trigger<'a>(
-    document_transition: &DocumentTransition,
+    document_create_transition: &DocumentCreateTransition,
     context: &DataTriggerExecutionContext<'a>,
     _top_level_identifier: Option<&Identifier>,
-) -> Result<DataTriggerExecutionResult, anyhow::Error> {
+) -> Result<DataTriggerExecutionResult, Error> {
     let mut result = DataTriggerExecutionResult::default();
     let is_dry_run = context.state_transition_execution_context.is_dry_run();
     let owner_id = context.owner_id.to_string(Encoding::Base58);
 
-    let document_create_transition = match document_transition {
-        DocumentTransition::Create(document_create_transition) => document_create_transition,
-        _ => bail!(
-            "the Document Transition {} isn't 'CREATE'",
-            get_from_transition!(document_transition, id)
-        ),
-    };
     let properties = document_create_transition.data.as_ref().ok_or_else(|| {
         anyhow!(
             "data isn't defined in Data Transition '{}'",
@@ -139,6 +131,8 @@ mod test {
     use dpp::document::document_transition::{Action, DocumentTransitionExt};
     use dpp::document::ExtendedDocument;
     use dpp::identity::Identity;
+    use dpp::mocks::{SimplifiedMNList, SMLEntry, SMLStore};
+    use dpp::platform_value::Value;
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use dpp::tests::fixtures::{
         get_document_transitions_fixture, get_masternode_reward_shares_documents_fixture,
@@ -172,7 +166,7 @@ mod test {
         data_contract: DataContract,
         sml_store: SMLStore,
         extended_documents: Vec<ExtendedDocument>,
-        document_transition: DocumentTransition,
+        document_create_transition: DocumentCreateTransition,
         identity: Identity,
     }
 
@@ -213,12 +207,14 @@ mod test {
         };
         let document_transitions =
             get_document_transitions_fixture([(Action::Create, vec![documents[0].clone()])]);
+
+        let DocumentTransition::Create(document_create_transition) = document_transitions[0].clone();
         TestData {
             extended_documents: documents,
             data_contract,
             top_level_identifier,
             sml_store,
-            document_transition: document_transitions[0].clone(),
+            document_create_transition,
             identity: Identity::default(),
         }
     }
@@ -243,7 +239,7 @@ mod test {
     #[tokio::test]
     async fn should_return_an_error_if_percentage_greater_than_1000() {
         let TestData {
-            mut document_transition,
+            mut document_create_transition,
             extended_documents,
             sml_store,
             data_contract,
@@ -269,7 +265,7 @@ mod test {
             .returning(move |_, _, _, _| Ok(documents.clone()));
 
         // documentsFixture contains percentage = 500
-        document_transition.insert_dynamic_property(String::from("percentage"), Value::U64(9501));
+        document_create_transition.insert_dynamic_property(String::from("percentage"), Value::U64(9501));
 
         let execution_context = StateTransitionExecutionContext::default();
         let context = DataTriggerExecutionContext {
@@ -280,7 +276,7 @@ mod test {
         };
 
         let result =
-            create_masternode_reward_shares_data_trigger(&document_transition, &context, None)
+            create_masternode_reward_shares_data_trigger(&document_create_transition, &context, None)
                 .await;
 
         let percentage_error = get_data_trigger_error(&result, 1);
@@ -292,7 +288,7 @@ mod test {
 
     fn should_return_an_error_if_pay_to_id_does_not_exists() {
         let TestData {
-            document_transition,
+            document_create_transition,
             sml_store,
             data_contract,
             top_level_identifier,
@@ -318,7 +314,7 @@ mod test {
             state_transition_execution_context: &execution_context,
         };
         let result =
-            create_masternode_reward_shares_data_trigger(&document_transition, &context, None);
+            create_masternode_reward_shares_data_trigger(&document_create_transition, &context, None);
 
         let error = get_data_trigger_error(&result, 0);
         let pay_to_id_bytes = document_transition
@@ -336,7 +332,7 @@ mod test {
 
     fn should_return_an_error_if_owner_id_is_not_a_masternode_identity() {
         let TestData {
-            document_transition,
+            document_create_transition,
             sml_store,
             data_contract,
             ..
@@ -361,7 +357,7 @@ mod test {
             state_transition_execution_context: &execution_context,
         };
         let result =
-            create_masternode_reward_shares_data_trigger(&document_transition, &context, None);
+            create_masternode_reward_shares_data_trigger(&document_create_transition, &context, None);
         let error = get_data_trigger_error(&result, 0);
 
         assert_eq!(
@@ -372,7 +368,7 @@ mod test {
 
     fn should_pass() {
         let TestData {
-            document_transition,
+            document_create_transition,
             sml_store,
             data_contract,
             top_level_identifier,
@@ -399,7 +395,7 @@ mod test {
             state_transition_execution_context: &execution_context,
         };
         let result =
-            create_masternode_reward_shares_data_trigger(&document_transition, &context, None)
+            create_masternode_reward_shares_data_trigger(&document_create_transition, &context, None)
                 .expect("the execution result should be returned");
         assert!(result.is_ok())
     }
@@ -407,7 +403,7 @@ mod test {
     #[tokio::test]
     async fn should_return_error_if_there_are_16_stored_shares() {
         let TestData {
-            document_transition,
+            document_create_transition,
             sml_store,
             data_contract,
             top_level_identifier,
@@ -436,7 +432,7 @@ mod test {
         };
 
         let result =
-            create_masternode_reward_shares_data_trigger(&document_transition, &context, None)
+            create_masternode_reward_shares_data_trigger(&document_create_transition, &context, None)
                 .await;
         let error = get_data_trigger_error(&result, 0);
 
@@ -448,7 +444,7 @@ mod test {
 
     fn should_pass_on_dry_run() {
         let TestData {
-            document_transition,
+            document_create_transition,
             data_contract,
             top_level_identifier,
             ..
@@ -472,7 +468,7 @@ mod test {
             state_transition_execution_context: &execution_context,
         };
         let result =
-            create_masternode_reward_shares_data_trigger(&document_transition, &context, None)
+            create_masternode_reward_shares_data_trigger(&document_create_transition, &context, None)
                 .expect("the execution result should be returned");
         assert!(result.is_ok());
     }

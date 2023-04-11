@@ -98,12 +98,21 @@ where
         let transaction_guard = self.transaction.read().unwrap();
         let transaction = transaction_guard.as_ref().unwrap();
         // Running the proposal executes all the state transitions for the block
+        let run_result = self
+            .platform
+            .run_block_proposal((&request).try_into()?, &transaction)?;
+
+        if !run_result.is_valid() {
+            // This is a system error, because we are proposing
+            return Err(run_result.errors.first().unwrap().to_string().into());
+        }
+
+        //todo: we need to set the block hash
+
         let BlockExecutionOutcome {
             app_hash,
             tx_results,
-        } = self
-            .platform
-            .run_block_proposal((&request).try_into()?, &transaction)?;
+        } = run_result.into_data().map_err(Error::Protocol)?;
 
         // We need to let Tenderdash know about the transactions we should remove from execution
         let (tx_results, tx_records): (Vec<Option<ExecTxResult>>, Vec<TxRecord>) = tx_results
@@ -174,22 +183,32 @@ where
         }
 
         // Running the proposal executes all the state transitions for the block
-        let BlockExecutionOutcome {
-            app_hash,
-            tx_results,
-        } = self
+        let run_result = self
             .platform
-            .run_block_proposal((&request).try_into()?, transaction)?;
+            .run_block_proposal((&request).try_into()?, &transaction)?;
 
-        // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
-        let response = ResponseProcessProposal {
-            app_hash: app_hash.to_vec(),
-            tx_results,
-            status: proto::response_process_proposal::ProposalStatus::Accept.into(),
-            ..Default::default()
-        };
+        if !run_result.is_valid() {
+            // This was an error running this proposal, tell tenderdash that the block isn't valid
+            let response = ResponseProcessProposal {
+                status: proto::response_process_proposal::ProposalStatus::Reject.into(),
+                ..Default::default()
+            };
+            Ok(response)
+        } else {
+            let BlockExecutionOutcome {
+                app_hash,
+                tx_results,
+            } = run_result.into_data().map_err(Error::Protocol)?;
 
-        Ok(response)
+            // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
+            let response = ResponseProcessProposal {
+                app_hash: app_hash.to_vec(),
+                tx_results,
+                status: proto::response_process_proposal::ProposalStatus::Accept.into(),
+                ..Default::default()
+            };
+            Ok(response)
+        }
     }
 
     fn extend_vote(
@@ -199,7 +218,7 @@ where
         let transaction_guard = self.transaction.read().unwrap();
         let transaction = transaction_guard.as_ref().unwrap();
 
-        self.must_match(request.height, request.round, request.hash)?;
+        self.must_match_vote_info(request.height, request.round, request.hash)?;
 
         let withdrawals = WithdrawalTxs::load(Some(transaction), &self.platform.drive)?;
 
@@ -215,7 +234,7 @@ where
         let transaction_guard = self.transaction.read().unwrap();
         let transaction = transaction_guard.as_ref().unwrap();
 
-        self.must_match(request.height, request.round, request.hash)?;
+        self.must_match_vote_info(request.height, request.round, request.hash)?;
 
         let got: WithdrawalTxs = request.vote_extensions.into();
         let expected = WithdrawalTxs::load(Some(transaction), &self.platform.drive)?;
@@ -852,7 +871,12 @@ where
 // }
 impl<'a, C> AbciApplication<'a, C> {
     /// Check if current state (round/height/hash) matches received message.
-    fn must_match(&self, height: i64, round: i32, hash: Vec<u8>) -> Result<(), Error> {
+    fn must_match_vote_info(
+        &self,
+        height: i64,
+        round: i32,
+        block_hash: Vec<u8>,
+    ) -> Result<(), Error> {
         let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
         let block_execution_context =
             guarded_block_execution_context
@@ -863,7 +887,7 @@ impl<'a, C> AbciApplication<'a, C> {
 
         let block_state_info = &block_execution_context.block_state_info;
 
-        if !block_state_info.matches(height as u64, round as u32, hash)? {
+        if !block_state_info.matches_current_block(height as u64, round as u32, block_hash)? {
             Err(Error::from(AbciError::RequestForWrongBlockReceived(
                 format!(
                     "received request for height: {} rount: {}, expected height: {} round: {}",

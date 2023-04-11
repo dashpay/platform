@@ -178,7 +178,8 @@ impl<C> Platform<C> {
             current_epoch: Default::default(),
             current_protocol_version_in_consensus,
             next_epoch_protocol_version,
-            quorums: Default::default(),
+            quorums_extended_info: Default::default(),
+            validator_sets: Default::default(),
         };
 
         Ok(Platform {

@@ -274,6 +274,7 @@ mod tests {
                 genesis_time_ms: u64,
                 epoch_index: u16,
                 block_height: u64,
+                block_hash: [u8; 32],
                 previous_block_time_ms: Option<u64>,
                 should_distribute: bool,
                 transaction: &Transaction,
@@ -316,6 +317,7 @@ mod tests {
                     previous_block_time_ms,
                     proposer_pro_tx_hash,
                     core_chain_locked_height: 1,
+                    block_hash,
                     commit_hash: None,
                 };
 
@@ -416,6 +418,7 @@ mod tests {
                 genesis_time_ms,
                 epoch_index,
                 block_height,
+                [0; 32],
                 None,
                 false,
                 &transaction,
@@ -435,6 +438,7 @@ mod tests {
                 genesis_time_ms,
                 epoch_index,
                 block_height,
+                [0; 32],
                 Some(block_info.block_time_ms),
                 true,
                 &transaction,
@@ -454,6 +458,7 @@ mod tests {
                 genesis_time_ms,
                 epoch_index,
                 block_height,
+                [0; 32],
                 Some(block_info.block_time_ms),
                 true,
                 &transaction,
@@ -493,6 +498,7 @@ mod tests {
                     previous_block_time_ms,
                     proposer_pro_tx_hash,
                     core_chain_locked_height: 1,
+                    block_hash: [0; 32],
                     commit_hash: None,
                 };
 

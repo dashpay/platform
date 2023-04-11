@@ -6,6 +6,8 @@ use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 /// The block proposal is the combination of information that a proposer will propose,
 /// Or that a validator or full node will process
 pub struct BlockProposal<'a> {
+    /// Block hash
+    pub block_hash: Option<[u8; 32]>,
     /// Block height
     pub height: u64,
     /// Block round
@@ -63,6 +65,7 @@ impl<'a> TryFrom<&'a RequestPrepareProposal> for BlockProposal<'a> {
             ))
         })?;
         Ok(Self {
+            block_hash: None,
             height: *height as u64,
             round: *round as u32,
             core_chain_locked_height: *core_chain_locked_height,
@@ -115,7 +118,15 @@ impl<'a> TryFrom<&'a RequestProcessProposal> for BlockProposal<'a> {
                 hex::encode(e)
             )))
         })?;
+
+        let block_hash: [u8; 32] = hash.clone().try_into().map_err(|e| {
+            Error::Abci(AbciError::BadRequestDataSize(format!(
+                "invalid block hash: {}",
+                hex::encode(e)
+            )))
+        })?;
         Ok(Self {
+            block_hash: Some(block_hash),
             height: *height as u64,
             round: *round as u32,
             core_chain_locked_height: *core_chain_locked_height,

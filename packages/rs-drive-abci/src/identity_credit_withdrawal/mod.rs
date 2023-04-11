@@ -645,6 +645,7 @@ mod tests {
                         0, 0, 0, 0, 0, 0, 0,
                     ],
                     core_chain_locked_height: 96,
+                    block_hash: [0; 32],
                     commit_hash: None,
                 },
                 epoch_info: EpochInfo {
@@ -800,6 +801,7 @@ mod tests {
                             0, 0, 0, 0, 0, 0, 0, 0,
                         ],
                         core_chain_locked_height: 96,
+                        block_hash: [0; 32],
                         commit_hash: None,
                     },
                     epoch_info: EpochInfo {
