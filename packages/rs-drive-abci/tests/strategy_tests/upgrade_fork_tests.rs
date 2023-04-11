@@ -24,6 +24,10 @@ mod tests {
                 proposed_protocol_versions_with_weight: vec![(2, 1)],
                 upgrade_three_quarters_life: 0.1,
             }),
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
         };
         let twenty_minutes_in_ms = 1000 * 60 * 20;
         let mut config = PlatformConfig {
@@ -121,6 +125,7 @@ mod tests {
             abci_app,
             ChainExecutionParameters {
                 block_start,
+                core_height_start: 0,
                 block_count: 200,
                 proposers,
                 quorums,
@@ -182,6 +187,7 @@ mod tests {
             abci_app,
             ChainExecutionParameters {
                 block_start,
+                core_height_start: 0,
                 block_count: 400,
                 proposers,
                 quorums,
@@ -243,6 +249,10 @@ mod tests {
                 proposed_protocol_versions_with_weight: vec![(2, 1)],
                 upgrade_three_quarters_life: 5.0, //it will take an epoch before we get enough nodes
             }),
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
@@ -332,6 +342,7 @@ mod tests {
             abci_app,
             ChainExecutionParameters {
                 block_start,
+                core_height_start: 0,
                 block_count: 1600,
                 proposers,
                 quorums,
@@ -392,6 +403,7 @@ mod tests {
             abci_app,
             ChainExecutionParameters {
                 block_start,
+                core_height_start: 0,
                 block_count: 400,
                 proposers,
                 quorums,
@@ -451,6 +463,10 @@ mod tests {
                 proposed_protocol_versions_with_weight: vec![(2, 1)],
                 upgrade_three_quarters_life: 5.0,
             }),
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
         };
         let hour_in_ms = 1000 * 60 * 60;
         let mut config = PlatformConfig {
@@ -534,6 +550,7 @@ mod tests {
             abci_app,
             ChainExecutionParameters {
                 block_start,
+                core_height_start: 0,
                 block_count: 3000,
                 proposers,
                 quorums,
@@ -595,6 +612,10 @@ mod tests {
                 proposed_protocol_versions_with_weight: vec![(1, 9), (2, 1)],
                 upgrade_three_quarters_life: 0.1,
             }),
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
         };
 
         let block_start = platform
@@ -619,6 +640,7 @@ mod tests {
             abci_app,
             ChainExecutionParameters {
                 block_start,
+                core_height_start: 0,
                 block_count: 2000,
                 proposers,
                 quorums,
@@ -678,6 +700,7 @@ mod tests {
             abci_app,
             ChainExecutionParameters {
                 block_start,
+                core_height_start: 0,
                 block_count: 100,
                 proposers,
                 quorums,
@@ -738,6 +761,10 @@ mod tests {
                 proposed_protocol_versions_with_weight: vec![(1, 3), (2, 95), (3, 2)],
                 upgrade_three_quarters_life: 0.75,
             }),
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
@@ -819,6 +846,10 @@ mod tests {
                 proposed_protocol_versions_with_weight: vec![(2, 3), (3, 97)],
                 upgrade_three_quarters_life: 0.5,
             }),
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
         };
 
         // we hit the required threshold to upgrade
@@ -837,6 +868,7 @@ mod tests {
             abci_app,
             ChainExecutionParameters {
                 block_start,
+                core_height_start: 0,
                 block_count: 700,
                 proposers,
                 quorums,

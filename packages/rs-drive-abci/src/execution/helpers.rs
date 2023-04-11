@@ -5,11 +5,13 @@ use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformState;
 use dashcore::signer::sign;
-use dashcore_rpc::json::QuorumType;
+use dashcore_rpc::dashcore_rpc_json::QuorumHash;
+use dashcore_rpc::json::{QuorumInfoResult, QuorumType};
 use dpp::bls_signatures;
 use dpp::bls_signatures::Serialize;
 use dpp::validation::{SimpleConsensusValidationResult, SimpleValidationResult, ValidationResult};
 use drive::grovedb::Transaction;
+use std::collections::HashMap;
 use tenderdash_abci::proto::abci::CommitInfo;
 use tenderdash_abci::proto::types::BlockId;
 
@@ -64,9 +66,9 @@ where
         &self,
         state: &mut PlatformState,
         core_block_height: u32,
-    ) -> Result<SimpleConsensusValidationResult, Error> {
+    ) -> Result<(), Error> {
         if core_block_height == state.core_height() {
-            return Ok(SimpleConsensusValidationResult::default()); // no need to do anything
+            return Ok(()); // no need to do anything
         }
 
         let quorum_list = self
@@ -82,7 +84,26 @@ where
                 ),
             )))?;
 
+        // Remove validator_sets entries that are no longer valid for the core block height
+        state
+            .validator_sets
+            .retain(|key, _| quorum_info.contains_key(key));
+
+        let mut new_quorums = quorum_info
+            .iter()
+            .filter(|(key, _)| !state.validator_sets.contains_key(key))
+            .map(|(key, _)| {
+                let quorum_info_result =
+                    self.core_rpc
+                        .get_quorum_info(self.config.quorum_type, key, None)?;
+                Ok((key.clone(), quorum_info_result))
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
+
+        // Add new validator_sets entries
+        state.validator_sets.extend(new_quorums.into_iter());
+
         state.quorums_extended_info = quorum_list.quorums_by_type;
-        return Ok(SimpleConsensusValidationResult::default());
+        return Ok(());
     }
 }

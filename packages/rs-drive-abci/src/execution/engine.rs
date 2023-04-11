@@ -353,12 +353,14 @@ where
     }
 
     /// Update the current quorums if the core_height changes
-    pub fn update_state_cache_and_quorums(&self, block_info: BlockInfo) {
+    pub fn update_state_cache_and_quorums(&self, block_info: BlockInfo) -> Result<(), Error> {
         let mut state_cache = self.state.write().unwrap();
 
-        self.update_quorum_info(&mut state_cache, block_info.core_height);
+        self.update_quorum_info(&mut state_cache, block_info.core_height)?;
 
         state_cache.last_committed_block_info = Some(block_info.clone());
+
+        Ok(())
     }
 
     /// check if received withdrawal transactions are correct and match our withdrawal txs
@@ -386,7 +388,7 @@ where
 
         Ok(())
     }
-    // Retreieve quorum public key
+    // Retrieve quorum public key
     fn get_quorum_key(&self, quorum_hash: Vec<u8>) -> Result<bls_signatures::PublicKey, Error> {
         let public_key = self
             .core_rpc

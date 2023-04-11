@@ -34,7 +34,7 @@ use anyhow::anyhow;
 use dashcore::secp256k1::SecretKey;
 use dashcore::{signer, Network, PrivateKey};
 use dashcore_rpc::dashcore_rpc_json::{
-    QuorumHash as QuorumHashObject, QuorumInfoResult, QuorumType,
+    ExtendedQuorumDetails, QuorumHash as QuorumHashObject, QuorumInfoResult, QuorumType,
 };
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::document::document_transition::document_base_transition::DocumentBaseTransition;
@@ -78,7 +78,7 @@ use drive::query::DriveQuery;
 use drive_abci::abci::AbciApplication;
 use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
 use drive_abci::platform::Platform;
-use drive_abci::rpc::core::MockCoreRPCLike;
+use drive_abci::rpc::core::{MockCoreRPCLike, QuorumListExtendedInfo};
 use drive_abci::test::fixture::abci::static_init_chain_request;
 use drive_abci::test::helpers::setup::TestPlatformBuilder;
 use drive_abci::{config::PlatformConfig, test::helpers::setup::TempPlatform};
@@ -145,6 +145,14 @@ impl Frequency {
             0
         } else {
             rng.gen_range(self.times_per_block_range.clone())
+        }
+    }
+
+    fn events_if_hit(&self, rng: &mut StdRng) -> u16 {
+        if self.check_hit(rng) {
+            self.events(rng)
+        } else {
+            0
         }
     }
 }
@@ -235,6 +243,7 @@ pub(crate) struct Strategy {
     identities_inserts: Frequency,
     total_hpmns: u16,
     upgrading_info: Option<UpgradingInfo>,
+    core_height_increase: Frequency,
 }
 
 #[derive(Clone, Debug)]
@@ -682,6 +691,7 @@ pub struct ChainExecutionOutcome<'a> {
 
 pub struct ChainExecutionParameters {
     pub block_start: u64,
+    pub core_height_start: u32,
     pub block_count: u64,
     pub proposers: Vec<[u8; 32]>,
     pub quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
@@ -750,6 +760,36 @@ pub(crate) fn run_chain_for_strategy(
 
     let quorums_clone = quorums.clone();
 
+    platform
+        .core_rpc
+        .expect_get_quorum_listextended()
+        .returning(move |_| {
+            Ok(dashcore_rpc::dashcore_rpc_json::QuorumListResult {
+                quorums_by_type: HashMap::from([(
+                    QuorumType::Llmq100_67,
+                    quorums_clone
+                        .iter()
+                        .map(|(key, _)| {
+                            (
+                                dashcore_rpc::dashcore_rpc_json::QuorumHash::from(
+                                    hex::encode(key).to_string().as_str(),
+                                ),
+                                ExtendedQuorumDetails {
+                                    creation_height: 0,
+                                    quorum_index: None,
+                                    mined_block_hash: Default::default(),
+                                    num_valid_members: 0,
+                                    health_ratio: 0.0,
+                                },
+                            )
+                        })
+                        .collect(),
+                )]),
+            })
+        });
+
+    let quorums_clone = quorums.clone();
+
     platform.core_rpc.expect_get_quorum_info().returning(
         move |_, quorum_hash: &QuorumHashObject, _| {
             Ok(quorums_clone
@@ -795,6 +835,7 @@ pub(crate) fn start_chain_for_strategy(
         abci_application,
         ChainExecutionParameters {
             block_start: 1,
+            core_height_start: config.abci.genesis_core_height,
             block_count,
             proposers,
             quorums,
@@ -818,6 +859,7 @@ pub(crate) fn continue_chain_for_strategy(
     let platform = abci_app.platform;
     let ChainExecutionParameters {
         block_start,
+        core_height_start,
         block_count,
         proposers,
         quorums,
@@ -846,6 +888,8 @@ pub(crate) fn continue_chain_for_strategy(
         }),
     );
 
+    let mut current_core_height = core_height_start;
+
     for block_height in block_start..(block_start + block_count) {
         let epoch_info = EpochInfo::calculate(
             first_block_time,
@@ -860,10 +904,12 @@ pub(crate) fn continue_chain_for_strategy(
         )
         .expect("should calculate epoch info");
 
+        current_core_height += strategy.core_height_increase.events_if_hit(&mut rng) as u32;
+
         let block_info = BlockInfo {
             time_ms: current_time_ms,
             height: block_height,
-            core_height: 1,
+            core_height: current_core_height,
             epoch: Epoch::new(epoch_info.current_epoch_index),
         };
 
@@ -953,9 +999,36 @@ pub(crate) fn continue_chain_for_strategy(
 mod tests {
     use super::*;
     use crate::DocumentAction::DocumentActionReplace;
+    use dashcore::hashes::Hash;
+    use dashcore::BlockHash;
+    use dashcore_rpc::dashcore_rpc_json::{ExtendedQuorumDetails, QuorumHash};
     use drive::dpp::data_contract::extra::common::json_document_to_cbor;
     use drive::dpp::data_contract::DriveContractExt;
+    use drive_abci::rpc::core::QuorumListExtendedInfo;
     use tenderdash_abci::proto::types::CoreChainLock;
+
+    pub fn generate_quorums_extended_info(n: u32) -> QuorumListExtendedInfo {
+        let mut quorums = QuorumListExtendedInfo::new();
+
+        for i in 0..n {
+            let i_bytes = [i as u8; 32];
+
+            let hash = QuorumHash(i_bytes.to_vec());
+
+            let details = ExtendedQuorumDetails {
+                creation_height: i,
+                health_ratio: (i as f32) / (n as f32),
+                mined_block_hash: BlockHash::from_slice(&i_bytes).unwrap(),
+                num_valid_members: i,
+                quorum_index: Some(i),
+            };
+
+            quorums
+                .insert(hash.clone(), details)
+                .map(|v| panic!("duplicate record {:?}={:?}", hash, v));
+        }
+        quorums
+    }
 
     #[test]
     fn run_chain_nothing_happening() {
@@ -968,6 +1041,50 @@ mod tests {
             },
             total_hpmns: 100,
             upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+        };
+        let config = PlatformConfig {
+            verify_sum_trees: true,
+            quorum_size: 100,
+            validator_set_quorum_rotation_block_count: 25,
+            block_spacing_ms: 3000,
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
+    }
+
+    #[test]
+    fn run_chain_core_height_randomly_increasing() {
+        let strategy = Strategy {
+            contracts: vec![],
+            operations: vec![],
+            identities_inserts: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+            total_hpmns: 100,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: 1..3,
+                chance_per_block: Some(0.01),
+            },
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -1004,6 +1121,10 @@ mod tests {
             },
             total_hpmns: 100,
             upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -1041,6 +1162,10 @@ mod tests {
             },
             total_hpmns: 100,
             upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -1093,6 +1218,10 @@ mod tests {
             },
             total_hpmns: 100,
             upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -1151,6 +1280,10 @@ mod tests {
             },
             total_hpmns: 100,
             upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -1209,6 +1342,10 @@ mod tests {
             },
             total_hpmns: 100,
             upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -1295,6 +1432,10 @@ mod tests {
             },
             total_hpmns: 100,
             upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -1381,6 +1522,10 @@ mod tests {
             },
             total_hpmns: 100,
             upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -1468,6 +1613,10 @@ mod tests {
             },
             total_hpmns: 100,
             upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
         };
 
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -1573,6 +1722,10 @@ mod tests {
             },
             total_hpmns: 100,
             upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
         };
 
         let day_in_ms = 1000 * 60 * 60 * 24;
