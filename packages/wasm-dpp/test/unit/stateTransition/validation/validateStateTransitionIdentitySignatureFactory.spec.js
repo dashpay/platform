@@ -275,7 +275,7 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
 
     it('should return PublicKeyIsDisabledConsensusError if PublicKeyIsDisabledError was thrown', async () => {
       const publicKeys = identity.getPublicKeys();
-      publicKeys[2].setDisabledAt(Date.now());
+      publicKeys[2].setDisabledAt(new Date());
       identity.setPublicKeys(publicKeys);
 
       const result = await validateStateTransitionIdentitySignature(
@@ -315,7 +315,7 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
     it('should not verify signature on dry run', async () => {
       // This will produce an error during signature validation
       const publicKeys = identity.getPublicKeys();
-      publicKeys[2].setDisabledAt(Date.now());
+      publicKeys[2].setDisabledAt(new Date());
       identity.setPublicKeys(publicKeys);
 
       executionContext.enableDryRun();

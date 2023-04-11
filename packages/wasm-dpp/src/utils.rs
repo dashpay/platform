@@ -3,17 +3,21 @@ use std::convert::TryInto;
 
 use anyhow::{anyhow, bail};
 use dpp::{
+    consensus::ConsensusError,
     dashcore::{anyhow, anyhow::Context},
     ProtocolError,
 };
 
 use dpp::platform_value::Value;
-use js_sys::Function;
+use js_sys::{Function, Uint8Array};
 use serde::de::DeserializeOwned;
 use serde_json::Value as JsonValue;
 use wasm_bindgen::{convert::RefFromWasmAbi, prelude::*};
 
-use crate::errors::{from_dpp_err, RustConversionError};
+use crate::{
+    buffer::Buffer,
+    errors::{from_dpp_err, RustConversionError},
+};
 
 pub trait ToSerdeJSONExt {
     fn with_serde_to_json_value(&self) -> Result<JsonValue, JsValue>;
@@ -279,4 +283,21 @@ pub(crate) trait Inner {
     fn into_inner(self) -> Self::InnerItem;
     fn inner(&self) -> &Self::InnerItem;
     fn inner_mut(&mut self) -> &mut Self::InnerItem;
+}
+
+pub(crate) fn consensus_errors_from_buffers(
+    errors: Vec<Buffer>,
+) -> Result<Vec<ConsensusError>, JsValue> {
+    errors
+        .iter()
+        .map(|error_buffer| {
+            Uint8Array::new_with_byte_offset_and_length(
+                &error_buffer.buffer(),
+                error_buffer.byte_offset(),
+                error_buffer.length(),
+            )
+            .to_vec()
+        })
+        .map(|error_bytes| ConsensusError::deserialize(&error_bytes.to_vec()).with_js_error())
+        .collect::<Result<Vec<ConsensusError>, JsValue>>()
 }

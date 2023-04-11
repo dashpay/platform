@@ -32,17 +32,24 @@ where
     let is_dry_run = context.state_transition_execution_context.is_dry_run();
     let owner_id = context.owner_id.to_string(Encoding::Base58);
 
-    let document_create_transition = match document_transition {
-        DocumentTransition::Create(document_create_transition) => document_create_transition,
+    let (transition_data, transition_base) = match document_transition {
+        DocumentTransition::Create(document_create_transition) => (
+            document_create_transition.data.as_ref(),
+            &document_create_transition.base,
+        ),
+        DocumentTransition::Replace(document_replace_transition) => (
+            document_replace_transition.data.as_ref(),
+            &document_replace_transition.base,
+        ),
         _ => bail!(
-            "the Document Transition {} isn't 'CREATE'",
+            "the Document Transition {} isn't 'CREATE or REPLACE'",
             get_from_transition!(document_transition, id)
         ),
     };
-    let properties = document_create_transition.data.as_ref().ok_or_else(|| {
+    let properties = transition_data.ok_or_else(|| {
         anyhow!(
             "data isn't defined in Data Transition '{}'",
-            document_create_transition.base.id
+            transition_base.id
         )
     })?;
 
@@ -50,20 +57,25 @@ where
     let percentage = properties.get_integer(PROPERTY_PERCENTAGE)?;
 
     if !is_dry_run {
-        // Do not allow creating document if ownerId is not in SML
-        let sml_store: SMLStore = context.state_repository.fetch_sml_store().await?;
+        let is_valid_master_node = context
+            .state_repository
+            .is_in_the_valid_master_nodes_list(context.owner_id.to_buffer())
+            .await?;
 
-        let valid_master_nodes_list = sml_store.get_current_sml()?.get_valid_master_nodes();
+        // // Do not allow creating document if ownerId is not in SML
+        // let sml_store: SMLStore = context.state_repository.fetch_sml_store().await?;
+        //
+        // let valid_master_nodes_list = sml_store.get_current_sml()?.get_valid_master_nodes();
+        //
+        // let owner_id_in_sml = valid_master_nodes_list.iter().any(|entry| {
+        //     hex::decode(&entry.pro_reg_tx_hash).expect("invalid hex value")
+        //         == context.owner_id.to_buffer()
+        // });
 
-        let owner_id_in_sml = valid_master_nodes_list.iter().any(|entry| {
-            hex::decode(&entry.pro_reg_tx_hash).expect("invalid hex value")
-                == context.owner_id.to_buffer()
-        });
-
-        if !owner_id_in_sml {
+        if !is_valid_master_node {
             let err = create_error(
                 context,
-                document_create_transition,
+                transition_base.id,
                 "Only masternode identities can share rewards".to_string(),
             );
             result.add_error(err.into());
@@ -83,19 +95,20 @@ where
     if !is_dry_run && maybe_identity.is_none() {
         let err = create_error(
             context,
-            document_create_transition,
+            transition_base.id,
             format!("Identity '{}' doesn't exist", pay_to_identifier),
         );
-        result.add_error(err.into())
+        result.add_error(err.into());
+        return Ok(result);
     }
 
     let documents_data = context
         .state_repository
         .fetch_documents(
             &context.data_contract.id,
-            &document_create_transition.base.document_type_name,
+            &transition_base.document_type_name,
             json!({
-                "where" : [ [ "$owner_id", "==", owner_id ]]
+                "where" : [ [ "$ownerId", "==", owner_id ]]
             }),
             Some(context.state_transition_execution_context),
         )
@@ -112,7 +125,7 @@ where
     if documents.len() >= MAX_DOCUMENTS {
         let err = create_error(
             context,
-            document_create_transition,
+            transition_base.id,
             format!(
                 "Reward shares cannot contain more than {} identities",
                 MAX_DOCUMENTS
@@ -130,7 +143,7 @@ where
     if total_percent > MAX_PERCENTAGE {
         let err = create_error(
             context,
-            document_create_transition,
+            transition_base.id,
             format!("Percentage can not be more than {}", MAX_PERCENTAGE),
         );
         result.add_error(err.into());
@@ -246,6 +259,7 @@ mod test {
             sml_store,
             data_contract,
             top_level_identifier,
+            identity,
             ..
         } = setup_test();
 
@@ -257,11 +271,11 @@ mod test {
 
         let mut state_repository_mock = MockStateRepositoryLike::new();
         state_repository_mock
-            .expect_fetch_sml_store()
-            .returning(move || Ok(sml_store.clone()));
+            .expect_is_in_the_valid_master_nodes_list()
+            .returning(move |_| Ok(true));
         state_repository_mock
             .expect_fetch_identity()
-            .returning(|_, _| Ok(None));
+            .returning(move |_, _| Ok(Some(identity.clone())));
         state_repository_mock
             .expect_fetch_documents()
             .returning(move |_, _, _, _| Ok(documents.clone()));
@@ -281,7 +295,7 @@ mod test {
             create_masternode_reward_shares_data_trigger(&document_transition, &context, None)
                 .await;
 
-        let percentage_error = get_data_trigger_error(&result, 1);
+        let percentage_error = get_data_trigger_error(&result, 0);
         assert_eq!(
             "Percentage can not be more than 10000",
             percentage_error.to_string()
@@ -300,8 +314,8 @@ mod test {
 
         let mut state_repository_mock = MockStateRepositoryLike::new();
         state_repository_mock
-            .expect_fetch_sml_store()
-            .returning(move || Ok(sml_store.clone()));
+            .expect_is_in_the_valid_master_nodes_list()
+            .returning(move |_| Ok(true));
         state_repository_mock
             .expect_fetch_identity()
             .returning(move |_, _| Ok(None));
@@ -345,8 +359,8 @@ mod test {
 
         let mut state_repository_mock = MockStateRepositoryLike::new();
         state_repository_mock
-            .expect_fetch_sml_store()
-            .returning(move || Ok(sml_store.clone()));
+            .expect_is_in_the_valid_master_nodes_list()
+            .returning(move |_| Ok(false));
         state_repository_mock
             .expect_fetch_identity()
             .returning(move |_, _| Ok(None));
@@ -385,8 +399,8 @@ mod test {
 
         let mut state_repository_mock = MockStateRepositoryLike::new();
         state_repository_mock
-            .expect_fetch_sml_store()
-            .returning(move || Ok(sml_store.clone()));
+            .expect_is_in_the_valid_master_nodes_list()
+            .returning(move |_| Ok(true));
         state_repository_mock
             .expect_fetch_identity()
             .returning(move |_, _| Ok(Some(identity.clone())));
@@ -421,8 +435,8 @@ mod test {
 
         let mut state_repository_mock = MockStateRepositoryLike::new();
         state_repository_mock
-            .expect_fetch_sml_store()
-            .returning(move || Ok(sml_store.clone()));
+            .expect_is_in_the_valid_master_nodes_list()
+            .returning(move |_| Ok(true));
         state_repository_mock
             .expect_fetch_identity()
             .returning(move |_, _| Ok(Some(identity.clone())));

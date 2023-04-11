@@ -28,7 +28,7 @@ where
         state_transition: &DataContractUpdateTransition,
     ) -> Result<()> {
         self.state_repository
-            .store_data_contract(
+            .update_data_contract(
                 state_transition.data_contract.clone(),
                 Some(state_transition.get_execution_context()),
             )

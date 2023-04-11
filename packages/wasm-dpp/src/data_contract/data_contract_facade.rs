@@ -119,10 +119,10 @@ impl DataContractFacadeWasm {
     #[wasm_bindgen(js_name=createDataContractUpdateTransition)]
     pub fn create_data_contract_update_transition(
         &self,
-        data_contract: DataContractWasm,
+        data_contract: &DataContractWasm,
     ) -> Result<DataContractUpdateTransitionWasm, JsValue> {
         self.0
-            .create_data_contract_update_transition(data_contract.into())
+            .create_data_contract_update_transition(data_contract.to_owned().into())
             .map(Into::into)
             .map_err(from_protocol_error)
     }
