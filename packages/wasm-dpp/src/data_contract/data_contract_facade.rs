@@ -73,9 +73,13 @@ impl DataContractFacadeWasm {
     pub async fn create_from_object(
         &self,
         js_raw_data_contract: JsValue,
-        options: JsValue,
+        options: Option<js_sys::Object>,
     ) -> Result<DataContractWasm, JsValue> {
-        let skip_validation = get_bool_from_options(options, SKIP_VALIDATION_PROPERTY_NAME, false)?;
+        let skip_validation = if let Some(options) = options {
+            get_bool_from_options(options.into(), SKIP_VALIDATION_PROPERTY_NAME, false)?
+        } else {
+            false
+        };
 
         self.0
             .create_from_object(
@@ -92,10 +96,13 @@ impl DataContractFacadeWasm {
     pub async fn create_from_buffer(
         &self,
         buffer: Vec<u8>,
-        options: JsValue,
+        options: Option<js_sys::Object>,
     ) -> Result<DataContractWasm, JsValue> {
-        let skip_validation = get_bool_from_options(options, SKIP_VALIDATION_PROPERTY_NAME, false)?;
-
+        let skip_validation = if let Some(options) = options {
+            get_bool_from_options(options.into(), SKIP_VALIDATION_PROPERTY_NAME, false)?
+        } else {
+            false
+        };
         self.0
             .create_from_buffer(buffer, skip_validation)
             .await
