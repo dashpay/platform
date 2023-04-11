@@ -66,7 +66,7 @@ describe('getDataContractHandlerFactory', () => {
     );
   });
 
-  it('should return valid data', async function it(){
+  it('should return valid data', async function it() {
     const result = await getDataContractHandler(call);
 
     expect(result).to.be.an.instanceOf(GetDataContractResponse);

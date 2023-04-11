@@ -1,8 +1,5 @@
 const fs = require('fs');
-
-const { expect, use } = require('chai');
-use(require('dirty-chai'));
-
+const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
 const Drive = require('../Drive');
 
 const TEST_DATA_PATH = './test_data';
@@ -16,8 +13,10 @@ describe('GroveDB', () => {
   let rootTreePath;
   let itemTreePath;
   let otherTreeKey;
+  let dppWasm;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    dppWasm = await loadWasmDpp();
     drive = new Drive(TEST_DATA_PATH, {
       drive: {
         dataContractsGlobalCacheSize: 500,
@@ -30,7 +29,8 @@ describe('GroveDB', () => {
           password: '',
         },
       },
-    });
+    },
+    dppWasm);
 
     groveDb = drive.getGroveDB();
 
