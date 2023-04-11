@@ -2,7 +2,7 @@
 //
 // Copyright (c) 2021 Dash Core Group
 //
-// Permission is hereby granted, free of charge, to any
+// P op_type: (), frequency: () op_type: (), frequency: ()ermission is hereby granted, free of charge, to any
 // person obtaining a copy of this software and associated
 // documentation files (the "Software"), to deal in the
 // Software without restriction, including without
@@ -616,7 +616,9 @@ impl Strategy {
         state_transitions.append(&mut document_state_transitions);
 
         state_transitions.extend(self.operations.iter().filter_map(|op| match op.op_type {
-            OperationType::IdentityTopUp if op.frequency.check_hit(rng) => {
+            OperationType::IdentityTopUp
+                if op.frequency.check_hit(rng) && !identities.is_empty() =>
+            {
                 let identity_idx = (rng.next_u32() as usize) % identities.len();
                 let random_identity = &identities[identity_idx];
                 Some(create_identity_top_up_transition(rng, random_identity))
@@ -635,13 +637,15 @@ fn create_identity_top_up_transition(rng: &mut StdRng, identity: &Identity) -> S
     let asset_lock_proof =
         instant_asset_lock_proof_fixture(Some(PrivateKey::new(secret_key, Network::Dash)));
 
-    StateTransition::IdentityTopUp(IdentityTopUpTransition {
-        transition_type: StateTransitionType::IdentityTopUp, // why it has this field
-        asset_lock_proof,
-        identity_id: identity.id,
-        protocol_version: PROTOCOL_VERSION,
-        signature: todo!(),
-    })
+    StateTransition::IdentityTopUp(
+        IdentityTopUpTransition::try_from_identity(
+            identity.clone(),
+            asset_lock_proof,
+            secret_key.as_ref(),
+            &NativeBlsModule::default(),
+        )
+        .expect("expected to create top up transition"),
+    )
 }
 
 fn create_identities_state_transitions(
@@ -1760,5 +1764,59 @@ mod tests {
             .filter(|(_, balance)| *balance != 0)
             .count();
         assert_eq!(balance_count, 19); // 1 epoch worth of proposers
+    }
+
+    #[test]
+    fn run_chain_top_up_identities() {
+        let strategy = Strategy {
+            contracts: vec![],
+            operations: vec![Operation {
+                op_type: OperationType::IdentityTopUp,
+                frequency: Frequency {
+                    times_per_block_range: 1..3,
+                    chance_per_block: None,
+                },
+            }],
+            identities_inserts: Frequency {
+                times_per_block_range: 1..2,
+                chance_per_block: None,
+            },
+            total_hpmns: 100,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+        };
+        let config = PlatformConfig {
+            verify_sum_trees: true,
+            quorum_size: 100,
+            validator_set_quorum_rotation_block_count: 25,
+            block_spacing_ms: 3000,
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
+
+        assert_eq!(outcome.identities.len(), 100);
+
+        let max_initial_balance = u64::MAX >> 20; // TODO: some centralized way for random test data (`arbitrary` maybe?)
+        assert!(outcome
+            .identities
+            .iter()
+            .map(|i| i.balance)
+            .any(|balance| balance > max_initial_balance));
     }
 }
