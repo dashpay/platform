@@ -21,7 +21,7 @@ type IdentifierEncoding = BufferEncoding | 'base58';
 export class Identifier {
   static MEDIA_TYPE = 'application/x.dash.dpp.identifier';
 
-  constructor(buffer: Buffer) {
+  constructor(buffer: Buffer | Identifier) {
     if (!Buffer.isBuffer(buffer)) {
       throw new IdentifierError('Identifier expects Buffer');
     }
@@ -87,11 +87,11 @@ export class Identifier {
   /**
    * Create Identifier from buffer or encoded string
    *
-   * @param {string|Buffer} value
+   * @param {string|Buffer|Identifier} value
    * @param {string} encoding
    * @return {Identifier}
    */
-  static from(value: string | Buffer, encoding: string = undefined): Identifier {
+  static from(value: string | Buffer | Identifier, encoding: string = undefined): Identifier {
     let buffer;
 
     if (typeof value === 'string') {
