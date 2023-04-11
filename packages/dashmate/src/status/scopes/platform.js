@@ -112,6 +112,7 @@ function getPlatformScopeFactory(dockerCompose,
         const lastBlockHeight = tenderdashStatus.sync_info.latest_block_height;
         const lastBlockHash = tenderdashStatus.sync_info.latest_block_hash;
         const latestAppHash = tenderdashStatus.sync_info.latest_app_hash;
+        const latestBlockTime = tenderdashStatus.sync_info.latest_block_time;
 
         const platformPeers = parseInt(tenderdashNetInfo.n_peers, 10);
         const { listening } = tenderdashNetInfo;
@@ -120,6 +121,7 @@ function getPlatformScopeFactory(dockerCompose,
         platform.tenderdash.listening = listening;
         platform.tenderdash.lastBlockHeight = lastBlockHeight;
         platform.tenderdash.lastBlockHash = lastBlockHash;
+        platform.tenderdash.lastBlockTime = latestBlockTime;
         platform.tenderdash.catchingUp = catchingUp;
         platform.tenderdash.peers = platformPeers;
         platform.tenderdash.moniker = moniker;
