@@ -62,6 +62,7 @@ where
             .is_in_the_valid_master_nodes_list(context.owner_id.to_buffer())
             .await?;
 
+        // TODO: bring it back once the SML store is implemented
         // // Do not allow creating document if ownerId is not in SML
         // let sml_store: SMLStore = context.state_repository.fetch_sml_store().await?;
         //
