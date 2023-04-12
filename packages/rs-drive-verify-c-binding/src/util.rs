@@ -1,6 +1,4 @@
-use crate::types::{
-    AssetLockProof, IdPublicKeyMap, Identity, IdentityPublicKey, MetaData,
-};
+use crate::types::{AssetLockProof, IdPublicKeyMap, Identity, IdentityPublicKey, MetaData};
 use crate::{DppAssetLockProof, DppIdentity};
 use std::{mem, slice};
 
