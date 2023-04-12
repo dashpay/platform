@@ -25,15 +25,11 @@ const {
 
 describe('Platform', () => {
   describe('Identity', () => {
-    let dpp;
     let client;
     let identity;
     let walletAccount;
 
     before(async () => {
-      dpp = new Dash.PlatformProtocol();
-      await dpp.initialize();
-
       client = await createClientWithFundedWallet(700000);
 
       walletAccount = await client.getWalletAccount();
@@ -65,7 +61,7 @@ describe('Platform', () => {
       } = await client.platform.identities.utils.createAssetLockTransaction(1);
 
       const invalidInstantLock = createFakeInstantLock(transaction.hash);
-      const assetLockProof = await client.platform.wasmDpp.identity.createInstantAssetLockProof(
+      const assetLockProof = await client.platform.dpp.identity.createInstantAssetLockProof(
         invalidInstantLock.toBuffer(),
         transaction.toBuffer(),
         outputIndex,
@@ -273,7 +269,7 @@ describe('Platform', () => {
         txIdBuffer.reverse();
         outPointBuffer = Buffer.concat([txIdBuffer, outputIndexBuffer]);
 
-        const assetLockProof = await client.platform.wasmDpp.identity.createChainAssetLockProof(
+        const assetLockProof = await client.platform.dpp.identity.createChainAssetLockProof(
           transactionHeight,
           outPointBuffer,
         );
@@ -377,14 +373,16 @@ describe('Platform', () => {
         } = await client.platform.identity.utils.createAssetLockTransaction(15);
 
         const instantLock = createFakeInstantLock(transaction.hash);
-        const assetLockProof = await dpp.identity.createInstantAssetLockProof(instantLock);
+        const assetLockProof = await client.platform.dpp.identity
+          .createInstantAssetLockProof(instantLock);
 
-        const identityTopUpTransition = dpp.identity.createIdentityTopUpTransition(
-          identity.getId(),
-          transaction,
-          outputIndex,
-          assetLockProof,
-        );
+        const identityTopUpTransition = client.platform.dpp.identity
+          .createIdentityTopUpTransition(
+            identity.getId(),
+            transaction,
+            outputIndex,
+            assetLockProof,
+          );
         await identityTopUpTransition.signByPrivateKey(
           privateKey,
           IdentityPublicKey.TYPES.ECDSA_SECP256K1,

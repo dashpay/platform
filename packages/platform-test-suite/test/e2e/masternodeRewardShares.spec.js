@@ -125,7 +125,7 @@ describe('Masternode Reward Shares', () => {
         add: [newPublicKey],
       };
 
-      const stateTransition = client.platform.wasmDpp.identity.createIdentityUpdateTransition(
+      const stateTransition = client.platform.dpp.identity.createIdentityUpdateTransition(
         masternodeOwnerIdentity,
         update,
       );
@@ -176,7 +176,7 @@ describe('Masternode Reward Shares', () => {
         },
       );
 
-      const stateTransition = client.platform.wasmDpp.document.createStateTransition({
+      const stateTransition = client.platform.dpp.document.createStateTransition({
         create: [rewardShare],
       });
 
@@ -202,7 +202,7 @@ describe('Masternode Reward Shares', () => {
         },
       );
 
-      const stateTransition = client.platform.wasmDpp.document.createStateTransition({
+      const stateTransition = client.platform.dpp.document.createStateTransition({
         create: [invalidRewardShare],
       });
 
@@ -226,7 +226,7 @@ describe('Masternode Reward Shares', () => {
     it('should be able to update reward shares with existing identity', async () => {
       rewardShare.set('percentage', 2);
 
-      const stateTransition = client.platform.wasmDpp.document.createStateTransition({
+      const stateTransition = client.platform.dpp.document.createStateTransition({
         replace: [rewardShare],
       });
 
@@ -261,7 +261,7 @@ describe('Masternode Reward Shares', () => {
 
       rewardShare.set('payToId', payToId);
 
-      const stateTransition = client.platform.wasmDpp.document.createStateTransition({
+      const stateTransition = client.platform.dpp.document.createStateTransition({
         replace: [rewardShare],
       });
 
@@ -296,7 +296,7 @@ describe('Masternode Reward Shares', () => {
         },
       );
 
-      const stateTransition = client.platform.wasmDpp.document.createStateTransition({
+      const stateTransition = client.platform.dpp.document.createStateTransition({
         create: [anotherRewardShare],
       });
 
@@ -318,7 +318,7 @@ describe('Masternode Reward Shares', () => {
     });
 
     it('should be able to remove reward shares', async () => {
-      const stateTransition = client.platform.wasmDpp.document.createStateTransition({
+      const stateTransition = client.platform.dpp.document.createStateTransition({
         delete: [rewardShare],
       });
 
@@ -360,7 +360,7 @@ describe('Masternode Reward Shares', () => {
           percentage: 1,
         },
       );
-      const stateTransition = client.platform.wasmDpp.document.createStateTransition({
+      const stateTransition = client.platform.dpp.document.createStateTransition({
         create: [rewardShare],
       });
 

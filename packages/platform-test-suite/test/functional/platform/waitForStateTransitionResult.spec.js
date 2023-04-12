@@ -83,7 +83,7 @@ describe.skip('Platform', () => {
           identityProof.calculateRoot([1], [identityLeafRoot], 6),
         )
         .toString('hex');
-      const parsedIdentity = client.platform.wasmDpp
+      const parsedIdentity = client.platform.dpp
         .identity.createFromBuffer(parsedStoreTreeProof.values[0]);
 
       expect(identity.getId()).to.be.deep.equal(parsedIdentity.getId());
