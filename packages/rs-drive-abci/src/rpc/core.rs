@@ -1,5 +1,3 @@
-use dashcore::hashes::sha256d;
-use dashcore::hashes::sha256d::Hash;
 use dashcore::{Block, BlockHash, Transaction, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
     ExtendedQuorumDetails, GetBestChainLockResult, MasternodeListDiff, ProTxHash, ProTxInfo,
@@ -8,7 +6,6 @@ use dashcore_rpc::dashcore_rpc_json::{
 use dashcore_rpc::json::GetTransactionResult;
 use dashcore_rpc::Error;
 use dashcore_rpc::{Auth, Client, RpcApi};
-use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use mockall::{automock, predicate::*};
 use serde_json::Value;
 use std::collections::HashMap;

@@ -1,5 +1,5 @@
 use crate::rpc::core::QuorumListExtendedInfo;
-use dashcore_rpc::dashcore_rpc_json::{ProTxHash, QuorumHash, QuorumInfoResult, QuorumMember};
+use dashcore_rpc::dashcore_rpc_json::{ProTxHash, QuorumHash, QuorumInfoResult};
 use dashcore_rpc::json::{QuorumMasternodeListItem, QuorumType};
 use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::drive::block_info::BlockInfo;

@@ -1,19 +1,13 @@
-use crate::abci::AbciError;
+use std::collections::BTreeSet;
+
+use dashcore_rpc::dashcore_rpc_json::ProTxHash;
+use drive::grovedb::Transaction;
+
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformState;
-use dashcore::signer::sign;
-use dashcore_rpc::dashcore_rpc_json::{ProTxHash, QuorumHash};
-use dashcore_rpc::json::{QuorumInfoResult, QuorumType};
-use dpp::bls_signatures;
-use dpp::bls_signatures::Serialize;
-use dpp::validation::{SimpleConsensusValidationResult, SimpleValidationResult, ValidationResult};
-use drive::grovedb::Transaction;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use tenderdash_abci::proto::abci::CommitInfo;
-use tenderdash_abci::proto::types::BlockId;
 
 impl<C> Platform<C>
 where

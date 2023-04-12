@@ -183,7 +183,7 @@ mod tests {
             .unwrap()
             .height
             + 1;
-        let ChainExecutionOutcome {  .. } = continue_chain_for_strategy(
+        let ChainExecutionOutcome { .. } = continue_chain_for_strategy(
             abci_app,
             ChainExecutionParameters {
                 block_start,
@@ -399,7 +399,7 @@ mod tests {
             .unwrap()
             .height
             + 1;
-        let ChainExecutionOutcome {  .. } = continue_chain_for_strategy(
+        let ChainExecutionOutcome { .. } = continue_chain_for_strategy(
             abci_app,
             ChainExecutionParameters {
                 block_start,
@@ -696,7 +696,7 @@ mod tests {
             .height
             + 1;
         config.block_spacing_ms = hour_in_ms * 4; //let's try to move to next epoch
-        let ChainExecutionOutcome {  .. } = continue_chain_for_strategy(
+        let ChainExecutionOutcome { .. } = continue_chain_for_strategy(
             abci_app,
             ChainExecutionParameters {
                 block_start,
@@ -864,7 +864,7 @@ mod tests {
             .unwrap()
             .height
             + 1;
-        let ChainExecutionOutcome {  .. } = continue_chain_for_strategy(
+        let ChainExecutionOutcome { .. } = continue_chain_for_strategy(
             abci_app,
             ChainExecutionParameters {
                 block_start,

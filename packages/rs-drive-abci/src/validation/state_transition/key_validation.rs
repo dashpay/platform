@@ -1,6 +1,5 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use dpp::bls_signatures::Serialize;
 use dpp::consensus::basic::identity::{
     DuplicatedIdentityPublicKeyError, DuplicatedIdentityPublicKeyIdError,
     InvalidIdentityPublicKeySecurityLevelError,
@@ -11,32 +10,24 @@ use dpp::consensus::signature::{
 use dpp::consensus::ConsensusError;
 use dpp::identity::security_level::ALLOWED_SECURITY_LEVELS;
 use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
-use dpp::identity::state_transition::identity_update_transition::validate_public_keys::{
-    IDENTITY_JSON_SCHEMA, IDENTITY_PLATFORM_VALUE_SCHEMA,
-};
+use dpp::identity::state_transition::identity_update_transition::validate_public_keys::IDENTITY_PLATFORM_VALUE_SCHEMA;
 use dpp::identity::validation::{duplicated_key_ids_witness, duplicated_keys_witness};
-use dpp::identity::{KeyID, PartialIdentity, SecurityLevel};
+use dpp::identity::{KeyID, PartialIdentity};
 use dpp::platform_value::Identifier;
-use dpp::prelude::IdentityPublicKey;
-use dpp::state_transition::fee::operations::{Operation, SignatureVerificationOperation};
-use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use dpp::state_transition::StateTransitionIdentitySigned;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
-use dpp::StateError::{InvalidIdentityPublicKeyIdError, MissingIdentityPublicKeyIdsError};
+use dpp::ProtocolError;
+use dpp::StateError::MissingIdentityPublicKeyIdsError;
 use dpp::{
     consensus::signature::{
         InvalidIdentityPublicKeyTypeError, MissingPublicKeyError, PublicKeyIsDisabledError,
         SignatureError,
     },
     state_transition::validation::validate_state_transition_identity_signature::convert_to_consensus_signature_error,
-    NativeBlsModule, PublicKeyValidationError, StateError,
+    NativeBlsModule, StateError,
 };
-use dpp::{BlsModule, ProtocolError};
 use drive::dpp::identity::KeyType;
-use drive::drive::identity::key::fetch::{
-    IdentityKeysRequest, KeyIDHashSet, KeyIDVec, KeyRequestType,
-    OptionalSingleIdentityPublicKeyOutcome,
-};
+use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyIDVec, KeyRequestType};
 use drive::drive::Drive;
 use drive::grovedb::{Transaction, TransactionArg};
 use lazy_static::lazy_static;

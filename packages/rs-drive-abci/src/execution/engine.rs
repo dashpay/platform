@@ -29,7 +29,6 @@ use crate::execution::execution_event::{ExecutionEvent, ExecutionResult};
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::platform::{Platform, PlatformRef};
 use crate::rpc::core::CoreRPCLike;
-use crate::state::PlatformState;
 use crate::validation::state_transition::process_state_transition;
 
 /// The outcome of the block execution, either by prepare proposal, or process proposal

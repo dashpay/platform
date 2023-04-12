@@ -2,10 +2,9 @@ use dpp::identity::PartialIdentity;
 use dpp::{identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition, state_transition::StateTransitionAction, StateError, validation::{ConsensusValidationResult, SimpleConsensusValidationResult}};
 use dpp::block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window;
 use dpp::identity::state_transition::identity_update_transition::IdentityUpdateTransitionAction;
-use dpp::identity::state_transition::identity_update_transition::validate_identity_update_transition_basic::{IDENTITY_UPDATE_JSON_SCHEMA_VALIDATOR, IDENTITY_UPDATE_SCHEMA};
-use dpp::validation::ValidationResult;
+use dpp::identity::state_transition::identity_update_transition::validate_identity_update_transition_basic::IDENTITY_UPDATE_JSON_SCHEMA_VALIDATOR;
 use drive::grovedb::TransactionArg;
-use drive::{drive::Drive, grovedb::Transaction};
+use drive::drive::Drive;
 
 use crate::error::execution::ExecutionError;
 use crate::error::execution::ExecutionError::CorruptedCodeExecution;

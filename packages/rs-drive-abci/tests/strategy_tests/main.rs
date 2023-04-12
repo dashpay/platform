@@ -47,24 +47,19 @@ use dpp::identity::signer::Signer;
 use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::identity::KeyType::ECDSA_SECP256K1;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
-use dpp::platform_value::{BinaryData};
+use dpp::platform_value::BinaryData;
 use dpp::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError,
 };
 use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionType};
-use dpp::tests::fixtures::{
-    instant_asset_lock_proof_fixture,
-};
+use dpp::tests::fixtures::instant_asset_lock_proof_fixture;
 use dpp::version::LATEST_VERSION;
 use dpp::{bls_signatures, NativeBlsModule, ProtocolError};
 use dpp::{
     bls_signatures::{PrivateKey as BlsPrivateKey, PublicKey as BlsPublicKey, Serialize},
     identity::state_transition::identity_topup_transition::IdentityTopUpTransition,
 };
-use drive::common::helpers::identities::{
-    create_test_identities_with_rng,
-    generate_pro_tx_hashes,
-};
+use drive::common::helpers::identities::{create_test_identities_with_rng, generate_pro_tx_hashes};
 use drive::contract::{Contract, CreateRandomDocument, DocumentType};
 use drive::dpp::document::Document;
 use drive::dpp::identity::{Identity, KeyID};
@@ -81,12 +76,12 @@ use drive::query::DriveQuery;
 use drive_abci::abci::AbciApplication;
 use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
 use drive_abci::platform::Platform;
-use drive_abci::rpc::core::{MockCoreRPCLike};
+use drive_abci::rpc::core::MockCoreRPCLike;
 use drive_abci::test::fixture::abci::static_init_chain_request;
 use drive_abci::test::helpers::setup::TestPlatformBuilder;
 use drive_abci::{config::PlatformConfig, test::helpers::setup::TempPlatform};
+use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
-use rand::{rngs::StdRng};
 use rand::{Rng, SeedableRng};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -220,19 +215,18 @@ impl Signer for SimpleSigner {
                 Ok(signature.to_vec().into())
             }
             KeyType::BLS12_381 => {
-                let pk = dpp::bls_signatures::PrivateKey::from_bytes(private_key).map_err(|_e| {
-                    ProtocolError::Error(anyhow!("bls private key from bytes isn't correct"))
-                })?;
+                let pk =
+                    dpp::bls_signatures::PrivateKey::from_bytes(private_key).map_err(|_e| {
+                        ProtocolError::Error(anyhow!("bls private key from bytes isn't correct"))
+                    })?;
                 Ok(pk.sign(data).as_bytes().into())
             }
             // the default behavior from
             // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L187
             // is to return the error for the BIP13_SCRIPT_HASH
-            KeyType::BIP13_SCRIPT_HASH => {
-                Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
-                    InvalidIdentityPublicKeyTypeError::new(identity_public_key.key_type),
-                ))
-            }
+            KeyType::BIP13_SCRIPT_HASH => Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
+                InvalidIdentityPublicKeyTypeError::new(identity_public_key.key_type),
+            )),
         }
     }
 }
@@ -748,7 +742,9 @@ pub(crate) fn run_chain_for_strategy(
             Ok(dashcore_rpc::dashcore_rpc_json::QuorumListResult {
                 quorums_by_type: HashMap::from([(
                     QuorumType::Llmq100_67,
-                    quorums_clone.keys().map(|key| {
+                    quorums_clone
+                        .keys()
+                        .map(|key| {
                             (
                                 dashcore_rpc::dashcore_rpc_json::QuorumHash::from(
                                     hex::encode(key).as_str(),
@@ -773,8 +769,12 @@ pub(crate) fn run_chain_for_strategy(
         move |_, quorum_hash: &QuorumHashObject, _| {
             Ok(quorums_clone
                 .get(quorum_hash.0.as_slice())
-                .unwrap_or_else(|| panic!("expected to get quorum {}",
-                        hex::encode(quorum_hash.0.as_slice())))
+                .unwrap_or_else(|| {
+                    panic!(
+                        "expected to get quorum {}",
+                        hex::encode(quorum_hash.0.as_slice())
+                    )
+                })
                 .into())
         },
     );
@@ -1008,8 +1008,9 @@ mod tests {
                 quorum_index: Some(i),
             };
 
-            if let Some(v) = quorums
-                .insert(hash.clone(), details) { panic!("duplicate record {:?}={:?}", hash, v) }
+            if let Some(v) = quorums.insert(hash.clone(), details) {
+                panic!("duplicate record {:?}={:?}", hash, v)
+            }
         }
         quorums
     }

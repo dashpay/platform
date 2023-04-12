@@ -1,15 +1,11 @@
-use itertools::Itertools;
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
-use std::convert::TryInto;
 
 use crate::error::Error;
-use crate::platform::{PlatformRef, PlatformStateRef};
-use crate::rpc::core::CoreRPCLike;
+use crate::platform::PlatformStateRef;
 use crate::validation::state_transition::document_state_validation::fetch_documents::fetch_documents_for_transitions_knowing_contract_and_document_type;
 use dpp::consensus::basic::BasicError;
 use dpp::data_contract::document_type::DocumentType;
-use dpp::data_contract::errors::DataContractNotPresentError;
 use dpp::data_contract::{DataContract, DriveContractExt};
 use dpp::document::document_transition::{
     DocumentCreateTransitionAction, DocumentDeleteTransitionAction, DocumentReplaceTransition,
@@ -19,7 +15,7 @@ use dpp::document::state_transition::documents_batch_transition::{
     DocumentsBatchTransitionAction, DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION,
 };
 use dpp::document::Document;
-use dpp::validation::{AsyncDataValidator, SimpleConsensusValidationResult};
+use dpp::validation::SimpleConsensusValidationResult;
 use dpp::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
     consensus::ConsensusError,
@@ -28,7 +24,6 @@ use dpp::{
         DocumentsBatchTransition,
     },
     prelude::{Identifier, TimestampMillis},
-    state_repository::StateRepositoryLike,
     state_transition::{
         state_transition_execution_context::StateTransitionExecutionContext,
         StateTransitionIdentitySigned,
@@ -36,7 +31,6 @@ use dpp::{
     validation::ConsensusValidationResult,
     ProtocolError, StateError,
 };
-use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
 pub fn validate_document_batch_transition_state(

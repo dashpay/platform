@@ -1,13 +1,9 @@
-use std::sync::Arc;
-
 use dpp::identity::PartialIdentity;
-use dpp::platform_value::string_encoding::Encoding::Base58;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::{
     consensus::basic::{data_contract::InvalidDataContractIdError, BasicError},
     data_contract::{
         state_transition::data_contract_create_transition::DataContractCreateTransitionAction,
-        validation::data_contract_validator::DataContractValidator,
     },
     validation::SimpleConsensusValidationResult,
     StateError,
@@ -16,17 +12,14 @@ use dpp::{
     data_contract::{
         generate_data_contract_id,
         state_transition::data_contract_create_transition::{
-            validation::state::validate_data_contract_create_transition_basic::DATA_CONTRACT_CREATE_SCHEMA,
             DataContractCreateTransition,
         },
     },
-    Convertible,
 };
-use dpp::{state_transition::StateTransitionAction, version::ProtocolVersionValidator};
+use dpp::state_transition::StateTransitionAction;
 use dpp::data_contract::state_transition::data_contract_create_transition::validation::state::validate_data_contract_create_transition_basic::DATA_CONTRACT_CREATE_SCHEMA_VALIDATOR;
-use dpp::identity::SecurityLevel::{CRITICAL, HIGH};
 use drive::grovedb::TransactionArg;
-use drive::{drive::Drive, grovedb::Transaction};
+use drive::drive::Drive;
 
 use crate::error::Error;
 use crate::platform::PlatformRef;
