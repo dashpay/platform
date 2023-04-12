@@ -229,7 +229,7 @@ impl Signer for SimpleSigner {
             // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L187
             // is to return the error for the BIP13_SCRIPT_HASH
             KeyType::BIP13_SCRIPT_HASH => {
-                return Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
+                Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
                     InvalidIdentityPublicKeyTypeError::new(identity_public_key.key_type),
                 ))
             }
@@ -445,7 +445,7 @@ impl Strategy {
                         document_type,
                         contract,
                     }) => {
-                        let any_item_query = DriveQuery::any_item_query(&contract, &document_type);
+                        let any_item_query = DriveQuery::any_item_query(contract, document_type);
                         let mut items = platform
                             .drive
                             .query_documents_as_serialized(
@@ -459,7 +459,7 @@ impl Strategy {
                         if !items.is_empty() {
                             let first_item = items.remove(0);
                             let document =
-                                Document::from_bytes(first_item.as_slice(), &document_type)
+                                Document::from_bytes(first_item.as_slice(), document_type)
                                     .expect("expected to deserialize document");
 
                             //todo: fix this into a search key request for the following
@@ -513,7 +513,7 @@ impl Strategy {
                         document_type,
                         contract,
                     }) => {
-                        let any_item_query = DriveQuery::any_item_query(&contract, &document_type);
+                        let any_item_query = DriveQuery::any_item_query(contract, document_type);
                         let mut items = platform
                             .drive
                             .query_documents_as_serialized(
@@ -527,7 +527,7 @@ impl Strategy {
                         if !items.is_empty() {
                             let first_item = items.remove(0);
                             let document =
-                                Document::from_bytes(first_item.as_slice(), &document_type)
+                                Document::from_bytes(first_item.as_slice(), document_type)
                                     .expect("expected to deserialize document");
 
                             //todo: fix this into a search key request for the following
@@ -623,7 +623,7 @@ impl Strategy {
 
 fn create_identity_top_up_transition(rng: &mut StdRng, identity: &Identity) -> StateTransition {
     let (_, pk) = ECDSA_SECP256K1.random_public_and_private_key_data(rng);
-    let sk: [u8; 32] = pk.clone().try_into().unwrap();
+    let sk: [u8; 32] = pk.try_into().unwrap();
     let secret_key = SecretKey::from_str(hex::encode(sk).as_str()).unwrap();
     let asset_lock_proof =
         instant_asset_lock_proof_fixture(Some(PrivateKey::new(secret_key, Network::Dash)));
@@ -748,12 +748,10 @@ pub(crate) fn run_chain_for_strategy(
             Ok(dashcore_rpc::dashcore_rpc_json::QuorumListResult {
                 quorums_by_type: HashMap::from([(
                     QuorumType::Llmq100_67,
-                    quorums_clone
-                        .iter()
-                        .map(|(key, _)| {
+                    quorums_clone.keys().map(|key| {
                             (
                                 dashcore_rpc::dashcore_rpc_json::QuorumHash::from(
-                                    hex::encode(key).to_string().as_str(),
+                                    hex::encode(key).as_str(),
                                 ),
                                 ExtendedQuorumDetails {
                                     creation_height: 0,
@@ -775,13 +773,8 @@ pub(crate) fn run_chain_for_strategy(
         move |_, quorum_hash: &QuorumHashObject, _| {
             Ok(quorums_clone
                 .get(quorum_hash.0.as_slice())
-                .expect(
-                    format!(
-                        "expected to get quorum {}",
-                        hex::encode(quorum_hash.0.as_slice())
-                    )
-                    .as_str(),
-                )
+                .unwrap_or_else(|| panic!("expected to get quorum {}",
+                        hex::encode(quorum_hash.0.as_slice())))
                 .into())
         },
     );
@@ -806,7 +799,7 @@ pub(crate) fn start_chain_for_strategy(
     config: PlatformConfig,
     mut rng: StdRng,
 ) -> ChainExecutionOutcome {
-    let abci_application = AbciApplication::new(&platform).expect("expected new abci application");
+    let abci_application = AbciApplication::new(platform).expect("expected new abci application");
 
     let quorum_hashes: Vec<&QuorumHash> = quorums.keys().collect();
 
@@ -912,7 +905,7 @@ pub(crate) fn continue_chain_for_strategy(
             .get(i as usize)
             .unwrap();
         let state_transitions = strategy.state_transitions_for_block_with_new_identities(
-            &platform,
+            platform,
             &block_info,
             &mut current_identities,
             &mut signer,
@@ -1015,9 +1008,8 @@ mod tests {
                 quorum_index: Some(i),
             };
 
-            quorums
-                .insert(hash.clone(), details)
-                .map(|v| panic!("duplicate record {:?}={:?}", hash, v));
+            if let Some(v) = quorums
+                .insert(hash.clone(), details) { panic!("duplicate record {:?}={:?}", hash, v) }
         }
         quorums
     }
