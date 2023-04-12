@@ -12,9 +12,7 @@ use crate::identity::Identity;
 use crate::identity::KeyType::ECDSA_HASH160;
 use crate::prelude::Identifier;
 
-use crate::state_transition::{
-    StateTransitionConvert, StateTransitionLike, StateTransitionType,
-};
+use crate::state_transition::{StateTransitionConvert, StateTransitionLike, StateTransitionType};
 use crate::{BlsModule, NonConsensusError, ProtocolError};
 use platform_value::btreemap_extensions::BTreeValueRemoveInnerValueFromMapHelper;
 

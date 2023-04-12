@@ -5,7 +5,8 @@ use crate::consensus::signature::InvalidSignaturePublicKeySecurityLevelError;
 use crate::data_contract::state_transition::errors::PublicKeyIsDisabledError;
 use crate::identity::signer::Signer;
 use crate::state_transition::errors::{
-    InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError, StateTransitionIsNotSignedError, WrongPublicKeyPurposeError,
+    InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError,
+    StateTransitionIsNotSignedError, WrongPublicKeyPurposeError,
 };
 
 use crate::{

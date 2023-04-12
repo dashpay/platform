@@ -3,7 +3,6 @@ use crate::drive::batch::DriveOperation::{IdentityOperation, SystemOperation};
 use crate::drive::batch::{DriveOperation, IdentityOperationType, SystemOperationType};
 use crate::drive::defaults::PROTOCOL_VERSION;
 
-
 use crate::error::Error;
 use crate::fee_pools::epochs::Epoch;
 use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransitionAction;

@@ -3,9 +3,7 @@ use platform_value::BinaryData;
 use platform_value::{platform_value, Value};
 
 use crate::identity::{KeyType, Purpose, SecurityLevel};
-use crate::tests::fixtures::{
-    raw_instant_asset_lock_proof_fixture,
-};
+use crate::tests::fixtures::raw_instant_asset_lock_proof_fixture;
 use crate::version;
 use platform_value::string_encoding::{decode, Encoding};
 

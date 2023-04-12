@@ -19,6 +19,7 @@ use crate::prelude::{DocumentTransition, Identifier};
 use crate::util::cbor_value::{CborCanonicalMap, FieldType, ReplacePaths, ValuesCollection};
 use crate::util::json_value::JsonValueExt;
 use crate::version::LATEST_VERSION;
+use crate::ProtocolError;
 use crate::{
     identity::{KeyID, SecurityLevel},
     state_transition::{
@@ -26,7 +27,6 @@ use crate::{
         StateTransitionType,
     },
 };
-use crate::{ProtocolError};
 use platform_value::string_encoding::Encoding;
 
 use self::document_transition::{
@@ -37,8 +37,6 @@ mod action;
 pub mod apply_documents_batch_transition_factory;
 pub mod document_transition;
 pub mod validation;
-
-
 
 pub use action::{DocumentsBatchTransitionAction, DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION};
 

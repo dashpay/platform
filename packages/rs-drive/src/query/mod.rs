@@ -32,7 +32,6 @@ use std::collections::BTreeMap;
 #[cfg(any(feature = "full", feature = "verify"))]
 use std::ops::BitXor;
 
-
 #[cfg(feature = "full")]
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
 /// Import grovedb
@@ -66,8 +65,6 @@ pub use conditions::WhereClause;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub use conditions::WhereOperator;
 
-
-
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::data_contract::document_type::DocumentType;
 #[cfg(feature = "full")]
@@ -99,8 +96,6 @@ use crate::fee::op::LowLevelDriveOperation;
 
 #[cfg(feature = "full")]
 use crate::drive::contract::paths::ContractPaths;
-
-
 
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::data_contract::extra::common::bytes_for_system_value;

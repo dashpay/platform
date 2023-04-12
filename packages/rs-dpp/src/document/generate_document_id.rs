@@ -1,6 +1,5 @@
 use crate::{prelude::Identifier, util::hash::hash};
 
-
 /// Generates the document ID
 pub fn generate_document_id(
     contract_id: &Identifier,

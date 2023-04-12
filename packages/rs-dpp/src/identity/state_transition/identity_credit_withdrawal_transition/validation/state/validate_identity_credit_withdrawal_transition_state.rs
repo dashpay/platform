@@ -17,8 +17,7 @@ use crate::validation::ConsensusValidationResult;
 use crate::{
     consensus::basic::identity::IdentityInsufficientBalanceError,
     identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
-    state_repository::StateRepositoryLike,
-    NonConsensusError, ProtocolError, StateError,
+    state_repository::StateRepositoryLike, NonConsensusError, ProtocolError, StateError,
 };
 
 pub struct IdentityCreditWithdrawalTransitionValidator<SR>

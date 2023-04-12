@@ -8,7 +8,6 @@ use std::convert::{TryFrom, TryInto};
 use bincode::{Decode, Encode};
 use bls_signatures::Serialize as BlsSerialize;
 
-
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{BinaryData, ReplacementType, Value};
@@ -21,13 +20,9 @@ use crate::errors::ProtocolError;
 use crate::identity::signer::Signer;
 use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
 use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
-use crate::util::{vec};
-use crate::validation::{
-    SimpleConsensusValidationResult,
-};
-use crate::{
-    BlsModule, Convertible, InvalidVectorSizeError, SerdeParsingError,
-};
+use crate::util::vec;
+use crate::validation::SimpleConsensusValidationResult;
+use crate::{BlsModule, Convertible, InvalidVectorSizeError, SerdeParsingError};
 
 pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
 

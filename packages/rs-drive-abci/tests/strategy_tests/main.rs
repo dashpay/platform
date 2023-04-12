@@ -70,6 +70,7 @@ use drive::drive::flags::StorageFlags::SingleEpoch;
 
 use crate::FinalizeBlockOperation::IdentityAddKeys;
 use dpp::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
+use dpp::identity::SecurityLevel::MASTER;
 use dpp::prelude::Identifier;
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 use drive::drive::Drive;
@@ -83,6 +84,7 @@ use drive_abci::rpc::core::MockCoreRPCLike;
 use drive_abci::test::fixture::abci::static_init_chain_request;
 use drive_abci::test::helpers::setup::TestPlatformBuilder;
 use drive_abci::{config::PlatformConfig, test::helpers::setup::TempPlatform};
+use rand::prelude::IteratorRandom;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
@@ -392,7 +394,7 @@ impl Strategy {
         &self,
         platform: &Platform<MockCoreRPCLike>,
         block_info: &BlockInfo,
-        current_identities: &Vec<Identity>,
+        current_identities: &mut Vec<Identity>,
         signer: &mut SimpleSigner,
         rng: &mut StdRng,
     ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
@@ -610,24 +612,38 @@ impl Strategy {
                         }
                     }
                     OperationType::IdentityUpdate(update_op) if !current_identities.is_empty() => {
-                        let identity_num = rng.gen_range(0..current_identities.len());
-                        let random_identity = current_identities.get(identity_num).unwrap();
-                        match update_op {
-                            IdentityUpdateOp::IdentityUpdateAddKeys(_) => {
-                                let (state_transition, keys_to_add_at_end_block) =
-                                    create_identity_update_transition_add_keys(
-                                        random_identity,
-                                        count,
-                                        signer,
-                                        rng,
-                                    );
-                                operations.push(state_transition);
-                                finalize_block_operations.push(IdentityAddKeys(
-                                    keys_to_add_at_end_block.0,
-                                    keys_to_add_at_end_block.1,
-                                ))
+                        for _i in 0..count {
+                            let identity_num = rng.gen_range(0..current_identities.len());
+                            let random_identity = current_identities.get_mut(identity_num).unwrap();
+                            match update_op {
+                                IdentityUpdateOp::IdentityUpdateAddKeys(count) => {
+                                    let (state_transition, keys_to_add_at_end_block) =
+                                        create_identity_update_transition_add_keys(
+                                            random_identity,
+                                            *count,
+                                            signer,
+                                            rng,
+                                        );
+                                    operations.push(state_transition);
+                                    finalize_block_operations.push(IdentityAddKeys(
+                                        keys_to_add_at_end_block.0,
+                                        keys_to_add_at_end_block.1,
+                                    ))
+                                }
+                                IdentityUpdateOp::IdentityUpdateDisableKey(count) => {
+                                    let state_transition =
+                                        create_identity_update_transition_disable_keys(
+                                            random_identity,
+                                            *count,
+                                            block_info.time_ms,
+                                            signer,
+                                            rng,
+                                        );
+                                    if let Some(state_transition) = state_transition {
+                                        operations.push(state_transition);
+                                    }
+                                }
                             }
-                            IdentityUpdateOp::IdentityUpdateDisableKey(_) => {}
                         }
                     }
                     _ => {}
@@ -709,6 +725,46 @@ fn create_identity_update_transition_add_keys(
     );
 
     (state_transition, (identity.id, add_public_keys))
+}
+
+fn create_identity_update_transition_disable_keys(
+    identity: &mut Identity,
+    count: u16,
+    block_time: u64,
+    signer: &mut SimpleSigner,
+    rng: &mut StdRng,
+) -> Option<StateTransition> {
+    // we want to find keys that are not disabled
+    let key_ids_we_could_disable = identity
+        .public_keys
+        .iter()
+        .filter(|(_, key)| key.disabled_at.is_none() && key.security_level != MASTER && key.id > 1)
+        .map(|(key_id, _)| *key_id)
+        .collect::<Vec<_>>();
+
+    if key_ids_we_could_disable.is_empty() {
+        return None;
+    }
+    let indices: Vec<_> = (0..key_ids_we_could_disable.len()).choose_multiple(rng, count as usize);
+
+    let key_ids_to_disable: Vec<_> = indices
+        .into_iter()
+        .map(|index| key_ids_we_could_disable[index])
+        .collect();
+
+    let state_transition = StateTransition::IdentityUpdate(
+        IdentityUpdateTransition::try_from_identity_with_signer(
+            identity,
+            &0,
+            vec![],
+            key_ids_to_disable,
+            Some(block_time),
+            signer,
+        )
+        .expect("expected to create top up transition"),
+    );
+
+    Some(state_transition)
 }
 
 fn create_identities_state_transitions(

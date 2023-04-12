@@ -2,8 +2,6 @@ use crate::state_transition::StateTransition;
 use crate::ProtocolError;
 use bincode::config;
 
-
-
 impl StateTransition {
     pub fn serialize(&self) -> Result<Vec<u8>, ProtocolError> {
         let config = config::standard().with_big_endian().with_no_limit();

@@ -1,8 +1,6 @@
-
 use crate::prelude::IdentityPublicKey;
 use crate::ProtocolError;
-use platform_value::{BinaryData};
-
+use platform_value::BinaryData;
 
 pub trait Signer {
     /// the public key bytes are only used to look up the private key

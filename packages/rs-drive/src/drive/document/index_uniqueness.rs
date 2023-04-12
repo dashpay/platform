@@ -39,14 +39,14 @@ use crate::drive::Drive;
 
 use crate::error::Error;
 use crate::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
-use dpp::data_contract::document_type::{DocumentType};
+use dpp::data_contract::document_type::DocumentType;
 use dpp::document::document_transition::{
     DocumentCreateTransitionAction, DocumentReplaceTransitionAction,
 };
 use dpp::document::Document;
 use dpp::identifier::Identifier;
 use dpp::platform_value::{platform_value, Value};
-use dpp::prelude::{TimestampMillis};
+use dpp::prelude::TimestampMillis;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::StateError;
 use grovedb::TransactionArg;

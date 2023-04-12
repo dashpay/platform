@@ -6,10 +6,9 @@ use serde_json::Value as JsonValue;
 use std::{collections::HashMap, sync::Arc};
 
 use crate::consensus::basic::data_contract::{
-    DuplicateIndexError, DuplicateIndexNameError,
-    InvalidIndexPropertyTypeError, InvalidIndexedPropertyConstraintError,
-    SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
-    UniqueIndicesLimitReachedError,
+    DuplicateIndexError, DuplicateIndexNameError, InvalidIndexPropertyTypeError,
+    InvalidIndexedPropertyConstraintError, SystemPropertyIndexAlreadyPresentError,
+    UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
 };
 use crate::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use crate::{

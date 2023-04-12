@@ -9,7 +9,7 @@ use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::result::FeeResult;
 use crate::fee_pools::epochs::Epoch;
 use dpp::identifier::Identifier;
-use dpp::identity::{PartialIdentity};
+use dpp::identity::PartialIdentity;
 use grovedb::TransactionArg;
 
 use std::collections::{BTreeMap, BTreeSet};

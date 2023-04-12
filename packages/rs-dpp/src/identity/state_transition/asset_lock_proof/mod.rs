@@ -13,7 +13,7 @@ pub use asset_lock_transaction_validator::*;
 pub use bincode::{Decode, Encode};
 pub use chain::*;
 pub use instant::*;
-use platform_value::{Value};
+use platform_value::Value;
 
 use crate::identity::errors::{AssetLockOutputNotFoundError, AssetLockTransactionIsNotFoundError};
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;

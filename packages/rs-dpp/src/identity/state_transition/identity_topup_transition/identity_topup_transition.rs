@@ -6,15 +6,12 @@ use platform_value::{BinaryData, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::identity::Identity;
 use crate::identity::KeyType::ECDSA_HASH160;
 use crate::prelude::Identifier;
 
-use crate::state_transition::{
-    StateTransitionConvert, StateTransitionLike, StateTransitionType,
-};
+use crate::state_transition::{StateTransitionConvert, StateTransitionLike, StateTransitionType};
 use crate::version::LATEST_VERSION;
 use crate::{BlsModule, NonConsensusError, ProtocolError};
 

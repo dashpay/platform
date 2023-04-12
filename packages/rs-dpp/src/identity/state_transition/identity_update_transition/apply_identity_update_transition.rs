@@ -3,9 +3,7 @@ use std::sync::Arc;
 
 use crate::identity::IdentityPublicKey;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::{
-    state_repository::StateRepositoryLike, ProtocolError,
-};
+use crate::{state_repository::StateRepositoryLike, ProtocolError};
 
 use super::identity_update_transition::IdentityUpdateTransition;
 

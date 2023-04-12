@@ -20,10 +20,7 @@ use crate::{
     BlsModule,
 };
 
-use super::{
-    StateTransition,
-    StateTransitionType,
-};
+use super::{StateTransition, StateTransitionType};
 
 const PROPERTY_SIGNATURE: &str = "signature";
 const PROPERTY_PROTOCOL_VERSION: &str = "protocolVersion";
