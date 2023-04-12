@@ -43,17 +43,17 @@ use dpp::document::document_transition::{
 };
 use dpp::document::DocumentsBatchTransition;
 use dpp::identity::signer::Signer;
-use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
+
 use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::identity::KeyType::ECDSA_SECP256K1;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
-use dpp::platform_value::{BinaryData, Value};
+use dpp::platform_value::{BinaryData};
 use dpp::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError,
 };
 use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionType};
 use dpp::tests::fixtures::{
-    instant_asset_lock_proof_fixture, instant_asset_lock_proof_transaction_fixture,
+    instant_asset_lock_proof_fixture,
 };
 use dpp::version::LATEST_VERSION;
 use dpp::{bls_signatures, NativeBlsModule, ProtocolError};
@@ -62,7 +62,7 @@ use dpp::{
     identity::state_transition::identity_topup_transition::IdentityTopUpTransition,
 };
 use drive::common::helpers::identities::{
-    create_test_identities_with_rng, create_test_masternode_identities_with_rng,
+    create_test_identities_with_rng,
     generate_pro_tx_hashes,
 };
 use drive::contract::{Contract, CreateRandomDocument, DocumentType};
@@ -72,7 +72,7 @@ use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::drive::block_info::BlockInfo;
 use drive::drive::defaults::PROTOCOL_VERSION;
 use drive::drive::flags::StorageFlags::SingleEpoch;
-use drive::drive::identity::key::fetch::KeyKindRequestType::AllKeysOfKindRequest;
+
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 use drive::drive::Drive;
 use drive::fee::credits::Credits;
@@ -81,12 +81,12 @@ use drive::query::DriveQuery;
 use drive_abci::abci::AbciApplication;
 use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
 use drive_abci::platform::Platform;
-use drive_abci::rpc::core::{MockCoreRPCLike, QuorumListExtendedInfo};
+use drive_abci::rpc::core::{MockCoreRPCLike};
 use drive_abci::test::fixture::abci::static_init_chain_request;
 use drive_abci::test::helpers::setup::TestPlatformBuilder;
 use drive_abci::{config::PlatformConfig, test::helpers::setup::TempPlatform};
 use rand::seq::SliceRandom;
-use rand::{rngs::StdRng, RngCore};
+use rand::{rngs::StdRng};
 use rand::{Rng, SeedableRng};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -112,8 +112,8 @@ impl From<&TestQuorumInfo> for QuorumInfoResult {
     fn from(value: &TestQuorumInfo) -> Self {
         let TestQuorumInfo {
             quorum_hash,
-            validator_set,
-            private_key,
+            validator_set: _,
+            private_key: _,
             public_key,
         } = value;
         QuorumInfoResult {
@@ -220,7 +220,7 @@ impl Signer for SimpleSigner {
                 Ok(signature.to_vec().into())
             }
             KeyType::BLS12_381 => {
-                let pk = dpp::bls_signatures::PrivateKey::from_bytes(private_key).map_err(|e| {
+                let pk = dpp::bls_signatures::PrivateKey::from_bytes(private_key).map_err(|_e| {
                     ProtocolError::Error(anyhow!("bls private key from bytes isn't correct"))
                 })?;
                 Ok(pk.sign(data).as_bytes().into())
@@ -395,7 +395,7 @@ impl Strategy {
                         );
                         documents
                             .into_iter()
-                            .for_each(|(mut document, identity, entropy)| {
+                            .for_each(|(document, identity, entropy)| {
                                 let document_create_transition = DocumentCreateTransition {
                                     base: DocumentBaseTransition {
                                         id: document.id,
@@ -526,7 +526,7 @@ impl Strategy {
 
                         if !items.is_empty() {
                             let first_item = items.remove(0);
-                            let mut document =
+                            let document =
                                 Document::from_bytes(first_item.as_slice(), &document_type)
                                     .expect("expected to deserialize document");
 

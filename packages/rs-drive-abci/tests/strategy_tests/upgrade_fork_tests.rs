@@ -183,7 +183,7 @@ mod tests {
             .unwrap()
             .height
             + 1;
-        let ChainExecutionOutcome { abci_app, .. } = continue_chain_for_strategy(
+        let ChainExecutionOutcome {  .. } = continue_chain_for_strategy(
             abci_app,
             ChainExecutionParameters {
                 block_start,
@@ -321,7 +321,7 @@ mod tests {
         // we did not yet hit the required threshold to upgrade
         // let's go a little longer
 
-        let mut platform = abci_app.platform;
+        let platform = abci_app.platform;
         let block_start = platform
             .state
             .read()
@@ -399,7 +399,7 @@ mod tests {
             .unwrap()
             .height
             + 1;
-        let ChainExecutionOutcome { abci_app, .. } = continue_chain_for_strategy(
+        let ChainExecutionOutcome {  .. } = continue_chain_for_strategy(
             abci_app,
             ChainExecutionParameters {
                 block_start,
@@ -696,7 +696,7 @@ mod tests {
             .height
             + 1;
         config.block_spacing_ms = hour_in_ms * 4; //let's try to move to next epoch
-        let ChainExecutionOutcome { abci_app, .. } = continue_chain_for_strategy(
+        let ChainExecutionOutcome {  .. } = continue_chain_for_strategy(
             abci_app,
             ChainExecutionParameters {
                 block_start,
@@ -864,7 +864,7 @@ mod tests {
             .unwrap()
             .height
             + 1;
-        let ChainExecutionOutcome { abci_app, .. } = continue_chain_for_strategy(
+        let ChainExecutionOutcome {  .. } = continue_chain_for_strategy(
             abci_app,
             ChainExecutionParameters {
                 block_start,
