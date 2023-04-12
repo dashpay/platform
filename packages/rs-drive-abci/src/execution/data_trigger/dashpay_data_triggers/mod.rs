@@ -4,6 +4,7 @@ use crate::execution::data_trigger::{DataTriggerExecutionContext, DataTriggerExe
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::Identifier;
 use dpp::prelude::DocumentTransition;
+use crate::error::Error;
 
 const BLOCKS_SIZE_WINDOW: u32 = 8;
 mod property_names {
@@ -16,7 +17,7 @@ pub fn create_contact_request_data_trigger<'a>(
     document_transition: &DocumentTransition,
     context: &DataTriggerExecutionContext<'a>,
     _: Option<&Identifier>,
-) -> Result<DataTriggerExecutionResult, anyhow::Error> {
+) -> Result<DataTriggerExecutionResult, Error> {
     let mut result = DataTriggerExecutionResult::default();
     let is_dry_run = context.state_transition_execution_context.is_dry_run();
     let owner_id = context.owner_id;
@@ -58,8 +59,7 @@ pub fn create_contact_request_data_trigger<'a>(
         if let Some(core_height_created_at) = maybe_core_height_created_at {
             let core_chain_locked_height = context
                 .state_repository
-                .fetch_latest_platform_core_chain_locked_height()
-                .await?
+                .fetch_latest_platform_core_chain_locked_height()?
                 // is unwrap_or_default necessary?
                 .unwrap_or_default();
 
@@ -123,7 +123,6 @@ mod test {
         get_contact_request_document_fixture, get_dashpay_contract_fixture,
         get_document_transitions_fixture, identity_fixture,
     };
-    use dpp::tests::utils::get_data_trigger_error_from_execution_result;
 
     fn should_successfully_execute_on_dry_run() {
         let mut contact_request_document = get_contact_request_document_fixture(None, None);
@@ -206,10 +205,9 @@ mod test {
         .expect("data trigger result should be returned");
 
         assert!(!result.is_ok());
-        let data_trigger_error = get_data_trigger_error_from_execution_result(&result, 0);
 
         assert!(matches!(
-            &data_trigger_error,
+            &result.errors.first().unwrap(),
             &DataTriggerError::DataTriggerConditionError { message, .. }  if {
                 message == &format!("Identity {owner_id} must not be equal to owner id")
 

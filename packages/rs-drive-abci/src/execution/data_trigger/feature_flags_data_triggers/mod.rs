@@ -1,9 +1,9 @@
+use crate::error::data_trigger::DataTriggerError;
+use crate::error::Error;
 use dpp::document::document_transition::DocumentCreateTransitionAction;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::Identifier;
 use dpp::prelude::DocumentTransition;
-use crate::error::data_trigger::DataTriggerError;
-use crate::error::Error;
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
@@ -15,13 +15,17 @@ pub fn create_feature_flag_data_trigger<'a>(
     latest_block_height: u64,
     context: &DataTriggerExecutionContext<'a>,
     top_level_identity: &Identifier,
-) -> Result<DataTriggerExecutionResult, DataTriggerError> {
+) -> Result<DataTriggerExecutionResult, Error> {
     let mut result = DataTriggerExecutionResult::default();
     if context.state_transition_execution_context.is_dry_run() {
         return Ok(result);
     }
 
-    let enable_at_height: u64 = check_data_trigger_validation_result(document_create_transition.data.get_integer(PROPERTY_ENABLE_AT_HEIGHT));
+    let enable_at_height: u64 = check_data_trigger_validation_result(
+        document_create_transition
+            .data
+            .get_integer(PROPERTY_ENABLE_AT_HEIGHT),
+    );
 
     if enable_at_height < latest_block_height {
         let err = create_error(

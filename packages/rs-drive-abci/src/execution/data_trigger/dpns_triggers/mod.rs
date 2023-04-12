@@ -7,6 +7,7 @@ use dpp::ProtocolError;
 use dpp::{
     document::document_transition::DocumentTransition, get_from_transition, prelude::Identifier,
 };
+use crate::error::Error;
 
 use super::{create_error, DataTriggerExecutionContext, DataTriggerExecutionResult};
 
@@ -24,7 +25,7 @@ pub async fn create_domain_data_trigger<'a>(
     document_transition: &DocumentTransition,
     context: &DataTriggerExecutionContext<'a>,
     top_level_identity: Option<&Identifier>,
-) -> Result<DataTriggerExecutionResult, anyhow::Error> {
+) -> Result<DataTriggerExecutionResult, Error> {
     let is_dry_run = context.state_transition_execution_context.is_dry_run();
     let dt_create = match document_transition {
         DocumentTransition::Create(d) => d,

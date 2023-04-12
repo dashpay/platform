@@ -1,17 +1,10 @@
-use dpp::document::Document;
 use dpp::document::document_transition::DocumentCreateTransition;
+use dpp::document::Document;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{platform_value, Identifier};
 use dpp::prelude::DocumentTransition;
-use platform_value::btreemap_extensions::BTreeValueMapHelper;
 
-use crate::document::Document;
-use crate::{
-    data_trigger::create_error, document::document_transition::DocumentTransition,
-    get_from_transition, mocks::SMLStore, prelude::Identifier,
-    state_repository::StateRepositoryLike, ProtocolError,
-};
 use crate::error::Error;
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
@@ -131,7 +124,7 @@ mod test {
     use dpp::document::document_transition::{Action, DocumentTransitionExt};
     use dpp::document::ExtendedDocument;
     use dpp::identity::Identity;
-    use dpp::mocks::{SimplifiedMNList, SMLEntry, SMLStore};
+    use dpp::mocks::{SMLEntry, SMLStore, SimplifiedMNList};
     use dpp::platform_value::Value;
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use dpp::tests::fixtures::{
@@ -208,7 +201,8 @@ mod test {
         let document_transitions =
             get_document_transitions_fixture([(Action::Create, vec![documents[0].clone()])]);
 
-        let DocumentTransition::Create(document_create_transition) = document_transitions[0].clone();
+        let DocumentTransition::Create(document_create_transition) =
+            document_transitions[0].clone();
         TestData {
             extended_documents: documents,
             data_contract,
@@ -265,7 +259,8 @@ mod test {
             .returning(move |_, _, _, _| Ok(documents.clone()));
 
         // documentsFixture contains percentage = 500
-        document_create_transition.insert_dynamic_property(String::from("percentage"), Value::U64(9501));
+        document_create_transition
+            .insert_dynamic_property(String::from("percentage"), Value::U64(9501));
 
         let execution_context = StateTransitionExecutionContext::default();
         let context = DataTriggerExecutionContext {
@@ -275,9 +270,12 @@ mod test {
             state_transition_execution_context: &execution_context,
         };
 
-        let result =
-            create_masternode_reward_shares_data_trigger(&document_create_transition, &context, None)
-                .await;
+        let result = create_masternode_reward_shares_data_trigger(
+            &document_create_transition,
+            &context,
+            None,
+        )
+        .await;
 
         let percentage_error = get_data_trigger_error(&result, 1);
         assert_eq!(
@@ -313,8 +311,11 @@ mod test {
             drive: &state_repository_mock,
             state_transition_execution_context: &execution_context,
         };
-        let result =
-            create_masternode_reward_shares_data_trigger(&document_create_transition, &context, None);
+        let result = create_masternode_reward_shares_data_trigger(
+            &document_create_transition,
+            &context,
+            None,
+        );
 
         let error = get_data_trigger_error(&result, 0);
         let pay_to_id_bytes = document_transition
@@ -356,8 +357,11 @@ mod test {
             drive: &state_repository_mock,
             state_transition_execution_context: &execution_context,
         };
-        let result =
-            create_masternode_reward_shares_data_trigger(&document_create_transition, &context, None);
+        let result = create_masternode_reward_shares_data_trigger(
+            &document_create_transition,
+            &context,
+            None,
+        );
         let error = get_data_trigger_error(&result, 0);
 
         assert_eq!(
@@ -394,9 +398,12 @@ mod test {
             drive: &state_repository_mock,
             state_transition_execution_context: &execution_context,
         };
-        let result =
-            create_masternode_reward_shares_data_trigger(&document_create_transition, &context, None)
-                .expect("the execution result should be returned");
+        let result = create_masternode_reward_shares_data_trigger(
+            &document_create_transition,
+            &context,
+            None,
+        )
+        .expect("the execution result should be returned");
         assert!(result.is_ok())
     }
 
@@ -431,9 +438,12 @@ mod test {
             state_transition_execution_context: &execution_context,
         };
 
-        let result =
-            create_masternode_reward_shares_data_trigger(&document_create_transition, &context, None)
-                .await;
+        let result = create_masternode_reward_shares_data_trigger(
+            &document_create_transition,
+            &context,
+            None,
+        )
+        .await;
         let error = get_data_trigger_error(&result, 0);
 
         assert_eq!(
@@ -467,9 +477,12 @@ mod test {
             drive: &state_repository_mock,
             state_transition_execution_context: &execution_context,
         };
-        let result =
-            create_masternode_reward_shares_data_trigger(&document_create_transition, &context, None)
-                .expect("the execution result should be returned");
+        let result = create_masternode_reward_shares_data_trigger(
+            &document_create_transition,
+            &context,
+            None,
+        )
+        .expect("the execution result should be returned");
         assert!(result.is_ok());
     }
 }
