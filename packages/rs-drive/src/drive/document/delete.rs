@@ -757,11 +757,7 @@ impl Drive {
             DocumentEstimatedAverageSize(query_target.len())
         } else if let Some(document_element) = &document_element {
             if let Element::Item(data, element_flags) = document_element {
-                //todo: remove this hack
-                let document = match Document::from_cbor(data.as_slice(), None, owner_id) {
-                    Ok(document) => Ok(document),
-                    Err(_) => Document::from_bytes(data.as_slice(), document_type),
-                }?;
+                let document = Document::from_bytes(data.as_slice(), document_type)?;
                 let storage_flags = StorageFlags::map_cow_some_element_flags_ref(element_flags)?;
                 DocumentWithoutSerialization((document, storage_flags))
             } else {

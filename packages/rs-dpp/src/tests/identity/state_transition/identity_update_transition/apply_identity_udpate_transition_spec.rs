@@ -1,4 +1,5 @@
 use crate::identity::IdentityPublicKey;
+use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::{
     identity::state_transition::identity_update_transition::{
         apply_identity_update_transition::apply_identity_update_transition,
@@ -73,7 +74,14 @@ async fn should_add_and_disable_public_keys() {
         .with(eq(identity_id), eq(keys_to_add), always())
         .returning(|_, _, _| Ok(()));
 
-    let result = apply_identity_update_transition(&state_repository_mock, state_transition).await;
+    let execution_context = StateTransitionExecutionContext::default();
+
+    let result = apply_identity_update_transition(
+        &state_repository_mock,
+        state_transition,
+        &execution_context,
+    )
+    .await;
 
     assert!(result.is_ok());
 }
@@ -124,9 +132,14 @@ async fn should_add_and_disable_public_keys_on_dry_run() {
         .with(eq(identity_id), eq(keys_to_add), always())
         .returning(|_, _, _| Ok(()));
 
-    state_transition.get_execution_context().enable_dry_run();
+    let execution_context = StateTransitionExecutionContext::default().with_dry_run();
 
-    let result = apply_identity_update_transition(&state_repository_mock, state_transition).await;
+    let result = apply_identity_update_transition(
+        &state_repository_mock,
+        state_transition,
+        &execution_context,
+    )
+    .await;
 
     assert!(result.is_ok());
 }

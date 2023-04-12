@@ -18,9 +18,7 @@ use crate::validation::SimpleConsensusValidationResult;
 use crate::{
     consensus::basic::BasicError,
     data_contract::{
-        enrich_data_contract_with_base_schema::{
-            enrich_data_contract_with_base_schema, PREFIX_BYTE_1, PREFIX_BYTE_2, PREFIX_BYTE_3,
-        },
+        enrich_with_base_schema::{PREFIX_BYTE_1, PREFIX_BYTE_2, PREFIX_BYTE_3},
         DataContract,
     },
     document::{document_transition::Action, generate_document_id::generate_document_id},
@@ -60,6 +58,9 @@ lazy_static! {
         include_str!("../../../../../schema/document/stateTransition/documentsBatch.json")
     )
     .unwrap();
+    pub static ref DOCUMENTS_BATCH_TRANSITIONS_SCHEMA_VALIDATOR: JsonSchemaValidator =
+        JsonSchemaValidator::new(DOCUMENTS_BATCH_TRANSITIONS_SCHEMA.clone())
+            .expect("unable to compile jsonschema");
 }
 
 pub trait Validator {
@@ -224,20 +225,14 @@ pub fn validate_document_transitions<'a>(
 fn get_enriched_contracts_by_action(
     data_contract: &DataContract,
 ) -> Result<HashMap<Action, DataContract>, ProtocolError> {
-    let enriched_base_contract = enrich_data_contract_with_base_schema(
-        data_contract,
-        &BASE_TRANSITION_SCHEMA,
-        PREFIX_BYTE_1,
-        &[],
-    )?;
-    let enriched_create_contract = enrich_data_contract_with_base_schema(
-        &enriched_base_contract,
+    let enriched_base_contract =
+        data_contract.enrich_with_base_schema(&BASE_TRANSITION_SCHEMA, PREFIX_BYTE_1, &[])?;
+    let enriched_create_contract = enriched_base_contract.enrich_with_base_schema(
         &CREATE_TRANSITION_SCHEMA,
         PREFIX_BYTE_2,
         &[],
     )?;
-    let enriched_replace_contract = enrich_data_contract_with_base_schema(
-        &enriched_base_contract,
+    let enriched_replace_contract = enriched_base_contract.enrich_with_base_schema(
         &REPLACE_TRANSITION_SCHEMA,
         PREFIX_BYTE_3,
         &["$createdAt"],
@@ -316,6 +311,15 @@ fn validate_raw_transitions<'a>(
                         generate_document_id(&data_contract.id, &owner_id, document_type, &entropy);
 
                     if generated_document_id != document_id {
+                        dbg!(
+                            "g {} d {} c id {} owner {} dt {} e {}",
+                            hex::encode(generated_document_id),
+                            hex::encode(document_id),
+                            hex::encode(&data_contract.id),
+                            hex::encode(owner_id),
+                            document_type,
+                            hex::encode(entropy)
+                        );
                         result.add_error(BasicError::InvalidDocumentTransitionIdError(
                             InvalidDocumentTransitionIdError::new(
                                 generated_document_id,

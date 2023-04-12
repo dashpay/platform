@@ -9,6 +9,7 @@ use platform_value::{platform_value, Bytes32, Value};
 use crate::contracts::withdrawals_contract::property_names;
 use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::document::ExtendedDocument;
+use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::util::entropy_generator::DefaultEntropyGenerator;
 use crate::{
     contracts::withdrawals_contract, data_contract::DataContract, document::generate_document_id,
@@ -40,15 +41,13 @@ where
     pub async fn apply_identity_credit_withdrawal_transition(
         &self,
         state_transition: &IdentityCreditWithdrawalTransition,
+        execution_context: &StateTransitionExecutionContext,
     ) -> Result<()> {
         let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
 
         let maybe_withdrawals_data_contract: Option<DataContract> = self
             .state_repository
-            .fetch_data_contract(
-                data_contract_id,
-                Some(state_transition.get_execution_context()),
-            )
+            .fetch_data_contract(data_contract_id, Some(execution_context))
             .await?
             .map(TryInto::try_into)
             .transpose()
@@ -114,7 +113,7 @@ where
                             ["$id", "==", document_id],
                         ],
                     }),
-                    Some(&state_transition.execution_context),
+                    Some(&execution_context),
                 )
                 .await?;
 
@@ -143,10 +142,7 @@ where
         };
 
         self.state_repository
-            .create_document(
-                &extended_withdrawal_document,
-                Some(state_transition.get_execution_context()),
-            )
+            .create_document(&extended_withdrawal_document, Some(execution_context))
             .await?;
 
         // TODO: we need to be able to batch state repository operations
@@ -154,15 +150,12 @@ where
             .remove_from_identity_balance(
                 &state_transition.identity_id,
                 state_transition.amount,
-                Some(state_transition.get_execution_context()),
+                Some(execution_context),
             )
             .await?;
 
         self.state_repository
-            .remove_from_system_credits(
-                state_transition.amount,
-                Some(state_transition.get_execution_context()),
-            )
+            .remove_from_system_credits(state_transition.amount, Some(execution_context))
             .await
     }
 }

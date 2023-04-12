@@ -1,3 +1,4 @@
+use bincode::{Decode, Encode};
 use rand::rngs::StdRng;
 use rand::Rng;
 use std::convert::{TryFrom, TryInto};
@@ -13,11 +14,23 @@ use crate::{string_encoding, Error, Value};
 
 pub const IDENTIFIER_MEDIA_TYPE: &str = "application/x.dash.dpp.identifier";
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Copy)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Copy, Encode, Decode)]
 pub struct IdentifierBytes32(pub [u8; 32]);
 
 #[derive(
-    Default, Debug, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Copy, Serialize, Deserialize,
+    Default,
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    Ord,
+    PartialOrd,
+    Copy,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
 )]
 pub struct Identifier(pub IdentifierBytes32);
 
@@ -73,13 +86,30 @@ impl<'de> Deserialize<'de> for IdentifierBytes32 {
 
             deserializer.deserialize_string(StringVisitor)
         } else {
-            let value = Value::deserialize(deserializer)?;
+            struct BytesVisitor;
 
-            Ok(IdentifierBytes32(
-                value
-                    .into_hash256()
-                    .map_err(|_| D::Error::custom("hello"))?,
-            ))
+            impl<'de> Visitor<'de> for BytesVisitor {
+                type Value = IdentifierBytes32;
+
+                fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                    formatter.write_str("a byte array with length 32")
+                }
+
+                fn visit_bytes<E>(self, v: &[u8]) -> Result<Self::Value, E>
+                where
+                    E: serde::de::Error,
+                {
+                    if v.len() != 32 {
+                        return Err(E::invalid_length(v.len(), &self));
+                    }
+                    let mut array = [0u8; 32];
+                    array.copy_from_slice(&v);
+
+                    Ok(IdentifierBytes32(array))
+                }
+            }
+
+            deserializer.deserialize_bytes(BytesVisitor)
         }
     }
 }

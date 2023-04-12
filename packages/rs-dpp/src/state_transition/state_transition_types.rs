@@ -1,3 +1,4 @@
+use bincode::{Decode, Encode};
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -13,6 +14,8 @@ use serde_repr::{Deserialize_repr, Serialize_repr};
     Debug,
     TryFromPrimitive,
     IntoPrimitive,
+    Encode,
+    Decode,
 )]
 pub enum StateTransitionType {
     DataContractCreate = 0,

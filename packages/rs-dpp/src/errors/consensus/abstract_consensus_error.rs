@@ -11,6 +11,7 @@ use crate::consensus::basic::identity::{
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
     IdentityAssetLockTransactionOutputNotFoundError, InvalidAssetLockProofCoreChainHeightError,
     InvalidAssetLockProofTransactionHeightError, InvalidAssetLockTransactionOutputReturnSizeError,
+    InvalidIdentityAssetLockProofChainLockValidationError,
     InvalidIdentityAssetLockTransactionError, InvalidIdentityAssetLockTransactionOutputError,
     InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError,
     InvalidInstantAssetLockProofError, InvalidInstantAssetLockProofSignatureError,
@@ -80,6 +81,10 @@ pub enum ConsensusError {
     IdentityAssetLockTransactionIsNotFoundError(IdentityAssetLockTransactionIsNotFoundError),
     #[error(transparent)]
     InvalidAssetLockProofCoreChainHeightError(InvalidAssetLockProofCoreChainHeightError),
+    #[error(transparent)]
+    InvalidIdentityAssetLockProofChainLockValidationError(
+        InvalidIdentityAssetLockProofChainLockValidationError,
+    ),
     #[error(transparent)]
     InvalidAssetLockProofTransactionHeightError(InvalidAssetLockProofTransactionHeightError),
 
@@ -175,6 +180,7 @@ impl ConsensusError {
             ConsensusError::InvalidIdentityPublicKeyDataError(_) => 1040,
             ConsensusError::InvalidInstantAssetLockProofError(_) => 1041,
             ConsensusError::InvalidInstantAssetLockProofSignatureError(_) => 1042,
+            ConsensusError::InvalidIdentityAssetLockProofChainLockValidationError(_) => 1043,
             ConsensusError::MissingMasterPublicKeyError(_) => 1046,
             ConsensusError::InvalidIdentityPublicKeySecurityLevelError(_) => 1047,
             ConsensusError::IdentityInsufficientBalanceError(_) => 4024,

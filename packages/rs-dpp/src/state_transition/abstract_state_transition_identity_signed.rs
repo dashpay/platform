@@ -3,10 +3,12 @@ use dashcore::secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey};
 
 use crate::consensus::signature::InvalidSignaturePublicKeySecurityLevelError;
 use crate::data_contract::state_transition::errors::PublicKeyIsDisabledError;
+use crate::identity::signer::Signer;
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError,
     PublicKeySecurityLevelNotMetError, StateTransitionIsNotSignedError, WrongPublicKeyPurposeError,
 };
+use crate::util::vec;
 use crate::{
     identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel},
     prelude::*,
@@ -23,6 +25,19 @@ where
     fn get_owner_id(&self) -> &Identifier;
     fn get_signature_public_key_id(&self) -> Option<KeyID>;
     fn set_signature_public_key_id(&mut self, key_id: KeyID);
+
+    fn sign_external<S: Signer>(
+        &mut self,
+        identity_public_key: &IdentityPublicKey,
+        signer: &S,
+    ) -> Result<(), ProtocolError> {
+        self.verify_public_key_level_and_purpose(identity_public_key)?;
+        self.verify_public_key_is_enabled(identity_public_key)?;
+        let data = self.to_cbor_buffer(true)?;
+        self.set_signature(signer.sign(identity_public_key, data.as_slice())?);
+        self.set_signature_public_key_id(identity_public_key.id);
+        Ok(())
+    }
 
     fn sign(
         &mut self,
@@ -125,22 +140,13 @@ where
         &self,
         public_key: &IdentityPublicKey,
     ) -> Result<(), ProtocolError> {
-        // If state transition requires MASTER security level it must be signed only with
-        // a MASTER key
-        if public_key.is_master() && self.get_security_level_requirement() != SecurityLevel::MASTER
+        // Otherwise, key security level should be less than MASTER but more or equal than required
+        if !self
+            .get_security_level_requirement()
+            .contains(&public_key.security_level)
         {
             return Err(ProtocolError::InvalidSignaturePublicKeySecurityLevelError(
                 InvalidSignaturePublicKeySecurityLevelError::new(
-                    public_key.security_level,
-                    self.get_security_level_requirement(),
-                ),
-            ));
-        }
-
-        // Otherwise, key security level should be less than MASTER but more or equal than required
-        if self.get_security_level_requirement() < public_key.security_level {
-            return Err(ProtocolError::PublicKeySecurityLevelNotMetError(
-                PublicKeySecurityLevelNotMetError::new(
                     public_key.security_level,
                     self.get_security_level_requirement(),
                 ),
@@ -169,8 +175,8 @@ where
 
     /// Returns minimal key security level that can be used to sign this ST.
     /// Override this method if the ST requires a different security level.
-    fn get_security_level_requirement(&self) -> SecurityLevel {
-        SecurityLevel::HIGH
+    fn get_security_level_requirement(&self) -> Vec<SecurityLevel> {
+        vec![SecurityLevel::HIGH]
     }
 }
 
@@ -255,17 +261,6 @@ mod test {
         }
         fn set_signature(&mut self, signature: BinaryData) {
             self.signature = signature
-        }
-        fn get_execution_context(&self) -> &StateTransitionExecutionContext {
-            &self.execution_context
-        }
-
-        fn get_execution_context_mut(&mut self) -> &mut StateTransitionExecutionContext {
-            &mut self.execution_context
-        }
-
-        fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
-            self.execution_context = execution_context
         }
 
         fn set_signature_bytes(&mut self, signature: Vec<u8>) {

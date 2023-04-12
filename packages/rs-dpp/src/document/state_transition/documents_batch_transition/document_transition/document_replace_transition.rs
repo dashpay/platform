@@ -1,3 +1,4 @@
+use bincode::{Decode, Encode};
 use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::{Bytes32, ReplacementType, Value};
@@ -23,7 +24,7 @@ pub(self) mod property_names {
 /// Identifier fields in [`DocumentReplaceTransition`]
 pub use super::document_base_transition::IDENTIFIER_FIELDS;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentReplaceTransition {
     #[serde(flatten)]

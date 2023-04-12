@@ -3,10 +3,12 @@ use std::convert::{TryFrom, TryInto};
 use dashcore::consensus::{Decodable, Encodable};
 use dashcore::{InstantLock, Transaction, TxIn, TxOut};
 use platform_value::{BinaryData, Value};
+use rand::rngs::StdRng;
 use serde::de::Error as DeError;
 use serde::ser::Error as SerError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use crate::identity::KeyType::ECDSA_HASH160;
 use crate::prelude::Identifier;
 use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::hash::hash;

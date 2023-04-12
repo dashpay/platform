@@ -8,6 +8,8 @@ use serde_json::Value as JsonValue;
 
 use crate::consensus::ConsensusError;
 use crate::errors::consensus::signature::SignatureError;
+use crate::identity::signer::Signer;
+use crate::identity::IdentityPublicKey;
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, StateTransitionIsNotSignedError,
 };
@@ -175,9 +177,6 @@ pub trait StateTransitionLike:
         IDENTITY_TRANSITION_TYPE.contains(&self.get_type())
     }
 
-    fn get_execution_context(&self) -> &StateTransitionExecutionContext;
-    fn get_execution_context_mut(&mut self) -> &mut StateTransitionExecutionContext;
-    fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext);
     fn set_signature_bytes(&mut self, signature: Vec<u8>);
 }
 

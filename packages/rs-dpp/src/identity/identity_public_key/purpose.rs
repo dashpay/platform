@@ -1,12 +1,24 @@
 use crate::identity::Purpose::{AUTHENTICATION, DECRYPTION, ENCRYPTION, WITHDRAW};
 use anyhow::bail;
+use bincode::{Decode, Encode};
 use ciborium::value::Value as CborValue;
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::convert::TryFrom;
 
 #[repr(u8)]
 #[derive(
-    Debug, PartialEq, Eq, Clone, Copy, Hash, Serialize_repr, Deserialize_repr, Ord, PartialOrd,
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    Copy,
+    Hash,
+    Serialize_repr,
+    Deserialize_repr,
+    Ord,
+    PartialOrd,
+    Encode,
+    Decode,
 )]
 pub enum Purpose {
     /// at least one authentication key must be registered for all security levels

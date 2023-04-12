@@ -40,7 +40,7 @@ use drive::drive::Drive;
 
 use drive::drive::defaults::PROTOCOL_VERSION;
 use std::path::Path;
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 use crate::rpc::core::MockCoreRPCLike;
 use dashcore::hashes::hex::FromHex;
@@ -61,6 +61,45 @@ pub struct Platform<C> {
     pub block_execution_context: RwLock<Option<BlockExecutionContext>>,
     /// Core RPC Client
     pub core_rpc: C,
+}
+
+/// Platform Ref
+pub struct PlatformRef<'a, C> {
+    /// Drive
+    pub drive: &'a Drive,
+    /// State
+    pub state: &'a PlatformState,
+    /// Configuration
+    pub config: &'a PlatformConfig,
+    /// Core RPC Client
+    pub core_rpc: &'a C,
+}
+
+/// Platform State Ref
+pub struct PlatformStateRef<'a> {
+    /// Drive
+    pub drive: &'a Drive,
+    /// State
+    pub state: &'a PlatformState,
+    /// Configuration
+    pub config: &'a PlatformConfig,
+}
+
+impl<'a, C> From<&PlatformRef<'a, C>> for PlatformStateRef<'a> {
+    fn from(value: &PlatformRef<'a, C>) -> Self {
+        let PlatformRef {
+            drive,
+            state,
+            config,
+            ..
+        } = value;
+
+        PlatformStateRef {
+            drive,
+            state,
+            config,
+        }
+    }
 }
 
 impl<C> std::fmt::Debug for Platform<C> {
@@ -139,7 +178,10 @@ impl<C> Platform<C> {
             current_epoch: Default::default(),
             current_protocol_version_in_consensus,
             next_epoch_protocol_version,
-            quorums: Default::default(),
+            quorums_extended_info: Default::default(),
+            validator_sets: Default::default(),
+            full_masternode_list: Default::default(),
+            hpmn_masternode_list: Default::default(),
         };
 
         Ok(Platform {

@@ -53,7 +53,7 @@ where
         // 2. Fetch Document by indexed properties
         let document_index_queries =
             generate_document_index_queries(&document_indices, transition, owner_id);
-        let queries = document_index_queries
+        let (futures, futures_meta): (Vec<_>, Vec<_>) = document_index_queries
             .filter(|query| !query.where_query.is_empty())
             .map(|query| {
                 (
@@ -65,9 +65,8 @@ where
                     ),
                     (query.index_definition, query.document_transition),
                 )
-            });
-
-        let (futures, futures_meta) = unzip_iter_and_collect(queries);
+            })
+            .unzip();
         let results = join_all(futures).await;
 
         // 3. Create errors if duplicates found
@@ -168,15 +167,4 @@ fn validate_uniqueness<'a>(
         })
     }
     Ok(validation_result)
-}
-
-fn unzip_iter_and_collect<A, B>(iter: impl Iterator<Item = (A, B)>) -> (Vec<A>, Vec<B>) {
-    let mut list_a = vec![];
-    let mut list_b = vec![];
-
-    for item in iter {
-        list_a.push(item.0);
-        list_b.push(item.1);
-    }
-    (list_a, list_b)
 }

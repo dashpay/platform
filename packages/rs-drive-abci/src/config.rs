@@ -26,6 +26,7 @@
 // IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 // DEALINGS IN THE SOFTWARE.
 
+use dashcore_rpc::json::QuorumType;
 use std::path::PathBuf;
 
 use drive::drive::config::DriveConfig;
@@ -82,16 +83,32 @@ pub struct CoreConfig {
     pub rpc: CoreRpcConfig,
 
     /// DKG interval
-    pub dkg_interval: u32,
+    pub dkg_interval: String, // String due to https://github.com/softprops/envy/issues/26
     /// Minimum number of valid members to use the quorum
-    pub min_quorum_valid_members: u32,
+    pub min_quorum_valid_members: String, // String due to https://github.com/softprops/envy/issues/26
 }
 
+impl CoreConfig {
+    /// return dkg_interval
+    pub fn dkg_interval(&self) -> u32 {
+        return self
+            .dkg_interval
+            .parse::<u32>()
+            .expect("DKG_INTERVAL is not an int");
+    }
+    /// Returns minimal number of quorum members
+    pub fn min_quorum_valid_members(&self) -> u32 {
+        return self
+            .min_quorum_valid_members
+            .parse::<u32>()
+            .expect("MIN_QUORUM_VALID_MEMBERS is not an int");
+    }
+}
 impl Default for CoreConfig {
     fn default() -> Self {
         Self {
-            dkg_interval: 24,
-            min_quorum_valid_members: 3,
+            dkg_interval: String::from("24"),
+            min_quorum_valid_members: String::from("3"),
             rpc: Default::default(),
         }
     }
@@ -132,8 +149,15 @@ pub struct PlatformConfig {
     #[serde(default = "PlatformConfig::default_verify_sum_trees")]
     pub verify_sum_trees: bool,
 
+    /// The default quorum type
+    pub quorum_type: QuorumType,
+
     /// The default quorum size
     pub quorum_size: u16,
+
+    // todo: this should probably be coming from Tenderdash config
+    /// Approximately how often are blocks produced
+    pub block_spacing_ms: u64,
 
     /// How often should quorums change?
     pub validator_set_quorum_rotation_block_count: u32,
@@ -165,13 +189,16 @@ impl Default for PlatformConfig {
     fn default() -> Self {
         Self {
             verify_sum_trees: true,
+            quorum_type: QuorumType::Llmq100_67,
             quorum_size: 100,
+            block_spacing_ms: 5000,
             validator_set_quorum_rotation_block_count: 15,
             drive: Default::default(),
             abci: AbciConfig {
                 bind_address: "tcp://127.0.0.1:1234".to_string(),
                 keys: Keys::new_random_keys_with_seed(18012014), //Dash genesis day
                 genesis_height: 1,
+                genesis_core_height: 0,
             },
             core: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
@@ -183,17 +210,19 @@ impl Default for PlatformConfig {
 mod tests {
     use std::env;
 
+    use dashcore_rpc::dashcore_rpc_json::QuorumType;
+
     use super::FromEnv;
 
     #[test]
     fn test_config_from_env() {
-        let envfile = format!("{}/.env.example", env!("CARGO_MANIFEST_DIR"));
-        let envfile = std::path::PathBuf::from(envfile);
+        let envfile = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".env.example");
 
         dotenvy::from_path(envfile.as_path()).expect("cannot load .env file");
         assert_eq!("5", env::var("QUORUM_SIZE").unwrap());
 
         let config = super::PlatformConfig::from_env().unwrap();
         assert_eq!(config.verify_sum_trees, true);
+        assert_ne!(config.quorum_type, QuorumType::UNKNOWN);
     }
 }

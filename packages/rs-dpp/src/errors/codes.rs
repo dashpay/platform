@@ -39,6 +39,7 @@ impl ErrorWithCode for ConsensusError {
             Self::InvalidIdentityPublicKeyDataError(_) => 1040,
             Self::InvalidInstantAssetLockProofError(_) => 1041,
             Self::InvalidInstantAssetLockProofSignatureError(_) => 1042,
+            Self::InvalidIdentityAssetLockProofChainLockValidationError(_) => 1043,
             Self::MissingMasterPublicKeyError(_) => 1046,
             Self::InvalidIdentityPublicKeySecurityLevelError(_) => 1047,
             Self::IdentityInsufficientBalanceError(_) => 4024,
@@ -85,6 +86,7 @@ impl ErrorWithCode for StateError {
             Self::DuplicatedIdentityPublicKeyError { .. } => 4021,
             Self::DuplicatedIdentityPublicKeyIdError { .. } => 4022,
             Self::IdentityPublicKeyIsDisabledError { .. } => 4023,
+            Self::MissingIdentityPublicKeyIdsError { .. } => 4024,
         }
     }
 }
@@ -170,6 +172,9 @@ impl ErrorWithCode for SignatureError {
             Self::WrongPublicKeyPurposeError { .. } => 2005,
             Self::PublicKeyIsDisabledError { .. } => 2006,
             Self::PublicKeySecurityLevelNotMetError { .. } => 2007,
+            Self::SignatureShouldNotBePresent(_) => 2008,
+            Self::BasicECDSAError(_) => 2009,
+            Self::BasicBLSError(_) => 2010,
         }
     }
 }

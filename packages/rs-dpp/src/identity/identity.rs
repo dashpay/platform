@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::convert::{TryFrom, TryInto};
 
 use ciborium::value::Value as CborValue;
@@ -7,8 +7,8 @@ use platform_value::{ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-use crate::identity::identity_public_key;
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
+use crate::identity::{identity_public_key, KeyType, Purpose, SecurityLevel};
 use crate::prelude::Revision;
 use crate::util::cbor_value::{CborBTreeMapHelper, CborCanonicalMap};
 use crate::util::deserializer;
@@ -16,6 +16,7 @@ use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::{
     errors::ProtocolError, identifier::Identifier, metadata::Metadata, util::hash, Convertible,
 };
+use bincode::{Decode, Encode};
 
 use super::{IdentityPublicKey, KeyID};
 
@@ -25,22 +26,29 @@ mod property_names {
     pub const ID_RAW_OBJECT: &str = "id";
 }
 
+pub const IDENTITY_MAX_KEYS: u16 = 15000;
+
 pub const IDENTIFIER_FIELDS_JSON: [&str; 1] = [property_names::ID_JSON];
 pub const IDENTIFIER_FIELDS_RAW_OBJECT: [&str; 1] = [property_names::ID_RAW_OBJECT];
 
 /// Implement the Identity. Identity is a low-level construct that provides the foundation
 /// for user-facing functionality on the platform
-#[derive(Default, Debug, Serialize, Deserialize, Clone, Eq, PartialEq)]
+#[derive(Default, Debug, Serialize, Deserialize, Encode, Decode, Clone, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Identity {
     pub protocol_version: u32,
+    #[bincode(with_serde)]
     pub id: Identifier,
+    #[bincode(with_serde)]
     #[serde(with = "public_key_serialization")]
     pub public_keys: BTreeMap<KeyID, IdentityPublicKey>,
     pub balance: u64,
+    #[bincode(with_serde)]
     pub revision: Revision,
+    #[bincode(with_serde)]
     #[serde(skip)]
     pub asset_lock_proof: Option<AssetLockProof>,
+    #[bincode(with_serde)]
     #[serde(skip)]
     pub metadata: Option<Metadata>,
 }
@@ -52,6 +60,8 @@ pub struct PartialIdentity {
     pub loaded_public_keys: BTreeMap<KeyID, IdentityPublicKey>,
     pub balance: Option<u64>,
     pub revision: Option<Revision>,
+    /// These are keys that were requested but didn't exist
+    pub not_found_public_keys: BTreeSet<KeyID>,
 }
 
 mod public_key_serialization {
@@ -139,6 +149,20 @@ impl Identity {
     ///   to accept BTreeSet and keep BTreeMap only for field or change to BTreeSet entirely
     pub fn set_public_keys(&mut self, pub_key: BTreeMap<KeyID, IdentityPublicKey>) {
         self.public_keys = pub_key;
+    }
+
+    /// Get first public key matching a purpose, security levels or key types
+    pub fn get_first_public_key_matching(
+        &self,
+        purpose: Purpose,
+        security_levels: HashSet<SecurityLevel>,
+        key_types: HashSet<KeyType>,
+    ) -> Option<&IdentityPublicKey> {
+        self.public_keys.values().find(|key| {
+            key.purpose == purpose
+                && security_levels.contains(&key.security_level)
+                && key_types.contains(&key.key_type)
+        })
     }
 
     /// Get Identity public keys revision
@@ -334,12 +358,6 @@ impl Identity {
         raw_object.try_into()
     }
 
-    /// Creates an identity from a json object
-    pub fn from_json_object(raw_object: JsonValue) -> Result<Identity, ProtocolError> {
-        let value: Value = raw_object.into();
-        value.try_into()
-    }
-
     /// Computes the hash of an identity
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
         Ok(hash::hash(self.to_buffer()?))
@@ -359,6 +377,7 @@ impl Identity {
             loaded_public_keys: public_keys,
             balance: Some(balance),
             revision: Some(revision),
+            not_found_public_keys: Default::default(),
         }
     }
 }

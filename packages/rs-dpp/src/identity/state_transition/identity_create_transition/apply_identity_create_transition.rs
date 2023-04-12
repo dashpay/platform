@@ -6,6 +6,7 @@ use crate::identity::state_transition::asset_lock_proof::AssetLockTransactionOut
 use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;
 use crate::identity::{convert_satoshi_to_credits, Identity};
 use crate::state_repository::StateRepositoryLike;
+use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::state_transition::StateTransitionLike;
 
 pub struct ApplyIdentityCreateTransition<SR>
@@ -34,13 +35,11 @@ where
     pub async fn apply_identity_create_transition(
         &self,
         state_transition: &IdentityCreateTransition,
+        execution_context: &StateTransitionExecutionContext,
     ) -> Result<()> {
         let output = self
             .asset_lock_transaction_output_fetcher
-            .fetch(
-                state_transition.get_asset_lock_proof(),
-                state_transition.get_execution_context(),
-            )
+            .fetch(state_transition.get_asset_lock_proof(), execution_context)
             .await?;
 
         let credits_amount = convert_satoshi_to_credits(output.value);
@@ -61,14 +60,11 @@ where
         };
 
         self.state_repository
-            .create_identity(&identity, Some(state_transition.get_execution_context()))
+            .create_identity(&identity, Some(execution_context))
             .await?;
 
         self.state_repository
-            .add_to_system_credits(
-                credits_amount,
-                Some(state_transition.get_execution_context()),
-            )
+            .add_to_system_credits(credits_amount, Some(execution_context))
             .await?;
 
         let out_point = state_transition
@@ -77,10 +73,7 @@ where
             .ok_or_else(|| anyhow!("Out point is missing from asset lock proof"))?;
 
         self.state_repository
-            .mark_asset_lock_transaction_out_point_as_used(
-                &out_point,
-                Some(state_transition.get_execution_context()),
-            )
+            .mark_asset_lock_transaction_out_point_as_used(&out_point, Some(execution_context))
             .await?;
 
         Ok(())

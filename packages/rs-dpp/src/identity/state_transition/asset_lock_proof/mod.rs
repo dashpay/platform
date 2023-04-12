@@ -10,6 +10,7 @@ pub use asset_lock_proof_validator::*;
 pub use asset_lock_public_key_hash_fetcher::*;
 pub use asset_lock_transaction_output_fetcher::*;
 pub use asset_lock_transaction_validator::*;
+pub use bincode::{Decode, Encode};
 pub use chain::*;
 pub use instant::*;
 use platform_value::{from_value, Value};
@@ -28,9 +29,9 @@ mod asset_lock_transaction_validator;
 pub mod chain;
 pub mod instant;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Encode, Decode)]
 pub enum AssetLockProof {
-    Instant(InstantAssetLockProof),
+    Instant(#[bincode(with_serde)] InstantAssetLockProof),
     Chain(ChainAssetLockProof),
 }
 
@@ -103,42 +104,42 @@ impl AsRef<AssetLockProof> for AssetLockProof {
         self
     }
 }
-
-impl Serialize for AssetLockProof {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match self {
-            AssetLockProof::Instant(instant_proof) => instant_proof.serialize(serializer),
-            AssetLockProof::Chain(chain) => chain.serialize(serializer),
-        }
-    }
-}
-
-impl<'de> Deserialize<'de> for AssetLockProof {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = platform_value::Value::deserialize(deserializer)?;
-
-        let proof_type_int: u8 = value
-            .get_integer("type")
-            .map_err(|e| D::Error::custom(e.to_string()))?;
-        let proof_type = AssetLockProofType::try_from(proof_type_int)
-            .map_err(|e| D::Error::custom(e.to_string()))?;
-
-        match proof_type {
-            AssetLockProofType::Instant => Ok(Self::Instant(
-                platform_value::from_value(value).map_err(|e| D::Error::custom(e.to_string()))?,
-            )),
-            AssetLockProofType::Chain => Ok(Self::Chain(
-                platform_value::from_value(value).map_err(|e| D::Error::custom(e.to_string()))?,
-            )),
-        }
-    }
-}
+//
+// impl Serialize for AssetLockProof {
+//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+//     where
+//         S: Serializer,
+//     {
+//         match self {
+//             AssetLockProof::Instant(instant_proof) => instant_proof.serialize(serializer),
+//             AssetLockProof::Chain(chain) => chain.serialize(serializer),
+//         }
+//     }
+// }
+//
+// impl<'de> Deserialize<'de> for AssetLockProof {
+//     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+//     where
+//         D: Deserializer<'de>,
+//     {
+//         let value = platform_value::Value::deserialize(deserializer)?;
+//
+//         let proof_type_int: u8 = value
+//             .get_integer("type")
+//             .map_err(|e| D::Error::custom(e.to_string()))?;
+//         let proof_type = AssetLockProofType::try_from(proof_type_int)
+//             .map_err(|e| D::Error::custom(e.to_string()))?;
+//
+//         match proof_type {
+//             AssetLockProofType::Instant => Ok(Self::Instant(
+//                 platform_value::from_value(value).map_err(|e| D::Error::custom(e.to_string()))?,
+//             )),
+//             AssetLockProofType::Chain => Ok(Self::Chain(
+//                 platform_value::from_value(value).map_err(|e| D::Error::custom(e.to_string()))?,
+//             )),
+//         }
+//     }
+// }
 
 pub enum AssetLockProofType {
     Instant = 0,
@@ -207,7 +208,14 @@ impl AssetLockProof {
     }
 
     pub fn to_raw_object(&self) -> Result<Value, ProtocolError> {
-        platform_value::to_value(self).map_err(ProtocolError::ValueError)
+        match self {
+            AssetLockProof::Instant(is) => {
+                platform_value::to_value(is).map_err(ProtocolError::ValueError)
+            }
+            AssetLockProof::Chain(cl) => {
+                platform_value::to_value(cl).map_err(ProtocolError::ValueError)
+            }
+        }
     }
 }
 
@@ -215,30 +223,35 @@ impl TryFrom<&Value> for AssetLockProof {
     type Error = ProtocolError;
 
     fn try_from(value: &Value) -> Result<Self, Self::Error> {
-        let proof_type_int: u8 = value
-            .get_integer("type")
+        //this is a complete hack for the moment
+        //todo: replace with
+        //  from_value(value.clone()).map_err(ProtocolError::ValueError)
+        let proof_type_int: Option<u8> = value
+            .get_optional_integer("type")
             .map_err(ProtocolError::ValueError)?;
-        let proof_type = AssetLockProofType::try_from(proof_type_int)?;
+        if let Some(proof_type_int) = proof_type_int {
+            let proof_type = AssetLockProofType::try_from(proof_type_int)?;
 
-        match proof_type {
-            AssetLockProofType::Instant => Ok(Self::Instant(value.clone().try_into()?)),
-            AssetLockProofType::Chain => Ok(Self::Chain(value.clone().try_into()?)),
-            // //todo: replace with
-            // //  from_value(value.clone()).map_err(ProtocolError::ValueError)
-            // let map = value.as_map().ok_or(ProtocolError::DecodingError(format!(
-            //     "error decoding asset lock proof"
-            // )))?;
-            // let (key, asset_lock_value) = map.first().ok_or(ProtocolError::DecodingError(format!(
-            //     "error decoding asset lock proof as it was empty"
-            // )))?;
-            // match key.as_str().ok_or(ProtocolError::DecodingError(format!(
-            //     "error decoding asset lock proof"
-            // )))? {
-            //     "Instant" => Ok(Self::Instant(asset_lock_value.clone().try_into()?)),
-            //     "Chain" => Ok(Self::Chain(asset_lock_value.clone().try_into()?)),
-            //     _ => Err(ProtocolError::DecodingError(format!(
-            //         "error decoding asset lock proof"
-            //     ))),
+            match proof_type {
+                AssetLockProofType::Instant => Ok(Self::Instant(value.clone().try_into()?)),
+                AssetLockProofType::Chain => Ok(Self::Chain(value.clone().try_into()?)),
+            }
+        } else {
+            let map = value.as_map().ok_or(ProtocolError::DecodingError(format!(
+                "error decoding asset lock proof"
+            )))?;
+            let (key, asset_lock_value) = map.first().ok_or(ProtocolError::DecodingError(
+                format!("error decoding asset lock proof as it was empty"),
+            ))?;
+            match key.as_str().ok_or(ProtocolError::DecodingError(format!(
+                "error decoding asset lock proof"
+            )))? {
+                "Instant" => Ok(Self::Instant(asset_lock_value.clone().try_into()?)),
+                "Chain" => Ok(Self::Chain(asset_lock_value.clone().try_into()?)),
+                _ => Err(ProtocolError::DecodingError(format!(
+                    "error decoding asset lock proof"
+                ))),
+            }
         }
     }
 }
@@ -247,14 +260,32 @@ impl TryFrom<Value> for AssetLockProof {
     type Error = ProtocolError;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
-        let proof_type_int: u8 = value
-            .get_integer("type")
+        let proof_type_int: Option<u8> = value
+            .get_optional_integer("type")
             .map_err(ProtocolError::ValueError)?;
-        let proof_type = AssetLockProofType::try_from(proof_type_int)?;
+        if let Some(proof_type_int) = proof_type_int {
+            let proof_type = AssetLockProofType::try_from(proof_type_int)?;
 
-        match proof_type {
-            AssetLockProofType::Instant => Ok(Self::Instant(value.try_into()?)),
-            AssetLockProofType::Chain => Ok(Self::Chain(value.try_into()?)),
+            match proof_type {
+                AssetLockProofType::Instant => Ok(Self::Instant(value.clone().try_into()?)),
+                AssetLockProofType::Chain => Ok(Self::Chain(value.clone().try_into()?)),
+            }
+        } else {
+            let map = value.as_map().ok_or(ProtocolError::DecodingError(format!(
+                "error decoding asset lock proof"
+            )))?;
+            let (key, asset_lock_value) = map.first().ok_or(ProtocolError::DecodingError(
+                format!("error decoding asset lock proof as it was empty"),
+            ))?;
+            match key.as_str().ok_or(ProtocolError::DecodingError(format!(
+                "error decoding asset lock proof"
+            )))? {
+                "Instant" => Ok(Self::Instant(asset_lock_value.clone().try_into()?)),
+                "Chain" => Ok(Self::Chain(asset_lock_value.clone().try_into()?)),
+                _ => Err(ProtocolError::DecodingError(format!(
+                    "error decoding asset lock proof"
+                ))),
+            }
         }
     }
 }

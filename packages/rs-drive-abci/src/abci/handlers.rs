@@ -35,8 +35,11 @@
 use crate::abci::server::AbciApplication;
 use crate::rpc::core::CoreRPCLike;
 use drive::fee::credits::SignedCredits;
+use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
-use tenderdash_abci::proto::abci::{self as proto, ResponseException};
+use tenderdash_abci::proto::abci::{
+    self as proto, RequestExtendVote, ResponseException, ResponseExtendVote,
+};
 use tenderdash_abci::proto::abci::{
     ExecTxResult, RequestCheckTx, RequestFinalizeBlock, RequestInitChain, RequestPrepareProposal,
     RequestProcessProposal, RequestQuery, ResponseCheckTx, ResponseFinalizeBlock,
@@ -46,6 +49,9 @@ use tenderdash_abci::proto::abci::{
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::engine::BlockExecutionOutcome;
+
+use super::withdrawal::WithdrawalTxs;
+use super::AbciError;
 
 impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>
 where
@@ -92,12 +98,21 @@ where
         let transaction_guard = self.transaction.read().unwrap();
         let transaction = transaction_guard.as_ref().unwrap();
         // Running the proposal executes all the state transitions for the block
+        let run_result = self
+            .platform
+            .run_block_proposal((&request).try_into()?, &transaction)?;
+
+        if !run_result.is_valid() {
+            // This is a system error, because we are proposing
+            return Err(run_result.errors.first().unwrap().to_string().into());
+        }
+
+        //todo: we need to set the block hash
+
         let BlockExecutionOutcome {
             app_hash,
             tx_results,
-        } = self
-            .platform
-            .run_block_proposal((&request).try_into()?, &transaction)?;
+        } = run_result.into_data().map_err(Error::Protocol)?;
 
         // We need to let Tenderdash know about the transactions we should remove from execution
         let (tx_results, tx_records): (Vec<Option<ExecTxResult>>, Vec<TxRecord>) = tx_results
@@ -168,21 +183,78 @@ where
         }
 
         // Running the proposal executes all the state transitions for the block
-        let BlockExecutionOutcome {
-            app_hash,
-            tx_results,
-        } = self
+        let run_result = self
             .platform
-            .run_block_proposal((&request).try_into()?, transaction)?;
+            .run_block_proposal((&request).try_into()?, &transaction)?;
 
-        // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
-        let response = ResponseProcessProposal {
-            app_hash: app_hash.to_vec(),
-            tx_results,
-            ..Default::default()
-        };
+        if !run_result.is_valid() {
+            // This was an error running this proposal, tell tenderdash that the block isn't valid
+            let response = ResponseProcessProposal {
+                status: proto::response_process_proposal::ProposalStatus::Reject.into(),
+                ..Default::default()
+            };
+            Ok(response)
+        } else {
+            let BlockExecutionOutcome {
+                app_hash,
+                tx_results,
+            } = run_result.into_data().map_err(Error::Protocol)?;
 
-        Ok(response)
+            // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
+            let response = ResponseProcessProposal {
+                app_hash: app_hash.to_vec(),
+                tx_results,
+                status: proto::response_process_proposal::ProposalStatus::Accept.into(),
+                ..Default::default()
+            };
+            Ok(response)
+        }
+    }
+
+    fn extend_vote(
+        &self,
+        request: proto::RequestExtendVote,
+    ) -> Result<proto::ResponseExtendVote, proto::ResponseException> {
+        let transaction_guard = self.transaction.read().unwrap();
+        let transaction = transaction_guard.as_ref().unwrap();
+
+        self.must_match_vote_info(request.height, request.round, request.hash)?;
+
+        let withdrawals = WithdrawalTxs::load(Some(transaction), &self.platform.drive)?;
+
+        Ok(proto::ResponseExtendVote {
+            vote_extensions: withdrawals.to_vec(),
+        })
+    }
+
+    fn verify_vote_extension(
+        &self,
+        request: proto::RequestVerifyVoteExtension,
+    ) -> Result<proto::ResponseVerifyVoteExtension, proto::ResponseException> {
+        let transaction_guard = self.transaction.read().unwrap();
+        let transaction = transaction_guard.as_ref().unwrap();
+
+        self.must_match_vote_info(request.height, request.round, request.hash)?;
+
+        let got: WithdrawalTxs = request.vote_extensions.into();
+        let expected = WithdrawalTxs::load(Some(transaction), &self.platform.drive)?;
+
+        if let Err(err) = self.platform.check_withdrawals(&got, &expected, None) {
+            tracing::error!(
+                method = "verify_vote_extension",
+                ?got,
+                ?expected,
+                ?err,
+                "vote extension mismatch"
+            );
+            Ok(proto::ResponseVerifyVoteExtension {
+                status: VerifyStatus::Reject.into(),
+            })
+        } else {
+            Ok(proto::ResponseVerifyVoteExtension {
+                status: VerifyStatus::Accept.into(),
+            })
+        }
     }
 
     fn finalize_block(
@@ -196,6 +268,7 @@ where
                 "trying to finalize block without a current transaction",
             ),
         ))?;
+
         self.platform
             .finalize_block_proposal(request, transaction)?;
 
@@ -796,3 +869,33 @@ where
 //         }
 //     }
 // }
+impl<'a, C> AbciApplication<'a, C> {
+    /// Check if current state (round/height/hash) matches received message.
+    fn must_match_vote_info(
+        &self,
+        height: i64,
+        round: i32,
+        block_hash: Vec<u8>,
+    ) -> Result<(), Error> {
+        let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
+        let block_execution_context =
+            guarded_block_execution_context
+                .as_ref()
+                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "block execution context must be set in block begin handler",
+                )))?;
+
+        let block_state_info = &block_execution_context.block_state_info;
+
+        if !block_state_info.matches_current_block(height as u64, round as u32, block_hash)? {
+            Err(Error::from(AbciError::RequestForWrongBlockReceived(
+                format!(
+                    "received request for height: {} rount: {}, expected height: {} round: {}",
+                    height, round, block_state_info.height, block_state_info.round
+                ),
+            )))
+        } else {
+            Ok(())
+        }
+    }
+}

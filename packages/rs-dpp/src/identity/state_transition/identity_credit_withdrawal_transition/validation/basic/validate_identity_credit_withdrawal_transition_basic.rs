@@ -20,11 +20,14 @@ use crate::{
 };
 
 lazy_static! {
-    static ref INDENTITY_CREDIT_WITHDRAWAL_TRANSITION_SCHEMA: JsonValue =
+    pub static ref IDENTITY_CREDIT_WITHDRAWAL_TRANSITION_SCHEMA: JsonValue =
         serde_json::from_str(include_str!(
             "../../../../../schema/identity/stateTransition/identityCreditWithdrawal.json"
         ))
         .unwrap();
+    pub static ref IDENTITY_CREDIT_WITHDRAWAL_TRANSITION_SCHEMA_VALIDATOR: JsonSchemaValidator =
+        JsonSchemaValidator::new(IDENTITY_CREDIT_WITHDRAWAL_TRANSITION_SCHEMA.clone())
+            .expect("unable to compile jsonschema");
 }
 
 pub struct IdentityCreditWithdrawalTransitionBasicValidator {
@@ -37,7 +40,7 @@ impl IdentityCreditWithdrawalTransitionBasicValidator {
         protocol_version_validator: Arc<ProtocolVersionValidator>,
     ) -> Result<Self, DashPlatformProtocolInitError> {
         let json_schema_validator =
-            JsonSchemaValidator::new(INDENTITY_CREDIT_WITHDRAWAL_TRANSITION_SCHEMA.clone())?;
+            JsonSchemaValidator::new(IDENTITY_CREDIT_WITHDRAWAL_TRANSITION_SCHEMA.clone())?;
 
         let identity_validator = Self {
             protocol_version_validator,

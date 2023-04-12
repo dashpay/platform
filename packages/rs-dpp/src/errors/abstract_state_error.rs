@@ -82,6 +82,9 @@ pub enum StateError {
     #[error("Identity Public Key with Id {id} does not exist")]
     InvalidIdentityPublicKeyIdError { id: KeyID },
 
+    #[error("Identity Public Key with Ids {} do not exist", ids.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(", "))]
+    MissingIdentityPublicKeyIdsError { ids: Vec<KeyID> },
+
     #[error("Identity cannot contain more than {max_items} public keys")]
     MaxIdentityPublicKeyLimitReachedError { max_items: usize },
 

@@ -45,7 +45,6 @@ fn setup_test() -> TestData {
         signature: BinaryData::new(vec![0; 65]),
         signature_public_key_id: 0,
         transition_type: StateTransitionType::DataContractUpdate,
-        execution_context: Default::default(),
     };
 
     let raw_state_transition = state_transition.to_object(false).unwrap();

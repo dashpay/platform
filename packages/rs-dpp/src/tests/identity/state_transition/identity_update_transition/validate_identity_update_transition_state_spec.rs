@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use chrono::Utc;
 
+use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::{
     block_time_window::validate_time_in_block_time_window::BLOCK_TIME_WINDOW_MILLIS,
     consensus::{basic::TestConsensusError, ConsensusError},
@@ -91,8 +92,10 @@ async fn should_return_invalid_identity_revision_error_if_new_revision_is_not_in
         Arc::new(state_repository_mock),
         Arc::new(validate_public_keys_mock),
     );
+    let execution_context = StateTransitionExecutionContext::default();
+
     let result = validator
-        .validate(&state_transition)
+        .validate(&state_transition, &execution_context)
         .await
         .expect("the validation result should be returned");
     let state_error = get_state_error_from_result(&result, 0);
@@ -131,8 +134,10 @@ async fn should_return_identity_public_key_is_read_only_error_if_disabling_publi
         Arc::new(state_repository_mock),
         Arc::new(validate_public_keys_mock),
     );
+    let execution_context = StateTransitionExecutionContext::default();
+
     let result = validator
-        .validate(&state_transition)
+        .validate(&state_transition, &execution_context)
         .await
         .expect("the validation result should be returned");
     let state_error = get_state_error_from_result(&result, 0);
@@ -167,8 +172,10 @@ async fn should_return_error_if_disabling_public_key_is_already_disabled() {
         Arc::new(state_repository_mock),
         Arc::new(validate_public_keys_mock),
     );
+    let execution_context = StateTransitionExecutionContext::default();
+
     let result = validator
-        .validate(&state_transition)
+        .validate(&state_transition, &execution_context)
         .await
         .expect("the validation result should be returned");
     let state_error = get_state_error_from_result(&result, 0);
@@ -198,8 +205,10 @@ async fn should_return_invalid_result_if_disabled_at_has_violated_time_window() 
         Arc::new(state_repository_mock),
         Arc::new(validate_public_keys_mock),
     );
+    let execution_context = StateTransitionExecutionContext::default();
+
     let result = validator
-        .validate(&state_transition)
+        .validate(&state_transition, &execution_context)
         .await
         .expect("the validation result should be returned");
     let state_error = get_state_error_from_result(&result, 0);
@@ -226,8 +235,10 @@ async fn should_throw_invalid_identity_public_key_id_error_if_identity_does_not_
         Arc::new(state_repository_mock),
         Arc::new(validate_public_keys_mock),
     );
+    let execution_context = StateTransitionExecutionContext::default();
+
     let result = validator
-        .validate(&state_transition)
+        .validate(&state_transition, &execution_context)
         .await
         .expect("the validation result should be returned");
     let state_error = get_state_error_from_result(&result, 0);
@@ -255,8 +266,10 @@ async fn should_pass_when_disabling_public_key() {
         Arc::new(state_repository_mock),
         Arc::new(validate_public_keys_mock),
     );
+    let execution_context = StateTransitionExecutionContext::default();
+
     let result = validator
-        .validate(&state_transition)
+        .validate(&state_transition, &execution_context)
         .await
         .expect("the validation result should be returned");
     assert!(result.is_valid());
@@ -277,8 +290,10 @@ async fn should_pass_when_adding_public_key() {
         Arc::new(state_repository_mock),
         Arc::new(validate_public_keys_mock),
     );
+    let execution_context = StateTransitionExecutionContext::default();
+
     let result = validator
-        .validate(&state_transition)
+        .validate(&state_transition, &execution_context)
         .await
         .expect("the validation result should be returned");
     assert!(result.is_valid(), "{:?}", result.errors);
@@ -299,8 +314,10 @@ async fn should_pass_when_both_adding_and_disabling_public_keys() {
         Arc::new(state_repository_mock),
         Arc::new(validate_public_keys_mock),
     );
+    let execution_context = StateTransitionExecutionContext::default();
+
     let result = validator
-        .validate(&state_transition)
+        .validate(&state_transition, &execution_context)
         .await
         .expect("the validation result should be returned");
     assert!(result.is_valid());
@@ -347,8 +364,10 @@ async fn should_validate_purpose_and_security_level() {
         Arc::new(state_repository_mock),
         Arc::new(validate_public_keys_mock),
     );
+    let execution_context = StateTransitionExecutionContext::default();
+
     let result = validator
-        .validate(&state_transition)
+        .validate(&state_transition, &execution_context)
         .await
         .expect("the validation result should be returned");
 
@@ -377,8 +396,10 @@ async fn should_validate_pubic_keys_to_add() {
         Arc::new(state_repository_mock),
         Arc::new(validate_public_keys_mock),
     );
+    let execution_context = StateTransitionExecutionContext::default();
+
     let result = validator
-        .validate(&state_transition)
+        .validate(&state_transition, &execution_context)
         .await
         .expect("the validation result should be returned");
 
@@ -397,7 +418,7 @@ async fn should_return_valid_result_on_dry_run() {
     } = setup_test();
     state_transition.set_public_key_ids_to_disable(vec![3]);
     state_transition.set_public_keys_disabled_at(Some(Utc::now().timestamp_millis() as u64));
-    state_transition.execution_context.enable_dry_run();
+    let execution_context = StateTransitionExecutionContext::default().with_dry_run();
 
     let mut state_repository_mock = MockStateRepositoryLike::new();
     state_repository_mock
@@ -409,7 +430,7 @@ async fn should_return_valid_result_on_dry_run() {
         Arc::new(validate_public_keys_mock),
     );
     let result = validator
-        .validate(&state_transition)
+        .validate(&state_transition, &execution_context)
         .await
         .expect("the validation result should be returned");
     assert!(result.is_valid());

@@ -1,4 +1,5 @@
 use crate::{prelude::Identifier, util::hash::hash};
+use integer_encoding::FixedInt;
 
 /// Generates the document ID
 pub fn generate_document_id(

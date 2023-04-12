@@ -3,17 +3,18 @@ use dpp::{
     validation::{JsonSchemaValidator, SimpleConsensusValidationResult},
     version::ProtocolVersionValidator,
 };
+use drive::grovedb::Transaction;
+
+use crate::error::Error;
 
 pub(super) fn validate_schema(
-    schema: serde_json::Value,
+    json_schema_validator: &JsonSchemaValidator,
     state_transition: &impl StateTransitionConvert,
 ) -> SimpleConsensusValidationResult {
-    let json_schema_validator =
-        JsonSchemaValidator::new(schema).expect("unable to compile jsonschema");
     json_schema_validator
         .validate(
             &(state_transition
-                .to_object(true)
+                .to_object(false)
                 .expect("we don't hold unserializable structs")
                 .try_into_validating_json()
                 .expect("TODO")),

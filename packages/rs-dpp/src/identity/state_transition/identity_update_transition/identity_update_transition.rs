@@ -1,9 +1,11 @@
+use bincode::{Decode, Encode};
 use platform_value::{BinaryData, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::convert::{TryFrom, TryInto};
 
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
+use crate::prelude::Identity;
 use crate::{
     identity::{KeyID, SecurityLevel},
     prelude::{Identifier, Revision, TimestampMillis},
@@ -37,7 +39,7 @@ pub const BINARY_FIELDS: [&str; 3] = [
     property_names::SIGNATURE,
 ];
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityUpdateTransition {
     pub protocol_version: u32,
@@ -59,18 +61,13 @@ pub struct IdentityUpdateTransition {
     /// Public Keys to add to the Identity
     /// we want to skip serialization of transitions, as we does it manually in `to_object()`  and `to_json()`
     #[serde(default)]
-    pub add_public_keys: Vec<IdentityPublicKeyWithWitness>,
+    pub add_public_keys: Vec<IdentityPublicKeyInCreationWithWitness>,
 
     /// Identity Public Keys ID's to disable for the Identity
-    #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub disable_public_keys: Vec<KeyID>,
 
     /// Timestamp when keys were disabled
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub public_keys_disabled_at: Option<TimestampMillis>,
-
-    #[serde(skip)]
-    pub execution_context: StateTransitionExecutionContext,
 }
 
 impl Default for IdentityUpdateTransition {
@@ -85,7 +82,6 @@ impl Default for IdentityUpdateTransition {
             add_public_keys: Default::default(),
             disable_public_keys: Default::default(),
             public_keys_disabled_at: Default::default(),
-            execution_context: Default::default(),
         }
     }
 }
@@ -132,7 +128,6 @@ impl IdentityUpdateTransition {
             disable_public_keys,
             public_keys_disabled_at,
             transition_type: StateTransitionType::IdentityUpdate,
-            execution_context: Default::default(),
         })
     }
 
@@ -157,15 +152,18 @@ impl IdentityUpdateTransition {
         self.revision
     }
 
-    pub fn set_public_keys_to_add(&mut self, add_public_keys: Vec<IdentityPublicKeyWithWitness>) {
+    pub fn set_public_keys_to_add(
+        &mut self,
+        add_public_keys: Vec<IdentityPublicKeyInCreationWithWitness>,
+    ) {
         self.add_public_keys = add_public_keys;
     }
 
-    pub fn get_public_keys_to_add(&self) -> &[IdentityPublicKeyWithWitness] {
+    pub fn get_public_keys_to_add(&self) -> &[IdentityPublicKeyInCreationWithWitness] {
         &self.add_public_keys
     }
 
-    pub fn get_public_keys_to_add_mut(&mut self) -> &mut [IdentityPublicKeyWithWitness] {
+    pub fn get_public_keys_to_add_mut(&mut self) -> &mut [IdentityPublicKeyInCreationWithWitness] {
         &mut self.add_public_keys
     }
 
@@ -333,18 +331,6 @@ impl StateTransitionLike for IdentityUpdateTransition {
         self.signature = signature;
     }
 
-    fn get_execution_context(&self) -> &StateTransitionExecutionContext {
-        &self.execution_context
-    }
-
-    fn get_execution_context_mut(&mut self) -> &mut StateTransitionExecutionContext {
-        &mut self.execution_context
-    }
-
-    fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
-        self.execution_context = execution_context
-    }
-
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
         self.signature = BinaryData::new(signature)
     }
@@ -355,8 +341,8 @@ impl StateTransitionIdentitySigned for IdentityUpdateTransition {
         &self.identity_id
     }
 
-    fn get_security_level_requirement(&self) -> SecurityLevel {
-        SecurityLevel::MASTER
+    fn get_security_level_requirement(&self) -> Vec<SecurityLevel> {
+        vec![SecurityLevel::MASTER]
     }
 
     fn get_signature_public_key_id(&self) -> Option<KeyID> {

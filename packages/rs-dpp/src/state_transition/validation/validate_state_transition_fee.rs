@@ -5,6 +5,7 @@ use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
 use crate::data_contract::errors::IdentityNotPresentError;
 use crate::state_transition::fee::calculate_state_transition_fee_factory::calculate_state_transition_fee;
 use crate::state_transition::fee::{Credits, FeeResult};
+use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::state_transition::StateTransitionType;
 use crate::{
     consensus::fee::FeeError,
@@ -40,20 +41,27 @@ where
     pub async fn validate(
         &self,
         state_transition: &StateTransition,
+        execution_context: &StateTransitionExecutionContext,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        self.validate_with_custom_calculator(state_transition, calculate_state_transition_fee)
-            .await
+        self.validate_with_custom_calculator(
+            state_transition,
+            calculate_state_transition_fee,
+            execution_context,
+        )
+        .await
     }
 
     async fn validate_with_custom_calculator(
         &self,
         state_transition: &StateTransition,
-        calculate_state_transition_fee_fn: impl Fn(&StateTransition) -> FeeResult,
+        calculate_state_transition_fee_fn: impl Fn(
+            &StateTransition,
+            &StateTransitionExecutionContext,
+        ) -> FeeResult,
+        execution_context: &StateTransitionExecutionContext,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         let mut result = SimpleConsensusValidationResult::default();
-
-        let execution_context = state_transition.get_execution_context();
-        let required_fee = calculate_state_transition_fee_fn(state_transition);
+        let required_fee = calculate_state_transition_fee_fn(state_transition, execution_context);
 
         let balance = match state_transition {
             StateTransition::IdentityCreate(st) => {
@@ -111,21 +119,27 @@ where
                 }
             }
             StateTransition::DataContractCreate(st) => {
-                let balance = self.get_identity_owner_balance(st).await?;
+                let balance = self
+                    .get_identity_owner_balance(st, execution_context)
+                    .await?;
                 if execution_context.is_dry_run() {
                     return Ok(result);
                 }
                 balance
             }
             StateTransition::DataContractUpdate(st) => {
-                let balance = self.get_identity_owner_balance(st).await?;
+                let balance = self
+                    .get_identity_owner_balance(st, execution_context)
+                    .await?;
                 if execution_context.is_dry_run() {
                     return Ok(result);
                 }
                 balance
             }
             StateTransition::DocumentsBatch(st) => {
-                let balance = self.get_identity_owner_balance(st).await?;
+                let balance = self
+                    .get_identity_owner_balance(st, execution_context)
+                    .await?;
                 if execution_context.is_dry_run() {
                     return Ok(result);
                 }
@@ -133,7 +147,9 @@ where
             }
 
             StateTransition::IdentityUpdate(st) => {
-                let balance = self.get_identity_owner_balance(st).await?;
+                let balance = self
+                    .get_identity_owner_balance(st, execution_context)
+                    .await?;
                 if execution_context.is_dry_run() {
                     return Ok(result);
                 }
@@ -166,11 +182,12 @@ where
     async fn get_identity_owner_balance(
         &self,
         st: &impl StateTransitionIdentitySigned,
+        execution_context: &StateTransitionExecutionContext,
     ) -> Result<u64, ProtocolError> {
         let identity_id = st.get_owner_id();
         let identity = self
             .state_repository
-            .fetch_identity(identity_id, Some(st.get_execution_context()))
+            .fetch_identity(identity_id, Some(execution_context))
             .await?
             .map(TryInto::try_into)
             .transpose()
@@ -256,16 +273,16 @@ mod test {
             .returning(move |_, _| Ok(Some(identity.clone())));
 
         let data_contract = get_data_contract_fixture(None);
+        let execution_context = execution_context_with_cost(40, 5);
         let data_contract_create_transition = DataContractCreateTransition {
             entropy: data_contract.entropy,
             data_contract,
-            execution_context: execution_context_with_cost(40, 5),
             ..Default::default()
         };
 
         let validator = StateTransitionFeeValidator::new(Arc::new(state_repository_mock));
         let result = validator
-            .validate(&data_contract_create_transition.into())
+            .validate(&data_contract_create_transition.into(), &execution_context)
             .await
             .expect("the validation result should be returned");
 
@@ -288,16 +305,16 @@ mod test {
             .returning(move |_, _| Ok(Some(identity.clone())));
 
         let data_contract = get_data_contract_fixture(None);
+        let execution_context = execution_context_with_cost(40, 5);
         let data_contract_create_transition = DataContractCreateTransition {
             entropy: data_contract.entropy,
             data_contract,
-            execution_context: execution_context_with_cost(40, 5),
             ..Default::default()
         };
 
         let validator = StateTransitionFeeValidator::new(Arc::new(state_repository_mock));
         let result = validator
-            .validate(&data_contract_create_transition.into())
+            .validate(&data_contract_create_transition.into(), &execution_context)
             .await
             .expect("the validation result should be returned");
         assert!(result.is_valid())
@@ -317,16 +334,16 @@ mod test {
         let documents =
             get_documents_fixture_with_owner_id_from_contract(data_contract.clone()).unwrap();
         let transitions = get_document_transitions_fixture([(Action::Create, documents)]);
+        let execution_context = execution_context_with_cost(40, 5);
         let documents_batch_transition = DocumentsBatchTransition {
             owner_id: data_contract.owner_id,
             transitions,
-            execution_context: execution_context_with_cost(40, 5),
             ..Default::default()
         };
 
         let validator = StateTransitionFeeValidator::new(Arc::new(state_repository_mock));
         let result = validator
-            .validate(&documents_batch_transition.into())
+            .validate(&documents_batch_transition.into(), &execution_context)
             .await
             .expect("the validation result should be returned");
 
@@ -352,16 +369,16 @@ mod test {
         let documents =
             get_documents_fixture_with_owner_id_from_contract(data_contract.clone()).unwrap();
         let transitions = get_document_transitions_fixture([(Action::Create, documents)]);
+        let execution_context = execution_context_with_cost(40, 5);
         let documents_batch_transition = DocumentsBatchTransition {
             owner_id: data_contract.owner_id,
             transitions,
-            execution_context: execution_context_with_cost(40, 5),
             ..Default::default()
         };
 
         let validator = StateTransitionFeeValidator::new(Arc::new(state_repository_mock));
         let result = validator
-            .validate(&documents_batch_transition.into())
+            .validate(&documents_batch_transition.into(), &execution_context)
             .await
             .expect("the validation result should be returned");
         assert!(result.is_valid());
@@ -387,13 +404,12 @@ mod test {
         let documents_batch_transition = DocumentsBatchTransition {
             owner_id: data_contract.owner_id,
             transitions,
-            execution_context,
             ..Default::default()
         };
 
         let validator = StateTransitionFeeValidator::new(Arc::new(state_repository_mock));
         let result = validator
-            .validate(&documents_batch_transition.into())
+            .validate(&documents_batch_transition.into(), &execution_context)
             .await
             .expect("the validation result should be returned");
         assert!(result.is_valid());
@@ -403,19 +419,24 @@ mod test {
     async fn identity_create_transition_should_return_invalid_result_if_asset_lock_output_amount_is_not_enough(
     ) {
         let identity_create_transition =
-            IdentityCreateTransition::new(identity_create_transition_fixture(None)).unwrap();
+            IdentityCreateTransition::from_raw_object(identity_create_transition_fixture(None))
+                .unwrap();
         let output_amount = get_output_amount_from_identity_transition!(identity_create_transition);
         let state_repository_mock = MockStateRepositoryLike::new();
-        let calculate_state_transition_fee_mock = |_: &StateTransition| FeeResult {
-            desired_amount: output_amount + 1,
-            ..Default::default()
-        };
+        let calculate_state_transition_fee_mock =
+            |_: &StateTransition, _: &StateTransitionExecutionContext| FeeResult {
+                desired_amount: output_amount + 1,
+                ..Default::default()
+            };
+
+        let execution_context = StateTransitionExecutionContext::default();
 
         let validator = StateTransitionFeeValidator::new(Arc::new(state_repository_mock));
         let result = validator
             .validate_with_custom_calculator(
                 &identity_create_transition.into(),
                 calculate_state_transition_fee_mock,
+                &execution_context,
             )
             .await
             .expect("the validation result should be returned");
@@ -431,18 +452,23 @@ mod test {
     #[tokio::test]
     async fn identity_create_transition_should_return_valid_result() {
         let identity_create_transition =
-            IdentityCreateTransition::new(identity_create_transition_fixture(None)).unwrap();
+            IdentityCreateTransition::from_raw_object(identity_create_transition_fixture(None))
+                .unwrap();
         let output_amount = get_output_amount_from_identity_transition!(identity_create_transition);
         let state_repository_mock = MockStateRepositoryLike::new();
-        let calculate_state_transition_fee_mock = |_: &StateTransition| FeeResult {
-            desired_amount: output_amount,
-            ..Default::default()
-        };
+        let calculate_state_transition_fee_mock =
+            |_: &StateTransition, _: &StateTransitionExecutionContext| FeeResult {
+                desired_amount: output_amount,
+                ..Default::default()
+            };
+        let execution_context = StateTransitionExecutionContext::default();
+
         let validator = StateTransitionFeeValidator::new(Arc::new(state_repository_mock));
         let result = validator
             .validate_with_custom_calculator(
                 &identity_create_transition.into(),
                 calculate_state_transition_fee_mock,
+                &execution_context,
             )
             .await
             .expect("the validation result should be returned");
@@ -460,16 +486,20 @@ mod test {
             IdentityTopUpTransition::new(identity_topup_transition_fixture(None)).unwrap();
         let output_amount = get_output_amount_from_identity_transition!(identity_topup_transition);
 
-        let calculate_state_transition_fee_mock = |_: &StateTransition| FeeResult {
-            desired_amount: output_amount + 2,
-            ..Default::default()
-        };
+        let calculate_state_transition_fee_mock =
+            |_: &StateTransition, _: &StateTransitionExecutionContext| FeeResult {
+                desired_amount: output_amount + 2,
+                ..Default::default()
+            };
+
+        let execution_context = StateTransitionExecutionContext::default();
 
         let validator = StateTransitionFeeValidator::new(Arc::new(state_repository_mock));
         let result = validator
             .validate_with_custom_calculator(
                 &identity_topup_transition.into(),
                 calculate_state_transition_fee_mock,
+                &execution_context,
             )
             .await
             .expect("the validation result should be returned");
@@ -493,14 +523,21 @@ mod test {
             IdentityTopUpTransition::new(identity_topup_transition_fixture(None)).unwrap();
         let output_amount = get_output_amount_from_identity_transition!(identity_topup_transition);
 
-        let calculation_mock = |_: &StateTransition| FeeResult {
-            desired_amount: output_amount - 1,
-            ..Default::default()
-        };
+        let calculation_mock =
+            |_: &StateTransition, _: &StateTransitionExecutionContext| FeeResult {
+                desired_amount: output_amount - 1,
+                ..Default::default()
+            };
+
+        let execution_context = StateTransitionExecutionContext::default();
 
         let validator = StateTransitionFeeValidator::new(Arc::new(state_repository_mock));
         let result = validator
-            .validate_with_custom_calculator(&identity_topup_transition.into(), calculation_mock)
+            .validate_with_custom_calculator(
+                &identity_topup_transition.into(),
+                calculation_mock,
+                &execution_context,
+            )
             .await
             .expect("the validation result should be returned");
 
@@ -512,9 +549,10 @@ mod test {
         let transition = IdentityCreditWithdrawalTransition::default();
         let state_repository_mock = MockStateRepositoryLike::new();
         let validator = StateTransitionFeeValidator::new(Arc::new(state_repository_mock));
+        let execution_context = StateTransitionExecutionContext::default();
 
         let result = validator
-            .validate(&transition.into())
+            .validate(&transition.into(), &execution_context)
             .await
             .expect_err("error should be returned");
 

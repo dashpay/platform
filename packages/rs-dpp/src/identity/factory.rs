@@ -3,7 +3,7 @@ use crate::identity::identity_public_key::factory::KeyCount;
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
 use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
 use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use crate::identity::validation::{IdentityValidator, PublicKeysValidator};
@@ -17,6 +17,7 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::collections::BTreeMap;
 use std::convert::TryInto;
+use std::iter::FromIterator;
 
 use platform_value::Value;
 use std::sync::Arc;
@@ -40,7 +41,7 @@ impl Identity {
             protocol_version: IDENTITY_PROTOCOL_VERSION,
             id,
             revision,
-            asset_lock_proof: None,
+            asset_lock_proof: Default::default(),
             balance,
             public_keys,
             metadata: None,
@@ -48,26 +49,29 @@ impl Identity {
     }
 
     // TODO: Move to a separate module under a feature
-    pub fn random_identity_with_private_key_with_rng(
+    pub fn random_identity_with_main_keys_with_private_key<I>(
         key_count: KeyCount,
         rng: &mut StdRng,
-    ) -> (Self, Vec<(IdentityPublicKey, Vec<u8>)>) {
+    ) -> Result<(Self, I), ProtocolError>
+    where
+        I: Default
+            + IntoIterator<Item = (IdentityPublicKey, Vec<u8>)>
+            + Extend<(IdentityPublicKey, Vec<u8>)>,
+    {
         let id = Identifier::new(rng.gen::<[u8; 32]>());
         let revision = rng.gen_range(0..100);
         // balance must be in i64 (that would be >> 2)
         // but let's make it smaller
         let balance = rng.gen::<u64>() >> 20; //around 175 Dash as max
-        let (public_keys, private_keys): (
-            BTreeMap<KeyID, IdentityPublicKey>,
-            Vec<(IdentityPublicKey, Vec<u8>)>,
-        ) = IdentityPublicKey::random_authentication_keys_with_private_keys_with_rng(
-            key_count, rng,
-        )
-        .into_iter()
-        .map(|(key, private_key)| ((key.id, key.clone()), (key, private_key)))
-        .unzip();
+        let (public_keys, private_keys): (BTreeMap<KeyID, IdentityPublicKey>, I) =
+            IdentityPublicKey::main_keys_with_random_authentication_keys_with_private_keys_with_rng(
+                key_count, rng,
+            )?
+            .into_iter()
+            .map(|(key, private_key)| ((key.id, key.clone()), (key, private_key)))
+            .unzip();
 
-        (
+        Ok((
             Identity {
                 protocol_version: IDENTITY_PROTOCOL_VERSION,
                 id,
@@ -78,7 +82,7 @@ impl Identity {
                 metadata: None,
             },
             private_keys,
-        )
+        ))
     }
 
     // TODO: Move to a separate module under a feature
@@ -113,20 +117,25 @@ impl Identity {
     }
 
     // TODO: Move to a separate module under a feature
-    pub fn random_identities_with_private_keys_with_rng(
+    pub fn random_identities_with_private_keys_with_rng<I>(
         count: u16,
         key_count: KeyCount,
         rng: &mut StdRng,
-    ) -> (Vec<Self>, Vec<(IdentityPublicKey, Vec<u8>)>) {
+    ) -> Result<(Vec<Self>, I), ProtocolError>
+    where
+        I: Default
+            + FromIterator<(IdentityPublicKey, Vec<u8>)>
+            + Extend<(IdentityPublicKey, Vec<u8>)>,
+    {
         let mut vec: Vec<Identity> = vec![];
         let mut private_key_map: Vec<(IdentityPublicKey, Vec<u8>)> = vec![];
         for _i in 0..count {
             let (identity, mut map) =
-                Self::random_identity_with_private_key_with_rng(key_count, rng);
+                Self::random_identity_with_main_keys_with_private_key(key_count, rng)?;
             vec.push(identity);
             private_key_map.append(&mut map);
         }
-        (vec, private_key_map)
+        Ok((vec, private_key_map.into_iter().collect()))
     }
 }
 
@@ -248,7 +257,7 @@ where
     pub fn create_identity_update_transition(
         &self,
         identity: Identity,
-        add_public_keys: Option<Vec<IdentityPublicKeyWithWitness>>,
+        add_public_keys: Option<Vec<IdentityPublicKeyInCreationWithWitness>>,
         public_key_ids_to_disable: Option<Vec<KeyID>>,
         // Pass disable time as argument because SystemTime::now() does not work for wasm target
         // https://github.com/rust-lang/rust/issues/48564

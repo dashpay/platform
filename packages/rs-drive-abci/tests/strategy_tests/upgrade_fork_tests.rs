@@ -1,10 +1,10 @@
 #[cfg(test)]
 mod tests {
-
     use crate::{
         continue_chain_for_strategy, run_chain_for_strategy, ChainExecutionOutcome,
         ChainExecutionParameters, Frequency, Strategy, StrategyRandomness, UpgradingInfo,
     };
+    use tenderdash_abci::proto::types::CoreChainLock;
 
     use drive_abci::config::PlatformConfig;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
@@ -24,17 +24,32 @@ mod tests {
                 proposed_protocol_versions_with_weight: vec![(2, 1)],
                 upgrade_three_quarters_life: 0.1,
             }),
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
         };
-        let config = PlatformConfig {
+        let twenty_minutes_in_ms = 1000 * 60 * 20;
+        let mut config = PlatformConfig {
             verify_sum_trees: true,
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 125,
+            block_spacing_ms: twenty_minutes_in_ms,
             ..Default::default()
         };
-        let twenty_minutes_in_ms = 1000 * 60 * 20;
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
         let ChainExecutionOutcome {
             abci_app,
             proposers,
@@ -43,14 +58,7 @@ mod tests {
             current_proposer_versions,
             end_time_ms,
             ..
-        } = run_chain_for_strategy(
-            &platform,
-            1300,
-            twenty_minutes_in_ms,
-            strategy.clone(),
-            config.clone(),
-            15,
-        );
+        } = run_chain_for_strategy(&mut platform, 1300, strategy.clone(), config.clone(), 15);
         {
             let platform = abci_app.platform;
             let drive_cache = platform.drive.cache.read().unwrap();
@@ -83,8 +91,8 @@ mod tests {
                     .current_protocol_version_in_consensus,
                 1
             );
-            assert_eq!(counter.get(&1), Some(&13)); //most nodes were hit (60 were not)
-            assert_eq!(counter.get(&2), Some(&400)); //most nodes were hit (60 were not)
+            assert_eq!(counter.get(&1), Some(&5)); //most nodes were hit (60 were not)
+            assert_eq!(counter.get(&2), Some(&390)); //most nodes were hit (60 were not)
         }
 
         // we did not yet hit the epoch change
@@ -102,6 +110,10 @@ mod tests {
             .unwrap()
             .height
             + 1;
+
+        //speed things up
+        config.block_spacing_ms = hour_in_ms;
+
         let ChainExecutionOutcome {
             abci_app,
             proposers,
@@ -113,8 +125,8 @@ mod tests {
             abci_app,
             ChainExecutionParameters {
                 block_start,
+                core_height_start: 0,
                 block_count: 200,
-                block_spacing_ms: hour_in_ms,
                 proposers,
                 quorums,
                 current_quorum_hash,
@@ -175,8 +187,8 @@ mod tests {
             abci_app,
             ChainExecutionParameters {
                 block_start,
+                core_height_start: 0,
                 block_count: 400,
-                block_spacing_ms: hour_in_ms,
                 proposers,
                 quorums,
                 current_quorum_hash,
@@ -237,17 +249,33 @@ mod tests {
                 proposed_protocol_versions_with_weight: vec![(2, 1)],
                 upgrade_three_quarters_life: 5.0, //it will take an epoch before we get enough nodes
             }),
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
         };
+        let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
             verify_sum_trees: true,
             quorum_size: 40,
             validator_set_quorum_rotation_block_count: 50,
+            block_spacing_ms: hour_in_ms,
             ..Default::default()
         };
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        let hour_in_ms = 1000 * 60 * 60;
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+
         let ChainExecutionOutcome {
             abci_app,
             proposers,
@@ -256,14 +284,7 @@ mod tests {
             current_proposer_versions,
             end_time_ms,
             ..
-        } = run_chain_for_strategy(
-            &platform,
-            2000,
-            hour_in_ms,
-            strategy.clone(),
-            config.clone(),
-            15,
-        );
+        } = run_chain_for_strategy(&mut platform, 2000, strategy.clone(), config.clone(), 15);
         {
             let platform = abci_app.platform;
             let drive_cache = platform.drive.cache.read().unwrap();
@@ -300,7 +321,7 @@ mod tests {
         // we did not yet hit the required threshold to upgrade
         // let's go a little longer
 
-        let platform = abci_app.platform;
+        let mut platform = abci_app.platform;
         let block_start = platform
             .state
             .read()
@@ -321,8 +342,8 @@ mod tests {
             abci_app,
             ChainExecutionParameters {
                 block_start,
+                core_height_start: 0,
                 block_count: 1600,
-                block_spacing_ms: hour_in_ms,
                 proposers,
                 quorums,
                 current_quorum_hash,
@@ -382,8 +403,8 @@ mod tests {
             abci_app,
             ChainExecutionParameters {
                 block_start,
+                core_height_start: 0,
                 block_count: 400,
-                block_spacing_ms: hour_in_ms,
                 proposers,
                 quorums,
                 current_quorum_hash,
@@ -442,17 +463,32 @@ mod tests {
                 proposed_protocol_versions_with_weight: vec![(2, 1)],
                 upgrade_three_quarters_life: 5.0,
             }),
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
         };
-        let config = PlatformConfig {
+        let hour_in_ms = 1000 * 60 * 60;
+        let mut config = PlatformConfig {
             verify_sum_trees: true,
             quorum_size: 50,
             validator_set_quorum_rotation_block_count: 60,
+            block_spacing_ms: hour_in_ms,
             ..Default::default()
         };
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        let hour_in_ms = 1000 * 60 * 60;
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
         let ChainExecutionOutcome {
             abci_app,
             proposers,
@@ -461,14 +497,7 @@ mod tests {
             current_proposer_versions,
             end_time_ms,
             ..
-        } = run_chain_for_strategy(
-            &platform,
-            2000,
-            hour_in_ms,
-            strategy.clone(),
-            config.clone(),
-            15,
-        );
+        } = run_chain_for_strategy(&mut platform, 2000, strategy.clone(), config.clone(), 15);
         {
             let platform = abci_app.platform;
             let drive_cache = platform.drive.cache.read().unwrap();
@@ -521,8 +550,8 @@ mod tests {
             abci_app,
             ChainExecutionParameters {
                 block_start,
+                core_height_start: 0,
                 block_count: 3000,
-                block_spacing_ms: hour_in_ms,
                 proposers,
                 quorums,
                 current_quorum_hash,
@@ -583,6 +612,10 @@ mod tests {
                 proposed_protocol_versions_with_weight: vec![(1, 9), (2, 1)],
                 upgrade_three_quarters_life: 0.1,
             }),
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
         };
 
         let block_start = platform
@@ -594,6 +627,7 @@ mod tests {
             .unwrap()
             .height
             + 1;
+        config.block_spacing_ms = hour_in_ms / 5; //speed things up
         let ChainExecutionOutcome {
             abci_app,
             proposers,
@@ -606,8 +640,8 @@ mod tests {
             abci_app,
             ChainExecutionParameters {
                 block_start,
+                core_height_start: 0,
                 block_count: 2000,
-                block_spacing_ms: hour_in_ms / 5, //speed things up
                 proposers,
                 quorums,
                 current_quorum_hash,
@@ -661,12 +695,13 @@ mod tests {
             .unwrap()
             .height
             + 1;
+        config.block_spacing_ms = hour_in_ms * 4; //let's try to move to next epoch
         let ChainExecutionOutcome { abci_app, .. } = continue_chain_for_strategy(
             abci_app,
             ChainExecutionParameters {
                 block_start,
+                core_height_start: 0,
                 block_count: 100,
-                block_spacing_ms: hour_in_ms * 4, //let's try to move to next epoch
                 proposers,
                 quorums,
                 current_quorum_hash,
@@ -726,17 +761,32 @@ mod tests {
                 proposed_protocol_versions_with_weight: vec![(1, 3), (2, 95), (3, 2)],
                 upgrade_three_quarters_life: 0.75,
             }),
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
         };
+        let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
             verify_sum_trees: true,
             quorum_size: 50,
             validator_set_quorum_rotation_block_count: 60,
+            block_spacing_ms: hour_in_ms,
             ..Default::default()
         };
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        let hour_in_ms = 1000 * 60 * 60;
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
         let ChainExecutionOutcome {
             abci_app,
             proposers,
@@ -744,7 +794,7 @@ mod tests {
             current_quorum_hash,
             end_time_ms,
             ..
-        } = run_chain_for_strategy(&platform, 1400, hour_in_ms, strategy, config.clone(), 15);
+        } = run_chain_for_strategy(&mut platform, 1400, strategy, config.clone(), 15);
         {
             let platform = abci_app.platform;
             let drive_cache = platform.drive.cache.read().unwrap();
@@ -796,6 +846,10 @@ mod tests {
                 proposed_protocol_versions_with_weight: vec![(2, 3), (3, 97)],
                 upgrade_three_quarters_life: 0.5,
             }),
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
         };
 
         // we hit the required threshold to upgrade
@@ -814,8 +868,8 @@ mod tests {
             abci_app,
             ChainExecutionParameters {
                 block_start,
+                core_height_start: 0,
                 block_count: 700,
-                block_spacing_ms: hour_in_ms,
                 proposers,
                 quorums,
                 current_quorum_hash,

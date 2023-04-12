@@ -13,11 +13,11 @@ use dpp::identifier::Identifier;
 use std::borrow::Cow;
 
 impl DriveHighLevelDocumentOperationConverter for DocumentDeleteTransitionAction {
-    fn into_high_level_document_drive_operations(
+    fn into_high_level_document_drive_operations<'a>(
         self,
         _epoch: &Epoch,
         _owner_id: Identifier,
-    ) -> Result<Vec<DriveOperation>, Error> {
+    ) -> Result<Vec<DriveOperation<'a>>, Error> {
         let DocumentDeleteTransitionAction { base } = self;
 
         let DocumentBaseTransitionAction {

@@ -1,7 +1,7 @@
 {
   "$id": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
   "ownerId": "AcYUCSvAmUwryNsQqkqqD1o3BnFuzepGtR3Mhh2swLk6",
-  "$schema": "http://json-schema.org/draft-07/schema",
+  "$schema": "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
   "version": 1,
   "documents": {
     "profile": {
@@ -28,7 +28,7 @@
       "properties": {
         "avatarUrl": {
           "type": "string",
-          "format": "url",
+          "format": "uri",
           "maxLength": 2048
         },
         "publicMessage": {

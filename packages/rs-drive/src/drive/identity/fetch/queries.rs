@@ -31,7 +31,7 @@ impl Drive {
     pub fn full_identity_query(identity_id: &[u8; 32]) -> Result<PathQuery, Error> {
         let balance_query = Self::identity_balance_query(identity_id);
         let revision_query = Self::identity_revision_query(identity_id);
-        let key_request = IdentityKeysRequest::new_all_keys_query(identity_id);
+        let key_request = IdentityKeysRequest::new_all_keys_query(identity_id, None);
         let all_keys_query = key_request.into_path_query();
         PathQuery::merge(vec![&balance_query, &revision_query, &all_keys_query])
             .map_err(Error::GroveDB)

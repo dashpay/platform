@@ -1,10 +1,16 @@
+use bincode::de::{BorrowDecoder, Decoder};
+use bincode::enc::Encoder;
+use bincode::error::{DecodeError, EncodeError};
+use bincode::{BorrowDecode, Decode, Encode};
+use futures::StreamExt;
 use std::collections::{BTreeMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 
 use itertools::{Either, Itertools};
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
-use platform_value::{Bytes32, Identifier};
+use platform_value::{platform_value, Bytes32, Identifier};
 use platform_value::{ReplacementType, Value, ValueMapHelper};
+use serde::de::Error;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -91,6 +97,7 @@ impl Convertible for DataContract {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[serde(try_from = "DataContractInner")]
 pub struct DataContract {
     pub protocol_version: u32,
     #[serde(rename = "$id")]
@@ -113,11 +120,91 @@ pub struct DataContract {
     #[serde(rename = "$defs", default)]
     pub defs: Option<BTreeMap<DefinitionName, JsonSchema>>,
 
+    //todo: we should remove entropy
     #[serde(skip)]
     pub entropy: Bytes32,
 
     #[serde(skip)]
     pub binary_properties: BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>,
+}
+
+impl Encode for DataContract {
+    fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
+        let inner: DataContractInner = self.clone().into();
+        inner.encode(encoder)
+    }
+}
+
+impl Decode for DataContract {
+    fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
+        let inner = DataContractInner::decode(decoder)?;
+        inner
+            .try_into()
+            .map_err(|e: ProtocolError| DecodeError::custom(e.to_string()))
+    }
+}
+
+impl<'a> BorrowDecode<'a> for DataContract {
+    fn borrow_decode<D: BorrowDecoder<'a>>(decoder: &mut D) -> Result<Self, DecodeError> {
+        let inner = DataContractInner::decode(decoder)?;
+        inner
+            .try_into()
+            .map_err(|e: ProtocolError| DecodeError::custom(e.to_string()))
+    }
+}
+
+#[derive(Serialize, Deserialize, Encode, Decode)]
+#[serde(rename_all = "camelCase")]
+pub struct DataContractInner {
+    pub protocol_version: u32,
+    #[serde(rename = "$id")]
+    pub id: Identifier,
+    #[serde(rename = "$schema")]
+    pub schema: String,
+    pub version: u32,
+    pub owner_id: Identifier,
+    pub documents: BTreeMap<DocumentName, Value>,
+    #[serde(rename = "$defs", default)]
+    pub defs: Option<BTreeMap<DefinitionName, Value>>,
+}
+
+impl From<DataContract> for DataContractInner {
+    fn from(value: DataContract) -> Self {
+        let DataContract {
+            protocol_version,
+            id,
+            schema,
+            version,
+            owner_id,
+            documents,
+            defs,
+            ..
+        } = value;
+        DataContractInner {
+            protocol_version,
+            id,
+            schema,
+            version,
+            owner_id,
+            documents: documents
+                .into_iter()
+                .map(|(key, value)| (key, value.into()))
+                .collect(),
+            defs: defs.map(|defs| {
+                defs.into_iter()
+                    .map(|(key, value)| (key, value.into()))
+                    .collect()
+            }),
+        }
+    }
+}
+
+impl TryFrom<DataContractInner> for DataContract {
+    type Error = ProtocolError;
+
+    fn try_from(value: DataContractInner) -> Result<Self, Self::Error> {
+        DataContract::from_raw_object(platform_value!(value))
+    }
 }
 
 impl DataContract {
@@ -130,9 +217,14 @@ impl DataContract {
             .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
 
+        let id = data_contract_map
+            .remove_identifier(property_names::ID)
+            .map_err(ProtocolError::ValueError)?;
+
         let mutability = get_contract_configuration_properties(&data_contract_map)?;
         let definition_references = get_definitions(&data_contract_map)?;
         let document_types = get_document_types_from_contract(
+            id,
             &data_contract_map,
             &definition_references,
             mutability.documents_keep_history_contract_default,
@@ -161,9 +253,7 @@ impl DataContract {
 
         let data_contract = DataContract {
             protocol_version,
-            id: data_contract_map
-                .remove_identifier(property_names::ID)
-                .map_err(ProtocolError::ValueError)?,
+            id,
             schema: data_contract_map
                 .remove_string(property_names::SCHEMA)
                 .map_err(ProtocolError::ValueError)?,
@@ -447,6 +537,7 @@ pub fn get_contract_configuration_properties(
 }
 
 pub fn get_document_types_from_value(
+    data_contract_id: Identifier,
     documents_value: &Value,
     definition_references: &BTreeMap<String, &Value>,
     documents_keep_history_contract_default: bool,
@@ -474,6 +565,7 @@ pub fn get_document_types_from_value(
         };
 
         let document_type = DocumentType::from_platform_value(
+            data_contract_id,
             type_key_str,
             document_type_value_map,
             definition_references,
@@ -486,6 +578,7 @@ pub fn get_document_types_from_value(
 }
 
 pub fn get_document_types_from_contract(
+    data_contract_id: Identifier,
     contract: &BTreeMap<String, Value>,
     definition_references: &BTreeMap<String, &Value>,
     documents_keep_history_contract_default: bool,
@@ -497,6 +590,7 @@ pub fn get_document_types_from_contract(
         return Ok(BTreeMap::new());
     };
     get_document_types_from_value(
+        data_contract_id,
         documents_value,
         definition_references,
         documents_keep_history_contract_default,

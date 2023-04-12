@@ -5,7 +5,7 @@ use wasm_bindgen::prelude::*;
 
 use crate::{
     state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper},
-    DataContractUpdateTransitionWasm,
+    DataContractUpdateTransitionWasm, StateTransitionExecutionContextWasm,
 };
 
 #[wasm_bindgen(js_name=ApplyDataContractUpdateTransition)]
@@ -35,9 +35,10 @@ impl ApplyDataContractUpdateTransitionWasm {
     pub async fn apply_data_contract_update_transition(
         &self,
         transition: DataContractUpdateTransitionWasm,
+        execution_context: StateTransitionExecutionContextWasm,
     ) -> Result<(), JsError> {
         self.0
-            .apply_data_contract_update_transition(&transition.into())
+            .apply_data_contract_update_transition(&transition.into(), &execution_context.into())
             .await
             .map_err(|e| e.deref().into())
     }

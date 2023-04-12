@@ -30,24 +30,37 @@
 //! Execution Tests
 //!
 
-use crate::DocumentAction::{DocumentActionDelete, DocumentActionInsert};
-use dashcore::signer;
+use anyhow::anyhow;
+use dashcore::secp256k1::SecretKey;
+use dashcore::{signer, Network, PrivateKey};
+use dashcore_rpc::dashcore_rpc_json::{
+    ExtendedQuorumDetails, QuorumHash as QuorumHashObject, QuorumInfoResult, QuorumType,
+};
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::document::document_transition::document_base_transition::DocumentBaseTransition;
 use dpp::document::document_transition::{
-    Action, DocumentCreateTransition, DocumentDeleteTransition,
+    Action, DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
 };
 use dpp::document::DocumentsBatchTransition;
 use dpp::identity::signer::Signer;
+use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransition;
-use dpp::identity::{IdentityPublicKey, KeyType};
-use dpp::platform_value::Value;
+use dpp::identity::KeyType::ECDSA_SECP256K1;
+use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+use dpp::platform_value::{BinaryData, Value};
 use dpp::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError,
 };
-use dpp::state_transition::StateTransition;
+use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionType};
+use dpp::tests::fixtures::{
+    instant_asset_lock_proof_fixture, instant_asset_lock_proof_transaction_fixture,
+};
 use dpp::version::LATEST_VERSION;
-use dpp::ProtocolError;
+use dpp::{bls_signatures, NativeBlsModule, ProtocolError};
+use dpp::{
+    bls_signatures::{PrivateKey as BlsPrivateKey, PublicKey as BlsPublicKey, Serialize},
+    identity::state_transition::identity_topup_transition::IdentityTopUpTransition,
+};
 use drive::common::helpers::identities::create_test_masternode_identities_with_rng;
 use drive::contract::{Contract, CreateRandomDocument, DocumentType};
 use drive::dpp::document::Document;
@@ -56,6 +69,8 @@ use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::drive::block_info::BlockInfo;
 use drive::drive::defaults::PROTOCOL_VERSION;
 use drive::drive::flags::StorageFlags::SingleEpoch;
+use drive::drive::identity::key::fetch::KeyKindRequestType::AllKeysOfKindRequest;
+use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 use drive::drive::Drive;
 use drive::fee::credits::Credits;
 use drive::fee_pools::epochs::Epoch;
@@ -63,20 +78,53 @@ use drive::query::DriveQuery;
 use drive_abci::abci::AbciApplication;
 use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
 use drive_abci::platform::Platform;
-use drive_abci::rpc::core::MockCoreRPCLike;
+use drive_abci::rpc::core::{MockCoreRPCLike, QuorumListExtendedInfo};
 use drive_abci::test::fixture::abci::static_init_chain_request;
 use drive_abci::test::helpers::setup::TestPlatformBuilder;
 use drive_abci::{config::PlatformConfig, test::helpers::setup::TempPlatform};
-use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
+use rand::{rngs::StdRng, RngCore};
 use rand::{Rng, SeedableRng};
 use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
+use std::str::FromStr;
 
 mod upgrade_fork_tests;
 
 pub type QuorumHash = [u8; 32];
+pub type ProTxHash = [u8; 32];
+
+#[derive(Clone)]
+pub struct TestQuorumInfo {
+    quorum_hash: QuorumHash,
+    validator_set: Vec<ProTxHash>,
+    // in reality quorums don't have a private key,
+    // however for these tests, we can just sign with a private key to mimic threshold signing
+    private_key: BlsPrivateKey,
+    public_key: BlsPublicKey,
+}
+
+impl From<&TestQuorumInfo> for QuorumInfoResult {
+    fn from(value: &TestQuorumInfo) -> Self {
+        let TestQuorumInfo {
+            quorum_hash,
+            validator_set,
+            private_key,
+            public_key,
+        } = value;
+        QuorumInfoResult {
+            height: 0,
+            quorum_type: QuorumType::Llmq25_67,
+            quorum_hash: QuorumHashObject(quorum_hash.to_vec()),
+            quorum_index: 0,
+            mined_block: vec![],
+            members: vec![],
+            quorum_public_key: public_key.as_bytes(),
+            secret_key_share: None,
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct Frequency {
@@ -99,12 +147,21 @@ impl Frequency {
             rng.gen_range(self.times_per_block_range.clone())
         }
     }
+
+    fn events_if_hit(&self, rng: &mut StdRng) -> u16 {
+        if self.check_hit(rng) {
+            self.events(rng)
+        } else {
+            0
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
 pub enum DocumentAction {
     DocumentActionInsert,
     DocumentActionDelete,
+    DocumentActionReplace,
 }
 
 #[derive(Clone, Debug)]
@@ -114,7 +171,17 @@ pub struct DocumentOp {
     pub action: DocumentAction,
 }
 
-pub type ProTxHash = [u8; 32];
+#[derive(Clone, Debug)]
+pub struct Operation {
+    op_type: OperationType,
+    frequency: Frequency,
+}
+
+#[derive(Clone, Debug)]
+pub enum OperationType {
+    Document(DocumentOp),
+    IdentityTopUp,
+}
 
 /// This simple signer is only to be used in tests
 #[derive(Default, Debug)]
@@ -137,25 +204,23 @@ impl Signer for SimpleSigner {
     fn sign(
         &self,
         identity_public_key: &IdentityPublicKey,
-        value: &Value,
-    ) -> Result<Vec<u8>, ProtocolError> {
+        data: &[u8],
+    ) -> Result<BinaryData, ProtocolError> {
         let private_key = self.private_keys.get(identity_public_key).ok_or(
             ProtocolError::InvalidSignaturePublicKeyError(InvalidSignaturePublicKeyError::new(
                 identity_public_key.data.to_vec(),
             )),
         )?;
-        let mut data = vec![];
-        ciborium::ser::into_writer(value, &mut data).map_err(|_| {
-            ProtocolError::EncodingError("unable to serialize into cbor for signing".to_string())
-        })?;
         match identity_public_key.key_type {
             KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
-                let signature = signer::sign(&data, private_key)?;
-                Ok(signature.to_vec())
+                let signature = signer::sign(data, private_key)?;
+                Ok(signature.to_vec().into())
             }
             KeyType::BLS12_381 => {
-                todo!();
-                // self.set_signature(bls.sign(&data, private_key)?.into())
+                let pk = dpp::bls_signatures::PrivateKey::from_bytes(private_key).map_err(|e| {
+                    ProtocolError::Error(anyhow!("bls private key from bytes isn't correct"))
+                })?;
+                Ok(pk.sign(data).as_bytes().into())
             }
             // the default behavior from
             // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L187
@@ -174,10 +239,11 @@ pub type BlockHeight = u64;
 #[derive(Clone, Debug)]
 pub(crate) struct Strategy {
     contracts: Vec<Contract>,
-    operations: Vec<(DocumentOp, Frequency)>,
+    operations: Vec<Operation>,
     identities_inserts: Frequency,
     total_hpmns: u16,
     upgrading_info: Option<UpgradingInfo>,
+    core_height_increase: Frequency,
 }
 
 #[derive(Clone, Debug)]
@@ -234,34 +300,39 @@ impl UpgradingInfo {
 }
 
 impl Strategy {
+    // TODO: This belongs to `DocumentOp`
     fn add_strategy_contracts_into_drive(&mut self, drive: &Drive) {
-        for (op, _) in &self.operations {
-            let serialize = op.contract.to_cbor().expect("expected to serialize");
-            drive
-                .apply_contract(
-                    &op.contract,
-                    serialize,
-                    BlockInfo::default(),
-                    true,
-                    Some(Cow::Owned(SingleEpoch(0))),
-                    None,
-                )
-                .expect("expected to be able to add contract");
+        for op in &self.operations {
+            match &op.op_type {
+                OperationType::Document(doc_op) => {
+                    let serialize = doc_op.contract.to_cbor().expect("expected to serialize");
+                    drive
+                        .apply_contract(
+                            &doc_op.contract,
+                            serialize,
+                            BlockInfo::default(),
+                            true,
+                            Some(Cow::Owned(SingleEpoch(0))),
+                            None,
+                        )
+                        .expect("expected to be able to add contract");
+                }
+                _ => {}
+            }
         }
     }
+
     fn identity_state_transitions_for_block(
         &self,
+        signer: &mut SimpleSigner,
         rng: &mut StdRng,
-    ) -> (
-        Vec<(Identity, StateTransition)>,
-        Vec<(IdentityPublicKey, Vec<u8>)>,
-    ) {
+    ) -> Vec<(Identity, StateTransition)> {
         let frequency = &self.identities_inserts;
         if frequency.check_hit(rng) {
             let count = frequency.events(rng);
-            create_identities_state_transitions(count, 5, rng)
+            create_identities_state_transitions(count, 5, signer, rng)
         } else {
-            (vec![], vec![])
+            vec![]
         }
     }
 
@@ -284,7 +355,7 @@ impl Strategy {
                 let state_transition = DataContractCreateTransition::new_from_data_contract(
                     contract.clone(),
                     &identity,
-                    0,
+                    1, //key id 1 should always be a high or critical auth key in these tests
                     signer,
                 )
                 .expect("expected to create a create state transition from a data contract");
@@ -293,63 +364,85 @@ impl Strategy {
             .collect()
     }
 
-    fn document_state_transitions_for_block(
+    // TODO: this belongs to `DocumentOp`, also randomization details are common for all operations
+    // and could be moved out of here
+    fn state_transitions_for_block(
         &self,
         platform: &Platform<MockCoreRPCLike>,
         block_info: &BlockInfo,
         current_identities: &Vec<Identity>,
+        signer: &mut SimpleSigner,
         rng: &mut StdRng,
     ) -> Vec<StateTransition> {
         let mut operations = vec![];
-        for (op, frequency) in &self.operations {
-            if frequency.check_hit(rng) {
-                let count = rng.gen_range(frequency.times_per_block_range.clone());
-                match op.action {
-                    DocumentActionInsert => {
-                        let documents = op
-                            .document_type
-                            .random_documents_with_rng(count as u32, rng);
-                        documents.into_iter().for_each(|mut document| {
-                            let identity_num = rng.gen_range(0..current_identities.len());
-                            let identity = current_identities
-                                .get(identity_num)
-                                .unwrap()
-                                .clone()
-                                .into_partial_identity_info();
+        for op in &self.operations {
+            if op.frequency.check_hit(rng) {
+                let count = rng.gen_range(op.frequency.times_per_block_range.clone());
+                match &op.op_type {
+                    OperationType::Document(DocumentOp {
+                        action: DocumentAction::DocumentActionInsert,
+                        document_type,
+                        contract,
+                    }) => {
+                        let documents = document_type.random_documents_with_params(
+                            count as u32,
+                            current_identities,
+                            block_info.time_ms,
+                            rng,
+                        );
+                        documents
+                            .into_iter()
+                            .for_each(|(mut document, identity, entropy)| {
+                                let document_create_transition = DocumentCreateTransition {
+                                    base: DocumentBaseTransition {
+                                        id: document.id,
+                                        document_type_name: document_type.name.clone(),
+                                        action: Action::Create,
+                                        data_contract_id: contract.id,
+                                        data_contract: contract.clone(),
+                                    },
+                                    entropy: entropy.to_buffer(),
+                                    created_at: document.created_at,
+                                    updated_at: document.created_at,
+                                    data: document.properties.into(),
+                                };
 
-                            let document_create_transition = DocumentCreateTransition {
-                                base: DocumentBaseTransition {
-                                    id: document.id,
-                                    document_type_name: op.document_type.name.clone(),
-                                    action: Action::Create,
-                                    data_contract_id: op.contract.id,
-                                    data_contract: op.contract.clone(),
-                                },
-                                entropy: [0; 32],
-                                created_at: document.created_at,
-                                updated_at: document.created_at,
-                                data: document.properties.into(),
-                            };
+                                let mut document_batch_transition = DocumentsBatchTransition {
+                                    protocol_version: LATEST_VERSION,
+                                    transition_type: StateTransitionType::DocumentsBatch,
+                                    owner_id: identity.id,
+                                    transitions: vec![document_create_transition.into()],
+                                    signature_public_key_id: None,
+                                    signature: None,
+                                };
 
-                            let document_batch_transition = DocumentsBatchTransition {
-                                protocol_version: LATEST_VERSION,
-                                transition_type: Default::default(),
-                                owner_id: identity.id,
-                                transitions: vec![document_create_transition.into()],
-                                signature_public_key_id: None,
-                                signature: None,
-                                execution_context: Default::default(),
-                            };
+                                let identity_public_key = identity
+                                    .get_first_public_key_matching(
+                                        Purpose::AUTHENTICATION,
+                                        HashSet::from([
+                                            SecurityLevel::HIGH,
+                                            SecurityLevel::CRITICAL,
+                                        ]),
+                                        HashSet::from([
+                                            KeyType::ECDSA_SECP256K1,
+                                            KeyType::BLS12_381,
+                                        ]),
+                                    )
+                                    .expect("expected to get a signing key");
 
-                            //todo: signing
-                            //document_batch_transition.sign()
+                                document_batch_transition
+                                    .sign_external(identity_public_key, signer)
+                                    .expect("expected to sign");
 
-                            operations.push(document_batch_transition.into());
-                        });
+                                operations.push(document_batch_transition.into());
+                            });
                     }
-                    DocumentActionDelete => {
-                        let any_item_query =
-                            DriveQuery::any_item_query(&op.contract, &op.document_type);
+                    OperationType::Document(DocumentOp {
+                        action: DocumentAction::DocumentActionDelete,
+                        document_type,
+                        contract,
+                    }) => {
+                        let any_item_query = DriveQuery::any_item_query(&contract, &document_type);
                         let mut items = platform
                             .drive
                             .query_documents_as_serialized(
@@ -363,39 +456,134 @@ impl Strategy {
                         if !items.is_empty() {
                             let first_item = items.remove(0);
                             let document =
-                                Document::from_bytes(first_item.as_slice(), &op.document_type)
+                                Document::from_bytes(first_item.as_slice(), &document_type)
                                     .expect("expected to deserialize document");
+
+                            //todo: fix this into a search key request for the following
+                            //let search_key_request = BTreeMap::from([(Purpose::AUTHENTICATION as u8, BTreeMap::from([(SecurityLevel::HIGH as u8, AllKeysOfKindRequest)]))]);
+
+                            let request = IdentityKeysRequest {
+                                identity_id: document.owner_id.to_buffer(),
+                                request_type: KeyRequestType::SpecificKeys(vec![1]),
+                                limit: Some(1),
+                                offset: None,
+                            };
                             let identity = platform
                                 .drive
-                                .fetch_identity_with_balance(document.owner_id.to_buffer(), None)
+                                .fetch_identity_balance_with_keys(request, None)
                                 .expect("expected to be able to get identity")
                                 .expect("expected to get an identity");
                             let document_delete_transition = DocumentDeleteTransition {
                                 base: DocumentBaseTransition {
                                     id: document.id,
-                                    document_type_name: op.document_type.name.clone(),
-                                    action: Action::Create,
-                                    data_contract_id: op.contract.id,
-                                    data_contract: op.contract.clone(),
+                                    document_type_name: document_type.name.clone(),
+                                    action: Action::Delete,
+                                    data_contract_id: contract.id,
+                                    data_contract: contract.clone(),
                                 },
                             };
 
-                            let document_batch_transition = DocumentsBatchTransition {
+                            let mut document_batch_transition = DocumentsBatchTransition {
                                 protocol_version: LATEST_VERSION,
-                                transition_type: Default::default(),
+                                transition_type: StateTransitionType::DocumentsBatch,
                                 owner_id: identity.id,
                                 transitions: vec![document_delete_transition.into()],
                                 signature_public_key_id: None,
                                 signature: None,
-                                execution_context: Default::default(),
                             };
 
-                            //todo: signing
-                            //document_batch_transition.sign()
+                            let identity_public_key = identity
+                                .loaded_public_keys
+                                .values()
+                                .next()
+                                .expect("expected a key");
+
+                            document_batch_transition
+                                .sign_external(identity_public_key, signer)
+                                .expect("expected to sign");
 
                             operations.push(document_batch_transition.into());
                         }
                     }
+                    OperationType::Document(DocumentOp {
+                        action: DocumentAction::DocumentActionReplace,
+                        document_type,
+                        contract,
+                    }) => {
+                        let any_item_query = DriveQuery::any_item_query(&contract, &document_type);
+                        let mut items = platform
+                            .drive
+                            .query_documents_as_serialized(
+                                any_item_query,
+                                Some(&block_info.epoch),
+                                None,
+                            )
+                            .expect("expect to execute query")
+                            .items;
+
+                        if !items.is_empty() {
+                            let first_item = items.remove(0);
+                            let mut document =
+                                Document::from_bytes(first_item.as_slice(), &document_type)
+                                    .expect("expected to deserialize document");
+
+                            //todo: fix this into a search key request for the following
+                            //let search_key_request = BTreeMap::from([(Purpose::AUTHENTICATION as u8, BTreeMap::from([(SecurityLevel::HIGH as u8, AllKeysOfKindRequest)]))]);
+
+                            let random_new_document = document_type.random_document_with_rng(rng);
+                            let request = IdentityKeysRequest {
+                                identity_id: document.owner_id.to_buffer(),
+                                request_type: KeyRequestType::SpecificKeys(vec![1]),
+                                limit: Some(1),
+                                offset: None,
+                            };
+                            let identity = platform
+                                .drive
+                                .fetch_identity_balance_with_keys(request, None)
+                                .expect("expected to be able to get identity")
+                                .expect("expected to get an identity");
+                            let document_replace_transition = DocumentReplaceTransition {
+                                base: DocumentBaseTransition {
+                                    id: document.id,
+                                    document_type_name: document_type.name.clone(),
+                                    action: Action::Replace,
+                                    data_contract_id: contract.id,
+                                    data_contract: contract.clone(),
+                                },
+                                revision: document.revision.expect("expected to unwrap revision")
+                                    + 1,
+                                updated_at: Some(block_info.time_ms),
+                                data: Some(random_new_document.properties),
+                            };
+
+                            let mut document_batch_transition = DocumentsBatchTransition {
+                                protocol_version: LATEST_VERSION,
+                                transition_type: StateTransitionType::DocumentsBatch,
+                                owner_id: identity.id,
+                                transitions: vec![document_replace_transition.into()],
+                                signature_public_key_id: None,
+                                signature: None,
+                            };
+
+                            let identity_public_key = identity
+                                .loaded_public_keys
+                                .values()
+                                .next()
+                                .expect("expected a key");
+
+                            document_batch_transition
+                                .sign_external(identity_public_key, signer)
+                                .expect("expected to sign");
+
+                            operations.push(document_batch_transition.into());
+                        }
+                    }
+                    OperationType::IdentityTopUp if !current_identities.is_empty() => {
+                        let identity_num = rng.gen_range(0..current_identities.len());
+                        let random_identity = current_identities.get(identity_num).unwrap();
+                        operations.push(create_identity_top_up_transition(rng, random_identity));
+                    }
+                    _ => {}
                 }
             }
         }
@@ -410,11 +598,10 @@ impl Strategy {
         signer: &mut SimpleSigner,
         rng: &mut StdRng,
     ) -> Vec<StateTransition> {
-        let (identity_state_transitions, new_keys) = self.identity_state_transitions_for_block(rng);
+        let identity_state_transitions = self.identity_state_transitions_for_block(signer, rng);
         let (mut identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
             identity_state_transitions.into_iter().unzip();
         current_identities.append(&mut identities);
-        signer.add_keys(new_keys);
 
         if block_info.height == 1 {
             // add contracts on block 1
@@ -423,37 +610,63 @@ impl Strategy {
             state_transitions.append(&mut contract_state_transitions);
         }
 
-        let mut document_state_transitions: Vec<StateTransition> = self
-            .document_state_transitions_for_block(platform, block_info, current_identities, rng);
-
+        let mut document_state_transitions: Vec<StateTransition> =
+            self.state_transitions_for_block(platform, block_info, current_identities, signer, rng);
         state_transitions.append(&mut document_state_transitions);
+
         state_transitions
     }
+}
+
+fn create_identity_top_up_transition(rng: &mut StdRng, identity: &Identity) -> StateTransition {
+    let (_, pk) = ECDSA_SECP256K1.random_public_and_private_key_data(rng);
+    let sk: [u8; 32] = pk.clone().try_into().unwrap();
+    let secret_key = SecretKey::from_str(hex::encode(sk).as_str()).unwrap();
+    let asset_lock_proof =
+        instant_asset_lock_proof_fixture(Some(PrivateKey::new(secret_key, Network::Dash)));
+
+    StateTransition::IdentityTopUp(
+        IdentityTopUpTransition::try_from_identity(
+            identity.clone(),
+            asset_lock_proof,
+            secret_key.as_ref(),
+            &NativeBlsModule::default(),
+        )
+        .expect("expected to create top up transition"),
+    )
 }
 
 fn create_identities_state_transitions(
     count: u16,
     key_count: KeyID,
+    signer: &mut SimpleSigner,
     rng: &mut StdRng,
-) -> (
-    Vec<(Identity, StateTransition)>,
-    Vec<(IdentityPublicKey, Vec<u8>)>,
-) {
+) -> Vec<(Identity, StateTransition)> {
     let (identities, keys) =
-        Identity::random_identities_with_private_keys_with_rng(count, key_count, rng);
-    (
-        identities
-            .into_iter()
-            .map(|identity| {
-                let identity_create_transition: IdentityCreateTransition = identity
-                    .clone()
-                    .try_into()
-                    .expect("expected to transform identity into identity create transition");
-                (identity, identity_create_transition.into())
-            })
-            .collect(),
-        keys,
-    )
+        Identity::random_identities_with_private_keys_with_rng::<Vec<_>>(count, key_count, rng)
+            .expect("expected to create identities");
+    signer.add_keys(keys);
+    identities
+        .into_iter()
+        .map(|mut identity| {
+            let (_, pk) = ECDSA_SECP256K1.random_public_and_private_key_data(rng);
+            let sk: [u8; 32] = pk.clone().try_into().unwrap();
+            let secret_key = SecretKey::from_str(hex::encode(sk).as_str()).unwrap();
+            let asset_lock_proof =
+                instant_asset_lock_proof_fixture(Some(PrivateKey::new(secret_key, Network::Dash)));
+            let identity_create_transition =
+                IdentityCreateTransition::try_from_identity_with_signer(
+                    identity.clone(),
+                    asset_lock_proof,
+                    pk.as_slice(),
+                    signer,
+                    &NativeBlsModule::default(),
+                )
+                .expect("expected to transform identity into identity create transition");
+            identity.id = *identity_create_transition.get_identity_id();
+            (identity, identity_create_transition.into())
+        })
+        .collect()
 }
 
 pub struct ChainExecutionOutcome<'a> {
@@ -461,7 +674,7 @@ pub struct ChainExecutionOutcome<'a> {
     pub masternode_identity_balances: BTreeMap<[u8; 32], Credits>,
     pub identities: Vec<Identity>,
     pub proposers: Vec<ProTxHash>,
-    pub quorums: BTreeMap<QuorumHash, Vec<ProTxHash>>,
+    pub quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
     pub current_quorum_hash: QuorumHash,
     pub current_proposer_versions: Option<HashMap<ProTxHash, ValidatorVersionMigration>>,
     pub end_epoch_index: u16,
@@ -470,10 +683,10 @@ pub struct ChainExecutionOutcome<'a> {
 
 pub struct ChainExecutionParameters {
     pub block_start: u64,
+    pub core_height_start: u32,
     pub block_count: u64,
-    pub block_spacing_ms: u64,
     pub proposers: Vec<[u8; 32]>,
-    pub quorums: BTreeMap<QuorumHash, Vec<ProTxHash>>,
+    pub quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
     pub current_quorum_hash: QuorumHash,
     // the first option is if it is set
     // the second option is if we are even upgrading
@@ -487,17 +700,12 @@ pub enum StrategyRandomness {
 }
 
 pub(crate) fn run_chain_for_strategy(
-    platform: &TempPlatform<MockCoreRPCLike>,
+    platform: &mut TempPlatform<MockCoreRPCLike>,
     block_count: u64,
-    block_spacing_ms: u64,
     strategy: Strategy,
     config: PlatformConfig,
     seed: u64,
 ) -> ChainExecutionOutcome {
-    let quorum_count = 24; // We assume 24 quorums
-    let quorum_size = config.quorum_size;
-    let abci_application = AbciApplication::new(&platform).expect("expected new abci application");
-    let mut rng = StdRng::seed_from_u64(seed);
     // init chain
     let init_chain_request = static_init_chain_request();
 
@@ -507,6 +715,11 @@ pub(crate) fn run_chain_for_strategy(
 
     platform.create_mn_shares_contract(None);
 
+    let quorum_count = 24; // We assume 24 quorums
+    let quorum_size = config.quorum_size;
+
+    let mut rng = StdRng::seed_from_u64(seed);
+
     let proposers = create_test_masternode_identities_with_rng(
         &platform.drive,
         strategy.total_hpmns,
@@ -514,19 +727,97 @@ pub(crate) fn run_chain_for_strategy(
         None,
     );
 
-    let quorums: BTreeMap<QuorumHash, Vec<[u8; 32]>> = (0..quorum_count)
+    let quorums: BTreeMap<QuorumHash, TestQuorumInfo> = (0..quorum_count)
         .into_iter()
         .map(|_| {
             let quorum_hash: [u8; 32] = rng.gen();
+            let validator_set = proposers
+                .choose_multiple(&mut rng, quorum_size as usize)
+                .cloned()
+                .collect();
+            let private_key = bls_signatures::PrivateKey::generate(&mut rng);
+            let public_key = private_key.public_key();
+
             (
                 quorum_hash,
-                proposers
-                    .choose_multiple(&mut rng, quorum_size as usize)
-                    .cloned()
-                    .collect(),
+                TestQuorumInfo {
+                    quorum_hash,
+                    validator_set,
+                    private_key,
+                    public_key,
+                },
             )
         })
         .collect();
+
+    let quorums_clone = quorums.clone();
+
+    platform
+        .core_rpc
+        .expect_get_quorum_listextended()
+        .returning(move |_| {
+            Ok(dashcore_rpc::dashcore_rpc_json::QuorumListResult {
+                quorums_by_type: HashMap::from([(
+                    QuorumType::Llmq100_67,
+                    quorums_clone
+                        .iter()
+                        .map(|(key, _)| {
+                            (
+                                dashcore_rpc::dashcore_rpc_json::QuorumHash::from(
+                                    hex::encode(key).to_string().as_str(),
+                                ),
+                                ExtendedQuorumDetails {
+                                    creation_height: 0,
+                                    quorum_index: None,
+                                    mined_block_hash: Default::default(),
+                                    num_valid_members: 0,
+                                    health_ratio: 0.0,
+                                },
+                            )
+                        })
+                        .collect(),
+                )]),
+            })
+        });
+
+    let quorums_clone = quorums.clone();
+
+    platform.core_rpc.expect_get_quorum_info().returning(
+        move |_, quorum_hash: &QuorumHashObject, _| {
+            Ok(quorums_clone
+                .get(quorum_hash.0.as_slice())
+                .expect(
+                    format!(
+                        "expected to get quorum {}",
+                        hex::encode(quorum_hash.0.as_slice())
+                    )
+                    .as_str(),
+                )
+                .into())
+        },
+    );
+
+    start_chain_for_strategy(
+        platform,
+        block_count,
+        proposers,
+        quorums,
+        strategy,
+        config,
+        rng,
+    )
+}
+
+pub(crate) fn start_chain_for_strategy(
+    platform: &TempPlatform<MockCoreRPCLike>,
+    block_count: u64,
+    proposers: Vec<[u8; 32]>,
+    quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
+    strategy: Strategy,
+    config: PlatformConfig,
+    mut rng: StdRng,
+) -> ChainExecutionOutcome {
+    let abci_application = AbciApplication::new(&platform).expect("expected new abci application");
 
     let quorum_hashes: Vec<&QuorumHash> = quorums.keys().collect();
 
@@ -536,13 +827,13 @@ pub(crate) fn run_chain_for_strategy(
         abci_application,
         ChainExecutionParameters {
             block_start: 1,
+            core_height_start: config.abci.genesis_core_height,
             block_count,
-            block_spacing_ms,
             proposers,
             quorums,
             current_quorum_hash,
             current_proposer_versions: None,
-            current_time_ms: 0,
+            current_time_ms: 1681094380000,
         },
         strategy,
         config,
@@ -560,8 +851,8 @@ pub(crate) fn continue_chain_for_strategy(
     let platform = abci_app.platform;
     let ChainExecutionParameters {
         block_start,
+        core_height_start,
         block_count,
-        block_spacing_ms,
         proposers,
         quorums,
         mut current_quorum_hash,
@@ -579,7 +870,7 @@ pub(crate) fn continue_chain_for_strategy(
     let mut signer = SimpleSigner::default();
     let mut i = 0;
 
-    let blocks_per_epoch = EPOCH_CHANGE_TIME_MS / block_spacing_ms;
+    let blocks_per_epoch = EPOCH_CHANGE_TIME_MS / config.block_spacing_ms;
 
     let proposer_count = proposers.len() as u32;
 
@@ -588,6 +879,8 @@ pub(crate) fn continue_chain_for_strategy(
             upgrading_info.apply_to_proposers(proposers.clone(), blocks_per_epoch, &mut rng)
         }),
     );
+
+    let mut current_core_height = core_height_start;
 
     for block_height in block_start..(block_start + block_count) {
         let epoch_info = EpochInfo::calculate(
@@ -603,16 +896,19 @@ pub(crate) fn continue_chain_for_strategy(
         )
         .expect("should calculate epoch info");
 
+        current_core_height += strategy.core_height_increase.events_if_hit(&mut rng) as u32;
+
         let block_info = BlockInfo {
             time_ms: current_time_ms,
             height: block_height,
-            core_height: 1,
+            core_height: current_core_height,
             epoch: Epoch::new(epoch_info.current_epoch_index),
         };
 
         let proposer = quorums
             .get(current_quorum_hash.as_slice())
             .unwrap()
+            .validator_set
             .get(i as usize)
             .unwrap();
         let state_transitions = strategy.state_transitions_for_block_with_new_identities(
@@ -648,11 +944,12 @@ pub(crate) fn continue_chain_for_strategy(
                 proposed_version,
                 proposer_count,
                 block_info,
+                false,
                 state_transitions,
             )
             .expect("expected to execute a block");
 
-        current_time_ms += block_spacing_ms;
+        current_time_ms += config.block_spacing_ms;
         i += 1;
         i %= quorum_size;
         let needs_rotation = block_height % quorum_rotation_block_count == 0;
@@ -693,9 +990,38 @@ pub(crate) fn continue_chain_for_strategy(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::DocumentAction::DocumentActionReplace;
+    use dashcore::hashes::Hash;
+    use dashcore::BlockHash;
+    use dashcore_rpc::dashcore_rpc_json::{ExtendedQuorumDetails, QuorumHash};
     use drive::dpp::data_contract::extra::common::json_document_to_cbor;
     use drive::dpp::data_contract::DriveContractExt;
+    use drive_abci::rpc::core::QuorumListExtendedInfo;
     use tenderdash_abci::proto::types::CoreChainLock;
+
+    pub fn generate_quorums_extended_info(n: u32) -> QuorumListExtendedInfo {
+        let mut quorums = QuorumListExtendedInfo::new();
+
+        for i in 0..n {
+            let i_bytes = [i as u8; 32];
+
+            let hash = QuorumHash(i_bytes.to_vec());
+
+            let details = ExtendedQuorumDetails {
+                creation_height: i,
+                health_ratio: (i as f32) / (n as f32),
+                mined_block_hash: BlockHash::from_slice(&i_bytes).unwrap(),
+                num_valid_members: i,
+                quorum_index: Some(i),
+            };
+
+            quorums
+                .insert(hash.clone(), details)
+                .map(|v| panic!("duplicate record {:?}={:?}", hash, v));
+        }
+        quorums
+    }
+
     #[test]
     fn run_chain_nothing_happening() {
         let strategy = Strategy {
@@ -707,11 +1033,16 @@ mod tests {
             },
             total_hpmns: 100,
             upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 25,
+            block_spacing_ms: 3000,
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -728,7 +1059,96 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
-        run_chain_for_strategy(&platform, 1000, 3000, strategy, config, 15);
+        run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
+    }
+
+    #[test]
+    fn run_chain_one_identity_in_solitude() {
+        let strategy = Strategy {
+            contracts: vec![],
+            operations: vec![],
+            identities_inserts: Frequency {
+                times_per_block_range: 1..2,
+                chance_per_block: None,
+            },
+            total_hpmns: 100,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+        };
+        let config = PlatformConfig {
+            verify_sum_trees: true,
+            quorum_size: 100,
+            validator_set_quorum_rotation_block_count: 25,
+            block_spacing_ms: 3000,
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
+
+        let balance = outcome
+            .abci_app
+            .platform
+            .drive
+            .fetch_identity_balance(outcome.identities.first().unwrap().id.to_buffer(), None)
+            .expect("expected to fetch balances")
+            .expect("expected to have an identity to get balance from");
+
+        assert_eq!(balance, 99876642200)
+    }
+
+    #[test]
+    fn run_chain_core_height_randomly_increasing() {
+        let strategy = Strategy {
+            contracts: vec![],
+            operations: vec![],
+            identities_inserts: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+            total_hpmns: 100,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: 1..3,
+                chance_per_block: Some(0.01),
+            },
+        };
+        let config = PlatformConfig {
+            verify_sum_trees: true,
+            quorum_size: 100,
+            validator_set_quorum_rotation_block_count: 25,
+            block_spacing_ms: 3000,
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
     }
 
     #[test]
@@ -742,17 +1162,32 @@ mod tests {
             },
             total_hpmns: 100,
             upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 25,
+            block_spacing_ms: 3000,
             ..Default::default()
         };
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        let outcome = run_chain_for_strategy(&platform, 100, 3000, strategy, config, 15);
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
 
         assert_eq!(outcome.identities.len(), 100);
     }
@@ -768,18 +1203,34 @@ mod tests {
             },
             total_hpmns: 100,
             upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
         };
+        let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
             verify_sum_trees: true,
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 100,
+            block_spacing_ms: day_in_ms,
             ..Default::default()
         };
-        let day_in_ms = 1000 * 60 * 60 * 24;
-        let platform = TestPlatformBuilder::new()
+
+        let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        let outcome = run_chain_for_strategy(&platform, 150, day_in_ms, strategy, config, 15);
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        let outcome = run_chain_for_strategy(&mut platform, 150, strategy, config, 15);
         assert_eq!(outcome.identities.len(), 150);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -808,17 +1259,32 @@ mod tests {
             },
             total_hpmns: 100,
             upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 25,
+            block_spacing_ms: 3000,
             ..Default::default()
         };
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        run_chain_for_strategy(&platform, 1, 3000, strategy, config, 15);
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        run_chain_for_strategy(&mut platform, 1, strategy, config, 15);
     }
 
     #[test]
@@ -833,7 +1299,7 @@ mod tests {
 
         let document_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentActionInsert,
+            action: DocumentAction::DocumentActionInsert,
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -842,30 +1308,45 @@ mod tests {
 
         let strategy = Strategy {
             contracts: vec![contract],
-            operations: vec![(
-                document_op,
-                Frequency {
+            operations: vec![Operation {
+                op_type: OperationType::Document(document_op),
+                frequency: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
                 },
-            )],
+            }],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
             },
             total_hpmns: 100,
             upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 25,
+            block_spacing_ms: 3000,
             ..Default::default()
         };
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        run_chain_for_strategy(&platform, 100, 3000, strategy, config, 15);
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
     }
 
     #[test]
@@ -880,7 +1361,7 @@ mod tests {
 
         let document_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentActionInsert,
+            action: DocumentAction::DocumentActionInsert,
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -889,33 +1370,47 @@ mod tests {
 
         let strategy = Strategy {
             contracts: vec![contract],
-            operations: vec![(
-                document_op,
-                Frequency {
+            operations: vec![Operation {
+                op_type: OperationType::Document(document_op),
+                frequency: Frequency {
                     times_per_block_range: 1..2,
                     chance_per_block: None,
                 },
-            )],
+            }],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
                 chance_per_block: None,
             },
             total_hpmns: 100,
             upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
         };
+        let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
             verify_sum_trees: true,
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 100,
+            block_spacing_ms: day_in_ms,
             ..Default::default()
         };
-        let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 120;
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        let outcome =
-            run_chain_for_strategy(&platform, block_count, day_in_ms, strategy, config, 15);
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -938,7 +1433,7 @@ mod tests {
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentActionInsert,
+            action: DocumentAction::DocumentActionInsert,
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -947,7 +1442,7 @@ mod tests {
 
         let document_deletion_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentActionDelete,
+            action: DocumentAction::DocumentActionDelete,
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -957,20 +1452,20 @@ mod tests {
         let strategy = Strategy {
             contracts: vec![contract],
             operations: vec![
-                (
-                    document_insertion_op,
-                    Frequency {
+                Operation {
+                    op_type: OperationType::Document(document_insertion_op),
+                    frequency: Frequency {
                         times_per_block_range: 1..2,
                         chance_per_block: None,
                     },
-                ),
-                (
-                    document_deletion_op,
-                    Frequency {
+                },
+                Operation {
+                    op_type: OperationType::Document(document_deletion_op),
+                    frequency: Frequency {
                         times_per_block_range: 1..2,
                         chance_per_block: None,
                     },
-                ),
+                },
             ],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
@@ -978,20 +1473,34 @@ mod tests {
             },
             total_hpmns: 100,
             upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
         };
+        let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
             verify_sum_trees: true,
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 100,
+            block_spacing_ms: day_in_ms,
             ..Default::default()
         };
-        let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 120;
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        let outcome =
-            run_chain_for_strategy(&platform, block_count, day_in_ms, strategy, config, 15);
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -1014,7 +1523,7 @@ mod tests {
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentActionInsert,
+            action: DocumentAction::DocumentActionInsert,
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1023,7 +1532,7 @@ mod tests {
 
         let document_deletion_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentActionDelete,
+            action: DocumentAction::DocumentActionDelete,
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1033,20 +1542,20 @@ mod tests {
         let strategy = Strategy {
             contracts: vec![contract],
             operations: vec![
-                (
-                    document_insertion_op,
-                    Frequency {
+                Operation {
+                    op_type: OperationType::Document(document_insertion_op),
+                    frequency: Frequency {
                         times_per_block_range: 1..10,
                         chance_per_block: None,
                     },
-                ),
-                (
-                    document_deletion_op,
-                    Frequency {
-                        times_per_block_range: 1..4,
+                },
+                Operation {
+                    op_type: OperationType::Document(document_deletion_op),
+                    frequency: Frequency {
+                        times_per_block_range: 1..10,
                         chance_per_block: None,
                     },
-                ),
+                },
             ],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
@@ -1054,20 +1563,35 @@ mod tests {
             },
             total_hpmns: 100,
             upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
         };
+        let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
             verify_sum_trees: true,
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 100,
+            block_spacing_ms: day_in_ms,
             ..Default::default()
         };
-        let day_in_ms = 1000 * 60 * 60 * 24;
+
         let block_count = 120;
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        let outcome =
-            run_chain_for_strategy(&platform, block_count, day_in_ms, strategy, config, 15);
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
         assert_eq!(outcome.identities.len() as u64, block_count);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let all_have_balances = outcome
@@ -1090,7 +1614,7 @@ mod tests {
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentActionInsert,
+            action: DocumentAction::DocumentActionInsert,
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1099,7 +1623,7 @@ mod tests {
 
         let document_deletion_op = DocumentOp {
             contract: contract.clone(),
-            action: DocumentActionDelete,
+            action: DocumentAction::DocumentActionDelete,
             document_type: contract
                 .document_type_for_name("contactRequest")
                 .expect("expected a profile document type")
@@ -1109,20 +1633,20 @@ mod tests {
         let strategy = Strategy {
             contracts: vec![contract],
             operations: vec![
-                (
-                    document_insertion_op,
-                    Frequency {
+                Operation {
+                    op_type: OperationType::Document(document_insertion_op),
+                    frequency: Frequency {
                         times_per_block_range: 1..40,
                         chance_per_block: None,
                     },
-                ),
-                (
-                    document_deletion_op,
-                    Frequency {
+                },
+                Operation {
+                    op_type: OperationType::Document(document_deletion_op),
+                    frequency: Frequency {
                         times_per_block_range: 1..15,
                         chance_per_block: None,
                     },
-                ),
+                },
             ],
             identities_inserts: Frequency {
                 times_per_block_range: 1..30,
@@ -1130,21 +1654,37 @@ mod tests {
             },
             total_hpmns: 100,
             upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
         };
+
+        let day_in_ms = 1000 * 60 * 60 * 24;
+
         let config = PlatformConfig {
             verify_sum_trees: true,
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 100,
+            block_spacing_ms: day_in_ms,
             ..Default::default()
         };
-        let day_in_ms = 1000 * 60 * 60 * 24;
         let block_count = 30;
-        let platform = TestPlatformBuilder::new()
+        let mut platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        let outcome =
-            run_chain_for_strategy(&platform, block_count, day_in_ms, strategy, config, 15);
-        assert_eq!(outcome.identities.len() as u64, 398);
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        assert_eq!(outcome.identities.len() as u64, 363);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
@@ -1152,5 +1692,178 @@ mod tests {
             .filter(|(_, balance)| *balance != 0)
             .count();
         assert_eq!(balance_count, 19); // 1 epoch worth of proposers
+    }
+
+    #[test]
+    fn run_chain_insert_many_new_identity_per_block_many_document_insertions_updates_and_deletions_with_epoch_change(
+    ) {
+        let contract_cbor = json_document_to_cbor(
+            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            Some(PROTOCOL_VERSION),
+        )
+        .expect("expected to get cbor from a json document");
+        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
+            .expect("contract should be deserialized");
+
+        let document_insertion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentAction::DocumentActionInsert,
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .clone(),
+        };
+
+        let document_replace_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentActionReplace,
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .clone(),
+        };
+
+        let document_deletion_op = DocumentOp {
+            contract: contract.clone(),
+            action: DocumentAction::DocumentActionDelete,
+            document_type: contract
+                .document_type_for_name("contactRequest")
+                .expect("expected a profile document type")
+                .clone(),
+        };
+
+        let strategy = Strategy {
+            contracts: vec![contract],
+            operations: vec![
+                Operation {
+                    op_type: OperationType::Document(document_insertion_op),
+                    frequency: Frequency {
+                        times_per_block_range: 1..40,
+                        chance_per_block: None,
+                    },
+                },
+                Operation {
+                    op_type: OperationType::Document(document_replace_op),
+                    frequency: Frequency {
+                        times_per_block_range: 1..5,
+                        chance_per_block: None,
+                    },
+                },
+                Operation {
+                    op_type: OperationType::Document(document_deletion_op),
+                    frequency: Frequency {
+                        times_per_block_range: 1..5,
+                        chance_per_block: None,
+                    },
+                },
+            ],
+            identities_inserts: Frequency {
+                times_per_block_range: 1..6,
+                chance_per_block: None,
+            },
+            total_hpmns: 100,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+        };
+
+        let day_in_ms = 1000 * 60 * 60 * 24;
+
+        let config = PlatformConfig {
+            verify_sum_trees: true,
+            quorum_size: 100,
+            validator_set_quorum_rotation_block_count: 100,
+            block_spacing_ms: day_in_ms,
+            ..Default::default()
+        };
+        let block_count = 30;
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
+        assert_eq!(outcome.identities.len() as u64, 84);
+        assert_eq!(outcome.masternode_identity_balances.len(), 100);
+        let balance_count = outcome
+            .masternode_identity_balances
+            .into_iter()
+            .filter(|(_, balance)| *balance != 0)
+            .count();
+        assert_eq!(balance_count, 19); // 1 epoch worth of proposers
+    }
+
+    #[test]
+    fn run_chain_top_up_identities() {
+        let strategy = Strategy {
+            contracts: vec![],
+            operations: vec![Operation {
+                op_type: OperationType::IdentityTopUp,
+                frequency: Frequency {
+                    times_per_block_range: 1..3,
+                    chance_per_block: None,
+                },
+            }],
+            identities_inserts: Frequency {
+                times_per_block_range: 1..2,
+                chance_per_block: None,
+            },
+            total_hpmns: 100,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+        };
+        let config = PlatformConfig {
+            verify_sum_trees: true,
+            quorum_size: 100,
+            validator_set_quorum_rotation_block_count: 25,
+            block_spacing_ms: 3000,
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
+
+        let max_initial_balance = 100000000000u64; // TODO: some centralized way for random test data (`arbitrary` maybe?)
+        let balances = outcome
+            .abci_app
+            .platform
+            .drive
+            .fetch_identities_balances(
+                &outcome
+                    .identities
+                    .into_iter()
+                    .map(|identity| identity.id.to_buffer())
+                    .collect(),
+                None,
+            )
+            .expect("expected to fetch balances");
+
+        assert!(balances
+            .into_iter()
+            .any(|(_, balance)| balance > max_initial_balance));
     }
 }

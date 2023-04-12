@@ -15,11 +15,11 @@ use dpp::prelude::Identifier;
 use std::borrow::Cow;
 
 impl DriveHighLevelDocumentOperationConverter for DocumentReplaceTransitionAction {
-    fn into_high_level_document_drive_operations(
+    fn into_high_level_document_drive_operations<'a>(
         self,
         epoch: &Epoch,
         owner_id: Identifier,
-    ) -> Result<Vec<DriveOperation>, Error> {
+    ) -> Result<Vec<DriveOperation<'a>>, Error> {
         let DocumentReplaceTransitionAction {
             base,
             revision,

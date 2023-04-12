@@ -2,6 +2,7 @@ use crate::drive::batch::transitions::DriveHighLevelOperationConverter;
 use crate::drive::batch::DriveOperation::{IdentityOperation, SystemOperation};
 use crate::drive::batch::{DriveOperation, IdentityOperationType, SystemOperationType};
 use crate::drive::defaults::PROTOCOL_VERSION;
+use dpp::identity::PartialIdentity;
 
 use crate::error::Error;
 use crate::fee_pools::epochs::Epoch;
@@ -9,10 +10,10 @@ use dpp::identity::state_transition::identity_create_transition::IdentityCreateT
 use dpp::prelude::Identity;
 
 impl DriveHighLevelOperationConverter for IdentityCreateTransitionAction {
-    fn into_high_level_drive_operations(
+    fn into_high_level_drive_operations<'a>(
         self,
         _epoch: &Epoch,
-    ) -> Result<Vec<DriveOperation>, Error> {
+    ) -> Result<Vec<DriveOperation<'a>>, Error> {
         let IdentityCreateTransitionAction {
             public_keys,
             initial_balance_amount,

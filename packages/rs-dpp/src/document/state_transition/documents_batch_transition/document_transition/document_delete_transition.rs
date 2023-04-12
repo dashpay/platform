@@ -1,4 +1,5 @@
 use crate::{data_contract::DataContract, errors::ProtocolError};
+use bincode::{Decode, Encode};
 use platform_value::Value;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -9,7 +10,7 @@ use super::{document_base_transition::DocumentBaseTransition, DocumentTransition
 /// Identifier fields in [`DocumentDeleteTransition`]
 pub use super::document_base_transition::IDENTIFIER_FIELDS;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode, PartialEq)]
 pub struct DocumentDeleteTransition {
     #[serde(flatten)]
     pub base: DocumentBaseTransition,

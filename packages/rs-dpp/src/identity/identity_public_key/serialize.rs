@@ -1,37 +1,24 @@
 use crate::identity::IdentityPublicKey;
 use crate::ProtocolError;
-use bincode::Options;
+use bincode::config;
 
 impl IdentityPublicKey {
     pub fn serialize(&self) -> Result<Vec<u8>, ProtocolError> {
-        bincode::DefaultOptions::default()
-            .with_varint_encoding()
-            .reject_trailing_bytes()
-            .with_big_endian()
-            .serialize(self)
-            .map_err(|_| {
-                ProtocolError::EncodingError(String::from(
-                    "unable to serialize identity public key",
-                ))
-            })
+        let config = config::standard().with_big_endian().with_limit::<2000>();
+        bincode::encode_to_vec(self, config).map_err(|_| {
+            ProtocolError::EncodingError(String::from("unable to serialize identity public key"))
+        })
     }
 
-    pub fn serialized_size(&self) -> usize {
-        bincode::DefaultOptions::default()
-            .with_varint_encoding()
-            .reject_trailing_bytes()
-            .with_big_endian()
-            .serialized_size(self)
-            .unwrap() as usize // this should not be able to error
+    pub fn serialized_size(&self) -> Result<usize, ProtocolError> {
+        self.serialize().map(|a| a.len())
     }
 
     pub fn deserialize(bytes: &[u8]) -> Result<Self, ProtocolError> {
-        bincode::DefaultOptions::default()
-            .with_varint_encoding()
-            .reject_trailing_bytes()
-            .with_big_endian()
-            .deserialize(bytes)
+        let config = config::standard().with_big_endian().with_limit::<2000>();
+        bincode::decode_from_slice(bytes, config)
             .map_err(|e| ProtocolError::EncodingError(format!("unable to deserialize key {}", e)))
+            .map(|(a, _)| a)
     }
 }
 

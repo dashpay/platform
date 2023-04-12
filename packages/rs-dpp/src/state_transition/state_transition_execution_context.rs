@@ -60,6 +60,14 @@ impl StateTransitionExecutionContext {
         inner.is_dry_run = true;
     }
 
+    /// Enable dry run
+    pub fn with_dry_run(self) -> Self {
+        let mut inner = self.inner.lock().unwrap();
+        inner.is_dry_run = true;
+        drop(inner);
+        self
+    }
+
     /// Disable dry run
     pub fn disable_dry_run(&self) {
         let mut inner = self.inner.lock().unwrap();

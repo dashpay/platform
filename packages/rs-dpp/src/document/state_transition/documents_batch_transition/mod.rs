@@ -1,5 +1,6 @@
+use bincode::{Decode, Encode};
 use std::collections::{BTreeMap, HashMap};
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 
 use anyhow::{anyhow, Context};
 use ciborium::value::Value as CborValue;
@@ -18,7 +19,6 @@ use crate::state_transition::state_transition_execution_context::StateTransition
 use crate::util::cbor_value::{CborCanonicalMap, FieldType, ReplacePaths, ValuesCollection};
 use crate::util::json_value::JsonValueExt;
 use crate::version::LATEST_VERSION;
-use crate::ProtocolError;
 use crate::{
     identity::{KeyID, SecurityLevel},
     state_transition::{
@@ -26,6 +26,7 @@ use crate::{
         StateTransitionType,
     },
 };
+use crate::{BlsModule, ProtocolError};
 use platform_value::string_encoding::Encoding;
 
 use self::document_transition::{
@@ -37,6 +38,8 @@ pub mod apply_documents_batch_transition_factory;
 pub mod document_transition;
 pub mod validation;
 
+use crate::identity::signer::Signer;
+use crate::identity::IdentityPublicKey;
 pub use action::{DocumentsBatchTransitionAction, DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION};
 
 pub mod property_names {
@@ -63,7 +66,7 @@ pub const U32_FIELDS: [&str; 1] = [property_names::PROTOCOL_VERSION];
 const DEFAULT_SECURITY_LEVEL: SecurityLevel = SecurityLevel::HIGH;
 const EMPTY_VEC: Vec<u8> = vec![];
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Encode, Decode, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentsBatchTransition {
     pub protocol_version: u32,
@@ -79,9 +82,6 @@ pub struct DocumentsBatchTransition {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signature: Option<BinaryData>,
-
-    #[serde(skip)]
-    pub execution_context: StateTransitionExecutionContext,
 }
 
 impl std::default::Default for DocumentsBatchTransition {
@@ -93,7 +93,6 @@ impl std::default::Default for DocumentsBatchTransition {
             transitions: vec![],
             signature_public_key_id: None,
             signature: None,
-            execution_context: Default::default(),
         }
     }
 }
@@ -164,7 +163,7 @@ impl DocumentsBatchTransition {
     }
 
     /// creates the instance of [`DocumentsBatchTransition`] from raw object
-    pub fn from_raw_object(
+    pub fn from_raw_object_with_contracts(
         raw_object: Value,
         data_contracts: Vec<DataContract>,
     ) -> Result<Self, ProtocolError> {
@@ -276,7 +275,7 @@ impl StateTransitionIdentitySigned for DocumentsBatchTransition {
         &self.owner_id
     }
 
-    fn get_security_level_requirement(&self) -> crate::identity::SecurityLevel {
+    fn get_security_level_requirement(&self) -> Vec<crate::identity::SecurityLevel> {
         // Step 1: Get all document types for the ST
         // Step 2: Get document schema for every type
         // If schema has security level, use that, if not, use the default security level
@@ -299,7 +298,13 @@ impl StateTransitionIdentitySigned for DocumentsBatchTransition {
                 }
             }
         }
-        highest_security_level
+        if highest_security_level == SecurityLevel::MASTER {
+            vec![SecurityLevel::MASTER]
+        } else {
+            (SecurityLevel::CRITICAL as u8..=highest_security_level as u8)
+                .map(|security_level| SecurityLevel::try_from(security_level).unwrap())
+                .collect()
+        }
     }
 
     fn get_signature_public_key_id(&self) -> Option<KeyID> {
@@ -516,17 +521,6 @@ impl StateTransitionLike for DocumentsBatchTransition {
     }
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
         self.signature = Some(BinaryData::new(signature));
-    }
-    fn get_execution_context(&self) -> &StateTransitionExecutionContext {
-        &self.execution_context
-    }
-
-    fn get_execution_context_mut(&mut self) -> &mut StateTransitionExecutionContext {
-        &mut self.execution_context
-    }
-
-    fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
-        self.execution_context = execution_context
     }
 }
 

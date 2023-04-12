@@ -1,10 +1,13 @@
-use dashcore::{Block, BlockHash};
+use dashcore::hashes::sha256d;
+use dashcore::hashes::sha256d::Hash;
+use dashcore::{Block, BlockHash, Transaction, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
-    ExtendedQuorumDetails, GetBestChainLockResult, QuorumHash, QuorumInfoResult, QuorumListResult,
-    QuorumType,
+    ExtendedQuorumDetails, GetBestChainLockResult, MasternodeListDiff, ProTxHash, ProTxInfo,
+    QuorumHash, QuorumInfoResult, QuorumListResult, QuorumType,
 };
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
-use dashcore_rpc::json::{MasternodeListDiff, ProTxHash, ProTxInfo};
+use dashcore_rpc::json::GetTransactionResult;
+use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use mockall::{automock, predicate::*};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -23,6 +26,12 @@ pub trait CoreRPCLike {
 
     /// Get block hash by height
     fn get_best_chain_lock(&self) -> Result<CoreChainLock, Error>;
+
+    /// Get transaction
+    fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, Error>;
+
+    /// Get transaction
+    fn get_transaction_extended_info(&self, tx_id: &Txid) -> Result<GetTransactionResult, Error>;
 
     /// Get block by hash
     fn get_block(&self, block_hash: &BlockHash) -> Result<Block, Error>;
@@ -45,10 +54,10 @@ pub trait CoreRPCLike {
         &self,
         quorum_type: QuorumType,
         hash: &QuorumHash,
-        o: Option<bool>,
+        include_secret_key_share: Option<bool>,
     ) -> Result<QuorumInfoResult, Error>;
 
-    /// Get the diff and proof between two masternode lists
+    /// Get the difference in masternode list
     fn get_protx_diff(&self, base_block: u32, block: u32) -> Result<MasternodeListDiff, Error>;
 
     /// Get the detailed information about a deterministic masternode
@@ -88,6 +97,14 @@ impl CoreRPCLike for DefaultCoreRPC {
         })
     }
 
+    fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, Error> {
+        self.inner.get_raw_transaction(tx_id, None)
+    }
+
+    fn get_transaction_extended_info(&self, tx_id: &Txid) -> Result<GetTransactionResult, Error> {
+        self.inner.get_transaction(tx_id, None)
+    }
+
     fn get_block(&self, block_hash: &BlockHash) -> Result<Block, Error> {
         self.inner.get_block(block_hash)
     }
@@ -106,11 +123,11 @@ impl CoreRPCLike for DefaultCoreRPC {
     fn get_quorum_info(
         &self,
         quorum_type: QuorumType,
-        quorum_hash: &QuorumHash,
-        include_sk_share: Option<bool>,
+        hash: &QuorumHash,
+        include_secret_key_share: Option<bool>,
     ) -> Result<QuorumInfoResult, Error> {
         self.inner
-            .get_quorum_info(quorum_type, quorum_hash, include_sk_share)
+            .get_quorum_info(quorum_type, hash, include_secret_key_share)
     }
 
     fn get_protx_diff(&self, base_block: u32, block: u32) -> Result<MasternodeListDiff, Error> {

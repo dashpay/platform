@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper};
 use crate::validation::ValidationResultWasm;
-use crate::{IdentityUpdateTransitionWasm};
+use crate::{IdentityUpdateTransitionWasm, StateTransitionExecutionContextWasm};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 use dpp::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
@@ -40,12 +40,13 @@ impl IdentityUpdateTransitionStateValidatorWasm {
     pub async fn validate(
         &self,
         state_transition: &IdentityUpdateTransitionWasm,
+        execution_context: StateTransitionExecutionContextWasm,
     ) -> Result<ValidationResultWasm, JsValue> {
         let state_transition: IdentityUpdateTransition = state_transition.to_owned().into();
 
         let validation_result = self
             .0
-            .validate(&state_transition)
+            .validate(&state_transition, &execution_context.into())
             .await
             .map_err(|e| from_dpp_err(e.into()))?;
 

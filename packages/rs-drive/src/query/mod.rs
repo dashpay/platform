@@ -31,6 +31,7 @@
 use std::collections::BTreeMap;
 #[cfg(any(feature = "full", feature = "verify"))]
 use std::ops::BitXor;
+use std::sync::Arc;
 
 #[cfg(feature = "full")]
 use grovedb::query_result_type::{QueryResultElements, QueryResultType};
@@ -64,6 +65,9 @@ pub use conditions::WhereClause;
 /// Import conditions
 #[cfg(any(feature = "full", feature = "verify"))]
 pub use conditions::WhereOperator;
+use dpp::consensus::basic::document::InvalidDocumentTypeError;
+use dpp::consensus::basic::BasicError;
+use dpp::consensus::ConsensusError;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::data_contract::document_type::DocumentType;
 #[cfg(feature = "full")]
@@ -95,15 +99,20 @@ use crate::fee::op::LowLevelDriveOperation;
 
 #[cfg(feature = "full")]
 use crate::drive::contract::paths::ContractPaths;
+use crate::drive::contract::ContractFetchInfo;
+use crate::fee::result::FeeResult;
+use crate::fee_pools::epochs::Epoch;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::data_contract::extra::common::bytes_for_system_value;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::document::Document;
+use dpp::identifier::Identifier;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use dpp::platform_value::platform_value;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::platform_value::Value;
+use dpp::validation::{ConsensusValidationResult, ValidationResult};
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::ProtocolError;
 
@@ -267,7 +276,7 @@ impl QueryResultEncoding {
 
 #[cfg(any(feature = "full", feature = "verify"))]
 /// Drive query struct
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct DriveQuery<'a> {
     /// Contract
     pub contract: &'a Contract,

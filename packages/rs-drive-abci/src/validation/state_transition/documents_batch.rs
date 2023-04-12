@@ -1,22 +1,52 @@
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::{btree_map::Entry, BTreeMap, HashMap};
 
+use dpp::block_time_window::validation_result;
+use dpp::document::validation::basic::validate_documents_batch_transition_basic::DOCUMENTS_BATCH_TRANSITIONS_SCHEMA_VALIDATOR;
+use dpp::identity::PartialIdentity;
 use dpp::{
-    consensus::basic::BasicError,
+    consensus::{basic::BasicError, ConsensusError},
+    data_contract::{errors::DataContractNotPresentError, DataContract, DriveContractExt},
     document::{
-        document_transition::{DocumentTransitionExt, DocumentTransitionObjectLike},
-        validation::basic::validate_documents_batch_transition_basic::{
-            validate_document_transitions, DOCUMENTS_BATCH_TRANSITIONS_SCHEMA,
+        document_transition::{
+            DocumentCreateTransitionAction, DocumentDeleteTransitionAction,
+            DocumentReplaceTransitionAction, DocumentTransitionAction, DocumentTransitionExt,
+            DocumentTransitionObjectLike,
         },
-        DocumentsBatchTransition,
+        validation::{
+            basic::validate_documents_batch_transition_basic::{
+                validate_document_transitions as validate_document_transitions_basic,
+                DOCUMENTS_BATCH_TRANSITIONS_SCHEMA,
+            },
+            state::validate_documents_batch_transition_state::{
+                check_created_inside_time_window, check_if_document_can_be_found,
+                check_if_document_is_already_present, check_if_timestamps_are_equal,
+                check_ownership, check_revision, check_updated_inside_time_window,
+            },
+        },
+        Document, DocumentsBatchTransition,
     },
-    platform_value::{Identifier, Value},
+    get_from_transition,
+    platform_value::{platform_value, string_encoding::Encoding, Identifier, Value},
     prelude::DocumentTransition,
-    state_transition::StateTransitionAction,
+    state_transition::{
+        state_transition_execution_context::StateTransitionExecutionContext, StateTransitionAction,
+    },
     validation::{ConsensusValidationResult, SimpleConsensusValidationResult, ValidationResult},
+    ProtocolError,
 };
-use drive::{drive::Drive, grovedb::Transaction};
+use drive::{
+    grovedb::Transaction,
+    query::{DriveQuery, InternalClauses, WhereClause, WhereOperator},
+};
+
+use drive::drive::Drive;
+use drive::grovedb::TransactionArg;
 
 use crate::error::Error;
+use crate::platform::PlatformRef;
+use crate::rpc::core::CoreRPCLike;
+use crate::validation::state_transition::document_state_validation::validate_documents_batch_transition_state::validate_document_batch_transition_state;
+use crate::validation::state_transition::key_validation::validate_state_transition_identity_signature;
 
 use super::{
     common::{validate_protocol_version, validate_schema},
@@ -24,12 +54,12 @@ use super::{
 };
 
 impl StateTransitionValidation for DocumentsBatchTransition {
-    fn validate_type(
+    fn validate_structure(
         &self,
         drive: &Drive,
-        tx: &Transaction,
+        tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let result = validate_schema(DOCUMENTS_BATCH_TRANSITIONS_SCHEMA.clone(), self);
+        let result = validate_schema(&DOCUMENTS_BATCH_TRANSITIONS_SCHEMA_VALIDATOR, self);
         if !result.is_valid() {
             return Ok(result);
         }
@@ -39,21 +69,23 @@ impl StateTransitionValidation for DocumentsBatchTransition {
             return Ok(result);
         }
 
-        let mut document_transitions_by_contracts: HashMap<Identifier, Vec<&DocumentTransition>> =
-            HashMap::new();
+        let mut document_transitions_by_contracts: BTreeMap<Identifier, Vec<&DocumentTransition>> =
+            BTreeMap::new();
 
-        for document_transition in self.get_transitions() {
-            let contract_identifier = document_transition.get_data_contract_id();
+        self.get_transitions()
+            .iter()
+            .for_each(|document_transition| {
+                let contract_identifier = document_transition.get_data_contract_id();
 
-            match document_transitions_by_contracts.entry(contract_identifier.clone()) {
-                Entry::Vacant(vacant) => {
-                    vacant.insert(vec![&document_transition]);
-                }
-                Entry::Occupied(mut identifiers) => {
-                    identifiers.get_mut().push(&document_transition);
-                }
-            };
-        }
+                match document_transitions_by_contracts.entry(contract_identifier.clone()) {
+                    Entry::Vacant(vacant) => {
+                        vacant.insert(vec![&document_transition]);
+                    }
+                    Entry::Occupied(mut identifiers) => {
+                        identifiers.get_mut().push(&document_transition);
+                    }
+                };
+            });
 
         let mut result = ValidationResult::default();
 
@@ -62,7 +94,7 @@ impl StateTransitionValidation for DocumentsBatchTransition {
             // This block cache only gets merged to the main cache if the block is finalized
             let Some(contract_fetch_info) =
                 drive
-                .get_contract_with_fetch_info(data_contract_id.0.0, None, true, Some(tx))?
+                .get_contract_with_fetch_info(data_contract_id.0.0, None, true, tx)?
                 .1
             else {
                 result.add_error(BasicError::DataContractNotPresent {
@@ -77,9 +109,9 @@ impl StateTransitionValidation for DocumentsBatchTransition {
                 .into_iter()
                 .map(|t| t.to_object().unwrap())
                 .collect();
-            let validation_result = validate_document_transitions(
+            let validation_result = validate_document_transitions_basic(
                 &existing_data_contract,
-                existing_data_contract.owner_id,
+                self.owner_id,
                 transitions_as_objects
                     .iter()
                     .map(|t| t.to_btree_ref_string_map().unwrap()),
@@ -90,19 +122,28 @@ impl StateTransitionValidation for DocumentsBatchTransition {
         Ok(result)
     }
 
-    fn validate_signature(&self, drive: &Drive) -> Result<SimpleConsensusValidationResult, Error> {
-        todo!()
-    }
-
-    fn validate_key_signature(&self) -> Result<SimpleConsensusValidationResult, Error> {
-        todo!()
-    }
-
-    fn validate_state(
+    fn validate_identity_and_signatures(
         &self,
         drive: &Drive,
-        tx: &Transaction,
+        transaction: TransactionArg,
+    ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
+        Ok(
+            validate_state_transition_identity_signature(drive, self, false, transaction)?
+                .map(|partial_identity| Some(partial_identity)),
+        )
+    }
+
+    fn validate_state<'a, C: CoreRPCLike>(
+        &self,
+        platform: &'a PlatformRef<C>,
+        tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        todo!()
+        let validation_result = validate_document_batch_transition_state(
+            &platform.into(),
+            self,
+            tx,
+            &StateTransitionExecutionContext::default(),
+        )?;
+        Ok(validation_result.map(Into::into))
     }
 }

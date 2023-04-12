@@ -39,6 +39,9 @@ lazy_static! {
     ))
     .expect("schema for Data Contract Update should be a valid json");
     pub static ref EMPTY_JSON: JsonValue = json!({});
+    pub static ref DATA_CONTRACT_UPDATE_SCHEMA_VALIDATOR: JsonSchemaValidator =
+        JsonSchemaValidator::new(DATA_CONTRACT_UPDATE_SCHEMA.clone())
+            .expect("unable to compile jsonschema");
 }
 
 pub struct DataContractUpdateTransitionBasicValidator<SR> {
@@ -146,7 +149,7 @@ where
 
         let new_version = new_data_contract_object.get_integer(contract_property_names::VERSION)?;
         let old_version = existing_data_contract.version;
-        if (new_version - old_version) != 1 {
+        if new_version < old_version || new_version - old_version != 1 {
             validation_result.add_error(BasicError::InvalidDataContractVersionError(
                 InvalidDataContractVersionError::new(old_version + 1, new_version),
             ))

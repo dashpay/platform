@@ -30,7 +30,6 @@ impl<SR: StateRepositoryLike> AssetLockProofValidator<SR> {
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<ConsensusValidationResult<PublicKeyHash>, NonConsensusError> {
         let asset_lock_type = AssetLockProof::type_from_raw_value(asset_lock_proof_object);
-
         if let Some(proof_type) = asset_lock_type {
             match proof_type {
                 AssetLockProofType::Instant => {

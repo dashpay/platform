@@ -1,5 +1,5 @@
 module.exports = {
-  $schema: 'http://json-schema.org/draft-07/schema#',
+  $schema: 'https://schema.dash.org/dpp-0-4-0/meta/data-contract#',
   type: 'object',
   properties: {
     configFormatVersion: {

@@ -78,9 +78,11 @@ impl DocumentsBatchTransitionWasm {
             .map_err(ProtocolError::ValueError)
             .with_js_error()?;
 
-        let documents_batch_transition =
-            DocumentsBatchTransition::from_raw_object(batch_transition_value, data_contracts)
-                .with_js_error()?;
+        let documents_batch_transition = DocumentsBatchTransition::from_raw_object_with_contracts(
+            batch_transition_value,
+            data_contracts,
+        )
+        .with_js_error()?;
 
         Ok(documents_batch_transition.into())
     }
@@ -343,16 +345,6 @@ impl DocumentsBatchTransitionWasm {
     #[wasm_bindgen(js_name=isIdentityStateTransition)]
     pub fn is_identity_state_transition(&self) -> bool {
         self.0.is_identity_state_transition()
-    }
-
-    #[wasm_bindgen(js_name=setExecutionContext)]
-    pub fn set_execution_context(&mut self, context: StateTransitionExecutionContextWasm) {
-        self.0.set_execution_context(context.into())
-    }
-
-    #[wasm_bindgen(js_name=getExecutionContext)]
-    pub fn get_execution_context(&mut self) -> StateTransitionExecutionContextWasm {
-        self.0.get_execution_context().clone().into()
     }
 
     #[wasm_bindgen(js_name=toBuffer)]

@@ -75,6 +75,7 @@ impl DataContractFactory {
 
         let config = config.unwrap_or_default();
         let document_types = data_contract::get_document_types_from_value(
+            data_contract_id,
             &documents,
             &definition_references,
             config.documents_keep_history_contract_default,
@@ -186,7 +187,6 @@ impl DataContractFactory {
             entropy,
             signature_public_key_id: 0,
             signature: Default::default(),
-            execution_context: Default::default(),
         })
     }
 

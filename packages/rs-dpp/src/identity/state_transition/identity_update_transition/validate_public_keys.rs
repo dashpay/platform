@@ -2,6 +2,7 @@ use anyhow::anyhow;
 use lazy_static::lazy_static;
 use platform_value::Value;
 use serde_json::Value as JsonValue;
+use std::convert::TryInto;
 
 use crate::{
     identity::validation::{duplicated_key_ids, duplicated_keys, TPublicKeysValidator},
@@ -15,6 +16,7 @@ lazy_static! {
     pub static ref IDENTITY_JSON_SCHEMA: JsonValue =
         serde_json::from_str(include_str!("./../../../schema/identity/identity.json"))
             .expect("Identity Schema file should exist");
+    pub static ref IDENTITY_PLATFORM_VALUE_SCHEMA: Value = IDENTITY_JSON_SCHEMA.clone().into();
 }
 
 pub struct IdentityUpdatePublicKeysValidator {}

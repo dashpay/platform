@@ -1,6 +1,7 @@
 use crate::state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper};
 use crate::utils::WithJsError;
 use crate::validation::ValidationResultWasm;
+use crate::StateTransitionExecutionContextWasm;
 use dpp::identity::state_transition::asset_lock_proof::{
     AssetLockPublicKeyHashFetcher, AssetLockTransactionOutputFetcher,
 };
@@ -46,13 +47,18 @@ impl StateTransitionKeySignatureValidatorWasm {
     pub async fn validate(
         &self,
         state_transition: JsValue,
+        execution_context: StateTransitionExecutionContextWasm,
     ) -> Result<ValidationResultWasm, JsValue> {
         let state_transition =
             super::super::conversion::create_state_transition_from_wasm_instance(
                 &state_transition,
             )?;
 
-        let validation_result = self.0.validate(&state_transition).await.with_js_error()?;
+        let validation_result = self
+            .0
+            .validate(&state_transition, &execution_context.into())
+            .await
+            .with_js_error()?;
         Ok(validation_result.map(|_| JsValue::undefined()).into())
     }
 }

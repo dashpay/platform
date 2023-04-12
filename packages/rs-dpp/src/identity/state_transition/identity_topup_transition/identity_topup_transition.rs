@@ -1,3 +1,4 @@
+use bincode::{Decode, Encode};
 use std::convert::{TryFrom, TryInto};
 
 use platform_value::{BinaryData, Value};
@@ -5,14 +6,17 @@ use platform_value::{BinaryData, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
+use crate::identity::signer::Signer;
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
+use crate::identity::Identity;
+use crate::identity::KeyType::ECDSA_HASH160;
 use crate::prelude::Identifier;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::state_transition::{
     StateTransition, StateTransitionConvert, StateTransitionLike, StateTransitionType,
 };
 use crate::version::LATEST_VERSION;
-use crate::{NonConsensusError, ProtocolError};
+use crate::{BlsModule, NonConsensusError, ProtocolError};
 
 mod property_names {
     pub const ASSET_LOCK_PROOF: &str = "assetLockProof";
@@ -22,19 +26,17 @@ mod property_names {
     pub const IDENTITY_ID: &str = "identityId";
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityTopUpTransition {
+    #[serde(rename = "type")]
+    pub transition_type: StateTransitionType,
     // Own ST fields
     pub asset_lock_proof: AssetLockProof,
     pub identity_id: Identifier,
     // Generic identity ST fields
     pub protocol_version: u32,
-    #[serde(rename = "type")]
-    pub transition_type: StateTransitionType,
     pub signature: BinaryData,
-    #[serde(skip)]
-    pub execution_context: StateTransitionExecutionContext,
 }
 
 impl Default for IdentityTopUpTransition {
@@ -45,19 +47,34 @@ impl Default for IdentityTopUpTransition {
             identity_id: Default::default(),
             protocol_version: Default::default(),
             signature: Default::default(),
-            execution_context: Default::default(),
         }
-    }
-}
-
-impl From<IdentityTopUpTransition> for StateTransition {
-    fn from(d: IdentityTopUpTransition) -> Self {
-        Self::IdentityTopUp(d)
     }
 }
 
 /// Main state transition functionality implementation
 impl IdentityTopUpTransition {
+    pub fn try_from_identity(
+        identity: Identity,
+        asset_lock_proof: AssetLockProof,
+        asset_lock_proof_private_key: &[u8],
+        bls: &impl BlsModule,
+    ) -> Result<Self, ProtocolError> {
+        let mut identity_top_up_transition = IdentityTopUpTransition {
+            transition_type: StateTransitionType::IdentityTopUp,
+            asset_lock_proof,
+            identity_id: identity.id,
+            protocol_version: identity.protocol_version,
+            signature: Default::default(),
+        };
+
+        identity_top_up_transition.sign_by_private_key(
+            asset_lock_proof_private_key,
+            ECDSA_HASH160,
+            bls,
+        )?;
+
+        Ok(identity_top_up_transition)
+    }
     pub fn new(raw_state_transition: Value) -> Result<Self, ProtocolError> {
         Self::from_raw_object(raw_state_transition)
     }
@@ -88,7 +105,6 @@ impl IdentityTopUpTransition {
             identity_id,
             asset_lock_proof,
             transition_type: StateTransitionType::IdentityTopUp,
-            execution_context: Default::default(),
         })
     }
 
@@ -197,17 +213,5 @@ impl StateTransitionLike for IdentityTopUpTransition {
     /// Returns ids of created identities
     fn get_modified_data_ids(&self) -> Vec<Identifier> {
         vec![*self.get_identity_id()]
-    }
-
-    fn get_execution_context(&self) -> &StateTransitionExecutionContext {
-        &self.execution_context
-    }
-
-    fn get_execution_context_mut(&mut self) -> &mut StateTransitionExecutionContext {
-        &mut self.execution_context
-    }
-
-    fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
-        self.execution_context = execution_context
     }
 }

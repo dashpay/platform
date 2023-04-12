@@ -1,4 +1,5 @@
 use crate::abci::server::AbciApplication;
+use crate::abci::AbciError;
 use crate::error::Error;
 use crate::rpc::core::CoreRPCLike;
 use dpp::state_transition::StateTransition;
@@ -8,6 +9,7 @@ use tenderdash_abci::proto::abci::{
     CommitInfo, RequestFinalizeBlock, RequestPrepareProposal, ResponsePrepareProposal,
 };
 use tenderdash_abci::proto::google::protobuf::Timestamp;
+use tenderdash_abci::proto::types::{Block, Header};
 use tenderdash_abci::Application;
 
 impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
@@ -19,6 +21,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         proposed_version: ProtocolVersion,
         total_hpmns: u32,
         block_info: BlockInfo,
+        expect_validation_errors: bool,
         state_transitions: Vec<StateTransition>,
     ) -> Result<(), Error> {
         let serialized_state_transitions = state_transitions
@@ -45,7 +48,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             }),
             next_validators_hash: vec![],
             round: 0,
-            core_chain_locked_height: 0,
+            core_chain_locked_height: core_height,
             proposer_pro_tx_hash: proposer_pro_tx_hash.to_vec(),
             proposed_app_version: proposed_version as u64,
             version: None,
@@ -69,18 +72,58 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             validator_set_update,
         } = response_prepare_proposal;
 
+        if expect_validation_errors == false {
+            if tx_results.len() != tx_records.len() {
+                return Err(Error::Abci(AbciError::GenericWithCode(0)));
+            }
+            tx_results.into_iter().try_for_each(|tx_result| {
+                if tx_result.code > 0 {
+                    Err(Error::Abci(AbciError::GenericWithCode(tx_result.code)))
+                } else {
+                    Ok(())
+                }
+            })?;
+        }
+
         let request_finalize_block = RequestFinalizeBlock {
             commit: Some(CommitInfo {
                 round: 0,
-                quorum_hash: vec![],
+                quorum_hash: quorum_hash.to_vec(),
                 block_signature: vec![],
                 threshold_vote_extensions: vec![],
             }),
             misbehavior: vec![],
-            hash: app_hash,
+            hash: app_hash.clone(), //todo: change this to block hash
             height: height as i64,
             round: 0,
-            block: None,
+            block: Some(Block {
+                header: Some(Header {
+                    version: None,
+                    chain_id: "strategy_tests".to_string(),
+                    height: height as i64,
+                    time: Some(Timestamp {
+                        seconds: (time_ms / 1000) as i64,
+                        nanos: ((time_ms % 1000) * 1000) as i32,
+                    }),
+                    last_block_id: None,
+                    last_commit_hash: vec![],
+                    data_hash: vec![],
+                    validators_hash: vec![],
+                    next_validators_hash: vec![],
+                    consensus_hash: vec![],
+                    next_consensus_hash: vec![],
+                    app_hash,
+                    results_hash: vec![],
+                    evidence_hash: vec![],
+                    proposed_app_version: 0,
+                    proposer_pro_tx_hash: proposer_pro_tx_hash.to_vec(),
+                    core_chain_locked_height: core_height,
+                }),
+                data: None,
+                evidence: None,
+                last_commit: None,
+                core_chain_lock: None,
+            }),
             block_id: None,
         };
 

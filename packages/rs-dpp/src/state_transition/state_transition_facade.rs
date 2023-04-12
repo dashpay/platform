@@ -241,7 +241,10 @@ where
         }
 
         if options.signature {
-            result.merge(self.validate_signature(state_transition.clone()).await?);
+            result.merge(
+                self.validate_signature(state_transition.clone(), execution_context)
+                    .await?,
+            );
 
             if !result.is_valid() {
                 return Ok(result);
@@ -249,7 +252,10 @@ where
         }
 
         if options.fee {
-            result.merge(self.validate_fee(state_transition).await?);
+            result.merge(
+                self.validate_fee(state_transition, execution_context)
+                    .await?,
+            );
 
             if !result.is_valid() {
                 return Ok(result);
@@ -257,7 +263,10 @@ where
         }
 
         if options.state {
-            Ok(self.validate_state(state_transition).await?.map(Some))
+            Ok(self
+                .validate_state(state_transition, execution_context)
+                .await?
+                .map(Some))
         } else {
             Ok(result)
         }
@@ -276,6 +285,7 @@ where
     pub async fn validate_signature(
         &self,
         mut state_transition: StateTransition,
+        execution_context: &StateTransitionExecutionContext,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         // TODO: can we avoid duplicated code here?
         return match state_transition {
@@ -284,6 +294,7 @@ where
                     self.state_repository.clone(),
                     st,
                     &self.bls,
+                    execution_context,
                 )
                 .await
             }
@@ -292,6 +303,7 @@ where
                     self.state_repository.clone(),
                     st,
                     &self.bls,
+                    execution_context,
                 )
                 .await
             }
@@ -300,6 +312,7 @@ where
                     self.state_repository.clone(),
                     st,
                     &self.bls,
+                    execution_context,
                 )
                 .await
             }
@@ -308,6 +321,7 @@ where
                     self.state_repository.clone(),
                     st,
                     &self.bls,
+                    execution_context,
                 )
                 .await
             }
@@ -316,12 +330,13 @@ where
                     self.state_repository.clone(),
                     st,
                     &self.bls,
+                    execution_context,
                 )
                 .await
             }
             _ => {
                 self.key_signature_validator
-                    .validate(&state_transition)
+                    .validate(&state_transition, execution_context)
                     .await
             }
         };
@@ -330,15 +345,21 @@ where
     pub async fn validate_fee(
         &self,
         state_transition: &StateTransition,
+        execution_context: &StateTransitionExecutionContext,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        self.fee_validator.validate(state_transition).await
+        self.fee_validator
+            .validate(state_transition, execution_context)
+            .await
     }
 
     pub async fn validate_state(
         &self,
         state_transition: &StateTransition,
+        execution_context: &StateTransitionExecutionContext,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, ProtocolError> {
-        self.state_validator.validate(state_transition).await
+        self.state_validator
+            .validate(state_transition, execution_context)
+            .await
     }
 }
 

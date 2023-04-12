@@ -26,7 +26,7 @@ jsonschema = { git="https://github.com/fominok/jsonschema-rs", branch="feat-unev
 lazy_static = { version ="1.4"}
 log = { version="0.4"}
 num_enum = "0.5.7"
-bincode = "1.3.3"
+bincode = { version="2.0.0-rc.3", features=["serde"] }
 rand = { version = "0.8.4", features = ["small_rng"] }
 regex = { version="1.5"}
 serde = { version="1.0.152", features=["derive"]}

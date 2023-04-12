@@ -8,10 +8,10 @@ use crate::fee_pools::epochs::Epoch;
 use dpp::identity::state_transition::identity_update_transition::IdentityUpdateTransitionAction;
 
 impl DriveHighLevelOperationConverter for IdentityUpdateTransitionAction {
-    fn into_high_level_drive_operations(
+    fn into_high_level_drive_operations<'a>(
         self,
         _epoch: &Epoch,
-    ) -> Result<Vec<DriveOperation>, Error> {
+    ) -> Result<Vec<DriveOperation<'a>>, Error> {
         let IdentityUpdateTransitionAction {
             add_public_keys,
             disable_public_keys,

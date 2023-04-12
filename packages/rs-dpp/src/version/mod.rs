@@ -4,7 +4,9 @@ use lazy_static::lazy_static;
 
 pub use protocol_version_validator::ProtocolVersionValidator;
 
+mod protocol_version;
 mod protocol_version_validator;
+mod v0;
 
 pub const LATEST_VERSION: u32 = 1;
 

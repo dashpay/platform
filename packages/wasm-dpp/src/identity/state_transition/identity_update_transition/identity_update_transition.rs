@@ -18,7 +18,7 @@ use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 
 use crate::errors::from_dpp_err;
 use crate::utils::{generic_of_js_val, WithJsError};
-use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
+use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
 use dpp::identity::{KeyID, TimestampMillis};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{string_encoding, BinaryData, Value};
@@ -42,7 +42,7 @@ struct IdentityUpdateTransitionParams {
     protocol_version: u32,
     identity_id: Vec<u8>,
     revision: Revision,
-    add_public_keys: Option<Vec<IdentityPublicKeyWithWitness>>,
+    add_public_keys: Option<Vec<IdentityPublicKeyInCreationWithWitness>>,
     disable_public_keys: Option<Vec<KeyID>>,
     public_keys_disabled_at: Option<TimestampMillis>,
 }
@@ -101,7 +101,7 @@ impl IdentityUpdateTransitionWasm {
                         )?;
                     Ok(public_key.clone().into())
                 })
-                .collect::<Result<Vec<IdentityPublicKeyWithWitness>, JsValue>>()?;
+                .collect::<Result<Vec<IdentityPublicKeyInCreationWithWitness>, JsValue>>()?;
         }
 
         self.0.set_public_keys_to_add(keys_to_add);
@@ -413,16 +413,6 @@ impl IdentityUpdateTransitionWasm {
     #[wasm_bindgen(js_name=isIdentityStateTransition)]
     pub fn is_identity_state_transition(&self) -> bool {
         self.0.is_identity_state_transition()
-    }
-
-    #[wasm_bindgen(js_name=setExecutionContext)]
-    pub fn set_execution_context(&mut self, context: &StateTransitionExecutionContextWasm) {
-        self.0.set_execution_context(context.into())
-    }
-
-    #[wasm_bindgen(js_name=getExecutionContext)]
-    pub fn get_execution_context(&mut self) -> StateTransitionExecutionContextWasm {
-        self.0.get_execution_context().into()
     }
 
     #[wasm_bindgen(js_name=signByPrivateKey)]

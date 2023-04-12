@@ -6,8 +6,9 @@ use crate::{
     errors::NonConsensusError, identifier::Identifier, util::hash::hash, util::vec::vec_to_array,
     ProtocolError,
 };
+pub use bincode::{Decode, Encode};
 
-#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, Encode, Decode)]
 #[serde(rename_all = "camelCase")]
 pub struct ChainAssetLockProof {
     #[serde(rename = "type")]

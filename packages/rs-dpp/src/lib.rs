@@ -62,5 +62,7 @@ pub mod prelude {
     pub type Revision = u64;
 }
 
+pub use bincode;
+pub use bls_signatures;
 pub use jsonschema;
 pub use platform_value;
