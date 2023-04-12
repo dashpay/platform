@@ -5,7 +5,7 @@ use dashcore_rpc::dashcore_rpc_json::{
     ExtendedQuorumDetails, GetBestChainLockResult, MasternodeListDiff, ProTxHash, ProTxInfo,
     QuorumHash, QuorumInfoResult, QuorumListResult, QuorumType,
 };
-use dashcore_rpc::json::GetTransactionResult;
+use dashcore_rpc::json::{GetTransactionResult, MasternodeListDiffWithMasternodes};
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use mockall::{automock, predicate::*};
@@ -57,11 +57,11 @@ pub trait CoreRPCLike {
         include_secret_key_share: Option<bool>,
     ) -> Result<QuorumInfoResult, Error>;
 
-    /// Get the difference in masternode list
-    fn get_protx_diff(&self, base_block: u32, block: u32) -> Result<MasternodeListDiff, Error>;
+    /// Get the difference in masternode list, return masternodes as diff elements
+    fn get_protx_diff_with_masternodes(&self, base_block: u32, block: u32) -> Result<MasternodeListDiffWithMasternodes, Error>;
 
-    /// Get the detailed information about a deterministic masternode
-    fn get_protx_info(&self, protx_hash: &ProTxHash) -> Result<ProTxInfo, Error>;
+    // /// Get the detailed information about a deterministic masternode
+    // fn get_protx_info(&self, protx_hash: &ProTxHash) -> Result<ProTxInfo, Error>;
 }
 
 /// Default implementation of Dash Core RPC using DashCoreRPC client
@@ -130,11 +130,12 @@ impl CoreRPCLike for DefaultCoreRPC {
             .get_quorum_info(quorum_type, hash, include_secret_key_share)
     }
 
-    fn get_protx_diff(&self, base_block: u32, block: u32) -> Result<MasternodeListDiff, Error> {
-        self.inner.get_protx_diff(base_block, block)
+    fn get_protx_diff_with_masternodes(&self, base_block: u32, block: u32) -> Result<MasternodeListDiffWithMasternodes, Error> {
+        // method does not yet exist in core
+        todo!()
     }
 
-    fn get_protx_info(&self, protx_hash: &ProTxHash) -> Result<ProTxInfo, Error> {
-        self.inner.get_protx_info(protx_hash)
-    }
+    // fn get_protx_info(&self, protx_hash: &ProTxHash) -> Result<ProTxInfo, Error> {
+    //     self.inner.get_protx_info(protx_hash)
+    // }
 }
