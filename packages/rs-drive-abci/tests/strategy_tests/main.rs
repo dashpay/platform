@@ -2,7 +2,7 @@
 //
 // Copyright (c) 2021 Dash Core Group
 //
-// P op_type: (), frequency: () op_type: (), frequency: ()ermission is hereby granted, free of charge, to any
+// Permission is hereby granted, free of charge, to any
 // person obtaining a copy of this software and associated
 // documentation files (the "Software"), to deal in the
 // Software without restriction, including without
@@ -366,7 +366,7 @@ impl Strategy {
 
     // TODO: this belongs to `DocumentOp`, also randomization details are common for all operations
     // and could be moved out of here
-    fn document_state_transitions_for_block(
+    fn state_transitions_for_block(
         &self,
         platform: &Platform<MockCoreRPCLike>,
         block_info: &BlockInfo,
@@ -578,6 +578,11 @@ impl Strategy {
                             operations.push(document_batch_transition.into());
                         }
                     }
+                    OperationType::IdentityTopUp if !current_identities.is_empty() => {
+                        let identity_num = rng.gen_range(0..current_identities.len());
+                        let random_identity = current_identities.get(identity_num).unwrap();
+                        operations.push(create_identity_top_up_transition(rng, random_identity));
+                    }
                     _ => {}
                 }
             }
@@ -605,26 +610,9 @@ impl Strategy {
             state_transitions.append(&mut contract_state_transitions);
         }
 
-        let mut document_state_transitions: Vec<StateTransition> = self
-            .document_state_transitions_for_block(
-                platform,
-                block_info,
-                current_identities,
-                signer,
-                rng,
-            );
+        let mut document_state_transitions: Vec<StateTransition> =
+            self.state_transitions_for_block(platform, block_info, current_identities, signer, rng);
         state_transitions.append(&mut document_state_transitions);
-
-        state_transitions.extend(self.operations.iter().filter_map(|op| match op.op_type {
-            OperationType::IdentityTopUp
-                if op.frequency.check_hit(rng) && !identities.is_empty() =>
-            {
-                let identity_idx = (rng.next_u32() as usize) % identities.len();
-                let random_identity = &identities[identity_idx];
-                Some(create_identity_top_up_transition(rng, random_identity))
-            }
-            _ => None,
-        }));
 
         state_transitions
     }
@@ -1072,6 +1060,55 @@ mod tests {
                 })
             });
         run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
+    }
+
+    #[test]
+    fn run_chain_one_identity_in_solitude() {
+        let strategy = Strategy {
+            contracts: vec![],
+            operations: vec![],
+            identities_inserts: Frequency {
+                times_per_block_range: 1..2,
+                chance_per_block: None,
+            },
+            total_hpmns: 100,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+        };
+        let config = PlatformConfig {
+            verify_sum_trees: true,
+            quorum_size: 100,
+            validator_set_quorum_rotation_block_count: 25,
+            block_spacing_ms: 3000,
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
+
+        let balance = outcome
+            .abci_app
+            .platform
+            .drive
+            .fetch_identity_balance(outcome.identities.first().unwrap().id.to_buffer(), None)
+            .expect("expected to fetch balances")
+            .expect("expected to have an identity to get balance from");
+
+        assert_eq!(balance, 99876642200)
     }
 
     #[test]
@@ -1808,15 +1845,25 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
-        let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
 
-        assert_eq!(outcome.identities.len(), 100);
+        let max_initial_balance = 100000000000u64; // TODO: some centralized way for random test data (`arbitrary` maybe?)
+        let balances = outcome
+            .abci_app
+            .platform
+            .drive
+            .fetch_identities_balances(
+                &outcome
+                    .identities
+                    .into_iter()
+                    .map(|identity| identity.id.to_buffer())
+                    .collect(),
+                None,
+            )
+            .expect("expected to fetch balances");
 
-        let max_initial_balance = u64::MAX >> 20; // TODO: some centralized way for random test data (`arbitrary` maybe?)
-        assert!(outcome
-            .identities
-            .iter()
-            .map(|i| i.balance)
-            .any(|balance| balance > max_initial_balance));
+        assert!(balances
+            .into_iter()
+            .any(|(_, balance)| balance > max_initial_balance));
     }
 }
