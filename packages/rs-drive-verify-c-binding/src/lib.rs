@@ -216,6 +216,7 @@ pub unsafe extern "C" fn verify_identity_ids_by_public_key_hashes(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use drive::drive::verify::RootHash;
     use drive::drive::Drive;
     use std::collections::BTreeMap;
 

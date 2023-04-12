@@ -15,10 +15,11 @@ use crate::{
 
 use super::{DataTrigger, DataTriggerKind};
 
-pub const REWARD_SHARE_DOCUMENT_TYPE: &'static str = "rewardShare";
-pub const CONTACT_REQUEST_DOCUMENT_TYPE: &'static str = "contactRequest";
-pub const DOMAIN_DOCUMENT_TYPE: &'static str = "domain";
-pub const PREORDER_DOCUMENT_TYPE: &'static str = "preorder";
+// TODO: Move to system contract crates
+pub const REWARD_SHARE_DOCUMENT_TYPE: &str = "rewardShare";
+pub const CONTACT_REQUEST_DOCUMENT_TYPE: &str = "contactRequest";
+pub const DOMAIN_DOCUMENT_TYPE: &str = "domain";
+pub const PREORDER_DOCUMENT_TYPE: &str = "preorder";
 
 /// returns Date Triggers filtered out by dataContractId, documentType, transactionAction
 pub fn get_data_triggers<'a>(
