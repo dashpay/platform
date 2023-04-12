@@ -347,10 +347,12 @@ impl StateTransitionConvert for IdentityUpdateTransition {
             add_public_keys.push(key.to_raw_object(skip_signature)?);
         }
 
-        value.insert(
-            property_names::ADD_PUBLIC_KEYS.to_owned(),
-            Value::Array(add_public_keys),
-        )?;
+        if !add_public_keys.is_empty() {
+            value.insert_at_end(
+                property_names::ADD_PUBLIC_KEYS.to_owned(),
+                Value::Array(add_public_keys),
+            )?;
+        }
 
         Ok(value)
     }
@@ -388,6 +390,11 @@ impl StateTransitionConvert for IdentityUpdateTransition {
         value.remove_optional_value_if_null(property_names::PUBLIC_KEYS_DISABLED_AT)?;
 
         Ok(value)
+    }
+
+    // Override to_canonical_cleaned_object to manage add_public_keys individually
+    fn to_canonical_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
+        self.to_cleaned_object(skip_signature)
     }
 }
 

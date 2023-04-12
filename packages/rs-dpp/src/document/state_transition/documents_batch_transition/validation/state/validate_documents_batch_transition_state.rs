@@ -152,7 +152,7 @@ pub async fn validate_document_transitions(
 
     // Data Contract must exist
     let data_contract = state_repository
-        .fetch_data_contract(data_contract_id, None)
+        .fetch_data_contract(data_contract_id, Some(&tmp_execution_context))
         .await?
         .map(TryInto::try_into)
         .transpose()

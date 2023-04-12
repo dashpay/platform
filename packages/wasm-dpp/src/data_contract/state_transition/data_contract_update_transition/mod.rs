@@ -156,11 +156,29 @@ impl DataContractUpdateTransitionWasm {
     pub fn to_object(&self, skip_signature: Option<bool>) -> Result<JsValue, JsValue> {
         let serde_object = self
             .0
-            .to_object(skip_signature.unwrap_or(false))
+            .to_cleaned_object(skip_signature.unwrap_or(false))
             .map_err(from_protocol_error)?;
         serde_object
             .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
             .map_err(|e| e.into())
+    }
+
+    #[wasm_bindgen]
+    pub fn sign(
+        &mut self,
+        identity_public_key: &IdentityPublicKeyWasm,
+        private_key: Vec<u8>,
+        bls: JsBlsAdapter,
+    ) -> Result<(), JsValue> {
+        let bls_adapter = BlsAdapter(bls);
+
+        self.0
+            .sign(
+                &identity_public_key.to_owned().into(),
+                &private_key,
+                &bls_adapter,
+            )
+            .with_js_error()
     }
 
     #[wasm_bindgen(js_name=verifySignature)]

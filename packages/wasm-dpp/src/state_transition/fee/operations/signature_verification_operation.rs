@@ -74,6 +74,21 @@ impl SignatureVerificationOperationWasm {
             None
         }
     }
+
+    #[wasm_bindgen(js_name = toJSON)]
+    pub fn to_json(&self) -> Result<JsValue, JsValue> {
+        let json = js_sys::Object::new();
+
+        js_sys::Reflect::set(&json, &"type".into(), &"signatureVerification".into())?;
+
+        js_sys::Reflect::set(
+            &json,
+            &"signatureType".into(),
+            &JsValue::from(self.0.signature_type as u8),
+        )?;
+
+        Ok(json.into())
+    }
 }
 
 impl Inner for SignatureVerificationOperationWasm {
