@@ -78,8 +78,8 @@ export async function update(
   const result = await dpp.stateTransition.validateBasic(identityUpdateTransition);
 
   if (!result.isValid()) {
-    // TODO(wasm): pretty print errors. JSON.stringify is not enough
-    throw new Error(`StateTransition is invalid - ${JSON.stringify(result.getErrors())}`);
+    const messages = result.getErrors().map((error) => error.message);
+    throw new Error(`StateTransition is invalid - ${JSON.stringify(messages)}`);
   }
   this.logger.silly('[Identity#update] Validated IdentityUpdateTransition');
 

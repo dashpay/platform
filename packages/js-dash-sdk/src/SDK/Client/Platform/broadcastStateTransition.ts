@@ -30,8 +30,6 @@ export default async function broadcastStateTransition(
     if (!result.isValid()) {
       const consensusError = result.getFirstError();
 
-      // TODO(wasm): make sure code, message and error are present
-      //  and that StateTransitionBroadcastError handles consensusError correctly
       throw new StateTransitionBroadcastError(
         consensusError.getCode(),
         consensusError.message,
@@ -59,8 +57,6 @@ export default async function broadcastStateTransition(
         cause = cause.getConsensusError();
       }
 
-      // TODO(wasm): make sure code, message and error are present
-      //  and that StateTransitionBroadcastError handles consensusError correctly
       throw new StateTransitionBroadcastError(
         cause.getCode(),
         cause.message,

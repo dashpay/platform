@@ -41,7 +41,6 @@ export async function get(this: Platform, id: Identifier | string): Promise<any>
     });
   }
 
-  // TODO(wasm): handle optional metadata in Identity Wasm side
   identity.setMetadata(metadata);
 
   return identity;
