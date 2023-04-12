@@ -99,18 +99,18 @@ class FeeResult {
 
     const feeRefundsWithBuffers = feeRefunds.map((refund) => {
       const { identifier, creditsPerEpoch } = refund.toObject();
-      const refundsMap = new Map();
 
-      Object.entries(creditsPerEpoch).forEach(([key, value]) => {
+      const creditsPerEpochWithBuffers = {};
+      creditsPerEpoch.forEach((value, key) => {
         const refundBuffer = Buffer.allocUnsafe(8);
         refundBuffer.writeBigInt64BE(value);
 
-        refundsMap.set(key, refundBuffer);
+        creditsPerEpochWithBuffers[key] = refundBuffer;
       });
 
       return {
         identifier,
-        creditsPerEpoch: refundsMap,
+        creditsPerEpoch: creditsPerEpochWithBuffers,
       };
     });
 
