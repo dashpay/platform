@@ -228,7 +228,7 @@ impl FeeRefunds {
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
         let config = config::standard().with_big_endian().with_limit::<15000>();
         let refund = bincode::decode_from_slice(bytes, config)
-            .map_err(|e| {
+            .map_err(|_e| {
                 Error::Fee(FeeError::CorruptedRemovedBytesFromIdentitiesSerialization(
                     "unable to deserialize",
                 ))

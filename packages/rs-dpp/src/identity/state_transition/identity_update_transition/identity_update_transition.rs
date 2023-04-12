@@ -5,12 +5,11 @@ use serde_json::Value as JsonValue;
 use std::convert::{TryFrom, TryInto};
 
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
-use crate::prelude::Identity;
+
 use crate::{
     identity::{KeyID, SecurityLevel},
     prelude::{Identifier, Revision, TimestampMillis},
     state_transition::{
-        state_transition_execution_context::StateTransitionExecutionContext,
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionType,
     },

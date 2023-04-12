@@ -11,7 +11,6 @@ use crate::{
     identity::{core_script::CoreScript, KeyID},
     prelude::{Identifier, Revision},
     state_transition::{
-        state_transition_execution_context::StateTransitionExecutionContext,
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionType,
     },

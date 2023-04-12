@@ -34,19 +34,19 @@
 //!
 
 use crate::contract::Contract;
-use crate::drive::query::QueryDocumentsOutcome;
+
 use crate::drive::Drive;
-use crate::error::drive::DriveError;
+
 use crate::error::Error;
 use crate::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
-use dpp::data_contract::document_type::{DocumentType, Index};
+use dpp::data_contract::document_type::{DocumentType};
 use dpp::document::document_transition::{
-    DocumentCreateTransitionAction, DocumentReplaceTransitionAction, DocumentTransitionExt,
+    DocumentCreateTransitionAction, DocumentReplaceTransitionAction,
 };
 use dpp::document::Document;
 use dpp::identifier::Identifier;
 use dpp::platform_value::{platform_value, Value};
-use dpp::prelude::{DocumentTransition, TimestampMillis};
+use dpp::prelude::{TimestampMillis};
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::StateError;
 use grovedb::TransactionArg;

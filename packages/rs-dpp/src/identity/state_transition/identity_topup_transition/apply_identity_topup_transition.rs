@@ -7,7 +7,7 @@ use crate::identity::state_transition::asset_lock_proof::AssetLockTransactionOut
 use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::state_transition::StateTransitionLike;
+
 
 pub struct ApplyIdentityTopUpTransition<SR>
 where

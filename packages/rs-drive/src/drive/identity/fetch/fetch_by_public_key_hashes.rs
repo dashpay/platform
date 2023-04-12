@@ -7,11 +7,11 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::query::QueryResultEncoding;
-use dpp::identity::{Identity, KeyID};
+use dpp::identity::{Identity};
 use dpp::platform_value::Value;
 use dpp::Convertible;
 use grovedb::query_result_type::QueryResultType;
-use grovedb::query_result_type::QueryResultType::QueryElementResultType;
+
 use grovedb::Element::Item;
 use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
 use std::collections::BTreeMap;

@@ -3,8 +3,8 @@ use std::convert::{TryFrom, TryInto};
 use dashcore::consensus::Decodable;
 use dashcore::hashes::hex::ToHex;
 use dashcore::{OutPoint, Transaction, TxOut};
-use serde::de::Error as DeError;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+use serde::{Deserialize, Serialize};
 
 pub use asset_lock_proof_validator::*;
 pub use asset_lock_public_key_hash_fetcher::*;
@@ -13,7 +13,7 @@ pub use asset_lock_transaction_validator::*;
 pub use bincode::{Decode, Encode};
 pub use chain::*;
 pub use instant::*;
-use platform_value::{from_value, Value};
+use platform_value::{Value};
 
 use crate::identity::errors::{AssetLockOutputNotFoundError, AssetLockTransactionIsNotFoundError};
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;

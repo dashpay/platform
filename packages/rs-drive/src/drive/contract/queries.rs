@@ -1,4 +1,4 @@
-use crate::drive::contract::paths::{contract_root_path, contract_storage_path_vec};
+use crate::drive::contract::paths::{contract_storage_path_vec};
 use crate::drive::Drive;
 use grovedb::PathQuery;
 

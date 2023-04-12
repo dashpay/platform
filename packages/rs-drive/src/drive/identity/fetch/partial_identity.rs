@@ -9,9 +9,9 @@ use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::result::FeeResult;
 use crate::fee_pools::epochs::Epoch;
 use dpp::identifier::Identifier;
-use dpp::identity::{IdentityPublicKey, PartialIdentity};
+use dpp::identity::{PartialIdentity};
 use grovedb::TransactionArg;
-use itertools::Itertools;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 impl Drive {

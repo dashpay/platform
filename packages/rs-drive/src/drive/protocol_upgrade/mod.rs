@@ -1,6 +1,6 @@
 use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::grove_operations::BatchDeleteApplyType::StatefulBatchDelete;
-use crate::drive::grove_operations::{BatchDeleteApplyType, BatchInsertApplyType};
+use crate::drive::grove_operations::{BatchInsertApplyType};
 use crate::drive::object_size_info::PathKeyElementInfo;
 use std::collections::BTreeMap;
 
@@ -287,7 +287,7 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<bool, Error> {
         let mut cache = self.cache.write().unwrap();
-        let mut maybe_version_counter = &mut cache.protocol_versions_counter;
+        let maybe_version_counter = &mut cache.protocol_versions_counter;
 
         let version_counter = if let Some(version_counter) = maybe_version_counter {
             version_counter
@@ -377,7 +377,7 @@ impl Drive {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<bool, Error> {
         let mut cache = self.cache.write().unwrap();
-        let mut maybe_version_counter = &mut cache.protocol_versions_counter;
+        let maybe_version_counter = &mut cache.protocol_versions_counter;
 
         let version_counter = if let Some(version_counter) = maybe_version_counter {
             version_counter
@@ -469,7 +469,7 @@ impl Drive {
         I: IntoIterator<Item = [u8; 32]>,
     {
         let mut cache = self.cache.write().unwrap();
-        let mut maybe_version_counter = &mut cache.protocol_versions_counter;
+        let maybe_version_counter = &mut cache.protocol_versions_counter;
 
         let version_counter = if let Some(version_counter) = maybe_version_counter {
             version_counter

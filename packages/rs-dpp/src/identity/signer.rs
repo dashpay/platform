@@ -1,8 +1,8 @@
-use crate::identity::KeyType;
+
 use crate::prelude::IdentityPublicKey;
 use crate::ProtocolError;
-use platform_value::{BinaryData, Value};
-use std::collections::HashMap;
+use platform_value::{BinaryData};
+
 
 pub trait Signer {
     /// the public key bytes are only used to look up the private key

@@ -9,7 +9,7 @@ use serde_json::Value as JsonValue;
 use crate::consensus::ConsensusError;
 use crate::errors::consensus::signature::SignatureError;
 use crate::identity::signer::Signer;
-use crate::identity::IdentityPublicKey;
+
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, StateTransitionIsNotSignedError,
 };
@@ -21,7 +21,7 @@ use crate::{
 };
 
 use super::{
-    state_transition_execution_context::StateTransitionExecutionContext, StateTransition,
+    StateTransition,
     StateTransitionType,
 };
 
