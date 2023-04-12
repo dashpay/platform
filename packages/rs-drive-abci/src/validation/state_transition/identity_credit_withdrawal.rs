@@ -107,7 +107,7 @@ impl StateTransitionValidation for IdentityCreditWithdrawalTransition {
         };
 
         // Check revision
-        if revision != (self.revision - 1) {
+        if revision + 1 != self.revision {
             return Ok(ConsensusValidationResult::new_with_error(
                 StateError::InvalidIdentityRevisionError {
                     identity_id: self.identity_id,
