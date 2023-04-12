@@ -5,7 +5,7 @@ const Long = require('long');
 // TODO: should we take it from other place?
 const identityUpdateTransitionSchema = require('@dashevo/dpp/schema/identity/stateTransition/identityUpdate.json');
 
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 const getInstantAssetLockProofFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
 
 const PrivateKey = require('@dashevo/dashcore-lib/lib/privatekey');
@@ -119,13 +119,10 @@ describe('feesPrediction', () => {
   let Identity;
   let BlsSignatures;
   let expectPredictedFeeHigherOrEqualThanActual;
-  let KeyPurpose;
-  let KeyType;
-  let KeySecurityLevel;
 
   before(function before() {
     ({
-      IdentityPublicKey, Identity, BlsSignatures, KeyPurpose, KeyType, KeySecurityLevel,
+      IdentityPublicKey, Identity, BlsSignatures,
     } = this.dppWasm);
 
     expectPredictedFeeHigherOrEqualThanActual = expectPredictedFeeHigherOrEqualThanActualFactory(
@@ -176,7 +173,7 @@ describe('feesPrediction', () => {
       instantAssetLockProof = getInstantAssetLockProofFixture(assetLockPrivateKey);
 
       identity = getBiggestPossibleIdentity(this.dppWasm);
-      identity.id = instantAssetLockProof.createIdentifier();
+      // identity.id = instantAssetLockProof.createIdentifier();
       identity.setAssetLockProof(instantAssetLockProof);
 
       // Generate real keys
@@ -212,7 +209,7 @@ describe('feesPrediction', () => {
         for (let i = 0; i < publicKeys.length; i++) {
           await stateTransition.signByPrivateKey(
             privateKeys[i],
-            KeyType.BLS12_381,
+            IdentityPublicKey.TYPES.BLS12_381,
           );
 
           publicKeys[i].setSignature(stateTransition.getSignature());
@@ -223,7 +220,7 @@ describe('feesPrediction', () => {
         // Sign state transition
         await stateTransition.signByPrivateKey(
           assetLockPrivateKey,
-          KeyType.ECDSA_SECP256K1,
+          IdentityPublicKey.TYPES.ECDSA_SECP256K1,
         );
 
         await expectPredictedFeeHigherOrEqualThanActual(dpp, groveDBStore, stateTransition);
@@ -241,7 +238,7 @@ describe('feesPrediction', () => {
 
         await stateTransition.signByPrivateKey(
           assetLockPrivateKey,
-          KeyType.ECDSA_SECP256K1,
+          IdentityPublicKey.TYPES.ECDSA_SECP256K1,
         );
 
         await expectPredictedFeeHigherOrEqualThanActual(dpp, groveDBStore, stateTransition);
@@ -269,11 +266,11 @@ describe('feesPrediction', () => {
           newIdentityPublicKeys.push(
             new IdentityPublicKey({
               id: i + identity.getPublicKeys().length,
-              type: KeyType.BLS12_381,
+              type: IdentityPublicKey.TYPES.BLS12_381,
               data: publicKeyBuffer,
-              purpose: KeyPurpose.AUTHENTICATION,
+              purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
               securityLevel: i === 0
-                ? KeySecurityLevel.MASTER : KeySecurityLevel.HIGH,
+                ? IdentityPublicKey.SECURITY_LEVELS.MASTER : IdentityPublicKey.SECURITY_LEVELS.HIGH,
               readOnly: false,
             }),
           );
@@ -336,23 +333,23 @@ describe('feesPrediction', () => {
 
       identity = new Identity({
         protocolVersion: 1,
-        id: generateRandomIdentifier().toBuffer(),
+        id: (await generateRandomIdentifier()).toBuffer(),
         publicKeys: [
           {
             id: 0,
-            type: KeyType.BLS12_381,
-            purpose: KeyPurpose.AUTHENTICATION,
-            securityLevel: KeySecurityLevel.MASTER,
-            readOnly: false,
-            data: Buffer.alloc(48).fill(255),
+            type: IdentityPublicKey.TYPES.BLS12_381,
+            data: Buffer.from('01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694', 'hex'),
+            purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+            securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+            readOnly: true,
           },
           {
             id: 1,
-            type: KeyType.ECDSA_SECP256K1,
-            purpose: KeyPurpose.AUTHENTICATION,
-            securityLevel: KeySecurityLevel.HIGH,
-            readOnly: false,
-            data: privateKey.toPublicKey().toBuffer(),
+            type: IdentityPublicKey.TYPES.BLS12_381,
+            data: Buffer.from('01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694', 'hex'),
+            purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+            securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
+            readOnly: true,
           },
         ],
         balance: Math.floor(9223372036854775807 / 10000),
@@ -383,7 +380,7 @@ describe('feesPrediction', () => {
 
     describe('DataContractUpdate', () => {
       it('should have predicted fee more than actual fee', async () => {
-        await stateRepository.createDataContract(dataContract);
+        await stateRepository.storeDataContract(dataContract);
 
         dataContract.incrementVersion();
 
@@ -442,23 +439,23 @@ describe('feesPrediction', () => {
 
       identity = new Identity({
         protocolVersion: 1,
-        id: generateRandomIdentifier().toBuffer(),
+        id: (await generateRandomIdentifier()).toBuffer(),
         publicKeys: [
           {
             id: 0,
-            type: KeyType.BLS12_381,
-            purpose: KeyPurpose.AUTHENTICATION,
-            securityLevel: KeySecurityLevel.MASTER,
-            readOnly: false,
-            data: Buffer.alloc(48).fill(255),
+            type: IdentityPublicKey.TYPES.BLS12_381,
+            data: Buffer.from('01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694', 'hex'),
+            purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+            securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+            readOnly: true,
           },
           {
             id: 1,
-            type: KeyType.ECDSA_SECP256K1,
-            purpose: KeyPurpose.AUTHENTICATION,
-            securityLevel: KeySecurityLevel.HIGH,
-            readOnly: false,
-            data: privateKey.toPublicKey().toBuffer(),
+            type: IdentityPublicKey.TYPES.BLS12_381,
+            data: Buffer.from('01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694', 'hex'),
+            purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+            securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
+            readOnly: true,
           },
         ],
         balance: Math.floor(9223372036854775807 / 10000),
@@ -473,7 +470,7 @@ describe('feesPrediction', () => {
 
       dataContract = dpp.dataContract.create(identity.getId(), documentTypes);
 
-      await stateRepository.createDataContract(dataContract);
+      await stateRepository.storeDataContract(dataContract);
 
       // Create documents
 
