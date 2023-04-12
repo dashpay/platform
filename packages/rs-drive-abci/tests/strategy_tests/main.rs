@@ -68,6 +68,9 @@ use drive::drive::block_info::BlockInfo;
 use drive::drive::defaults::PROTOCOL_VERSION;
 use drive::drive::flags::StorageFlags::SingleEpoch;
 
+use crate::FinalizeBlockOperation::IdentityAddKeys;
+use dpp::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
+use dpp::prelude::Identifier;
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 use drive::drive::Drive;
 use drive::fee::credits::Credits;
@@ -176,9 +179,22 @@ pub struct Operation {
 }
 
 #[derive(Clone, Debug)]
+pub enum IdentityUpdateOp {
+    IdentityUpdateAddKeys(u16),
+    IdentityUpdateDisableKey(u16),
+}
+
+#[derive(Clone, Debug)]
 pub enum OperationType {
     Document(DocumentOp),
     IdentityTopUp,
+    IdentityUpdate(IdentityUpdateOp),
+    IdentityWithdrawal,
+}
+
+#[derive(Clone, Debug)]
+pub enum FinalizeBlockOperation {
+    IdentityAddKeys(Identifier, Vec<IdentityPublicKey>),
 }
 
 /// This simple signer is only to be used in tests
@@ -186,6 +202,8 @@ pub enum OperationType {
 pub struct SimpleSigner {
     /// Private keys is a map from the public key to the Private key bytes
     private_keys: HashMap<IdentityPublicKey, Vec<u8>>,
+    /// Private keys to be added at the end of a block
+    private_keys_in_creation: HashMap<IdentityPublicKey, Vec<u8>>,
 }
 
 impl SimpleSigner {
@@ -196,6 +214,11 @@ impl SimpleSigner {
     fn add_keys<I: IntoIterator<Item = (IdentityPublicKey, Vec<u8>)>>(&mut self, keys: I) {
         self.private_keys.extend(keys)
     }
+
+    fn commit_block_keys(&mut self) {
+        self.private_keys
+            .extend(self.private_keys_in_creation.drain())
+    }
 }
 
 impl Signer for SimpleSigner {
@@ -204,11 +227,13 @@ impl Signer for SimpleSigner {
         identity_public_key: &IdentityPublicKey,
         data: &[u8],
     ) -> Result<BinaryData, ProtocolError> {
-        let private_key = self.private_keys.get(identity_public_key).ok_or(
-            ProtocolError::InvalidSignaturePublicKeyError(InvalidSignaturePublicKeyError::new(
-                identity_public_key.data.to_vec(),
-            )),
-        )?;
+        let private_key = self
+            .private_keys
+            .get(identity_public_key)
+            .or_else(|| self.private_keys_in_creation.get(identity_public_key))
+            .ok_or(ProtocolError::InvalidSignaturePublicKeyError(
+                InvalidSignaturePublicKeyError::new(identity_public_key.data.to_vec()),
+            ))?;
         match identity_public_key.key_type {
             KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
                 let signature = signer::sign(data, private_key)?;
@@ -370,8 +395,9 @@ impl Strategy {
         current_identities: &Vec<Identity>,
         signer: &mut SimpleSigner,
         rng: &mut StdRng,
-    ) -> Vec<StateTransition> {
+    ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
         let mut operations = vec![];
+        let mut finalize_block_operations = vec![];
         for op in &self.operations {
             if op.frequency.check_hit(rng) {
                 let count = rng.gen_range(op.frequency.times_per_block_range.clone());
@@ -576,15 +602,39 @@ impl Strategy {
                         }
                     }
                     OperationType::IdentityTopUp if !current_identities.is_empty() => {
+                        for _i in 0..count {
+                            let identity_num = rng.gen_range(0..current_identities.len());
+                            let random_identity = current_identities.get(identity_num).unwrap();
+                            operations
+                                .push(create_identity_top_up_transition(rng, random_identity));
+                        }
+                    }
+                    OperationType::IdentityUpdate(update_op) if !current_identities.is_empty() => {
                         let identity_num = rng.gen_range(0..current_identities.len());
                         let random_identity = current_identities.get(identity_num).unwrap();
-                        operations.push(create_identity_top_up_transition(rng, random_identity));
+                        match update_op {
+                            IdentityUpdateOp::IdentityUpdateAddKeys(_) => {
+                                let (state_transition, keys_to_add_at_end_block) =
+                                    create_identity_update_transition_add_keys(
+                                        random_identity,
+                                        count,
+                                        signer,
+                                        rng,
+                                    );
+                                operations.push(state_transition);
+                                finalize_block_operations.push(IdentityAddKeys(
+                                    keys_to_add_at_end_block.0,
+                                    keys_to_add_at_end_block.1,
+                                ))
+                            }
+                            IdentityUpdateOp::IdentityUpdateDisableKey(_) => {}
+                        }
                     }
                     _ => {}
                 }
             }
         }
-        operations
+        (operations, finalize_block_operations)
     }
 
     fn state_transitions_for_block_with_new_identities(
@@ -594,7 +644,8 @@ impl Strategy {
         current_identities: &mut Vec<Identity>,
         signer: &mut SimpleSigner,
         rng: &mut StdRng,
-    ) -> Vec<StateTransition> {
+    ) -> (Vec<StateTransition>, Vec<FinalizeBlockOperation>) {
+        let mut finalize_block_operations = vec![];
         let identity_state_transitions = self.identity_state_transitions_for_block(signer, rng);
         let (mut identities, mut state_transitions): (Vec<Identity>, Vec<StateTransition>) =
             identity_state_transitions.into_iter().unzip();
@@ -607,11 +658,12 @@ impl Strategy {
             state_transitions.append(&mut contract_state_transitions);
         }
 
-        let mut document_state_transitions: Vec<StateTransition> =
+        let (mut document_state_transitions, mut add_to_finalize_block_operations) =
             self.state_transitions_for_block(platform, block_info, current_identities, signer, rng);
+        finalize_block_operations.append(&mut add_to_finalize_block_operations);
         state_transitions.append(&mut document_state_transitions);
 
-        state_transitions
+        (state_transitions, finalize_block_operations)
     }
 }
 
@@ -631,6 +683,32 @@ fn create_identity_top_up_transition(rng: &mut StdRng, identity: &Identity) -> S
         )
         .expect("expected to create top up transition"),
     )
+}
+
+fn create_identity_update_transition_add_keys(
+    identity: &Identity,
+    count: u16,
+    signer: &mut SimpleSigner,
+    rng: &mut StdRng,
+) -> (StateTransition, (Identifier, Vec<IdentityPublicKey>)) {
+    let keys =
+        IdentityPublicKey::random_authentication_keys_with_private_keys_with_rng(count as u32, rng);
+
+    let add_public_keys: Vec<IdentityPublicKey> = keys.iter().map(|(key, _)| key.clone()).collect();
+    signer.private_keys_in_creation.extend(keys);
+    let state_transition = StateTransition::IdentityUpdate(
+        IdentityUpdateTransition::try_from_identity_with_signer(
+            identity,
+            &0,
+            add_public_keys.clone(),
+            vec![],
+            None,
+            signer,
+        )
+        .expect("expected to create top up transition"),
+    );
+
+    (state_transition, (identity.id, add_public_keys))
 }
 
 fn create_identities_state_transitions(
@@ -904,13 +982,14 @@ pub(crate) fn continue_chain_for_strategy(
             .validator_set
             .get(i as usize)
             .unwrap();
-        let state_transitions = strategy.state_transitions_for_block_with_new_identities(
-            platform,
-            &block_info,
-            &mut current_identities,
-            &mut signer,
-            &mut rng,
-        );
+        let (state_transitions, finalize_block_operations) = strategy
+            .state_transitions_for_block_with_new_identities(
+                platform,
+                &block_info,
+                &mut current_identities,
+                &mut signer,
+                &mut rng,
+            );
 
         let proposed_version = proposer_versions
             .as_ref()
@@ -941,6 +1020,21 @@ pub(crate) fn continue_chain_for_strategy(
                 state_transitions,
             )
             .expect("expected to execute a block");
+
+        for finalize_block_operation in finalize_block_operations {
+            match finalize_block_operation {
+                IdentityAddKeys(identifier, mut keys) => {
+                    let identity = current_identities
+                        .iter_mut()
+                        .find(|identity| identity.id == identifier)
+                        .expect("expected to find an identity");
+                    identity
+                        .public_keys
+                        .extend(keys.into_iter().map(|key| (key.id, key)));
+                }
+            }
+        }
+        signer.commit_block_keys();
 
         current_time_ms += config.block_spacing_ms;
         i += 1;

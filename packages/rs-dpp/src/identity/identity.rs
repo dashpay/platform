@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::convert::{TryFrom, TryInto};
+use std::hash::{Hash, Hasher};
 
 use ciborium::value::Value as CborValue;
 use integer_encoding::VarInt;
@@ -51,6 +52,12 @@ pub struct Identity {
     #[bincode(with_serde)]
     #[serde(skip)]
     pub metadata: Option<Metadata>,
+}
+
+impl Hash for Identity {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
 }
 
 /// An identity struct that represent partially set/loaded identity data.

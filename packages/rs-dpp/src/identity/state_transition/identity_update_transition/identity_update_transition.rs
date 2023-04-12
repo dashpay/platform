@@ -6,16 +6,15 @@ use std::convert::{TryFrom, TryInto};
 
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
 
-use crate::{
-    identity::{KeyID, SecurityLevel},
-    prelude::{Identifier, Revision, TimestampMillis},
-    state_transition::{
-        StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
-        StateTransitionType,
-    },
-    version::LATEST_VERSION,
-    ProtocolError,
-};
+use crate::{identity::{KeyID, SecurityLevel}, prelude::{Identifier, Revision, TimestampMillis}, state_transition::{
+    StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
+    StateTransitionType,
+}, version::LATEST_VERSION, ProtocolError, BlsModule, NonConsensusError};
+use crate::consensus::ConsensusError;
+use crate::consensus::signature::{MissingPublicKeyError, SignatureError};
+use crate::identity::{Identity, IdentityPublicKey};
+use crate::identity::signer::Signer;
+use crate::state_transition::errors::PublicKeyMismatchError;
 
 pub mod property_names {
     pub const PROTOCOL_VERSION: &str = "protocolVersion";
@@ -88,6 +87,33 @@ impl Default for IdentityUpdateTransition {
 impl IdentityUpdateTransition {
     pub fn new(raw_state_transition: Value) -> Result<Self, ProtocolError> {
         IdentityUpdateTransition::from_raw_object(raw_state_transition)
+    }
+
+    pub fn try_from_identity_with_signer<S: Signer>(identity: &Identity, master_public_key_id: &KeyID, add_public_keys: Vec<IdentityPublicKey>, disable_public_keys: Vec<KeyID>, public_keys_disabled_at: Option<u64>, signer: &S, ) -> Result<Self, ProtocolError> {
+        let add_public_keys = add_public_keys
+            .iter()
+            .map(|public_key| {
+                IdentityPublicKeyInCreationWithWitness::from_public_key_signed_external(
+                    public_key.clone(),
+                    signer,
+                )
+            })
+            .collect::<Result<Vec<IdentityPublicKeyInCreationWithWitness>, ProtocolError>>()?;
+
+        let mut identity_update_transition = IdentityUpdateTransition {
+            protocol_version: LATEST_VERSION,
+            transition_type: StateTransitionType::IdentityUpdate,
+            signature: Default::default(),
+            signature_public_key_id: 0,
+            identity_id: identity.id,
+            revision: identity.revision,
+            add_public_keys,
+            disable_public_keys,
+            public_keys_disabled_at,
+        };
+        let master_public_key = identity.public_keys.get(master_public_key_id).ok_or::<ConsensusError>(SignatureError::MissingPublicKeyError(MissingPublicKeyError::new(*master_public_key_id)).into())?;
+        identity_update_transition.sign_external(master_public_key, signer)?;
+        Ok(identity_update_transition)
     }
 
     pub fn from_raw_object(
