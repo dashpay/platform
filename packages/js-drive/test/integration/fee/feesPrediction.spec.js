@@ -118,14 +118,14 @@ describe('feesPrediction', () => {
   let groveDBStore;
   let blockInfo;
   let IdentityPublicKey;
+  let IdentityPublicKeyWithWitness;
   let Identity;
-  let BlsSignatures;
   let expectPredictedFeeHigherOrEqualThanActual;
   let blsInstance;
 
   before(async function before() {
     ({
-      IdentityPublicKey, IdentityPublicKeyWithWitness, Identity, BlsSignatures,
+      IdentityPublicKey, IdentityPublicKeyWithWitness, Identity,
     } = this.dppWasm);
 
     blsInstance = await loadBLS();
@@ -315,7 +315,9 @@ describe('feesPrediction', () => {
 
             stateTransition.setSignaturePublicKeyId(signerKey.getId());
 
-            await stateTransition.signByPrivateKey(privateKey, publicKey.getType(), this.blsAdapter);
+            await stateTransition.signByPrivateKey(
+              privateKey, publicKey.getType(), this.blsAdapter,
+            );
 
             publicKey.setSignature(stateTransition.getSignature());
 

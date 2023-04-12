@@ -1,3 +1,4 @@
+/* eslint-disable */
 const path = require('path');
 const dotenvSafe = require('dotenv-safe');
 const dotenvExpand = require('dotenv-expand');

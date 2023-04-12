@@ -220,7 +220,7 @@ describe('deliverTxFactory', () => {
       {
         identifier: Buffer.alloc(32),
         creditsPerEpoch: {
-          '1': 15,
+          1: 15,
         },
       },
     ]);
@@ -297,7 +297,7 @@ describe('deliverTxFactory', () => {
       {
         identifier: Buffer.alloc(32),
         creditsPerEpoch: {
-          '1': 15,
+          1: 15,
         },
       },
     ]);
