@@ -26,10 +26,12 @@ describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
       new DAPIAddress({
         host: validMasternodeList[0].getIp(),
         proRegTxHash: validMasternodeList[0].proRegTxHash,
+        port: validMasternodeList[0].platformHTTPPort,
       }),
       new DAPIAddress({
         host: '127.0.0.1',
         proRegTxHash: validMasternodeList[1].proRegTxHash,
+        port: validMasternodeList[1].platformHTTPPort,
       }),
       new DAPIAddress({
         host: '127.0.0.1',
@@ -80,7 +82,7 @@ describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
       expect(firstAddress).to.equal(addresses[0]);
       expect(firstAddress.toJSON()).to.deep.equal({
         host: validMasternodeList[0].getIp(),
-        port: DAPIAddress.DEFAULT_PORT,
+        port: validMasternodeList[0].platformHTTPPort,
         proRegTxHash: validMasternodeList[0].proRegTxHash,
         protocol: DAPIAddress.DEFAULT_PROTOCOL,
         allowSelfSignedCertificate: false,
@@ -90,7 +92,7 @@ describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
       expect(secondAddress).to.deep.equal(addresses[1]);
       expect(secondAddress.toJSON()).to.deep.equal({
         host: validMasternodeList[1].getIp(),
-        port: DAPIAddress.DEFAULT_PORT,
+        port: validMasternodeList[1].platformHTTPPort,
         proRegTxHash: validMasternodeList[1].proRegTxHash,
         protocol: DAPIAddress.DEFAULT_PROTOCOL,
         allowSelfSignedCertificate: false,
@@ -100,7 +102,7 @@ describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
       expect(thirdAddress).to.not.equal(addresses[2]);
       expect(thirdAddress.toJSON()).to.deep.equal({
         host: validMasternodeList[2].getIp(),
-        port: DAPIAddress.DEFAULT_PORT,
+        port: validMasternodeList[2].platformHTTPPort,
         proRegTxHash: validMasternodeList[2].proRegTxHash,
         protocol: DAPIAddress.DEFAULT_PROTOCOL,
         allowSelfSignedCertificate: false,
@@ -116,7 +118,7 @@ describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
       smlDAPIAddressProvider = new SimplifiedMasternodeListDAPIAddressProvider(
         smlProviderMock,
         listDAPIAddressProviderMock,
-        [new DAPIAddress(validMasternodeList[1].getIp())],
+        [new DAPIAddress(`${validMasternodeList[1].getIp()}:${validMasternodeList[1].platformHTTPPort}`)],
       );
 
       await smlDAPIAddressProvider.getLiveAddress();
@@ -136,7 +138,7 @@ describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
       expect(secondAddress).to.equal(addresses[0]);
       expect(secondAddress.toJSON()).to.deep.equal({
         host: validMasternodeList[0].getIp(),
-        port: DAPIAddress.DEFAULT_PORT,
+        port: validMasternodeList[0].platformHTTPPort,
         proRegTxHash: validMasternodeList[0].proRegTxHash,
         protocol: DAPIAddress.DEFAULT_PROTOCOL,
         allowSelfSignedCertificate: false,
@@ -146,7 +148,7 @@ describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
       expect(thirdAddress).to.not.equal(addresses[2]);
       expect(thirdAddress.toJSON()).to.deep.equal({
         host: validMasternodeList[1].getIp(),
-        port: DAPIAddress.DEFAULT_PORT,
+        port: validMasternodeList[1].platformHTTPPort,
         proRegTxHash: validMasternodeList[1].proRegTxHash,
         protocol: DAPIAddress.DEFAULT_PROTOCOL,
         allowSelfSignedCertificate: false,
