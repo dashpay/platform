@@ -5,8 +5,8 @@ use dashcore_rpc::dashcore_rpc_json::{
     ExtendedQuorumDetails, GetBestChainLockResult, MasternodeListDiff, ProTxHash, ProTxInfo,
     QuorumHash, QuorumInfoResult, QuorumListResult, QuorumType,
 };
-use dashcore_rpc::{Auth, Client, Error, RpcApi};
 use dashcore_rpc::json::GetTransactionResult;
+use dashcore_rpc::{Auth, Client, Error, RpcApi};
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use mockall::{automock, predicate::*};
 use serde_json::Value;
