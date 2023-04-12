@@ -107,6 +107,8 @@ where
         return Ok(());
     }
 
+    /*
+    // TODO: re-enable
     pub(crate) fn update_masternode_list(
         &self,
         state: &mut PlatformState,
@@ -156,4 +158,5 @@ where
 
         Ok(())
     }
+     */
 }

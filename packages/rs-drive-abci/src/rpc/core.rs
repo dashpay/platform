@@ -58,7 +58,11 @@ pub trait CoreRPCLike {
     ) -> Result<QuorumInfoResult, Error>;
 
     /// Get the difference in masternode list, return masternodes as diff elements
-    fn get_protx_diff_with_masternodes(&self, base_block: u32, block: u32) -> Result<MasternodeListDiffWithMasternodes, Error>;
+    fn get_protx_diff_with_masternodes(
+        &self,
+        base_block: u32,
+        block: u32,
+    ) -> Result<MasternodeListDiffWithMasternodes, Error>;
 
     // /// Get the detailed information about a deterministic masternode
     // fn get_protx_info(&self, protx_hash: &ProTxHash) -> Result<ProTxInfo, Error>;
@@ -130,7 +134,11 @@ impl CoreRPCLike for DefaultCoreRPC {
             .get_quorum_info(quorum_type, hash, include_secret_key_share)
     }
 
-    fn get_protx_diff_with_masternodes(&self, base_block: u32, block: u32) -> Result<MasternodeListDiffWithMasternodes, Error> {
+    fn get_protx_diff_with_masternodes(
+        &self,
+        base_block: u32,
+        block: u32,
+    ) -> Result<MasternodeListDiffWithMasternodes, Error> {
         // method does not yet exist in core
         todo!()
     }

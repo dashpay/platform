@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
-use dashcore_rpc::json::{ProTxHash, QuorumMasternodeListItem};
+use dashcore_rpc::json::{Masternode, ProTxHash, QuorumMasternodeListItem};
 use dpp::identifier::Identifier;
 use dpp::identity::factory::IDENTITY_PROTOCOL_VERSION;
 use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
@@ -14,31 +14,31 @@ use std::collections::BTreeMap;
 // TODO: clean this file up
 
 impl<C> Platform<C>
-    where
-        C: CoreRPCLike,
+where
+    C: CoreRPCLike,
 {
     // TODO: store after identity creation
     fn create_owner_identity(
         &self,
-        protx_hash: &[u8],
         masternode_identifier: [u8; 32],
+        updated_masternode: &Masternode,
     ) -> Result<Identity, Error> {
         let mut identity = Self::create_basic_identity(masternode_identifier);
-        identity.add_public_keys([self.get_owner_identity_key(protx_hash)?]);
+        identity.add_public_keys([self.get_owner_identity_key(&updated_masternode)?]);
         Ok(identity)
     }
 
-    fn get_owner_identity_key(&self, protx_hash: &[u8]) -> Result<IdentityPublicKey, Error> {
-        let full_masternode_detail = self
-            .core_rpc
-            .get_protx_info(&ProTxHash(protx_hash.to_vec()))?;
+    fn get_owner_identity_key(
+        &self,
+        updated_masternode: &Masternode,
+    ) -> Result<IdentityPublicKey, Error> {
         Ok(IdentityPublicKey {
             id: 0,
             key_type: KeyType::ECDSA_HASH160,
             purpose: Purpose::WITHDRAW,
             security_level: SecurityLevel::MASTER,
             read_only: true,
-            data: BinaryData::new(full_masternode_detail.state.payout_address),
+            data: BinaryData::new(updated_masternode.payee.clone()),
             disabled_at: None,
         })
     }
@@ -46,7 +46,7 @@ impl<C> Platform<C>
     fn create_voter_identity(
         &self,
         voting_identifier: [u8; 32],
-        updated_masternode: &QuorumMasternodeListItem,
+        updated_masternode: &Masternode,
     ) -> Result<Identity, Error> {
         let mut identity = Self::create_basic_identity(voting_identifier);
         identity.add_public_keys([self.get_voter_identity_key(&updated_masternode)?]);
@@ -55,7 +55,7 @@ impl<C> Platform<C>
 
     fn get_voter_identity_key(
         &self,
-        updated_masternode: &QuorumMasternodeListItem,
+        updated_masternode: &Masternode,
     ) -> Result<IdentityPublicKey, Error> {
         Ok(IdentityPublicKey {
             id: 0,
@@ -70,27 +70,19 @@ impl<C> Platform<C>
 
     fn create_operator_identity(
         &self,
-        protx_hash: &[u8],
         operator_identifier: [u8; 32],
-        updated_masternode: &QuorumMasternodeListItem,
+        updated_masternode: &Masternode,
     ) -> Result<Identity, Error> {
         let mut identity = Self::create_basic_identity(operator_identifier);
-        identity.add_public_keys(self.get_operator_identity_keys(protx_hash, &updated_masternode)?);
+        identity.add_public_keys(self.get_operator_identity_keys(&updated_masternode)?);
 
         Ok(identity)
     }
 
     fn get_operator_identity_keys(
         &self,
-        protx_hash: &[u8],
-        updated_masternode: &QuorumMasternodeListItem,
+        updated_masternode: &Masternode,
     ) -> Result<Vec<IdentityPublicKey>, Error> {
-        let full_masternode_detail = self
-            .core_rpc
-            .get_protx_info(&ProTxHash(protx_hash.to_vec()))?;
-        // TODO: js uses something called a Script to convert this to payoutPublicKey, what is this?
-        let operator_payout_address = full_masternode_detail.state.payout_address;
-
         Ok(vec![
             IdentityPublicKey {
                 id: 0,
@@ -98,7 +90,7 @@ impl<C> Platform<C>
                 purpose: Purpose::WITHDRAW, // todo: is this purpose correct??
                 security_level: SecurityLevel::CRITICAL,
                 read_only: true,
-                data: BinaryData::new(updated_masternode.pub_key_operator.clone()),
+                data: BinaryData::new(updated_masternode.pubkey_operator.clone()),
                 disabled_at: None,
             },
             IdentityPublicKey {
@@ -107,36 +99,32 @@ impl<C> Platform<C>
                 purpose: Purpose::WITHDRAW, // todo: is this purpose correct??
                 security_level: SecurityLevel::CRITICAL,
                 read_only: true,
-                data: BinaryData::new(operator_payout_address),
+                // TODO: this should be the operator payout address
+                data: BinaryData::new(updated_masternode.payee.clone()),
                 disabled_at: None,
             },
         ])
     }
 
-    fn get_owner_identifier(
-        updated_masternode: &QuorumMasternodeListItem,
-    ) -> Result<[u8; 32], Error> {
+    fn get_owner_identifier(updated_masternode: &Masternode) -> Result<[u8; 32], Error> {
         // TODO: do proper error handling
-        let masternode_identifier: [u8; 32] = updated_masternode
-            .pro_reg_tx_hash
-            .clone()
-            .try_into()
-            .unwrap();
+        let masternode_identifier: [u8; 32] =
+            updated_masternode.pro_tx_hash.clone().0.try_into().unwrap();
         Ok(masternode_identifier)
     }
 
     fn get_operator_identifier(
         protx_hash: &[u8],
-        updated_masternode: &QuorumMasternodeListItem,
+        updated_masternode: &Masternode,
     ) -> Result<[u8; 32], Error> {
-        let operator_pub_key = updated_masternode.pub_key_operator.as_slice();
+        let operator_pub_key = updated_masternode.pubkey_operator.as_slice();
         let operator_identifier = Self::hash_concat_protxhash(protx_hash, operator_pub_key)?;
         Ok(operator_identifier)
     }
 
     fn get_voter_identifier(
         protx_hash: &[u8],
-        updated_masternode: &QuorumMasternodeListItem,
+        updated_masternode: &Masternode,
     ) -> Result<[u8; 32], Error> {
         let voting_address = updated_masternode.voting_address.as_slice();
         let voting_identifier = Self::hash_concat_protxhash(protx_hash, voting_address)?;
@@ -174,21 +162,20 @@ impl<C> Platform<C>
         if previous_core_height != current_core_height {
             let masternode_list_diff = self
                 .core_rpc
-                .get_protx_diff(previous_core_height, current_core_height)?;
+                .get_protx_diff_with_masternodes(previous_core_height, current_core_height)?;
             let updated_masternodes = masternode_list_diff.mn_list;
 
             for updated_masternode in updated_masternodes {
                 // Need to get the protx hash for this
-                let protx_hash = hex::decode(&updated_masternode.pro_reg_tx_hash).unwrap();
+                let protx_hash = hex::decode(&updated_masternode.pro_tx_hash.0).unwrap();
 
                 // TODO: remove duplication
-                let owner_identifier =
-                    Self::get_owner_identifier(&updated_masternode)?;
+                let owner_identifier = Self::get_owner_identifier(&updated_masternode)?;
                 let maybe_owner_identity = self
                     .drive
                     .fetch_full_identity(owner_identifier, Some(transaction))?;
                 match maybe_owner_identity {
-                    None => self.create_owner_identity(protx_hash.as_slice(), owner_identifier)?,
+                    None => self.create_owner_identity(owner_identifier, &updated_masternode)?,
                     Some(owner_identity) => {
                         todo!();
                         // let latest_owner_pub_key = self.get_owner_identity_key(protx_hash.as_slice())?;
@@ -241,7 +228,6 @@ impl<C> Platform<C>
                         //     // add the new key to the identity
                         //     self.drive.add_new_non_unique_keys_to_identity(voter_identifer, vec![latest_voter_public_key], &block_info, true, Some(transaction));
                         // }
-
                     }
                 };
 
@@ -251,11 +237,9 @@ impl<C> Platform<C>
                     .drive
                     .fetch_full_identity(operator_identifier, Some(transaction))?;
                 let operator_identity = match maybe_operator_identity {
-                    None => self.create_operator_identity(
-                        protx_hash.as_slice(),
-                        operator_identifier,
-                        &updated_masternode,
-                    )?,
+                    None => {
+                        self.create_operator_identity(operator_identifier, &updated_masternode)?
+                    }
                     _ => todo!(),
                 };
 
