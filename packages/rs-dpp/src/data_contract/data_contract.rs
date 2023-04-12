@@ -214,10 +214,36 @@ impl DataContract {
         self.document_types.get(document_type_name).is_some()
     }
 
-    pub fn set_document_schema(&mut self, doc_type: String, schema: JsonSchema) {
+    pub fn set_document_schema(
+        &mut self,
+        doc_type: String,
+        schema: JsonSchema,
+    ) -> Result<(), ProtocolError> {
         let binary_properties = get_binary_properties(&schema);
-        self.documents.insert(doc_type.clone(), schema);
-        self.binary_properties.insert(doc_type, binary_properties);
+        self.documents.insert(doc_type.clone(), schema.clone());
+        self.binary_properties
+            .insert(doc_type.clone(), binary_properties);
+
+        let document_type_value = platform_value::Value::from(schema);
+
+        // Make sure the document_type_value is a map
+        let Some(document_type_value_map) = document_type_value.as_map() else {
+            return Err(ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
+                "document type data is not a map as expected",
+            )));
+        };
+
+        let document_type = DocumentType::from_platform_value(
+            &doc_type,
+            document_type_value_map,
+            &BTreeMap::new(),
+            self.config.documents_keep_history_contract_default,
+            self.config.documents_mutable_contract_default,
+        )?;
+
+        self.document_types.insert(doc_type, document_type);
+
+        Ok(())
     }
 
     pub fn get_document_schema(&self, doc_type: &str) -> Result<&JsonSchema, ProtocolError> {

@@ -4,6 +4,7 @@ use wasm_bindgen::prelude::*;
 use crate::utils::Inner;
 mod calculate_operation_fees;
 mod calculate_state_transition_fee;
+mod calculate_state_transition_fee_from_operations;
 mod dummy_fee_result;
 mod fee_result;
 mod operations;

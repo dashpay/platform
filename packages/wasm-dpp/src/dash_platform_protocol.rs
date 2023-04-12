@@ -45,6 +45,10 @@ impl DashPlatformProtocol {
         entropy_generator: ExternalEntropyGenerator,
         maybe_protocol_version: Option<u32>,
     ) -> Result<DashPlatformProtocol, JsValue> {
+        if cfg!(debug_assertions) {
+            wasm_logger::init(wasm_logger::Config::new(log::Level::Debug));
+        }
+
         let bls = BlsAdapter(bls_adapter);
         let protocol_version = maybe_protocol_version.unwrap_or(LATEST_VERSION);
         let public_keys_validator = Arc::new(PublicKeysValidator::new(bls.clone()).unwrap());

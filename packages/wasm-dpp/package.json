@@ -9,6 +9,7 @@
     "test": "yarn run test:node && yarn run test:browsers",
     "test:browsers": "karma start ./karma.conf.js --single-run",
     "test:node": "NODE_ENV=test mocha",
+    "tsc": "tsc",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "clean": "yarn exec scripts/clean.sh"

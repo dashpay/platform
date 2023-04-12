@@ -144,6 +144,11 @@ impl DataContractCreateTransitionWasm {
         self.0.set_execution_context(context.into())
     }
 
+    #[wasm_bindgen(js_name=getExecutionContext)]
+    pub fn get_execution_context(&mut self) -> StateTransitionExecutionContextWasm {
+        self.0.get_execution_context().into()
+    }
+
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self, skip_signature: Option<bool>) -> Result<JsValue, JsValue> {
         let serde_object = self

@@ -402,6 +402,18 @@ where
             let new_revision = document_revision + 1;
             map.insert(PROPERTY_REVISION.to_string(), Value::U64(new_revision));
 
+            // If document have an originally set `updatedAt`
+            // we should update it then
+            let contains_updated_at = document
+                .document_type()?
+                .required_fields
+                .contains(PROPERTY_UPDATED_AT);
+
+            if contains_updated_at {
+                let now = Utc::now().timestamp_millis() as TimestampMillis;
+                map.insert(PROPERTY_UPDATED_AT.to_string(), Value::U64(now));
+            }
+
             raw_transitions.push(map.into());
         }
         Ok(raw_transitions)

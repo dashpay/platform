@@ -9,7 +9,7 @@ use dpp::util::deserializer::ProtocolVersion;
 use dpp::util::json_value::JsonValueExt;
 
 #[wasm_bindgen(js_name=Metadata)]
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct MetadataWasm(Metadata);
 
 impl std::convert::From<Metadata> for MetadataWasm {
