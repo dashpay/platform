@@ -26,7 +26,7 @@ function getBiggestPossibleIdentity(dppWasm) {
       purpose: dppWasm.KeyPurpose.AUTHENTICATION,
       securityLevel,
       readOnly: false,
-      data: Buffer.alloc(48).fill(255),
+      data: Buffer.alloc(48).fill(i),
     });
   }
 

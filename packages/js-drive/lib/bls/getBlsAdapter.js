@@ -46,6 +46,15 @@ module.exports = async function getBlsAdapter() {
 
       return result;
     },
+    privateKeyToPublicKey(privateKeyBuffer) {
+      console.log('calling private key to public key');
+
+      const blsKey = bls.PrivateKey.fromBytes(Uint8Array.from(privateKeyBuffer), true);
+
+      const publicKey = blsKey.getG1();
+
+      return publicKey.serialize();
+    },
   };
 
   return blsAdapter;

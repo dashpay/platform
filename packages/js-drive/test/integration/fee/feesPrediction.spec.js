@@ -1,5 +1,7 @@
 const crypto = require('crypto');
 
+const loadBLS = require('@dashevo/bls');
+
 const Long = require('long');
 
 // TODO: should we take it from other place?
@@ -119,11 +121,14 @@ describe('feesPrediction', () => {
   let Identity;
   let BlsSignatures;
   let expectPredictedFeeHigherOrEqualThanActual;
+  let blsInstance;
 
-  before(function before() {
+  before(async function before() {
     ({
-      IdentityPublicKey, Identity, BlsSignatures,
+      IdentityPublicKey, IdentityPublicKeyWithWitness, Identity, BlsSignatures,
     } = this.dppWasm);
+
+    blsInstance = await loadBLS();
 
     expectPredictedFeeHigherOrEqualThanActual = expectPredictedFeeHigherOrEqualThanActualFactory(
       this.dppWasm,
@@ -170,16 +175,17 @@ describe('feesPrediction', () => {
     beforeEach(async function beforeEachFunction() {
       assetLockPrivateKey = new PrivateKey();
 
-      instantAssetLockProof = getInstantAssetLockProofFixture(assetLockPrivateKey);
+      instantAssetLockProof = await getInstantAssetLockProofFixture(assetLockPrivateKey);
 
       identity = getBiggestPossibleIdentity(this.dppWasm);
       // identity.id = instantAssetLockProof.createIdentifier();
       identity.setAssetLockProof(instantAssetLockProof);
 
       // Generate real keys
-      const { BasicSchemeMPL } = await BlsSignatures.getInstance();
+      const { BasicSchemeMPL } = blsInstance;
 
-      privateKeys = identity.getPublicKeys().map((identityPublicKey) => {
+      const identityPublicKeys = identity.getPublicKeys();
+      privateKeys = identityPublicKeys.map((identityPublicKey) => {
         const randomBytes = new Uint8Array(crypto.randomBytes(256));
 
         const privateKey = BasicSchemeMPL.keyGen(randomBytes);
@@ -196,11 +202,13 @@ describe('feesPrediction', () => {
         return result;
       });
 
+      identity.setPublicKeys(identityPublicKeys);
+
       stateRepository.verifyInstantLock = this.sinon.stub().resolves(true);
     });
 
     describe('IdentityCreateTransition', () => {
-      it('should have predicted fee more than actual fee', async () => {
+      it('should have predicted fee more than actual fee', async function it() {
         const stateTransition = dpp.identity.createIdentityCreateTransition(identity);
 
         // Sign public keys
@@ -210,6 +218,7 @@ describe('feesPrediction', () => {
           await stateTransition.signByPrivateKey(
             privateKeys[i],
             IdentityPublicKey.TYPES.BLS12_381,
+            this.blsAdapter,
           );
 
           publicKeys[i].setSignature(stateTransition.getSignature());
@@ -217,9 +226,11 @@ describe('feesPrediction', () => {
           stateTransition.setSignature(undefined);
         }
 
+        stateTransition.setPublicKeys(publicKeys);
+
         // Sign state transition
         await stateTransition.signByPrivateKey(
-          assetLockPrivateKey,
+          assetLockPrivateKey.toBuffer(),
           IdentityPublicKey.TYPES.ECDSA_SECP256K1,
         );
 
@@ -237,7 +248,7 @@ describe('feesPrediction', () => {
         );
 
         await stateTransition.signByPrivateKey(
-          assetLockPrivateKey,
+          assetLockPrivateKey.toBuffer(),
           IdentityPublicKey.TYPES.ECDSA_SECP256K1,
         );
 
@@ -246,13 +257,13 @@ describe('feesPrediction', () => {
     });
 
     describe('IdentityUpdateTransition', () => {
-      it('should have predicted fee more than actual fee', async () => {
+      it('should have predicted fee more than actual fee', async function it() {
         await stateRepository.createIdentity(identity);
 
         const newIdentityPublicKeys = [];
         const disableIdentityPublicKeys = [];
 
-        const { BasicSchemeMPL } = await BlsSignatures.getInstance();
+        const { BasicSchemeMPL } = blsInstance;
 
         const newPrivateKeys = [];
         for (let i = 0; i < identityUpdateTransitionSchema.properties.addPublicKeys.maxItems; i++) {
@@ -261,10 +272,10 @@ describe('feesPrediction', () => {
           const publicKey = privateKey.getG1();
           const publicKeyBuffer = Buffer.from(publicKey.serialize());
 
-          newPrivateKeys.push(privateKey);
+          newPrivateKeys.push(Buffer.from(privateKey.serialize()));
 
           newIdentityPublicKeys.push(
-            new IdentityPublicKey({
+            new IdentityPublicKeyWithWitness({
               id: i + identity.getPublicKeys().length,
               type: IdentityPublicKey.TYPES.BLS12_381,
               data: publicKeyBuffer,
@@ -272,6 +283,7 @@ describe('feesPrediction', () => {
               securityLevel: i === 0
                 ? IdentityPublicKey.SECURITY_LEVELS.MASTER : IdentityPublicKey.SECURITY_LEVELS.HIGH,
               readOnly: false,
+              signature: Buffer.alloc(0),
             }),
           );
 
@@ -292,6 +304,7 @@ describe('feesPrediction', () => {
 
         const starterPromise = Promise.resolve(null);
 
+        const updatedPublicKeys = [];
         await stateTransition.getPublicKeysToAdd().reduce(
           (previousPromise, publicKey) => previousPromise.then(async () => {
             const privateKey = newPrivateKeys[publicKey.getId() - identity.getPublicKeys().length];
@@ -302,19 +315,24 @@ describe('feesPrediction', () => {
 
             stateTransition.setSignaturePublicKeyId(signerKey.getId());
 
-            await stateTransition.signByPrivateKey(privateKey, publicKey.getType());
+            await stateTransition.signByPrivateKey(privateKey, publicKey.getType(), this.blsAdapter);
 
             publicKey.setSignature(stateTransition.getSignature());
 
             stateTransition.setSignature(undefined);
             stateTransition.setSignaturePublicKeyId(undefined);
+
+            updatedPublicKeys.push(publicKey);
           }),
           starterPromise,
         );
 
+        stateTransition.setPublicKeysToAdd(updatedPublicKeys);
+
         await stateTransition.sign(
           identity.getPublicKeyById(0),
           privateKeys[0],
+          this.blsAdapter,
         );
 
         await expectPredictedFeeHigherOrEqualThanActual(dpp, groveDBStore, stateTransition);
@@ -329,7 +347,11 @@ describe('feesPrediction', () => {
     beforeEach(async () => {
       // Create identity
 
-      privateKey = new PrivateKey();
+      const { BasicSchemeMPL } = blsInstance;
+
+      const randomBytes = new Uint8Array(crypto.randomBytes(256));
+      privateKey = BasicSchemeMPL.keyGen(randomBytes);
+      const publicKey = privateKey.getG1();
 
       identity = new Identity({
         protocolVersion: 1,
@@ -338,15 +360,7 @@ describe('feesPrediction', () => {
           {
             id: 0,
             type: IdentityPublicKey.TYPES.BLS12_381,
-            data: Buffer.from('01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694', 'hex'),
-            purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-            securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-            readOnly: true,
-          },
-          {
-            id: 1,
-            type: IdentityPublicKey.TYPES.BLS12_381,
-            data: Buffer.from('01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694', 'hex'),
+            data: Buffer.from(publicKey.serialize()),
             purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
             securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
             readOnly: true,
@@ -366,12 +380,13 @@ describe('feesPrediction', () => {
     });
 
     describe('DataContractCreate', () => {
-      it('should have predicted fee more than actual fee', async () => {
+      it('should have predicted fee more than actual fee', async function it() {
         const stateTransition = dpp.dataContract.createDataContractCreateTransition(dataContract);
 
         await stateTransition.sign(
-          identity.getPublicKeyById(1),
-          privateKey,
+          identity.getPublicKeyById(0),
+          Buffer.from(privateKey.serialize()),
+          this.blsAdapter,
         );
 
         await expectPredictedFeeHigherOrEqualThanActual(dpp, groveDBStore, stateTransition);
@@ -379,7 +394,7 @@ describe('feesPrediction', () => {
     });
 
     describe('DataContractUpdate', () => {
-      it('should have predicted fee more than actual fee', async () => {
+      it('should have predicted fee more than actual fee', async function it() {
         await stateRepository.storeDataContract(dataContract);
 
         dataContract.incrementVersion();
@@ -418,8 +433,9 @@ describe('feesPrediction', () => {
         const stateTransition = dpp.dataContract.createDataContractUpdateTransition(dataContract);
 
         await stateTransition.sign(
-          identity.getPublicKeyById(1),
-          privateKey,
+          identity.getPublicKeyById(0),
+          Buffer.from(privateKey.serialize()),
+          this.blsAdapter,
         );
 
         await expectPredictedFeeHigherOrEqualThanActual(dpp, groveDBStore, stateTransition);
@@ -435,7 +451,11 @@ describe('feesPrediction', () => {
     beforeEach(async () => {
       // Create Identity
 
-      privateKey = new PrivateKey();
+      const { BasicSchemeMPL } = blsInstance;
+
+      const randomBytes = new Uint8Array(crypto.randomBytes(256));
+      privateKey = BasicSchemeMPL.keyGen(randomBytes);
+      const publicKey = privateKey.getG1();
 
       identity = new Identity({
         protocolVersion: 1,
@@ -444,15 +464,7 @@ describe('feesPrediction', () => {
           {
             id: 0,
             type: IdentityPublicKey.TYPES.BLS12_381,
-            data: Buffer.from('01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694', 'hex'),
-            purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-            securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-            readOnly: true,
-          },
-          {
-            id: 1,
-            type: IdentityPublicKey.TYPES.BLS12_381,
-            data: Buffer.from('01fac99ca2c8f39c286717c213e190aba4b7af76db320ec43f479b7d9a2012313a0ae59ca576edf801444bc694686694', 'hex'),
+            data: Buffer.from(publicKey.serialize()),
             purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
             securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
             readOnly: true,
@@ -503,14 +515,15 @@ describe('feesPrediction', () => {
 
     describe('DocumentsBatchTransition', () => {
       context('create', () => {
-        it('should have predicted fee more than actual fee', async () => {
+        it('should have predicted fee more than actual fee', async function it() {
           const stateTransition = dpp.document.createStateTransition({
             create: documents,
           });
 
           await stateTransition.sign(
-            identity.getPublicKeyById(1),
-            privateKey,
+            identity.getPublicKeyById(0),
+            Buffer.from(privateKey.serialize()),
+            this.blsAdapter,
           );
 
           await expectPredictedFeeHigherOrEqualThanActual(dpp, groveDBStore, stateTransition);
@@ -518,7 +531,7 @@ describe('feesPrediction', () => {
       });
 
       context('replace', () => {
-        it('should have predicted fee more than actual fee', async () => {
+        it('should have predicted fee more than actual fee', async function it() {
           for (const document of documents) {
             await stateRepository.createDocument(document);
           }
@@ -538,8 +551,9 @@ describe('feesPrediction', () => {
           });
 
           await stateTransition.sign(
-            identity.getPublicKeyById(1),
-            privateKey,
+            identity.getPublicKeyById(0),
+            Buffer.from(privateKey.serialize()),
+            this.blsAdapter,
           );
 
           await expectPredictedFeeHigherOrEqualThanActual(dpp, groveDBStore, stateTransition);
@@ -547,7 +561,7 @@ describe('feesPrediction', () => {
       });
 
       context('delete', () => {
-        it('should have predicted fee more than actual fee', async () => {
+        it('should have predicted fee more than actual fee', async function it() {
           for (const document of documents) {
             await stateRepository.createDocument(document);
           }
@@ -557,8 +571,9 @@ describe('feesPrediction', () => {
           });
 
           await stateTransition.sign(
-            identity.getPublicKeyById(1),
-            privateKey,
+            identity.getPublicKeyById(0),
+            Buffer.from(privateKey.serialize()),
+            this.blsAdapter,
           );
 
           await expectPredictedFeeHigherOrEqualThanActual(dpp, groveDBStore, stateTransition);
