@@ -36,8 +36,8 @@ export async function createIdentityTopUpTransition(
   const result = await dpp.stateTransition.validateBasic(identityTopUpTransition);
 
   if (!result.isValid()) {
-    // TODO(wasm): pretty print errors. JSON stringify is not handling wasm errors well
-    throw new Error(`StateTransition is invalid - ${JSON.stringify(result.getErrors())}`);
+    const messages = result.getErrors().map((error) => error.message);
+    throw new Error(`StateTransition is invalid - ${JSON.stringify(messages)}`);
   }
 
   return identityTopUpTransition;

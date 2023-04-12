@@ -57,9 +57,7 @@ async function makeGetIdentityRespondWithIdentity(client, dapiClientMock, sinon)
 
     if (interceptedIdentityStateTransition.getType() === stateTransitionTypes.IDENTITY_CREATE) {
       const identityToResolve = new Identity({
-        // TODO(wasm): get from platform.wasmDpp once we merge
-        //  https://github.com/dashpay/platform/pull/841
-        protocolVersion: 1,
+        protocolVersion: client.platform.dpp.getProtocolVersion(),
         id: interceptedIdentityStateTransition.getIdentityId().toBuffer(),
         publicKeys: interceptedIdentityStateTransition
           .getPublicKeys().map((key) => key.toObject({ skipSignature: true })),
