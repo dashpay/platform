@@ -3,8 +3,8 @@ use dashcore_rpc::dashcore_rpc_json::{
     ExtendedQuorumDetails, GetBestChainLockResult, QuorumHash, QuorumInfoResult, QuorumListResult,
     QuorumType,
 };
-use dashcore_rpc::{Auth, Client, Error, RpcApi};
 use dashcore_rpc::json::{MasternodeListDiff, ProTxHash, ProTxInfo};
+use dashcore_rpc::{Auth, Client, Error, RpcApi};
 use mockall::{automock, predicate::*};
 use serde_json::Value;
 use std::collections::HashMap;

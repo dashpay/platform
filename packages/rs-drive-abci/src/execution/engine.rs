@@ -1,5 +1,10 @@
+use dashcore_rpc::json::{ProTxHash, QuorumMasternodeListItem};
 use dpp::consensus::basic::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::ConsensusError;
+use dpp::identity::factory::IDENTITY_PROTOCOL_VERSION;
+use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
+use dpp::platform_value::BinaryData;
+use dpp::prelude::{Identifier, IdentityPublicKey};
 use dpp::state_transition::StateTransition;
 use dpp::validation::{
     ConsensusValidationResult, SimpleConsensusValidationResult, SimpleValidationResult,
@@ -9,6 +14,7 @@ use drive::drive::block_info::BlockInfo;
 use drive::error::Error::GroveDB;
 use drive::fee::result::FeeResult;
 use drive::grovedb::{Transaction, TransactionArg};
+use std::collections::BTreeMap;
 use tenderdash_abci::proto::abci::{ExecTxResult, RequestFinalizeBlock};
 
 use crate::abci::AbciError;
@@ -183,20 +189,6 @@ where
         Ok((aggregate_fee_result, exec_tx_results))
     }
 
-    /// Update of the masternode identities
-    pub fn update_masternode_identities(
-        &self,
-        previous_core_height: u32,
-        current_core_height: u32,
-    ) -> Result<(), Error> {
-        if previous_core_height != current_core_height {
-            //todo:
-            // self.drive.fetch_full_identity()
-            // self.drive.add_new_non_unique_keys_to_identity()
-        }
-        Ok(())
-    }
-
     /// Run a block proposal, either from process proposal, or prepare proposal
     pub fn run_block_proposal(
         &self,
@@ -291,7 +283,8 @@ where
             transaction,
         )?;
 
-        self.update_masternode_identities(previous_core_height, core_chain_locked_height)?;
+        // TODO: re-enable
+        // self.update_masternode_identities(previous_core_height, core_chain_locked_height)?;
 
         let root_hash = self
             .drive

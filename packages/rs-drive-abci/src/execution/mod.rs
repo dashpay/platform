@@ -10,5 +10,7 @@ pub mod fee_pools;
 pub mod helpers;
 /// Initialization
 pub mod initialization;
+/// Masternode Identities
+mod masternode_identities;
 /// Protocol upgrade
 pub mod protocol_upgrade;
