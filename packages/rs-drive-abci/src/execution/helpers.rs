@@ -5,13 +5,13 @@ use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformState;
 use dashcore::signer::sign;
-use dashcore_rpc::dashcore_rpc_json::QuorumHash;
+use dashcore_rpc::dashcore_rpc_json::{ProTxHash, QuorumHash};
 use dashcore_rpc::json::{QuorumInfoResult, QuorumType};
 use dpp::bls_signatures;
 use dpp::bls_signatures::Serialize;
 use dpp::validation::{SimpleConsensusValidationResult, SimpleValidationResult, ValidationResult};
 use drive::grovedb::Transaction;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use tenderdash_abci::proto::abci::CommitInfo;
 use tenderdash_abci::proto::types::BlockId;
 
@@ -105,5 +105,55 @@ where
 
         state.quorums_extended_info = quorum_list.quorums_by_type;
         return Ok(());
+    }
+
+    pub(crate) fn update_masternode_list(
+        &self,
+        state: &mut PlatformState,
+        core_block_height: u32,
+    ) -> Result<(), Error> {
+        let previous_core_height = state.core_height();
+        if core_block_height == previous_core_height {
+            return Ok(()); // no need to do anything
+        }
+
+        let masternode_list_diff = self
+            .core_rpc
+            .get_protx_diff(previous_core_height, core_block_height)?;
+        //todo: clean up
+        let updated_masternodes = masternode_list_diff.mn_list.into_iter().map(|masternode| {
+            let pro_tx_hash =
+                ProTxHash::from(hex::encode(masternode.pro_reg_tx_hash.clone()).as_str());
+            (pro_tx_hash, masternode)
+        });
+
+        //filter updated masternodes between hpmns and non hpmns
+
+        state
+            .full_masternode_list
+            .extend(updated_masternodes.clone());
+        //FIXME: Filter updated masternodes for HPMNs
+        state.hpmn_masternode_list.extend(updated_masternodes);
+
+        let deleted_masternodes = masternode_list_diff
+            .deleted_mns
+            .into_iter()
+            .map(|masternode| {
+                let pro_tx_hash =
+                    ProTxHash::from(hex::encode(masternode.pro_reg_tx_hash.clone()).as_str());
+                pro_tx_hash
+            })
+            .collect::<BTreeSet<ProTxHash>>();
+
+        state
+            .hpmn_masternode_list
+            .retain(|key, _| !deleted_masternodes.contains(key));
+        state
+            .full_masternode_list
+            .retain(|key, _| !deleted_masternodes.contains(key));
+
+        //Todo: masternode identities
+
+        Ok(())
     }
 }

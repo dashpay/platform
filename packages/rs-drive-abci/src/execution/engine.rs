@@ -358,6 +358,8 @@ where
 
         self.update_quorum_info(&mut state_cache, block_info.core_height)?;
 
+        self.update_masternode_list(&mut state_cache, block_info.core_height)?;
+
         state_cache.last_committed_block_info = Some(block_info.clone());
 
         Ok(())

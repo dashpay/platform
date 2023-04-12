@@ -2,8 +2,8 @@ use dashcore::hashes::sha256d;
 use dashcore::hashes::sha256d::Hash;
 use dashcore::{Block, BlockHash, Transaction, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
-    ExtendedQuorumDetails, GetBestChainLockResult, QuorumHash, QuorumInfoResult, QuorumListResult,
-    QuorumType,
+    ExtendedQuorumDetails, GetBestChainLockResult, MasternodeListDiff, ProTxHash, ProTxInfo,
+    QuorumHash, QuorumInfoResult, QuorumListResult, QuorumType,
 };
 use dashcore_rpc::json::GetTransactionResult;
 use dashcore_rpc::Error;
@@ -57,6 +57,12 @@ pub trait CoreRPCLike {
         hash: &QuorumHash,
         include_secret_key_share: Option<bool>,
     ) -> Result<QuorumInfoResult, Error>;
+
+    /// Get the difference in masternode list
+    fn get_protx_diff(&self, base_block: u32, block: u32) -> Result<MasternodeListDiff, Error>;
+
+    /// The the difference in masternode list
+    fn get_protx_info(&self, protx_hash: &ProTxHash) -> Result<ProTxInfo, Error>;
 }
 
 /// Default implementation of Dash Core RPC using DashCoreRPC client
@@ -122,5 +128,13 @@ impl CoreRPCLike for DefaultCoreRPC {
     ) -> Result<QuorumInfoResult, Error> {
         self.inner
             .get_quorum_info(quorum_type, hash, include_secret_key_share)
+    }
+
+    fn get_protx_diff(&self, base_block: u32, block: u32) -> Result<MasternodeListDiff, Error> {
+        self.inner.get_protx_diff(base_block, block)
+    }
+
+    fn get_protx_info(&self, protx_hash: &ProTxHash) -> Result<ProTxInfo, Error> {
+        self.inner.get_protx_info(protx_hash)
     }
 }

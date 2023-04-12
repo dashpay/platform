@@ -180,6 +180,8 @@ impl<C> Platform<C> {
             next_epoch_protocol_version,
             quorums_extended_info: Default::default(),
             validator_sets: Default::default(),
+            full_masternode_list: Default::default(),
+            hpmn_masternode_list: Default::default(),
         };
 
         Ok(Platform {
