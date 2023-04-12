@@ -235,7 +235,8 @@ where
             state.known_height_or((self.config.abci.genesis_height as u64).saturating_sub(1));
         let last_block_core_height =
             state.known_core_height_or(self.config.abci.genesis_core_height);
-        let hpmn_list_len = state.hpmn_list_len();
+        //todo: fix this
+        let hpmn_list_len = 100; //state.hpmn_list_len();
         drop(state);
 
         // Init block execution context
@@ -360,7 +361,7 @@ where
 
         self.update_quorum_info(&mut state_cache, block_info.core_height)?;
 
-        self.update_masternode_list(&mut state_cache, block_info.core_height, transaction)?;
+        //self.update_masternode_list(&mut state_cache, block_info.core_height, transaction)?;
 
         state_cache.last_committed_block_info = Some(block_info.clone());
 

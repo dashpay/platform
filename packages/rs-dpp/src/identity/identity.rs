@@ -367,7 +367,7 @@ impl Identity {
 
     /// Computes the hash of an identity
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash::hash(self.to_buffer()?))
+        Ok(hash::hash_to_vec(self.to_buffer()?))
     }
 
     /// Convenience method to get Partial Identity Info

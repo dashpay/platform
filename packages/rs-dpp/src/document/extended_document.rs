@@ -5,7 +5,7 @@ use crate::prelude::{Revision, TimestampMillis};
 use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::deserializer;
 use crate::util::deserializer::{ProtocolVersion, SplitProtocolVersionOutcome};
-use crate::util::hash::hash;
+use crate::util::hash::hash_to_vec;
 use crate::ProtocolError;
 use ciborium::Value as CborValue;
 use integer_encoding::VarInt;
@@ -377,7 +377,7 @@ impl ExtendedDocument {
     }
 
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash(self.to_buffer()?))
+        Ok(hash_to_vec(self.to_buffer()?))
     }
 
     /// Set the value under given path.

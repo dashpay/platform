@@ -28,7 +28,7 @@ where
 
         let mut state_cache = self.state.write().unwrap();
 
-        self.update_masternode_list(&mut state_cache, request.initial_core_height, &transaction)?;
+        //self.update_masternode_list(&mut state_cache, request.initial_core_height, &transaction)?;
 
         self.drive
             .commit_transaction(transaction)

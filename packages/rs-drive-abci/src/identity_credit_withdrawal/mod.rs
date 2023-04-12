@@ -245,8 +245,9 @@ where
                             ))
                         })?;
 
-                    let original_transaction_id = hash::hash(untied_transaction_bytes);
-                    let update_transaction_id = hash::hash(unsigned_transaction_bytes.clone());
+                    let original_transaction_id = hash::hash_to_vec(untied_transaction_bytes);
+                    let update_transaction_id =
+                        hash::hash_to_vec(unsigned_transaction_bytes.clone());
 
                     let mut document = self.drive.find_withdrawal_document_by_transaction_id(
                         &original_transaction_id,
@@ -353,7 +354,7 @@ where
                 return Err(Error::Execution(ExecutionError::CorruptedCodeExecution("transactions must contain a transaction")))
             };
 
-            let transaction_id = hash::hash(transaction_bytes);
+            let transaction_id = hash::hash_to_vec(transaction_bytes);
 
             document.set_bytes(
                 withdrawals_contract::property_names::TRANSACTION_ID,

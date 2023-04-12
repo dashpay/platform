@@ -1,4 +1,4 @@
-use crate::{prelude::Identifier, util::hash::hash};
+use crate::{prelude::Identifier, util::hash::hash_to_vec};
 
 /// Generates the document ID
 pub fn generate_document_id(
@@ -14,5 +14,5 @@ pub fn generate_document_id(
     buf.extend_from_slice(document_type.as_bytes());
     buf.extend_from_slice(entropy);
 
-    Identifier::from_bytes(&hash(&buf)).unwrap()
+    Identifier::from_bytes(&hash_to_vec(&buf)).unwrap()
 }

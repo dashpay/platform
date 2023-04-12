@@ -245,7 +245,7 @@ pub trait StateTransitionConvert: Serialize {
 
     // Returns the hash of cibor-encoded bytes representation of the object
     fn hash(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash::hash(self.to_cbor_buffer(skip_signature)?))
+        Ok(hash::hash_to_vec(self.to_cbor_buffer(skip_signature)?))
     }
 
     fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
