@@ -229,9 +229,9 @@ describe('deliverTxFactory', () => {
 
     expect(proposalBlockExecutionContextMock.addDataContract).to.not.be.called();
 
-    // expect(
-    //   dataContractCreateTransitionFixture.getExecutionContext().getDryOperations(),
-    // ).to.have.length(0);
+    expect(
+      dataContractCreateTransitionFixture.getExecutionContext().getDryOperations(),
+    ).to.have.length(0);
 
     const stHash = crypto
       .createHash('sha256')
@@ -304,9 +304,9 @@ describe('deliverTxFactory', () => {
 
     expect(applyFeesToBalanceArgs[2]).to.deep.equals({ useTransaction: true });
 
-    // expect(
-    //   dataContractCreateTransitionFixture.getExecutionContext().getDryOperations(),
-    // ).to.have.length(0);
+    expect(
+      dataContractCreateTransitionFixture.getExecutionContext().getDryOperations(),
+    ).to.have.length(0);
 
     expect(proposalBlockExecutionContextMock.addDataContract).to.be.calledOnceWithExactly(
       dataContractCreateTransitionFixture.getDataContract(),
