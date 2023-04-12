@@ -80,4 +80,9 @@ impl PlatformState {
             .map(|block_info| block_info.epoch)
             .unwrap_or_default()
     }
+
+    /// HPMN list len
+    pub fn hpmn_list_len(&self) -> usize {
+        self.hpmn_masternode_list.len()
+    }
 }

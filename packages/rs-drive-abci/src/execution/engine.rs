@@ -236,6 +236,7 @@ where
             state.known_height_or((self.config.abci.genesis_height as u64).saturating_sub(1));
         let last_block_core_height =
             state.known_core_height_or(self.config.abci.genesis_core_height);
+        let hpmn_list_len = state.hpmn_list_len();
         drop(state);
 
         // Init block execution context
@@ -281,12 +282,10 @@ where
             })?; // This is a system error
 
         let block_info = block_state_info.to_block_info(epoch_info.current_epoch_index);
-        // FIXME: we need to calculate total hpmns based on masternode list (or remove hpmn_count if not needed)
-        let total_hpmns = self.config.quorum_size as u32;
         let mut block_execution_context = BlockExecutionContext {
             block_state_info,
             epoch_info: epoch_info.clone(),
-            hpmn_count: total_hpmns,
+            hpmn_count: hpmn_list_len as u32,
         };
 
         // If last synced Core block height is not set instead of scanning
@@ -353,12 +352,16 @@ where
     }
 
     /// Update the current quorums if the core_height changes
-    pub fn update_state_cache_and_quorums(&self, block_info: BlockInfo) -> Result<(), Error> {
+    pub fn update_state_cache_and_quorums(
+        &self,
+        block_info: BlockInfo,
+        transaction: &Transaction,
+    ) -> Result<(), Error> {
         let mut state_cache = self.state.write().unwrap();
 
         self.update_quorum_info(&mut state_cache, block_info.core_height)?;
 
-        self.update_masternode_list(&mut state_cache, block_info.core_height)?;
+        self.update_masternode_list(&mut state_cache, block_info.core_height, transaction)?;
 
         state_cache.last_committed_block_info = Some(block_info.clone());
 
@@ -550,7 +553,7 @@ where
 
         // At the end we update the state cache
 
-        self.update_state_cache_and_quorums(to_commit_block_info);
+        self.update_state_cache_and_quorums(to_commit_block_info, transaction)?;
 
         let mut drive_cache = self.drive.cache.write().unwrap();
 

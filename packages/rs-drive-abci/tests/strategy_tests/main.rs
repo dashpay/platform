@@ -61,7 +61,10 @@ use dpp::{
     bls_signatures::{PrivateKey as BlsPrivateKey, PublicKey as BlsPublicKey, Serialize},
     identity::state_transition::identity_topup_transition::IdentityTopUpTransition,
 };
-use drive::common::helpers::identities::create_test_masternode_identities_with_rng;
+use drive::common::helpers::identities::{
+    create_test_identities_with_rng, create_test_masternode_identities_with_rng,
+    generate_pro_tx_hashes,
+};
 use drive::contract::{Contract, CreateRandomDocument, DocumentType};
 use drive::dpp::document::Document;
 use drive::dpp::identity::{Identity, KeyID};
@@ -706,26 +709,12 @@ pub(crate) fn run_chain_for_strategy(
     config: PlatformConfig,
     seed: u64,
 ) -> ChainExecutionOutcome {
-    // init chain
-    let init_chain_request = static_init_chain_request();
-
-    platform
-        .init_chain(init_chain_request)
-        .expect("should init chain");
-
-    platform.create_mn_shares_contract(None);
-
     let quorum_count = 24; // We assume 24 quorums
     let quorum_size = config.quorum_size;
 
     let mut rng = StdRng::seed_from_u64(seed);
 
-    let proposers = create_test_masternode_identities_with_rng(
-        &platform.drive,
-        strategy.total_hpmns,
-        &mut rng,
-        None,
-    );
+    let proposers = generate_pro_tx_hashes(strategy.total_hpmns, &mut rng);
 
     let quorums: BTreeMap<QuorumHash, TestQuorumInfo> = (0..quorum_count)
         .into_iter()
@@ -822,6 +811,17 @@ pub(crate) fn start_chain_for_strategy(
     let quorum_hashes: Vec<&QuorumHash> = quorums.keys().collect();
 
     let current_quorum_hash = **quorum_hashes.choose(&mut rng).unwrap();
+
+    // init chain
+    let init_chain_request = static_init_chain_request();
+
+    platform
+        .init_chain(init_chain_request)
+        .expect("should init chain");
+
+    platform.create_mn_shares_contract(None);
+
+    create_test_identities_with_rng(&platform.drive, proposers.clone(), &mut rng, None);
 
     continue_chain_for_strategy(
         abci_application,

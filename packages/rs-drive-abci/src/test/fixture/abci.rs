@@ -49,7 +49,7 @@ pub fn static_init_chain_request() -> RequestInitChain {
         validator_set: None,
         app_state_bytes: [0u8; 32].to_vec(),
         initial_height: 0,
-        initial_core_height: 0,
+        initial_core_height: 1,
     }
 }
 
