@@ -1,4 +1,4 @@
-import { Document } from '@dashevo/wasm-dpp';
+import { ExtendedDocument } from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
 import broadcastStateTransition from '../../broadcastStateTransition';
 import { signStateTransition } from '../../signStateTransition';
@@ -8,14 +8,18 @@ import { signStateTransition } from '../../signStateTransition';
  *
  * @param {Platform} this - bound instance class
  * @param {Object} documents
- * @param {Document[]} [documents.create]
- * @param {Document[]} [documents.replace]
- * @param {Document[]} [documents.delete]
+ * @param {ExtendedDocument[]} [documents.create]
+ * @param {ExtendedDocument[]} [documents.replace]
+ * @param {ExtendedDocument[]} [documents.delete]
  * @param identity - identity
  */
 export default async function broadcast(
   this: Platform,
-  documents: { create?: Document[], replace?: Document[], delete?: Document[] },
+  documents: {
+    create?: ExtendedDocument[],
+    replace?: ExtendedDocument[],
+    delete?: ExtendedDocument[]
+  },
   identity: any,
 ): Promise<any> {
   this.logger.debug('[Document#broadcast] Broadcast documents', {

@@ -1,49 +1,60 @@
 import { expect } from 'chai';
-import DataContractFactory from '@dashevo/dpp/lib/dataContract/DataContractFactory';
-import ValidationResult from '@dashevo/dpp/lib/validation/ValidationResult';
-import Identifier from '@dashevo/dpp/lib/Identifier';
+
+import loadDpp from '@dashevo/wasm-dpp';
+
+import getDataContractFixture from '@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture';
+
 import getResponseMetadataFixture from '../../../../../test/fixtures/getResponseMetadataFixture';
 import get from './get';
 import identitiesFixtures from '../../../../../../tests/fixtures/identities.json';
-import contractsFixtures from '../../../../../../tests/fixtures/contracts.json';
 import 'mocha';
 import { ClientApps } from '../../../ClientApps';
 
 const GetDataContractResponse = require('@dashevo/dapi-client/lib/methods/platform/getDataContract/GetDataContractResponse');
 const NotFoundError = require('@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError');
 
-const factory = new DataContractFactory(
-  undefined,
-  () => new ValidationResult(),
-  () => [42, contractsFixtures.ratePlatform],
-);
-const dpp = {
-  dataContract: factory,
-  getProtocolVersion: () => 42,
-};
-factory.dpp = dpp;
-
-const apps = new ClientApps({
-  ratePlatform: {
-    contractId: contractsFixtures.ratePlatform.$id,
-  },
-});
 let client;
 let askedFromDapi;
 let initialize;
 let metadataFixture;
+let dataContractFixture;
+
+const factory = {
+  createFromBuffer: () => dataContractFixture,
+};
+
+const wasmDpp = {
+  dataContract: factory,
+  getProtocolVersion: () => 42,
+};
+
+const logger = {
+  debug: () => {},
+  silly: () => {},
+};
+
+let apps;
 
 describe('Client - Platform - Contracts - .get()', () => {
-  before(function before() {
+  before(async function before() {
+    await loadDpp();
+
+    dataContractFixture = await getDataContractFixture();
     metadataFixture = getResponseMetadataFixture();
+
+    apps = new ClientApps({
+      ratePlatform: {
+        contractId: dataContractFixture.getId(),
+      },
+    });
+
     askedFromDapi = 0;
     const getDataContract = async (id) => {
-      const fixtureIdentifier = Identifier.from(contractsFixtures.ratePlatform.$id);
+      const fixtureIdentifier = dataContractFixture.getId();
       askedFromDapi += 1;
 
       if (id.equals(fixtureIdentifier)) {
-        const contract = await dpp.dataContract.createFromObject(contractsFixtures.ratePlatform);
-        return new GetDataContractResponse(contract.toBuffer(), metadataFixture);
+        return new GetDataContractResponse(dataContractFixture.toBuffer(), metadataFixture);
       }
 
       throw new NotFoundError();
@@ -67,9 +78,9 @@ describe('Client - Platform - Contracts - .get()', () => {
     it('should get from DAPIClient if there is none locally', async () => {
       const contract = await get.call({
         // @ts-ignore
-        apps, dpp, client, initialize,
-      }, contractsFixtures.ratePlatform.$id);
-      expect(contract.toJSON()).to.deep.equal(contractsFixtures.ratePlatform);
+        apps, wasmDpp, client, initialize, logger,
+      }, dataContractFixture.getId());
+      expect(contract.toJSON()).to.deep.equal(dataContractFixture.toJSON());
       expect(contract.getMetadata().getBlockHeight()).to.equal(10);
       expect(contract.getMetadata().getCoreChainLockedHeight()).to.equal(42);
       expect(contract.getMetadata().getTimeMs()).to.equal(metadataFixture.getTimeMs());
@@ -81,9 +92,9 @@ describe('Client - Platform - Contracts - .get()', () => {
     it('should get from local when already fetched once', async () => {
       const contract = await get.call({
         // @ts-ignore
-        apps, dpp, client, initialize,
-      }, contractsFixtures.ratePlatform.$id);
-      expect(contract.toJSON()).to.deep.equal(contractsFixtures.ratePlatform);
+        apps, wasmDpp, client, initialize, logger,
+      }, dataContractFixture.getId());
+      expect(contract.toJSON()).to.deep.equal(dataContractFixture.toJSON());
       expect(contract.getMetadata().getBlockHeight()).to.equal(10);
       expect(contract.getMetadata().getCoreChainLockedHeight()).to.equal(42);
       expect(contract.getMetadata().getTimeMs()).to.equal(metadataFixture.getTimeMs());
@@ -97,7 +108,7 @@ describe('Client - Platform - Contracts - .get()', () => {
     it('should deal when contract do not exist', async () => {
       const contract = await get.call({
         // @ts-ignore
-        apps, dpp, client, initialize,
+        apps, wasmDpp, client, initialize, logger,
       }, identitiesFixtures.bob.id);
       expect(contract).to.equal(null);
     });

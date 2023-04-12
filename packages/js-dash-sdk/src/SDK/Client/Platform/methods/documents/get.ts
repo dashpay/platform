@@ -1,19 +1,19 @@
-import { Identifier, Document, Metadata } from '@dashevo/wasm-dpp';
+import { Identifier, ExtendedDocument, Metadata } from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
 
 /**
  * @param {WhereCondition[]} [where] - where
  * @param {OrderByCondition[]} [orderBy] - order by
  * @param {number} [limit] - limit
- * @param {string|Buffer|Document|Identifier} [startAt] - start value (included)
- * @param {string|Buffer|Document|Identifier} [startAfter] - start value (not included)
+ * @param {string|Buffer|ExtendedDocument|Identifier} [startAt] - start value (included)
+ * @param {string|Buffer|ExtendedDocument|Identifier} [startAfter] - start value (not included)
  */
 declare interface FetchOpts {
   where?: WhereCondition[];
   orderBy?: OrderByCondition[];
   limit?: number;
-  startAt?: string | Buffer | Document | Identifier;
-  startAfter?: string | Buffer | Document | Identifier;
+  startAt?: string | Buffer | ExtendedDocument | Identifier;
+  startAfter?: string | Buffer | ExtendedDocument | Identifier;
 }
 
 type OrderByCondition = [
@@ -128,13 +128,13 @@ export async function get(this: Platform, typeLocator: string, opts: FetchOpts):
       ));
   }
 
-  if (opts.startAt instanceof Document) {
+  if (opts.startAt instanceof ExtendedDocument) {
     opts.startAt = opts.startAt.getId();
   } else if (typeof opts.startAt === 'string') {
     opts.startAt = Identifier.from(opts.startAt);
   }
 
-  if (opts.startAfter instanceof Document) {
+  if (opts.startAfter instanceof ExtendedDocument) {
     opts.startAfter = opts.startAfter.getId();
   } else if (typeof opts.startAfter === 'string') {
     opts.startAfter = Identifier.from(opts.startAfter);

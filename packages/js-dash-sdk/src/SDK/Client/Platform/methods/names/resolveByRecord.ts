@@ -4,7 +4,7 @@ import { Platform } from '../../Platform';
 /**
  * @param record - the exact name of the record to resolve
  * @param value - the exact value for this record to resolve
- * @returns {Document[]} - Resolved domains
+ * @returns {ExtendedDocument[]} - Resolved domains
  */
 export async function resolveByRecord(this: Platform, record: string, value: any): Promise<any> {
   await this.initialize();

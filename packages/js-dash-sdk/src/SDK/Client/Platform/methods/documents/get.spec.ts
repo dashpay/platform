@@ -1,7 +1,6 @@
-import getDataContractFixture from '@dashevo/dpp/lib/test/fixtures/getDataContractFixture';
-import generateRandomIdentifier from '@dashevo/dpp/lib/test/utils/generateRandomIdentifier';
-import createDPPMock from '@dashevo/dpp/lib/test/mocks/createDPPMock';
-import getDocumentsFixture from '@dashevo/dpp/lib/test/fixtures/getDocumentsFixture';
+import getDataContractFixture from '@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture';
+import generateRandomIdentifier from '@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync';
+import getDocumentsFixture from '@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture';
 import { expect } from 'chai';
 import getResponseMetadataFixture from '../../../../../test/fixtures/getResponseMetadataFixture';
 
@@ -16,8 +15,8 @@ describe('Client - Platform - Documents - .get()', () => {
   let getDocumentsMock;
   let appsGetMock;
 
-  beforeEach(function beforeEach() {
-    dataContract = getDataContractFixture();
+  beforeEach(async function beforeEach() {
+    dataContract = await getDataContractFixture();
 
     appDefinition = {
       contractId: dataContract.getId(),
@@ -28,8 +27,18 @@ describe('Client - Platform - Documents - .get()', () => {
       .resolves(new GetDocumentsResponse([], getResponseMetadataFixture()));
     appsGetMock = this.sinon.stub().returns(appDefinition);
 
+    const wasmDpp = {
+      getProtocolVersion: () => 42,
+    };
+
+    const logger = {
+      debug: () => {},
+      silly: () => {},
+    };
+
     platform = {
-      dpp: createDPPMock(this.sinon),
+      wasmDpp,
+      logger,
       client: {
         getApps: () => ({
           has: this.sinon.stub().returns(true),
@@ -46,7 +55,7 @@ describe('Client - Platform - Documents - .get()', () => {
   });
 
   it('should convert identifier properties inside where condition', async () => {
-    const id = generateRandomIdentifier();
+    const id = await generateRandomIdentifier();
     await get.call(platform, 'app.withByteArrays', {
       where: [
         ['identifierField', '==', id.toString()],
@@ -65,8 +74,8 @@ describe('Client - Platform - Documents - .get()', () => {
   });
 
   it('should convert $id and $ownerId to identifiers inside where condition', async () => {
-    const id = generateRandomIdentifier();
-    const ownerId = generateRandomIdentifier();
+    const id = await generateRandomIdentifier();
+    const ownerId = await generateRandomIdentifier();
 
     await get.call(platform, 'app.withByteArrays', {
       where: [
@@ -88,7 +97,7 @@ describe('Client - Platform - Documents - .get()', () => {
   });
 
   it('should convert Document to identifiers inside where condition for "startAt" and "startAfter"', async () => {
-    const [docA, docB] = getDocumentsFixture();
+    const [docA, docB] = await getDocumentsFixture();
 
     await get.call(platform, 'app.withByteArrays', {
       startAt: docA,
@@ -106,7 +115,7 @@ describe('Client - Platform - Documents - .get()', () => {
   });
 
   it('should convert string to identifiers inside where condition for "startAt" and "startAfter"', async () => {
-    const [docA, docB] = getDocumentsFixture();
+    const [docA, docB] = await getDocumentsFixture();
 
     await get.call(platform, 'app.withByteArrays', {
       startAt: docA.getId().toString('base58'),
@@ -124,33 +133,38 @@ describe('Client - Platform - Documents - .get()', () => {
   });
 
   it('should convert nested identifier properties inside where condition if `elementMatch` is used', async () => {
-    const id = generateRandomIdentifier();
+    const id = await generateRandomIdentifier();
 
-    dataContract = getDataContractFixture();
-    dataContract.documents.withByteArrays.properties.nestedObject = {
+    dataContract = await getDataContractFixture();
+    dataContract.setDocumentSchema('withByteArrays', {
       type: 'object',
       properties: {
-        idField: {
-          type: 'array',
-          byteArray: true,
-          contentMediaType: 'application/x.dash.dpp.identifier',
-          minItems: 32,
-          maxItems: 32,
-        },
-        anotherNested: {
+        nestedObject: {
           type: 'object',
           properties: {
-            anotherIdField: {
+            idField: {
               type: 'array',
               byteArray: true,
               contentMediaType: 'application/x.dash.dpp.identifier',
               minItems: 32,
               maxItems: 32,
             },
+            anotherNested: {
+              type: 'object',
+              properties: {
+                anotherIdField: {
+                  type: 'array',
+                  byteArray: true,
+                  contentMediaType: 'application/x.dash.dpp.identifier',
+                  minItems: 32,
+                  maxItems: 32,
+                },
+              },
+            },
           },
         },
       },
-    };
+    });
 
     appDefinition = {
       contractId: dataContract.getId(),
