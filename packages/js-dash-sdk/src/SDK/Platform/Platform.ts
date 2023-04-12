@@ -1,5 +1,5 @@
 // @ts-ignore
-import { default as _DashPlatformProtocol } from '@dashevo/dpp';
+import * as _DashPlatformProtocol from '@dashevo/wasm-dpp';
 import { Platform as PlatformClient } from '../Client/Platform/Platform';
 
 export namespace Platform {

@@ -153,7 +153,7 @@ export async function get(this: Platform, typeLocator: string, opts: FetchOpts):
 
   const result = await Promise.all(
     rawDocuments.map(async (rawDocument) => {
-      const document = await this.wasmDpp.document.createFromBuffer(rawDocument);
+      const document = await this.dpp.document.createFromBuffer(rawDocument);
 
       let metadata;
       const responseMetadata = documentsResponse.getMetadata();

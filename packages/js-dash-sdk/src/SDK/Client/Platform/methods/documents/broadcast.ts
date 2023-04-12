@@ -29,9 +29,9 @@ export default async function broadcast(
   });
   await this.initialize();
 
-  const { wasmDpp } = this;
+  const { dpp } = this;
 
-  const documentsBatchTransition = wasmDpp.document.createStateTransition(documents);
+  const documentsBatchTransition = dpp.document.createStateTransition(documents);
 
   this.logger.silly('[Document#broadcast] Created documents batch transition');
 

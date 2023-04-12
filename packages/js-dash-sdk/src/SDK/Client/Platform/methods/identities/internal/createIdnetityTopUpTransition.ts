@@ -23,17 +23,17 @@ export async function createIdentityTopUpTransition(
   const platform = this;
   await platform.initialize();
 
-  const { wasmDpp } = platform;
+  const { dpp } = platform;
 
   // @ts-ignore
-  const identityTopUpTransition = wasmDpp.identity.createIdentityTopUpTransition(
+  const identityTopUpTransition = dpp.identity.createIdentityTopUpTransition(
     identityId, assetLockProof,
   );
 
   await identityTopUpTransition
     .signByPrivateKey(assetLockPrivateKey.toBuffer(), IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
-  const result = await wasmDpp.stateTransition.validateBasic(identityTopUpTransition);
+  const result = await dpp.stateTransition.validateBasic(identityTopUpTransition);
 
   if (!result.isValid()) {
     // TODO(wasm): pretty print errors. JSON stringify is not handling wasm errors well

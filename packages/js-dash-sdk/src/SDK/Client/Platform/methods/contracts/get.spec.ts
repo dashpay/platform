@@ -23,7 +23,7 @@ const factory = {
   createFromBuffer: () => dataContractFixture,
 };
 
-const wasmDpp = {
+const dpp = {
   dataContract: factory,
   getProtocolVersion: () => 42,
 };
@@ -78,7 +78,7 @@ describe('Client - Platform - Contracts - .get()', () => {
     it('should get from DAPIClient if there is none locally', async () => {
       const contract = await get.call({
         // @ts-ignore
-        apps, wasmDpp, client, initialize, logger,
+        apps, dpp, client, initialize, logger,
       }, dataContractFixture.getId());
       expect(contract.toJSON()).to.deep.equal(dataContractFixture.toJSON());
       expect(contract.getMetadata().getBlockHeight()).to.equal(10);
@@ -92,7 +92,7 @@ describe('Client - Platform - Contracts - .get()', () => {
     it('should get from local when already fetched once', async () => {
       const contract = await get.call({
         // @ts-ignore
-        apps, wasmDpp, client, initialize, logger,
+        apps, dpp, client, initialize, logger,
       }, dataContractFixture.getId());
       expect(contract.toJSON()).to.deep.equal(dataContractFixture.toJSON());
       expect(contract.getMetadata().getBlockHeight()).to.equal(10);
@@ -108,7 +108,7 @@ describe('Client - Platform - Contracts - .get()', () => {
     it('should deal when contract do not exist', async () => {
       const contract = await get.call({
         // @ts-ignore
-        apps, wasmDpp, client, initialize, logger,
+        apps, dpp, client, initialize, logger,
       }, identitiesFixtures.bob.id);
       expect(contract).to.equal(null);
     });

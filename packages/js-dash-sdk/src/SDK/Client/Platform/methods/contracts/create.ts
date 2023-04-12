@@ -16,7 +16,7 @@ export async function create(
   this.logger.debug('[Contracts#create] create data contract');
   await this.initialize();
 
-  const dataContract = this.wasmDpp.dataContract.create(identity.getId(), contractDefinitions);
+  const dataContract = this.dpp.dataContract.create(identity.getId(), contractDefinitions);
   this.logger.debug(`[Contracts#create] created data contract "${dataContract.getId()}"`);
   return dataContract;
 }

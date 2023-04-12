@@ -18,9 +18,9 @@ export default async function publish(
   this.logger.debug(`[Contracts#publish] publish data contract ${dataContract.getId()}`);
   await this.initialize();
 
-  const { wasmDpp } = this;
+  const { dpp } = this;
 
-  const dataContractCreateTransition = wasmDpp.dataContract
+  const dataContractCreateTransition = dpp.dataContract
     .createDataContractCreateTransition(dataContract);
 
   this.logger.silly(`[Contracts#publish] created data contract create transition ${dataContract.getId()}`);

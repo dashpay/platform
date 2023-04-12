@@ -22,7 +22,7 @@ export async function createIdentityCreateTransition(
   await platform.initialize();
 
   const account = await platform.client.getWalletAccount();
-  const { wasmDpp } = platform;
+  const { dpp } = platform;
 
   const identityIndex = await account.getUnusedIdentityIndex();
 
@@ -37,7 +37,7 @@ export async function createIdentityCreateTransition(
 
   // Create Identity
   // @ts-ignore
-  const identity = wasmDpp.identity.create(
+  const identity = dpp.identity.create(
     assetLockProof, [{
       id: 0,
       data: identityMasterPublicKey.toBuffer(),
@@ -58,7 +58,7 @@ export async function createIdentityCreateTransition(
   );
 
   // Create ST
-  const identityCreateTransition = wasmDpp.identity.createIdentityCreateTransition(identity);
+  const identityCreateTransition = dpp.identity.createIdentityCreateTransition(identity);
 
   // Create key proofs
 
@@ -86,7 +86,7 @@ export async function createIdentityCreateTransition(
   await identityCreateTransition
     .signByPrivateKey(assetLockPrivateKey.toBuffer(), IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
-  const result = await wasmDpp.stateTransition.validateBasic(identityCreateTransition);
+  const result = await dpp.stateTransition.validateBasic(identityCreateTransition);
 
   if (!result.isValid()) {
     // TODO(wasm): pretty print errors. JSON stringify is not handling wasm errors well

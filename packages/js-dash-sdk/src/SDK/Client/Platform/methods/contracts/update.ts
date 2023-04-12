@@ -18,16 +18,16 @@ export default async function update(
   this.logger.debug(`[DataContract#update] Update data contract ${dataContract.getId()}`);
   await this.initialize();
 
-  const { wasmDpp } = this;
+  const { dpp } = this;
 
   // Clone contract
-  const updatedDataContract = await wasmDpp.dataContract.createFromObject(
+  const updatedDataContract = await dpp.dataContract.createFromObject(
     dataContract.toObject(),
   );
 
   updatedDataContract.incrementVersion();
 
-  const dataContractUpdateTransition = wasmDpp.dataContract
+  const dataContractUpdateTransition = dpp.dataContract
     .createDataContractUpdateTransition(updatedDataContract);
 
   this.logger.silly(`[DataContract#update] Created data contract update transition ${dataContract.getId()}`);

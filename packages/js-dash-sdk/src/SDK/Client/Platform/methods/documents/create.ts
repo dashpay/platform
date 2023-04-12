@@ -21,7 +21,7 @@ export async function create(
   this.logger.debug(`[Document#create] Create document "${typeLocator}"`);
   await this.initialize();
 
-  const { wasmDpp } = this;
+  const { dpp } = this;
 
   const appNames = this.client.getApps().getNames();
 
@@ -38,7 +38,7 @@ export async function create(
     throw new Error(`Contract ${appName} not found. Ensure contractId ${contractId} is correct.`);
   }
 
-  const document = wasmDpp.document.create(
+  const document = dpp.document.create(
     dataContract,
     identity.getId(),
     fieldType,

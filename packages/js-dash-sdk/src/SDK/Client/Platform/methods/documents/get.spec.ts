@@ -27,7 +27,7 @@ describe('Client - Platform - Documents - .get()', () => {
       .resolves(new GetDocumentsResponse([], getResponseMetadataFixture()));
     appsGetMock = this.sinon.stub().returns(appDefinition);
 
-    const wasmDpp = {
+    const dpp = {
       getProtocolVersion: () => 42,
     };
 
@@ -37,7 +37,7 @@ describe('Client - Platform - Documents - .get()', () => {
     };
 
     platform = {
-      wasmDpp,
+      dpp,
       logger,
       client: {
         getApps: () => ({

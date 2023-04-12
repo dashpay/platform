@@ -42,7 +42,7 @@ export async function get(this: Platform, identifier: ContractIdentifier): Promi
     throw e;
   }
 
-  const contract = await this.wasmDpp.dataContract
+  const contract = await this.dpp.dataContract
     .createFromBuffer(dataContractResponse.getDataContract());
 
   let metadata;

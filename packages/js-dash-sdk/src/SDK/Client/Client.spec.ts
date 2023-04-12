@@ -142,7 +142,7 @@ describe('Dash - Client', function suite() {
 
       const serializedSt = dapiClientMock.platform.broadcastStateTransition.getCall(0).args[0];
       const interceptedIdentityStateTransition = await client
-        .platform.wasmDpp.stateTransition.createFromBuffer(serializedSt);
+        .platform.dpp.stateTransition.createFromBuffer(serializedSt);
       const interceptedAssetLockProof = interceptedIdentityStateTransition.getAssetLockProof();
 
       const transaction = new Transaction(transportMock.sendTransaction.getCall(0).args[0]);
@@ -200,7 +200,7 @@ describe('Dash - Client', function suite() {
 
       const serializedSt = dapiClientMock.platform.broadcastStateTransition.getCall(1).args[0];
       const interceptedIdentityStateTransition = await client
-        .platform.wasmDpp.stateTransition.createFromBuffer(serializedSt);
+        .platform.dpp.stateTransition.createFromBuffer(serializedSt);
       const interceptedAssetLockProof = interceptedIdentityStateTransition.getAssetLockProof();
 
       expect(interceptedIdentityStateTransition.getType())
@@ -275,7 +275,7 @@ describe('Dash - Client', function suite() {
 
       const serializedSt = dapiClientMock.platform.broadcastStateTransition.getCall(1).args[0];
       const interceptedIdentityStateTransition = await client
-        .platform.wasmDpp.stateTransition.createFromBuffer(serializedSt);
+        .platform.dpp.stateTransition.createFromBuffer(serializedSt);
 
       expect(interceptedIdentityStateTransition.getType())
         .to.be.equal(stateTransitionTypes.IDENTITY_UPDATE);
@@ -353,7 +353,7 @@ describe('Dash - Client', function suite() {
 
       const serializedSt = dapiClientMock.platform.broadcastStateTransition.getCall(0).args[0];
       const interceptedSt = await client
-        .platform.wasmDpp.stateTransition.createFromBuffer(serializedSt);
+        .platform.dpp.stateTransition.createFromBuffer(serializedSt);
 
       // .to.be.true() doesn't work after TS compilation in Chrome
       expect(await interceptedSt.verifySignature(
@@ -400,7 +400,7 @@ describe('Dash - Client', function suite() {
 
       const serializedSt = dapiClientMock.platform.broadcastStateTransition.getCall(0).args[0];
       const interceptedSt = await client
-        .platform.wasmDpp.stateTransition.createFromBuffer(serializedSt);
+        .platform.dpp.stateTransition.createFromBuffer(serializedSt);
 
       // .to.be.true() doesn't work after TS compilation in Chrome
       expect(await interceptedSt.verifySignature(

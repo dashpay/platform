@@ -22,10 +22,10 @@ export default async function broadcastStateTransition(
   stateTransition: any,
   options: { skipValidation?: boolean; } = {},
 ): Promise<IStateTransitionResult | void> {
-  const { client, wasmDpp } = platform;
+  const { client, dpp } = platform;
 
   if (!options.skipValidation) {
-    const result = await wasmDpp.stateTransition.validateBasic(stateTransition);
+    const result = await dpp.stateTransition.validateBasic(stateTransition);
 
     if (!result.isValid()) {
       const consensusError = result.getFirstError();

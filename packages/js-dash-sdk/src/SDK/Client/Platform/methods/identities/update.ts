@@ -26,9 +26,9 @@ export async function update(
   });
   await this.initialize();
 
-  const { wasmDpp } = this;
+  const { dpp } = this;
 
-  const identityUpdateTransition = wasmDpp.identity.createIdentityUpdateTransition(
+  const identityUpdateTransition = dpp.identity.createIdentityUpdateTransition(
     identity,
     publicKeys,
   );
@@ -75,7 +75,7 @@ export async function update(
   await signStateTransition(this, identityUpdateTransition, identity, signerKeyIndex);
   this.logger.silly('[Identity#update] Signed IdentityUpdateTransition');
 
-  const result = await wasmDpp.stateTransition.validateBasic(identityUpdateTransition);
+  const result = await dpp.stateTransition.validateBasic(identityUpdateTransition);
 
   if (!result.isValid()) {
     // TODO(wasm): pretty print errors. JSON.stringify is not enough

@@ -1,5 +1,4 @@
 // @ts-ignore
-import DashPlatformProtocolJS from '@dashevo/dpp';
 import loadWasmDpp, { DPPModule, DashPlatformProtocol } from '@dashevo/wasm-dpp';
 import crypto from 'crypto';
 
@@ -106,16 +105,15 @@ interface DataContracts {
 export class Platform {
   // TODO: revisit this. Do we want to refactor all methods to check
   //  whether dppModule is initialized?
-
   // @ts-ignore
   dppModule: DPPModule;
-
-  dpp: DashPlatformProtocolJS;
 
   // TODO: revisit this. Do we want to refactor all methods to check
   //  whether dppModule is initialized?
   // @ts-ignore
-  wasmDpp: DashPlatformProtocol;
+  dpp: DashPlatformProtocol;
+
+  protocolVersion: number;
 
   options: PlatformOpts;
 
@@ -207,37 +205,25 @@ export class Platform {
     // use mapped one otherwise
     // fallback to one that set in dpp as the last option
     // eslint-disable-next-line
-    const driveProtocolVersion = options.driveProtocolVersion !== undefined
+    this.protocolVersion = options.driveProtocolVersion !== undefined
       ? options.driveProtocolVersion
       : (mappedProtocolVersion !== undefined ? mappedProtocolVersion : latestProtocolVersion);
-
-    const stateRepository = new StateRepository(this.client);
-
-    this.dpp = new DashPlatformProtocolJS({
-      stateRepository,
-      protocolVersion: driveProtocolVersion,
-      ...options,
-    });
   }
 
   async initialize() {
-    await this.dpp.initialize();
+    if (!this.dpp) {
+      this.dppModule = await Platform.initializeDppModule();
 
-    this.dppModule = await Platform.initializeDppModule();
-
-    if (!this.wasmDpp) {
       const bls = await getBlsAdapter();
+      const stateRepository = new StateRepository(this.client);
 
-      const protocolVersion = this.dpp.getProtocolVersion();
-      const stateRepository = this.dpp.getStateRepository();
-
-      this.wasmDpp = new DashPlatformProtocol(
+      this.dpp = new DashPlatformProtocol(
         bls,
         stateRepository,
         {
           generate: () => crypto.randomBytes(32),
         },
-        protocolVersion,
+        this.protocolVersion,
       );
     }
   }

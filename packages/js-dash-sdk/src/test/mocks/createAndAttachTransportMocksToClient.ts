@@ -53,7 +53,7 @@ function makeTxStreamEmitISLocksForTransactions(transportMock, txStreamMock) {
 async function makeGetIdentityRespondWithIdentity(client, dapiClientMock, sinon) {
   dapiClientMock.platform.broadcastStateTransition.callsFake(async (stBuffer) => {
     const interceptedIdentityStateTransition = await client
-      .platform.wasmDpp.stateTransition.createFromBuffer(stBuffer);
+      .platform.dpp.stateTransition.createFromBuffer(stBuffer);
 
     if (interceptedIdentityStateTransition.getType() === stateTransitionTypes.IDENTITY_CREATE) {
       const identityToResolve = new Identity({

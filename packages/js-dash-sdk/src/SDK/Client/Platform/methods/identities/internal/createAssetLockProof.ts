@@ -21,7 +21,7 @@ export async function createAssetLockProof(
   await platform.initialize();
 
   const account = await platform.client.getWalletAccount();
-  const { wasmDpp } = platform;
+  const { dpp } = platform;
 
   // Create poof that the transaction won't be double spend
 
@@ -60,7 +60,7 @@ export async function createAssetLockProof(
         }
 
         // @ts-ignore
-        return wasmDpp.identity.createInstantAssetLockProof(
+        return dpp.identity.createInstantAssetLockProof(
           instantLock.toBuffer(),
           assetLockTransaction.toBuffer(),
           outputIndex,
@@ -98,7 +98,7 @@ export async function createAssetLockProof(
           outPointBuffer = Buffer.concat([txIdBuffer, outputIndexBuffer]);
 
           // @ts-ignore
-          return wasmDpp.identity.createChainAssetLockProof(
+          return dpp.identity.createChainAssetLockProof(
             // @ts-ignore
             assetLockMetadata.height,
             outPointBuffer,

@@ -28,7 +28,7 @@ export async function get(this: Platform, id: Identifier | string): Promise<any>
     throw e;
   }
 
-  const identity = this.wasmDpp.identity.createFromBuffer(identityResponse.getIdentity());
+  const identity = this.dpp.identity.createFromBuffer(identityResponse.getIdentity());
 
   let metadata;
   const responseMetadata = identityResponse.getMetadata();
