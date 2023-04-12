@@ -57,6 +57,15 @@ function endBlockFactory(
 
     // Call RS ABCI
 
+    // Convert feeRefunds because rs-drive-nodejs expects them to be Buffers
+    // eslint-disable-next-line
+    for (const epoch in fees.refundsPerEpoch) {
+      const amount = BigInt(fees.refundsPerEpoch[epoch]);
+      const refundBuffer = Buffer.allocUnsafe(8);
+      refundBuffer.writeBigInt64BE(amount);
+      fees.refundsPerEpoch[epoch] = refundBuffer;
+    }
+
     const rsRequest = {
       fees,
     };
