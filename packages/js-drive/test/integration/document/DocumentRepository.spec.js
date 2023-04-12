@@ -1,3 +1,7 @@
+const crypto = require('crypto');
+
+const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
+
 const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
@@ -614,12 +618,12 @@ describe('DocumentRepository', function main() {
   let documentSchema;
   let blockInfo;
   let Identifier;
-  let Document;
+  let ExtendedDocument;
   let DataContractFactory;
   let validQueries = [];
 
   before(async function before() {
-    ({ Identifier, Document, DataContractFactory } = this.dppWasm);
+    ({ Identifier, ExtendedDocument, DataContractFactory, DataContractValidator } = this.dppWasm);
 
     validQueries = [
       {},
@@ -695,15 +699,17 @@ describe('DocumentRepository', function main() {
       //   .fill(1)
       //   .map((item, index) => i + index));
       // currentDocument.set('arrayWithObjects', Array(i + 1).fill(arrayItem));
-      currentDocument.type = document.getType();
+      currentDocument.setType(document.getType());
 
       return currentDocument;
     });
 
     [document] = documents;
 
-    dataContract.getDocuments()[document.getType()].properties = {
-      ...dataContract.getDocuments()[document.getType()].properties,
+    const documentsSchema = dataContract.getDocuments();
+
+    documentsSchema[document.getType()].properties = {
+      ...documentsSchema[document.getType()].properties,
       name: {
         type: 'string',
         maxLength: 63,
@@ -733,8 +739,6 @@ describe('DocumentRepository', function main() {
       //   },
       // },
     };
-
-    const documentsSchema = dataContract.getDocuments();
 
     documentSchema = documentsSchema[document.getType()];
 
@@ -783,6 +787,8 @@ describe('DocumentRepository', function main() {
         properties: [{ $ownerId: 'asc' }],
       },
     ]);
+
+    dataContract.setDocuments(documentsSchema);
 
     const dpp = container.resolve('dpp');
     queryDataContract = dpp.dataContract.create(
@@ -929,7 +935,7 @@ describe('DocumentRepository', function main() {
     beforeEach(async () => {
       await createDocuments(documentRepository, documents, blockInfo);
 
-      replaceDocument = new Document({
+      replaceDocument = new ExtendedDocument({
         ...documents[1].toObject(),
         lastName: 'NotSoShiny',
       }, dataContract);
@@ -1033,7 +1039,7 @@ describe('DocumentRepository', function main() {
     });
 
     it('should find all existing documents', async () => {
-      const result = await documentRepository.find(dataContract, document.getType());
+      const result = await documentRepository.find(dataContract, document.getType(), {}, true);
 
       expect(result).to.be.instanceOf(StorageResult);
       expect(result.getOperations().length).to.be.greaterThan(0);
@@ -1056,7 +1062,7 @@ describe('DocumentRepository', function main() {
       const foundDocumentsResult = await documentRepository
         .find(dataContract, document.getType(), {
           useTransaction: true,
-        });
+        }, true);
 
       expect(foundDocumentsResult).to.be.instanceOf(StorageResult);
       expect(foundDocumentsResult.getOperations().length).to.be.greaterThan(0);
@@ -1081,7 +1087,7 @@ describe('DocumentRepository', function main() {
       const foundDocumentsResult = await documentRepository
         .find(dataContract, document.getType(), {
           dryRun: true,
-        });
+        }, true);
 
       expect(foundDocumentsResult).to.be.instanceOf(StorageResult);
       expect(foundDocumentsResult.getOperations().length).to.be.greaterThan(0);
@@ -1102,7 +1108,7 @@ describe('DocumentRepository', function main() {
       describe('valid queries', () => {
         validQueries.forEach((query) => {
           it(`should return valid result for query "${JSON.stringify(query)}"`, async () => {
-            const result = await documentRepository.find(queryDataContract, 'testDocument', query);
+            const result = await documentRepository.find(queryDataContract, 'testDocument', query, true);
 
             expect(result).to.be.instanceOf(StorageResult);
           });
@@ -1135,7 +1141,18 @@ describe('DocumentRepository', function main() {
             },
           };
 
-          const factory = new DataContractFactory(createDPPMock(), () => { });
+          const dataContractValidator = new DataContractValidator();
+          const entropyGenerator = {
+            generate() {
+              return crypto.randomBytes(32);
+            },
+          };
+
+          const factory = new DataContractFactory(
+            protocolVersion.latestVersion,
+            dataContractValidator,
+            entropyGenerator,
+          );
           const ownerId = await generateRandomIdentifier();
           const myDataContract = factory.create(ownerId, schema);
           await dataContractRepository.create(myDataContract, blockInfo);
@@ -1146,7 +1163,7 @@ describe('DocumentRepository', function main() {
               ['$createdAt', '>', new Date().getTime()],
             ],
             orderBy: [['$createdAt', 'asc']],
-          });
+          }, true);
 
           expect(result).to.be.instanceOf(StorageResult);
         });
@@ -1180,7 +1197,18 @@ describe('DocumentRepository', function main() {
             },
           };
 
-          const factory = new DataContractFactory(createDPPMock(), () => { });
+          const dataContractValidator = new DataContractValidator();
+          const entropyGenerator = {
+            generate() {
+              return crypto.randomBytes(32);
+            },
+          };
+
+          const factory = new DataContractFactory(
+            protocolVersion.latestVersion,
+            dataContractValidator,
+            entropyGenerator,
+          );
           const ownerId = await generateRandomIdentifier();
           const myDataContract = factory.create(ownerId, schema);
           await dataContractRepository.create(myDataContract, blockInfo);
@@ -1190,7 +1218,7 @@ describe('DocumentRepository', function main() {
               ['normalizedParentDomainName', '==', 'dash'],
             ],
             orderBy: [['normalizedLabel', 'asc']],
-          });
+          }, true);
 
           expect(result).to.be.instanceOf(StorageResult);
         });
@@ -1200,7 +1228,7 @@ describe('DocumentRepository', function main() {
         invalidQueries.forEach(({ query, error }) => {
           it(`should throw InvalidQueryError for query "${JSON.stringify(query)}"`, async () => {
             try {
-              await documentRepository.find(queryDataContract, 'testDocument', query);
+              await documentRepository.find(queryDataContract, 'testDocument', query, true);
 
               expect.fail('should throw an error');
             } catch (e) {
@@ -1213,7 +1241,7 @@ describe('DocumentRepository', function main() {
         notObjectTestCases.forEach(({ type, value: query }) => {
           it(`should return invalid result if query is a ${type}`, async () => {
             try {
-              await documentRepository.find(queryDataContract, 'documentA', query);
+              await documentRepository.find(queryDataContract, 'documentA', query, true);
 
               expect.fail('should throw an error');
             } catch (e) {
@@ -1234,6 +1262,7 @@ describe('DocumentRepository', function main() {
             dataContract,
             document.getType(),
             query,
+            true,
           );
 
           expect(result).to.be.instanceOf(StorageResult);
@@ -1255,6 +1284,7 @@ describe('DocumentRepository', function main() {
             dataContract,
             document.getType(),
             query,
+            true,
           );
 
           expect(result).to.be.an('array');
@@ -1277,6 +1307,7 @@ describe('DocumentRepository', function main() {
             dataContract,
             document.getType(),
             query,
+            true,
           );
 
           expect(result).to.be.an('array');
@@ -1290,7 +1321,7 @@ describe('DocumentRepository', function main() {
         notArrayTestCases.forEach(({ type, value: query }) => {
           it(`should return invalid result if "where" is not an array, but ${type}`, async () => {
             try {
-              await documentRepository.find(queryDataContract, 'documentA', { where: query });
+              await documentRepository.find(queryDataContract, 'documentA', { where: query }, true);
 
               expect.fail('should throw an error');
             } catch (e) {
@@ -1303,7 +1334,7 @@ describe('DocumentRepository', function main() {
         it('should return invalid result if "where" contains more than 10 conditions', async () => {
           const where = Array(11).fill(['a', '<', 1]);
           try {
-            await documentRepository.find(queryDataContract, 'documentA', { where });
+            await documentRepository.find(queryDataContract, 'documentA', { where }, true);
 
             expect.fail('should throw an error');
           } catch (e) {
@@ -1320,7 +1351,7 @@ describe('DocumentRepository', function main() {
                 ['a', '>', 1],
               ],
               orderBy: [['a', 'asc']],
-            });
+            }, true);
 
             expect.fail('should throw an error');
           } catch (e) {
@@ -1334,7 +1365,7 @@ describe('DocumentRepository', function main() {
               where: [
                 ['a', '==', 1],
               ],
-            });
+            }, true);
 
             expect.fail('should throw an error');
           } catch (e) {
@@ -1349,7 +1380,7 @@ describe('DocumentRepository', function main() {
               const result = await documentRepository.find(queryDataContract, 'documentB', {
                 where:
                   [['$id', '==', await generateRandomIdentifier()]],
-              });
+              }, true);
 
               expect(result).to.be.instanceOf(StorageResult);
               expect(result.isEmpty()).to.be.true();
@@ -1360,7 +1391,7 @@ describe('DocumentRepository', function main() {
                 where: [
                   ['a', '==', '1'],
                 ],
-              });
+              }, true);
 
               expect(result).to.be.instanceOf(StorageResult);
               expect(result.isEmpty()).to.be.true();
@@ -1370,7 +1401,7 @@ describe('DocumentRepository', function main() {
               const result = await documentRepository.find(queryDataContract, 'documentD', {
                 where:
                   [['a.b', '==', '1']],
-              });
+              }, true);
 
               expect(result).to.be.instanceOf(StorageResult);
             });
@@ -1381,7 +1412,7 @@ describe('DocumentRepository', function main() {
                   where: [
                     ['a', '==', '1'],
                   ],
-                });
+                }, true);
 
                 expect.fail('should throw an error');
               } catch (e) {
@@ -1396,7 +1427,7 @@ describe('DocumentRepository', function main() {
               await documentRepository.find(queryDataContract, 'documentA', {
                 where:
                   [['a', '==']],
-              });
+              }, true);
 
               expect.fail('should throw an error');
             } catch (e) {
@@ -1411,7 +1442,7 @@ describe('DocumentRepository', function main() {
                 where: [
                   [['a', '==', '1', '2']],
                 ],
-              });
+              }, true);
 
               expect.fail('should throw an error');
             } catch (e) {
@@ -1430,7 +1461,7 @@ describe('DocumentRepository', function main() {
                   }
 
                   try {
-                    await documentRepository.find(queryDataContract, 'documentE', query);
+                    await documentRepository.find(queryDataContract, 'documentE', query, true);
 
                     expect.fail('should throw an error');
                   } catch (e) {
@@ -1451,6 +1482,7 @@ describe('DocumentRepository', function main() {
                     dataContract,
                     document.getType(),
                     query,
+                    true,
                   );
 
                   expect(result).to.be.instanceOf(StorageResult);
@@ -1476,6 +1508,7 @@ describe('DocumentRepository', function main() {
                       where: [['a', '<', longString]],
                       orderBy: [['a', 'asc']],
                     },
+                    true,
                   );
 
                   expect(result).to.be.instanceOf(StorageResult);
@@ -1490,6 +1523,7 @@ describe('DocumentRepository', function main() {
                         where: [['a', '<', veryLongString]],
                         orderBy: [['a', 'asc']],
                       },
+                      true,
                     );
 
                     expect.fail('should throw an error');
@@ -1506,7 +1540,7 @@ describe('DocumentRepository', function main() {
                     }
 
                     try {
-                      await documentRepository.find(queryDataContract, 'documentNumber', { where: [['a', '<', value]], orderBy: [['a', 'asc']] });
+                      await documentRepository.find(queryDataContract, 'documentNumber', { where: [['a', '<', value]], orderBy: [['a', 'asc']] }, true);
 
                       expect.fail('should throw an error');
                     } catch (e) {
@@ -1520,7 +1554,7 @@ describe('DocumentRepository', function main() {
                   it(`should return valid result if "<" operator used with a scalar value ${type}`, async () => {
                     const docType = `document${ucFirst(type)}`;
 
-                    const result = await documentRepository.find(queryDataContract, docType, { where: [['a', '<', value]], orderBy: [['a', 'asc']] });
+                    const result = await documentRepository.find(queryDataContract, docType, { where: [['a', '<', value]], orderBy: [['a', 'asc']] }, true);
 
                     expect(result).to.be.instanceOf(StorageResult);
                   });
@@ -1530,7 +1564,7 @@ describe('DocumentRepository', function main() {
               describe('<=', () => {
                 scalarTestCases.forEach(({ type, value }) => {
                   it(`should return valid result if "<=" operator used with a scalar value ${type}`, async () => {
-                    const result = await documentRepository.find(queryDataContract, `document${ucFirst(type)}`, { where: [['a', '<=', value]], orderBy: [['a', 'asc']] });
+                    const result = await documentRepository.find(queryDataContract, `document${ucFirst(type)}`, { where: [['a', '<=', value]], orderBy: [['a', 'asc']] }, true);
 
                     expect(result).to.be.instanceOf(StorageResult);
                   });
@@ -1546,6 +1580,7 @@ describe('DocumentRepository', function main() {
                     dataContract,
                     document.getType(),
                     query,
+                    true,
                   );
 
                   expect(result).to.be.instanceOf(StorageResult);
@@ -1574,6 +1609,7 @@ describe('DocumentRepository', function main() {
                     dataContract,
                     document.getType(),
                     query,
+                    true,
                   );
 
                   expect(result).to.be.instanceOf(StorageResult);
@@ -1591,7 +1627,7 @@ describe('DocumentRepository', function main() {
 
                 scalarTestCases.forEach(({ type, value }) => {
                   it(`should return valid result if "==" operator used with a scalar value ${type}`, async () => {
-                    const result = await documentRepository.find(queryDataContract, `document${ucFirst(type)}`, { where: [['a', '==', value]] });
+                    const result = await documentRepository.find(queryDataContract, `document${ucFirst(type)}`, { where: [['a', '==', value]] }, true);
 
                     expect(result).to.be.instanceOf(StorageResult);
                   });
@@ -1609,6 +1645,7 @@ describe('DocumentRepository', function main() {
                     dataContract,
                     document.getType(),
                     query,
+                    true,
                   );
 
                   expect(result).to.be.instanceOf(StorageResult);
@@ -1630,7 +1667,7 @@ describe('DocumentRepository', function main() {
 
                 scalarTestCases.forEach(({ type, value }) => {
                   it(`should return valid result if ">=" operator used with a scalar value ${type}`, async () => {
-                    const result = await documentRepository.find(queryDataContract, `document${ucFirst(type)}`, { where: [['a', '>=', value]], orderBy: [['a', 'asc']] });
+                    const result = await documentRepository.find(queryDataContract, `document${ucFirst(type)}`, { where: [['a', '>=', value]], orderBy: [['a', 'asc']] }, true);
 
                     expect(result).to.be.instanceOf(StorageResult);
                   });
@@ -1648,6 +1685,7 @@ describe('DocumentRepository', function main() {
                     dataContract,
                     document.getType(),
                     query,
+                    true,
                   );
 
                   expect(result).to.be.instanceOf(StorageResult);
@@ -1669,7 +1707,7 @@ describe('DocumentRepository', function main() {
 
                 scalarTestCases.forEach(({ type, value }) => {
                   it(`should return valid result if ">" operator used with a scalar value ${type}`, async () => {
-                    const result = await documentRepository.find(queryDataContract, `document${ucFirst(type)}`, { where: [['a', '>', value]], orderBy: [['a', 'asc']] });
+                    const result = await documentRepository.find(queryDataContract, `document${ucFirst(type)}`, { where: [['a', '>', value]], orderBy: [['a', 'asc']] }, true);
 
                     expect(result).to.be.instanceOf(StorageResult);
                   });
@@ -1686,7 +1724,7 @@ describe('DocumentRepository', function main() {
                         ['a', 'startsWith', 'r-'],
                       ],
                       orderBy: [['a', 'asc']],
-                    });
+                    }, true);
                     expect.fail('should throw an error');
                   } catch (e) {
                     expect(e).to.be.instanceOf(InvalidQueryError);
@@ -1703,7 +1741,7 @@ describe('DocumentRepository', function main() {
                         const query = { where: [['a', firstOperator, '1'], ['b', secondOperator, 'a']] };
 
                         try {
-                          await documentRepository.find(queryDataContract, 'documentE', query);
+                          await documentRepository.find(queryDataContract, 'documentE', query, true);
 
                           expect.fail('should throw an error');
                         } catch (e) {
@@ -1719,7 +1757,7 @@ describe('DocumentRepository', function main() {
                       const query = { where: [['a', firstOperator, '1'], ['b', 'startsWith', 'a']] };
 
                       try {
-                        await documentRepository.find(queryDataContract, 'documentE', query);
+                        await documentRepository.find(queryDataContract, 'documentE', query, true);
 
                         expect.fail('should throw an error');
                       } catch (e) {
@@ -1733,7 +1771,7 @@ describe('DocumentRepository', function main() {
                     const query = { where: [['a', 'startsWith', '1'], ['b', 'startsWith', 'a']] };
 
                     try {
-                      await documentRepository.find(queryDataContract, 'documentE', query);
+                      await documentRepository.find(queryDataContract, 'documentE', query, true);
 
                       expect.fail('should throw an error');
                     } catch (e) {
@@ -1771,7 +1809,7 @@ describe('DocumentRepository', function main() {
                       };
 
                       try {
-                        await documentRepository.find(queryDataContract, 'documentE', query);
+                        await documentRepository.find(queryDataContract, 'documentE', query, true);
 
                         expect.fail('should throw an error');
                       } catch (e) {
@@ -1786,7 +1824,7 @@ describe('DocumentRepository', function main() {
                   const query = { where: [['a', 'in', [1, 2]]] };
 
                   try {
-                    await documentRepository.find(queryDataContract, 'documentF', query);
+                    await documentRepository.find(queryDataContract, 'documentF', query, true);
 
                     expect.fail('should throw an error');
                   } catch (e) {
@@ -1801,7 +1839,7 @@ describe('DocumentRepository', function main() {
                     const query = { where: [['a', operator, 2], ['b', '==', 1]], orderBy: [['a', 'asc']] };
 
                     try {
-                      await documentRepository.find(queryDataContract, 'documentF', query);
+                      await documentRepository.find(queryDataContract, 'documentF', query, true);
                       expect.fail('should throw an error');
                     } catch (e) {
                       expect(e).to.be.instanceOf(InvalidQueryError);
@@ -1815,7 +1853,7 @@ describe('DocumentRepository', function main() {
                   it(`should return valid result if ${operator} operator is used before "in"`, async () => {
                     const query = { where: [['a', operator, 2], ['b', 'in', [1, 2]]], orderBy: [['a', 'asc'], ['b', 'asc']] };
 
-                    const result = await documentRepository.find(queryDataContract, 'documentG', query);
+                    const result = await documentRepository.find(queryDataContract, 'documentG', query, true);
 
                     expect(result).to.be.instanceOf(StorageResult);
                   });
@@ -1833,7 +1871,7 @@ describe('DocumentRepository', function main() {
                   delete query.orderBy;
 
                   try {
-                    await documentRepository.find(queryDataContract, 'documentF', query);
+                    await documentRepository.find(queryDataContract, 'documentF', query, true);
                     expect.fail('should throw an error');
                   } catch (e) {
                     expect(e).to.be.instanceOf(InvalidQueryError);
@@ -1847,7 +1885,7 @@ describe('DocumentRepository', function main() {
               nonNumberNullAndUndefinedTestCases.forEach(({ type, value }) => {
                 it(`should return invalid result if $createdAt timestamp used with ${type} value`, async () => {
                   try {
-                    await documentRepository.find(queryDataContract, 'documentI', { where: [['$createdAt', '>', value]], orderBy: [['$createdAt', 'asc']] });
+                    await documentRepository.find(queryDataContract, 'documentI', { where: [['$createdAt', '>', value]], orderBy: [['$createdAt', 'asc']] }, true);
 
                     expect.fail('should throw an error');
                   } catch (e) {
@@ -1862,7 +1900,7 @@ describe('DocumentRepository', function main() {
               nonNumberNullAndUndefinedTestCases.forEach(({ type, value }) => {
                 it(`should return invalid result if $updatedAt timestamp used with ${type} value`, async () => {
                   try {
-                    await documentRepository.find(queryDataContract, 'documentH', { where: [['$updatedAt', '>', value]], orderBy: [['$updatedAt', 'asc']] });
+                    await documentRepository.find(queryDataContract, 'documentH', { where: [['$updatedAt', '>', value]], orderBy: [['$updatedAt', 'asc']] }, true);
 
                     expect.fail('should throw an error');
                   } catch (e) {
@@ -1875,13 +1913,13 @@ describe('DocumentRepository', function main() {
               });
 
               it('should return valid result if condition contains "$createdAt" field', async () => {
-                const result = await documentRepository.find(queryDataContract, 'documentI', { where: [['$createdAt', '==', Date.now()]] });
+                const result = await documentRepository.find(queryDataContract, 'documentI', { where: [['$createdAt', '==', Date.now()]] }, true);
 
                 expect(result).to.be.instanceOf(StorageResult);
               });
 
               it('should return valid result if condition contains "$updatedAt" field', async () => {
-                const result = await documentRepository.find(queryDataContract, 'documentH', { where: [['$updatedAt', '==', Date.now()]] });
+                const result = await documentRepository.find(queryDataContract, 'documentH', { where: [['$updatedAt', '==', Date.now()]] }, true);
 
                 expect(result).to.be.instanceOf(StorageResult);
               });
@@ -1903,6 +1941,7 @@ describe('DocumentRepository', function main() {
                   dataContract,
                   document.getType(),
                   query,
+                  true,
                 );
 
                 expect(result).to.be.instanceOf(StorageResult);
@@ -1923,7 +1962,7 @@ describe('DocumentRepository', function main() {
               notArrayTestCases.forEach(({ type, value }) => {
                 it(`should return invalid result if "in" operator used with not an array value, but ${type}`, async () => {
                   try {
-                    await documentRepository.find(queryDataContract, 'documentNumber', { where: [['a', 'in', value]], orderBy: [['a', 'asc']] });
+                    await documentRepository.find(queryDataContract, 'documentNumber', { where: [['a', 'in', value]], orderBy: [['a', 'asc']] }, true);
 
                     expect.fail('should throw an error');
                   } catch (e) {
@@ -1935,7 +1974,7 @@ describe('DocumentRepository', function main() {
 
               it('should return invalid result if "in" operator used with an empty array value', async () => {
                 try {
-                  await documentRepository.find(queryDataContract, 'documentNumber', { where: [['a', 'in', []]], orderBy: [['a', 'asc']] });
+                  await documentRepository.find(queryDataContract, 'documentNumber', { where: [['a', 'in', []]], orderBy: [['a', 'asc']] }, true);
 
                   expect.fail('should throw an error');
                 } catch (e) {
@@ -1951,14 +1990,14 @@ describe('DocumentRepository', function main() {
                   arr.push(i);
                 }
 
-                const result = await documentRepository.find(queryDataContract, 'documentNumber', { where: [['a', 'in', arr]], orderBy: [['a', 'asc']] });
+                const result = await documentRepository.find(queryDataContract, 'documentNumber', { where: [['a', 'in', arr]], orderBy: [['a', 'asc']] }, true);
 
                 expect(result).to.be.instanceOf(StorageResult);
 
                 arr.push(101);
 
                 try {
-                  await documentRepository.find(queryDataContract, 'documentNumber', { where: [['a', 'in', arr]], orderBy: [['a', 'asc']] });
+                  await documentRepository.find(queryDataContract, 'documentNumber', { where: [['a', 'in', arr]], orderBy: [['a', 'asc']] }, true);
 
                   expect.fail('should throw an error');
                 } catch (e) {
@@ -1970,7 +2009,7 @@ describe('DocumentRepository', function main() {
               it('should return invalid result if "in" operator used with an array which contains not unique elements', async () => {
                 const arr = [1, 1];
                 try {
-                  await documentRepository.find(queryDataContract, 'documentNumber', { where: [['a', 'in', arr]], orderBy: [['a', 'asc']] });
+                  await documentRepository.find(queryDataContract, 'documentNumber', { where: [['a', 'in', arr]], orderBy: [['a', 'asc']] }, true);
 
                   expect.fail('should throw an error');
                 } catch (e) {
@@ -1981,7 +2020,7 @@ describe('DocumentRepository', function main() {
 
               it('should return invalid results if "in" condition contains an array as an element', async () => {
                 try {
-                  await documentRepository.find(queryDataContract, 'documentNumber', { where: [['a', 'in', [[]]]], orderBy: [['a', 'asc']] });
+                  await documentRepository.find(queryDataContract, 'documentNumber', { where: [['a', 'in', [[]]]], orderBy: [['a', 'asc']] }, true);
 
                   expect.fail('should throw an error');
                 } catch (e) {
@@ -2002,6 +2041,7 @@ describe('DocumentRepository', function main() {
                   dataContract,
                   document.getType(),
                   query,
+                  true,
                 );
 
                 expect(result).to.be.instanceOf(StorageResult);
@@ -2019,7 +2059,7 @@ describe('DocumentRepository', function main() {
 
               it('should return invalid result if "startsWith" operator used with an empty string value', async () => {
                 try {
-                  await documentRepository.find(queryDataContract, 'documentString', { where: [['a', 'startsWith', '']], orderBy: [['a', 'asc']] });
+                  await documentRepository.find(queryDataContract, 'documentString', { where: [['a', 'startsWith', '']], orderBy: [['a', 'asc']] }, true);
 
                   expect.fail('should throw an error');
                 } catch (e) {
@@ -2031,7 +2071,7 @@ describe('DocumentRepository', function main() {
               it('should return invalid result if "startsWith" operator used with a string value which is more than 255 bytes long', async () => {
                 const value = 'b'.repeat(256);
                 try {
-                  await documentRepository.find(queryDataContract, 'documentString', { where: [['a', 'startsWith', value]], orderBy: [['a', 'asc']] });
+                  await documentRepository.find(queryDataContract, 'documentString', { where: [['a', 'startsWith', value]], orderBy: [['a', 'asc']] }, true);
 
                   expect.fail('should throw an error');
                 } catch (e) {
@@ -2048,7 +2088,7 @@ describe('DocumentRepository', function main() {
               ].forEach(({ type, value }) => {
                 it(`should return invalid result if "startWith" operator used with a not string value, but ${type}`, async () => {
                   try {
-                    await documentRepository.find(queryDataContract, 'documentString', { where: [['a', 'startsWith', value]], orderBy: [['a', 'asc']] });
+                    await documentRepository.find(queryDataContract, 'documentString', { where: [['a', 'startsWith', value]], orderBy: [['a', 'asc']] }, true);
                     expect.fail('should throw an error');
                   } catch (e) {
                     expect(e).to.be.instanceOf(InvalidQueryError);
@@ -2063,7 +2103,7 @@ describe('DocumentRepository', function main() {
               ].forEach(({ type, value }) => {
                 it(`should return invalid result if "startWith" operator used with a not string value, but ${type}`, async () => {
                   try {
-                    await documentRepository.find(queryDataContract, 'documentString', { where: [['a', 'startsWith', value]], orderBy: [['a', 'asc']] });
+                    await documentRepository.find(queryDataContract, 'documentString', { where: [['a', 'startsWith', value]], orderBy: [['a', 'asc']] }, true);
                     expect.fail('should throw an error');
                   } catch (e) {
                     expect(e).to.be.instanceOf(InvalidQueryError);
@@ -2087,6 +2127,7 @@ describe('DocumentRepository', function main() {
                   dataContract,
                   document.getType(),
                   query,
+                  true,
                 );
 
                 expect(result).to.be.instanceOf(StorageResult);
@@ -2112,7 +2153,7 @@ describe('DocumentRepository', function main() {
                 };
 
                 try {
-                  await documentRepository.find(queryDataContract, 'document', query);
+                  await documentRepository.find(queryDataContract, 'document', query, true);
 
                   expect.fail('should throw an error');
                 } catch (e) {
@@ -2131,7 +2172,7 @@ describe('DocumentRepository', function main() {
                 };
 
                 try {
-                  await documentRepository.find(queryDataContract, 'document', query);
+                  await documentRepository.find(queryDataContract, 'document', query, true);
 
                   expect.fail('should throw an error');
                 } catch (e) {
@@ -2150,7 +2191,7 @@ describe('DocumentRepository', function main() {
                 };
 
                 try {
-                  await documentRepository.find(queryDataContract, 'document', query);
+                  await documentRepository.find(queryDataContract, 'document', query, true);
 
                   expect.fail('should throw an error');
                 } catch (e) {
@@ -2169,7 +2210,7 @@ describe('DocumentRepository', function main() {
                 };
 
                 try {
-                  await documentRepository.find(queryDataContract, 'document', query);
+                  await documentRepository.find(queryDataContract, 'document', query, true);
 
                   expect.fail('should throw an error');
                 } catch (e) {
@@ -2188,7 +2229,7 @@ describe('DocumentRepository', function main() {
                 };
 
                 try {
-                  await documentRepository.find(queryDataContract, 'document', query);
+                  await documentRepository.find(queryDataContract, 'document', query, true);
 
                   expect.fail('should throw an error');
                 } catch (e) {
@@ -2209,7 +2250,7 @@ describe('DocumentRepository', function main() {
                 };
 
                 try {
-                  await documentRepository.find(queryDataContract, 'document', query);
+                  await documentRepository.find(queryDataContract, 'document', query, true);
 
                   expect.fail('should throw an error');
                 } catch (e) {
@@ -2229,6 +2270,7 @@ describe('DocumentRepository', function main() {
                   dataContract,
                   document.getType(),
                   query,
+                  true,
                 );
 
                 expect(result).to.be.instanceOf(StorageResult);
@@ -2249,7 +2291,7 @@ describe('DocumentRepository', function main() {
                   where: [
                     ['arr', 'length', 0],
                   ],
-                });
+                }, true);
 
                 expect(result).to.be.instanceOf(StorageResult);
               });
@@ -2260,7 +2302,7 @@ describe('DocumentRepository', function main() {
                     where: [
                       ['arr', 'length', 1.2],
                     ],
-                  });
+                  }, true);
 
                   expect.fail('should throw an error');
                 } catch (e) {
@@ -2275,7 +2317,7 @@ describe('DocumentRepository', function main() {
                     where: [
                       ['arr', 'length', NaN],
                     ],
-                  });
+                  }, true);
 
                   expect.fail('should throw an error');
                 } catch (e) {
@@ -2290,7 +2332,7 @@ describe('DocumentRepository', function main() {
                     where: [
                       ['arr', 'length', -1],
                     ],
-                  });
+                  }, true);
 
                   expect.fail('should throw an error');
                 } catch (e) {
@@ -2306,7 +2348,7 @@ describe('DocumentRepository', function main() {
                       where: [
                         ['arr', 'length', value],
                       ],
-                    });
+                    }, true);
 
                     expect.fail('should throw an error');
                   } catch (e) {
@@ -2329,6 +2371,7 @@ describe('DocumentRepository', function main() {
                   dataContract,
                   document.getType(),
                   query,
+                  true,
                 );
 
                 expect(result).to.be.instanceOf(StorageResult);
@@ -2355,6 +2398,7 @@ describe('DocumentRepository', function main() {
                   dataContract,
                   document.getType(),
                   query,
+                  true,
                 );
 
                 expect(result).to.be.instanceOf(StorageResult);
@@ -2378,7 +2422,7 @@ describe('DocumentRepository', function main() {
                     where: [
                       ['arr', 'contains', value],
                     ],
-                  });
+                  }, true);
 
                   expect(result).to.be.instanceOf(StorageResult);
                 });
@@ -2390,7 +2434,7 @@ describe('DocumentRepository', function main() {
                     where: [
                       ['arr', 'contains', [value]],
                     ],
-                  });
+                  }, true);
 
                   expect(result).to.be.instanceOf(StorageResult);
                 });
@@ -2398,34 +2442,34 @@ describe('DocumentRepository', function main() {
 
               it('should return invalid result if "contains" operator used with an array which has '
                 + ' more than 100 elements', async () => {
-                const arr = [];
-                for (let i = 0; i < 100; i++) {
-                  arr.push(i);
-                }
+                  const arr = [];
+                  for (let i = 0; i < 100; i++) {
+                    arr.push(i);
+                  }
 
-                const result = await documentRepository.find(queryDataContract, 'document', {
-                  where: [
-                    ['arr', 'contains', arr],
-                  ],
-                });
-
-                expect(result).to.be.instanceOf(StorageResult);
-
-                arr.push(101);
-
-                try {
-                  await documentRepository.find(queryDataContract, 'document', {
+                  const result = await documentRepository.find(queryDataContract, 'document', {
                     where: [
                       ['arr', 'contains', arr],
                     ],
-                  });
+                  }, true);
 
-                  expect.fail('should throw an error');
-                } catch (e) {
-                  expect(e).to.be.instanceOf(InvalidQueryError);
-                  expect(e.message).to.equal('');
-                }
-              });
+                  expect(result).to.be.instanceOf(StorageResult);
+
+                  arr.push(101);
+
+                  try {
+                    await documentRepository.find(queryDataContract, 'document', {
+                      where: [
+                        ['arr', 'contains', arr],
+                      ],
+                    }, true);
+
+                    expect.fail('should throw an error');
+                  } catch (e) {
+                    expect(e).to.be.instanceOf(InvalidQueryError);
+                    expect(e.message).to.equal('');
+                  }
+                });
 
               it('should return invalid result if "contains" operator used with an empty array', async () => {
                 try {
@@ -2433,7 +2477,7 @@ describe('DocumentRepository', function main() {
                     where: [
                       ['arr', 'contains', []],
                     ],
-                  });
+                  }, true);
 
                   expect.fail('should throw an error');
                 } catch (e) {
@@ -2444,19 +2488,19 @@ describe('DocumentRepository', function main() {
 
               it('should return invalid result if "contains" operator used with an array which contains not unique'
                 + ' elements', async () => {
-                try {
-                  await documentRepository.find(queryDataContract, 'document', {
-                    where: [
-                      ['arr', 'contains', [1, 1]],
-                    ],
-                  });
+                  try {
+                    await documentRepository.find(queryDataContract, 'document', {
+                      where: [
+                        ['arr', 'contains', [1, 1]],
+                      ],
+                    }, true);
 
-                  expect.fail('should throw an error');
-                } catch (e) {
-                  expect(e).to.be.instanceOf(InvalidQueryError);
-                  expect(e.message).to.equal('');
-                }
-              });
+                    expect.fail('should throw an error');
+                  } catch (e) {
+                    expect(e).to.be.instanceOf(InvalidQueryError);
+                    expect(e.message).to.equal('');
+                  }
+                });
 
               nonScalarTestCases.forEach(({ type, value }) => {
                 it(`should return invalid result if used with non-scalar value ${type}`, async () => {
@@ -2465,7 +2509,7 @@ describe('DocumentRepository', function main() {
                       where: [
                         ['arr', 'contains', value],
                       ],
-                    });
+                    }, true);
 
                     expect.fail('should throw an error');
                   } catch (e) {
@@ -2482,7 +2526,7 @@ describe('DocumentRepository', function main() {
                       where: [
                         ['arr', 'contains', [value]],
                       ],
-                    });
+                    }, true);
 
                     expect.fail('should throw an error');
                   } catch (e) {
@@ -2506,6 +2550,7 @@ describe('DocumentRepository', function main() {
             dataContract,
             document.getType(),
             options,
+            true,
           );
 
           expect(result).to.be.instanceOf(StorageResult);
@@ -2522,11 +2567,11 @@ describe('DocumentRepository', function main() {
           for (let i = 0; i < 101; i++) {
             const svDoc = document;
 
-            svDoc.id = Identifier.from(Buffer.alloc(32, i + 1));
+            svDoc.setId(await generateRandomIdentifier());
             await documentRepository.create(svDoc, blockInfo);
           }
 
-          const result = await documentRepository.find(dataContract, document.getType());
+          const result = await documentRepository.find(dataContract, document.getType(), {}, true);
 
           expect(result).to.be.instanceOf(StorageResult);
           expect(result.getOperations().length).to.be.greaterThan(0);
@@ -2544,7 +2589,7 @@ describe('DocumentRepository', function main() {
             ],
             orderBy: [['a', 'asc']],
             limit: 1,
-          });
+          }, true);
 
           expect(result).to.be.instanceOf(StorageResult);
         });
@@ -2555,7 +2600,7 @@ describe('DocumentRepository', function main() {
           ];
 
           try {
-            await documentRepository.find(queryDataContract, 'documentNumber', { where, limit: -1, orderBy: [['a', 'asc']] });
+            await documentRepository.find(queryDataContract, 'documentNumber', { where, limit: -1, orderBy: [['a', 'asc']] }, true);
 
             expect.fail('should throw an error');
           } catch (e) {
@@ -2570,7 +2615,7 @@ describe('DocumentRepository', function main() {
           ];
 
           try {
-            await documentRepository.find(queryDataContract, 'documentNumber', { where, limit: 0, orderBy: [['a', 'asc']] });
+            await documentRepository.find(queryDataContract, 'documentNumber', { where, limit: 0, orderBy: [['a', 'asc']] }, true);
 
             expect.fail('should throw an error');
           } catch (e) {
@@ -2584,12 +2629,12 @@ describe('DocumentRepository', function main() {
             ['a', '>', 1],
           ];
 
-          const result = await documentRepository.find(queryDataContract, 'documentNumber', { where, limit: 100, orderBy: [['a', 'asc']] });
+          const result = await documentRepository.find(queryDataContract, 'documentNumber', { where, limit: 100, orderBy: [['a', 'asc']] }, true);
 
           expect(result).to.be.instanceOf(StorageResult);
 
           try {
-            await documentRepository.find(queryDataContract, 'documentNumber', { where, limit: 101, orderBy: [['a', 'asc']] });
+            await documentRepository.find(queryDataContract, 'documentNumber', { where, limit: 101, orderBy: [['a', 'asc']] }, true);
 
             expect.fail('should throw an error');
           } catch (e) {
@@ -2604,7 +2649,7 @@ describe('DocumentRepository', function main() {
           ];
 
           try {
-            await documentRepository.find(queryDataContract, 'documentNumber', { where, limit: 1.5, orderBy: [['a', 'asc']] });
+            await documentRepository.find(queryDataContract, 'documentNumber', { where, limit: 1.5, orderBy: [['a', 'asc']] }, true);
 
             expect.fail('should throw an error');
           } catch (e) {
@@ -2622,7 +2667,7 @@ describe('DocumentRepository', function main() {
                 ],
                 limit: value,
                 orderBy: [['a', 'asc']],
-              });
+              }, true);
 
               expect.fail('should throw an error');
             } catch (e) {
@@ -2649,6 +2694,7 @@ describe('DocumentRepository', function main() {
             dataContract,
             document.getType(),
             query,
+            true,
           );
 
           expect(result).to.be.instanceOf(StorageResult);
@@ -2678,6 +2724,7 @@ describe('DocumentRepository', function main() {
             dataContract,
             document.getType(),
             query,
+            true,
           );
 
           expect(result).to.be.instanceOf(StorageResult);
@@ -2698,7 +2745,7 @@ describe('DocumentRepository', function main() {
           };
 
           try {
-            await documentRepository.find(dataContract, document.getType(), options);
+            await documentRepository.find(dataContract, document.getType(), options, true);
 
             expect.fail('should throw InvalidQueryError');
           } catch (e) {
@@ -2717,7 +2764,7 @@ describe('DocumentRepository', function main() {
             try {
               await documentRepository.find(queryDataContract, 'documentNumber', {
                 startAt: value,
-              });
+              }, true);
 
               expect.fail('should throw an error');
             } catch (e) {
@@ -2736,13 +2783,14 @@ describe('DocumentRepository', function main() {
             orderBy: [
               ['order', 'asc'],
             ],
-            startAfter: documents[0].id,
+            startAfter: documents[0].getId(),
           };
 
           const result = await documentRepository.find(
             dataContract,
             document.getType(),
             options,
+            true,
           );
 
           expect(result).to.be.instanceOf(StorageResult);
@@ -2763,7 +2811,7 @@ describe('DocumentRepository', function main() {
           };
 
           try {
-            await documentRepository.find(dataContract, document.getType(), options);
+            await documentRepository.find(dataContract, document.getType(), options, true);
 
             expect.fail('should throw InvalidQueryError');
           } catch (e) {
@@ -2777,7 +2825,7 @@ describe('DocumentRepository', function main() {
             await documentRepository.find(queryDataContract, 'documentNumber', {
               startAfter: documents[1].getId(),
               startAt: documents[1].getId(),
-            });
+            }, true);
 
             expect.fail('should throw an error');
           } catch (e) {
@@ -2796,7 +2844,7 @@ describe('DocumentRepository', function main() {
             try {
               await documentRepository.find(queryDataContract, 'documentNumber', {
                 startAfter: value,
-              });
+              }, true);
 
               expect.fail('should throw an error');
             } catch (e) {
@@ -2822,6 +2870,7 @@ describe('DocumentRepository', function main() {
             dataContract,
             document.getType(),
             query,
+            true,
           );
 
           expect(result).to.be.instanceOf(StorageResult);
@@ -2850,6 +2899,7 @@ describe('DocumentRepository', function main() {
             dataContract,
             document.getType(),
             query,
+            true,
           );
 
           expect(result).to.be.instanceOf(StorageResult);
@@ -2873,10 +2923,10 @@ describe('DocumentRepository', function main() {
           const createdIds = [];
           let i = 0;
           for (const svDoc of documents) {
-            svDoc.id = Identifier.from(Buffer.alloc(32, i + 1));
+            svDoc.setId(Identifier.from(Buffer.alloc(32, i + 1)));
             await documentRepository.create(svDoc, blockInfo);
             i++;
-            createdIds.push(svDoc.id);
+            createdIds.push(svDoc.getId());
           }
 
           const query = {
@@ -2892,6 +2942,7 @@ describe('DocumentRepository', function main() {
             dataContract,
             document.getType(),
             query,
+            true,
           );
 
           expect(result).to.be.instanceOf(StorageResult);
@@ -2915,7 +2966,7 @@ describe('DocumentRepository', function main() {
               ['a', '>', 1],
             ],
             orderBy: [['a', 'asc']],
-          });
+          }, true);
 
           expect(result).to.be.instanceOf(StorageResult);
         });
@@ -2926,7 +2977,7 @@ describe('DocumentRepository', function main() {
               ['a', '>', 1],
             ],
             orderBy: [['a', 'asc'], ['b', 'desc']],
-          });
+          }, true);
 
           expect(result).to.be.an.instanceOf(StorageResult);
         });
@@ -2938,7 +2989,7 @@ describe('DocumentRepository', function main() {
                 ['a', '>', 1],
               ],
               orderBy: [],
-            });
+            }, true);
 
             expect.fail('should throw an error');
           } catch (e) {
@@ -2954,7 +3005,7 @@ describe('DocumentRepository', function main() {
             await documentRepository.find(queryDataContract, 'documentString', {
               where: [['a', '==', 'b']],
               orderBy: [['a', 'asc']],
-            });
+            }, true);
 
             expect.fail('should throw an error');
           } catch (e) {
@@ -2965,7 +3016,7 @@ describe('DocumentRepository', function main() {
         it('should return valid result if there is no where conditions', async () => {
           const result = await documentRepository.find(queryDataContract, 'documentNumber', {
             orderBy: [['a', 'asc']],
-          });
+          }, true);
 
           expect(result).to.be.instanceOf(StorageResult);
         });
@@ -2977,7 +3028,7 @@ describe('DocumentRepository', function main() {
                 ['a', '>', 1],
               ],
               orderBy: [[]],
-            });
+            }, true);
 
             expect.fail('should throw an error');
           } catch (e) {
@@ -2993,7 +3044,7 @@ describe('DocumentRepository', function main() {
                 ['b', '>', 1],
               ],
               orderBy: [['b', 'desc'], ['e', 'asc']],
-            });
+            }, true);
 
             expect.fail('should throw an error');
           } catch (e) {
@@ -3009,7 +3060,7 @@ describe('DocumentRepository', function main() {
                 ['b', '>', 1],
               ],
               orderBy: [['b', 'desc'], ['d', 'asc']],
-            });
+            }, true);
 
             expect.fail('should throw an error');
           } catch (e) {
@@ -3025,7 +3076,7 @@ describe('DocumentRepository', function main() {
                 [fieldName, '>', fieldName.startsWith('$') && !fieldName.endsWith('At') ? await generateRandomIdentifier() : 1],
               ],
               orderBy: [[fieldName, 'asc']],
-            });
+            }, true);
 
             expect(result).to.be.instanceOf(StorageResult);
           });
@@ -3039,7 +3090,7 @@ describe('DocumentRepository', function main() {
                   ['a', '>', 1],
                 ],
                 orderBy: [['$a', 'asc']],
-              });
+              }, true);
 
               expect.fail('should throw an error');
             } catch (e) {
@@ -3056,7 +3107,7 @@ describe('DocumentRepository', function main() {
                 ['a', '>', 1],
               ],
               orderBy: [['a', 'a']],
-            });
+            }, true);
 
             expect.fail('should throw an error');
           } catch (e) {
@@ -3072,7 +3123,7 @@ describe('DocumentRepository', function main() {
                 ['a', '>', 1],
               ],
               orderBy: [['a']],
-            });
+            }, true);
 
             expect.fail('should throw an error');
           } catch (e) {
@@ -3088,7 +3139,7 @@ describe('DocumentRepository', function main() {
                 ['a', '>', 1],
               ],
               orderBy: [['a', 'asc', 'desc']],
-            });
+            }, true);
 
             expect.fail('should throw an error');
           } catch (e) {
@@ -3108,6 +3159,7 @@ describe('DocumentRepository', function main() {
                 ],
                 orderBy: [['a', 'asc']],
               },
+              true,
             );
 
             expect(result).to.be.instanceOf(StorageResult);
@@ -3121,7 +3173,7 @@ describe('DocumentRepository', function main() {
           };
 
           try {
-            await documentRepository.find(queryDataContract, 'documentK', query);
+            await documentRepository.find(queryDataContract, 'documentK', query, true);
 
             expect.fail('should throw an error');
           } catch (e) {
@@ -3151,7 +3203,7 @@ describe('DocumentRepository', function main() {
 
       result = await documentRepository.find(dataContract, document.getType(), {
         where: [['$id', '==', document.getId()]],
-      });
+      }, true);
 
       expect(result).to.be.instanceOf(StorageResult);
       expect(result.getOperations().length).to.be.greaterThan(0);
@@ -3191,12 +3243,13 @@ describe('DocumentRepository', function main() {
             ...query,
             useTransaction: true,
           },
+          true,
         );
 
       const removedDocument = removedDocumentResult.getValue();
 
       const notRemovedDocumentsResult = await documentRepository
-        .find(dataContract, document.getType(), query);
+        .find(dataContract, document.getType(), query, true);
 
       const notRemovedDocuments = notRemovedDocumentsResult.getValue();
 
@@ -3204,7 +3257,7 @@ describe('DocumentRepository', function main() {
         .storage.commitTransaction();
 
       const completelyRemovedDocumentResult = await documentRepository
-        .find(dataContract, document.getType(), query);
+        .find(dataContract, document.getType(), query, true);
 
       const completelyRemovedDocument = completelyRemovedDocumentResult.getValue();
 
@@ -3242,6 +3295,7 @@ describe('DocumentRepository', function main() {
           ...query,
           useTransaction: true,
         },
+        true,
       );
 
       const removedDocuments = removedDocumentsResult.getValue();
@@ -3251,7 +3305,7 @@ describe('DocumentRepository', function main() {
       // But still exists in main database
 
       const removedDocumentsWithoutTransactionResult = await documentRepository
-        .find(dataContract, document.getType(), query);
+        .find(dataContract, document.getType(), query, true);
 
       const removedDocumentsWithoutTransaction = removedDocumentsWithoutTransactionResult
         .getValue();
@@ -3264,7 +3318,7 @@ describe('DocumentRepository', function main() {
         .abortTransaction();
 
       const restoredDocumentsResult = await documentRepository
-        .find(dataContract, document.getType(), query);
+        .find(dataContract, document.getType(), query, true);
 
       const restoredDocuments = restoredDocumentsResult.getValue();
 
@@ -3291,7 +3345,7 @@ describe('DocumentRepository', function main() {
       };
 
       const removedDocumentsResult = await documentRepository
-        .find(dataContract, document.getType(), query);
+        .find(dataContract, document.getType(), query, true);
 
       const removedDocuments = removedDocumentsResult
         .getValue();
@@ -3369,8 +3423,8 @@ describe('DocumentRepository', function main() {
 
     it('should return proof non existing documents', async () => {
       const documentsToProve = [{
-        dataContractId: await generateRandomIdentifier().toBuffer(),
-        documentId: await generateRandomIdentifier().toBuffer(),
+        dataContractId: (await generateRandomIdentifier()).toBuffer(),
+        documentId: (await generateRandomIdentifier()).toBuffer(),
         type: 'unknownType',
       }];
 
@@ -3395,8 +3449,8 @@ describe('DocumentRepository', function main() {
       }));
 
       documentsToProve.push({
-        dataContractId: await generateRandomIdentifier().toBuffer(),
-        documentId: await generateRandomIdentifier().toBuffer(),
+        dataContractId: (await generateRandomIdentifier()).toBuffer(),
+        documentId: (await generateRandomIdentifier()).toBuffer(),
         type: 'unknownType',
       });
 
