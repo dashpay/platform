@@ -30,23 +30,21 @@ COPY packages/masternode-reward-shares-contract packages/masternode-reward-share
 COPY packages/withdrawals-contract packages/withdrawals-contract
 COPY packages/data-contracts packages/data-contracts
 
-# Build RS Drive Node.JS binding
+RUN echo "GHA=$SCCACHE_GHA_ENABLED"
+RUN echo "URL=$ACTIONS_CACHE_URL"
+RUN echo "TOKEN=$ACTIONS_RUNTIME_TOKEN"
+ARG SCCACHE_GHA_ENABLED
+ARG ACTIONS_CACHE_URL
+ARG ACTIONS_RUNTIME_TOKEN
+
+# Build RS Drive Node.JS binding and WASM DPP
 RUN --mount=type=cache,sharing=private,target=/root/.cache/sccache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     yarn workspace @dashevo/rs-drive build && \
-    sccache --show-stats
-
-# Build WASM DPP
-RUN --mount=type=cache,sharing=private,target=/root/.cache/sccache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
-    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     yarn workspace @dashevo/wasm-dpp build && \
-    cargo clean && \
     sccache --show-stats
 
 # Install Drive-specific dependencies using previous
