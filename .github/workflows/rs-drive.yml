@@ -24,7 +24,7 @@ concurrency:
 jobs:
   feature-compilation:
     name: Feature compilation errors
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     timeout-minutes: 20
     env:
       SCCACHE_GHA_ENABLED: "true"

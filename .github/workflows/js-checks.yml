@@ -26,7 +26,7 @@ on:
 jobs:
   lint:
     name: Linting
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     timeout-minutes: 20
     env:
       SCCACHE_GHA_ENABLED: "true"
@@ -85,7 +85,7 @@ jobs:
 
   test:
     name: Tests
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     timeout-minutes: 60  # TODO Change to 60
     if: ${{ !inputs.skip-tests }}
     env:

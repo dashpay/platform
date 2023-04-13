@@ -11,7 +11,7 @@ on:
 jobs:
   lint:
     name: Linting
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     timeout-minutes: 20
     env:
       SCCACHE_GHA_ENABLED: "true"
@@ -63,7 +63,7 @@ jobs:
 
   compile:
     name: Compilation errors
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     timeout-minutes: 20
     env:
       SCCACHE_GHA_ENABLED: "true"
@@ -96,7 +96,7 @@ jobs:
 
   test:
     name: Tests
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     timeout-minutes: 20
     env:
       SCCACHE_GHA_ENABLED: "true"

@@ -64,7 +64,7 @@ jobs:
 
   test-suite:
     name: Run Platform Test Suite
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     timeout-minutes: 120 # TODO Change to 60
     env:
       SCCACHE_GHA_ENABLED: "true"
@@ -152,8 +152,8 @@ jobs:
 
   test-suite-browsers:
     name: Run Platform Test Suite in Browsers
-    runs-on: ubuntu-22.04
-    timeout-minutes: 60  # TODO Change to 60
+    runs-on: self-hosted
+    timeout-minutes: 120  # TODO Change to 60
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
