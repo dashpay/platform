@@ -46,7 +46,7 @@ impl PreCalculatedOperationWasm {
         let processing_cost = try_to_u64(processing_cost).with_js_error()?;
 
         let mut refunds = vec![];
-        // TODO(wasm-dpp): any chance to make this parsing simpler? :)
+
         for refund in js_fee_refunds.iter() {
             let parsed_refund = refund.with_serde_to_platform_value()?;
             let identifier = parsed_refund

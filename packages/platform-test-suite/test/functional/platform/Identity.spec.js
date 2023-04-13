@@ -548,8 +548,6 @@ describe('Platform', () => {
         expect(identity.getPublicKeyById(2)).to.exist();
 
         const newPublicKeyObject = newPublicKey.toObject();
-        // TODO(wasm-dpp): re-check if removal of signature is needed
-        // and not caused by bug in identity.getPublicKeyById(2).toObject()
         delete newPublicKeyObject.signature;
         expect(identity.getPublicKeyById(2).toObject()).to.deep.equal(
           newPublicKeyObject,

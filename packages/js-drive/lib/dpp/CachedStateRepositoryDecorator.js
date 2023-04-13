@@ -188,8 +188,8 @@ class CachedStateRepositoryDecorator {
    *
    * @returns {Promise<void>}
    */
-  async storeDataContract(dataContract, executionContext = undefined) {
-    return this.stateRepository.storeDataContract(dataContract, executionContext);
+  async createDataContract(dataContract, executionContext = undefined) {
+    return this.stateRepository.createDataContract(dataContract, executionContext);
   }
 
   /**

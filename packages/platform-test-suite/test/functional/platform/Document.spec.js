@@ -293,9 +293,7 @@ describe('Platform', () => {
 
       const transitions = documentsBatchTransition.getTransitions();
       transitions[0].setUpdatedAt(updatedAt);
-      // TODO(wasm-dpp): revisit - removed because there's no such API,
-      // and tests pass without it
-      // transitions[0].setRevision(transitions[0].getRevision() + 1);
+
       documentsBatchTransition.setTransitions(transitions);
       const signedTransition = await signStateTransition(
         client.platform, documentsBatchTransition, identity, 1,

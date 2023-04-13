@@ -353,13 +353,13 @@ describe('DriveStateRepository', () => {
     });
   });
 
-  describe('#storeDataContract', () => {
+  describe('#createDataContract', () => {
     it('should create data contract to repository', async () => {
       dataContractRepositoryMock.create.resolves(
         new StorageResult(undefined, operations),
       );
 
-      await stateRepository.storeDataContract(dataContract, executionContext);
+      await stateRepository.createDataContract(dataContract, executionContext);
 
       expect(dataContractRepositoryMock.create).to.be.calledOnceWith(
         dataContract,
