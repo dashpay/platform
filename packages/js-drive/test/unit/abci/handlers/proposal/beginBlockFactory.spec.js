@@ -191,7 +191,10 @@ describe('beginBlockFactory', () => {
       coreChainLockedHeight, { logger: loggerMock },
     );
 
-    expect(synchronizeMasternodeIdentitiesMock).to.not.been.called();
+    expect(synchronizeMasternodeIdentitiesMock).to.be.calledWithExactly(
+      coreChainLockedHeight,
+      blockInfo,
+    );
 
     expect(executionTimerMock.clearTimer).to.be.calledTwice();
     expect(executionTimerMock.clearTimer.getCall(1)).to.be.calledWithExactly('roundExecution');
