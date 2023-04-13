@@ -40,8 +40,19 @@ fn calculate_state_transition_fee_from_operations_with_custom_calculator(
             .fold(0, |sum, (_, credits)| sum + credits);
     }
 
-    let required_amount = (storage_fee - total_refunds) + DEFAULT_USER_TIP;
-    let desired_amount = (storage_fee + processing_fee - total_refunds) + DEFAULT_USER_TIP;
+    let required_amount = if storage_fee > total_refunds {
+        (storage_fee - total_refunds) + DEFAULT_USER_TIP
+    } else {
+        0
+    };
+
+    let fee_sum = storage_fee + processing_fee;
+
+    let desired_amount = if fee_sum > total_refunds {
+        (fee_sum - total_refunds) + DEFAULT_USER_TIP
+    } else {
+        0
+    };
 
     Ok(FeeResult {
         storage_fee,
@@ -55,8 +66,15 @@ fn calculate_state_transition_fee_from_operations_with_custom_calculator(
 
 #[cfg(test)]
 mod test {
+    use dashcore::blockdata::script::Instruction::Op;
+    use platform_value::Identifier;
     use std::collections::HashMap;
 
+    use crate::identity::KeyType::ECDSA_SECP256K1;
+    use crate::state_transition::fee::calculate_operation_fees::calculate_operation_fees;
+    use crate::state_transition::fee::operations::{
+        PreCalculatedOperation, SignatureVerificationOperation,
+    };
     use crate::{
         state_transition::fee::{
             operations::Operation, Credits, DummyFeesResult, FeeResult, Refunds,
@@ -108,5 +126,60 @@ mod test {
             total_refunds: 1500,
         };
         assert_eq!(expected, result);
+    }
+
+    #[test]
+    fn test_with_negative_credits() {
+        // Set of operations that produced by Document Remove Transition
+        let operations = vec![
+            Operation::PreCalculated(PreCalculatedOperation {
+                storage_cost: 0,
+                processing_cost: 551320,
+                fee_refunds: vec![],
+            }),
+            Operation::SignatureVerification(SignatureVerificationOperation {
+                signature_type: ECDSA_SECP256K1,
+            }),
+            Operation::PreCalculated(PreCalculatedOperation {
+                storage_cost: 0,
+                processing_cost: 551320,
+                fee_refunds: vec![],
+            }),
+            Operation::PreCalculated(PreCalculatedOperation {
+                storage_cost: 0,
+                processing_cost: 191260,
+                fee_refunds: vec![],
+            }),
+            Operation::PreCalculated(PreCalculatedOperation {
+                storage_cost: 0,
+                processing_cost: 16870910,
+                fee_refunds: vec![Refunds {
+                    identifier: Identifier::new([
+                        130, 188, 56, 7, 78, 143, 58, 212, 133, 162, 145, 56, 186, 219, 191, 75,
+                        64, 112, 236, 226, 135, 75, 132, 170, 135, 243, 180, 110, 103, 161, 153,
+                        252,
+                    ]),
+                    credits_per_epoch: [("0".to_string(), 114301030)].iter().cloned().collect(),
+                }],
+            }),
+        ];
+
+        let identifier = Identifier::new([
+            130, 188, 56, 7, 78, 143, 58, 212, 133, 162, 145, 56, 186, 219, 191, 75, 64, 112, 236,
+            226, 135, 75, 132, 170, 135, 243, 180, 110, 103, 161, 153, 252,
+        ]);
+
+        // Panics because of negative credits
+        let result = calculate_state_transition_fee_from_operations_with_custom_calculator(
+            &operations,
+            &identifier,
+            calculate_operation_fees,
+        );
+
+        assert!(matches!(result, Ok(FeeResult {
+            desired_amount,
+            required_amount,
+            ..
+        }) if desired_amount == 0 && required_amount == 0));
     }
 }

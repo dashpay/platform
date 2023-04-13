@@ -49,7 +49,6 @@ describe('beginBlockFactory', () => {
   let time;
   let lastSyncedCoreHeightRepositoryMock;
   let simplifyMasternodeListMock;
-  let validMasternodesListLength;
 
   beforeEach(function beforeEach() {
     round = 0;
@@ -117,15 +116,13 @@ describe('beginBlockFactory', () => {
       }),
     };
 
-    validMasternodesListLength = 400;
-
     simplifyMasternodeListMock = {
       getStore() {
         return {
           getCurrentSML() {
             return {
               getValidMasternodesList() {
-                return validMasternodesListLength;
+                return new Array(400);
               },
             };
           },

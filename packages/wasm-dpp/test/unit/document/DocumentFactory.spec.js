@@ -154,7 +154,7 @@ describe('DocumentFactory', () => {
       // in a true unit test. Not here.
       expect(newDocument.getEntropy()).not.to.deep.be.equal(Buffer.alloc(32));
 
-      expect(newDocument.getCreatedAt()).to.be.an('number');
+      expect(newDocument.getCreatedAt()).to.be.an.instanceOf(Date);
     });
 
     it('should throw an error if type is not defined', () => {
