@@ -1,7 +1,7 @@
 use crate::error::Error;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
-use dashcore_rpc::json::{Masternode, ProTxHash, QuorumMasternodeListItem};
+use dashcore_rpc::json::{Masternode, MasternodeListItem, ProTxHash, QuorumMasternodeListItem};
 use dpp::identifier::Identifier;
 use dpp::identity::factory::IDENTITY_PROTOCOL_VERSION;
 use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
@@ -21,7 +21,7 @@ where
     fn create_owner_identity(
         &self,
         masternode_identifier: [u8; 32],
-        updated_masternode: &Masternode,
+        updated_masternode: &MasternodeListItem,
     ) -> Result<Identity, Error> {
         let mut identity = Self::create_basic_identity(masternode_identifier);
         identity.add_public_keys([self.get_owner_identity_key(&updated_masternode)?]);
@@ -30,7 +30,7 @@ where
 
     fn get_owner_identity_key(
         &self,
-        updated_masternode: &Masternode,
+        updated_masternode: &MasternodeListItem,
     ) -> Result<IdentityPublicKey, Error> {
         Ok(IdentityPublicKey {
             id: 0,
@@ -38,7 +38,7 @@ where
             purpose: Purpose::WITHDRAW,
             security_level: SecurityLevel::MASTER,
             read_only: true,
-            data: BinaryData::new(updated_masternode.payee.clone()),
+            data: BinaryData::new(updated_masternode.state.payout_address.clone()),
             disabled_at: None,
         })
     }
@@ -46,7 +46,7 @@ where
     fn create_voter_identity(
         &self,
         voting_identifier: [u8; 32],
-        updated_masternode: &Masternode,
+        updated_masternode: &MasternodeListItem,
     ) -> Result<Identity, Error> {
         let mut identity = Self::create_basic_identity(voting_identifier);
         identity.add_public_keys([self.get_voter_identity_key(&updated_masternode)?]);
@@ -55,7 +55,7 @@ where
 
     fn get_voter_identity_key(
         &self,
-        updated_masternode: &Masternode,
+        updated_masternode: &MasternodeListItem,
     ) -> Result<IdentityPublicKey, Error> {
         Ok(IdentityPublicKey {
             id: 0,
@@ -63,7 +63,7 @@ where
             purpose: Purpose::WITHDRAW, // todo: is this purpose correct??
             security_level: SecurityLevel::MASTER,
             read_only: true,
-            data: BinaryData::new(updated_masternode.voting_address.clone()),
+            data: BinaryData::new(updated_masternode.state.voting_address.clone()),
             disabled_at: None,
         })
     }
@@ -71,7 +71,7 @@ where
     fn create_operator_identity(
         &self,
         operator_identifier: [u8; 32],
-        updated_masternode: &Masternode,
+        updated_masternode: &MasternodeListItem,
     ) -> Result<Identity, Error> {
         let mut identity = Self::create_basic_identity(operator_identifier);
         identity.add_public_keys(self.get_operator_identity_keys(&updated_masternode)?);
@@ -81,52 +81,70 @@ where
 
     fn get_operator_identity_keys(
         &self,
-        updated_masternode: &Masternode,
+        updated_masternode: &MasternodeListItem,
     ) -> Result<Vec<IdentityPublicKey>, Error> {
         Ok(vec![
             IdentityPublicKey {
                 id: 0,
                 key_type: KeyType::BLS12_381,
-                purpose: Purpose::WITHDRAW, // todo: is this purpose correct??
+                purpose: Purpose::AUTHENTICATION, // todo: is this purpose correct??
                 security_level: SecurityLevel::CRITICAL,
                 read_only: true,
-                data: BinaryData::new(updated_masternode.pubkey_operator.clone()),
+                data: BinaryData::new(updated_masternode.state.pub_key_operator.clone()),
                 disabled_at: None,
             },
             IdentityPublicKey {
                 id: 1,
+                // key_type: KeyType::ECDSA_HASH160,
+                // TODO: commented version is the correct one, disable to get it building
                 key_type: KeyType::BLS12_381,
                 purpose: Purpose::WITHDRAW, // todo: is this purpose correct??
                 security_level: SecurityLevel::CRITICAL,
                 read_only: true,
                 // TODO: this should be the operator payout address
-                data: BinaryData::new(updated_masternode.payee.clone()),
+                data: BinaryData::new(updated_masternode.state.payout_address.clone()),
+                disabled_at: None,
+            },
+            // TODO: this public key should be optionally created
+            IdentityPublicKey {
+                id: 2,
+                // key_type: KeyType::EDDSA_25519_HASH160,
+                // TODO: commented version is the correct one, disable to get it building
+                key_type: KeyType::BLS12_381,
+                // purpose: Purpose::SYSTEM,
+                // TODO: commented version is the correct one, disable to get it building
+                purpose: Purpose::DECRYPTION,
+                security_level: SecurityLevel::CRITICAL,
+                read_only: true,
+                // TODO: this should be the node id
+                data: BinaryData::new(updated_masternode.state.payout_address.clone()),
                 disabled_at: None,
             },
         ])
     }
 
-    fn get_owner_identifier(updated_masternode: &Masternode) -> Result<[u8; 32], Error> {
+    // TODO: this should take in a trait, so we can re-use this, right now we have to duplicate
+    fn get_owner_identifier(updated_masternode: &MasternodeListItem) -> Result<[u8; 32], Error> {
         // TODO: do proper error handling
         let masternode_identifier: [u8; 32] =
-            updated_masternode.pro_tx_hash.clone().0.try_into().unwrap();
+            updated_masternode.protx_hash.clone().0.try_into().unwrap();
         Ok(masternode_identifier)
     }
 
     fn get_operator_identifier(
         protx_hash: &[u8],
-        updated_masternode: &Masternode,
+        updated_masternode: &MasternodeListItem,
     ) -> Result<[u8; 32], Error> {
-        let operator_pub_key = updated_masternode.pubkey_operator.as_slice();
+        let operator_pub_key = updated_masternode.state.pub_key_operator.as_slice();
         let operator_identifier = Self::hash_concat_protxhash(protx_hash, operator_pub_key)?;
         Ok(operator_identifier)
     }
 
     fn get_voter_identifier(
         protx_hash: &[u8],
-        updated_masternode: &Masternode,
+        updated_masternode: &MasternodeListItem,
     ) -> Result<[u8; 32], Error> {
-        let voting_address = updated_masternode.voting_address.as_slice();
+        let voting_address = updated_masternode.state.voting_address.as_slice();
         let voting_identifier = Self::hash_concat_protxhash(protx_hash, voting_address)?;
         Ok(voting_identifier)
     }
@@ -163,160 +181,37 @@ where
             let masternode_list_diff = self
                 .core_rpc
                 .get_protx_diff_with_masternodes(previous_core_height, current_core_height)?;
-            let updated_masternodes = masternode_list_diff.mn_list;
+            let added_masternodes = masternode_list_diff.added_mns;
+            let updated_masternodes = masternode_list_diff.updated_mns;
 
-            for updated_masternode in updated_masternodes {
-                // Need to get the protx hash for this
-                let protx_hash = hex::decode(&updated_masternode.pro_tx_hash.0).unwrap();
+            // TODO: remove duplication
+            // for the added masternodes, we just want to create the required identities
+            for masternode in added_masternodes {
+                let protx_hash = hex::decode(&masternode.protx_hash.0).unwrap();
 
-                // TODO: remove duplication
-                let owner_identifier = Self::get_owner_identifier(&updated_masternode)?;
-                let maybe_owner_identity = self
-                    .drive
-                    .fetch_full_identity(owner_identifier, Some(transaction))?;
-                match maybe_owner_identity {
-                    None => self.create_owner_identity(owner_identifier, &updated_masternode)?,
-                    Some(owner_identity) => {
-                        todo!();
-                        // let latest_owner_pub_key = self.get_owner_identity_key(protx_hash.as_slice())?;
-                        // let mut found = false;
-                        // let mut to_disable = vec![];
-                        // // TODO: clean up
-                        // for (key, pub_key) in owner_identity.get_public_keys() {
-                        //     // search the public key
-                        //     // TODO: impl eq for IdentityPublicKey
-                        //     if pub_key.data == latest_owner_pub_key.data {
-                        //         found = true
-                        //     } else {
-                        //         to_disable.push(key.clone())
-                        //     }
-                        // }
-                        // if !found {
-                        //     // disable all current keys
-                        //     self.drive.disable_identity_keys(voter_identifer, to_disable, todo!(), &block_info, true, Some(transaction));
-                        //     // add the new key to the identity
-                        //     self.drive.add_new_non_unique_keys_to_identity(owner_identifier, vec![latest_owner_pub_key], &block_info, true, Some(transaction));
-                        // }
-                    }
-                };
+                // create the owner identity
+                let owner_identifier = Self::get_owner_identifier(&masternode)?;
+                let owner_identity = self.create_owner_identity(owner_identifier, &masternode)?;
+                // store the owner identity
 
-                let voter_identifier =
-                    Self::get_voter_identifier(protx_hash.as_slice(), &updated_masternode)?;
-                let maybe_voter_identity = self
-                    .drive
-                    .fetch_full_identity(voter_identifier, Some(transaction))?;
-                match maybe_voter_identity {
-                    None => self.create_voter_identity(voter_identifier, &updated_masternode)?,
-                    Some(voter_identity) => {
-                        todo!();
-                        // TODO: remove duplication
-                        // let latest_voter_public_key = self.get_voter_identity_key(&updated_masternode)?;
-                        // let mut found = false;
-                        // let mut to_disable = vec![];
-                        // for (key, pub_key) in voter_identity.get_public_keys() {
-                        //     // search the public key
-                        //     // TODO: impl eq for IdentityPublicKey
-                        //     if pub_key.data == latest_voter_public_key.data {
-                        //         found = true
-                        //     } else {
-                        //         to_disable.push(key.clone())
-                        //     }
-                        // }
-                        // if !found {
-                        //     // disable all current keys
-                        //     self.drive.disable_identity_keys(voter_identifer, to_disable, todo!(), &block_info, true, Some(transaction));
-                        //     // add the new key to the identity
-                        //     self.drive.add_new_non_unique_keys_to_identity(voter_identifer, vec![latest_voter_public_key], &block_info, true, Some(transaction));
-                        // }
-                    }
-                };
+                // create the voter identity
+                let voter_identifier = Self::get_voter_identifier(&protx_hash, &masternode)?;
+                let voter_identity = self.create_voter_identity(voter_identifier, &masternode)?;
 
-                let operator_identifier =
-                    Self::get_operator_identifier(protx_hash.as_slice(), &updated_masternode)?;
-                let maybe_operator_identity = self
-                    .drive
-                    .fetch_full_identity(operator_identifier, Some(transaction))?;
-                let operator_identity = match maybe_operator_identity {
-                    None => {
-                        self.create_operator_identity(operator_identifier, &updated_masternode)?
-                    }
-                    _ => todo!(),
-                };
-
-                // next up if there is an identity, we need to check if the key is still the same
-                // if it is not the same, we need to disable that key and then add a new key
-                // might make sense to extract the key creation functions
-                // how do we check if a key has changed tho??
-                // we need to filter all the keys, for non disabled, then from this new key list
-                // we need to check if the key we are looking for is there
-                // if it is not there tho
-                // when adding a key, we need to use the next available id
-
-                // for x in owner_identity.public_keys.values() {
-                //
-                // }
-
-                // need to fetch the identities associated with this masternode
-                // self.drive.fetch_full_identity();
-                // assuming no fetch and just creation
-
-                //         // from the masternode, we need to get the identifiers for each type, then check if the key is what we expect
-                //         // TODO: make into owner_identifier function
-                //         // let protx_hash = hex::decode(&updated_masternode.pro_reg_tx_hash).unwrap();
-                //         let voting_address = updated_masternode.clone().voting_address;
-                //         let mut hasher = Sha256::new();
-                //         // TODO: remove clone
-                //         hasher.update([protx_hash, voting_address.clone()].concat().as_slice());
-                //         let voting_identifier: [u8; 32] = hasher.finalize().try_into().unwrap();
-                //
-                //         let previous_voter_identity = self
-                //             .drive
-                //             .fetch_full_identity(voting_identifier, Some(transaction))?;
-                //         if previous_voter_identity.is_none() {
-                //             let voter_identity = self.create_voter_identity(updated_masternode.clone())?;
-                //             let _ = self.drive.add_new_identity(
-                //                 voter_identity,
-                //                 block_info,
-                //                 true,
-                //                 Some(transaction),
-                //             )?;
-                //         } else {
-                //             // we need to confirm there has been no change in the key
-                //             // previous_voter_identity.unwrap().public_keys.values().fil
-                //         }
-                //
-                //         // TODO: get rid of clone
-                //         let owner_identity = self.create_owner_identity(updated_masternode.clone())?;
-                //         let voter_identity = self.create_voter_identity(updated_masternode.clone())?;
-                //         let operator_identity = self.create_operator_identity(updated_masternode)?;
-                //
-                //         // TODO: move this into the identity creation step
-                //         // TODO: what do we do with the fee result
-                //         let _ = self.drive.add_new_identity(
-                //             owner_identity,
-                //             block_info,
-                //             true,
-                //             Some(transaction),
-                //         )?;
-                //         let _ = self.drive.add_new_identity(
-                //             voter_identity,
-                //             block_info,
-                //             true,
-                //             Some(transaction),
-                //         )?;
-                //         let _ = self.drive.add_new_identity(
-                //             operator_identity,
-                //             block_info,
-                //             true,
-                //             Some(transaction),
-                //         )?;
+                // create the operator identity
+                let operator_identifier = Self::get_operator_identifier(&protx_hash, &masternode)?;
+                let operator_identity = self.create_operator_identity(operator_identifier, &masternode)?;
             }
-            //     //todo:
-            //     // self.drive.fetch_full_identity()
-            //     // self.drive.add_new_non_unique_keys_to_identity()
+
+            // how do we handle updated masternodes?
+            // well from the state diff, we can know which identity changed
+            // if an identity has changed, we retrieve the full identity
+            // next, we need to disable the part that changed, which means we need to identity that part
+            // need to get the next key id, need to disable the keys that should not be there e.t.c.
+            // would be better off if I can get this building and actually write some tests
+            // just test to make sure that the identities are created the way we want
+            // and that we are doing the updates correctly.
         }
         Ok(())
     }
-
-    // fn store_identity(identity)
 }
