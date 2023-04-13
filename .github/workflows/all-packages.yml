@@ -66,6 +66,9 @@ jobs:
     name: Run Platform Test Suite
     runs-on: ubuntu-22.04
     timeout-minutes: 60
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -81,27 +84,18 @@ jobs:
           toolchain: stable
           target: wasm32-unknown-unknown
 
-      - name: Run sccache-cache
+      - name: Setup Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          # Don't cache ./target, as it takes tons of space, use sccache instead.
+          cache-targets: false
+          # We set a shared key, as our cache is reusable between jobs
+          shared-key: rust-cargo
+
+      - name: Setup Rust compilation cache
         uses: mozilla-actions/sccache-action@v0.0.3
         with:
           version: "v0.4.1"
-        env:
-          SCCACHE_GHA_ENABLED: "true"
-          RUSTC_WRAPPER: "sccache"
-
-      - name: Configure sccache
-        uses: actions/github-script@v6
-        with:
-          script: |
-            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
-
-      - name: Run sccache stat for check
-        shell: bash
-        run: ${SCCACHE_PATH} --show-stats
-
-      # - name: Enable Rust cache
-      #   uses: Swatinem/rust-cache@v2
 
       - name: Enable corepack
         run: corepack enable
@@ -123,28 +117,12 @@ jobs:
       - name: Build SDK
         run: yarn build --filter "+dash"
 
+      - name: Show Rust compilation cache stats
+        shell: bash
+        run: ${SCCACHE_PATH} --show-stats
+
       - name: Set up Docker BuildX
-        id: buildx
-        uses: docker/setup-buildx-action@v2.5.0
-        with:
-          version: v0.10.4
-          install: true
-          driver-opts: image=moby/buildkit:buildx-stable-1
-
-      # - name: Enable buildkit cache
-      #   uses: actions/cache@v3
-      #   with:
-      #     path: /tmp/buildkit-cache/buildkit-state.tar
-      #     key: ${{ runner.os }}-buildkit-${{ github.sha }}
-      #     restore-keys: |
-      #       ${{ runner.os }}-buildkit-
-
-      # - name: Load buildkit state from cache
-      #   uses: dashevo/gh-action-cache-buildkit-state@skip-cachemount
-      #   with:
-      #     builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
-      #     cache-path: /tmp/buildkit-cache
-      #     cache-max-size: 6gb
+        uses: docker/setup-buildx-action@v2
 
       - name: Setup local network
         run: yarn configure
@@ -163,6 +141,9 @@ jobs:
     name: Run Platform Test Suite in Browsers
     runs-on: ubuntu-22.04
     timeout-minutes: 60
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -178,8 +159,18 @@ jobs:
           toolchain: stable
           target: wasm32-unknown-unknown
 
-      - name: Enable Rust cache
+      - name: Setup Cargo cache
         uses: Swatinem/rust-cache@v2
+        with:
+          # Don't cache ./target, as it takes tons of space, use sccache instead.
+          cache-targets: false
+          # We set a shared key, as our cache is reusable between jobs
+          shared-key: rust-cargo
+
+      - name: Setup Rust compilation cache
+        uses: mozilla-actions/sccache-action@v0.0.3
+        with:
+          version: "v0.4.1"
 
       - name: Enable corepack
         run: corepack enable
@@ -201,28 +192,12 @@ jobs:
       - name: Build SDK
         run: yarn build --filter "+dash"
 
+      - name: Show Rust compilation cache stats
+        shell: bash
+        run: ${SCCACHE_PATH} --show-stats
+
       - name: Set up Docker BuildX
-        id: buildx
         uses: docker/setup-buildx-action@v2
-        with:
-          version: v0.9.1
-          install: true
-          driver-opts: image=moby/buildkit:buildx-stable-1
-
-      - name: Enable buildkit cache
-        uses: actions/cache@v3
-        with:
-          path: /tmp/buildkit-cache/buildkit-state.tar
-          key: ${{ runner.os }}-buildkit-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildkit-
-
-      - name: Load buildkit state from cache
-        uses: dashevo/gh-action-cache-buildkit-state@skip-cachemount
-        with:
-          builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
-          cache-path: /tmp/buildkit-cache
-          cache-max-size: 6gb
 
       - name: Setup local network
         run: yarn configure
@@ -264,10 +239,19 @@ jobs:
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
-          components: clippy
 
-      - name: Setup wasm-bindgen
-        run: cargo install -f wasm-bindgen-cli
+      - name: Setup Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          # Don't cache ./target, as it takes tons of space, use sccache instead.
+          cache-targets: false
+          # We set a shared key, as our cache is reusable between jobs
+          shared-key: rust-cargo
+
+      - name: Setup Rust compilation cache
+        uses: mozilla-actions/sccache-action@v0.0.3
+        with:
+          version: "v0.4.1"
 
       - name: Enable corepack
         run: corepack enable
@@ -287,14 +271,11 @@ jobs:
         run: yarn install
 
       - name: Build package and dependencies
-        run: yarn build --filter "+${{ inputs.package }}"
-        if: ${{ !inputs.start-local-network }}
+        run: yarn build --filter "+dash"
 
-      - name: Build all packages
-        run: yarn build
-        if: ${{ inputs.start-local-network }}
+      - name: Show Rust compilation cache stats
+        shell: bash
+        run: ${SCCACHE_PATH} --show-stats
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v2
-        with:
-          category: "/language:javascript"

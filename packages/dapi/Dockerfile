@@ -1,5 +1,5 @@
 # syntax = docker/dockerfile:1.5
-FROM strophy/buildbase:0.0.4 as builder
+FROM strophy/buildbase:0.0.5 as builder
 
 WORKDIR /platform
 
@@ -29,7 +29,7 @@ COPY packages/masternode-reward-shares-contract packages/masternode-reward-share
 COPY packages/feature-flags-contract packages/feature-flags-contract
 
 # Build WASM DPP
-RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
+RUN --mount=type=cache,sharing=private,target=/root/.cache/sccache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
