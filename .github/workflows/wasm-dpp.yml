@@ -70,7 +70,3 @@ jobs:
 
       - name: Compile WASM
         run: cargo check --lib --target wasm32-unknown-unknown --package=wasm-dpp
-
-      - name: Show Rust compilation cache stats
-        shell: bash
-        run: ${SCCACHE_PATH} --show-stats

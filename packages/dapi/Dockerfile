@@ -45,6 +45,10 @@ RUN --mount=type=cache,target=/tmp/unplugged \
     yarn workspaces focus --production @dashevo/dapi && \
     cp -R /platform/.yarn/unplugged /tmp/
 
+
+# Remove Rust sources
+RUN rm -rf packages/rs-dpp packages/rs-platform-value
+
 FROM node:16-alpine3.16
 
 ARG NODE_ENV=production
@@ -59,9 +63,6 @@ RUN apk update && apk add --no-cache zeromq-dev
 WORKDIR /platform
 
 COPY --from=builder /platform /platform
-
-# Remove Rust sources
-RUN rm -rf packages/rs-dpp packages/rs-platform-value
 
 RUN cp /platform/packages/dapi/.env.example /platform/packages/dapi/.env
 

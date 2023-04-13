@@ -55,10 +55,6 @@ jobs:
 
       - run: cargo check --package=drive --no-default-features --features=verify
 
-      - name: Show Rust compilation cache stats
-        shell: bash
-        run: ${SCCACHE_PATH} --show-stats
-
   rs-checks:
     name: Rust
     uses: ./.github/workflows/rs-checks.yml

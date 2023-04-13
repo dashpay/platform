@@ -45,6 +45,7 @@ RUN --mount=type=cache,sharing=private,target=/root/.cache/sccache \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     yarn workspace @dashevo/rs-drive build && \
     yarn workspace @dashevo/wasm-dpp build && \
+    cargo clean && \
     sccache --show-stats
 
 # Install Drive-specific dependencies using previous
@@ -53,6 +54,9 @@ RUN --mount=type=cache,target=/tmp/unplugged \
     cp -R /tmp/unplugged /platform/.yarn/ && \
     yarn workspaces focus --production @dashevo/drive && \
     cp -R /platform/.yarn/unplugged /tmp/
+
+# Remove Rust sources
+RUN rm -rf packages/rs-drive packages/rs-drive-abci packages/rs-dpp packages/rs-platform-value
 
 FROM node:16-alpine3.16
 
@@ -68,9 +72,6 @@ RUN apk update && apk add --no-cache zeromq-dev
 WORKDIR /platform
 
 COPY --from=builder /platform /platform
-
-# Remove Rust sources
-RUN rm -rf packages/rs-drive packages/rs-drive-abci packages/rs-dpp packages/rs-platform-value
 
 RUN cp /platform/packages/js-drive/.env.example /platform/packages/js-drive/.env
 

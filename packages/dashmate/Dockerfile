@@ -49,6 +49,9 @@ RUN --mount=type=cache,target=/tmp/unplugged \
     yarn workspaces focus --production dashmate && \
     cp -R /platform/.yarn/unplugged /tmp/
 
+# Remove Rust sources
+RUN rm -rf packages/rs-dpp packages/rs-platform-value
+
 FROM node:16-alpine3.16
 
 ARG NODE_ENV=production
@@ -64,8 +67,5 @@ LABEL description="Dashmate Helper Node.JS"
 WORKDIR /platform
 
 COPY --from=builder /platform /platform
-
-# Remove Rust sources
-RUN rm -rf packages/rs-dpp packages/rs-platform-value
 
 ENTRYPOINT ["/platform/packages/dashmate/docker/entrypoint.sh"]

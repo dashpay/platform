@@ -159,10 +159,6 @@ jobs:
 #        run: yarn build --filter "+@dashevo/drive"
 #        env:
 #          CARGO_BUILD_PROFILE: release
-#
-#      - name: Show Rust compilation cache stats
-#        shell: bash
-#        run: ${SCCACHE_PATH} --show-stats
 
       - name: Set up QEMU to run multi-arch builds
         uses: docker/setup-qemu-action@v2
@@ -244,12 +240,6 @@ jobs:
             ACTIONS_RUNTIME_TOKEN=${{ env.ACTIONS_RUNTIME_TOKEN }}
             CARGO_BUILD_PROFILE=release
           platforms: linux/amd64,linux/arm64
-          cache-from: |
-            type=gha
-          # In practice, time spent preparing images is much lower than build.
-          # We minimize cached info to leave more space for sccache cache.
-          cache-to: |
-            type=gha,mode=min
 
   release-dapi-docker-image:
     name: Release DAPI to Docker Hub
@@ -291,10 +281,6 @@ jobs:
 #
 #      - name: Build packages
 #        run: yarn build --filter "+@dashevo/dapi"
-#
-#      - name: Show Rust compilation cache stats
-#        shell: bash
-#        run: ${SCCACHE_PATH} --show-stats
 
       - name: Set up QEMU to run multi-arch builds
         uses: docker/setup-qemu-action@v2
@@ -305,7 +291,7 @@ jobs:
         with:
           install: true
 
-      - name: Enable buildkit cache
+      - name: Enable docker cache mount
         uses: actions/cache@v3
         with:
           path: /tmp/buildkit-cache/buildkit-state.tar
@@ -313,7 +299,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildkit-
 
-      - name: Load buildkit state from cache
+      - name: Load docker cache mount
         uses: dashevo/gh-action-cache-buildkit-state@v1
         with:
           builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
@@ -424,10 +410,6 @@ jobs:
 #
 #      - name: Build packages
 #        run: yarn build --filter "+@dashevo/platform-test-suite"
-#
-#      - name: Show Rust compilation cache stats
-#        shell: bash
-#        run: ${SCCACHE_PATH} --show-stats
 
       - name: Set up QEMU to run multi-arch builds
         uses: docker/setup-qemu-action@v2
@@ -438,7 +420,7 @@ jobs:
         with:
           install: true
 
-      - name: Enable buildkit cache
+      - name: Enable docker cache mount
         uses: actions/cache@v3
         with:
           path: /tmp/buildkit-cache/buildkit-state.tar
@@ -446,7 +428,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildkit-
 
-      - name: Load buildkit state from cache
+      - name: Load docker cache mount
         uses: dashevo/gh-action-cache-buildkit-state@v1
         with:
           builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
@@ -636,7 +618,7 @@ jobs:
         with:
           install: true
 
-      - name: Enable buildkit cache
+      - name: Enable docker cache mount
         uses: actions/cache@v3
         with:
           path: /tmp/buildkit-cache/buildkit-state.tar
@@ -644,7 +626,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-buildkit-
 
-      - name: Load buildkit state from cache
+      - name: Load docker cache mount
         uses: dashevo/gh-action-cache-buildkit-state@v1
         with:
           builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
@@ -708,12 +690,6 @@ jobs:
             ACTIONS_CACHE_URL=${{ env.ACTIONS_CACHE_URL }}
             ACTIONS_RUNTIME_TOKEN=${{ env.ACTIONS_RUNTIME_TOKEN }}
             CARGO_BUILD_PROFILE=release
-          cache-from: |
-            type=gha
-          # In practice, time spent preparing images is much lower than build.
-          # We minimize cached info to leave more space for sccache cache.
-          cache-to: |
-            type=gha,mode=min
 
   # TODO: Implement yarn and rust cache
   build-rs-drive-nodejs:

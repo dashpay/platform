@@ -49,6 +49,9 @@ RUN --mount=type=cache,target=/tmp/unplugged \
     yarn workspaces focus --production @dashevo/platform-test-suite && \
     cp -R /platform/.yarn/unplugged /tmp/
 
+# Remove Rust sources
+RUN rm -rf packages/rs-dpp packages/rs-platform-value
+
 FROM node:16-alpine3.16
 
 ARG NODE_ENV=production
@@ -63,9 +66,6 @@ RUN apk add --no-cache bash
 WORKDIR /platform
 
 COPY --from=builder /platform /platform
-
-# Remove Rust sources
-RUN rm -rf packages/rs-dpp packages/rs-platform-value
 
 RUN cp /platform/packages/platform-test-suite/.env.example /platform/packages/platform-test-suite/.env
 
