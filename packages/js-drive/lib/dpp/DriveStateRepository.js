@@ -447,8 +447,8 @@ class DriveStateRepository {
    *
    * @returns {Promise<void>}
    */
-  async storeDataContract(dataContract, executionContext = undefined) {
-    console.log('DriveStateRepository.storeDataContract() start', {
+  async createDataContract(dataContract, executionContext = undefined) {
+    console.log('DriveStateRepository.createDataContract() start', {
       dataContract, executionContext,
     });
     const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
@@ -465,7 +465,7 @@ class DriveStateRepository {
       }
     }
 
-    console.log('DriveStateRepository.storeDataContract() end', {});
+    console.log('DriveStateRepository.createDataContract() end', {});
   }
 
   /**

@@ -383,13 +383,13 @@ class LoggedStateRepositoryDecorator {
    *
    * @returns {Promise<void>}
    */
-  async storeDataContract(dataContract, executionContext = undefined) {
+  async createDataContract(dataContract, executionContext = undefined) {
     let response;
 
     try {
-      response = await this.stateRepository.storeDataContract(dataContract, executionContext);
+      response = await this.stateRepository.createDataContract(dataContract, executionContext);
     } finally {
-      this.log('storeDataContract', { dataContract }, response);
+      this.log('createDataContract', { dataContract }, response);
     }
 
     return response;

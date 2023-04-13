@@ -482,7 +482,7 @@ describe('LoggedStateRepositoryDecorator', () => {
     });
   });
 
-  describe('#storeDataContract', () => {
+  describe('#createDataContract', () => {
     let dataContract;
 
     beforeEach(() => {
@@ -492,26 +492,26 @@ describe('LoggedStateRepositoryDecorator', () => {
     it('should call logger with proper params', async () => {
       const response = undefined;
 
-      stateRepositoryMock.storeDataContract.resolves(response);
+      stateRepositoryMock.createDataContract.resolves(response);
 
-      await loggedStateRepositoryDecorator.storeDataContract(dataContract);
+      await loggedStateRepositoryDecorator.createDataContract(dataContract);
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
         stateRepository: {
-          method: 'storeDataContract',
+          method: 'createDataContract',
           parameters: { dataContract },
           response,
         },
-      }, 'StateRepository#storeDataContract');
+      }, 'StateRepository#createDataContract');
     });
 
     it('should call logger in case of error', async () => {
       const error = new Error('unknown error');
 
-      stateRepositoryMock.storeDataContract.throws(error);
+      stateRepositoryMock.createDataContract.throws(error);
 
       try {
-        await loggedStateRepositoryDecorator.storeDataContract(dataContract);
+        await loggedStateRepositoryDecorator.createDataContract(dataContract);
 
         expect.fail('should throw an error');
       } catch (e) {
@@ -520,11 +520,11 @@ describe('LoggedStateRepositoryDecorator', () => {
 
       expect(loggerMock.trace).to.be.calledOnceWithExactly({
         stateRepository: {
-          method: 'storeDataContract',
+          method: 'createDataContract',
           parameters: { dataContract },
           response: undefined,
         },
-      }, 'StateRepository#storeDataContract');
+      }, 'StateRepository#createDataContract');
     });
   });
 

@@ -5,7 +5,6 @@ import init from './wasm/wasm_dpp';
 import wasmBase from './wasm/wasm_dpp_bg';
 import * as dpp_module from './dpp';
 
-// TODO(wasm-dpp): add tests for types with tsd tool
 export * from './dpp';
 export type DPPModule = typeof dpp_module;
 
