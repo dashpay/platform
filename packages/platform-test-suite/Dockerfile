@@ -1,6 +1,17 @@
 # syntax = docker/dockerfile:1.5
 FROM strophy/buildbase:0.0.5 as builder
 
+# TODO: Probably should be release by default
+ARG CARGO_BUILD_PROFILE=debug
+ENV CARGO_BUILD_PROFILE ${CARGO_BUILD_PROFILE}
+
+ARG NODE_ENV=production
+ENV NODE_ENV ${NODE_ENV}
+
+ARG SCCACHE_GHA_ENABLED
+ARG ACTIONS_CACHE_URL
+ARG ACTIONS_RUNTIME_TOKEN
+
 WORKDIR /platform
 
 # Copy yarn and Cargo files
@@ -53,9 +64,6 @@ RUN --mount=type=cache,target=/tmp/unplugged \
 RUN rm -rf packages/rs-dpp packages/rs-platform-value
 
 FROM node:16-alpine3.16
-
-ARG NODE_ENV=production
-ENV NODE_ENV ${NODE_ENV}
 
 LABEL maintainer="Dash Developers <dev@dash.org>"
 LABEL description="DAPI Node.JS"
