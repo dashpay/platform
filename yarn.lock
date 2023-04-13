@@ -1941,8 +1941,8 @@ __metadata:
     "@dashevo/dapi-client": "workspace:*"
     "@dashevo/dash-spv": "workspace:*"
     "@dashevo/dashcore-lib": ~0.20.0
-    "@dashevo/dpp": "workspace:*"
     "@dashevo/grpc-common": "workspace:*"
+    "@dashevo/wasm-dpp": "workspace:*"
     assert: ^2.0.0
     browserify-zlib: ^0.2.0
     buffer: ^6.0.3

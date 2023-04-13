@@ -2984,8 +2984,8 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dapi-client", "workspace:packages/js-dapi-client"],\
             ["@dashevo/dash-spv", "workspace:packages/dash-spv"],\
             ["@dashevo/dashcore-lib", "npm:0.20.0"],\
-            ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/grpc-common", "workspace:packages/js-grpc-common"],\
+            ["@dashevo/wasm-dpp", "workspace:packages/wasm-dpp"],\
             ["assert", "npm:2.0.0"],\
             ["browserify-zlib", "npm:0.2.0"],\
             ["buffer", "npm:6.0.3"],\
