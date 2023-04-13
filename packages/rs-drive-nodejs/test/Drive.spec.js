@@ -785,7 +785,7 @@ describe('Drive', function main() {
         toObject: this.sinonSandbox.stub().returns(
           {
             identifier: identity.getId().toBuffer(),
-            creditsPerEpoch: { 0: BigInt(1000000) },
+            creditsPerEpoch: new Map([['0', BigInt(1000000)]]),
           },
         ),
       };
