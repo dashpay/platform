@@ -187,7 +187,7 @@ function deliverTxFactory(
 
       txContextLogger.info(message);
       txContextLogger.debug({
-        consensusError,
+        consensusError: consensusError.toString(),
       });
 
       throw new DPPValidationAbciError(message, result.getFirstError());
