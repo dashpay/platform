@@ -1,5 +1,7 @@
 const { hash } = require('@dashevo/dpp/lib/util/hash');
 
+const { MASTERNODE_TYPE_HP } = require('@dashevo/dashcore-lib/lib/constants');
+
 const NotSupportedNetworkProtocolVersionError = require('../errors/NotSupportedNetworkProtocolVersionError');
 const NetworkProtocolVersionIsNotSetError = require('../errors/NetworkProtocolVersionIsNotSetError');
 
@@ -147,6 +149,7 @@ function beginBlockFactory(
       totalHpmns: simplifiedMasternodeList.getStore()
         .getCurrentSML()
         .getValidMasternodesList()
+        .filter((smlEntry) => smlEntry.nType === MASTERNODE_TYPE_HP)
         .length,
       proposedAppVersion: proposedAppVersion.toNumber(),
     };
