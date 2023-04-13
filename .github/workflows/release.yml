@@ -24,6 +24,7 @@ jobs:
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "false"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -122,6 +123,7 @@ jobs:
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "false"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -255,6 +257,7 @@ jobs:
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "false"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -387,6 +390,7 @@ jobs:
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "false"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -588,6 +592,7 @@ jobs:
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "false"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -749,6 +754,7 @@ jobs:
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "false"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -868,6 +874,7 @@ jobs:
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "false"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -905,48 +912,49 @@ jobs:
       - name: Install Linux build deps
         if: runner.os == 'Linux'
         run: sudo apt-get install -y nsis
-# TODO: We still need a build
-#
-#      - name: Setup Node.JS
-#        uses: actions/setup-node@v3
-#        with:
-#          node-version: '16'
-#
-#      - uses: dtolnay/rust-toolchain@master
-#        with:
-#          toolchain: stable
-#          target: wasm32-unknown-unknown
-#
-#      - name: Setup Rust compilation cache
-#        uses: mozilla-actions/sccache-action@v0.0.3
-#        with:
-#          version: "v0.4.1"
-#
-#      - name: Enable corepack
-#        run: corepack enable
-#
-#      - name: Disable NPM audit
-#        run: npm config set audit false
-#
-#      - name: Enable Yarn unplugged modules cache
-#        uses: actions/cache@v3
-#        with:
-#          path: '.yarn/unplugged'
-#          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
-#          restore-keys: |
-#            ${{ runner.os }}-yarn-unplugged-
-#
-#      - name: Install dependencies
-#        run: yarn install
-#
-#      - name: Build packages
-#        run: yarn build
-#        env:
-#          CARGO_BUILD_PROFILE: release
-#
-#      - name: Show Rust compilation cache stats
-#        shell: bash
-#        run: ${SCCACHE_PATH} --show-stats
+
+      - name: Setup Node.JS
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: Setup Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          # Don't cache ./target, as it takes tons of space, use sccache instead.
+          cache-targets: false
+          # We set a shared key, as our cache is reusable between jobs
+          shared-key: rust-cargo
+
+      - name: Setup Rust compilation cache
+        uses: mozilla-actions/sccache-action@v0.0.3
+        with:
+          version: "v0.4.1"
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Disable NPM audit
+        run: npm config set audit false
+
+      - name: Enable Yarn unplugged modules cache
+        uses: actions/cache@v3
+        with:
+          path: '.yarn/unplugged'
+          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-unplugged-
+
+      - name: Install dependencies
+        run: yarn install
+
+      - name: Build packages
+        run: yarn workspace dash run build
 
       - name: Create package
         env:
