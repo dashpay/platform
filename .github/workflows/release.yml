@@ -79,10 +79,6 @@ jobs:
         env:
           CARGO_BUILD_PROFILE: release
 
-      - name: Show Rust compilation cache stats
-        shell: bash
-        run: ${SCCACHE_PATH} --show-stats
-
       - name: Download prebuild artifacts
         uses: actions/download-artifact@v3
         with:
@@ -909,6 +905,7 @@ jobs:
       - name: Install Linux build deps
         if: runner.os == 'Linux'
         run: sudo apt-get install -y nsis
+# TODO: We still need a build
 #
 #      - name: Setup Node.JS
 #        uses: actions/setup-node@v3

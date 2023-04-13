@@ -44,10 +44,6 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           args: --all-features
 
-      - name: Show Rust compilation cache stats
-        shell: bash
-        run: ${SCCACHE_PATH} --show-stats
-
   formatting:
     name: Formatting
     runs-on: ubuntu-22.04
@@ -96,10 +92,6 @@ jobs:
 
       - run: cargo check --package=${{ inputs.package }}
 
-      - name: Show Rust compilation cache stats
-        shell: bash
-        run: ${SCCACHE_PATH} --show-stats
-
   test:
     name: Tests
     runs-on: ubuntu-22.04
@@ -132,7 +124,3 @@ jobs:
 
       - name: Run tests
         run: cargo test --package=${{ inputs.package }} --all-features
-
-      - name: Show Rust compilation cache stats
-        shell: bash
-        run: ${SCCACHE_PATH} --show-stats

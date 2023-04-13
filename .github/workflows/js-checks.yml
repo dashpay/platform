@@ -79,17 +79,13 @@ jobs:
       - name: Build package and dependencies
         run: yarn build --filter "+${{ inputs.package }}"
 
-      - name: Show Rust compilation cache stats
-        shell: bash
-        run: ${SCCACHE_PATH} --show-stats
-
       - name: Run ESLinter
         run: yarn workspace "${{ inputs.package }}" lint
 
   test:
     name: Tests
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    timeout-minutes: 60  # TODO Change to 60
     if: ${{ !inputs.skip-tests }}
     env:
       SCCACHE_GHA_ENABLED: "true"
@@ -150,18 +146,10 @@ jobs:
         env:
           NODE_ENV: test
 
-      - name: Show Rust compilation cache stats
-        shell: bash
-        run: ${SCCACHE_PATH} --show-stats
-
       # TODO: We build second time here, but with cache it must be quick
       - name: Build SDK
         run: yarn build --filter "+dash"
         if: ${{ inputs.start-local-network }}
-
-      - name: Show Rust compilation cache stats
-        shell: bash
-        run: ${SCCACHE_PATH} --show-stats
 
       - name: Create necessary dotenv files
         run: |
