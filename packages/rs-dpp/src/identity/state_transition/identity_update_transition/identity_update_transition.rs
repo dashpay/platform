@@ -70,6 +70,7 @@ pub struct IdentityUpdateTransition {
     pub add_public_keys: Vec<IdentityPublicKeyInCreationWithWitness>,
 
     /// Identity Public Keys ID's to disable for the Identity
+    #[serde(default)]
     pub disable_public_keys: Vec<KeyID>,
 
     /// Timestamp when keys were disabled
@@ -352,15 +353,19 @@ impl StateTransitionConvert for IdentityUpdateTransition {
                 .map_err(ProtocolError::ValueError)?;
         }
 
-        let mut add_public_keys: Vec<Value> = vec![];
-        for key in self.add_public_keys.iter() {
-            add_public_keys.push(key.to_raw_cleaned_object(skip_signature)?);
+        if !self.add_public_keys.is_empty() {
+            let mut add_public_keys: Vec<Value> = vec![];
+            for key in self.add_public_keys.iter() {
+                add_public_keys.push(key.to_raw_cleaned_object(skip_signature)?);
+            }
+
+            value.insert(
+                property_names::ADD_PUBLIC_KEYS.to_owned(),
+                Value::Array(add_public_keys),
+            )?;
         }
 
-        value.insert(
-            property_names::ADD_PUBLIC_KEYS.to_owned(),
-            Value::Array(add_public_keys),
-        )?;
+        value.remove_optional_value_if_empty_array(property_names::ADD_PUBLIC_KEYS)?;
 
         value.remove_optional_value_if_empty_array(property_names::DISABLE_PUBLIC_KEYS)?;
 

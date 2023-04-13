@@ -77,7 +77,8 @@ use dpp::identity::state_transition::identity_credit_withdrawal_transition::{
     IdentityCreditWithdrawalTransition, Pooling,
 };
 use dpp::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
-use dpp::identity::SecurityLevel::MASTER;
+use dpp::identity::Purpose::AUTHENTICATION;
+use dpp::identity::SecurityLevel::{CRITICAL, MASTER};
 use dpp::prelude::Identifier;
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 use drive::drive::Drive;
@@ -793,7 +794,13 @@ fn create_identity_update_transition_disable_keys(
     let key_ids_we_could_disable = identity
         .public_keys
         .iter()
-        .filter(|(_, key)| key.disabled_at.is_none() && key.security_level != MASTER && key.id > 1)
+        .filter(|(_, key)| {
+            key.disabled_at.is_none()
+                && (key.security_level != MASTER
+                    && !(key.security_level == CRITICAL
+                        && key.purpose == AUTHENTICATION
+                        && key.key_type == ECDSA_SECP256K1))
+        })
         .map(|(key_id, _)| *key_id)
         .collect::<Vec<_>>();
 
@@ -807,6 +814,12 @@ fn create_identity_update_transition_disable_keys(
         .into_iter()
         .map(|index| key_ids_we_could_disable[index])
         .collect();
+
+    identity.public_keys.iter_mut().for_each(|(key_id, key)| {
+        if key_ids_to_disable.contains(key_id) {
+            key.disabled_at = Some(block_time);
+        }
+    });
 
     let (key_id, _) = identity
         .public_keys
@@ -2122,7 +2135,7 @@ mod tests {
     }
 
     #[test]
-    fn run_chain_update_identities() {
+    fn run_chain_update_identities_add_keys() {
         let strategy = Strategy {
             contracts: vec![],
             operations: vec![Operation {
@@ -2182,6 +2195,75 @@ mod tests {
         assert!(identities
             .into_iter()
             .any(|(_, identity)| { identity.expect("expected identity").public_keys.len() > 7 }));
+    }
+
+    #[test]
+    fn run_chain_update_identities_remove_keys() {
+        let strategy = Strategy {
+            contracts: vec![],
+            operations: vec![Operation {
+                op_type: OperationType::IdentityUpdate(IdentityUpdateOp::IdentityUpdateDisableKey(
+                    3,
+                )),
+                frequency: Frequency {
+                    times_per_block_range: 1..2,
+                    chance_per_block: None,
+                },
+            }],
+            identities_inserts: Frequency {
+                times_per_block_range: 1..2,
+                chance_per_block: None,
+            },
+            total_hpmns: 100,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+        };
+        let config = PlatformConfig {
+            verify_sum_trees: true,
+            quorum_size: 100,
+            validator_set_quorum_rotation_block_count: 25,
+            block_spacing_ms: 3000,
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
+
+        let identities = outcome
+            .abci_app
+            .platform
+            .drive
+            .fetch_full_identities(
+                outcome
+                    .identities
+                    .into_iter()
+                    .map(|identity| identity.id.to_buffer())
+                    .collect(),
+                None,
+            )
+            .expect("expected to fetch balances");
+
+        assert!(identities.into_iter().any(|(_, identity)| {
+            identity
+                .expect("expected identity")
+                .public_keys
+                .into_iter()
+                .any(|(_, public_key)| public_key.is_disabled())
+        }));
     }
 
     #[test]

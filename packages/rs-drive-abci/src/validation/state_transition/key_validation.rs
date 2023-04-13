@@ -270,10 +270,11 @@ pub fn validate_identity_public_key_ids_exist_in_state(
     drive: &Drive,
     transaction: TransactionArg,
 ) -> Result<SimpleConsensusValidationResult, Error> {
+    let limit = key_ids.len() as u16;
     let identity_key_request = IdentityKeysRequest {
         identity_id: identity_id.to_buffer(),
         request_type: KeyRequestType::SpecificKeys(key_ids.clone()),
-        limit: None,
+        limit: Some(limit),
         offset: None,
     };
     let keys = drive.fetch_identity_keys::<KeyIDVec>(identity_key_request, transaction)?;
