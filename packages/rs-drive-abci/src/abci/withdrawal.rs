@@ -135,9 +135,21 @@ impl<'a> From<&Vec<VoteExtension>> for WithdrawalTxs<'a> {
 
 impl<'a> PartialEq for WithdrawalTxs<'a> {
     /// Two sets of withdrawal transactions are equal if all their inner raw transactions are equal.
-    /// Note we don't compare `drive_operations`.
+    /// Notes:
+    /// 1. We don't compare `drive_operations`, as this is internal utility fields
+    /// 2. For a transaction, we don't compare signatures if at least one of them is empty
     fn eq(&self, other: &Self) -> bool {
-        self.inner.eq(&other.inner)
+        if self.inner.len() != other.inner.len() {
+            return false;
+        }
+
+        std::iter::zip(&self.inner,& other.inner).all(|(left, right)| {
+            left.r#type == right.r#type
+                && left.extension == right.extension
+                && (left.signature.len() == 0
+                    || right.signature.len() == 0
+                    || left.signature == right.signature)
+        })
     }
 }
 
