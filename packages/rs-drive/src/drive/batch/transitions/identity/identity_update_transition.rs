@@ -17,10 +17,19 @@ impl DriveHighLevelOperationConverter for IdentityUpdateTransitionAction {
             disable_public_keys,
             public_keys_disabled_at,
             identity_id,
+            revision,
             ..
         } = self;
 
         let mut drive_operations = vec![];
+
+        drive_operations.push(IdentityOperation(
+            IdentityOperationType::UpdateIdentityRevision {
+                identity_id: identity_id.to_buffer(),
+                revision,
+            },
+        ));
+
         if !add_public_keys.is_empty() {
             drive_operations.push(IdentityOperation(
                 IdentityOperationType::AddNewKeysToIdentity {

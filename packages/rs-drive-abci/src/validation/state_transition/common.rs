@@ -11,7 +11,7 @@ pub(super) fn validate_schema(
     json_schema_validator
         .validate(
             &(state_transition
-                .to_object(false)
+                .to_cleaned_object(false)
                 .expect("we don't hold unserializable structs")
                 .try_into_validating_json()
                 .expect("TODO")),

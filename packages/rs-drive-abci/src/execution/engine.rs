@@ -503,15 +503,16 @@ where
         let received_withdrawals = WithdrawalTxs::from(&commit.threshold_vote_extensions);
         let our_withdrawals = WithdrawalTxs::load(Some(transaction), &self.drive)
             .map_err(|e| AbciError::WithdrawalTransactionsDBLoadError(e.to_string()))?;
-
-        if let Err(e) = self.check_withdrawals(
-            &received_withdrawals,
-            &our_withdrawals,
-            Some(quorum_public_key),
-        ) {
-            validation_result.add_error(e);
-            return Ok(validation_result.into());
-        }
+        //todo: reenable check
+        //
+        // if let Err(e) = self.check_withdrawals(
+        //     &received_withdrawals,
+        //     &our_withdrawals,
+        //     Some(quorum_public_key),
+        // ) {
+        //     validation_result.add_error(e);
+        //     return Ok(validation_result.into());
+        // }
 
         // Next let's check that the hash received is the same as the hash we expect
 

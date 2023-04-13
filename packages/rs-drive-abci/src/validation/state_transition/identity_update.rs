@@ -54,7 +54,7 @@ impl StateTransitionValidation for IdentityUpdateTransition {
         }
 
         let validation_result =
-            validate_state_transition_identity_signature(drive, self, false, transaction)?;
+            validate_state_transition_identity_signature(drive, self, true, transaction)?;
 
         if !result.is_valid() {
             result.merge(validation_result);
@@ -68,7 +68,7 @@ impl StateTransitionValidation for IdentityUpdateTransition {
         };
 
         // Check revision
-        if revision != (self.revision - 1) {
+        if revision + 1 != self.revision {
             result.add_error(StateError::InvalidIdentityRevisionError {
                 identity_id: self.identity_id,
                 current_revision: revision,

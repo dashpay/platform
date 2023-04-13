@@ -631,17 +631,23 @@ impl Strategy {
                         }
                     }
                     OperationType::IdentityTopUp if !current_identities.is_empty() => {
-                        for _i in 0..count {
-                            let identity_num = rng.gen_range(0..current_identities.len());
-                            let random_identity = current_identities.get(identity_num).unwrap();
+                        let indices: Vec<usize> =
+                            (0..current_identities.len()).choose_multiple(rng, count as usize);
+                        let random_identities: Vec<&Identity> = indices
+                            .into_iter()
+                            .map(|index| &current_identities[index])
+                            .collect();
+
+                        for random_identity in random_identities {
                             operations
                                 .push(create_identity_top_up_transition(rng, random_identity));
                         }
                     }
                     OperationType::IdentityUpdate(update_op) if !current_identities.is_empty() => {
-                        for _i in 0..count {
-                            let identity_num = rng.gen_range(0..current_identities.len());
-                            let random_identity = current_identities.get_mut(identity_num).unwrap();
+                        let indices: Vec<usize> =
+                            (0..current_identities.len()).choose_multiple(rng, count as usize);
+                        for index in indices {
+                            let random_identity = current_identities.get_mut(index).unwrap();
                             match update_op {
                                 IdentityUpdateOp::IdentityUpdateAddKeys(count) => {
                                     let (state_transition, keys_to_add_at_end_block) =
@@ -674,9 +680,10 @@ impl Strategy {
                         }
                     }
                     OperationType::IdentityWithdrawal if !current_identities.is_empty() => {
-                        for _i in 0..count {
-                            let identity_num = rng.gen_range(0..current_identities.len());
-                            let random_identity = current_identities.get_mut(identity_num).unwrap();
+                        let indices: Vec<usize> =
+                            (0..current_identities.len()).choose_multiple(rng, count as usize);
+                        for index in indices {
+                            let random_identity = current_identities.get_mut(index).unwrap();
                             let state_transition =
                                 create_identity_withdrawal_transition(random_identity, signer, rng);
                             operations.push(state_transition);
@@ -739,20 +746,27 @@ fn create_identity_top_up_transition(rng: &mut StdRng, identity: &Identity) -> S
 }
 
 fn create_identity_update_transition_add_keys(
-    identity: &Identity,
+    identity: &mut Identity,
     count: u16,
     signer: &mut SimpleSigner,
     rng: &mut StdRng,
 ) -> (StateTransition, (Identifier, Vec<IdentityPublicKey>)) {
+    identity.revision += 1;
     let keys =
         IdentityPublicKey::random_authentication_keys_with_private_keys_with_rng(count as u32, rng);
 
     let add_public_keys: Vec<IdentityPublicKey> = keys.iter().map(|(key, _)| key.clone()).collect();
     signer.private_keys_in_creation.extend(keys);
+    let (key_id, _) = identity
+        .public_keys
+        .iter()
+        .find(|(_, key)| key.security_level == MASTER)
+        .expect("expected to have a master key");
+
     let state_transition = StateTransition::IdentityUpdate(
         IdentityUpdateTransition::try_from_identity_with_signer(
             identity,
-            &0,
+            key_id,
             add_public_keys.clone(),
             vec![],
             None,
@@ -771,6 +785,7 @@ fn create_identity_update_transition_disable_keys(
     signer: &mut SimpleSigner,
     rng: &mut StdRng,
 ) -> Option<StateTransition> {
+    identity.revision += 1;
     // we want to find keys that are not disabled
     let key_ids_we_could_disable = identity
         .public_keys
@@ -780,6 +795,7 @@ fn create_identity_update_transition_disable_keys(
         .collect::<Vec<_>>();
 
     if key_ids_we_could_disable.is_empty() {
+        identity.revision -= 1; //since we added 1 before
         return None;
     }
     let indices: Vec<_> = (0..key_ids_we_could_disable.len()).choose_multiple(rng, count as usize);
@@ -789,10 +805,16 @@ fn create_identity_update_transition_disable_keys(
         .map(|index| key_ids_we_could_disable[index])
         .collect();
 
+    let (key_id, _) = identity
+        .public_keys
+        .iter()
+        .find(|(_, key)| key.security_level == MASTER)
+        .expect("expected to have a master key");
+
     let state_transition = StateTransition::IdentityUpdate(
         IdentityUpdateTransition::try_from_identity_with_signer(
             identity,
-            &0,
+            key_id,
             vec![],
             key_ids_to_disable,
             Some(block_time),
@@ -2094,6 +2116,69 @@ mod tests {
         assert!(balances
             .into_iter()
             .any(|(_, balance)| balance > max_initial_balance));
+    }
+
+    #[test]
+    fn run_chain_update_identities() {
+        let strategy = Strategy {
+            contracts: vec![],
+            operations: vec![Operation {
+                op_type: OperationType::IdentityUpdate(IdentityUpdateOp::IdentityUpdateAddKeys(3)),
+                frequency: Frequency {
+                    times_per_block_range: 1..2,
+                    chance_per_block: None,
+                },
+            }],
+            identities_inserts: Frequency {
+                times_per_block_range: 1..2,
+                chance_per_block: None,
+            },
+            total_hpmns: 100,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+        };
+        let config = PlatformConfig {
+            verify_sum_trees: true,
+            quorum_size: 100,
+            validator_set_quorum_rotation_block_count: 25,
+            block_spacing_ms: 3000,
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
+
+        let identities = outcome
+            .abci_app
+            .platform
+            .drive
+            .fetch_full_identities(
+                outcome
+                    .identities
+                    .into_iter()
+                    .map(|identity| identity.id.to_buffer())
+                    .collect(),
+                None,
+            )
+            .expect("expected to fetch balances");
+
+        assert!(identities
+            .into_iter()
+            .any(|(_, identity)| { identity.expect("expected identity").public_keys.len() > 7 }));
     }
 
     #[test]

@@ -6,7 +6,9 @@ use std::convert::{TryFrom, TryInto};
 
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
 
-use crate::consensus::signature::{MissingPublicKeyError, SignatureError};
+use crate::consensus::signature::{
+    InvalidSignaturePublicKeySecurityLevelError, MissingPublicKeyError, SignatureError,
+};
 use crate::consensus::ConsensusError;
 use crate::identity::signer::Signer;
 use crate::identity::{Identity, IdentityPublicKey};
@@ -133,8 +135,17 @@ impl IdentityUpdateTransition {
                 ))
                 .into(),
             )?;
-        identity_update_transition.sign_external(master_public_key, signer)?;
-        Ok(identity_update_transition)
+        if master_public_key.security_level != SecurityLevel::MASTER {
+            Err(ProtocolError::InvalidSignaturePublicKeySecurityLevelError(
+                InvalidSignaturePublicKeySecurityLevelError::new(
+                    master_public_key.security_level,
+                    vec![SecurityLevel::MASTER],
+                ),
+            ))
+        } else {
+            identity_update_transition.sign_external(master_public_key, signer)?;
+            Ok(identity_update_transition)
+        }
     }
 
     pub fn from_raw_object(
@@ -350,6 +361,10 @@ impl StateTransitionConvert for IdentityUpdateTransition {
             property_names::ADD_PUBLIC_KEYS.to_owned(),
             Value::Array(add_public_keys),
         )?;
+
+        value.remove_optional_value_if_empty_array(property_names::DISABLE_PUBLIC_KEYS)?;
+
+        value.remove_optional_value_if_null(property_names::PUBLIC_KEYS_DISABLED_AT)?;
 
         Ok(value)
     }
