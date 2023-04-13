@@ -18,19 +18,16 @@ where
     C: CoreRPCLike,
 {
     // TODO: store after identity creation
-    fn create_owner_identity(
-        &self,
-        masternode_identifier: [u8; 32],
-        updated_masternode: &MasternodeListItem,
-    ) -> Result<Identity, Error> {
-        let mut identity = Self::create_basic_identity(masternode_identifier);
-        identity.add_public_keys([self.get_owner_identity_key(&updated_masternode)?]);
+    fn create_owner_identity(&self, masternode: &MasternodeListItem) -> Result<Identity, Error> {
+        let owner_identifier = Self::get_owner_identifier(&masternode)?;
+        let mut identity = Self::create_basic_identity(owner_identifier);
+        identity.add_public_keys([self.get_owner_identity_key(&masternode)?]);
         Ok(identity)
     }
 
     fn get_owner_identity_key(
         &self,
-        updated_masternode: &MasternodeListItem,
+        masternode: &MasternodeListItem,
     ) -> Result<IdentityPublicKey, Error> {
         Ok(IdentityPublicKey {
             id: 0,
@@ -38,24 +35,25 @@ where
             purpose: Purpose::WITHDRAW,
             security_level: SecurityLevel::MASTER,
             read_only: true,
-            data: BinaryData::new(updated_masternode.state.payout_address.clone()),
+            data: BinaryData::new(masternode.state.payout_address.clone()),
             disabled_at: None,
         })
     }
 
     fn create_voter_identity(
         &self,
-        voting_identifier: [u8; 32],
-        updated_masternode: &MasternodeListItem,
+        protx_hash: &[u8],
+        masternode: &MasternodeListItem,
     ) -> Result<Identity, Error> {
+        let voting_identifier = Self::get_voter_identifier(protx_hash, &masternode)?;
         let mut identity = Self::create_basic_identity(voting_identifier);
-        identity.add_public_keys([self.get_voter_identity_key(&updated_masternode)?]);
+        identity.add_public_keys([self.get_voter_identity_key(&masternode)?]);
         Ok(identity)
     }
 
     fn get_voter_identity_key(
         &self,
-        updated_masternode: &MasternodeListItem,
+        masternode: &MasternodeListItem,
     ) -> Result<IdentityPublicKey, Error> {
         Ok(IdentityPublicKey {
             id: 0,
@@ -63,25 +61,26 @@ where
             purpose: Purpose::WITHDRAW, // todo: is this purpose correct??
             security_level: SecurityLevel::MASTER,
             read_only: true,
-            data: BinaryData::new(updated_masternode.state.voting_address.clone()),
+            data: BinaryData::new(masternode.state.voting_address.clone()),
             disabled_at: None,
         })
     }
 
     fn create_operator_identity(
         &self,
-        operator_identifier: [u8; 32],
-        updated_masternode: &MasternodeListItem,
+        protx_hash: &[u8],
+        masternode: &MasternodeListItem,
     ) -> Result<Identity, Error> {
+        let operator_identifier = Self::get_operator_identifier(protx_hash, &masternode)?;
         let mut identity = Self::create_basic_identity(operator_identifier);
-        identity.add_public_keys(self.get_operator_identity_keys(&updated_masternode)?);
+        identity.add_public_keys(self.get_operator_identity_keys(&masternode)?);
 
         Ok(identity)
     }
 
     fn get_operator_identity_keys(
         &self,
-        updated_masternode: &MasternodeListItem,
+        masternode: &MasternodeListItem,
     ) -> Result<Vec<IdentityPublicKey>, Error> {
         Ok(vec![
             IdentityPublicKey {
@@ -90,7 +89,7 @@ where
                 purpose: Purpose::AUTHENTICATION, // todo: is this purpose correct??
                 security_level: SecurityLevel::CRITICAL,
                 read_only: true,
-                data: BinaryData::new(updated_masternode.state.pub_key_operator.clone()),
+                data: BinaryData::new(masternode.state.pub_key_operator.clone()),
                 disabled_at: None,
             },
             IdentityPublicKey {
@@ -102,7 +101,7 @@ where
                 security_level: SecurityLevel::CRITICAL,
                 read_only: true,
                 // TODO: this should be the operator payout address
-                data: BinaryData::new(updated_masternode.state.payout_address.clone()),
+                data: BinaryData::new(masternode.state.payout_address.clone()),
                 disabled_at: None,
             },
             // TODO: this public key should be optionally created
@@ -117,34 +116,33 @@ where
                 security_level: SecurityLevel::CRITICAL,
                 read_only: true,
                 // TODO: this should be the node id
-                data: BinaryData::new(updated_masternode.state.payout_address.clone()),
+                data: BinaryData::new(masternode.state.payout_address.clone()),
                 disabled_at: None,
             },
         ])
     }
 
     // TODO: this should take in a trait, so we can re-use this, right now we have to duplicate
-    fn get_owner_identifier(updated_masternode: &MasternodeListItem) -> Result<[u8; 32], Error> {
+    fn get_owner_identifier(masternode: &MasternodeListItem) -> Result<[u8; 32], Error> {
         // TODO: do proper error handling
-        let masternode_identifier: [u8; 32] =
-            updated_masternode.protx_hash.clone().0.try_into().unwrap();
+        let masternode_identifier: [u8; 32] = masternode.protx_hash.clone().0.try_into().unwrap();
         Ok(masternode_identifier)
     }
 
     fn get_operator_identifier(
         protx_hash: &[u8],
-        updated_masternode: &MasternodeListItem,
+        masternode: &MasternodeListItem,
     ) -> Result<[u8; 32], Error> {
-        let operator_pub_key = updated_masternode.state.pub_key_operator.as_slice();
+        let operator_pub_key = masternode.state.pub_key_operator.as_slice();
         let operator_identifier = Self::hash_concat_protxhash(protx_hash, operator_pub_key)?;
         Ok(operator_identifier)
     }
 
     fn get_voter_identifier(
         protx_hash: &[u8],
-        updated_masternode: &MasternodeListItem,
+        masternode: &MasternodeListItem,
     ) -> Result<[u8; 32], Error> {
-        let voting_address = updated_masternode.state.voting_address.as_slice();
+        let voting_address = masternode.state.voting_address.as_slice();
         let voting_identifier = Self::hash_concat_protxhash(protx_hash, voting_address)?;
         Ok(voting_identifier)
     }
@@ -184,23 +182,13 @@ where
             let added_masternodes = masternode_list_diff.added_mns;
             let updated_masternodes = masternode_list_diff.updated_mns;
 
-            // TODO: remove duplication
             // for the added masternodes, we just want to create the required identities
             for masternode in added_masternodes {
                 let protx_hash = hex::decode(&masternode.protx_hash.0).unwrap();
 
-                // create the owner identity
-                let owner_identifier = Self::get_owner_identifier(&masternode)?;
-                let owner_identity = self.create_owner_identity(owner_identifier, &masternode)?;
-                // store the owner identity
-
-                // create the voter identity
-                let voter_identifier = Self::get_voter_identifier(&protx_hash, &masternode)?;
-                let voter_identity = self.create_voter_identity(voter_identifier, &masternode)?;
-
-                // create the operator identity
-                let operator_identifier = Self::get_operator_identifier(&protx_hash, &masternode)?;
-                let operator_identity = self.create_operator_identity(operator_identifier, &masternode)?;
+                let owner_identity = self.create_owner_identity(&masternode)?;
+                let voter_identity = self.create_voter_identity(&protx_hash, &masternode)?;
+                let operator_identity = self.create_operator_identity(&protx_hash, &masternode)?;
             }
 
             // how do we handle updated masternodes?
@@ -214,4 +202,68 @@ where
         }
         Ok(())
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use dashcore_rpc::dashcore_rpc_json::MasternodeListDiffWithMasternodes;
+    use dashcore_rpc::json::MasternodeType::Regular;
+    use dashcore_rpc::json::{DMNState, MasternodeListItem, ProTxHash};
+    use std::net::SocketAddr;
+    use std::str::FromStr;
+
+    // thinking of creating a function that returns identity creation instructions based on the masternode list diff
+    // this way I can confirm that it is doing things correctly on the test level
+    // maybe two functions, 1 for the creation, another for update and another for deletion
+    // but don't think this is the best approach as the list might be very long and we don't want to
+    // store too much information in ram
+    // what should the result of an update function look like?
+    // it should return the key id's to disable and the new set of public keys to add.
+    // alright, let's focus on creation first
+    // we need to pass it the list of added master nodes
+    // we run into the batching problem with that, what we really want is a function that takes
+    // a sinlge masternode list item and then returns the correct identity.
+    // update also works for a very specific identity, hence we are testing on the specific identity level
+    // so create_owner_id ...
+    // update_owner_id ...
+    // we currently have the creation function, but it needs the identifier, is this the case anymore?
+    // we needed to remove the identifier because we had to retrieve before we knew if it was an update or not
+    // but this is no longer the case, so we can just combine it into one step
+
+    fn get_masternode_list_diff() -> MasternodeListDiffWithMasternodes {
+        // TODO: eventually generate this from json
+        MasternodeListDiffWithMasternodes {
+            base_height: 850000,
+            block_height: 867165,
+            added_mns: vec![
+                MasternodeListItem{
+                    node_type: Regular,
+                    protx_hash: ProTxHash::from("1628e387a7badd30fd4ee391ae0cab7e3bc84e792126c6b7cccd99257dad741d"),
+                    collateral_hash: hex::decode("4fde102b0c14c50d58d01cc7a53f9a73ae8283dcfe3f13685682ac6dd93f6210").unwrap().try_into().unwrap(),
+                    collateral_index: 1,
+                    operator_reward: 0,
+                    state: DMNState {
+                        service: SocketAddr::from_str("1.2.3.4:1234").unwrap(),
+                        registered_height: 0,
+                        last_paid_height: 0,
+                        consecutive_payments: 0,
+                        pose_penalty: 519,
+                        pose_revived_height: -1,
+                        pose_ban_height: 850091,
+                        revocation_reason: 0,
+                        owner_address: hex::decode("yT5qnTnzEe6a3qAaiaC6eG5XZgoyYErppd").unwrap(),
+                        voting_address: hex::decode("yccz9JhWMQsdeNAJ8TQ5JtNFXqUxk7dAS2").unwrap(),
+                        payout_address: hex::decode("yeBF5m81EKyr44JXgzFzj8ppSkS1R9vdz9").unwrap(),
+                        pub_key_operator: hex::decode("b9ba4890073eda0df9987857a9ecc4a47e25d0ca475e33586fae44684ef1d703d64a33f52bb93ba0fe5e81f832469fb4").unwrap()
+                        operator_payout_address: None,
+                    }
+                }
+            ],
+            updated_mns: vec![],
+            removed_mns: vec![],
+        }
+    }
+
+    #[test]
+    fn test_owner_identity() {}
 }
