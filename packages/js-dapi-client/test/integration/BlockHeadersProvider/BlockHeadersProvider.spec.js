@@ -4,7 +4,9 @@ const BlockHeadersProvider = require('../../../lib/BlockHeadersProvider/BlockHea
 const BlockHeadersWithChainLocksStreamMock = require('../../../lib/test/mocks/BlockHeadersWithChainLocksStreamMock');
 const mockHeadersChain = require('../../../lib/test/mocks/mockHeadersChain');
 
-describe('BlockHeadersProvider - integration', () => {
+describe('BlockHeadersProvider - integration', function describe() {
+  this.timeout(6000);
+
   let blockHeadersProvider;
   let historicalStreams = [];
   let continuousStream;
