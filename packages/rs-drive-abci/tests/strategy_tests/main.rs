@@ -752,8 +752,11 @@ fn create_identity_update_transition_add_keys(
     rng: &mut StdRng,
 ) -> (StateTransition, (Identifier, Vec<IdentityPublicKey>)) {
     identity.revision += 1;
-    let keys =
-        IdentityPublicKey::random_authentication_keys_with_private_keys_with_rng(count as u32, rng);
+    let keys = IdentityPublicKey::random_authentication_keys_with_private_keys_with_rng(
+        identity.public_keys.len() as KeyID,
+        count as u32,
+        rng,
+    );
 
     let add_public_keys: Vec<IdentityPublicKey> = keys.iter().map(|(key, _)| key.clone()).collect();
     signer.private_keys_in_creation.extend(keys);

@@ -13,6 +13,7 @@ use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use crate::validation::state_transition::common::{validate_protocol_version, validate_schema};
 use crate::validation::state_transition::key_validation::{
+    validate_identity_public_key_ids_dont_exist_in_state,
     validate_identity_public_key_ids_exist_in_state, validate_identity_public_keys_signatures,
     validate_identity_public_keys_structure, validate_state_transition_identity_signature,
     validate_unique_identity_public_key_hashes_state,
@@ -92,6 +93,20 @@ impl StateTransitionValidation for IdentityUpdateTransition {
         // Now we should check the state of added keys to make sure there aren't any that already exist
         validation_result.add_errors(
             validate_unique_identity_public_key_hashes_state(
+                self.add_public_keys.as_slice(),
+                drive,
+                tx,
+            )?
+            .errors,
+        );
+
+        if !validation_result.is_valid() {
+            return Ok(validation_result);
+        }
+
+        validation_result.add_errors(
+            validate_identity_public_key_ids_dont_exist_in_state(
+                self.identity_id,
                 self.add_public_keys.as_slice(),
                 drive,
                 tx,

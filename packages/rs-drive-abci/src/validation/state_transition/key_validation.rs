@@ -242,11 +242,12 @@ pub fn validate_identity_public_key_ids_dont_exist_in_state(
     let key_ids = identity_public_keys_with_witness
         .iter()
         .map(|key| key.id)
-        .collect();
+        .collect::<Vec<KeyID>>();
+    let limit = key_ids.len() as u16;
     let identity_key_request = IdentityKeysRequest {
         identity_id: identity_id.to_buffer(),
         request_type: KeyRequestType::SpecificKeys(key_ids),
-        limit: None,
+        limit: Some(limit),
         offset: None,
     };
     let keys = drive.fetch_identity_keys::<KeyIDVec>(identity_key_request, transaction)?;
