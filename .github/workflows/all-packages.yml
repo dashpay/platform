@@ -152,7 +152,7 @@ jobs:
 
   test-suite-browsers:
     name: Run Platform Test Suite in Browsers
-    runs-on: ubuntu-22.04 # self-hosted
+    runs-on: self-hosted # ubuntu-22.04
     timeout-minutes: 120  # TODO Change to 60
     env:
       SCCACHE_GHA_ENABLED: "true"
