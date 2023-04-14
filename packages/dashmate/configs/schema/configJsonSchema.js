@@ -243,9 +243,29 @@ module.exports = {
           additionalProperties: false,
           required: ['name', 'minimumDifficultyBlocks', 'powTargetSpacing'],
         },
-        debug: {
-          type: 'integer',
-          enum: [0, 1],
+        log: {
+          type: 'object',
+          properties: {
+            file: {
+              type: 'object',
+              properties: {
+                level: {
+                  type: 'array',
+                  items: {
+                    type: 'string',
+                  },
+                },
+                path: {
+                  type: 'string',
+                  minLength: 1,
+                },
+              },
+              additionalProperties: false,
+              required: ['level', 'path'],
+            },
+          },
+          additionalProperties: false,
+          required: ['file'],
         },
         logIps: {
           type: 'integer',
@@ -271,7 +291,7 @@ module.exports = {
         },
       },
       required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnet',
-        'debug', 'reindex', 'logIps', 'indexes'],
+        'log', 'reindex', 'logIps', 'indexes'],
       additionalProperties: false,
     },
     platform: {

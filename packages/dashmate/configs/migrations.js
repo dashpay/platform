@@ -4,7 +4,9 @@ const lodashGet = require('lodash/get');
 
 const systemConfigs = require('./system');
 
-const { NETWORK_TESTNET } = require('../src/constants');
+const path = require("path");
+
+const {NETWORK_TESTNET, HOME_DIR_PATH} = require('../src/constants');
 
 module.exports = {
   '0.17.2': (configFile) => {
@@ -530,6 +532,15 @@ module.exports = {
             port: systemConfigs.base.dashmate.helper.api.port,
           };
         }
+
+        config.core.log = {
+          file: {
+            level: [config.core.debug],
+            path: path.join(HOME_DIR_PATH, 'logs', config.name, 'core.log')
+          }
+        }
+
+        delete config.core.debug
       });
 
     return configFile;
