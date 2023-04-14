@@ -1,10 +1,11 @@
 import loadBLS from '@dashevo/bls';
+import { Buffer } from 'buffer';
 
-export default async () => {
+export default async (): Promise<any> => {
   const bls = await loadBLS();
 
   return {
-    validatePublicKey(publicKeyBuffer) {
+    validatePublicKey(publicKeyBuffer: Buffer): boolean {
       let pk;
 
       try {
@@ -19,7 +20,7 @@ export default async () => {
 
       return Boolean(pk);
     },
-    sign(data, key) {
+    sign(data: Uint8Array, key: Buffer): Buffer {
       const blsKey = bls.PrivateKey.fromBytes(Uint8Array.from(key), true);
       const signature = bls.BasicSchemeMPL.sign(blsKey, data);
       const result = Buffer.from(signature.serialize());
@@ -29,7 +30,7 @@ export default async () => {
 
       return result;
     },
-    verifySignature(signature, data, publicKey) {
+    verifySignature(signature: Buffer, data: Buffer, publicKey: Buffer): boolean {
       const { G1Element, G2Element, BasicSchemeMPL } = bls;
 
       const blsKey = G1Element.fromBytes(Uint8Array.from(publicKey));
@@ -38,7 +39,7 @@ export default async () => {
         Uint8Array.from(signature),
       );
 
-      const result = BasicSchemeMPL.verify(blsKey, Uint8Array.from(data), blsSignature);
+      const result: boolean = BasicSchemeMPL.verify(blsKey, Uint8Array.from(data), blsSignature);
 
       blsKey.delete();
       blsSignature.delete();

@@ -145,7 +145,7 @@ function expectOperatorIdentityFactory(
 
 /**
  * @param {IdentityStoreRepository} identityRepository
- * @param {Object} dppWasm
+ * @param {WebAssembly.Instance} dppWasm
  * @returns {expectVotingIdentity}
  */
 function expectVotingIdentityFactory(
@@ -208,7 +208,7 @@ function expectVotingIdentityFactory(
  * @param {IdentityPublicKeyStoreRepository} identityPublicKeyRepository
  * @param {getWithdrawPubKeyTypeFromPayoutScript} getWithdrawPubKeyTypeFromPayoutScript
  * @param {getPublicKeyFromPayoutScript} getPublicKeyFromPayoutScript
- * @param {Object} dppWasm
+ * @param {WebAssembly.Instance} dppWasm
  * @returns {expectMasternodeIdentity}
  */
 function expectMasternodeIdentityFactory(

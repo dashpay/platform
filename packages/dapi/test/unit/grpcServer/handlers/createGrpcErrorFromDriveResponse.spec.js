@@ -6,14 +6,12 @@ const InvalidArgumentGrpcError = require('@dashevo/grpc-common/lib/server/error/
 const FailedPreconditionGrpcError = require('@dashevo/grpc-common/lib/server/error/FailedPreconditionGrpcError');
 const generateRandomIdentifierAsync = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 
-let {
-  ProtocolVersionParsingError,
+const {
+  default: loadWasmDpp, ProtocolVersionParsingError,
   IdentityNotFoundError,
   BalanceIsNotEnoughError,
   DataContractAlreadyPresentError,
 } = require('@dashevo/wasm-dpp');
-
-const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
 const createGrpcErrorFromDriveResponse = require(
   '../../../../lib/grpcServer/handlers/createGrpcErrorFromDriveResponse',
 );
@@ -24,12 +22,7 @@ describe('createGrpcErrorFromDriveResponse', () => {
   let encodedInfo;
 
   before(async () => {
-    ({
-      ProtocolVersionParsingError,
-      IdentityNotFoundError,
-      BalanceIsNotEnoughError,
-      DataContractAlreadyPresentError,
-    } = await loadWasmDpp());
+    await loadWasmDpp();
   });
 
   beforeEach(() => {

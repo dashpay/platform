@@ -1,7 +1,5 @@
 const rimraf = require('rimraf');
 const Drive = require('@dashevo/rs-drive');
-// TODO: What should we do with it?
-const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
 
 const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
 const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
@@ -22,7 +20,7 @@ describe('DataContractStoreRepository', () => {
   let DataContract;
 
   before(function before() {
-    ({ DataContract } = this.dppWasm);
+    ({ DataContract, decodeProtocolEntity } = this.dppWasm);
   });
 
   beforeEach(async function beforeEach() {
@@ -43,8 +41,6 @@ describe('DataContractStoreRepository', () => {
     store = new GroveDBStore(rsDrive, noopLogger);
 
     await rsDrive.createInitialStateStructure();
-
-    decodeProtocolEntity = decodeProtocolEntityFactory();
 
     repository = new DataContractStoreRepository(
       store, decodeProtocolEntity, this.dppWasm, noopLogger,

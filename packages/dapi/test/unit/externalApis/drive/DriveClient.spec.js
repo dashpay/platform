@@ -162,7 +162,7 @@ describe('DriveClient', () => {
     });
   });
 
-  describe('#fetchIdentitiesByPublicKeyHashes', async () => {
+  describe('#fetchIdentitiesByPublicKeyHashes', () => {
     it('Should call \'fetchIdentitiesByPublicKeyHashes\' RPC with the given parameters', async () => {
       const drive = new DriveClient({ host: '127.0.0.1', port: 3000 });
 

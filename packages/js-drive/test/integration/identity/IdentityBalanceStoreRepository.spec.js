@@ -2,8 +2,6 @@ const fs = require('fs');
 const Drive = require('@dashevo/rs-drive');
 const { FeeResult } = require('@dashevo/rs-drive');
 
-// TODO: should we take it from other place?
-const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
 const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 
 const GroveDBStore = require('../../../lib/storage/GroveDBStore');
@@ -23,6 +21,8 @@ describe('IdentityBalanceStoreRepository', () => {
   let blockInfo;
 
   beforeEach(async function beforeEach() {
+    ({ decodeProtocolEntity } = this.dppWasm);
+
     rsDrive = new Drive('./db/grovedb_test', {
       drive: {
         dataContractsGlobalCacheSize: 500,
@@ -40,8 +40,6 @@ describe('IdentityBalanceStoreRepository', () => {
     await rsDrive.createInitialStateStructure();
 
     store = new GroveDBStore(rsDrive, logger);
-
-    decodeProtocolEntity = decodeProtocolEntityFactory();
 
     balanceRepository = new IdentityBalanceStoreRepository(
       store, decodeProtocolEntity, this.dppWasm,

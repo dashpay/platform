@@ -178,7 +178,6 @@ function deliverTxFactory(
 
     executionTimer.startTimer(TIMERS.DELIVER_TX.VALIDATE_STATE);
 
-    console.log('[Deliver ST Factory] validate state');
     const result = await transactionalDpp.stateTransition.validateState(stateTransition);
 
     if (!result.isValid()) {

@@ -1,8 +1,6 @@
 const fs = require('fs');
 const Drive = require('@dashevo/rs-drive');
 
-// TODO: should we take it from other place?
-const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
 const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 
@@ -24,7 +22,7 @@ describe('IdentityStoreRepository', () => {
   let IdentityPublicKey;
 
   before(function before() {
-    ({ Identity, IdentityPublicKey } = this.dppWasm);
+    ({ Identity, IdentityPublicKey, decodeProtocolEntity } = this.dppWasm);
   });
 
   beforeEach(async function beforeEach() {
@@ -45,8 +43,6 @@ describe('IdentityStoreRepository', () => {
     await rsDrive.createInitialStateStructure();
 
     store = new GroveDBStore(rsDrive, logger);
-
-    decodeProtocolEntity = decodeProtocolEntityFactory();
 
     repository = new IdentityStoreRepository(store, decodeProtocolEntity, this.dppWasm);
     identity = await getIdentityFixture();

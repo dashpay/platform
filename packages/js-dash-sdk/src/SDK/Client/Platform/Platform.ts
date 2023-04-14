@@ -98,7 +98,7 @@ interface DataContracts {
  * Class for Dash Platform
  *
  * @param documents - documents
- * @param identities - identites
+ * @param identities - identities
  * @param names - names
  * @param contracts - contracts
  */

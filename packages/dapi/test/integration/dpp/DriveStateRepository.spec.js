@@ -4,7 +4,7 @@ const sinon = require('sinon');
 const chaiAsPromised = require('chai-as-promised');
 const dirtyChai = require('dirty-chai');
 
-const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
+const { default: loadWasmDpp, DashPlatformProtocol } = require('@dashevo/wasm-dpp');
 
 const generateRandomIdentifierAsync = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
@@ -29,10 +29,8 @@ describe('DriveStateRepository', () => {
   let dataContractFixture;
   let proto;
 
-  let DashPlatformProtocol;
-
   before(async () => {
-    ({ DashPlatformProtocol } = await loadWasmDpp());
+    await loadWasmDpp();
   });
 
   beforeEach(async function before() {
