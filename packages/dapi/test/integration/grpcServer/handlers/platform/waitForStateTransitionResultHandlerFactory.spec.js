@@ -16,7 +16,7 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 const getIdentityCreateTransitionFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
-const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
+const { default: loadWasmDpp, DashPlatformProtocol } = require('@dashevo/wasm-dpp');
 
 const { EventEmitter } = require('events');
 
@@ -48,10 +48,8 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
   let createGrpcErrorFromDriveResponseMock;
   let errorInfo;
 
-  let DashPlatformProtocol;
-
   before(async () => {
-    ({ DashPlatformProtocol } = await loadWasmDpp());
+    await loadWasmDpp();
   });
 
   beforeEach(async function beforeEach() {
