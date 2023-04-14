@@ -205,19 +205,19 @@ where
         Ok((aggregate_fee_result, exec_tx_results))
     }
 
-    /// Update of the masternode identities
-    pub fn update_masternode_identities(
-        &self,
-        previous_core_height: u32,
-        current_core_height: u32,
-    ) -> Result<(), Error> {
-        if previous_core_height != current_core_height {
-            //todo:
-            // self.drive.fetch_full_identity()
-            // self.drive.add_new_non_unique_keys_to_identity()
-        }
-        Ok(())
-    }
+    // /// Update of the masternode identities
+    // pub fn update_masternode_identities(
+    //     &self,
+    //     previous_core_height: u32,
+    //     current_core_height: u32,
+    // ) -> Result<(), Error> {
+    //     if previous_core_height != current_core_height {
+    //         //todo:
+    //         // self.drive.fetch_full_identity()
+    //         // self.drive.add_new_non_unique_keys_to_identity()
+    //     }
+    //     Ok(())
+    // }
 
     /// Run a block proposal, either from process proposal, or prepare proposal
     /// Errors returned in the validation result are consensus errors, any error here means that
@@ -329,7 +329,7 @@ where
             transaction,
         )?;
 
-        self.update_masternode_identities(last_block_core_height, core_chain_locked_height)?;
+        // self.update_masternode_identities(last_block_core_height, core_chain_locked_height)?;
 
         let root_hash = self
             .drive
@@ -361,7 +361,8 @@ where
 
         self.update_quorum_info(&mut state_cache, block_info.core_height)?;
 
-        //self.update_masternode_list(&mut state_cache, block_info.core_height, transaction)?;
+        // TODO: re-enable
+        // self.update_masternode_list(&mut state_cache, block_info.core_height, transaction)?;
 
         state_cache.last_committed_block_info = Some(block_info.clone());
 

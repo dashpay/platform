@@ -101,6 +101,9 @@ where
         return Ok(());
     }
 
+    /*
+    // TODO: re-enable
+
     /// Updates the masternode list in the platform state based on changes in the masternode list
     /// from Dash Core between two block heights.
     ///
@@ -177,4 +180,5 @@ where
 
         Ok(())
     }
+     */
 }
