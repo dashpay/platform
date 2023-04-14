@@ -17,7 +17,7 @@ concurrency:
 jobs:
   release-npm:
     name: Release NPM packages
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     if: github.event_name != 'workflow_dispatch'
     needs:
       - build-rs-drive-nodejs
@@ -119,7 +119,7 @@ jobs:
 
   release-drive-docker-image:
     name: Release Drive to Docker Hub
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
@@ -132,33 +132,33 @@ jobs:
         uses: mozilla-actions/sccache-action@v0.0.3
         with:
           version: "v0.4.1"
-#
-#      - name: Setup Node.JS
-#        uses: actions/setup-node@v3
-#        with:
-#          node-version: '16'
-#
-#      - name: Enable corepack
-#        run: corepack enable
-#
-#      - name: Disable NPM audit
-#        run: npm config set audit false
-#
-#      - name: Enable Yarn unplugged modules cache
-#        uses: actions/cache@v3
-#        with:
-#          path: '.yarn/unplugged'
-#          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
-#          restore-keys: |
-#            ${{ runner.os }}-yarn-unplugged-
-#
-#      - name: Install dependencies
-#        run: yarn install
-#
-#      - name: Build packages
-#        run: yarn build --filter "+@dashevo/drive"
-#        env:
-#          CARGO_BUILD_PROFILE: release
+
+      - name: Setup Node.JS
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Disable NPM audit
+        run: npm config set audit false
+
+      - name: Enable Yarn unplugged modules cache
+        uses: actions/cache@v3
+        with:
+          path: '.yarn/unplugged'
+          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-unplugged-
+
+      - name: Install dependencies
+        run: yarn install
+
+      - name: Build packages
+        run: yarn build --filter "+@dashevo/drive"
+        env:
+          CARGO_BUILD_PROFILE: release
 
       - name: Set up QEMU to run multi-arch builds
         uses: docker/setup-qemu-action@v2
@@ -243,7 +243,7 @@ jobs:
 
   release-dapi-docker-image:
     name: Release DAPI to Docker Hub
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
@@ -256,31 +256,33 @@ jobs:
         uses: mozilla-actions/sccache-action@v0.0.3
         with:
           version: "v0.4.1"
-#
-#      - name: Setup Node.JS
-#        uses: actions/setup-node@v3
-#        with:
-#          node-version: '16'
-#
-#      - name: Enable corepack
-#        run: corepack enable
-#
-#      - name: Disable NPM audit
-#        run: npm config set audit false
-#
-#      - name: Enable Yarn unplugged modules cache
-#        uses: actions/cache@v3
-#        with:
-#          path: '.yarn/unplugged'
-#          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
-#          restore-keys: |
-#            ${{ runner.os }}-yarn-unplugged-
-#
-#      - name: Install dependencies
-#        run: yarn install
-#
-#      - name: Build packages
-#        run: yarn build --filter "+@dashevo/dapi"
+
+      - name: Setup Node.JS
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Disable NPM audit
+        run: npm config set audit false
+
+      - name: Enable Yarn unplugged modules cache
+        uses: actions/cache@v3
+        with:
+          path: '.yarn/unplugged'
+          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-unplugged-
+
+      - name: Install dependencies
+        run: yarn install
+
+      - name: Build packages
+        run: yarn build --filter "+@dashevo/dapi"
+        env:
+          CARGO_BUILD_PROFILE: release
 
       - name: Set up QEMU to run multi-arch builds
         uses: docker/setup-qemu-action@v2
@@ -372,7 +374,7 @@ jobs:
 
   release-test-suite-docker-image:
     name: Release Test Suite to Docker Hub
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
@@ -385,31 +387,33 @@ jobs:
         uses: mozilla-actions/sccache-action@v0.0.3
         with:
           version: "v0.4.1"
-#
-#      - name: Setup Node.JS
-#        uses: actions/setup-node@v3
-#        with:
-#          node-version: '16'
-#
-#      - name: Enable corepack
-#        run: corepack enable
-#
-#      - name: Disable NPM audit
-#        run: npm config set audit false
-#
-#      - name: Enable Yarn unplugged modules cache
-#        uses: actions/cache@v3
-#        with:
-#          path: '.yarn/unplugged'
-#          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
-#          restore-keys: |
-#            ${{ runner.os }}-yarn-unplugged-
-#
-#      - name: Install dependencies
-#        run: yarn install
-#
-#      - name: Build packages
-#        run: yarn build --filter "+@dashevo/platform-test-suite"
+
+      - name: Setup Node.JS
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Disable NPM audit
+        run: npm config set audit false
+
+      - name: Enable Yarn unplugged modules cache
+        uses: actions/cache@v3
+        with:
+          path: '.yarn/unplugged'
+          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-unplugged-
+
+      - name: Install dependencies
+        run: yarn install
+
+      - name: Build packages
+        run: yarn build --filter "+@dashevo/platform-test-suite"
+        env:
+          CARGO_BUILD_PROFILE: release
 
       - name: Set up QEMU to run multi-arch builds
         uses: docker/setup-qemu-action@v2
@@ -570,7 +574,7 @@ jobs:
 
   release-dashmate-helper-docker-image:
     name: Release Dashmate helper to Docker Hub
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
@@ -583,31 +587,33 @@ jobs:
         uses: mozilla-actions/sccache-action@v0.0.3
         with:
           version: "v0.4.1"
-#
-#      - name: Setup Node.JS
-#        uses: actions/setup-node@v3
-#        with:
-#          node-version: '16'
-#
-#      - name: Enable corepack
-#        run: corepack enable
-#
-#      - name: Disable NPM audit
-#        run: npm config set audit false
-#
-#      - name: Enable Yarn unplugged modules cache
-#        uses: actions/cache@v3
-#        with:
-#          path: '.yarn/unplugged'
-#          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
-#          restore-keys: |
-#            ${{ runner.os }}-yarn-unplugged-
-#
-#      - name: Install dependencies
-#        run: yarn install
-#
-#      - name: Build packages
-#        run: yarn build --filter "+dashmate"
+
+      - name: Setup Node.JS
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Disable NPM audit
+        run: npm config set audit false
+
+      - name: Enable Yarn unplugged modules cache
+        uses: actions/cache@v3
+        with:
+          path: '.yarn/unplugged'
+          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-unplugged-
+
+      - name: Install dependencies
+        run: yarn install
+
+      - name: Build packages
+        run: yarn build --filter "+dashmate"
+        env:
+          CARGO_BUILD_PROFILE: release
 
       - name: Set up QEMU to run multi-arch builds
         uses: docker/setup-qemu-action@v2
@@ -780,7 +786,16 @@ jobs:
           toolchain: stable
           target: ${{ steps.set-target.outputs.result }}
 
+      - name: Setup Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          # Don't cache ./target, as it takes tons of space, use sccache instead.
+          cache-targets: false
+          # We set a shared key, as our cache is reusable between jobs
+          shared-key: rust-cargo
+
       - name: Setup Rust compilation cache
+        if: ${{ runner.os == 'macOS' }}
         uses: mozilla-actions/sccache-action@v0.0.3
         with:
           version: "v0.4.1"
@@ -929,8 +944,9 @@ jobs:
       - name: Install dependencies
         run: yarn install
 
+      # TODO: We don't need to build it, since pack should use released npm packages
       - name: Build packages
-        run: yarn workspace dash run build
+        run: yarn build --filter "+dashmate"
 
       - name: Create package
         env:
