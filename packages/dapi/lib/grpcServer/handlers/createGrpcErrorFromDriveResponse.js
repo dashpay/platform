@@ -15,11 +15,7 @@ const {
   },
 } = require('@dashevo/grpc-common');
 
-let {
-  deserializeConsensusError,
-} = require('@dashevo/wasm-dpp');
-
-const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
+const { default: loadWasmDpp, deserializeConsensusError } = require('@dashevo/wasm-dpp');
 
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const AlreadyExistsGrpcError = require('@dashevo/grpc-common/lib/server/error/AlreadyExistsGrpcError');
@@ -55,7 +51,7 @@ const COMMON_ERROR_CLASSES = {
  * @return {GrpcError}
  */
 async function createGrpcErrorFromDriveResponse(code, info) {
-  ({ deserializeConsensusError } = await loadWasmDpp());
+  await loadWasmDpp();
 
   if (code === undefined) {
     return new InternalGrpcError(new Error('Drive’s error code is empty'));
