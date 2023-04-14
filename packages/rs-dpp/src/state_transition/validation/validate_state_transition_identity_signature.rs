@@ -4,13 +4,14 @@ use std::{collections::HashSet, convert::TryInto};
 use anyhow::Context;
 use lazy_static::lazy_static;
 
+use crate::consensus::signature::SignatureError;
 use crate::consensus::signature::{
-    IdentityNotFoundError, InvalidIdentityPublicKeyTypeError, MissingPublicKeyError,
-    PublicKeyIsDisabledError, PublicKeySecurityLevelNotMetError,
+    IdentityNotFoundError, InvalidIdentityPublicKeyTypeError, InvalidStateTransitionSignatureError,
+    MissingPublicKeyError, PublicKeyIsDisabledError, PublicKeySecurityLevelNotMetError,
 };
 use crate::validation::SimpleValidationResult;
 use crate::{
-    consensus::{signature::SignatureError, ConsensusError},
+    consensus::ConsensusError,
     identity::KeyType,
     state_repository::StateRepositoryLike,
     state_transition::{
@@ -139,9 +140,12 @@ fn convert_to_consensus_signature_error(
                 InvalidIdentityPublicKeyTypeError::new(err.public_key_type()),
             )),
         ),
+        ProtocolError::WrongPublicKeyPurposeError(err) => Ok(err.into()),
         ProtocolError::Error(_) => Err(error),
         _ => Ok(ConsensusError::SignatureError(
-            SignatureError::InvalidStateTransitionSignatureError,
+            SignatureError::InvalidStateTransitionSignatureError(
+                InvalidStateTransitionSignatureError::new(),
+            ),
         )),
     }
 }
@@ -426,7 +430,9 @@ mod test {
 
         assert!(matches!(
             signature_error,
-            SignatureError::InvalidStateTransitionSignatureError
+            SignatureError::InvalidStateTransitionSignatureError(
+                InvalidStateTransitionSignatureError { .. }
+            )
         ));
     }
 

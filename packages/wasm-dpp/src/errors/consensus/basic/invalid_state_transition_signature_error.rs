@@ -1,13 +1,17 @@
+use crate::buffer::Buffer;
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::signature::InvalidStateTransitionSignatureError;
+use dpp::consensus::ConsensusError;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=InvalidStateTransitionSignatureError)]
 pub struct InvalidStateTransitionSignatureErrorWasm {
-    code: u32,
+    inner: InvalidStateTransitionSignatureError,
 }
 
-impl InvalidStateTransitionSignatureErrorWasm {
-    pub fn new(code: u32) -> Self {
-        InvalidStateTransitionSignatureErrorWasm { code }
+impl From<&InvalidStateTransitionSignatureError> for InvalidStateTransitionSignatureErrorWasm {
+    fn from(e: &InvalidStateTransitionSignatureError) -> Self {
+        Self { inner: e.clone() }
     }
 }
 
@@ -15,6 +19,20 @@ impl InvalidStateTransitionSignatureErrorWasm {
 impl InvalidStateTransitionSignatureErrorWasm {
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {
-        self.code
+        ConsensusError::from(self.inner.clone()).code()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn message(&self) -> String {
+        self.inner.to_string()
+    }
+
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+        let bytes = ConsensusError::from(self.inner.clone())
+            .serialize()
+            .map_err(|e| JsError::from(e))?;
+
+        Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }

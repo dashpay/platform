@@ -8,6 +8,7 @@ use crate::identity::{convert_satoshi_to_credits, Identity};
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::StateTransitionLike;
 
+#[derive(Clone)]
 pub struct ApplyIdentityCreateTransition<SR>
 where
     SR: StateRepositoryLike,
@@ -43,7 +44,7 @@ where
             )
             .await?;
 
-        let credits_amount = convert_satoshi_to_credits(output.value);
+        let credits_amount = convert_satoshi_to_credits(output.value)?;
 
         let identity = Identity {
             protocol_version: state_transition.get_protocol_version(),

@@ -1,18 +1,20 @@
 use anyhow::Result;
+use std::sync::Arc;
 
 use crate::{state_repository::StateRepositoryLike, state_transition::StateTransitionLike};
 
 use super::DataContractUpdateTransition;
 
+#[derive(Clone)]
 pub struct ApplyDataContractUpdateTransition<SR>
 where
     SR: StateRepositoryLike,
 {
-    state_repository: SR,
+    state_repository: Arc<SR>,
 }
 
 impl<SR: StateRepositoryLike> ApplyDataContractUpdateTransition<SR> {
-    pub fn new(state_repository: SR) -> Self {
+    pub fn new(state_repository: Arc<SR>) -> Self {
         ApplyDataContractUpdateTransition { state_repository }
     }
 }
@@ -26,7 +28,7 @@ where
         state_transition: &DataContractUpdateTransition,
     ) -> Result<()> {
         self.state_repository
-            .store_data_contract(
+            .update_data_contract(
                 state_transition.data_contract.clone(),
                 Some(state_transition.get_execution_context()),
             )

@@ -48,6 +48,13 @@ module.exports = lodashMerge({}, baseConfig, {
       },
     },
   },
+  dashmate: {
+    helper: {
+      api: {
+        port: 9100,
+      },
+    },
+  },
   externalIp: null,
   environment: 'development',
   network: NETWORK_LOCAL,

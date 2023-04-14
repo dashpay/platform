@@ -6,7 +6,11 @@ use std::collections::HashMap;
 pub use apply::*;
 pub use validation::*;
 
+use dpp::consensus::ConsensusError::SignatureError as ConsensusSignatureErrorVariant;
+
+use dpp::consensus::ConsensusError;
 use dpp::{
+    consensus::signature::SignatureError,
     data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition,
     platform_value,
     state_transition::{
@@ -17,7 +21,11 @@ use dpp::{
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 
-use crate::utils::WithJsError;
+use crate::{
+    bls_adapter::{BlsAdapter, JsBlsAdapter},
+    utils::WithJsError,
+    IdentityPublicKeyWasm,
+};
 use crate::{
     buffer::Buffer, errors::protocol_error::from_protocol_error, identifier::IdentifierWrapper,
     with_js_error, DataContractParameters, DataContractWasm, StateTransitionExecutionContextWasm,
@@ -140,6 +148,11 @@ impl DataContractUpdateTransitionWasm {
         self.0.set_execution_context(context.into())
     }
 
+    #[wasm_bindgen(js_name=getExecutionContext)]
+    pub fn get_execution_context(&mut self) -> StateTransitionExecutionContextWasm {
+        self.0.get_execution_context().into()
+    }
+
     #[wasm_bindgen(js_name=hash)]
     pub fn hash(&self, skip_signature: Option<bool>) -> Result<Buffer, JsValue> {
         let bytes = self
@@ -153,10 +166,55 @@ impl DataContractUpdateTransitionWasm {
     pub fn to_object(&self, skip_signature: Option<bool>) -> Result<JsValue, JsValue> {
         let serde_object = self
             .0
-            .to_object(skip_signature.unwrap_or(false))
+            .to_cleaned_object(skip_signature.unwrap_or(false))
             .map_err(from_protocol_error)?;
         serde_object
             .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
             .map_err(|e| e.into())
+    }
+
+    #[wasm_bindgen]
+    pub fn sign(
+        &mut self,
+        identity_public_key: &IdentityPublicKeyWasm,
+        private_key: Vec<u8>,
+        bls: JsBlsAdapter,
+    ) -> Result<(), JsValue> {
+        let bls_adapter = BlsAdapter(bls);
+
+        self.0
+            .sign(
+                &identity_public_key.to_owned().into(),
+                &private_key,
+                &bls_adapter,
+            )
+            .with_js_error()
+    }
+
+    #[wasm_bindgen(js_name=verifySignature)]
+    pub fn verify_signature(
+        &self,
+        identity_public_key: &IdentityPublicKeyWasm,
+        bls: JsBlsAdapter,
+    ) -> Result<bool, JsValue> {
+        let bls_adapter = BlsAdapter(bls);
+
+        let verification_result = self
+            .0
+            .verify_signature(&identity_public_key.to_owned().into(), &bls_adapter);
+
+        match verification_result {
+            Ok(()) => Ok(true),
+            Err(protocol_error) => match &protocol_error {
+                ProtocolError::ConsensusError(err) => match err.as_ref() {
+                    ConsensusError::SignatureError(
+                        SignatureError::InvalidStateTransitionSignatureError { .. },
+                    ) => Ok(false),
+                    _ => Err(protocol_error),
+                },
+                _ => Err(protocol_error),
+            },
+        }
+        .with_js_error()
     }
 }

@@ -1,11 +1,18 @@
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::data_contract::errors::DataContractError;
 use crate::prelude::Identifier;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Data Contract {data_contract_id} doesn't define document with the type {document_type}")]
 pub struct InvalidDocumentTypeError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     document_type: String,
     data_contract_id: Identifier,
 }
@@ -27,8 +34,8 @@ impl InvalidDocumentTypeError {
     }
 }
 
-impl From<InvalidDocumentTypeError> for DataContractError {
+impl From<InvalidDocumentTypeError> for ConsensusError {
     fn from(err: InvalidDocumentTypeError) -> Self {
-        Self::InvalidDocumentTypeError(err)
+        Self::BasicError(BasicError::InvalidDocumentTypeError(err))
     }
 }

@@ -429,6 +429,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
+name = "cbindgen"
+version = "0.24.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a6358dedf60f4d9b8db43ad187391afe959746101346fe51bb978126bec61dfb"
+dependencies = [
+ "clap 3.2.23",
+ "heck",
+ "indexmap",
+ "log",
+ "proc-macro2",
+ "quote",
+ "serde",
+ "serde_json",
+ "syn",
+ "tempfile",
+ "toml",
+]
+
+[[package]]
 name = "cc"
 version = "1.0.79"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -516,8 +535,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a0610544180c38b88101fecf2dd634b174a62eef6946f84dfc6a7127512b381c"
 dependencies = [
  "bitflags",
- "textwrap",
+ "textwrap 0.11.0",
  "unicode-width",
+]
+
+[[package]]
+name = "clap"
+version = "3.2.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "71655c45cb9845d3270c9d6df84ebe72b4dad3c2ba3f7023ad47c144e4e473a5"
+dependencies = [
+ "atty",
+ "bitflags",
+ "clap_lex",
+ "indexmap",
+ "strsim",
+ "termcolor",
+ "textwrap 0.16.0",
+]
+
+[[package]]
+name = "clap_lex"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2850f2f5a82cbf437dd5af4d49848fbdfc27c157c3d010345776f952765261c5"
+dependencies = [
+ "os_str_bytes",
 ]
 
 [[package]]
@@ -566,7 +609,7 @@ checksum = "5827cebf4670468b8772dd191856768aedcb1b0278a04f989f7766351917b9dc"
 [[package]]
 name = "costs"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=3f07f53175d99e4a3eab7b53d8bd221f59ea9047#3f07f53175d99e4a3eab7b53d8bd221f59ea9047"
+source = "git+https://github.com/dashpay/grovedb?branch=develop#12a1ddf3fc3c08851c244673b17683d7df2c1adb"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -590,7 +633,7 @@ checksum = "b01d6de93b2b6c65e17c634a26653a29d107b3c98c607c765bf38d041531cd8f"
 dependencies = [
  "atty",
  "cast",
- "clap",
+ "clap 2.34.0",
  "criterion-plot",
  "csv",
  "itertools",
@@ -1349,7 +1392,7 @@ dependencies = [
 [[package]]
 name = "grovedb"
 version = "0.12.2"
-source = "git+https://github.com/dashpay/grovedb?rev=3f07f53175d99e4a3eab7b53d8bd221f59ea9047#3f07f53175d99e4a3eab7b53d8bd221f59ea9047"
+source = "git+https://github.com/dashpay/grovedb?branch=develop#12a1ddf3fc3c08851c244673b17683d7df2c1adb"
 dependencies = [
  "bincode",
  "costs",
@@ -1786,7 +1829,7 @@ dependencies = [
 [[package]]
 name = "merk"
 version = "0.12.2"
-source = "git+https://github.com/dashpay/grovedb?rev=3f07f53175d99e4a3eab7b53d8bd221f59ea9047#3f07f53175d99e4a3eab7b53d8bd221f59ea9047"
+source = "git+https://github.com/dashpay/grovedb?branch=develop#12a1ddf3fc3c08851c244673b17683d7df2c1adb"
 dependencies = [
  "blake3",
  "byteorder",
@@ -2140,6 +2183,12 @@ name = "opaque-debug"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "624a8340c38c1b80fd549087862da4ba43e08858af025b236e509b6649fc13d5"
+
+[[package]]
+name = "os_str_bytes"
+version = "6.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ceedf44fb00f2d1984b0bc98102627ce622e083e49a5bacdb3e514fa4238e267"
 
 [[package]]
 name = "output_vt100"
@@ -2561,6 +2610,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "rs-drive-verify-c-binding"
+version = "0.1.0"
+dependencies = [
+ "cbindgen",
+ "drive",
+ "hex",
+]
+
+[[package]]
 name = "rust_decimal"
 version = "1.28.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2893,7 +2951,7 @@ dependencies = [
 [[package]]
 name = "storage"
 version = "1.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=3f07f53175d99e4a3eab7b53d8bd221f59ea9047#3f07f53175d99e4a3eab7b53d8bd221f59ea9047"
+source = "git+https://github.com/dashpay/grovedb?branch=develop#12a1ddf3fc3c08851c244673b17683d7df2c1adb"
 dependencies = [
  "blake3",
  "costs",
@@ -3047,6 +3105,12 @@ checksum = "d326610f408c7a4eb6f51c37c330e496b08506c9457c9d34287ecc38809fb060"
 dependencies = [
  "unicode-width",
 ]
+
+[[package]]
+name = "textwrap"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "222a222a5bfe1bba4a77b45ec488a741b3cb8872e5e499451fd7d0129c9c7c3d"
 
 [[package]]
 name = "thiserror"
@@ -3310,7 +3374,7 @@ checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
 [[package]]
 name = "visualize"
 version = "0.1.0"
-source = "git+https://github.com/dashpay/grovedb?rev=3f07f53175d99e4a3eab7b53d8bd221f59ea9047#3f07f53175d99e4a3eab7b53d8bd221f59ea9047"
+source = "git+https://github.com/dashpay/grovedb?branch=develop#12a1ddf3fc3c08851c244673b17683d7df2c1adb"
 dependencies = [
  "hex",
  "itertools",
@@ -3415,12 +3479,25 @@ dependencies = [
  "dpp",
  "itertools",
  "js-sys",
+ "log",
  "serde",
  "serde-wasm-bindgen",
  "serde_json",
  "thiserror",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+ "wasm-logger",
+ "web-sys",
+]
+
+[[package]]
+name = "wasm-logger"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "074649a66bb306c8f2068c9016395fa65d8e08d2affcbf95acf3c24c3ab19718"
+dependencies = [
+ "log",
+ "wasm-bindgen",
  "web-sys",
 ]
 

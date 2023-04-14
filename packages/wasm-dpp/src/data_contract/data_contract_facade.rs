@@ -8,6 +8,7 @@ use dpp::data_contract::DataContractFacade;
 use dpp::identifier::Identifier;
 use dpp::version::ProtocolVersionValidator;
 
+use crate::entropy_generator::ExternalEntropyGenerator;
 use crate::utils::{get_bool_from_options, WithJsError, SKIP_VALIDATION_PROPERTY_NAME};
 use crate::validation::ValidationResultWasm;
 use dpp::platform_value::Value;
@@ -23,8 +24,13 @@ impl DataContractFacadeWasm {
     pub fn new(
         protocol_version: u32,
         protocol_version_validator: Arc<ProtocolVersionValidator>,
+        entropy_generator: ExternalEntropyGenerator,
     ) -> Self {
-        let inner = DataContractFacade::new(protocol_version, protocol_version_validator);
+        let inner = DataContractFacade::new_with_entropy_generator(
+            protocol_version,
+            protocol_version_validator,
+            Box::new(entropy_generator),
+        );
 
         Self(Arc::new(inner))
     }
@@ -113,10 +119,10 @@ impl DataContractFacadeWasm {
     #[wasm_bindgen(js_name=createDataContractUpdateTransition)]
     pub fn create_data_contract_update_transition(
         &self,
-        data_contract: DataContractWasm,
+        data_contract: &DataContractWasm,
     ) -> Result<DataContractUpdateTransitionWasm, JsValue> {
         self.0
-            .create_data_contract_update_transition(data_contract.into())
+            .create_data_contract_update_transition(data_contract.to_owned().into())
             .map(Into::into)
             .map_err(from_protocol_error)
     }

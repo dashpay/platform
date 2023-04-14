@@ -6,6 +6,8 @@ use std::collections::HashMap;
 pub use apply::*;
 pub use validation::*;
 
+use dpp::consensus::signature::SignatureError;
+use dpp::consensus::ConsensusError;
 use dpp::{
     data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition,
     platform_value,
@@ -142,6 +144,11 @@ impl DataContractCreateTransitionWasm {
         self.0.set_execution_context(context.into())
     }
 
+    #[wasm_bindgen(js_name=getExecutionContext)]
+    pub fn get_execution_context(&mut self) -> StateTransitionExecutionContextWasm {
+        self.0.get_execution_context().into()
+    }
+
     #[wasm_bindgen(js_name=toObject)]
     pub fn to_object(&self, skip_signature: Option<bool>) -> Result<JsValue, JsValue> {
         let serde_object = self
@@ -161,6 +168,7 @@ impl DataContractCreateTransitionWasm {
         bls: JsBlsAdapter,
     ) -> Result<(), JsValue> {
         let bls_adapter = BlsAdapter(bls);
+
         self.0
             .sign(
                 &identity_public_key.to_owned().into(),
@@ -168,5 +176,32 @@ impl DataContractCreateTransitionWasm {
                 &bls_adapter,
             )
             .with_js_error()
+    }
+
+    #[wasm_bindgen(js_name=verifySignature)]
+    pub fn verify_signature(
+        &self,
+        identity_public_key: &IdentityPublicKeyWasm,
+        bls: JsBlsAdapter,
+    ) -> Result<bool, JsValue> {
+        let bls_adapter = BlsAdapter(bls);
+
+        let verification_result = self
+            .0
+            .verify_signature(&identity_public_key.to_owned().into(), &bls_adapter);
+
+        match verification_result {
+            Ok(()) => Ok(true),
+            Err(protocol_error) => match &protocol_error {
+                ProtocolError::ConsensusError(err) => match err.as_ref() {
+                    ConsensusError::SignatureError(
+                        SignatureError::InvalidStateTransitionSignatureError { .. },
+                    ) => Ok(false),
+                    _ => Err(protocol_error),
+                },
+                _ => Err(protocol_error),
+            },
+        }
+        .with_js_error()
     }
 }

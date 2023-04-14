@@ -84,8 +84,10 @@ impl DocumentReplaceTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getUpdatedAt)]
-    pub fn updated_at(&self) -> Option<TimestampMillis> {
-        self.inner.updated_at
+    pub fn updated_at(&self) -> Option<js_sys::Date> {
+        self.inner
+            .updated_at
+            .map(|timestamp| js_sys::Date::new(&JsValue::from_f64(timestamp as f64)))
     }
 
     #[wasm_bindgen(js_name=toObject)]

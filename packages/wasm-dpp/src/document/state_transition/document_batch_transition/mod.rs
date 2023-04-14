@@ -1,5 +1,5 @@
 use dpp::identity::KeyID;
-use dpp::state_transition::fee::calculate_state_transition_fee_factory::calculate_state_transition_fee;
+
 use dpp::{
     document::{
         document_transition::document_base_transition,
@@ -16,7 +16,8 @@ use dpp::{
 use js_sys::{Array, Reflect};
 use serde::{Deserialize, Serialize};
 
-use dpp::platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
+use dpp::consensus::signature::SignatureError;
+use dpp::consensus::ConsensusError;
 use dpp::platform_value::{BinaryData, ReplacementType};
 use wasm_bindgen::prelude::*;
 
@@ -210,7 +211,7 @@ impl DocumentsBatchTransitionWasm {
                 if !options.skip_identifiers_conversion {
                     lodash_set(&js_value, path, buffer.into());
                 } else {
-                    let id = IdentifierWrapper::new(buffer.into())?;
+                    let id = IdentifierWrapper::new(buffer.into());
                     lodash_set(&js_value, path, id.into());
                 }
             }
@@ -296,12 +297,28 @@ impl DocumentsBatchTransitionWasm {
     #[wasm_bindgen(js_name=verifySignature)]
     pub fn verify_signature(
         &self,
-        public_key: &IdentityPublicKeyWasm,
+        identity_public_key: &IdentityPublicKeyWasm,
         bls: JsBlsAdapter,
-    ) -> Result<(), JsValue> {
-        self.0
-            .verify_signature(public_key.inner(), &BlsAdapter(bls))
-            .with_js_error()
+    ) -> Result<bool, JsValue> {
+        let bls_adapter = BlsAdapter(bls);
+
+        let verification_result = self
+            .0
+            .verify_signature(&identity_public_key.to_owned().into(), &bls_adapter);
+
+        match verification_result {
+            Ok(()) => Ok(true),
+            Err(protocol_error) => match &protocol_error {
+                ProtocolError::ConsensusError(err) => match err.as_ref() {
+                    ConsensusError::SignatureError(
+                        SignatureError::InvalidStateTransitionSignatureError { .. },
+                    ) => Ok(false),
+                    _ => Err(protocol_error),
+                },
+                _ => Err(protocol_error),
+            },
+        }
+        .with_js_error()
     }
 
     #[wasm_bindgen(js_name=setSignaturePublicKey)]
@@ -346,7 +363,7 @@ impl DocumentsBatchTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=setExecutionContext)]
-    pub fn set_execution_context(&mut self, context: StateTransitionExecutionContextWasm) {
+    pub fn set_execution_context(&mut self, context: &StateTransitionExecutionContextWasm) {
         self.0.set_execution_context(context.into())
     }
 

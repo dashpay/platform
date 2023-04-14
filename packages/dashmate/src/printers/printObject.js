@@ -29,6 +29,8 @@ function printObject(object, format) {
 
   // eslint-disable-next-line no-console
   console.log(output);
+
+  return output;
 }
 
 module.exports = printObject;

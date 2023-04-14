@@ -6,12 +6,12 @@ use std::{
 };
 
 use crate::consensus::basic::document::{
-    DuplicateDocumentTransitionsWithIdsError, DuplicateDocumentTransitionsWithIndicesError,
-    InvalidDocumentTransitionActionError, InvalidDocumentTransitionIdError,
-    InvalidDocumentTypeError,
+    DataContractNotPresentError, DuplicateDocumentTransitionsWithIdsError,
+    DuplicateDocumentTransitionsWithIndicesError, InvalidDocumentTransitionActionError,
+    InvalidDocumentTransitionIdError, InvalidDocumentTypeError, MissingDataContractIdBasicError,
+    MissingDocumentTransitionActionError, MissingDocumentTransitionTypeError,
 };
-use crate::consensus::ConsensusError;
-use crate::data_contract::state_transition::errors::MissingDataContractIdError;
+use crate::consensus::basic::value_error::ValueError;
 use crate::document::state_transition::documents_batch_transition::property_names;
 use crate::document::validation::basic::find_duplicates_by_id::find_duplicates_by_id;
 use crate::validation::SimpleValidationResult;
@@ -152,14 +152,14 @@ pub async fn validate_documents_batch_transition_basic(
             .get_optional_identifier(property_names::DATA_CONTRACT_ID)
         {
             Ok(None) => {
-                result.add_error(BasicError::MissingDataContractIdError(
-                    MissingDataContractIdError::new(raw_document_transition.into()),
+                result.add_error(BasicError::MissingDataContractIdBasicError(
+                    MissingDataContractIdBasicError::new(),
                 ));
                 continue;
             }
             Ok(Some(id)) => id,
             Err(err) => {
-                result.add_error(ConsensusError::ValueError(err));
+                result.add_error(BasicError::ValueError(ValueError::new(err)));
                 continue;
             }
         };
@@ -188,7 +188,7 @@ pub async fn validate_documents_batch_transition_basic(
 
         let data_contract = match maybe_data_contract {
             None => {
-                result.add_error(BasicError::DataContractNotPresent { data_contract_id });
+                result.add_error(DataContractNotPresentError::new(data_contract_id));
                 continue;
             }
             Some(data_contract) => data_contract,
@@ -260,7 +260,7 @@ fn validate_raw_transitions<'a>(
     let owner_id_value: Value = owner_id.into();
     for mut raw_document_transition in raw_document_transitions {
         let Some(document_type) = raw_document_transition.get_optional_str("$type").map_err(ProtocolError::ValueError)? else {
-                result.add_error(BasicError::MissingDocumentTransitionTypeError);
+                result.add_error(BasicError::MissingDocumentTransitionTypeError(MissingDocumentTransitionTypeError::new()));
                 return Ok(result);
         };
 
@@ -272,7 +272,7 @@ fn validate_raw_transitions<'a>(
         }
 
         let Some(document_action) = raw_document_transition.get_optional_integer::<u8>("$action").map_err(ProtocolError::ValueError)? else {
-            result.add_error(BasicError::MissingDocumentTransitionActionError);
+            result.add_error(BasicError::MissingDocumentTransitionActionError(MissingDocumentTransitionActionError::new()));
             return Ok(result);
         };
 

@@ -8,6 +8,7 @@ use crate::identity::state_transition::identity_topup_transition::IdentityTopUpT
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::StateTransitionLike;
 
+#[derive(Clone)]
 pub struct ApplyIdentityTopUpTransition<SR>
 where
     SR: StateRepositoryLike,
@@ -39,7 +40,7 @@ where
             )
             .await?;
 
-        let mut credits_amount = convert_satoshi_to_credits(output.value);
+        let mut credits_amount = convert_satoshi_to_credits(output.value)?;
 
         let out_point = state_transition
             .get_asset_lock_proof()
