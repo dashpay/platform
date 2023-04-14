@@ -53,9 +53,7 @@ describe('getDataContractHandlerFactory', () => {
 
     response = new GetDataContractResponse();
     response.setProof(proofMock);
-    // TODO: Identifier/buffer issue - problem with Buffer shim:
-    //  Without Buffer.from it throws AssertionError: Failure: Type not convertible to Uint8Array.
-    response.setDataContract(Buffer.from(dataContractFixture.toBuffer()));
+    response.setDataContract(dataContractFixture.toBuffer());
 
     driveStateRepositoryMock = {
       fetchDataContract: this.sinon.stub().resolves(response.serializeBinary()),

@@ -41,9 +41,7 @@ describe('DriveStateRepository', () => {
     dpp = new DashPlatformProtocol({}, null, null);
 
     proto = new GetDataContractResponse();
-    // TODO: Identifier/buffer issue - problem with Buffer shim:
-    //  Without Buffer.from it throws AssertionError: Failure: Type not convertible to Uint8Array.
-    proto.setDataContract(Buffer.from(dataContractFixture.toBuffer()));
+    proto.setDataContract(dataContractFixture.toBuffer());
 
     driveClientMock = sinon.stub();
     driveClientMock.fetchDataContract = this.sinon.stub().resolves(
