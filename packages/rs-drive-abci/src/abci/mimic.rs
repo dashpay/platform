@@ -6,7 +6,8 @@ use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;
 use drive::drive::block_info::BlockInfo;
 use tenderdash_abci::proto::abci::{
-    CommitInfo, RequestFinalizeBlock, RequestPrepareProposal, ResponsePrepareProposal,
+    CommitInfo, RequestExtendVote, RequestFinalizeBlock, RequestPrepareProposal,
+    RequestVerifyVoteExtension, ResponsePrepareProposal,
 };
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::types::{Block, Header};
@@ -84,6 +85,24 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                 }
             })?;
         }
+
+        // let request_extend_vote = RequestExtendVote {
+        //     hash: vec![],
+        //     height: height as i64,
+        //     round: 0,
+        // };
+        //
+        // let response_extend_vote = self.extend_vote(request_extend_vote)?;
+        //
+        // let request_verify_vote_extension = RequestVerifyVoteExtension {
+        //     hash: vec![],
+        //     validator_pro_tx_hash: vec![],
+        //     height: 0,
+        //     round: 0,
+        //     vote_extensions: vec![],
+        // };
+        //
+        // self.verify_vote_extension(request_verify_vote_extension)?;
 
         let request_finalize_block = RequestFinalizeBlock {
             commit: Some(CommitInfo {

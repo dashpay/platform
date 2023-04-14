@@ -1,5 +1,7 @@
 use crate::rpc::core::QuorumListExtendedInfo;
-use dashcore_rpc::dashcore_rpc_json::{ProTxHash, QuorumHash, QuorumInfoResult};
+use dashcore_rpc::dashcore_rpc_json::{
+    MasternodeListItem, ProTxHash, QuorumHash, QuorumInfoResult,
+};
 use dashcore_rpc::json::{QuorumMasternodeListItem, QuorumType};
 use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::drive::block_info::BlockInfo;
@@ -27,10 +29,10 @@ pub struct PlatformState {
     pub validator_sets: HashMap<QuorumHash, QuorumInfoResult>,
 
     /// current full masternode list
-    pub full_masternode_list: BTreeMap<ProTxHash, QuorumMasternodeListItem>,
+    pub full_masternode_list: BTreeMap<ProTxHash, MasternodeListItem>,
 
     /// current hpmn masternode list
-    pub hpmn_masternode_list: BTreeMap<ProTxHash, QuorumMasternodeListItem>,
+    pub hpmn_masternode_list: BTreeMap<ProTxHash, MasternodeListItem>,
 }
 
 impl PlatformState {

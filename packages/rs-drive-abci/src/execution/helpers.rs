@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 
 use dashcore_rpc::dashcore_rpc_json::ProTxHash;
+use dashcore_rpc::json::{MasternodeListDiffWithMasternodes, MasternodeType};
 use drive::grovedb::Transaction;
 
 use crate::error::execution::ExecutionError;
@@ -101,7 +102,6 @@ where
         return Ok(());
     }
 
-    /*
     // TODO: re-enable
 
     /// Updates the masternode list in the platform state based on changes in the masternode list
@@ -132,30 +132,50 @@ where
             return Ok(()); // no need to do anything
         }
 
-        let masternode_list_diff = self
+        let MasternodeListDiffWithMasternodes {
+            added_mns,
+            removed_mns,
+            updated_mns,
+            ..
+        } = self
             .core_rpc
-            .get_protx_diff(previous_core_height, core_block_height)?;
+            .get_protx_diff_with_masternodes(previous_core_height, core_block_height)?;
+
         //todo: clean up
-        let updated_masternodes = masternode_list_diff.mn_list.into_iter().map(|masternode| {
-            let pro_tx_hash =
-                ProTxHash::from(hex::encode(masternode.pro_reg_tx_hash.clone()).as_str());
-            (pro_tx_hash, masternode)
+        let added_hpmns = added_mns.iter().filter_map(|masternode| {
+            if masternode.node_type == MasternodeType::HighPerformance {
+                Some((masternode.protx_hash.clone(), masternode.clone()))
+            } else {
+                None
+            }
         });
 
-        //filter updated masternodes between hpmns and non hpmns
+        state.hpmn_masternode_list.extend(added_hpmns.clone());
 
-        state
-            .full_masternode_list
-            .extend(updated_masternodes.clone());
-        //FIXME: Filter updated masternodes for HPMNs
-        state.hpmn_masternode_list.extend(updated_masternodes);
+        let added_masternodes = added_mns
+            .into_iter()
+            .map(|masternode| (masternode.protx_hash.clone(), masternode));
 
-        let deleted_masternodes = masternode_list_diff
-            .deleted_mns
+        state.full_masternode_list.extend(added_masternodes.clone());
+
+        let updated_masternodes = updated_mns
+            .into_iter()
+            .map(|masternode| (masternode.protx_hash.clone(), masternode.state_diff));
+
+        updated_masternodes.for_each(|(pro_tx_hash, state_diff)| {
+            if let Some(masternode_list_item) = state.full_masternode_list.get_mut(&pro_tx_hash) {
+                if let Some(masternode_list_item) = state.hpmn_masternode_list.get_mut(&pro_tx_hash)
+                {
+                    masternode_list_item.state.apply_diff(state_diff.clone());
+                }
+                masternode_list_item.state.apply_diff(state_diff);
+            }
+        });
+
+        let deleted_masternodes = removed_mns
             .into_iter()
             .map(|masternode| {
-                let pro_tx_hash =
-                    ProTxHash::from(hex::encode(masternode.pro_reg_tx_hash.clone()).as_str());
+                let pro_tx_hash = masternode.protx_hash;
                 pro_tx_hash
             })
             .collect::<BTreeSet<ProTxHash>>();
@@ -180,5 +200,4 @@ where
 
         Ok(())
     }
-     */
 }

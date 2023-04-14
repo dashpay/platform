@@ -37,7 +37,7 @@ where
             purpose: Purpose::WITHDRAW,
             security_level: SecurityLevel::MASTER,
             read_only: true,
-            data: BinaryData::new(masternode.state.payout_address.clone()),
+            data: BinaryData::new(masternode.state.payout_address.to_vec()),
             disabled_at: None,
         })
     }
@@ -60,7 +60,7 @@ where
             purpose: Purpose::WITHDRAW, // todo: is this purpose correct??
             security_level: SecurityLevel::MASTER,
             read_only: true,
-            data: BinaryData::new(masternode.state.voting_address.clone()),
+            data: BinaryData::new(masternode.state.voting_address.to_vec()),
             disabled_at: None,
         })
     }
@@ -97,7 +97,7 @@ where
                 security_level: SecurityLevel::CRITICAL,
                 read_only: true,
                 // TODO: this should be the operator payout address
-                data: BinaryData::new(masternode.state.payout_address.clone()),
+                data: BinaryData::new(masternode.state.payout_address.to_vec()),
                 disabled_at: None,
             },
             // TODO: this public key should be optionally created
@@ -112,7 +112,7 @@ where
                 security_level: SecurityLevel::CRITICAL,
                 read_only: true,
                 // TODO: this should be the node id
-                data: BinaryData::new(masternode.state.payout_address.clone()),
+                data: BinaryData::new(masternode.state.payout_address.to_vec()),
                 disabled_at: None,
             },
         ])
@@ -213,8 +213,8 @@ where
                 masternode
                     .state_diff
                     .payout_address
-                    .clone()
-                    .expect("confirmed not none"),
+                    .expect("confirmed not none")
+                    .to_vec(),
             ),
             disabled_at: None,
         };
@@ -294,8 +294,8 @@ where
                 masternode
                     .state_diff
                     .payout_address
-                    .clone()
-                    .expect("confirmed not none"),
+                    .expect("confirmed not none")
+                    .to_vec(),
             ),
             disabled_at: None,
         };

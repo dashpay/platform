@@ -235,8 +235,7 @@ where
             state.known_height_or((self.config.abci.genesis_height as u64).saturating_sub(1));
         let last_block_core_height =
             state.known_core_height_or(self.config.abci.genesis_core_height);
-        //todo: fix this
-        let hpmn_list_len = 100; //state.hpmn_list_len();
+        let hpmn_list_len = state.hpmn_list_len();
         drop(state);
 
         // Init block execution context

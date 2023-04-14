@@ -198,7 +198,6 @@ pub enum IdentityUpdateOp {
 pub enum DataContractUpdateOp {
     DataContractNewDocumentTypes(Range<u16>),
     DataContractNewFields(Range<u16>, Range<u16>), // How many new fields on how many document types
-    DataContractNewFieldsAndIndexes(Range<u16>, Range<u16>),
 }
 
 #[derive(Clone, Debug)]
@@ -207,7 +206,7 @@ pub enum OperationType {
     IdentityTopUp,
     IdentityUpdate(IdentityUpdateOp),
     IdentityWithdrawal,
-    ContractUpdate(DataContractUpdateOp)
+    ContractUpdate(DataContractUpdateOp),
 }
 
 #[derive(Clone, Debug)]
@@ -698,9 +697,8 @@ impl Strategy {
                             operations.push(state_transition);
                         }
                     }
-                    OperationType::ContractUpdate(contractUpdateOp) if !current_identities.is_empty() => {
-
-                    }
+                    OperationType::ContractUpdate(contractUpdateOp)
+                        if !current_identities.is_empty() => {}
                     _ => {}
                 }
             }
