@@ -64,9 +64,7 @@ async function makeGetIdentityRespondWithIdentity(client, dapiClientMock, sinon)
         balance: interceptedIdentityStateTransition.getAssetLockProof().getOutput().satoshis,
         revision: 0,
       });
-      dapiClientMock.platform.getIdentity.withArgs(
-        sinon.match((id) => id.equals(identityToResolve.getId().toBuffer())),
-      )
+      dapiClientMock.platform.getIdentity.withArgs(identityToResolve.getId())
         .resolves(new GetIdentityResponse(
           identityToResolve.toBuffer(),
           getResponseMetadataFixture(),

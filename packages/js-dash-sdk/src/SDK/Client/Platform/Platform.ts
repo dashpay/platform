@@ -103,19 +103,19 @@ interface DataContracts {
  * @param contracts - contracts
  */
 export class Platform {
-  // TODO: revisit this. Do we want to refactor all methods to check
-  //  whether dppModule is initialized?
+  // TODO: Address in further type system improvements
+  //  Do we want to refactor all methods to check
+  //  whether dppModule is initialized instead of ts-ignoring?
   // @ts-ignore
   dppModule: DPPModule;
 
-  // TODO: revisit this. Do we want to refactor all methods to check
-  //  whether dppModule is initialized?
+  // TODO: Address in further type system improvements
+  //  Do we want to refactor all methods to check
+  //  whether dpp is initialized instead of ts-ignoring?
   // @ts-ignore
   dpp: DashPlatformProtocol;
 
   protocolVersion: number;
-
-  options: PlatformOpts;
 
   public documents: Records;
 
@@ -160,8 +160,6 @@ export class Platform {
      * @param {PlatformOpts} options - options for Platform
      */
   constructor(options: PlatformOpts) {
-    this.options = { ...options };
-
     this.documents = {
       broadcast: broadcastDocument.bind(this),
       create: createDocument.bind(this),
