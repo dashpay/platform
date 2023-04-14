@@ -26,8 +26,8 @@ on:
 jobs:
   lint:
     name: Linting
-    runs-on: ubuntu-22.04 # self-hosted
-    timeout-minutes: 20
+    runs-on: self-hosted
+    timeout-minutes: 15
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
@@ -85,8 +85,8 @@ jobs:
 
   test:
     name: Tests
-    runs-on: ubuntu-22.04 # self-hosted
-    timeout-minutes: 60  # TODO Change to 60
+    runs-on: self-hosted
+    timeout-minutes: 30
     if: ${{ !inputs.skip-tests }}
     env:
       SCCACHE_GHA_ENABLED: "true"
@@ -168,9 +168,9 @@ jobs:
         uses: actions/cache@v3
         with:
           path: /tmp/buildkit-cache/buildkit-state.tar
-          key: ${{ runner.os }}-buildkit-${{ github.sha }}
+          key: ${{ runner.os }}-buildkit
           restore-keys: |
-            ${{ runner.os }}-buildkit-
+            ${{ runner.os }}-buildkit
 
       - name: Load docker cache mount
         uses: dashevo/gh-action-cache-buildkit-state@v1

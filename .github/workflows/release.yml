@@ -172,9 +172,9 @@ jobs:
         uses: actions/cache@v3
         with:
           path: /tmp/buildkit-cache/buildkit-state.tar
-          key: ${{ runner.os }}-buildkit-${{ github.sha }}
+          key: ${{ runner.os }}-buildkit
           restore-keys: |
-            ${{ runner.os }}-buildkit-
+            ${{ runner.os }}-buildkit
 
       - name: Load docker cache mount
         uses: dashevo/gh-action-cache-buildkit-state@v1
@@ -295,9 +295,9 @@ jobs:
         uses: actions/cache@v3
         with:
           path: /tmp/buildkit-cache/buildkit-state.tar
-          key: ${{ runner.os }}-buildkit-${{ github.sha }}
+          key: ${{ runner.os }}-buildkit
           restore-keys: |
-            ${{ runner.os }}-buildkit-
+            ${{ runner.os }}-buildkit
 
       - name: Load docker cache mount
         uses: dashevo/gh-action-cache-buildkit-state@v1
@@ -424,9 +424,9 @@ jobs:
         uses: actions/cache@v3
         with:
           path: /tmp/buildkit-cache/buildkit-state.tar
-          key: ${{ runner.os }}-buildkit-${{ github.sha }}
+          key: ${{ runner.os }}-buildkit
           restore-keys: |
-            ${{ runner.os }}-buildkit-
+            ${{ runner.os }}-buildkit
 
       - name: Load docker cache mount
         uses: dashevo/gh-action-cache-buildkit-state@v1
@@ -622,9 +622,9 @@ jobs:
         uses: actions/cache@v3
         with:
           path: /tmp/buildkit-cache/buildkit-state.tar
-          key: ${{ runner.os }}-buildkit-${{ github.sha }}
+          key: ${{ runner.os }}-buildkit
           restore-keys: |
-            ${{ runner.os }}-buildkit-
+            ${{ runner.os }}-buildkit
 
       - name: Load docker cache mount
         uses: dashevo/gh-action-cache-buildkit-state@v1

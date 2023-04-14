@@ -65,7 +65,7 @@ jobs:
   test-suite:
     name: Run Platform Test Suite
     runs-on: self-hosted # ubuntu-22.04
-    timeout-minutes: 120 # TODO Change to 60
+    timeout-minutes: 30
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
@@ -126,9 +126,9 @@ jobs:
         uses: actions/cache@v3
         with:
           path: /tmp/buildkit-cache/buildkit-state.tar
-          key: ${{ runner.os }}-buildkit-${{ github.sha }}
+          key: ${{ runner.os }}-buildkit
           restore-keys: |
-            ${{ runner.os }}-buildkit-
+            ${{ runner.os }}-buildkit
 
       - name: Load docker cache mount
         uses: dashevo/gh-action-cache-buildkit-state@v1
@@ -153,7 +153,7 @@ jobs:
   test-suite-browsers:
     name: Run Platform Test Suite in Browsers
     runs-on: self-hosted # ubuntu-22.04
-    timeout-minutes: 120  # TODO Change to 60
+    timeout-minutes: 30
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
@@ -214,9 +214,9 @@ jobs:
         uses: actions/cache@v3
         with:
           path: /tmp/buildkit-cache/buildkit-state.tar
-          key: ${{ runner.os }}-buildkit-${{ github.sha }}
+          key: ${{ runner.os }}-buildkit
           restore-keys: |
-            ${{ runner.os }}-buildkit-
+            ${{ runner.os }}-buildkit
 
       - name: Load docker cache mount
         uses: dashevo/gh-action-cache-buildkit-state@v1

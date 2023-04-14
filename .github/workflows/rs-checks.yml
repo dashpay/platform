@@ -11,8 +11,8 @@ on:
 jobs:
   lint:
     name: Linting
-    runs-on: ubuntu-22.04 # self-hosted
-    timeout-minutes: 20
+    runs-on: self-hosted
+    timeout-minutes: 15
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
@@ -63,8 +63,8 @@ jobs:
 
   compile:
     name: Compilation errors
-    runs-on: ubuntu-22.04 # self-hosted
-    timeout-minutes: 20
+    runs-on: self-hosted
+    timeout-minutes: 15
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
@@ -96,8 +96,8 @@ jobs:
 
   test:
     name: Tests
-    runs-on: ubuntu-22.04 # self-hosted
-    timeout-minutes: 20
+    runs-on: self-hosted
+    timeout-minutes: 15
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
