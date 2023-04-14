@@ -39,9 +39,9 @@ pub async fn fetch_documents(
 
     let mut fetch_documents_futures = vec![];
     for (_, dts) in transitions_by_contracts_and_types {
-        let ids: Vec<[u8; 32]> = dts
+        let ids: Vec<String> = dts
             .iter()
-            .map(|dt| get_from_transition!(dt, id).to_buffer())
+            .map(|dt| get_from_transition!(dt, id).to_string(Encoding::Base58))
             .collect();
 
         let options = json!({
