@@ -278,7 +278,7 @@ describe('Platform', () => {
         { where: [['$id', '==', document.getId()]] },
       );
 
-      const updatedAt = new Date(storedDocument.getUpdatedAt());
+      const updatedAt = storedDocument.getUpdatedAt();
 
       updatedAt.setMinutes(updatedAt.getMinutes() - 10);
 
@@ -335,7 +335,7 @@ describe('Platform', () => {
         },
       );
 
-      const timestamp = new Date(document.getCreatedAt());
+      const timestamp = document.getCreatedAt();
 
       timestamp.setMinutes(timestamp.getMinutes() - 10);
 

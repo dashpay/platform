@@ -9,7 +9,7 @@ const generateRandomIdentifier = require('../../lib/test/utils/generateRandomIde
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
 const waitForSTPropagated = require('../../lib/waitForSTPropagated');
 
-const { PlatformProtocol: { IdentityPublicKey }, Core: { PrivateKey } } = Dash;
+const { Core: { PrivateKey } } = Dash;
 
 describe('Masternode Reward Shares', () => {
   let failed = false;
@@ -105,7 +105,7 @@ describe('Masternode Reward Shares', () => {
           signaturePublicKeyId,
         ));
 
-      const { IdentityPublicKeyWithWitness } = client.platform.dppModule;
+      const { IdentityPublicKeyWithWitness, IdentityPublicKey } = client.platform.dppModule;
 
       const identityPublicKey = derivedPrivateKey.toPublicKey().toBuffer();
 
@@ -224,7 +224,8 @@ describe('Masternode Reward Shares', () => {
     });
 
     it('should be able to update reward shares with existing identity', async () => {
-      rewardShare.set('percentage', 2);
+      const percentage = 2;
+      rewardShare.set('percentage', percentage);
 
       const stateTransition = client.platform.dpp.document.createStateTransition({
         replace: [rewardShare],
@@ -248,7 +249,10 @@ describe('Masternode Reward Shares', () => {
 
       expect(updatedRewardShare).to.exists();
 
-      expect(updatedRewardShare.get('percentage')).equals(BigInt(2));
+      // TODO: check this case.
+      //  rewardShare.set() can not accept bigint, however rewardShare.get()
+      //  returns bigint.
+      expect(updatedRewardShare.get('percentage')).equals(BigInt(percentage));
     });
 
     it('should not be able to update reward shares with non-existing identity', async () => {
@@ -364,7 +368,7 @@ describe('Masternode Reward Shares', () => {
         create: [rewardShare],
       });
 
-      stateTransition.setSignaturePublicKey(1);
+      stateTransition.setSignaturePublicKeyId(1);
 
       const account = await client.getWalletAccount();
 

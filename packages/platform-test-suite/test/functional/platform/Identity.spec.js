@@ -576,7 +576,7 @@ describe('Platform', () => {
 
         expect(identity.getRevision()).to.equal(identityBeforeUpdate.getRevision() + 1);
         expect(identity.getPublicKeyById(2)).to.exist();
-        expect(identity.getPublicKeyById(2).getDisabledAt().getTime()).to.be.at.least(now);
+        expect(identity.getPublicKeyById(2).getDisabledAt()).to.be.at.least(now);
 
         expect(identity.getPublicKeyById(0)).to.exist();
         expect(identity.getPublicKeyById(0).getDisabledAt()).to.be.undefined();
