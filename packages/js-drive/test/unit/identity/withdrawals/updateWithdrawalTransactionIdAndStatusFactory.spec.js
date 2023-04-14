@@ -17,7 +17,7 @@ describe('updateWithdrawalTransactionIdAndStatusFactory', () => {
   });
 
   beforeEach(async function beforeEach() {
-    ([document1Fixture, document2Fixture] =  await getDocumentsFixture());
+    ([document1Fixture, document2Fixture] = await getDocumentsFixture());
 
     document1Fixture.set('transactionId', Buffer.alloc(32, 1));
     document2Fixture.set('transactionId', Buffer.alloc(32, 3));

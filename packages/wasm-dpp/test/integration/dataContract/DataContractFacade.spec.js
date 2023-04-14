@@ -130,7 +130,7 @@ describe('DataContractFacade', () => {
   });
 
   describe('validate', () => {
-    it('should DataContract raw data contract', async () => {
+    it('should validate raw data contract', async () => {
       const result = await dpp.dataContract.validate(rawDataContract);
 
       expect(result).to.be.an.instanceOf(ValidationResult);

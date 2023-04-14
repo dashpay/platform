@@ -18,6 +18,7 @@ describe('IdentityPublicKeyStoreRepository', () => {
   let identity;
   let blockInfo;
   let IdentityPublicKey;
+  let decodeProtocolEntity;
 
   before(function before() {
     ({ IdentityPublicKey, decodeProtocolEntity } = this.dppWasm);

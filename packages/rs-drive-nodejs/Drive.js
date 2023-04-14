@@ -1,8 +1,5 @@
 const { promisify } = require('util');
 const cbor = require('cbor');
-// const Document = require('@dashevo/dpp/lib/document/Document');
-// const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
-// const Identity = require('@dashevo/dpp/lib/identity/Identity');
 
 // This file is crated when run `npm run build`. The actual source file that
 // exports those functions is ./src/lib.rs
