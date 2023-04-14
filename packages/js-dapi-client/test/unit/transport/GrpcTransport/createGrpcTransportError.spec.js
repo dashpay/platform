@@ -2,12 +2,9 @@ const { Metadata, parseMetadata } = require('@dashevo/dapi-grpc');
 const GrpcError = require('@dashevo/grpc-common/lib/server/error/GrpcError');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 
-let {
-  ProtocolVersionParsingError,
-} = require('@dashevo/wasm-dpp');
-
 const {
   default: loadWasmDpp,
+  ProtocolVersionParsingError,
 } = require('@dashevo/wasm-dpp');
 
 const cbor = require('cbor');
@@ -26,7 +23,7 @@ describe('createGrpcTransportError', () => {
   let metadata;
 
   before(async () => {
-    ({ ProtocolVersionParsingError } = await loadWasmDpp());
+    await loadWasmDpp();
   });
 
   beforeEach(() => {
