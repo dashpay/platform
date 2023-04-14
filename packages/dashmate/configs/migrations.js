@@ -532,10 +532,10 @@ module.exports = {
           };
         }
 
-        const categories = []
+        const categories = [];
 
         if (config.core.debug) {
-          categories.push('all')
+          categories.push('all');
         }
 
         config.core.log = {
