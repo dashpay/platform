@@ -255,9 +255,9 @@ where
 
         // destructure the block proposal
         let BlockProposal {
-            block_hash,
+            block_hash:_,
             height,
-            round,
+            round:_,
             core_chain_locked_height,
             proposed_app_version,
             proposer_pro_tx_hash,
@@ -308,7 +308,7 @@ where
             &transaction,
         )?;
 
-        let unsigned_withdrawal_transaction_bytes = self
+        let _unsigned_withdrawal_transaction_bytes = self
             .fetch_and_prepare_unsigned_withdrawal_transactions(
                 validator_set_quorum_hash,
                 &block_execution_context,

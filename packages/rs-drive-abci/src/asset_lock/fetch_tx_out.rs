@@ -47,7 +47,7 @@ impl FetchAssetLockProofTxOut for AssetLockProof {
 
                 let transaction_data = match core.get_transaction_extended_info(&transaction_hash) {
                     Ok(transaction) => transaction,
-                    Err(e) => {
+                    Err(_e) => {
                         //todo: deal with IO errors
                         return Ok(ValidationResult::new_with_error(
                             ConsensusError::IdentityAssetLockTransactionIsNotFoundError(
@@ -80,7 +80,7 @@ impl FetchAssetLockProofTxOut for AssetLockProof {
                         let transaction_data =
                             match core.get_transaction_extended_info(&transaction_hash) {
                                 Ok(transaction) => transaction,
-                                Err(e) => {
+                                Err(_e) => {
                                     return Ok(ValidationResult::new_with_error(
                                         ConsensusError::IdentityAssetLockTransactionIsNotFoundError(
                                             IdentityAssetLockTransactionIsNotFoundError::new(
