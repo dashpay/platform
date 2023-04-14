@@ -101,8 +101,7 @@ describe('Platform', () => {
 
       const account = await client.getWalletAccount();
 
-      // TODO(wasm-dpp): fix or add task to research this problem.
-      // For some reason when we `await` for this call, it does not propagate instant locks
+      // Do not `await` for this call, it does not propagate instant locks
       // and createAsstLockProof falls back to chain lock instead which is not what we want
       account.broadcastTransaction(transaction);
 
@@ -165,8 +164,7 @@ describe('Platform', () => {
 
       const account = await client.getWalletAccount();
 
-      // TODO(wasm-dpp): fix or add task to research this problem.
-      // For some reason when we `await` for this call, it does not propagate instant locks
+      // Do not `await` for this call, it does not propagate instant locks
       // and createAsstLockProof falls back to chain lock instead which is not what we want
       account.broadcastTransaction(transaction);
 

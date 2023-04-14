@@ -656,8 +656,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         _amount: u64,
         _execution_context: Option<&'a StateTransitionExecutionContext>,
     ) -> anyhow::Result<()> {
-        // TODO(wasm-dpp): !!!Missing implementation will hang js-drive and no one will have a clue what's going on
-        todo!()
+        bail!("remove_from_system_credits is not implemented in JS State Repository")
     }
 
     async fn fetch_latest_platform_block_header(&self) -> anyhow::Result<Vec<u8>> {
@@ -771,8 +770,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
     }
 
     async fn fetch_latest_withdrawal_transaction_index(&self) -> anyhow::Result<u64> {
-        // TODO(wasm-dpp): !!!Missing implementation will hang js-drive and no one will have a clue what's going on
-        todo!()
+        bail!("fetch_latest_withdrawal_transaction_index is not implemented in JS State Repository")
     }
 
     async fn enqueue_withdrawal_transaction(
@@ -780,8 +778,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         _index: u64,
         _transaction_bytes: Vec<u8>,
     ) -> anyhow::Result<()> {
-        // TODO(wasm-dpp): !!!Missing implementation will hang js-drive and no one will have a clue what's going on
-        todo!()
+        bail!("enqueue_withdrawal_transaction is not implemented in JS State Repository")
     }
 
     async fn fetch_latest_platform_block_time(&self) -> anyhow::Result<u64> {
