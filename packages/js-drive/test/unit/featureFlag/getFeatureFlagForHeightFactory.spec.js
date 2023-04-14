@@ -1,6 +1,6 @@
 const Long = require('long');
 
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
 
 const getFeatureFlagForHeightFactory = require('../../../lib/featureFlag/getFeatureFlagForHeightFactory');
 const StorageResult = require('../../../lib/storage/StorageResult');
@@ -17,10 +17,10 @@ describe('getFeatureFlagForHeightFactory', () => {
     ({ Identifier } = this.dppWasm);
   });
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     featureFlagDataContractId = Identifier.from(Buffer.alloc(32, 1));
 
-    ([document] = getDocumentsFixture());
+    ([document] = await getDocumentsFixture());
 
     fetchDocumentsMock = this.sinon.stub().resolves(
       new StorageResult([document]),

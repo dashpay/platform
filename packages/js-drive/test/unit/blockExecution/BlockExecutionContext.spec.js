@@ -34,7 +34,7 @@ describe('BlockExecutionContext', () => {
     dataContract = await getDataContractFixture();
     delete dataContract.entropy;
 
-    plainObject = getBlockExecutionContextObjectFixture(dataContract);
+    plainObject = await getBlockExecutionContextObjectFixture(dataContract);
 
     lastCommitInfo = CommitInfo.fromObject(plainObject.lastCommitInfo);
 
