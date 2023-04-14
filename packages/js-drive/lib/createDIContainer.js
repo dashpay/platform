@@ -21,6 +21,15 @@ const RpcClient = require('@dashevo/dashd-rpc/promise');
 
 const { PublicKey } = require('@dashevo/dashcore-lib');
 
+const {
+  DashPlatformProtocol,
+  Identifier,
+  decodeProtocolEntity,
+  calculateOperationFees,
+  calculateStateTransitionFeeFromOperations,
+  calculateStateTransitionFee,
+} = require('@dashevo/wasm-dpp');
+
 const pino = require('pino');
 const pinoMultistream = require('pino-multi-stream');
 
@@ -142,7 +151,6 @@ const IdentityBalanceStoreRepository = require('./identity/IdentityBalanceStoreR
 
 /**
  * @param {WebAssembly.Instance} blsSignatures
- * @param {WebAssembly.Instance} dppWasm
  * @param {Object} options
  * @param {string} options.ABCI_HOST
  * @param {string} options.ABCI_PORT
@@ -181,7 +189,7 @@ const IdentityBalanceStoreRepository = require('./identity/IdentityBalanceStoreR
  *
  * @return {AwilixContainer}
  */
-function createDIContainer(blsSignatures, dppWasm, options) {
+function createDIContainer(blsSignatures, options) {
   if (!options.DPNS_MASTER_PUBLIC_KEY) {
     throw new Error('DPNS_MASTER_PUBLIC_KEY must be set');
   }
@@ -284,10 +292,10 @@ function createDIContainer(blsSignatures, dppWasm, options) {
       parseInt(options.VALIDATOR_SET_LLMQ_TYPE, 10),
     ),
     masternodeRewardSharesContractId: asValue(
-      dppWasm.Identifier.from(masternodeRewardsSystemIds.contractId),
+      Identifier.from(masternodeRewardsSystemIds.contractId),
     ),
     masternodeRewardSharesOwnerId: asValue(
-      dppWasm.Identifier.from(masternodeRewardsSystemIds.ownerId),
+      Identifier.from(masternodeRewardsSystemIds.ownerId),
     ),
     masternodeRewardSharesOwnerMasterPublicKey: asValue(
       PublicKey.fromString(
@@ -303,10 +311,10 @@ function createDIContainer(blsSignatures, dppWasm, options) {
       masternodeRewardsDocuments,
     ),
     featureFlagsContractId: asValue(
-      dppWasm.Identifier.from(featureFlagsSystemIds.contractId),
+      Identifier.from(featureFlagsSystemIds.contractId),
     ),
     featureFlagsOwnerId: asValue(
-      dppWasm.Identifier.from(featureFlagsSystemIds.ownerId),
+      Identifier.from(featureFlagsSystemIds.ownerId),
     ),
     featureFlagsOwnerMasterPublicKey: asValue(
       PublicKey.fromString(
@@ -319,8 +327,8 @@ function createDIContainer(blsSignatures, dppWasm, options) {
       ),
     ),
     featureFlagsDocuments: asValue(featureFlagsDocuments),
-    dpnsContractId: asValue(dppWasm.Identifier.from(dpnsSystemIds.contractId)),
-    dpnsOwnerId: asValue(dppWasm.Identifier.from(dpnsSystemIds.ownerId)),
+    dpnsContractId: asValue(Identifier.from(dpnsSystemIds.contractId)),
+    dpnsOwnerId: asValue(Identifier.from(dpnsSystemIds.ownerId)),
     dpnsOwnerMasterPublicKey: asValue(
       PublicKey.fromString(
         options.DPNS_MASTER_PUBLIC_KEY,
@@ -332,8 +340,8 @@ function createDIContainer(blsSignatures, dppWasm, options) {
       ),
     ),
     dpnsDocuments: asValue(dpnsDocuments),
-    dashpayContractId: asValue(dppWasm.Identifier.from(dashpaySystemIds.contractId)),
-    dashpayOwnerId: asValue(dppWasm.Identifier.from(dashpaySystemIds.ownerId)),
+    dashpayContractId: asValue(Identifier.from(dashpaySystemIds.contractId)),
+    dashpayOwnerId: asValue(Identifier.from(dashpaySystemIds.ownerId)),
     dashpayOwnerMasterPublicKey: asValue(
       PublicKey.fromString(
         options.DASHPAY_MASTER_PUBLIC_KEY,
@@ -345,8 +353,8 @@ function createDIContainer(blsSignatures, dppWasm, options) {
       ),
     ),
     dashpayDocuments: asValue(dashpayDocuments),
-    withdrawalsContractId: asValue(dppWasm.Identifier.from(withdrawalsSystemIds.contractId)),
-    withdrawalsOwnerId: asValue(dppWasm.Identifier.from(withdrawalsSystemIds.ownerId)),
+    withdrawalsContractId: asValue(Identifier.from(withdrawalsSystemIds.contractId)),
+    withdrawalsOwnerId: asValue(Identifier.from(withdrawalsSystemIds.ownerId)),
     withdrawalsOwnerMasterPublicKey: asValue(
       PublicKey.fromString(
         options.WITHDRAWALS_MASTER_PUBLIC_KEY,
@@ -475,7 +483,6 @@ function createDIContainer(blsSignatures, dppWasm, options) {
       coreJsonRpcPort,
       coreJsonRpcUsername,
       coreJsonRpcPassword,
-      dppWasm,
     ) => new RSDrive(groveDBLatestFile, {
       drive: {
         dataContractsGlobalCacheSize,
@@ -488,7 +495,7 @@ function createDIContainer(blsSignatures, dppWasm, options) {
           password: coreJsonRpcPassword,
         },
       },
-    }, dppWasm))
+    }))
       .disposer(async (rsDrive) => {
         // Flush data on disk
         await rsDrive.getGroveDB().flush();
@@ -589,8 +596,7 @@ function createDIContainer(blsSignatures, dppWasm, options) {
     dataContractRepository: asFunction((
       groveDBStore,
       decodeProtocolEntity,
-      dppWasm,
-    ) => new DataContractStoreRepository(groveDBStore, decodeProtocolEntity, dppWasm)).singleton(),
+    ) => new DataContractStoreRepository(groveDBStore, decodeProtocolEntity)).singleton(),
   });
 
   /**
@@ -599,8 +605,7 @@ function createDIContainer(blsSignatures, dppWasm, options) {
   container.register({
     documentRepository: asFunction((
       groveDBStore,
-      dppWasm,
-    ) => new DocumentRepository(groveDBStore, dppWasm)).singleton(),
+    ) => new DocumentRepository(groveDBStore)).singleton(),
 
     fetchDocuments: asFunction(fetchDocumentsFactory).singleton(),
     fetchDataContract: asFunction(fetchDataContractFactory).singleton(),
@@ -620,19 +625,18 @@ function createDIContainer(blsSignatures, dppWasm, options) {
    * Register DPP
    */
   container.register({
-    dppWasm: asValue(dppWasm),
     blsSignatures: asValue(blsSignatures),
 
-    DashPlatformProtocol: asFunction((dppWasm) => dppWasm.DashPlatformProtocol),
+    DashPlatformProtocol: asFunction(() => DashPlatformProtocol),
 
-    decodeProtocolEntity: asValue(dppWasm.decodeProtocolEntity),
+    decodeProtocolEntity: asValue(decodeProtocolEntity),
 
-    calculateOperationFees: asValue(dppWasm.calculateOperationFees),
+    calculateOperationFees: asValue(calculateOperationFees),
 
     calculateStateTransitionFeeFromOperations:
-    asValue(dppWasm.calculateStateTransitionFeeFromOperations),
+    asValue(calculateStateTransitionFeeFromOperations),
 
-    calculateStateTransitionFee: asValue(dppWasm.calculateStateTransitionFee),
+    calculateStateTransitionFee: asValue(calculateStateTransitionFee),
 
     stateRepository: asFunction((
       identityRepository,
@@ -646,7 +650,6 @@ function createDIContainer(blsSignatures, dppWasm, options) {
       latestBlockExecutionContext,
       simplifiedMasternodeList,
       rsDrive,
-      dppWasm,
     ) => {
       const stateRepository = new DriveStateRepository(
         identityRepository,
@@ -660,7 +663,6 @@ function createDIContainer(blsSignatures, dppWasm, options) {
         latestBlockExecutionContext,
         simplifiedMasternodeList,
         rsDrive,
-        dppWasm,
       );
 
       return new CachedStateRepositoryDecorator(
@@ -694,7 +696,6 @@ function createDIContainer(blsSignatures, dppWasm, options) {
         proposalBlockExecutionContext,
         simplifiedMasternodeList,
         rsDrive,
-        dppWasm,
         {
           useTransaction: true,
         },
@@ -717,12 +718,12 @@ function createDIContainer(blsSignatures, dppWasm, options) {
     unserializeStateTransition: asFunction((
       dpp,
       noopLogger,
-    ) => unserializeStateTransitionFactory(dpp, noopLogger, dppWasm)).singleton(),
+    ) => unserializeStateTransitionFactory(dpp, noopLogger)).singleton(),
 
     transactionalUnserializeStateTransition: asFunction((
       transactionalDpp,
       noopLogger,
-    ) => unserializeStateTransitionFactory(transactionalDpp, noopLogger, dppWasm)).singleton(),
+    ) => unserializeStateTransitionFactory(transactionalDpp, noopLogger)).singleton(),
 
     dpp: asFunction((DashPlatformProtocol, stateRepository, dppOptions, blsSignatures) => (
       new DashPlatformProtocol(blsSignatures, stateRepository, { generate: () => Buffer.alloc(32) })

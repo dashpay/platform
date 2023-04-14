@@ -1,4 +1,5 @@
 const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
+const { Identifier } = require('@dashevo/wasm-dpp');
 
 const updateWithdrawalTransactionIdAndStatusFactory = require('../../../../lib/identity/withdrawals/updateWithdrawalTransactionIdAndStatusFactory');
 const BlockInfo = require('../../../../lib/blockExecution/BlockInfo');
@@ -10,11 +11,6 @@ describe('updateWithdrawalTransactionIdAndStatusFactory', () => {
   let fetchDocumentsMock;
   let document1Fixture;
   let document2Fixture;
-  let Identifier;
-
-  before(function before() {
-    ({ Identifier } = this.dppWasm);
-  });
 
   beforeEach(async function beforeEach() {
     ([document1Fixture, document2Fixture] = await getDocumentsFixture());

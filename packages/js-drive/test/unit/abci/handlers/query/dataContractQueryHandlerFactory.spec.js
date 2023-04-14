@@ -46,7 +46,6 @@ describe('dataContractQueryHandlerFactory', () => {
     dataContractQueryHandler = dataContractQueryHandlerFactory(
       dataContractRepositoryMock,
       createQueryResponseMock,
-      this.dppWasm,
     );
 
     params = {};

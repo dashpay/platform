@@ -29,8 +29,8 @@ describe('BlockExecutionContext', () => {
   let prepareProposalResult;
   let proposedAppVersion;
 
-  beforeEach(async function beforeEach() {
-    blockExecutionContext = new BlockExecutionContext(this.dppWasm);
+  beforeEach(async () => {
+    blockExecutionContext = new BlockExecutionContext();
     dataContract = await getDataContractFixture();
     delete dataContract.entropy;
 

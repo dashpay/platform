@@ -26,11 +26,11 @@ const banner = '\n ____       ______      ____        __  __                 ___
 console.log(chalk.hex('#008de4')(banner));
 
 (async function main() {
-  const dppWasm = await loadWasmDpp();
+  await loadWasmDpp();
 
   const blsSignatures = await getBlsAdapter();
 
-  const container = createDIContainer(blsSignatures, dppWasm, process.env);
+  const container = createDIContainer(blsSignatures, process.env);
   const logger = container.resolve('logger');
   const errorHandler = container.resolve('errorHandler');
   const latestProtocolVersion = container.resolve('latestProtocolVersion');

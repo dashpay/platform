@@ -11,14 +11,11 @@ const {
 
 const Long = require('long');
 
+const { DataContract } = require('@dashevo/wasm-dpp');
+
 class BlockExecutionContext {
-  /**
-   *
-   * @param {WebAssembly.Instance} dppWasm
-   */
-  constructor(dppWasm) {
+  constructor() {
     this.reset();
-    this.dppWasm = dppWasm;
   }
 
   /**
@@ -319,7 +316,7 @@ class BlockExecutionContext {
    */
   fromObject(object) {
     this.dataContracts = object.dataContracts
-      .map((rawDataContract) => new this.dppWasm.DataContract(rawDataContract));
+      .map((rawDataContract) => new DataContract(rawDataContract));
     this.lastCommitInfo = CommitInfo.fromObject(object.lastCommitInfo);
     this.contextLogger = object.contextLogger;
     this.epochInfo = object.epochInfo;

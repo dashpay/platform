@@ -1,6 +1,7 @@
 const rimraf = require('rimraf');
 const Drive = require('@dashevo/rs-drive');
 
+const { DataContract, decodeProtocolEntity } = require('@dashevo/wasm-dpp');
 const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
 const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 
@@ -14,16 +15,10 @@ describe('DataContractStoreRepository', () => {
   let rsDrive;
   let store;
   let repository;
-  let decodeProtocolEntity;
   let dataContract;
   let blockInfo;
-  let DataContract;
 
-  before(function before() {
-    ({ DataContract, decodeProtocolEntity } = this.dppWasm);
-  });
-
-  beforeEach(async function beforeEach() {
+  beforeEach(async () => {
     rsDrive = new Drive('./db/grovedb_test', {
       drive: {
         dataContractsGlobalCacheSize: 500,
@@ -36,14 +31,14 @@ describe('DataContractStoreRepository', () => {
           password: '',
         },
       },
-    }, this.dppWasm);
+    });
 
     store = new GroveDBStore(rsDrive, noopLogger);
 
     await rsDrive.createInitialStateStructure();
 
     repository = new DataContractStoreRepository(
-      store, decodeProtocolEntity, this.dppWasm, noopLogger,
+      store, decodeProtocolEntity, noopLogger,
     );
 
     dataContract = await getDataContractFixture();

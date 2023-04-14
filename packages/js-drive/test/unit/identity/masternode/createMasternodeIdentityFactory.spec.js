@@ -3,6 +3,10 @@ const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRa
 
 const Address = require('@dashevo/dashcore-lib/lib/address');
 const Script = require('@dashevo/dashcore-lib/lib/script');
+const {
+  Identity, IdentityPublicKey, ValidationResult, MissingStateTransitionTypeError,
+} = require('@dashevo/wasm-dpp');
+
 const createMasternodeIdentityFactory = require('../../../../lib/identity/masternode/createMasternodeIdentityFactory');
 const InvalidMasternodeIdentityError = require('../../../../lib/identity/masternode/errors/InvalidMasternodeIdentityError');
 const BlockInfo = require('../../../../lib/blockExecution/BlockInfo');
@@ -15,16 +19,6 @@ describe('createMasternodeIdentityFactory', () => {
   let getPublicKeyFromPayoutScriptMock;
   let identityRepositoryMock;
   let blockInfo;
-  let Identity;
-  let IdentityPublicKey;
-  let ValidationResult;
-  let MissingStateTransitionTypeError;
-
-  before(function before() {
-    ({
-      Identity, IdentityPublicKey, ValidationResult, MissingStateTransitionTypeError,
-    } = this.dppWasm);
-  });
 
   beforeEach(function beforeEach() {
     dppMock = createDPPMock(this.sinon);
@@ -47,7 +41,6 @@ describe('createMasternodeIdentityFactory', () => {
 
     createMasternodeIdentity = createMasternodeIdentityFactory(
       dppMock,
-      this.dppWasm,
       identityRepositoryMock,
     );
 

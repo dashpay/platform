@@ -4,6 +4,9 @@ const loadBLS = require('@dashevo/bls');
 
 const Long = require('long');
 
+const {
+  StateTransitionExecutionContext, IdentityPublicKey, IdentityPublicKeyWithWitness, Identity,
+} = require('@dashevo/wasm-dpp');
 // TODO: should we take it from other place?
 const identityUpdateTransitionSchema = require('@dashevo/dpp/schema/identity/stateTransition/identityUpdate.json');
 
@@ -41,10 +44,9 @@ async function validateStateTransition(dpp, stateTransition) {
 }
 
 /**
- * @param {WebAssembly.Instance} dppWasm
  * @returns expectPredictedFeeHigherOrEqualThanActual
  */
-function expectPredictedFeeHigherOrEqualThanActualFactory(dppWasm) {
+function expectPredictedFeeHigherOrEqualThanActualFactory() {
   /**
    * @param {DashPlatformProtocol} dpp
    * @param {GroveDBStore} groveDBStore
@@ -52,7 +54,6 @@ function expectPredictedFeeHigherOrEqualThanActualFactory(dppWasm) {
    * @return {Promise<void>}
    */
   async function expectPredictedFeeHigherOrEqualThanActual(dpp, groveDBStore, stateTransition) {
-    const { StateTransitionExecutionContext } = dppWasm;
     // Execute state transition without dry run
 
     const actualExecutionContext = new StateTransitionExecutionContext();
@@ -117,26 +118,17 @@ describe('feesPrediction', () => {
   let identity;
   let groveDBStore;
   let blockInfo;
-  let IdentityPublicKey;
-  let IdentityPublicKeyWithWitness;
-  let Identity;
   let expectPredictedFeeHigherOrEqualThanActual;
   let blsInstance;
 
-  before(async function before() {
-    ({
-      IdentityPublicKey, IdentityPublicKeyWithWitness, Identity,
-    } = this.dppWasm);
-
+  before(async () => {
     blsInstance = await loadBLS();
 
-    expectPredictedFeeHigherOrEqualThanActual = expectPredictedFeeHigherOrEqualThanActualFactory(
-      this.dppWasm,
-    );
+    expectPredictedFeeHigherOrEqualThanActual = expectPredictedFeeHigherOrEqualThanActualFactory();
   });
 
   beforeEach(async function beforeEach() {
-    container = await createTestDIContainer(this.blsAdapter, this.dppWasm);
+    container = await createTestDIContainer(this.blsAdapter);
 
     const latestBlockExecutionContext = container.resolve('latestBlockExecutionContext');
 
@@ -177,7 +169,7 @@ describe('feesPrediction', () => {
 
       instantAssetLockProof = await getInstantAssetLockProofFixture(assetLockPrivateKey);
 
-      identity = getBiggestPossibleIdentity(this.dppWasm);
+      identity = getBiggestPossibleIdentity();
       identity.setAssetLockProof(instantAssetLockProof);
 
       // Generate real keys

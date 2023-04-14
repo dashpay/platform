@@ -27,7 +27,7 @@ describe('queryHandlerFactory', function main() {
   beforeEach(async function beforeEach() {
     proof = Buffer.from('GbYYWuLCU6u7nb4pdnMM1uzAeURhE7ZPxGqAbUARBsb3', 'hex');
 
-    container = await createTestDIContainer(this.blsAdapter, this.dppWasm);
+    container = await createTestDIContainer(this.blsAdapter);
 
     dataContract = await getDataContractFixture();
     documents = await getDocumentsFixture(dataContract);

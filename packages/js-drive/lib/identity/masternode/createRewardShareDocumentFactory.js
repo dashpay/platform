@@ -1,17 +1,16 @@
 const { hash } = require('@dashevo/dpp/lib/util/hash');
+const { Identifier } = require('@dashevo/wasm-dpp');
 
 const MAX_DOCUMENTS = 16;
 
 /**
  * @param {DashPlatformProtocol} dpp
  * @param {DocumentRepository} documentRepository
- * @param {WebAssembly.Instance} dppWasm
  * @return {createRewardShareDocument}
  */
 function createRewardShareDocumentFactory(
   dpp,
   documentRepository,
-  dppWasm,
 ) {
   /**
    * @typedef {createRewardShareDocument}
@@ -74,7 +73,7 @@ function createRewardShareDocumentFactory(
       ]),
     );
 
-    rewardShareDocument.id = dppWasm.Identifier.from(rewardShareDocumentIdSeed);
+    rewardShareDocument.id = Identifier.from(rewardShareDocumentIdSeed);
 
     await documentRepository.create(rewardShareDocument, blockInfo, {
       useTransaction: true,

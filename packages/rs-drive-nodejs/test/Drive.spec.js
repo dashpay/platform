@@ -1,7 +1,9 @@
 const fs = require('fs');
 const { PrivateKey } = require('@dashevo/dashcore-lib');
 
-const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
+const {
+  default: loadWasmDpp, DashPlatformProtocol, Identifier, IdentityPublicKey,
+} = require('@dashevo/wasm-dpp');
 
 const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
@@ -34,12 +36,11 @@ describe('Drive', function main() {
   let documents;
   let initialRootHash;
   let withdrawalsDataContract;
-  let dppWasm;
   let blsAdapter;
   let stateRepositoryMock;
 
   beforeEach(async function beforeEach() {
-    dppWasm = await loadWasmDpp();
+    await loadWasmDpp();
     drive = new Drive(TEST_DATA_PATH, {
       drive: {
         dataContractsGlobalCacheSize: 500,
@@ -52,9 +53,8 @@ describe('Drive', function main() {
           password: '',
         },
       },
-    }, dppWasm);
+    });
 
-    const { DashPlatformProtocol } = dppWasm;
     blsAdapter = await getBlsAdapterMock();
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 
@@ -67,7 +67,7 @@ describe('Drive', function main() {
       withdrawalContractDocumentsSchema,
     );
 
-    withdrawalsDataContract.id = dppWasm.Identifier.from(withdrawalContractIds.contractId);
+    withdrawalsDataContract.id = Identifier.from(withdrawalContractIds.contractId);
 
     dataContract = await getDataContractFixture();
     identity = await getIdentityFixture();
@@ -855,8 +855,6 @@ describe('Drive', function main() {
       const privateKey = new PrivateKey();
       const publicKey = privateKey.toPublicKey();
 
-      const { IdentityPublicKey } = dppWasm;
-
       const identityPublicKey = new IdentityPublicKey({
         id: 2,
         type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
@@ -889,8 +887,6 @@ describe('Drive', function main() {
 
       const privateKey = new PrivateKey();
       const publicKey = privateKey.toPublicKey();
-
-      const { IdentityPublicKey } = dppWasm;
 
       const identityPublicKey = new IdentityPublicKey({
         id: 2,

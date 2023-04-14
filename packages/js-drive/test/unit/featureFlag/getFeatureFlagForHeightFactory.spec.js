@@ -1,5 +1,6 @@
 const Long = require('long');
 
+const { Identifier } = require('@dashevo/wasm-dpp');
 const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
 
 const getFeatureFlagForHeightFactory = require('../../../lib/featureFlag/getFeatureFlagForHeightFactory');
@@ -11,11 +12,6 @@ describe('getFeatureFlagForHeightFactory', () => {
   let getFeatureFlagForHeight;
   let document;
   let featureFlagDataContractBlockHeight;
-  let Identifier;
-
-  before(function before() {
-    ({ Identifier } = this.dppWasm);
-  });
 
   beforeEach(async function beforeEach() {
     featureFlagDataContractId = Identifier.from(Buffer.alloc(32, 1));

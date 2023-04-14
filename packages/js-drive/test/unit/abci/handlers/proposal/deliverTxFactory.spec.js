@@ -3,6 +3,12 @@ const Long = require('long');
 const crypto = require('crypto');
 
 const { FeeResult } = require('@dashevo/rs-drive');
+const {
+  DashPlatformProtocol,
+  StateTransitionExecutionContext,
+  ValidationResult,
+  MissingStateTransitionTypeError,
+} = require('@dashevo/wasm-dpp');
 
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
@@ -42,19 +48,6 @@ describe('deliverTxFactory', () => {
   let createContextLoggerMock;
   let calculateStateTransitionFeeMock;
   let calculateStateTransitionFeeFromOperationsMock;
-  let DashPlatformProtocol;
-  let StateTransitionExecutionContext;
-  let ValidationResult;
-  let MissingStateTransitionTypeError;
-
-  before(function before() {
-    ({
-      DashPlatformProtocol,
-      StateTransitionExecutionContext,
-      ValidationResult,
-      MissingStateTransitionTypeError,
-    } = this.dppWasm);
-  });
 
   beforeEach(async function beforeEach() {
     round = 42;

@@ -2,6 +2,9 @@ const crypto = require('crypto');
 
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
+const {
+  Identifier, ExtendedDocument, DataContractFactory, DataContractValidator,
+} = require('@dashevo/wasm-dpp');
 const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
 const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
 const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
@@ -616,17 +619,9 @@ describe('DocumentRepository', function main() {
   let document;
   let documentSchema;
   let blockInfo;
-  let Identifier;
-  let ExtendedDocument;
-  let DataContractFactory;
-  let DataContractValidator;
   let validQueries = [];
 
-  before(async function before() {
-    ({
-      Identifier, ExtendedDocument, DataContractFactory, DataContractValidator,
-    } = this.dppWasm);
-
+  before(async () => {
     validQueries = [
       {},
       {
@@ -683,7 +678,7 @@ describe('DocumentRepository', function main() {
 
   beforeEach(async function beforeEach() {
     const now = 86400;
-    container = await createTestDIContainer(this.blsAdapter, this.dppWasm);
+    container = await createTestDIContainer(this.blsAdapter);
 
     dataContract = await getDataContractFixture();
     documents = (await getDocumentsFixture(dataContract)).slice(0, 5);

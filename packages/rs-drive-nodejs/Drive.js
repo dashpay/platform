@@ -1,6 +1,10 @@
 const { promisify } = require('util');
 const cbor = require('cbor');
 
+const {
+  Document, ExtendedDocument, decodeProtocolEntity, Identity, DataContract,
+} = require('@dashevo/wasm-dpp');
+
 // This file is crated when run `npm run build`. The actual source file that
 // exports those functions is ./src/lib.rs
 const {
@@ -111,12 +115,10 @@ class Drive {
    * @param {Object} config
    * @param {number} config.dataContractsGlobalCacheSize
    * @param {number} config.dataContractsBlockCacheSize
-   * @param {WebAssembly.Instance} dppWasm
    */
-  constructor(dbPath, config, dppWasm) {
+  constructor(dbPath, config) {
     this.drive = driveOpen(dbPath, config);
     this.groveDB = new GroveDB(this.drive);
-    this.dppWasm = dppWasm;
   }
 
   /**
@@ -159,13 +161,13 @@ class Drive {
       let dataContract = encodedDataContract;
 
       if (encodedDataContract !== null) {
-        const [protocolVersion, rawDataContract] = this.dppWasm.decodeProtocolEntity(
+        const [protocolVersion, rawDataContract] = decodeProtocolEntity(
           encodedDataContract,
         );
 
         rawDataContract.protocolVersion = protocolVersion;
 
-        dataContract = new this.dppWasm.DataContract(rawDataContract);
+        dataContract = new DataContract(rawDataContract);
       }
 
       const result = [dataContract];
@@ -310,7 +312,6 @@ class Drive {
     useTransaction = false,
     extended = false,
   ) {
-    console.log('[Drive] Querying documents for type', documentType);
     const encodedQuery = await cbor.encodeAsync(query);
 
     const [encodedDocuments, , processingFee] = await driveQueryDocumentsAsync.call(
@@ -321,19 +322,15 @@ class Drive {
       epochIndex,
       useTransaction,
     );
-    console.log('[Drive] Found documents for type', documentType);
     const documents = encodedDocuments.map((encodedDocument) => {
-      const [protocolVersion, rawDocument] = this.dppWasm.decodeProtocolEntity(encodedDocument);
+      const [protocolVersion, rawDocument] = decodeProtocolEntity(encodedDocument);
 
       rawDocument.$protocolVersion = protocolVersion;
-
-      const { Document, ExtendedDocument } = this.dppWasm;
 
       return extended
         ? new ExtendedDocument(rawDocument, dataContract)
         : new Document(rawDocument, dataContract, documentType);
     });
-    console.log('[Drive] Parsed documents for type', documentType);
 
     return [
       documents,
@@ -402,13 +399,13 @@ class Drive {
         return null;
       }
 
-      const [protocolVersion, rawIdentity] = this.dppWasm.decodeProtocolEntity(
+      const [protocolVersion, rawIdentity] = decodeProtocolEntity(
         encodedIdentity,
       );
 
       rawIdentity.protocolVersion = protocolVersion;
 
-      return new this.dppWasm.Identity(rawIdentity);
+      return new Identity(rawIdentity);
     });
   }
 
@@ -512,13 +509,13 @@ class Drive {
       let identity = encodedIdentity;
 
       if (encodedIdentity !== null) {
-        const [protocolVersion, rawIdentity] = this.dppWasm.decodeProtocolEntity(
+        const [protocolVersion, rawIdentity] = decodeProtocolEntity(
           encodedIdentity,
         );
 
         rawIdentity.protocolVersion = protocolVersion;
 
-        identity = new this.dppWasm.Identity(rawIdentity);
+        identity = new Identity(rawIdentity);
       }
 
       return [identity, new FeeResult(innerFeeResult)];
@@ -627,13 +624,13 @@ class Drive {
       useTransaction,
     ).then((encodedIdentities) => (
       encodedIdentities.map((encodedIdentity) => {
-        const [protocolVersion, rawIdentity] = this.dppWasm.decodeProtocolEntity(
+        const [protocolVersion, rawIdentity] = decodeProtocolEntity(
           encodedIdentity,
         );
 
         rawIdentity.protocolVersion = protocolVersion;
 
-        return new this.dppWasm.Identity(rawIdentity);
+        return new Identity(rawIdentity);
       })
     ));
   }

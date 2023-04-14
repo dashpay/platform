@@ -25,7 +25,7 @@ describe('updateSimplifiedMasternodeListFactory', function main() {
   it('should wait until SML will be retrieved', async function it() {
     dashCore = await startDashCore(dashCoreOptions);
 
-    container = await createTestDIContainer(this.blsAdapter, this.dppWasm, dashCore);
+    container = await createTestDIContainer(this.blsAdapter, dashCore);
 
     const simplifiedMasternodeList = container.resolve('simplifiedMasternodeList');
 
@@ -46,7 +46,7 @@ describe('updateSimplifiedMasternodeListFactory', function main() {
   it('should update SML Store so other consumers can use it', async function it() {
     dashCore = await startDashCore(dashCoreOptions);
 
-    container = await createTestDIContainer(this.blsAdapter, this.dppWasm, dashCore);
+    container = await createTestDIContainer(this.blsAdapter, dashCore);
 
     // Create initial state
     const groveDBStore = container.resolve('groveDBStore');

@@ -1,13 +1,13 @@
+const { Identifier } = require('@dashevo/wasm-dpp');
 const { hash } = require('@dashevo/dpp/lib/util/hash');
 
 /**
  * @param {SimplifiedMNListEntry} smlEntry
- * @param {WebAssembly.Instance} dppWasm
  */
-function createOperatorIdentifier(dppWasm, smlEntry) {
+function createOperatorIdentifier(smlEntry) {
   const operatorPubKey = Buffer.from(smlEntry.pubKeyOperator, 'hex');
 
-  return dppWasm.Identifier.from(
+  return Identifier.from(
     hash(
       Buffer.concat([
         Buffer.from(smlEntry.proRegTxHash, 'hex'),

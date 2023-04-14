@@ -13,7 +13,7 @@ const lodash = require('lodash');
 
 const DashCoreOptions = require('@dashevo/dp-services-ctl/lib/services/dashCore/DashCoreOptions');
 
-const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
+const { default: loadWasmDpp, Identifier } = require('@dashevo/wasm-dpp');
 
 const getBlsAdapter = require('../bls/getBlsAdapter');
 
@@ -22,14 +22,14 @@ use(chaiAsPromised);
 use(chaiString);
 use(dirtyChai);
 use(async (chai, util) => {
-  const dppWasm = await loadWasmDpp();
+  await loadWasmDpp();
 
   const getMofifiedArgument = (argument) => {
     if (!argument.hasOwnProperty('ptr')) {
       return argument;
     }
 
-    const isIdentifier = (argument instanceof dppWasm.Identifier);
+    const isIdentifier = (argument instanceof Identifier);
 
     if (isIdentifier) {
       return argument.toBuffer();
@@ -161,7 +161,7 @@ DashCoreOptions.setDefaultCustomOptions({
 
 before(async function before() {
   this.blsAdapter = await getBlsAdapter();
-  this.dppWasm = await loadWasmDpp();
+  await loadWasmDpp();
 });
 
 beforeEach(function beforeEach() {

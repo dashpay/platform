@@ -1,6 +1,7 @@
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
 const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
+const { Identifier, KeyType } = require('@dashevo/wasm-dpp');
 
 const Address = require('@dashevo/dashcore-lib/lib/address');
 const Script = require('@dashevo/dashcore-lib/lib/script');
@@ -21,12 +22,6 @@ describe('handleNewMasternodeFactory', () => {
   let dataContract;
   let blockInfo;
   let identityFixture;
-  let Identifier;
-  let KeyType;
-
-  before(function before() {
-    ({ Identifier, KeyType } = this.dppWasm);
-  });
 
   beforeEach(async function beforeEach() {
     const smlFixture = getSmlFixture();
@@ -59,7 +54,6 @@ describe('handleNewMasternodeFactory', () => {
       createMasternodeIdentityMock,
       createRewardShareDocumentMock,
       fetchTransactionMock,
-      this.dppWasm,
     );
   });
 
@@ -127,7 +121,7 @@ describe('handleNewMasternodeFactory', () => {
     expect(createRewardShareDocumentMock).to.not.be.called();
   });
 
-  it('should create masternode identity and a document in rewards data contract with percentage', async function test() {
+  it('should create masternode identity and a document in rewards data contract with percentage', async () => {
     transactionFixture.extraPayload.operatorReward = 10;
 
     const result = await handleNewMasternode(masternodeEntry, dataContract, blockInfo);
@@ -140,11 +134,11 @@ describe('handleNewMasternodeFactory', () => {
     expect(result.createdEntities[1].toJSON()).to.deep.equal(identityFixture.toJSON());
     expect(result.createdEntities[2].toJSON()).to.deep.equal(identityFixture.toJSON());
 
-    const operatorIdentifier = createOperatorIdentifier(this.dppWasm, masternodeEntry);
+    const operatorIdentifier = createOperatorIdentifier(masternodeEntry);
     const operatorPayoutAddress = Address.fromString(masternodeEntry.operatorPayoutAddress);
     const operatorPayoutScript = new Script(operatorPayoutAddress);
 
-    const votingIdentifier = createVotingIdentifier(masternodeEntry, this.dppWasm);
+    const votingIdentifier = createVotingIdentifier(masternodeEntry);
     const payoutAddress = Address.fromString(masternodeEntry.payoutAddress);
     const payoutScript = new Script(payoutAddress);
 

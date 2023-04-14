@@ -13,10 +13,9 @@ describe('GroveDB', () => {
   let rootTreePath;
   let itemTreePath;
   let otherTreeKey;
-  let dppWasm;
 
   beforeEach(async () => {
-    dppWasm = await loadWasmDpp();
+    await loadWasmDpp();
     drive = new Drive(TEST_DATA_PATH, {
       drive: {
         dataContractsGlobalCacheSize: 500,
@@ -29,8 +28,7 @@ describe('GroveDB', () => {
           password: '',
         },
       },
-    },
-    dppWasm);
+    });
 
     groveDb = drive.getGroveDB();
 

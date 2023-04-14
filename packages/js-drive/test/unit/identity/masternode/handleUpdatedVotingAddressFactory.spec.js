@@ -1,3 +1,4 @@
+const { Identifier, KeyType } = require('@dashevo/wasm-dpp');
 const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 
 const handleUpdatedVotingAddressFactory = require('../../../../lib/identity/masternode/handleUpdatedVotingAddressFactory');
@@ -13,12 +14,6 @@ describe('handleUpdatedVotingAddressFactory', () => {
   let transactionFixture;
   let identityRepositoryMock;
   let blockInfo;
-  let Identifier;
-  let KeyType;
-
-  before(function before() {
-    ({ Identifier, KeyType } = this.dppWasm);
-  });
 
   beforeEach(async function beforeEach() {
     smlEntry = {
@@ -55,7 +50,6 @@ describe('handleUpdatedVotingAddressFactory', () => {
       identityRepositoryMock,
       createMasternodeIdentityMock,
       fetchTransactionMock,
-      this.dppWasm,
     );
   });
 

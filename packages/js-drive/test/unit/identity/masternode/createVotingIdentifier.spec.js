@@ -1,12 +1,8 @@
+const { Identifier } = require('@dashevo/wasm-dpp');
 const createVotingIdentifier = require('../../../../lib/identity/masternode/createVotingIdentifier');
 
 describe('createVotingIdentifier', () => {
   let smlEntry;
-  let Identifier;
-
-  before(function before() {
-    ({ Identifier } = this.dppWasm);
-  });
 
   beforeEach(() => {
     smlEntry = {
@@ -19,8 +15,8 @@ describe('createVotingIdentifier', () => {
     };
   });
 
-  it('should return voting identifier from smlEntry', function test() {
-    const identifier = createVotingIdentifier(smlEntry, this.dppWasm);
+  it('should return voting identifier from smlEntry', () => {
+    const identifier = createVotingIdentifier(smlEntry);
 
     expect(identifier).to.deep.equal(Identifier.from('G1p14MYdpNRLNWuKgQ9SjJUPxfuaJMTwYjdRWu9sLzvL'));
   });

@@ -72,7 +72,6 @@ describe('getProofsQueryHandlerFactory', () => {
       identityRepositoryMock,
       dataContractRepositoryMock,
       documentRepository,
-      this.dppWasm,
     );
 
     dataContractData = {
