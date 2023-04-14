@@ -79,7 +79,12 @@ module.exports = {
       minimumDifficultyBlocks: 0,
       powTargetSpacing: 150,
     },
-    debug: 0,
+    log: {
+      file: {
+        level: ['0'],
+        path: path.join(HOME_DIR_PATH, 'logs', 'base', 'core.log')
+      }
+    },
     logIps: 0,
     indexes: true,
     reindex: {
