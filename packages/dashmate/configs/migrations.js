@@ -517,7 +517,7 @@ module.exports = {
     let groupJsonApiPort = systemConfigs.local.dashmate.helper.api.port;
 
     Object.entries(configFile.configs)
-      .forEach(([, config]) => {
+      .forEach(([configName, config]) => {
         if (config.group === 'local') {
           config.dashmate.helper.api = {
             enable: false,
@@ -535,7 +535,7 @@ module.exports = {
         config.core.log = {
           file: {
             level: [config.core.debug],
-            path: path.join(HOME_DIR_PATH, 'logs', config.name, 'core.log'),
+            path: path.join(HOME_DIR_PATH, 'logs', configName, 'core.log'),
           },
         };
 
