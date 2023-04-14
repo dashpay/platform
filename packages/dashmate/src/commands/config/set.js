@@ -21,12 +21,20 @@ class ConfigSetCommand extends ConfigBaseCommand {
       optionValue = null;
     }
 
+    // check for existence
+    config.get(optionPath)
+
     const path = optionPath.split('.')
 
     let schema = configJsonSchema
 
     for (const e of path) {
-      schema = schema.properties[e]
+      if (schema['$ref']) {
+        const [, , definitionName] = schema['$ref'].split('/')
+        schema = configJsonSchema.definitions[definitionName].properties
+      } else {
+        schema = schema.properties[e]
+      }
     }
 
     let schemaType = schema.type
