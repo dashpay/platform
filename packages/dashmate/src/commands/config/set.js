@@ -1,4 +1,5 @@
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
+const configJsonSchema = require("../../../configs/schema/configJsonSchema");
 
 class ConfigSetCommand extends ConfigBaseCommand {
   /**
@@ -20,7 +21,25 @@ class ConfigSetCommand extends ConfigBaseCommand {
       optionValue = null;
     }
 
-    config.set(optionPath, JSON.parse(optionValue));
+    const path = optionPath.split('.')
+
+    let schema = configJsonSchema
+
+    for (const e of path) {
+      schema = schema.properties[e]
+    }
+
+    let schemaType = schema.type
+
+    if (Array.isArray(schemaType)) {
+      schemaType = schemaType[0]
+    }
+
+    if (schemaType === 'object' || schemaType === 'array') {
+      config.set(optionPath, JSON.parse(optionValue));
+    } else {
+      config.set(optionPath, optionValue);
+    }
 
     // eslint-disable-next-line no-console
     console.log(`${optionPath} set to ${config.get(optionPath)}`);
