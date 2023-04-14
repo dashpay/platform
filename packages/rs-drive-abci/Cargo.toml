@@ -57,7 +57,7 @@ itertools = { version = "0.10.5" }
 
 [features]
 default = ["server"]
-server = ["tenderdash-abci", "clap", "dotenvy", "tracing-subscriber", "atty"]
+server = ["tenderdash-abci", "clap", "dotenvy", "tracing-subscriber", "atty", "mockall"]
 
 [[bin]]
 name = "drive-abci"
