@@ -553,7 +553,7 @@ describe('Platform', () => {
       });
 
       it('should be able to disable public key of the identity', async () => {
-        const now = new Date().getTime();
+        const now = new Date();
 
         const { Identity } = client.platform.dppModule;
         const identityBeforeUpdate = new Identity(identity.toObject());
