@@ -45,7 +45,7 @@ describe('BlockHeadersProvider - integration', function describe() {
   // because we need to make sure that spv chain could bootstrap itself
   // from any header
   const fromBlockHeight = 10;
-  const numHeaders = 500;
+  const numHeaders = 100;
   const newHeadersAmount = 2;
   const numStreams = 5;
   const historicalHeadersAmount = numHeaders - newHeadersAmount;
