@@ -98,10 +98,6 @@ async function main() {
   log.info(`JSON RPC server is listening on port ${config.rpcServer.port}`);
 
   const dpp = new DashPlatformProtocol(blsSignatures, driveStateRepository);
-  // const dpp = new DashPlatformProtocolJS({
-  //   stateRepository: driveStateRepository,
-  // });
-  // await dpp.initialize();
 
   // Start GRPC server
   log.info('Starting GRPC server');

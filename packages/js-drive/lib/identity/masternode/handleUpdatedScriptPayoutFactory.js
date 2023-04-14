@@ -82,7 +82,6 @@ function handleUpdatedScriptPayoutFactory(
     const withdrawPubKeyType = getWithdrawPubKeyTypeFromPayoutScript(newPayoutScript);
     const pubKeyData = getPublicKeyFromPayoutScript(newPayoutScript, withdrawPubKeyType, dppWasm);
 
-    // TODO wasm-dpp doesn' use fluent api
     const newWithdrawalIdentityPublicKey = new dppWasm.IdentityPublicKey({
       id: identity.getPublicKeyMaxId() + 1,
       type: withdrawPubKeyType,

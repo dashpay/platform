@@ -41,7 +41,7 @@ async function validateStateTransition(dpp, stateTransition) {
 }
 
 /**
- * @param {Object} dppWasm
+ * @param {WebAssembly.Instance} dppWasm
  * @returns expectPredictedFeeHigherOrEqualThanActual
  */
 function expectPredictedFeeHigherOrEqualThanActualFactory(dppWasm) {
@@ -178,7 +178,6 @@ describe('feesPrediction', () => {
       instantAssetLockProof = await getInstantAssetLockProofFixture(assetLockPrivateKey);
 
       identity = getBiggestPossibleIdentity(this.dppWasm);
-      // identity.id = instantAssetLockProof.createIdentifier();
       identity.setAssetLockProof(instantAssetLockProof);
 
       // Generate real keys

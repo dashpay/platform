@@ -12,6 +12,10 @@ const {
 const Long = require('long');
 
 class BlockExecutionContext {
+  /**
+   *
+   * @param {WebAssembly.Instance} dppWasm
+   */
   constructor(dppWasm) {
     this.reset();
     this.dppWasm = dppWasm;

@@ -6,7 +6,7 @@ class BlockExecutionContextRepository {
   /**
    *
    * @param {GroveDBStore} groveDBStore
-   * @param {DppWasm} dppWasm
+   * @param {WebAssembly.Instance} dppWasm
    */
   constructor(groveDBStore, dppWasm) {
     this.db = groveDBStore;

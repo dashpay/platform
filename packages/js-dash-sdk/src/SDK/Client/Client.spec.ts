@@ -132,7 +132,7 @@ describe('Dash - Client', function suite() {
     }
   });
 
-  describe('#platform.identities.register ', async () => {
+  describe('#platform.identities.register', async () => {
     it('should register an identity', async () => {
       const accountIdentitiesCountBeforeTest = account.identities.getIdentityIds().length;
 
