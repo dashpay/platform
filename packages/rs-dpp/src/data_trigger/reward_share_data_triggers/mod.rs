@@ -109,7 +109,7 @@ where
             &context.data_contract.id,
             &transition_base.document_type_name,
             json!({
-                "where" : [ [ "$ownerId", "==", owner_id ]]
+                "where" : [ [ "$ownerId", "==", context.owner_id.to_buffer() ]]
             }),
             Some(context.state_transition_execution_context),
         )

@@ -53,6 +53,25 @@ describe('Identifier', () => {
     });
   });
 
+  describe('#encodeCBOR', () => {
+    let encoderMock;
+
+    beforeEach(function before() {
+      encoderMock = {
+        pushAny: this.sinonSandbox.stub(),
+      };
+    });
+
+    it('should encode using cbor encoder', () => {
+      const identifier = new Identifier(buffer);
+
+      const result = identifier.encodeCBOR(encoderMock);
+
+      expect(result).to.be.true();
+      expect(encoderMock.pushAny).to.be.calledOnceWithExactly(buffer);
+    });
+  });
+
   describe('#toJSON', () => {
     it('should return a base58 encoded string', () => {
       const identifier = new Identifier(buffer);
