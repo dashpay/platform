@@ -647,7 +647,7 @@ class DriveStateRepository {
     }
 
     try {
-      const instantLock = new InstantLock(rawInstantLock);
+      const instantLock = new InstantLock(Buffer.from(rawInstantLock));
       const { result: isVerified } = await this.coreRpcClient.verifyIsLock(
         instantLock.getRequestId().toString('hex'),
         instantLock.txid,
