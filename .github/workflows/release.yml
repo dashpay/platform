@@ -172,7 +172,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: /tmp/buildkit-cache/buildkit-state.tar
-          key: ${{ runner.os }}-buildkit
+          key: ${{ runner.os }}-buildkit-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-buildkit
 
@@ -295,7 +295,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: /tmp/buildkit-cache/buildkit-state.tar
-          key: ${{ runner.os }}-buildkit
+          key: ${{ runner.os }}-buildkit-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-buildkit
 
@@ -424,7 +424,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: /tmp/buildkit-cache/buildkit-state.tar
-          key: ${{ runner.os }}-buildkit
+          key: ${{ runner.os }}-buildkit-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-buildkit
 
@@ -622,7 +622,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: /tmp/buildkit-cache/buildkit-state.tar
-          key: ${{ runner.os }}-buildkit
+          key: ${{ runner.os }}-buildkit-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-buildkit
 
