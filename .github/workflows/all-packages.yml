@@ -159,6 +159,11 @@ jobs:
       RUSTC_WRAPPER: "sccache"
       CARGO_INCREMENTAL: "false"
     steps:
+      - name: Install Chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
       - name: Check out repo
         uses: actions/checkout@v3
 
