@@ -2,11 +2,10 @@
 const lodashSet = require('lodash/set');
 const lodashGet = require('lodash/get');
 
+const path = require('path');
 const systemConfigs = require('./system');
 
-const path = require("path");
-
-const {NETWORK_TESTNET, HOME_DIR_PATH} = require('../src/constants');
+const { NETWORK_TESTNET, HOME_DIR_PATH } = require('../src/constants');
 
 module.exports = {
   '0.17.2': (configFile) => {
@@ -536,11 +535,11 @@ module.exports = {
         config.core.log = {
           file: {
             level: [config.core.debug],
-            path: path.join(HOME_DIR_PATH, 'logs', config.name, 'core.log')
-          }
-        }
+            path: path.join(HOME_DIR_PATH, 'logs', config.name, 'core.log'),
+          },
+        };
 
-        delete config.core.debug
+        delete config.core.debug;
       });
 
     return configFile;
