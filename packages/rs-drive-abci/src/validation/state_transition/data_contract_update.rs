@@ -1,16 +1,5 @@
-use std::sync::Arc;
-
-use dpp::data_contract::enrich_with_base_schema::PREFIX_BYTE_0;
 use dpp::data_contract::state_transition::data_contract_update_transition::validation::basic::DATA_CONTRACT_UPDATE_SCHEMA_VALIDATOR;
-use dpp::data_contract::validation::multi_validator;
-use dpp::data_contract::validation::multi_validator::{
-    byte_array_has_no_items_as_parent_validator, pattern_is_valid_regex_validator,
-};
-use dpp::data_contract::validation::validate_data_contract_max_depth::validate_data_contract_max_depth;
-use dpp::data_contract::DataContract;
-use dpp::document::document_validator::BASE_DOCUMENT_SCHEMA;
 use dpp::identity::PartialIdentity;
-use dpp::validation::JsonSchemaValidator;
 use dpp::{
     consensus::basic::{
         data_contract::{
@@ -27,24 +16,21 @@ use dpp::{
                 schema_compatibility_validator::{
                     validate_schema_compatibility, DiffVAlidatorError,
                 },
-                validate_indices_are_backward_compatible, DATA_CONTRACT_UPDATE_SCHEMA, EMPTY_JSON,
+                validate_indices_are_backward_compatible, EMPTY_JSON,
             },
             DataContractUpdateTransition,
         },
-        validation::data_contract_validator::DataContractValidator,
     },
     platform_value::{self, Value},
     state_transition::StateTransitionAction,
-    validation::ValidationResult,
-    version::ProtocolVersionValidator,
     Convertible, ProtocolError,
 };
 use dpp::{
     data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransitionAction,
     validation::{ConsensusValidationResult, SimpleConsensusValidationResult},
 };
+use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
-use drive::{drive::Drive, grovedb::Transaction};
 use serde_json::Value as JsonValue;
 
 use crate::platform::PlatformRef;

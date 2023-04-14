@@ -11,7 +11,6 @@ use crate::{
     identity::{core_script::CoreScript, KeyID},
     prelude::{Identifier, Revision},
     state_transition::{
-        state_transition_execution_context::StateTransitionExecutionContext,
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionType,
     },
@@ -25,8 +24,9 @@ use super::properties::{
 mod action;
 pub mod apply_identity_credit_withdrawal_transition_factory;
 pub mod validation;
-use crate::identity::SecurityLevel;
+use crate::identity::signer::Signer;
 use crate::identity::SecurityLevel::{CRITICAL, HIGH, MEDIUM};
+use crate::identity::{IdentityPublicKey, SecurityLevel};
 pub use action::{
     IdentityCreditWithdrawalTransitionAction, IDENTITY_CREDIT_WITHDRAWAL_TRANSITION_VERSION,
 };

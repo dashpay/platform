@@ -59,7 +59,7 @@ impl Identity {
             + Extend<(IdentityPublicKey, Vec<u8>)>,
     {
         let id = Identifier::new(rng.gen::<[u8; 32]>());
-        let revision = rng.gen_range(0..100);
+        let revision = 0;
         // balance must be in i64 (that would be >> 2)
         // but let's make it smaller
         let balance = rng.gen::<u64>() >> 20; //around 175 Dash as max

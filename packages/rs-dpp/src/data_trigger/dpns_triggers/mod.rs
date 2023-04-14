@@ -7,7 +7,7 @@ use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use platform_value::platform_value;
 
 use crate::document::Document;
-use crate::util::hash::hash;
+use crate::util::hash::hash_to_vec;
 
 use crate::ProtocolError;
 use crate::{
@@ -212,7 +212,7 @@ where
     salted_domain_buffer.extend(preorder_salt);
     salted_domain_buffer.extend(full_domain_name.to_owned().as_bytes());
 
-    let salted_domain_hash = hash(salted_domain_buffer);
+    let salted_domain_hash = hash_to_vec(salted_domain_buffer);
 
     let preorder_documents_data = context
         .state_repository

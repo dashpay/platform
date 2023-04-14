@@ -15,10 +15,11 @@ use serde_json::Value as JsonValue;
 use crate::data_contract::DataContract;
 use crate::document::document_transition::DocumentTransitionObjectLike;
 use crate::prelude::{DocumentTransition, Identifier};
-use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
+
 use crate::util::cbor_value::{CborCanonicalMap, FieldType, ReplacePaths, ValuesCollection};
 use crate::util::json_value::JsonValueExt;
 use crate::version::LATEST_VERSION;
+use crate::ProtocolError;
 use crate::{
     identity::{KeyID, SecurityLevel},
     state_transition::{
@@ -26,7 +27,6 @@ use crate::{
         StateTransitionType,
     },
 };
-use crate::{BlsModule, ProtocolError};
 use platform_value::string_encoding::Encoding;
 
 use self::document_transition::{
@@ -38,8 +38,6 @@ pub mod apply_documents_batch_transition_factory;
 pub mod document_transition;
 pub mod validation;
 
-use crate::identity::signer::Signer;
-use crate::identity::IdentityPublicKey;
 pub use action::{DocumentsBatchTransitionAction, DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION};
 
 pub mod property_names {

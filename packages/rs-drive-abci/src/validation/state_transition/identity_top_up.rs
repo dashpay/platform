@@ -1,8 +1,6 @@
 use crate::asset_lock::fetch_tx_out::FetchAssetLockProofTxOut;
 use dpp::consensus::signature::{IdentityNotFoundError, SignatureError};
-use dpp::identity::state_transition::identity_topup_transition::validation::basic::{
-    IDENTITY_TOP_UP_TRANSITION_SCHEMA, IDENTITY_TOP_UP_TRANSITION_SCHEMA_VALIDATOR,
-};
+use dpp::identity::state_transition::identity_topup_transition::validation::basic::IDENTITY_TOP_UP_TRANSITION_SCHEMA_VALIDATOR;
 use dpp::identity::state_transition::identity_topup_transition::IdentityTopUpTransitionAction;
 use dpp::identity::PartialIdentity;
 use dpp::{
@@ -10,8 +8,8 @@ use dpp::{
     state_transition::StateTransitionAction,
     validation::{ConsensusValidationResult, SimpleConsensusValidationResult},
 };
+use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
-use drive::{drive::Drive, grovedb::Transaction};
 
 use crate::error::Error;
 use crate::platform::PlatformRef;

@@ -34,12 +34,11 @@
 
 use crate::abci::server::AbciApplication;
 use crate::rpc::core::CoreRPCLike;
+use dpp::ProtocolError;
 use drive::fee::credits::SignedCredits;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
-use tenderdash_abci::proto::abci::{
-    self as proto, RequestExtendVote, ResponseException, ResponseExtendVote,
-};
+use tenderdash_abci::proto::abci::{self as proto, ResponseException};
 use tenderdash_abci::proto::abci::{
     ExecTxResult, RequestCheckTx, RequestFinalizeBlock, RequestInitChain, RequestPrepareProposal,
     RequestProcessProposal, RequestQuery, ResponseCheckTx, ResponseFinalizeBlock,
@@ -269,8 +268,23 @@ where
             ),
         ))?;
 
-        self.platform
+        let block_finalization_outcome = self
+            .platform
             .finalize_block_proposal(request, transaction)?;
+
+        //FIXME: tell tenderdash about the problem instead
+        // This can not go to production!
+        if !block_finalization_outcome.validation_result.is_valid() {
+            return Err(Error::Abci(
+                block_finalization_outcome
+                    .validation_result
+                    .errors
+                    .into_iter()
+                    .next()
+                    .unwrap(),
+            )
+            .into());
+        }
 
         drop(transaction_guard);
 

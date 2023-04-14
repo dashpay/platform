@@ -10,7 +10,6 @@ use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
     identity::validation::{RequiredPurposeAndSecurityLevelValidator, TPublicKeysValidator},
     state_repository::StateRepositoryLike,
-    state_transition::StateTransitionLike,
     validation::ConsensusValidationResult,
     NonConsensusError, StateError,
 };

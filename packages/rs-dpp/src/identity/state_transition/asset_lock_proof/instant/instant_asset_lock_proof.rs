@@ -3,15 +3,14 @@ use std::convert::{TryFrom, TryInto};
 use dashcore::consensus::{Decodable, Encodable};
 use dashcore::{InstantLock, Transaction, TxIn, TxOut};
 use platform_value::{BinaryData, Value};
-use rand::rngs::StdRng;
+
 use serde::de::Error as DeError;
 use serde::ser::Error as SerError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-use crate::identity::KeyType::ECDSA_HASH160;
 use crate::prelude::Identifier;
 use crate::util::cbor_value::CborCanonicalMap;
-use crate::util::hash::hash;
+use crate::util::hash::hash_to_vec;
 use crate::util::vec::vec_to_array;
 use crate::{NonConsensusError, ProtocolError};
 
@@ -123,7 +122,7 @@ impl InstantAssetLockProof {
             NonConsensusError::IdentifierCreateError(String::from("No output at a given index"))
         })?;
 
-        let buffer = hash(out_point);
+        let buffer = hash_to_vec(out_point);
         Ok(Identifier::new(vec_to_array(&buffer)?))
     }
 

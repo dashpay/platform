@@ -1,5 +1,3 @@
-use dashcore::hashes::sha256d;
-use dashcore::hashes::sha256d::Hash;
 use dashcore::{Block, BlockHash, Transaction, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
     ExtendedQuorumDetails, GetBestChainLockResult, MasternodeListDiff, ProTxHash, ProTxInfo,

@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::convert::{TryFrom, TryInto};
+use std::hash::{Hash, Hasher};
 
 use ciborium::value::Value as CborValue;
 use integer_encoding::VarInt;
@@ -51,6 +52,12 @@ pub struct Identity {
     #[bincode(with_serde)]
     #[serde(skip)]
     pub metadata: Option<Metadata>,
+}
+
+impl Hash for Identity {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
+    }
 }
 
 /// An identity struct that represent partially set/loaded identity data.
@@ -360,7 +367,7 @@ impl Identity {
 
     /// Computes the hash of an identity
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash::hash(self.to_buffer()?))
+        Ok(hash::hash_to_vec(self.to_buffer()?))
     }
 
     /// Convenience method to get Partial Identity Info

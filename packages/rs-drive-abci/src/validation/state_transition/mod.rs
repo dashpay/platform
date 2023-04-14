@@ -12,16 +12,13 @@ mod key_validation;
 use dpp::identity::PartialIdentity;
 use dpp::state_transition::{StateTransition, StateTransitionAction};
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
-use drive::fee_pools::epochs::Epoch;
+use drive::drive::Drive;
 use drive::query::TransactionArg;
-use drive::{drive::Drive, grovedb::Transaction};
 
 use crate::error::Error;
 use crate::execution::execution_event::ExecutionEvent;
-use crate::platform::{Platform, PlatformRef};
+use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
-use crate::state::PlatformState;
-use crate::validation::state_transition::key_validation::validate_state_transition_identity_signature;
 
 /// There are 3 stages in a state transition processing:
 /// Structure, Signature and State validation,

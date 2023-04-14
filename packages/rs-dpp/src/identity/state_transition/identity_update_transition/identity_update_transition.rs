@@ -5,17 +5,23 @@ use serde_json::Value as JsonValue;
 use std::convert::{TryFrom, TryInto};
 
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
-use crate::prelude::Identity;
+
+use crate::consensus::signature::{
+    InvalidSignaturePublicKeySecurityLevelError, MissingPublicKeyError, SignatureError,
+};
+use crate::consensus::ConsensusError;
+use crate::identity::signer::Signer;
+use crate::identity::{Identity, IdentityPublicKey};
+use crate::state_transition::errors::PublicKeyMismatchError;
 use crate::{
     identity::{KeyID, SecurityLevel},
     prelude::{Identifier, Revision, TimestampMillis},
     state_transition::{
-        state_transition_execution_context::StateTransitionExecutionContext,
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionType,
     },
     version::LATEST_VERSION,
-    ProtocolError,
+    BlsModule, NonConsensusError, ProtocolError,
 };
 
 pub mod property_names {
@@ -64,6 +70,7 @@ pub struct IdentityUpdateTransition {
     pub add_public_keys: Vec<IdentityPublicKeyInCreationWithWitness>,
 
     /// Identity Public Keys ID's to disable for the Identity
+    #[serde(default)]
     pub disable_public_keys: Vec<KeyID>,
 
     /// Timestamp when keys were disabled
@@ -89,6 +96,57 @@ impl Default for IdentityUpdateTransition {
 impl IdentityUpdateTransition {
     pub fn new(raw_state_transition: Value) -> Result<Self, ProtocolError> {
         IdentityUpdateTransition::from_raw_object(raw_state_transition)
+    }
+
+    pub fn try_from_identity_with_signer<S: Signer>(
+        identity: &Identity,
+        master_public_key_id: &KeyID,
+        add_public_keys: Vec<IdentityPublicKey>,
+        disable_public_keys: Vec<KeyID>,
+        public_keys_disabled_at: Option<u64>,
+        signer: &S,
+    ) -> Result<Self, ProtocolError> {
+        let add_public_keys = add_public_keys
+            .iter()
+            .map(|public_key| {
+                IdentityPublicKeyInCreationWithWitness::from_public_key_signed_external(
+                    public_key.clone(),
+                    signer,
+                )
+            })
+            .collect::<Result<Vec<IdentityPublicKeyInCreationWithWitness>, ProtocolError>>()?;
+
+        let mut identity_update_transition = IdentityUpdateTransition {
+            protocol_version: LATEST_VERSION,
+            transition_type: StateTransitionType::IdentityUpdate,
+            signature: Default::default(),
+            signature_public_key_id: 0,
+            identity_id: identity.id,
+            revision: identity.revision,
+            add_public_keys,
+            disable_public_keys,
+            public_keys_disabled_at,
+        };
+        let master_public_key = identity
+            .public_keys
+            .get(master_public_key_id)
+            .ok_or::<ConsensusError>(
+                SignatureError::MissingPublicKeyError(MissingPublicKeyError::new(
+                    *master_public_key_id,
+                ))
+                .into(),
+            )?;
+        if master_public_key.security_level != SecurityLevel::MASTER {
+            Err(ProtocolError::InvalidSignaturePublicKeySecurityLevelError(
+                InvalidSignaturePublicKeySecurityLevelError::new(
+                    master_public_key.security_level,
+                    vec![SecurityLevel::MASTER],
+                ),
+            ))
+        } else {
+            identity_update_transition.sign_external(master_public_key, signer)?;
+            Ok(identity_update_transition)
+        }
     }
 
     pub fn from_raw_object(
@@ -295,15 +353,23 @@ impl StateTransitionConvert for IdentityUpdateTransition {
                 .map_err(ProtocolError::ValueError)?;
         }
 
-        let mut add_public_keys: Vec<Value> = vec![];
-        for key in self.add_public_keys.iter() {
-            add_public_keys.push(key.to_raw_cleaned_object(skip_signature)?);
+        if !self.add_public_keys.is_empty() {
+            let mut add_public_keys: Vec<Value> = vec![];
+            for key in self.add_public_keys.iter() {
+                add_public_keys.push(key.to_raw_cleaned_object(skip_signature)?);
+            }
+
+            value.insert(
+                property_names::ADD_PUBLIC_KEYS.to_owned(),
+                Value::Array(add_public_keys),
+            )?;
         }
 
-        value.insert(
-            property_names::ADD_PUBLIC_KEYS.to_owned(),
-            Value::Array(add_public_keys),
-        )?;
+        value.remove_optional_value_if_empty_array(property_names::ADD_PUBLIC_KEYS)?;
+
+        value.remove_optional_value_if_empty_array(property_names::DISABLE_PUBLIC_KEYS)?;
+
+        value.remove_optional_value_if_null(property_names::PUBLIC_KEYS_DISABLED_AT)?;
 
         Ok(value)
     }

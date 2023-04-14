@@ -122,9 +122,9 @@ fn validate_data_contract_create_transition_basic(
     let generated_id = generate_data_contract_id(owner_id, entropy);
 
     let mut validation_result = SimpleConsensusValidationResult::default();
-    if generated_id != raw_data_contract_id {
+    if generated_id.as_slice() != raw_data_contract_id {
         validation_result.add_error(BasicError::InvalidDataContractIdError(
-            InvalidDataContractIdError::new(generated_id, raw_data_contract_id),
+            InvalidDataContractIdError::new(generated_id.to_vec(), raw_data_contract_id),
         ))
     }
 

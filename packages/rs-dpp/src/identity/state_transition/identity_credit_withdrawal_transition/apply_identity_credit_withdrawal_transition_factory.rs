@@ -14,8 +14,7 @@ use crate::util::entropy_generator::DefaultEntropyGenerator;
 use crate::{
     contracts::withdrawals_contract, data_contract::DataContract, document::generate_document_id,
     document::Document, identity::state_transition::identity_credit_withdrawal_transition::Pooling,
-    state_repository::StateRepositoryLike, state_transition::StateTransitionLike,
-    util::entropy_generator::EntropyGenerator,
+    state_repository::StateRepositoryLike, util::entropy_generator::EntropyGenerator,
 };
 
 use super::IdentityCreditWithdrawalTransition;

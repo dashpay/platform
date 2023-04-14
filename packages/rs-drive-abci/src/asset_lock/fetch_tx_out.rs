@@ -1,11 +1,9 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dashcore::hashes::Hash;
 use dashcore::{OutPoint, TxOut};
 use dpp::consensus::basic::identity::{
-    IdentityAssetLockProofLockedTransactionMismatchError,
     IdentityAssetLockTransactionIsNotFoundError, IdentityAssetLockTransactionOutputNotFoundError,
     InvalidAssetLockProofCoreChainHeightError,
     InvalidIdentityAssetLockProofChainLockValidationError,
@@ -13,7 +11,6 @@ use dpp::consensus::basic::identity::{
 use dpp::consensus::ConsensusError;
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 use dpp::validation::ValidationResult;
-use drive::drive::Drive;
 
 pub trait FetchAssetLockProofTxOut {
     fn fetch_asset_lock_transaction_output_sync<C: CoreRPCLike>(

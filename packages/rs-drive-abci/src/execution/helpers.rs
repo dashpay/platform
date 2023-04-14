@@ -1,19 +1,13 @@
-use crate::abci::AbciError;
+use std::collections::BTreeSet;
+
+use dashcore_rpc::dashcore_rpc_json::ProTxHash;
+use drive::grovedb::Transaction;
+
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformState;
-use dashcore::signer::sign;
-use dashcore_rpc::dashcore_rpc_json::{ProTxHash, QuorumHash};
-use dashcore_rpc::json::{QuorumInfoResult, QuorumType};
-use dpp::bls_signatures;
-use dpp::bls_signatures::Serialize;
-use dpp::validation::{SimpleConsensusValidationResult, SimpleValidationResult, ValidationResult};
-use drive::grovedb::Transaction;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
-use tenderdash_abci::proto::abci::CommitInfo;
-use tenderdash_abci::proto::types::BlockId;
 
 impl<C> Platform<C>
 where
@@ -109,10 +103,29 @@ where
 
     /*
     // TODO: re-enable
+
+    /// Updates the masternode list in the platform state based on changes in the masternode list
+    /// from Dash Core between two block heights.
+    ///
+    /// This function fetches the masternode list difference between the current core block height
+    /// and the previous core block height, then updates the full masternode list and the
+    /// HPMN (high performance masternode) list in the platform state accordingly.
+    ///
+    /// # Arguments
+    ///
+    /// * `state` - A mutable reference to the platform state to be updated.
+    /// * `core_block_height` - The current block height in the Dash Core.
+    /// * `transaction` - The current groveDB transaction.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<(), Error>` - Returns `Ok(())` if the update is successful. Returns an error if
+    ///   there is a problem fetching the masternode list difference or updating the state.
     pub(crate) fn update_masternode_list(
         &self,
         state: &mut PlatformState,
         core_block_height: u32,
+        transaction: &Transaction,
     ) -> Result<(), Error> {
         let previous_core_height = state.core_height();
         if core_block_height == previous_core_height {
@@ -155,6 +168,15 @@ where
             .retain(|key, _| !deleted_masternodes.contains(key));
 
         //Todo: masternode identities
+
+        //For all deleted masternodes we need to remove them from the state of the app version votes
+
+        self.drive.remove_validators_proposed_app_versions(
+            deleted_masternodes
+                .into_iter()
+                .map(|a| a.0.try_into().unwrap()),
+            Some(transaction),
+        )?;
 
         Ok(())
     }

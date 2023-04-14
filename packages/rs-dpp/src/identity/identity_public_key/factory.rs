@@ -282,18 +282,13 @@ impl IdentityPublicKey {
 
     // TODO: Move to a separate module under a feature
     pub fn random_authentication_keys_with_private_keys_with_rng(
+        start_id: KeyID,
         key_count: KeyCount,
         rng: &mut StdRng,
     ) -> Vec<(Self, Vec<u8>)> {
-        let mut used_key_matrix = [false; 16].to_vec();
-        (0..key_count)
+        (start_id..(start_id + key_count))
             .map(|i| {
-                Self::random_authentication_key_with_private_key_with_rng(
-                    i,
-                    rng,
-                    Some((i, &mut used_key_matrix)),
-                )
-                .unwrap()
+                Self::random_authentication_key_with_private_key_with_rng(i, rng, None).unwrap()
             })
             .collect()
     }

@@ -1,22 +1,18 @@
 use dpp::identity::PartialIdentity;
-use dpp::{identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition, NonConsensusError, state_transition::StateTransitionAction, StateError, validation::{ConsensusValidationResult, SimpleConsensusValidationResult}};
+use dpp::{identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition, state_transition::StateTransitionAction, StateError, validation::{ConsensusValidationResult, SimpleConsensusValidationResult}};
 use dpp::consensus::basic::identity::{IdentityInsufficientBalanceError, InvalidIdentityCreditWithdrawalTransitionCoreFeeError, InvalidIdentityCreditWithdrawalTransitionOutputScriptError, NotImplementedIdentityCreditWithdrawalTransitionPoolingError};
 use dpp::consensus::signature::IdentityNotFoundError;
-use dpp::contracts::withdrawals_contract;
-use dpp::document::{Document, generate_document_id};
-use dpp::identity::core_script::CoreScript;
 use dpp::identity::state_transition::identity_credit_withdrawal_transition::{IdentityCreditWithdrawalTransitionAction, Pooling};
 use dpp::identity::state_transition::identity_credit_withdrawal_transition::validation::basic::validate_identity_credit_withdrawal_transition_basic::IDENTITY_CREDIT_WITHDRAWAL_TRANSITION_SCHEMA_VALIDATOR;
-use dpp::platform_value::platform_value;
 use dpp::util::is_fibonacci_number::is_fibonacci_number;
 use drive::grovedb::TransactionArg;
-use drive::{drive::Drive, grovedb::Transaction};
+use drive::drive::Drive;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
-use crate::validation::state_transition::common::{validate_protocol_version, validate_schema};
+use crate::validation::state_transition::common::validate_schema;
 use crate::validation::state_transition::key_validation::validate_state_transition_identity_signature;
 
 use super::StateTransitionValidation;
@@ -111,7 +107,7 @@ impl StateTransitionValidation for IdentityCreditWithdrawalTransition {
         };
 
         // Check revision
-        if revision != (self.revision - 1) {
+        if revision + 1 != self.revision {
             return Ok(ConsensusValidationResult::new_with_error(
                 StateError::InvalidIdentityRevisionError {
                     identity_id: self.identity_id,

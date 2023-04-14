@@ -2,6 +2,7 @@ use crate::identifier::Identifier;
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
 use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use crate::identity::{IdentityPublicKey, KeyID, TimestampMillis};
+use crate::prelude::Revision;
 use serde::{Deserialize, Serialize};
 
 pub const IDENTITY_UPDATE_TRANSITION_ACTION_VERSION: u32 = 0;
@@ -14,6 +15,7 @@ pub struct IdentityUpdateTransitionAction {
     pub disable_public_keys: Vec<KeyID>,
     pub public_keys_disabled_at: Option<TimestampMillis>,
     pub identity_id: Identifier,
+    pub revision: Revision,
 }
 
 impl From<IdentityUpdateTransition> for IdentityUpdateTransitionAction {
@@ -23,6 +25,7 @@ impl From<IdentityUpdateTransition> for IdentityUpdateTransitionAction {
             add_public_keys,
             disable_public_keys,
             public_keys_disabled_at,
+            revision,
             ..
         } = value;
         IdentityUpdateTransitionAction {
@@ -34,6 +37,7 @@ impl From<IdentityUpdateTransition> for IdentityUpdateTransitionAction {
             disable_public_keys,
             public_keys_disabled_at,
             identity_id,
+            revision,
         }
     }
 }
@@ -45,6 +49,7 @@ impl From<&IdentityUpdateTransition> for IdentityUpdateTransitionAction {
             add_public_keys,
             disable_public_keys,
             public_keys_disabled_at,
+            revision,
             ..
         } = value;
         IdentityUpdateTransitionAction {
@@ -56,6 +61,7 @@ impl From<&IdentityUpdateTransition> for IdentityUpdateTransitionAction {
             disable_public_keys: disable_public_keys.clone(),
             public_keys_disabled_at: public_keys_disabled_at.clone(),
             identity_id: *identity_id,
+            revision: *revision,
         }
     }
 }

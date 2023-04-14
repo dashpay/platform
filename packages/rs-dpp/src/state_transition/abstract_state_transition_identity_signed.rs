@@ -6,9 +6,9 @@ use crate::data_contract::state_transition::errors::PublicKeyIsDisabledError;
 use crate::identity::signer::Signer;
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError,
-    PublicKeySecurityLevelNotMetError, StateTransitionIsNotSignedError, WrongPublicKeyPurposeError,
+    StateTransitionIsNotSignedError, WrongPublicKeyPurposeError,
 };
-use crate::util::vec;
+
 use crate::{
     identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel},
     prelude::*,

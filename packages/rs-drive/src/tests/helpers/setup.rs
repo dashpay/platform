@@ -35,7 +35,6 @@
 use crate::drive::block_info::BlockInfo;
 use crate::drive::config::DriveConfig;
 use crate::drive::Drive;
-use crate::fee_pools::epochs::Epoch;
 
 use crate::drive::object_size_info::DocumentInfo::DocumentRefWithoutSerialization;
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
