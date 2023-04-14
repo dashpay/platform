@@ -69,8 +69,7 @@ describe('getDocumentsHandlerFactory', () => {
 
     documentsFixture = [document];
 
-    documentsSerialized = documentsFixture
-      .map((documentItem) => Buffer.from(documentItem.toBuffer()));
+    documentsSerialized = documentsFixture.map((documentItem) => documentItem.toBuffer());
     proofFixture = {
       merkleProof: Buffer.alloc(1, 1),
     };
