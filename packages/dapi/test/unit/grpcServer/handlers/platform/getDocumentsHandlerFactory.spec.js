@@ -91,7 +91,7 @@ describe('getDocumentsHandlerFactory', () => {
     );
   });
 
-  it('should return valid result', async function it() {
+  it('should return valid result', async () => {
     response.setProof(null);
 
     driveStateRepositoryMock.fetchDocuments.resolves(response.serializeBinary());
@@ -105,7 +105,7 @@ describe('getDocumentsHandlerFactory', () => {
     expect(documentsBinary).to.have.lengthOf(documentsFixture.length);
 
     expect(driveStateRepositoryMock.fetchDocuments).to.be.calledOnceWith(
-      this.sinon.match((id) => id.equals(dataContractId.toBuffer())),
+      dataContractId.toBuffer(),
       documentType,
       {
         where,
@@ -124,7 +124,7 @@ describe('getDocumentsHandlerFactory', () => {
     expect(proof).to.be.undefined();
   });
 
-  it('should return proof', async function it() {
+  it('should return proof', async () => {
     request.getProve.returns(true);
 
     const result = await getDocumentsHandler(call);
@@ -132,7 +132,7 @@ describe('getDocumentsHandlerFactory', () => {
     expect(result).to.be.an.instanceOf(GetDocumentsResponse);
 
     expect(driveStateRepositoryMock.fetchDocuments).to.be.calledOnceWith(
-      this.sinon.match((id) => id.equals(dataContractId.toBuffer())),
+      dataContractId.toBuffer(),
       documentType,
       {
         where,

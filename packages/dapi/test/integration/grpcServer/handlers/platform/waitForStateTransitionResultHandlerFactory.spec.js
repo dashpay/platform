@@ -273,11 +273,10 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
 
     expect(merkleProof).to.deep.equal(proofFixture.merkleProof);
 
-    const { identityIds } = driveClientMock.fetchProofs.firstCall.firstArg;
-    expect(identityIds).to.deep.equal(
-      stateTransitionFixture.getModifiedDataIds()
+    expect(driveClientMock.fetchProofs).to.be.calledOnceWithExactly({
+      identityIds: stateTransitionFixture.getModifiedDataIds()
         .map((identifier) => identifier.toBuffer()),
-    );
+    });
   });
 
   it('should wait for state transition and return result with error', (done) => {
