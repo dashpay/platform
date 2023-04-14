@@ -81,7 +81,7 @@ module.exports = {
     },
     log: {
       file: {
-        level: ['0'],
+        level: [],
         path: path.join(HOME_DIR_PATH, 'logs', 'base', 'core.log'),
       },
     },

@@ -532,9 +532,15 @@ module.exports = {
           };
         }
 
+        const categories = []
+
+        if (config.core.debug) {
+          categories.push('all')
+        }
+
         config.core.log = {
           file: {
-            level: [String(config.core.debug)],
+            categories,
             path: path.join(HOME_DIR_PATH, 'logs', configName, 'core.log'),
           },
         };

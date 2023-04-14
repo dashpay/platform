@@ -4,9 +4,9 @@ reindex={{?it.core.reindex.enable}}1{{??}}0{{?}}
 logtimestamps=1
 maxconnections=256
 printtoconsole=0
-{{~it.core.log.file.level :debug}}
-debug={{=debug}}{{~}}
-debuglogfile=/tmp/debug.log
+{{~it.core.log.file.categories :category}}
+debug={{=category}}{{~}}
+debuglogfile=/var/log/dash/core.log
 logips={{=it.core.logIps }}
 
 # JSONRPC

@@ -27,7 +27,7 @@ module.exports = lodashMerge({}, baseConfig, {
     },
     log: {
       file: {
-        level: ['0'],
+        level: [],
         path: path.join(HOME_DIR_PATH, 'logs', 'testnet', 'core.log'),
       },
     },

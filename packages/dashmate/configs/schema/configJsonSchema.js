@@ -249,10 +249,15 @@ module.exports = {
             file: {
               type: 'object',
               properties: {
-                level: {
+                categories: {
                   type: 'array',
                   items: {
                     type: 'string',
+                    enum: ['all', 'net, tor', 'mempool', 'http', 'bench', 'zmq', 'walletdb', 'rpc', 'estimatefee',
+                      'addrman', 'selectcoins', 'reindex', 'cmpctblock', 'rand', 'prune', 'proxy', 'mempoolrej',
+                      'libevent', 'coindb', 'qt', 'leveldb', 'chainlocks', 'gobject', 'instantsend', 'llmq',
+                      'llmq-dkg', 'llmq-sigs', 'mnpayments', 'mnsync', 'coinjoin', 'spork', 'netconn'
+                    ],
                   },
                 },
                 path: {
@@ -261,7 +266,7 @@ module.exports = {
                 },
               },
               additionalProperties: false,
-              required: ['level', 'path'],
+              required: ['categories', 'path'],
             },
           },
           additionalProperties: false,

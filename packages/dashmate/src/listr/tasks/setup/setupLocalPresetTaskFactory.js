@@ -176,7 +176,7 @@ function setupLocalPresetTaskFactory(
                 config.set('core.log.file.path', coreLogFilePath);
 
                 if (ctx.debugLogs) {
-                  config.set('core.log.file.level', ['1']);
+                  config.set('core.log.file.categories', ['all']);
                 }
 
                 // Although not all nodes are miners, all nodes should be aware of
