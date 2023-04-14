@@ -199,6 +199,7 @@ impl Default for PlatformConfig {
                 keys: Keys::new_random_keys_with_seed(18012014), //Dash genesis day
                 genesis_height: 1,
                 genesis_core_height: 0,
+                chain_id: "chain_id".to_string(),
             },
             core: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),

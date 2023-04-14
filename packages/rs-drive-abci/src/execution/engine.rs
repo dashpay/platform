@@ -1,3 +1,4 @@
+use crate::abci::commit::Commit;
 use dashcore_rpc::json::QuorumHash;
 use dpp::bls_signatures;
 use dpp::bls_signatures::Serialize;
@@ -368,31 +369,6 @@ where
         Ok(())
     }
 
-    /// check if received withdrawal transactions are correct and match our withdrawal txs
-    pub fn check_withdrawals(
-        &self,
-        received_withdrawals: &WithdrawalTxs,
-        our_withdrawals: &WithdrawalTxs,
-        quorum_public_key: Option<bls_signatures::PublicKey>,
-    ) -> Result<(), AbciError> {
-        if received_withdrawals.ne(&our_withdrawals) {
-            return Err(AbciError::VoteExtensionMismatchReceived {
-                got: received_withdrawals.to_string(),
-                expected: our_withdrawals.to_string(),
-            });
-        }
-
-        // Now, verify signature
-        if let Some(public_key) = quorum_public_key {
-            match received_withdrawals.verify_signature(public_key) {
-                Ok(true) => return Ok(()),
-                Ok(false) => return Err(AbciError::VoteExtensionsSignatureInvalid),
-                Err(e) => return Err(e.into()),
-            }
-        }
-
-        Ok(())
-    }
     // Retrieve quorum public key
     fn get_quorum_key(&self, quorum_hash: Vec<u8>) -> Result<bls_signatures::PublicKey, Error> {
         let public_key = self
@@ -433,7 +409,7 @@ where
 
         // Let's decompose the request
         let RequestFinalizeBlock {
-            commit,
+            commit: commit_info,
             misbehavior,
             hash,
             height,
@@ -443,7 +419,21 @@ where
         } = request_finalize_block;
 
         //todo: block and header should not be optional
-        let block_header = block.unwrap().header.unwrap();
+        let block = block.ok_or(Error::Abci(AbciError::WrongFinalizeBlockReceived(
+            "empty block".into(),
+        )))?;
+        let block_header =
+            block
+                .header
+                .ok_or(Error::Abci(AbciError::WrongFinalizeBlockReceived(
+                    "missing block header".into(),
+                )))?;
+        let block_id = block_id.ok_or(Error::Abci(AbciError::WrongFinalizeBlockReceived(
+            "missing block id".into(),
+        )))?;
+        let commit_info = commit_info.ok_or(Error::Abci(AbciError::WrongFinalizeBlockReceived(
+            "missing commit".into(),
+        )))?;
 
         let Ok(proposer_protx_hash) = block_header.proposer_pro_tx_hash.try_into() else {
             validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
@@ -472,47 +462,44 @@ where
             return Ok(validation_result.into());
         }
 
-        // Next we need to verify that the signature returned from the quorum is valid
-        let commit = if let Some(commit) = commit {
-            commit
-        } else {
-            validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
-                "received a block for h: {} r: {} without a commit",
-                height, round
-            )));
-            return Ok(validation_result.into());
-        };
+        let quorum_public_key = self.get_quorum_key(commit_info.quorum_hash.clone())?;
 
-        let quorum_public_key = self.get_quorum_key(commit.quorum_hash.clone())?;
+        // Verify commit
+        let commit = Commit::new(commit_info.clone(), block_id.clone(), height);
+        commit
+            .verify_signature(
+                &commit_info.block_signature,
+                &block_header.chain_id,
+                height,
+                round,
+                &quorum_public_key,
+            )
+            .map_err(AbciError::from)?;
 
-        //todo: verify commit
-        // if let Some(block_id) = block_id {
-        //     let result = self.validate_commit(commit.clone(), block_id, quorum_public_key)?;
-        //     if !result.is_valid() {
-        //         return Ok(validation_result.into());
-        //     }
-        // } else {
-        //     validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
-        //         "received a block for h: {} r: {} without a block id",
-        //         height, round
-        //     )));
-        //     return Ok(validation_result.into());
-        // }
-
-        // Verify vote extensions
-        let received_withdrawals = WithdrawalTxs::from(&commit.threshold_vote_extensions);
+        // Verify vote extensions; right now, we only support withdrawal txs
+        let received_withdrawals = WithdrawalTxs::from(&commit_info.threshold_vote_extensions);
         let our_withdrawals = WithdrawalTxs::load(Some(transaction), &self.drive)
             .map_err(|e| AbciError::WithdrawalTransactionsDBLoadError(e.to_string()))?;
-        //todo: reenable check
-        //
-        // if let Err(e) = self.check_withdrawals(
-        //     &received_withdrawals,
-        //     &our_withdrawals,
-        //     Some(quorum_public_key),
-        // ) {
-        //     validation_result.add_error(e);
-        //     return Ok(validation_result.into());
-        // }
+
+        if received_withdrawals.ne(&our_withdrawals) {
+            return Err(AbciError::VoteExtensionMismatchReceived {
+                got: received_withdrawals.to_string(),
+                expected: our_withdrawals.to_string(),
+            }
+            .into());
+        }
+
+        // Now, verify signatures if present
+        match received_withdrawals.verify_signatures(
+            &self.config.abci.chain_id,
+            height,
+            round,
+            quorum_public_key,
+        ) {
+            Ok(true) => (),
+            Ok(false) => return Err(AbciError::VoteExtensionsSignatureInvalid.into()),
+            Err(e) => return Err(AbciError::from(e).into()),
+        };
 
         // Next let's check that the hash received is the same as the hash we expect
 

@@ -15,6 +15,7 @@ pub mod mimic;
 #[cfg(any(feature = "server", test))]
 mod server;
 
+pub mod commit;
 pub mod signature_verifier;
 pub mod withdrawal;
 

@@ -1,7 +1,7 @@
 //! Signature verification
 
 use dpp::bls_signatures::Serialize;
-use tenderdash_abci::proto::types::VoteExtension;
+use tenderdash_abci::proto::signatures::SignBytes;
 
 /// Errors occured during signature verification
 #[derive(Debug, thiserror::Error)]
@@ -9,6 +9,10 @@ pub enum SignatureError {
     /// Error occurred during bls signature verification
     #[error("bls error set: {0}")]
     BLSError(#[from] dpp::bls_signatures::Error),
+
+    /// Error creating canonical form of signed data
+    #[error("error creating canonical form of signed data: {0}")]
+    CanonicalError(tenderdash_abci::proto::Error),
 }
 /// SignatureVerifier can be used to verify a BLS signature.
 pub trait SignatureVerifier {
@@ -21,40 +25,32 @@ pub trait SignatureVerifier {
     /// * Err(e) on error
     fn verify_signature(
         &self,
-        quorum_public_key: dpp::bls_signatures::PublicKey,
+        signature: &Vec<u8>,
+        chain_id: &str,
+        height: i64,
+        round: i32,
+        quorum_public_key: &dpp::bls_signatures::PublicKey,
     ) -> Result<bool, SignatureError>;
 }
 
-impl<T: SignatureVerifier> SignatureVerifier for Vec<T> {
+impl<T: SignBytes> SignatureVerifier for T {
     fn verify_signature(
         &self,
-        quorum_public_key: dpp::bls_signatures::PublicKey,
+        signature: &Vec<u8>,
+        chain_id: &str,
+        height: i64,
+        round: i32,
+        quorum_public_key: &dpp::bls_signatures::PublicKey,
     ) -> Result<bool, SignatureError> {
-        for tx in self {
-            if !tx.verify_signature(quorum_public_key)? {
-                return Ok(false);
-            }
-        }
-
-        Ok(true)
-    }
-}
-
-impl SignatureVerifier for VoteExtension {
-    fn verify_signature(
-        &self,
-        _quorum_public_key: dpp::bls_signatures::PublicKey,
-    ) -> Result<bool, SignatureError> {
-        let signature = &self.signature;
-
         // We could have received a fake commit, so signature validation needs to be returned if error as a simple validation result
-        let _signature = match dpp::bls_signatures::Signature::from_bytes(signature.as_slice()) {
+        let signature = match dpp::bls_signatures::Signature::from_bytes(signature.as_slice()) {
             Ok(signature) => signature,
             Err(e) => return Err(SignatureError::from(e)),
         };
-        //  TODO: implement correct signature verification for VoteExtension. It uses CanonicalVoteExtension.
-        // For now, we just return `true`
-        // Ok(quorum_public_key.verify(signature, &self.extension))
-        Ok(true)
+
+        let hash = self
+            .sha256(chain_id, height, round)
+            .map_err(SignatureError::CanonicalError)?;
+        Ok(quorum_public_key.verify(signature, hash))
     }
 }

@@ -92,6 +92,24 @@ impl<'a> WithdrawalTxs<'a> {
             })
             .collect::<Vec<ExtendVoteExtension>>()
     }
+
+    /// Verify signatures of all withdrawal TXs
+    pub fn verify_signatures(
+        &self,
+        chain_id: &str,
+        height: i64,
+        round: i32,
+        quorum_public_key: bls_signatures::PublicKey,
+    ) -> Result<bool, SignatureError> {
+        // self.inner.all(|s| s.verify_signature())
+        for s in &self.inner {
+            if !s.verify_signature(&s.signature, chain_id, height, round, &quorum_public_key)? {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
+    }
 }
 
 impl<'a> Display for WithdrawalTxs<'a> {
@@ -135,7 +153,9 @@ impl<'a> From<&Vec<VoteExtension>> for WithdrawalTxs<'a> {
 
 impl<'a> PartialEq for WithdrawalTxs<'a> {
     /// Two sets of withdrawal transactions are equal if all their inner raw transactions are equal.
-    /// Notes:
+    ///
+    /// ## Notes
+    ///
     /// 1. We don't compare `drive_operations`, as this is internal utility fields
     /// 2. For a transaction, we don't compare signatures if at least one of them is empty
     fn eq(&self, other: &Self) -> bool {
@@ -143,21 +163,12 @@ impl<'a> PartialEq for WithdrawalTxs<'a> {
             return false;
         }
 
-        std::iter::zip(&self.inner,& other.inner).all(|(left, right)| {
+        std::iter::zip(&self.inner, &other.inner).all(|(left, right)| {
             left.r#type == right.r#type
                 && left.extension == right.extension
                 && (left.signature.len() == 0
                     || right.signature.len() == 0
                     || left.signature == right.signature)
         })
-    }
-}
-
-impl<'a> SignatureVerifier for WithdrawalTxs<'a> {
-    fn verify_signature(
-        &self,
-        quorum_public_key: bls_signatures::PublicKey,
-    ) -> Result<bool, SignatureError> {
-        self.inner.verify_signature(quorum_public_key)
     }
 }

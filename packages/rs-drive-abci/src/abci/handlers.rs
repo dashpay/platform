@@ -34,7 +34,6 @@
 
 use crate::abci::server::AbciApplication;
 use crate::rpc::core::CoreRPCLike;
-use dpp::ProtocolError;
 use drive::fee::credits::SignedCredits;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
@@ -107,7 +106,6 @@ where
         }
 
         //todo: we need to set the block hash
-
         let BlockExecutionOutcome {
             app_hash,
             tx_results,
@@ -177,7 +175,7 @@ where
         let transaction = transaction_guard.as_ref().unwrap();
 
         // We can take the core chain lock update here because it won't be used anywhere else
-        if let Some(c) = request.core_chain_lock_update.take() {
+        if let Some(_c) = request.core_chain_lock_update.take() {
             //todo: if there is a core chain lock update we need to validate it
         }
 
@@ -238,12 +236,11 @@ where
         let got: WithdrawalTxs = request.vote_extensions.into();
         let expected = WithdrawalTxs::load(Some(transaction), &self.platform.drive)?;
 
-        if let Err(err) = self.platform.check_withdrawals(&got, &expected, None) {
+        if got.ne(&expected) {
             tracing::error!(
                 method = "verify_vote_extension",
                 ?got,
                 ?expected,
-                ?err,
                 "vote extension mismatch"
             );
             Ok(proto::ResponseVerifyVoteExtension {
@@ -297,7 +294,7 @@ where
     }
 
     fn check_tx(&self, request: RequestCheckTx) -> Result<ResponseCheckTx, ResponseException> {
-        let RequestCheckTx { tx, r#type } = request;
+        let RequestCheckTx { tx, r#type: _ } = request;
         let validation_result = self.platform.check_tx(tx)?;
 
         // If there are no execution errors the code will be 0

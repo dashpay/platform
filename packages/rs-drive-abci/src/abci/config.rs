@@ -33,6 +33,10 @@ pub struct AbciConfig {
     /// Height of core at genesis
     #[serde(default = "AbciConfig::default_genesis_core_height")]
     pub genesis_core_height: u32,
+
+    /// Chain ID of the network to use
+    #[serde(default)]
+    pub chain_id: String,
 }
 
 impl AbciConfig {
