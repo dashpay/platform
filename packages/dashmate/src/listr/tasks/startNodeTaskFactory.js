@@ -6,6 +6,18 @@ const { Observable } = require('rxjs');
 
 const { NETWORK_LOCAL } = require('../../constants');
 
+const ensureLogFilePath = (logFilePath) => {
+  // Remove directory that could potentially be created by Docker mount
+  if (fs.existsSync(logFilePath) && fs.lstatSync(logFilePath).isDirectory()) {
+    fs.rmSync(logFilePath, { recursive: true });
+  }
+
+  if (!fs.existsSync(logFilePath)) {
+    fs.mkdirSync(path.dirname(logFilePath), { recursive: true });
+    fs.writeFileSync(logFilePath, '');
+  }
+};
+
 /**
  *
  * @param {DockerCompose} dockerCompose
@@ -47,42 +59,15 @@ function startNodeTaskFactory(
     }
 
     const coreLogFilePath = config.get('core.log.file.path');
-
-    // Remove directory that could potentially be created by Docker mount
-    if (fs.existsSync(coreLogFilePath) && fs.lstatSync(coreLogFilePath).isDirectory()) {
-      fs.rmSync(coreLogFilePath, { recursive: true });
-    }
-
-    if (!fs.existsSync(coreLogFilePath)) {
-      fs.mkdirSync(path.dirname(coreLogFilePath), { recursive: true });
-      fs.writeFileSync(coreLogFilePath, '');
-    }
+    ensureLogFilePath(coreLogFilePath);
 
     // Check Drive log files are created
     if (config.get('platform.enable')) {
       const prettyFilePath = config.get('platform.drive.abci.log.prettyFile.path');
-
-      // Remove directory that could potentially be created by Docker mount
-      if (fs.existsSync(prettyFilePath) && fs.lstatSync(prettyFilePath).isDirectory()) {
-        fs.rmSync(prettyFilePath, { recursive: true });
-      }
-
-      if (!fs.existsSync(prettyFilePath)) {
-        fs.mkdirSync(path.dirname(prettyFilePath), { recursive: true });
-        fs.writeFileSync(prettyFilePath, '');
-      }
+      ensureLogFilePath(prettyFilePath);
 
       const jsonFilePath = config.get('platform.drive.abci.log.jsonFile.path');
-
-      // Remove directory that could potentially be created by Docker mount
-      if (fs.existsSync(jsonFilePath) && fs.lstatSync(jsonFilePath).isDirectory()) {
-        fs.rmSync(jsonFilePath, { recursive: true });
-      }
-
-      if (!fs.existsSync(jsonFilePath)) {
-        fs.mkdirSync(path.dirname(jsonFilePath), { recursive: true });
-        fs.writeFileSync(jsonFilePath, '');
-      }
+      ensureLogFilePath(jsonFilePath);
     }
 
     return new Listr([
