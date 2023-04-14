@@ -4,9 +4,9 @@ const {
   asValue,
 } = require('awilix');
 
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
+const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 
 const createTestDIContainer = require('../../../../lib/test/createTestDIContainer');
 const InvalidArgumentAbciError = require('../../../../lib/abci/errors/InvalidArgumentAbciError');
@@ -29,9 +29,9 @@ describe('queryHandlerFactory', function main() {
 
     container = await createTestDIContainer(this.blsAdapter, this.dppWasm);
 
-    dataContract = getDataContractFixture();
-    documents = getDocumentsFixture(dataContract);
-    identity = getIdentityFixture();
+    dataContract = await getDataContractFixture();
+    documents = await getDocumentsFixture(dataContract);
+    identity = await getIdentityFixture();
 
     identityQueryHandlerMock = this.sinon.stub();
     identityQueryHandlerMock.resolves({

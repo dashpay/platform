@@ -13,7 +13,7 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
 
 const dataContractQueryHandlerFactory = require('../../../../../lib/abci/handlers/query/dataContractQueryHandlerFactory');
 
@@ -31,8 +31,8 @@ describe('dataContractQueryHandlerFactory', () => {
   let responseMock;
   let dataContractRepositoryMock;
 
-  beforeEach(function beforeEach() {
-    dataContract = getDataContractFixture();
+  beforeEach(async function beforeEach() {
+    dataContract = await getDataContractFixture();
 
     createQueryResponseMock = this.sinon.stub();
 

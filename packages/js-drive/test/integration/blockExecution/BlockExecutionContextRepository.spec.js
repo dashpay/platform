@@ -20,7 +20,7 @@ describe('BlockExecutionContextRepository', () => {
     const dataContract = await getDataContractFixture();
     delete dataContract.entropy;
 
-    const plainObject = getBlockExecutionContextObjectFixture(dataContract);
+    const plainObject = await getBlockExecutionContextObjectFixture(dataContract);
 
     blockExecutionContext = new BlockExecutionContext(this.dppWasm);
     blockExecutionContext.fromObject(plainObject);

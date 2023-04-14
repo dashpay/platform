@@ -1,4 +1,4 @@
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 
 const handleUpdatedVotingAddressFactory = require('../../../../lib/identity/masternode/handleUpdatedVotingAddressFactory');
 const StorageResult = require('../../../../lib/storage/StorageResult');
@@ -20,7 +20,7 @@ describe('handleUpdatedVotingAddressFactory', () => {
     ({ Identifier, KeyType } = this.dppWasm);
   });
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     smlEntry = {
       proRegTxHash: '5557273f5922d9925e2327908ddb128bcf8e055a04d86e23431809bedd077060',
       confirmedHash: '0000003da09fd100c60ad5743c44257bb9220ad8162a9b6cae9d005c8e465dba',
@@ -40,7 +40,7 @@ describe('handleUpdatedVotingAddressFactory', () => {
 
     fetchTransactionMock = this.sinon.stub().resolves(transactionFixture);
 
-    identity = getIdentityFixture();
+    identity = await getIdentityFixture();
 
     identityRepositoryMock = {
       update: this.sinon.stub(),

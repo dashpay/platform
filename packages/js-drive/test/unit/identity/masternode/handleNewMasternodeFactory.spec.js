@@ -1,6 +1,6 @@
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 
 const Address = require('@dashevo/dashcore-lib/lib/address');
 const Script = require('@dashevo/dashcore-lib/lib/script');
@@ -28,16 +28,16 @@ describe('handleNewMasternodeFactory', () => {
     ({ Identifier, KeyType } = this.dppWasm);
   });
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     const smlFixture = getSmlFixture();
     [masternodeEntry] = smlFixture[0].mnList;
     masternodeEntry.operatorPayoutAddress = 'yTCALGQTFNsA4pMPLTKAWdaLRmxfGpbujY';
 
-    dataContract = getDataContractFixture();
+    dataContract = await getDataContractFixture();
 
     dppMock = createDPPMock(this.sinon);
 
-    identityFixture = getIdentityFixture();
+    identityFixture = await getIdentityFixture();
 
     createMasternodeIdentityMock = this.sinon.stub().resolves(identityFixture);
     createRewardShareDocumentMock = this.sinon.stub();
