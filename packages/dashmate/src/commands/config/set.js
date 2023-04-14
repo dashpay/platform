@@ -1,5 +1,5 @@
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
-const configJsonSchema = require("../../../configs/schema/configJsonSchema");
+const configJsonSchema = require('../../../configs/schema/configJsonSchema');
 
 class ConfigSetCommand extends ConfigBaseCommand {
   /**
@@ -22,25 +22,25 @@ class ConfigSetCommand extends ConfigBaseCommand {
     }
 
     // check for existence
-    config.get(optionPath)
+    config.get(optionPath);
 
-    const path = optionPath.split('.')
+    const path = optionPath.split('.');
 
-    let schema = configJsonSchema
+    let schema = configJsonSchema;
 
     for (const e of path) {
-      if (schema['$ref']) {
-        const [, , definitionName] = schema['$ref'].split('/')
-        schema = configJsonSchema.definitions[definitionName].properties
+      if (schema.$ref) {
+        const [, , definitionName] = schema.$ref.split('/');
+        schema = configJsonSchema.definitions[definitionName].properties;
       } else {
-        schema = schema.properties[e]
+        schema = schema.properties[e];
       }
     }
 
-    let schemaType = schema.type
+    let schemaType = schema.type;
 
     if (Array.isArray(schemaType)) {
-      schemaType = schemaType[0]
+      [schemaType] = schemaType;
     }
 
     if (schemaType === 'object' || schemaType === 'array') {
