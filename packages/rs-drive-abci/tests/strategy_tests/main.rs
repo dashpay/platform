@@ -195,11 +195,19 @@ pub enum IdentityUpdateOp {
 }
 
 #[derive(Clone, Debug)]
+pub enum DataContractUpdateOp {
+    DataContractNewDocumentTypes(Range<u16>),
+    DataContractNewFields(Range<u16>, Range<u16>), // How many new fields on how many document types
+    DataContractNewFieldsAndIndexes(Range<u16>, Range<u16>),
+}
+
+#[derive(Clone, Debug)]
 pub enum OperationType {
     Document(DocumentOp),
     IdentityTopUp,
     IdentityUpdate(IdentityUpdateOp),
     IdentityWithdrawal,
+    ContractUpdate(DataContractUpdateOp)
 }
 
 #[derive(Clone, Debug)]
@@ -689,6 +697,9 @@ impl Strategy {
                                 create_identity_withdrawal_transition(random_identity, signer, rng);
                             operations.push(state_transition);
                         }
+                    }
+                    OperationType::ContractUpdate(contractUpdateOp) if !current_identities.is_empty() => {
+
                     }
                     _ => {}
                 }
