@@ -36,6 +36,9 @@ pub enum KeyType {
     BLS12_381 = 1,
     ECDSA_HASH160 = 2,
     BIP13_SCRIPT_HASH = 3,
+    // TODO: re-enable this keys
+    // EDDSA_25519 = 4,
+    // EDDSA_25519_HASH160 = 5,
 }
 
 lazy_static! {
