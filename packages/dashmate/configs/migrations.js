@@ -534,7 +534,7 @@ module.exports = {
 
         config.core.log = {
           file: {
-            level: [config.core.debug],
+            level: [String(config.core.debug)],
             path: path.join(HOME_DIR_PATH, 'logs', configName, 'core.log'),
           },
         };
