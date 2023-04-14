@@ -26,7 +26,6 @@ describe('SimplifiedMasternodeListDAPIAddressProvider', () => {
       platformHTTPPort: 3200,
       platformNodeID: 'fe84df23e1a7f1db40e8e3fd3a4d88662bf0d89d',
     }, {
-
       proRegTxHash: 'a2c9b34ef525271d84f70a0d4d2c107e8a2f81cd4d8256dc7b3911ed253d5611',
       confirmedHash: '29ff8afb463604ba7d984b483e92dfefa4e80e12de3acae6d75f9b910df9eab6',
       service: '192.168.65.2:20201',
