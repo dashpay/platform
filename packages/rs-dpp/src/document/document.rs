@@ -55,7 +55,7 @@ use crate::identity::TimestampMillis;
 use crate::prelude::Identifier;
 use crate::prelude::Revision;
 
-use crate::util::hash::hash;
+use crate::util::hash::hash_to_vec;
 use crate::util::json_value::JsonValueExt;
 use crate::ProtocolError;
 
@@ -213,7 +213,7 @@ impl Document {
         let mut buf = contract.id.to_vec();
         buf.extend(document_type.name.as_bytes());
         buf.extend(self.serialize(document_type)?);
-        Ok(hash(buf))
+        Ok(hash_to_vec(buf))
     }
 
     pub fn increment_revision(&mut self) -> Result<(), ProtocolError> {

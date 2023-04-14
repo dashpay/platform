@@ -1,3 +1,4 @@
+use crate::data_contract::generate_data_contract_id;
 use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use crate::identity::signer::Signer;
 use crate::identity::{KeyID, PartialIdentity};
@@ -15,6 +16,7 @@ impl DataContractCreateTransition {
         signer: &S,
     ) -> Result<Self, ProtocolError> {
         data_contract.owner_id = identity.id;
+        data_contract.id = generate_data_contract_id(identity.id, data_contract.entropy);
         let mut transition = DataContractCreateTransition {
             protocol_version: LATEST_VERSION,
             transition_type: DataContractCreate,

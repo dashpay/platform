@@ -1,8 +1,12 @@
 use dashcore::hashes::{ripemd160, sha256, Hash};
 use sha2::{Digest, Sha256};
 
-pub fn hash(payload: impl AsRef<[u8]>) -> Vec<u8> {
+pub fn hash_to_vec(payload: impl AsRef<[u8]>) -> Vec<u8> {
     Sha256::digest(Sha256::digest(payload)).to_vec()
+}
+
+pub fn hash(payload: impl AsRef<[u8]>) -> [u8; 32] {
+    Sha256::digest(Sha256::digest(payload)).into()
 }
 
 pub fn ripemd160_sha256(data: &[u8]) -> Vec<u8> {

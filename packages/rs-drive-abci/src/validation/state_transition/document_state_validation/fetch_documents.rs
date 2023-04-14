@@ -1,25 +1,19 @@
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
-use std::convert::TryInto;
 
 use crate::error::Error;
 use crate::platform::PlatformStateRef;
-use dpp::block_time_window::validation_result;
 use dpp::consensus::basic::document::InvalidDocumentTypeError;
 use dpp::consensus::basic::BasicError;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::DriveContractExt;
-use dpp::document::{Document, ExtendedDocument};
-use dpp::platform_value::string_encoding::Encoding;
-use dpp::platform_value::{platform_value, Identifier, Value};
-use dpp::prelude::{DataContract, DocumentTransition};
-use dpp::state_repository::StateRepositoryLike;
-use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
+use dpp::document::Document;
+use dpp::get_from_transition;
+use dpp::platform_value::{Identifier, Value};
+use dpp::prelude::DocumentTransition;
 use dpp::validation::ConsensusValidationResult;
-use dpp::{get_from_transition, ProtocolError};
 use drive::contract::Contract;
 use drive::drive::Drive;
-use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::TransactionArg;
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 

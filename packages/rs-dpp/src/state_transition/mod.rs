@@ -27,8 +27,6 @@ use crate::ProtocolError;
 pub use state_transition_facade::*;
 pub use state_transition_factory::*;
 
-use self::state_transition_execution_context::StateTransitionExecutionContext;
-
 mod state_transition_types;
 pub mod validation;
 

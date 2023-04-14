@@ -14,7 +14,7 @@ use crate::{
         state_transition::asset_lock_proof::AssetLockTransactionOutputFetcher,
     },
     state_repository::StateRepositoryLike,
-    state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionLike},
+    state_transition::{StateTransition, StateTransitionIdentitySigned},
     validation::SimpleConsensusValidationResult,
     ProtocolError,
 };

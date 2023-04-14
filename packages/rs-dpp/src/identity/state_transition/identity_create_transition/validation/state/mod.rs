@@ -4,7 +4,7 @@ use crate::identity::state_transition::identity_create_transition::{
 };
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::state_transition::StateTransitionLike;
+
 use crate::validation::{AsyncDataValidator, ConsensusValidationResult};
 use crate::{NonConsensusError, ProtocolError};
 use async_trait::async_trait;

@@ -29,6 +29,9 @@ pub enum Purpose {
     DECRYPTION = 2,
     /// this key cannot be used for signing documents
     WITHDRAW = 3,
+    // TODO: re-enable this
+    // /// this key cannot be used for signing documents
+    // SYSTEM = 4
 }
 
 impl TryFrom<u8> for Purpose {

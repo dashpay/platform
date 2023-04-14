@@ -2,16 +2,13 @@ use dpp::consensus::state::identity::IdentityAlreadyExistsError;
 use dpp::identity::state_transition::identity_create_transition::validation::basic::IDENTITY_CREATE_TRANSITION_SCHEMA_VALIDATOR;
 use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransitionAction;
 use dpp::identity::PartialIdentity;
-use dpp::{
-    identity::state_transition::identity_create_transition::validation::basic::IDENTITY_CREATE_TRANSITION_SCHEMA,
-    validation::ConsensusValidationResult,
-};
+use dpp::validation::ConsensusValidationResult;
 use dpp::{
     identity::state_transition::identity_create_transition::IdentityCreateTransition,
     state_transition::StateTransitionAction, validation::SimpleConsensusValidationResult,
 };
+use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
-use drive::{drive::Drive, grovedb::Transaction};
 
 use crate::rpc::core::CoreRPCLike;
 use crate::validation::state_transition::key_validation::{

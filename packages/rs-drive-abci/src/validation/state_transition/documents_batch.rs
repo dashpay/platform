@@ -1,42 +1,20 @@
-use std::collections::{btree_map::Entry, BTreeMap, HashMap};
+use std::collections::{btree_map::Entry, BTreeMap};
 
-use dpp::block_time_window::validation_result;
+use dpp::document::document_transition::{DocumentTransitionExt, DocumentTransitionObjectLike};
 use dpp::document::validation::basic::validate_documents_batch_transition_basic::DOCUMENTS_BATCH_TRANSITIONS_SCHEMA_VALIDATOR;
 use dpp::identity::PartialIdentity;
 use dpp::{
-    consensus::{basic::BasicError, ConsensusError},
-    data_contract::{errors::DataContractNotPresentError, DataContract, DriveContractExt},
+    consensus::basic::BasicError,
     document::{
-        document_transition::{
-            DocumentCreateTransitionAction, DocumentDeleteTransitionAction,
-            DocumentReplaceTransitionAction, DocumentTransitionAction, DocumentTransitionExt,
-            DocumentTransitionObjectLike,
-        },
-        validation::{
-            basic::validate_documents_batch_transition_basic::{
-                validate_document_transitions as validate_document_transitions_basic,
-                DOCUMENTS_BATCH_TRANSITIONS_SCHEMA,
-            },
-            state::validate_documents_batch_transition_state::{
-                check_created_inside_time_window, check_if_document_can_be_found,
-                check_if_document_is_already_present, check_if_timestamps_are_equal,
-                check_ownership, check_revision, check_updated_inside_time_window,
-            },
-        },
-        Document, DocumentsBatchTransition,
+        validation::basic::validate_documents_batch_transition_basic::validate_document_transitions as validate_document_transitions_basic,
+        DocumentsBatchTransition,
     },
-    get_from_transition,
-    platform_value::{platform_value, string_encoding::Encoding, Identifier, Value},
+    platform_value::{Identifier, Value},
     prelude::DocumentTransition,
     state_transition::{
         state_transition_execution_context::StateTransitionExecutionContext, StateTransitionAction,
     },
     validation::{ConsensusValidationResult, SimpleConsensusValidationResult, ValidationResult},
-    ProtocolError,
-};
-use drive::{
-    grovedb::Transaction,
-    query::{DriveQuery, InternalClauses, WhereClause, WhereOperator},
 };
 
 use drive::drive::Drive;

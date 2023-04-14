@@ -24,11 +24,8 @@ ARG ALPINE_VERSION=3.17
 FROM rust:alpine${ALPINE_VERSION} as deps
 
 #
-# Update Rust runtime
+# Install some dependencies
 #
-ARG CARGO_BUILD_PROFILE=debug
-RUN rustup install stable
-
 RUN apk add --no-cache \
         alpine-sdk \
         bash \
@@ -37,19 +34,30 @@ RUN apk add --no-cache \
         linux-headers \
         openssl-dev \
         perl \
-        sccache \
         unzip \
         wget
 
 SHELL ["/bin/bash", "-c"]
 
+ARG TARGETARCH
+
+RUN rustup install stable
+
 # Install protoc - protobuf compiler
 # The one shipped with Alpine does not work
-ARG PROTOC_ARCH=x86_64
-RUN wget -q -O /tmp/protoc.zip https://github.com/protocolbuffers/protobuf/releases/download/v22.2/protoc-22.2-linux-${PROTOC_ARCH}.zip && \
+RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else export PROTOC_ARCH=x86_64; fi; \
+    curl -Ls https://github.com/protocolbuffers/protobuf/releases/download/v22.2/protoc-22.2-linux-${PROTOC_ARCH}.zip \
+        -o /tmp/protoc.zip && \
     unzip -qd /opt/protoc /tmp/protoc.zip && \
     rm /tmp/protoc.zip && \
     ln -s /opt/protoc/bin/protoc /usr/bin/
+
+# Install sccache for caching
+RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else export SCC_ARCH=x86_64; fi; \
+    curl -Ls \
+        https://github.com/mozilla/sccache/releases/download/v0.4.1/sccache-v0.4.1-${SCC_ARCH}-unknown-linux-musl.tar.gz | \
+        tar -C /tmp -xz && \
+        mv /tmp/sccache-*/sccache /usr/bin/
 
 #
 # EXECUTE BUILD
@@ -63,15 +71,18 @@ COPY . .
 #
 # Configure sccache
 #
+# Activate sccache for Rust code
+ENV RUSTC_WRAPPER=/usr/bin/sccache
 # Set args below to use Github Actions cache; see https://github.com/mozilla/sccache/blob/main/docs/GHA.md
 ARG SCCACHE_GHA_ENABLED
 ARG ACTIONS_CACHE_URL
 ARG ACTIONS_RUNTIME_TOKEN
 
-# Activate sccache for Rust code
-ENV RUSTC_WRAPPER=/usr/bin/sccache
 # Disable incremental buildings, not supported by sccache
 ENV CARGO_INCREMENTAL=false
+
+# Select whether we want dev or release
+ARG CARGO_BUILD_PROFILE=dev
 
 # Run the build, with extensive caching.
 # 
@@ -81,15 +92,25 @@ ENV CARGO_INCREMENTAL=false
 # 2. We add `--config net.git-fetch-with-cli=true` to address ARM build issue,
 # see https://github.com/rust-lang/cargo/issues/10781#issuecomment-1441071052
 # 3. To preserve space on github cache, we call `cargo clean`.
-RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
+# 4. Github Actions have shared networking configured, so we need to set a random
+# SCCACHE_SERVER_PORT port to avoid conflicts in case of parallel compilation
+# 5. We also set RUSTC to include exact toolchain name in compilation command, and
+# include this in cache key
+# 6. We build `dashcore-rpc` first, as arm64 builder on github hangs if we don't do this.
+RUN --mount=type=cache,sharing=private,target=/root/.cache/sccache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
+    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
+    cargo build \
+        --package dashcore-rpc \
+       --config net.git-fetch-with-cli=true && \
     cargo build \
         --package drive-abci \
         --config net.git-fetch-with-cli=true && \
-    cp /usr/src/platform/target/${CARGO_BUILD_PROFILE}/drive-abci /usr/src/platform/drive-abci && \
-    cargo clean
+    cp /usr/src/platform/target/*/drive-abci /usr/src/platform/drive-abci && \
+    cargo clean && \
+    sccache --show-stats
 
 #
 # FINAL IMAGE

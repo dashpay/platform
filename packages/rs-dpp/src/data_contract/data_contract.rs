@@ -27,7 +27,7 @@ use crate::data_contract::get_binary_properties_from_schema::get_binary_properti
 use crate::{
     errors::ProtocolError,
     metadata::Metadata,
-    util::{hash::hash, serializer},
+    util::{hash::hash_to_vec, serializer},
 };
 use crate::{identifier, Convertible};
 use platform_value::string_encoding::Encoding;
@@ -291,7 +291,7 @@ impl DataContract {
 
     // Returns hash from Data Contract
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash(self.to_buffer()?))
+        Ok(hash_to_vec(self.to_buffer()?))
     }
 
     /// Increments version of Data Contract

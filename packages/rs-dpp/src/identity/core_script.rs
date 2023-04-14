@@ -1,8 +1,11 @@
+use dashcore::blockdata::opcodes;
 use std::fmt;
 use std::ops::Deref;
 
 use dashcore::Script as DashcoreScript;
 use platform_value::string_encoding::{self, Encoding};
+use rand::rngs::StdRng;
+use rand::Rng;
 
 use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
@@ -24,11 +27,33 @@ impl CoreScript {
     pub fn from_string(encoded_value: &str, encoding: Encoding) -> Result<Self, ProtocolError> {
         let vec = string_encoding::decode(encoded_value, encoding)?;
 
-        Ok(Self(DashcoreScript::from(vec)))
+        Ok(Self(vec.into()))
     }
 
     pub fn from_bytes(bytes: Vec<u8>) -> Self {
-        Self(DashcoreScript::from(bytes))
+        Self(bytes.into())
+    }
+
+    pub fn random_p2pkh(rng: &mut StdRng) -> Self {
+        let mut bytes = vec![
+            opcodes::all::OP_DUP.into_u8(),
+            opcodes::all::OP_HASH160.into_u8(),
+            opcodes::all::OP_PUSHBYTES_20.into_u8(),
+        ];
+        bytes.append(&mut rng.gen::<[u8; 20]>().to_vec());
+        bytes.push(opcodes::all::OP_EQUALVERIFY.into_u8());
+        bytes.push(opcodes::all::OP_CHECKSIG.into_u8());
+        Self::from_bytes(bytes)
+    }
+
+    pub fn random_p2sh(rng: &mut StdRng) -> Self {
+        let mut bytes = vec![
+            opcodes::all::OP_HASH160.into_u8(),
+            opcodes::all::OP_PUSHBYTES_20.into_u8(),
+        ];
+        bytes.append(&mut rng.gen::<[u8; 20]>().to_vec());
+        bytes.push(opcodes::all::OP_EQUAL.into_u8());
+        Self::from_bytes(bytes)
     }
 }
 

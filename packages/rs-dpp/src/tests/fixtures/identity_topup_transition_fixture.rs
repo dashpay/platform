@@ -2,9 +2,7 @@ use crate::state_transition::StateTransitionType;
 use dashcore::PrivateKey;
 use platform_value::{platform_value, BinaryData, Identifier, Value};
 
-use crate::tests::fixtures::{
-    instant_asset_lock_proof_fixture, raw_instant_asset_lock_proof_fixture,
-};
+use crate::tests::fixtures::raw_instant_asset_lock_proof_fixture;
 use crate::version;
 
 //3bufpwQjL5qsvuP4fmCKgXJrKG852DDMYfi9J6XKqPAT

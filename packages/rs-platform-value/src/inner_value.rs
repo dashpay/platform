@@ -95,6 +95,12 @@ impl Value {
         Ok(())
     }
 
+    pub fn remove_optional_value_if_empty_array(&mut self, key: &str) -> Result<(), Error> {
+        let map = self.as_map_mut_ref()?;
+        map.remove_optional_key_if_empty_array(key);
+        Ok(())
+    }
+
     pub fn remove_integer<T>(&mut self, key: &str) -> Result<T, Error>
     where
         T: TryFrom<i128>

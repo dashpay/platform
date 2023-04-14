@@ -7,11 +7,10 @@ use std::convert::{TryFrom, TryInto};
 
 use bincode::{Decode, Encode};
 use bls_signatures::Serialize as BlsSerialize;
-use dashcore::secp256k1::ecdsa::Signature;
-use dashcore::secp256k1::PublicKey;
+
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use platform_value::{BinaryData, ReplacementType, Value, ValueMapHelper};
+use platform_value::{BinaryData, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
@@ -21,14 +20,9 @@ use crate::errors::ProtocolError;
 use crate::identity::signer::Signer;
 use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
 use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
-use crate::util::{serializer, vec};
-use crate::validation::{
-    ConsensusValidationResult, SimpleConsensusValidationResult, SimpleValidationResult,
-    ValidationResult,
-};
-use crate::{
-    BlsModule, Convertible, InvalidVectorSizeError, PublicKeyValidationError, SerdeParsingError,
-};
+use crate::util::vec;
+use crate::validation::SimpleConsensusValidationResult;
+use crate::{BlsModule, Convertible, InvalidVectorSizeError, SerdeParsingError};
 
 pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
 

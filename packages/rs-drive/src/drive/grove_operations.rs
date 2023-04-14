@@ -240,6 +240,38 @@ pub enum QueryType {
     StatefulQuery,
 }
 
+impl From<BatchDeleteApplyType> for QueryType {
+    fn from(value: BatchDeleteApplyType) -> Self {
+        match value {
+            BatchDeleteApplyType::StatelessBatchDelete {
+                is_sum_tree,
+                estimated_value_size,
+            } => QueryType::StatelessQuery {
+                in_tree_using_sums: is_sum_tree,
+                query_target: QueryTarget::QueryTargetValue(estimated_value_size),
+                estimated_reference_sizes: vec![],
+            },
+            BatchDeleteApplyType::StatefulBatchDelete { .. } => QueryType::StatefulQuery,
+        }
+    }
+}
+
+impl From<&BatchDeleteApplyType> for QueryType {
+    fn from(value: &BatchDeleteApplyType) -> Self {
+        match value {
+            BatchDeleteApplyType::StatelessBatchDelete {
+                is_sum_tree,
+                estimated_value_size,
+            } => QueryType::StatelessQuery {
+                in_tree_using_sums: *is_sum_tree,
+                query_target: QueryTarget::QueryTargetValue(*estimated_value_size),
+                estimated_reference_sizes: vec![],
+            },
+            BatchDeleteApplyType::StatefulBatchDelete { .. } => QueryType::StatefulQuery,
+        }
+    }
+}
+
 impl Drive {
     /// Pushes the `OperationCost` of inserting an element in groveDB to `drive_operations`.
     pub fn grove_insert<'p, P>(
@@ -1498,6 +1530,100 @@ impl Drive {
         }
 
         Ok(())
+    }
+
+    /// Pushes a "delete element" operation to `drive_operations` and returns the current element.
+    /// If the element didn't exist does nothing.
+    pub(crate) fn batch_remove<'a, 'c, P>(
+        &'a self,
+        path: P,
+        key: &'c [u8],
+        apply_type: BatchDeleteApplyType,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+    ) -> Result<Option<Element>, Error>
+    where
+        P: IntoIterator<Item = &'c [u8]>,
+        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
+    {
+        let mut current_batch_operations =
+            LowLevelDriveOperation::grovedb_operations_batch(drive_operations);
+        let options = DeleteOptions {
+            allow_deleting_non_empty_trees: false,
+            deleting_non_empty_trees_returns_error: true,
+            base_root_storage_is_free: true,
+            validate_tree_at_path_exists: false, //todo: not sure about this one
+        };
+
+        let path_iter = path.into_iter();
+
+        let needs_removal_from_state =
+            match current_batch_operations.remove_if_insert(path_iter.clone(), key) {
+                Some(Op::Insert { element })
+                | Some(Op::Replace { element })
+                | Some(Op::Patch { element, .. }) => return Ok(Some(element)),
+                Some(Op::InsertTreeWithRootHash { .. }) => {
+                    return Err(Error::Drive(DriveError::CorruptedCodeExecution(
+                        "we should not be seeing internal grovedb operations",
+                    )));
+                }
+                Some(Op::Delete { .. })
+                | Some(Op::DeleteTree { .. })
+                | Some(Op::DeleteSumTree { .. }) => false,
+                _ => true,
+            };
+
+        let maybe_element = self.grove_get(
+            path_iter.clone(),
+            key,
+            (&apply_type).into(),
+            transaction,
+            drive_operations,
+        )?;
+        if maybe_element.is_none()
+            && matches!(
+                &apply_type,
+                &BatchDeleteApplyType::StatefulBatchDelete { .. }
+            )
+        {
+            return Ok(None);
+        }
+        if needs_removal_from_state {
+            let delete_operation = match apply_type {
+                BatchDeleteApplyType::StatelessBatchDelete {
+                    is_sum_tree,
+                    estimated_value_size,
+                } => GroveDb::worst_case_delete_operation_for_delete_internal::<RocksDbStorage>(
+                    &KeyInfoPath::from_known_path(path_iter.clone()),
+                    &KeyInfo::KnownKey(key.to_vec()),
+                    is_sum_tree,
+                    false,
+                    true,
+                    0,
+                    estimated_value_size,
+                )
+                .map(|r| r.map(Some)),
+                BatchDeleteApplyType::StatefulBatchDelete {
+                    is_known_to_be_subtree_with_sum,
+                } => self.grove.delete_operation_for_delete_internal(
+                    path_iter.clone(),
+                    key,
+                    &options,
+                    is_known_to_be_subtree_with_sum,
+                    &current_batch_operations.operations,
+                    transaction,
+                ),
+            };
+
+            if let Some(delete_operation) =
+                push_drive_operation_result(delete_operation, drive_operations)?
+            {
+                // we also add the actual delete operation
+                drive_operations.push(GroveOperation(delete_operation))
+            }
+        }
+
+        Ok(maybe_element)
     }
 
     /// Pushes a "delete up tree while empty" operation to `drive_operations`.

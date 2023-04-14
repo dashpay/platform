@@ -9,7 +9,7 @@ use serde_json::Value as JsonValue;
 use crate::consensus::ConsensusError;
 use crate::errors::consensus::signature::SignatureError;
 use crate::identity::signer::Signer;
-use crate::identity::IdentityPublicKey;
+
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, StateTransitionIsNotSignedError,
 };
@@ -20,10 +20,7 @@ use crate::{
     BlsModule,
 };
 
-use super::{
-    state_transition_execution_context::StateTransitionExecutionContext, StateTransition,
-    StateTransitionType,
-};
+use super::{StateTransition, StateTransitionType};
 
 const PROPERTY_SIGNATURE: &str = "signature";
 const PROPERTY_PROTOCOL_VERSION: &str = "protocolVersion";
@@ -248,7 +245,7 @@ pub trait StateTransitionConvert: Serialize {
 
     // Returns the hash of cibor-encoded bytes representation of the object
     fn hash(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash::hash(self.to_cbor_buffer(skip_signature)?))
+        Ok(hash::hash_to_vec(self.to_cbor_buffer(skip_signature)?))
     }
 
     fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {

@@ -29,7 +29,6 @@ use crate::execution::execution_event::{ExecutionEvent, ExecutionResult};
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::platform::{Platform, PlatformRef};
 use crate::rpc::core::CoreRPCLike;
-use crate::state::PlatformState;
 use crate::validation::state_transition::process_state_transition;
 
 /// The outcome of the block execution, either by prepare proposal, or process proposal
@@ -206,19 +205,19 @@ where
         Ok((aggregate_fee_result, exec_tx_results))
     }
 
-    /// Update of the masternode identities
-    pub fn update_masternode_identities(
-        &self,
-        previous_core_height: u32,
-        current_core_height: u32,
-    ) -> Result<(), Error> {
-        if previous_core_height != current_core_height {
-            //todo:
-            // self.drive.fetch_full_identity()
-            // self.drive.add_new_non_unique_keys_to_identity()
-        }
-        Ok(())
-    }
+    // /// Update of the masternode identities
+    // pub fn update_masternode_identities(
+    //     &self,
+    //     previous_core_height: u32,
+    //     current_core_height: u32,
+    // ) -> Result<(), Error> {
+    //     if previous_core_height != current_core_height {
+    //         //todo:
+    //         // self.drive.fetch_full_identity()
+    //         // self.drive.add_new_non_unique_keys_to_identity()
+    //     }
+    //     Ok(())
+    // }
 
     /// Run a block proposal, either from process proposal, or prepare proposal
     /// Errors returned in the validation result are consensus errors, any error here means that
@@ -236,6 +235,7 @@ where
             state.known_height_or((self.config.abci.genesis_height as u64).saturating_sub(1));
         let last_block_core_height =
             state.known_core_height_or(self.config.abci.genesis_core_height);
+        let hpmn_list_len = state.hpmn_list_len();
         drop(state);
 
         // Init block execution context
@@ -281,12 +281,10 @@ where
             })?; // This is a system error
 
         let block_info = block_state_info.to_block_info(epoch_info.current_epoch_index);
-        // FIXME: we need to calculate total hpmns based on masternode list (or remove hpmn_count if not needed)
-        let total_hpmns = self.config.quorum_size as u32;
         let mut block_execution_context = BlockExecutionContext {
             block_state_info,
             epoch_info: epoch_info.clone(),
-            hpmn_count: total_hpmns,
+            hpmn_count: hpmn_list_len as u32,
         };
 
         // If last synced Core block height is not set instead of scanning
@@ -330,7 +328,7 @@ where
             transaction,
         )?;
 
-        self.update_masternode_identities(last_block_core_height, core_chain_locked_height)?;
+        // self.update_masternode_identities(last_block_core_height, core_chain_locked_height)?;
 
         let root_hash = self
             .drive
@@ -353,12 +351,17 @@ where
     }
 
     /// Update the current quorums if the core_height changes
-    pub fn update_state_cache_and_quorums(&self, block_info: BlockInfo) -> Result<(), Error> {
+    pub fn update_state_cache_and_quorums(
+        &self,
+        block_info: BlockInfo,
+        transaction: &Transaction,
+    ) -> Result<(), Error> {
         let mut state_cache = self.state.write().unwrap();
 
         self.update_quorum_info(&mut state_cache, block_info.core_height)?;
 
-        self.update_masternode_list(&mut state_cache, block_info.core_height)?;
+        // TODO: re-enable
+        // self.update_masternode_list(&mut state_cache, block_info.core_height, transaction)?;
 
         state_cache.last_committed_block_info = Some(block_info.clone());
 
@@ -500,15 +503,16 @@ where
         let received_withdrawals = WithdrawalTxs::from(&commit.threshold_vote_extensions);
         let our_withdrawals = WithdrawalTxs::load(Some(transaction), &self.drive)
             .map_err(|e| AbciError::WithdrawalTransactionsDBLoadError(e.to_string()))?;
-
-        if let Err(e) = self.check_withdrawals(
-            &received_withdrawals,
-            &our_withdrawals,
-            Some(quorum_public_key),
-        ) {
-            validation_result.add_error(e);
-            return Ok(validation_result.into());
-        }
+        //todo: reenable check
+        //
+        // if let Err(e) = self.check_withdrawals(
+        //     &received_withdrawals,
+        //     &our_withdrawals,
+        //     Some(quorum_public_key),
+        // ) {
+        //     validation_result.add_error(e);
+        //     return Ok(validation_result.into());
+        // }
 
         // Next let's check that the hash received is the same as the hash we expect
 
@@ -550,7 +554,7 @@ where
 
         // At the end we update the state cache
 
-        self.update_state_cache_and_quorums(to_commit_block_info);
+        self.update_state_cache_and_quorums(to_commit_block_info, transaction)?;
 
         let mut drive_cache = self.drive.cache.write().unwrap();
 

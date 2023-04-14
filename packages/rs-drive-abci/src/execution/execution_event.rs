@@ -1,14 +1,13 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::execution_event::ExecutionEvent::{
-    FreeDriveEvent, PaidDriveEvent, PaidFromAssetLockDriveEvent,
+    PaidDriveEvent, PaidFromAssetLockDriveEvent,
 };
 use dpp::identity::PartialIdentity;
 use dpp::state_transition::StateTransitionAction;
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::drive::batch::transitions::DriveHighLevelOperationConverter;
 use drive::drive::batch::DriveOperation;
-use drive::drive::Drive;
 use drive::fee::credits::SignedCredits;
 use drive::fee::result::FeeResult;
 use drive::fee_pools::epochs::Epoch;

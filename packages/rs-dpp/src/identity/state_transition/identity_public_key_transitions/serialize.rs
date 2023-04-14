@@ -1,5 +1,5 @@
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithoutWitness;
-use crate::identity::IdentityPublicKey;
+
 use crate::ProtocolError;
 use bincode::config;
 

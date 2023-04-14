@@ -2,10 +2,9 @@ use dpp::identity::PartialIdentity;
 use dpp::{identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition, state_transition::StateTransitionAction, StateError, validation::{ConsensusValidationResult, SimpleConsensusValidationResult}};
 use dpp::block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window;
 use dpp::identity::state_transition::identity_update_transition::IdentityUpdateTransitionAction;
-use dpp::identity::state_transition::identity_update_transition::validate_identity_update_transition_basic::{IDENTITY_UPDATE_JSON_SCHEMA_VALIDATOR, IDENTITY_UPDATE_SCHEMA};
-use dpp::validation::ValidationResult;
+use dpp::identity::state_transition::identity_update_transition::validate_identity_update_transition_basic::IDENTITY_UPDATE_JSON_SCHEMA_VALIDATOR;
 use drive::grovedb::TransactionArg;
-use drive::{drive::Drive, grovedb::Transaction};
+use drive::drive::Drive;
 
 use crate::error::execution::ExecutionError;
 use crate::error::execution::ExecutionError::CorruptedCodeExecution;
@@ -14,6 +13,7 @@ use crate::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use crate::validation::state_transition::common::{validate_protocol_version, validate_schema};
 use crate::validation::state_transition::key_validation::{
+    validate_identity_public_key_ids_dont_exist_in_state,
     validate_identity_public_key_ids_exist_in_state, validate_identity_public_keys_signatures,
     validate_identity_public_keys_structure, validate_state_transition_identity_signature,
     validate_unique_identity_public_key_hashes_state,
@@ -55,7 +55,7 @@ impl StateTransitionValidation for IdentityUpdateTransition {
         }
 
         let validation_result =
-            validate_state_transition_identity_signature(drive, self, false, transaction)?;
+            validate_state_transition_identity_signature(drive, self, true, transaction)?;
 
         if !result.is_valid() {
             result.merge(validation_result);
@@ -69,7 +69,7 @@ impl StateTransitionValidation for IdentityUpdateTransition {
         };
 
         // Check revision
-        if revision != (self.revision - 1) {
+        if revision + 1 != self.revision {
             result.add_error(StateError::InvalidIdentityRevisionError {
                 identity_id: self.identity_id,
                 current_revision: revision,
@@ -93,6 +93,20 @@ impl StateTransitionValidation for IdentityUpdateTransition {
         // Now we should check the state of added keys to make sure there aren't any that already exist
         validation_result.add_errors(
             validate_unique_identity_public_key_hashes_state(
+                self.add_public_keys.as_slice(),
+                drive,
+                tx,
+            )?
+            .errors,
+        );
+
+        if !validation_result.is_valid() {
+            return Ok(validation_result);
+        }
+
+        validation_result.add_errors(
+            validate_identity_public_key_ids_dont_exist_in_state(
+                self.identity_id,
                 self.add_public_keys.as_slice(),
                 drive,
                 tx,
