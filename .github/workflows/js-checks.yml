@@ -36,6 +36,12 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v3
 
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
@@ -99,8 +105,19 @@ jobs:
         with:
           firefox-version: 'latest'
 
+      - name: Install Chrome
+        uses: browser-actions/setup-chrome@v1
+        with:
+          chrome-version: stable
+
       - name: Check out repo
         uses: actions/checkout@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3

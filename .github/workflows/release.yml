@@ -128,6 +128,12 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v3
 
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Setup Rust compilation cache
         uses: mozilla-actions/sccache-action@v0.0.3
         with:
@@ -182,12 +188,6 @@ jobs:
           builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
           cache-path: /tmp/buildkit-cache
           cache-max-size: 3g
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Get tag
         uses: actions/github-script@v6
@@ -252,6 +252,12 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v3
 
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Setup Rust compilation cache
         uses: mozilla-actions/sccache-action@v0.0.3
         with:
@@ -307,12 +313,6 @@ jobs:
           builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
           cache-path: /tmp/buildkit-cache
           cache-max-size: 3g
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Get tag
         uses: actions/github-script@v6
@@ -383,6 +383,12 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v3
 
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Setup Rust compilation cache
         uses: mozilla-actions/sccache-action@v0.0.3
         with:
@@ -438,12 +444,6 @@ jobs:
           builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
           cache-path: /tmp/buildkit-cache
           cache-max-size: 3g
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Get tag
         uses: actions/github-script@v6
@@ -510,6 +510,12 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v3
 
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Set up QEMU to run multi-arch builds
         uses: docker/setup-qemu-action@v2
 
@@ -518,12 +524,6 @@ jobs:
         uses: docker/setup-buildx-action@v2
         with:
           install: true
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Get tag
         uses: actions/github-script@v6
@@ -583,6 +583,12 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v3
 
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Setup Rust compilation cache
         uses: mozilla-actions/sccache-action@v0.0.3
         with:
@@ -638,12 +644,6 @@ jobs:
           builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
           cache-path: /tmp/buildkit-cache
           cache-max-size: 3g
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Get tag
         uses: actions/github-script@v6
@@ -740,6 +740,12 @@ jobs:
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
