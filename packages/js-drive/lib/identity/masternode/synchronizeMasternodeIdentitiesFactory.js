@@ -58,8 +58,6 @@ function synchronizeMasternodeIdentitiesFactory(
   lastSyncedCoreHeightRepository,
   fetchSimplifiedMNList,
 ) {
-  let lastSyncedCoreHeight = 0;
-
   /**
    * @typedef synchronizeMasternodeIdentities
    * @param {number} coreHeight
@@ -73,18 +71,23 @@ function synchronizeMasternodeIdentitiesFactory(
    * }>}
    */
   async function synchronizeMasternodeIdentities(coreHeight, blockInfo) {
+    // TODO: Must be moved outside of this function
+    const lastSyncedHeightResult = await lastSyncedCoreHeightRepository.fetch({
+      useTransaction: true,
+    });
+
+    const lastSyncedCoreHeight = lastSyncedHeightResult.getValue() || 0;
+
     let result = {
       createdEntities: [],
       updatedEntities: [],
       removedEntities: [],
+      fromHeight: lastSyncedCoreHeight,
+      toHeight: coreHeight,
     };
 
-    if (!lastSyncedCoreHeight) {
-      const lastSyncedHeightResult = await lastSyncedCoreHeightRepository.fetch({
-        useTransaction: true,
-      });
-
-      lastSyncedCoreHeight = lastSyncedHeightResult.getValue() || 0;
+    if (lastSyncedCoreHeight === coreHeight) {
+      return result;
     }
 
     let newMasternodes;
@@ -242,9 +245,7 @@ function synchronizeMasternodeIdentitiesFactory(
       result = mergeEntities(result, affectedEntities);
     }
 
-    result.fromHeight = lastSyncedCoreHeight;
-    result.toHeight = coreHeight;
-
+    // TODO: Must be moved outside of this function
     await lastSyncedCoreHeightRepository.store(coreHeight, {
       useTransaction: true,
     });

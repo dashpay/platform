@@ -108,7 +108,7 @@ function beginBlockFactory(
     proposalBlockExecutionContext.setLastCommitInfo(lastCommitInfo);
 
     // Update SML
-    const isSimplifiedMasternodeListUpdated = await updateSimplifiedMasternodeList(
+    await updateSimplifiedMasternodeList(
       coreChainLockedHeight,
       {
         logger: contextLogger,
@@ -144,8 +144,7 @@ function beginBlockFactory(
       validatorSetQuorumHash: quorumHash,
       coreChainLockedHeight,
       lastSyncedCoreHeight,
-      // TODO: Since we don't have HPMNs now and every masternode can be a validator,
-      //  we pass the whole list
+      // TODO: We should pass only HPMNs
       totalHpmns: simplifiedMasternodeList.getStore()
         .getCurrentSML()
         .getValidMasternodesList()
@@ -191,19 +190,18 @@ function beginBlockFactory(
     }
 
     // Synchronize masternode identities
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(proposalBlockExecutionContext);
 
-    if (isSimplifiedMasternodeListUpdated) {
-      const blockInfo = BlockInfo.createFromBlockExecutionContext(proposalBlockExecutionContext);
+    const synchronizeMasternodeIdentitiesResult = await synchronizeMasternodeIdentities(
+      coreChainLockedHeight,
+      blockInfo,
+    );
 
-      const synchronizeMasternodeIdentitiesResult = await synchronizeMasternodeIdentities(
-        coreChainLockedHeight,
-        blockInfo,
-      );
+    const {
+      createdEntities, updatedEntities, removedEntities, fromHeight, toHeight,
+    } = synchronizeMasternodeIdentitiesResult;
 
-      const {
-        createdEntities, updatedEntities, removedEntities, fromHeight, toHeight,
-      } = synchronizeMasternodeIdentitiesResult;
-
+    if (fromHeight !== toHeight) {
       contextLogger.info(
         `Masternode identities are synced for heights from ${fromHeight} to ${toHeight}: ${createdEntities.length} created, ${updatedEntities.length} updated, ${removedEntities.length} removed`,
       );
