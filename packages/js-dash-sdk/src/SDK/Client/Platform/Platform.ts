@@ -105,12 +105,6 @@ interface DataContracts {
 export class Platform {
   // TODO: Address in further type system improvements
   //  Do we want to refactor all methods to check
-  //  whether dppModule is initialized instead of ts-ignoring?
-  // @ts-ignore
-  dppModule: DPPModule;
-
-  // TODO: Address in further type system improvements
-  //  Do we want to refactor all methods to check
   //  whether dpp is initialized instead of ts-ignoring?
   // @ts-ignore
   dpp: DashPlatformProtocol;
@@ -210,7 +204,7 @@ export class Platform {
 
   async initialize() {
     if (!this.dpp) {
-      this.dppModule = await Platform.initializeDppModule();
+      await Platform.initializeDppModule();
 
       const bls = await getBlsAdapter();
       const stateRepository = new StateRepository(this.client);

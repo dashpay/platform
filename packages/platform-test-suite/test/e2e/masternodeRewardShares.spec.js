@@ -9,7 +9,10 @@ const generateRandomIdentifier = require('../../lib/test/utils/generateRandomIde
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
 const waitForSTPropagated = require('../../lib/waitForSTPropagated');
 
-const { Core: { PrivateKey } } = Dash;
+const {
+  Core: { PrivateKey },
+  PlatformProtocol: { IdentityPublicKeyWithWitness, IdentityPublicKey },
+} = Dash;
 
 describe('Masternode Reward Shares', () => {
   let failed = false;
@@ -104,8 +107,6 @@ describe('Masternode Reward Shares', () => {
           1000,
           signaturePublicKeyId,
         ));
-
-      const { IdentityPublicKeyWithWitness, IdentityPublicKey } = client.platform.dppModule;
 
       const identityPublicKey = derivedPrivateKey.toPublicKey().toBuffer();
 

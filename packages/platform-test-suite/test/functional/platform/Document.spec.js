@@ -13,6 +13,9 @@ const {
   Errors: {
     StateTransitionBroadcastError,
   },
+  PlatformProtocol: {
+    InvalidDocumentTypeError,
+  },
 } = Dash;
 
 describe('Platform', () => {
@@ -56,8 +59,6 @@ describe('Platform', () => {
     });
 
     it('should fail to create new document with an unknown type', async () => {
-      const { InvalidDocumentTypeError } = client.platform.dppModule;
-
       // Add undefined document type for
       client.getApps().get('customContracts').contract.setDocumentSchema('undefinedType', {
         type: 'object',
