@@ -71,6 +71,9 @@ function startCoreFactory(
       fs.writeFileSync(logFilePath, '');
     }
 
+    console.log(config.toEnvs())
+    console.log(logFilePath)
+
     const coreContainer = await dockerCompose.runService(
       config.toEnvs(),
       'core',
