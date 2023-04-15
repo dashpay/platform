@@ -1,4 +1,5 @@
-use dashcore_rpc::json::QuorumHash;
+use dashcore::hashes::Hash;
+use dashcore::QuorumHash;
 use dpp::bls_signatures;
 use dpp::bls_signatures::Serialize;
 use dpp::consensus::basic::identity::IdentityInsufficientBalanceError;
@@ -14,6 +15,7 @@ use drive::fee::result::FeeResult;
 use drive::grovedb::{Transaction, TransactionArg};
 use tenderdash_abci::proto::abci::{ExecTxResult, RequestFinalizeBlock};
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
+use tenderdash_abci::proto::types::Block;
 
 use crate::abci::signature_verifier::{SignatureError, SignatureVerifier};
 use crate::abci::withdrawal::WithdrawalTxs;
@@ -27,6 +29,7 @@ use crate::execution::execution_event::ExecutionResult::{
 };
 use crate::execution::execution_event::{ExecutionEvent, ExecutionResult};
 use crate::execution::fee_pools::epoch::EpochInfo;
+use crate::execution::finalize_block_cleaned_request::{CleanedBlock, FinalizeBlockCleanedRequest};
 use crate::platform::{Platform, PlatformRef};
 use crate::rpc::core::CoreRPCLike;
 use crate::validation::state_transition::process_state_transition;
@@ -361,7 +364,7 @@ where
         self.update_quorum_info(&mut state_cache, block_info.core_height)?;
 
         // TODO: re-enable
-        // self.update_masternode_list(&mut state_cache, block_info.core_height, transaction)?;
+        self.update_masternode_list(&mut state_cache, block_info.core_height, transaction)?;
 
         state_cache.last_committed_block_info = Some(block_info.clone());
 
@@ -393,13 +396,14 @@ where
 
         Ok(())
     }
+
     // Retrieve quorum public key
-    fn get_quorum_key(&self, quorum_hash: Vec<u8>) -> Result<bls_signatures::PublicKey, Error> {
+    fn get_quorum_key(&self, quorum_hash: [u8; 32]) -> Result<bls_signatures::PublicKey, Error> {
         let public_key = self
             .core_rpc
             .get_quorum_info(
                 self.config.quorum_type,
-                &QuorumHash { 0: quorum_hash },
+                &QuorumHash::from_inner(quorum_hash),
                 Some(false),
             )?
             .quorum_public_key;
@@ -407,11 +411,12 @@ where
         bls_signatures::PublicKey::from_bytes(public_key.as_slice())
             .map_err(|e| AbciError::from(SignatureError::from(e)).into())
     }
+
     /// Finalize the block, this first involves validating it, then if valid
     /// it is committed to the state
     pub fn finalize_block_proposal(
         &self,
-        request_finalize_block: RequestFinalizeBlock,
+        request_finalize_block: FinalizeBlockCleanedRequest,
         transaction: &Transaction,
     ) -> Result<BlockFinalizationOutcome, Error> {
         let mut validation_result = SimpleValidationResult::<AbciError>::new_with_errors(vec![]);
@@ -432,7 +437,7 @@ where
         } = &block_execution_context;
 
         // Let's decompose the request
-        let RequestFinalizeBlock {
+        let FinalizeBlockCleanedRequest {
             commit,
             misbehavior,
             hash,
@@ -442,26 +447,23 @@ where
             block_id,
         } = request_finalize_block;
 
-        //todo: block and header should not be optional
-        let block_header = block.unwrap().header.unwrap();
-
-        let Ok(proposer_protx_hash) = block_header.proposer_pro_tx_hash.try_into() else {
-            validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
-                "received a block for h: {} r: {}, expected h: {} r: {}",
-                height, round, block_state_info.height, block_state_info.round
-            )));
-            return Ok(validation_result.into());
-        };
+        let CleanedBlock {
+            header: block_header,
+            data,
+            evidence,
+            last_commit,
+            core_chain_lock,
+        } = block;
 
         //// Verification that commit is for our current executed block
         // When receiving the finalized block, we need to make sure that info matches our current block
 
         // First let's check the basics, height, round and hash
         if !block_state_info.matches_expected_block_info(
-            height as u64,
-            round as u32,
+            height,
+            round,
             block_header.core_chain_locked_height,
-            proposer_protx_hash,
+            block_header.proposer_pro_tx_hash,
             hash,
         )? {
             // we are on the wrong height or round
@@ -472,18 +474,7 @@ where
             return Ok(validation_result.into());
         }
 
-        // Next we need to verify that the signature returned from the quorum is valid
-        let commit = if let Some(commit) = commit {
-            commit
-        } else {
-            validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
-                "received a block for h: {} r: {} without a commit",
-                height, round
-            )));
-            return Ok(validation_result.into());
-        };
-
-        let quorum_public_key = self.get_quorum_key(commit.quorum_hash.clone())?;
+        let quorum_public_key = self.get_quorum_key(commit.quorum_hash)?;
 
         //todo: verify commit
         // if let Some(block_id) = block_id {
@@ -547,7 +538,7 @@ where
             block_state_info.to_block_info(epoch_info.current_epoch_index);
 
         // we need to add the block time
-        to_commit_block_info.time_ms = block_header.time.unwrap().to_milis() as u64;
+        to_commit_block_info.time_ms = block_header.time.to_milis() as u64;
 
         // Finalize withdrawal processing
         our_withdrawals.finalize(Some(transaction), &self.drive, &to_commit_block_info)?;

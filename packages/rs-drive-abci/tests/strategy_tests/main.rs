@@ -30,11 +30,14 @@
 //! Execution Tests
 //!
 
+extern crate core;
+
 use anyhow::anyhow;
 use dashcore::secp256k1::SecretKey;
-use dashcore::{signer, Network, PrivateKey};
+use dashcore::{signer, Network, PrivateKey, ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{
-    ExtendedQuorumDetails, QuorumHash as QuorumHashObject, QuorumInfoResult, QuorumType,
+    DMNState, ExtendedQuorumDetails, MasternodeListDiffWithMasternodes, MasternodeListItem,
+    MasternodeType, QuorumInfoResult, QuorumType,
 };
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::document::document_transition::document_base_transition::DocumentBaseTransition;
@@ -71,6 +74,8 @@ use drive::drive::defaults::PROTOCOL_VERSION;
 use drive::drive::flags::StorageFlags::SingleEpoch;
 
 use crate::FinalizeBlockOperation::IdentityAddKeys;
+use dashcore::hashes::hex::ToHex;
+use dashcore::hashes::Hash;
 use dpp::data_contract::generate_data_contract_id;
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::state_transition::identity_credit_withdrawal_transition::{
@@ -98,18 +103,16 @@ use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::net::{IpAddr, SocketAddr};
 use std::ops::Range;
 use std::str::FromStr;
 
 mod upgrade_fork_tests;
 
-pub type QuorumHash = [u8; 32];
-pub type ProTxHash = [u8; 32];
-
 #[derive(Clone)]
 pub struct TestQuorumInfo {
     quorum_hash: QuorumHash,
-    validator_set: Vec<ProTxHash>,
+    validator_set: Vec<MasternodeListItem>,
     // in reality quorums don't have a private key,
     // however for these tests, we can just sign with a private key to mimic threshold signing
     private_key: BlsPrivateKey,
@@ -127,7 +130,7 @@ impl From<&TestQuorumInfo> for QuorumInfoResult {
         QuorumInfoResult {
             height: 0,
             quorum_type: QuorumType::Llmq25_67,
-            quorum_hash: QuorumHashObject(quorum_hash.to_vec()),
+            quorum_hash: quorum_hash.clone(),
             quorum_index: 0,
             mined_block: vec![],
             members: vec![],
@@ -281,6 +284,7 @@ pub struct Strategy {
     operations: Vec<Operation>,
     identities_inserts: Frequency,
     total_hpmns: u16,
+    extra_normal_mns: u16,
     upgrading_info: Option<UpgradingInfo>,
     core_height_increase: Frequency,
 }
@@ -307,10 +311,10 @@ pub struct ValidatorVersionMigration {
 impl UpgradingInfo {
     fn apply_to_proposers(
         &self,
-        proposers: Vec<[u8; 32]>,
+        proposers: Vec<ProTxHash>,
         blocks_per_epoch: u64,
         rng: &mut StdRng,
-    ) -> HashMap<[u8; 32], ValidatorVersionMigration> {
+    ) -> HashMap<ProTxHash, ValidatorVersionMigration> {
         let expected_blocks = blocks_per_epoch as f64 * self.upgrade_three_quarters_life;
         proposers
             .into_iter()
@@ -922,7 +926,7 @@ pub struct ChainExecutionOutcome<'a> {
     pub abci_app: AbciApplication<'a, MockCoreRPCLike>,
     pub masternode_identity_balances: BTreeMap<[u8; 32], Credits>,
     pub identities: Vec<Identity>,
-    pub proposers: Vec<ProTxHash>,
+    pub proposers: Vec<MasternodeListItem>,
     pub quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
     pub current_quorum_hash: QuorumHash,
     pub current_proposer_versions: Option<HashMap<ProTxHash, ValidatorVersionMigration>>,
@@ -935,7 +939,7 @@ pub struct ChainExecutionParameters {
     pub block_start: u64,
     pub core_height_start: u32,
     pub block_count: u64,
-    pub proposers: Vec<[u8; 32]>,
+    pub proposers: Vec<MasternodeListItem>,
     pub quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
     pub current_quorum_hash: QuorumHash,
     // the first option is if it is set
@@ -947,6 +951,39 @@ pub struct ChainExecutionParameters {
 pub enum StrategyRandomness {
     SeedEntropy(u64),
     RNGEntropy(StdRng),
+}
+
+/// Creates a list of test Masternode identities of size `count` with random data
+pub fn generate_masternode_list_items(count: u16, rng: &mut StdRng) -> Vec<MasternodeListItem> {
+    let mut masternodes: Vec<MasternodeListItem> = Vec::with_capacity(count as usize);
+
+    for _ in 0..count {
+        let private_key_operator = bls_signatures::PrivateKey::generate(rng);
+        let pub_key_operator = private_key_operator.public_key().as_bytes();
+        let masternode_list_item = MasternodeListItem {
+            node_type: MasternodeType::Regular,
+            protx_hash: ProTxHash::from_inner(rng.gen::<[u8; 32]>()),
+            collateral_hash: rng.gen::<[u8; 32]>(),
+            collateral_index: 0,
+            operator_reward: 0,
+            state: DMNState {
+                service: SocketAddr::from_str("1.2.3.4:1234").unwrap(),
+                registered_height: 0,
+                pose_revived_height: 0,
+                pose_ban_height: 0,
+                revocation_reason: 0,
+                owner_address: rng.gen::<[u8; 20]>(),
+                voting_address: rng.gen::<[u8; 20]>(),
+                payout_address: rng.gen::<[u8; 20]>(),
+                pub_key_operator,
+                operator_payout_address: None,
+                platform_node_id: Some(rng.gen::<[u8; 20]>()),
+            },
+        };
+        masternodes.push(masternode_list_item);
+    }
+
+    masternodes
 }
 
 pub(crate) fn run_chain_for_strategy(
@@ -961,12 +998,12 @@ pub(crate) fn run_chain_for_strategy(
 
     let mut rng = StdRng::seed_from_u64(seed);
 
-    let proposers = generate_pro_tx_hashes(strategy.total_hpmns, &mut rng);
+    let proposers = generate_masternode_list_items(strategy.total_hpmns, &mut rng);
 
     let quorums: BTreeMap<QuorumHash, TestQuorumInfo> = (0..quorum_count)
         .into_iter()
         .map(|_| {
-            let quorum_hash: [u8; 32] = rng.gen();
+            let quorum_hash: QuorumHash = QuorumHash::from_inner(rng.gen());
             let validator_set = proposers
                 .choose_multiple(&mut rng, quorum_size as usize)
                 .cloned()
@@ -999,9 +1036,7 @@ pub(crate) fn run_chain_for_strategy(
                         .keys()
                         .map(|key| {
                             (
-                                dashcore_rpc::dashcore_rpc_json::QuorumHash::from(
-                                    hex::encode(key).as_str(),
-                                ),
+                                key.clone(),
                                 ExtendedQuorumDetails {
                                     creation_height: 0,
                                     quorum_index: None,
@@ -1018,19 +1053,42 @@ pub(crate) fn run_chain_for_strategy(
 
     let quorums_clone = quorums.clone();
 
-    platform.core_rpc.expect_get_quorum_info().returning(
-        move |_, quorum_hash: &QuorumHashObject, _| {
+    platform
+        .core_rpc
+        .expect_get_quorum_info()
+        .returning(move |_, quorum_hash: &QuorumHash, _| {
             Ok(quorums_clone
-                .get(quorum_hash.0.as_slice())
-                .unwrap_or_else(|| {
-                    panic!(
-                        "expected to get quorum {}",
-                        hex::encode(quorum_hash.0.as_slice())
-                    )
-                })
+                .get(quorum_hash)
+                .unwrap_or_else(|| panic!("expected to get quorum {}", quorum_hash.to_hex()))
                 .into())
-        },
-    );
+        });
+
+    let initial_proposers = proposers.clone();
+
+    platform
+        .core_rpc
+        .expect_get_protx_diff_with_masternodes()
+        .returning(move |base_block, block| {
+            let diff = if base_block == 0 {
+                MasternodeListDiffWithMasternodes {
+                    base_height: base_block,
+                    block_height: block,
+                    added_mns: initial_proposers.clone(),
+                    removed_mns: vec![],
+                    updated_mns: vec![],
+                }
+            } else {
+                MasternodeListDiffWithMasternodes {
+                    base_height: base_block,
+                    block_height: block,
+                    added_mns: vec![],
+                    removed_mns: vec![],
+                    updated_mns: vec![],
+                }
+            };
+
+            Ok(diff)
+        });
 
     start_chain_for_strategy(
         platform,
@@ -1046,7 +1104,7 @@ pub(crate) fn run_chain_for_strategy(
 pub(crate) fn start_chain_for_strategy(
     platform: &TempPlatform<MockCoreRPCLike>,
     block_count: u64,
-    proposers: Vec<[u8; 32]>,
+    proposers: Vec<MasternodeListItem>,
     quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
     strategy: Strategy,
     config: PlatformConfig,
@@ -1067,7 +1125,14 @@ pub(crate) fn start_chain_for_strategy(
 
     platform.create_mn_shares_contract(None);
 
-    create_test_identities_with_rng(&platform.drive, proposers.clone(), &mut rng, None);
+    create_test_identities_with_rng(
+        &platform.drive,
+        proposers
+            .iter()
+            .map(|masternode_list_item| masternode_list_item.protx_hash.into_inner()),
+        &mut rng,
+        None,
+    );
 
     continue_chain_for_strategy(
         abci_application,
@@ -1122,7 +1187,14 @@ pub(crate) fn continue_chain_for_strategy(
 
     let proposer_versions = current_proposer_versions.unwrap_or(
         strategy.upgrading_info.as_ref().map(|upgrading_info| {
-            upgrading_info.apply_to_proposers(proposers.clone(), blocks_per_epoch, &mut rng)
+            upgrading_info.apply_to_proposers(
+                proposers
+                    .iter()
+                    .map(|masternode_list_item| masternode_list_item.protx_hash.clone())
+                    .collect(),
+                blocks_per_epoch,
+                &mut rng,
+            )
         }),
     );
 
@@ -1152,7 +1224,7 @@ pub(crate) fn continue_chain_for_strategy(
         };
 
         let proposer = quorums
-            .get(current_quorum_hash.as_slice())
+            .get(&current_quorum_hash)
             .unwrap()
             .validator_set
             .get(i as usize)
@@ -1174,7 +1246,7 @@ pub(crate) fn continue_chain_for_strategy(
                     next_protocol_version,
                     change_block_height,
                 } = proposer_versions
-                    .get(proposer)
+                    .get(&proposer.protx_hash)
                     .expect("expected to have version");
                 if &block_height >= change_block_height {
                     *next_protocol_version
@@ -1186,8 +1258,8 @@ pub(crate) fn continue_chain_for_strategy(
 
         abci_app
             .mimic_execute_block(
-                *proposer,
-                current_quorum_hash,
+                proposer.protx_hash.into_inner(),
+                current_quorum_hash.into_inner(),
                 proposed_version,
                 proposer_count,
                 block_info,
@@ -1224,7 +1296,13 @@ pub(crate) fn continue_chain_for_strategy(
 
     let masternode_identity_balances = platform
         .drive
-        .fetch_identities_balances(&proposers, None)
+        .fetch_identities_balances(
+            &proposers
+                .iter()
+                .map(|proposer| proposer.protx_hash.into_inner())
+                .collect(),
+            None,
+        )
         .expect("expected to get balances");
 
     let end_epoch_index = platform
@@ -1256,7 +1334,7 @@ mod tests {
     use crate::DocumentAction::DocumentActionReplace;
     use dashcore::hashes::Hash;
     use dashcore::BlockHash;
-    use dashcore_rpc::dashcore_rpc_json::{ExtendedQuorumDetails, QuorumHash};
+    use dashcore_rpc::dashcore_rpc_json::ExtendedQuorumDetails;
     use drive::dpp::data_contract::extra::common::json_document_to_cbor;
     use drive::dpp::data_contract::DriveContractExt;
     use drive_abci::rpc::core::QuorumListExtendedInfo;
@@ -1268,7 +1346,7 @@ mod tests {
         for i in 0..n {
             let i_bytes = [i as u8; 32];
 
-            let hash = QuorumHash(i_bytes.to_vec());
+            let hash = QuorumHash::from_inner(i_bytes);
 
             let details = ExtendedQuorumDetails {
                 creation_height: i,
@@ -1295,6 +1373,7 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -1335,6 +1414,7 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -1384,6 +1464,7 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: 1..3,
@@ -1424,6 +1505,7 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -1465,6 +1547,7 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -1521,6 +1604,7 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -1596,6 +1680,7 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -1658,6 +1743,7 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -1748,6 +1834,7 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -1838,6 +1925,7 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -1929,6 +2017,7 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -2038,6 +2127,7 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -2095,6 +2185,7 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -2159,6 +2250,7 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -2224,6 +2316,7 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -2300,6 +2393,7 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),

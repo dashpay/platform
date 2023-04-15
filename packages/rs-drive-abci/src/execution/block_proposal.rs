@@ -64,6 +64,19 @@ impl<'a> TryFrom<&'a RequestPrepareProposal> for BlockProposal<'a> {
                 hex::encode(e)
             ))
         })?;
+
+        if *height < 0 {
+            return Err(AbciError::BadRequest(
+                "height is negative in request prepare proposal".to_string(),
+            )
+            .into());
+        }
+        if *round < 0 {
+            return Err(AbciError::BadRequest(
+                "round is negative in request prepare proposal".to_string(),
+            )
+            .into());
+        }
         Ok(Self {
             block_hash: None,
             height: *height as u64,
@@ -125,6 +138,18 @@ impl<'a> TryFrom<&'a RequestProcessProposal> for BlockProposal<'a> {
                 hex::encode(e)
             )))
         })?;
+        if *height < 0 {
+            return Err(AbciError::BadRequest(
+                "height is negative in request process proposal".to_string(),
+            )
+            .into());
+        }
+        if *round < 0 {
+            return Err(AbciError::BadRequest(
+                "round is negative in request process proposal".to_string(),
+            )
+            .into());
+        }
         Ok(Self {
             block_hash: Some(block_hash),
             height: *height as u64,

@@ -961,7 +961,7 @@ dependencies = [
 [[package]]
 name = "dashcore"
 version = "0.29.1"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=51548a4a1b9eca7430f5f3caf94d9784886ff2e9#51548a4a1b9eca7430f5f3caf94d9784886ff2e9"
+source = "git+https://github.com/dashpay/rust-dashcore?branch=feat/addons#c9bfcb53b77c03d533dfcbb515760ece5beb0aa9"
 dependencies = [
  "anyhow",
  "bech32",
@@ -975,7 +975,7 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc"
 version = "0.15.0"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=feat/quorumListImprovement#8f12bdeefbb984f0e654668c62763a90ffe269dc"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=feat/quorumListImprovement#4362e2f90677fac3a53cb5b5a9f3e52a9b1665b2"
 dependencies = [
  "dashcore-rpc-json",
  "env_logger 0.10.0",
@@ -988,7 +988,7 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc-json"
 version = "0.15.0"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=feat/quorumListImprovement#8f12bdeefbb984f0e654668c62763a90ffe269dc"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=feat/quorumListImprovement#4362e2f90677fac3a53cb5b5a9f3e52a9b1665b2"
 dependencies = [
  "dashcore",
  "hex",

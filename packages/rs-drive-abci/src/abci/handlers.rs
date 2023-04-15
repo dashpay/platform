@@ -270,7 +270,7 @@ where
 
         let block_finalization_outcome = self
             .platform
-            .finalize_block_proposal(request, transaction)?;
+            .finalize_block_proposal(request.try_into()?, transaction)?;
 
         //FIXME: tell tenderdash about the problem instead
         // This can not go to production!

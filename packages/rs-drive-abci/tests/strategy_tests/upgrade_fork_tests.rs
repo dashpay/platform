@@ -19,6 +19,7 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 460,
+            extra_normal_mns: 0,
             upgrading_info: Some(UpgradingInfo {
                 current_protocol_version: 1,
                 proposed_protocol_versions_with_weight: vec![(2, 1)],
@@ -244,6 +245,7 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 120,
+            extra_normal_mns: 0,
             upgrading_info: Some(UpgradingInfo {
                 current_protocol_version: 1,
                 proposed_protocol_versions_with_weight: vec![(2, 1)],
@@ -458,6 +460,7 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 200,
+            extra_normal_mns: 0,
             upgrading_info: Some(UpgradingInfo {
                 current_protocol_version: 1,
                 proposed_protocol_versions_with_weight: vec![(2, 1)],
@@ -607,6 +610,7 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 200,
+            extra_normal_mns: 0,
             upgrading_info: Some(UpgradingInfo {
                 current_protocol_version: 2,
                 proposed_protocol_versions_with_weight: vec![(1, 9), (2, 1)],
@@ -756,6 +760,7 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 200,
+            extra_normal_mns: 0,
             upgrading_info: Some(UpgradingInfo {
                 current_protocol_version: 1,
                 proposed_protocol_versions_with_weight: vec![(1, 3), (2, 95), (3, 2)],
@@ -841,6 +846,7 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 200,
+            extra_normal_mns: 0,
             upgrading_info: Some(UpgradingInfo {
                 current_protocol_version: 1,
                 proposed_protocol_versions_with_weight: vec![(2, 3), (3, 97)],
