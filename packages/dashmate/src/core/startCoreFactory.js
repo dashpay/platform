@@ -1,6 +1,6 @@
+const fs = require('fs');
+const path = require('path');
 const CoreService = require('./CoreService');
-const fs = require("fs");
-const path = require("path");
 
 /**
  * @param {createRpcClient} createRpcClient
