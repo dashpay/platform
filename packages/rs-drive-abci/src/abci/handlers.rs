@@ -34,6 +34,8 @@
 
 use crate::abci::server::AbciApplication;
 use crate::rpc::core::CoreRPCLike;
+use dashcore::hashes::Hash;
+use dashcore::ProTxHash;
 use dpp::ProtocolError;
 use drive::fee::credits::SignedCredits;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
@@ -238,20 +240,42 @@ where
         let got: WithdrawalTxs = request.vote_extensions.into();
         let expected = WithdrawalTxs::load(Some(transaction), &self.platform.drive)?;
 
-        if let Err(err) = self.platform.check_withdrawals(&got, &expected, None) {
+        let state = self.platform.state.read().unwrap();
+
+        let quorum = state.current_validator_set()?;
+
+        let validator_pro_tx_hash = ProTxHash::from_slice(request.validator_pro_tx_hash.as_slice())
+            .map_err(|_| {
+                Error::Abci(AbciError::BadRequestDataSize(format!(
+                    "invalid vote extension protxhash: {}",
+                    hex::encode(request.validator_pro_tx_hash.as_slice())
+                )))
+            })?;
+
+        let Some(validator) =  quorum.validator_set.get(&validator_pro_tx_hash) else {
+            return Ok(proto::ResponseVerifyVoteExtension {
+                status: VerifyStatus::Unknown.into(),
+            });
+        };
+
+        let validation_result =
+            self.platform
+                .check_withdrawals(&got, &expected, &validator.public_key);
+
+        if validation_result.is_valid() {
+            Ok(proto::ResponseVerifyVoteExtension {
+                status: VerifyStatus::Accept.into(),
+            })
+        } else {
             tracing::error!(
                 method = "verify_vote_extension",
                 ?got,
                 ?expected,
-                ?err,
+                ?validation_result.errors,
                 "vote extension mismatch"
             );
             Ok(proto::ResponseVerifyVoteExtension {
                 status: VerifyStatus::Reject.into(),
-            })
-        } else {
-            Ok(proto::ResponseVerifyVoteExtension {
-                status: VerifyStatus::Accept.into(),
             })
         }
     }

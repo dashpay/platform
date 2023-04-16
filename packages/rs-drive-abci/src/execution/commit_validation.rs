@@ -2,8 +2,7 @@ use crate::abci::AbciError;
 use crate::error::Error;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
-use dpp::bls_signatures;
-use dpp::bls_signatures::Serialize;
+use bls_signatures;
 use dpp::validation::SimpleValidationResult;
 use tenderdash_abci::proto::abci::CommitInfo;
 use tenderdash_abci::proto::types::BlockId;
@@ -34,11 +33,7 @@ where
         // We could have received a fake commit, so signature validation needs to be returned if error as a simple validation result
         let signature = match bls_signatures::Signature::from_bytes(signature.as_slice()) {
             Ok(signature) => signature,
-            Err(e) => {
-                return Ok(SimpleValidationResult::new_with_error(
-                    AbciError::SignatureError(e.into()),
-                ))
-            }
+            Err(e) => return Ok(SimpleValidationResult::new_with_error(e.into())),
         };
         // todo: public_key.verify(signature, )
 

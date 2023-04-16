@@ -1,7 +1,6 @@
+use bls_signatures;
 use dashcore::hashes::Hash;
 use dashcore::QuorumHash;
-use dpp::bls_signatures;
-use dpp::bls_signatures::Serialize;
 use dpp::consensus::basic::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::ConsensusError;
 use dpp::state_transition::StateTransition;
@@ -17,9 +16,10 @@ use tenderdash_abci::proto::abci::{ExecTxResult, RequestFinalizeBlock};
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 use tenderdash_abci::proto::types::Block;
 
-use crate::abci::signature_verifier::{SignatureError, SignatureVerifier};
+use crate::abci::signature_verifier::SignatureVerifier;
 use crate::abci::withdrawal::WithdrawalTxs;
 use crate::abci::AbciError;
+use crate::abci::AbciError::BlsError;
 use crate::block::{BlockExecutionContext, BlockStateInfo};
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -359,9 +359,12 @@ where
     pub fn update_state_cache_and_quorums(
         &self,
         block_info: BlockInfo,
+        updated_validator_hash: QuorumHash,
         transaction: &Transaction,
     ) -> Result<(), Error> {
         let mut state_cache = self.state.write().unwrap();
+
+        state_cache.current_validator_set_quorum_hash = updated_validator_hash;
 
         self.update_quorum_info(&mut state_cache, block_info.core_height)?;
 
@@ -378,25 +381,41 @@ where
         &self,
         received_withdrawals: &WithdrawalTxs,
         our_withdrawals: &WithdrawalTxs,
-        quorum_public_key: Option<bls_signatures::PublicKey>,
-    ) -> Result<(), AbciError> {
+        validator_public_key: &bls_signatures::PublicKey,
+    ) -> SimpleValidationResult<AbciError> {
         if received_withdrawals.ne(&our_withdrawals) {
-            return Err(AbciError::VoteExtensionMismatchReceived {
-                got: received_withdrawals.to_string(),
-                expected: our_withdrawals.to_string(),
-            });
+            return SimpleValidationResult::new_with_error(
+                AbciError::VoteExtensionMismatchReceived {
+                    got: received_withdrawals.to_string(),
+                    expected: our_withdrawals.to_string(),
+                },
+            );
         }
 
-        // Now, verify signature
-        if let Some(public_key) = quorum_public_key {
-            match received_withdrawals.verify_signature(public_key) {
-                Ok(true) => return Ok(()),
-                Ok(false) => return Err(AbciError::VoteExtensionsSignatureInvalid),
-                Err(e) => return Err(e.into()),
+        let validation_result = received_withdrawals.verify_signature(validator_public_key);
+        // There are two types of errors,
+        // The first is that the signature was invalid and that is shown with the result bool as false
+        // The second is that the signature is malformed, and that gives a BLSError
+
+        // However for this case we want to treat both as errors
+
+        if validation_result.is_valid() {
+            let value = validation_result.into_data().expect("expected data");
+            if value == true {
+                SimpleValidationResult::default()
+            } else {
+                SimpleValidationResult::new_with_error(AbciError::VoteExtensionsSignatureInvalid)
             }
+        } else {
+            SimpleValidationResult::new_with_error(
+                validation_result
+                    .errors
+                    .into_iter()
+                    .next()
+                    .expect("expected an error")
+                    .into(),
+            )
         }
-
-        Ok(())
     }
 
     // Retrieve quorum public key
@@ -411,7 +430,7 @@ where
             .quorum_public_key;
 
         bls_signatures::PublicKey::from_bytes(public_key.as_slice())
-            .map_err(|e| AbciError::from(SignatureError::from(e)).into())
+            .map_err(|e| AbciError::from(e).into())
     }
 
     /// Finalize the block, this first involves validating it, then if valid
@@ -476,6 +495,14 @@ where
             return Ok(validation_result.into());
         }
 
+        let mut state = self.state.write().unwrap();
+        if state.current_validator_set_quorum_hash.as_inner() != &commit.quorum_hash {
+            validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
+                "received a block for h: {} r: {} with validator set quorum hash {} expected current validator set quorum hash is {}",
+                height, round, hex::encode(commit.quorum_hash), hex::encode(state.current_validator_set_quorum_hash)
+            )));
+        }
+
         let quorum_public_key = self.get_quorum_key(commit.quorum_hash)?;
 
         //todo: verify commit
@@ -515,7 +542,6 @@ where
 
         // Determine a new protocol version if enough proposers voted
         let changed_protocol_version = if epoch_info.is_epoch_change_but_not_genesis() {
-            let mut state = self.state.write().unwrap();
             // Set current protocol version to the version from upcoming epoch
             state.current_protocol_version_in_consensus = state.next_epoch_protocol_version;
 
@@ -529,12 +555,12 @@ where
             }
 
             let current_protocol_version_in_consensus = state.current_protocol_version_in_consensus;
-            drop(state);
 
             Some(current_protocol_version_in_consensus)
         } else {
             None
         };
+        drop(state);
 
         let mut to_commit_block_info =
             block_state_info.to_block_info(epoch_info.current_epoch_index);
@@ -547,7 +573,11 @@ where
 
         // At the end we update the state cache
 
-        self.update_state_cache_and_quorums(to_commit_block_info, transaction)?;
+        self.update_state_cache_and_quorums(
+            to_commit_block_info,
+            QuorumHash::from_inner(block_header.next_validators_hash),
+            transaction,
+        )?;
 
         let mut drive_cache = self.drive.cache.write().unwrap();
 

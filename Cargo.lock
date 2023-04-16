@@ -270,6 +270,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "bindgen"
+version = "0.65.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cfdf7b466f9a4903edc73f95d6d2bcd5baf8ae620638762244d3f60143643cc5"
+dependencies = [
+ "bitflags",
+ "cexpr",
+ "clang-sys",
+ "lazy_static",
+ "lazycell",
+ "log",
+ "peeking_take_while",
+ "prettyplease 0.2.4",
+ "proc-macro2",
+ "quote",
+ "regex",
+ "rustc-hash",
+ "shlex",
+ "syn 2.0.15",
+ "which",
+]
+
+[[package]]
 name = "bit-set"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -350,6 +373,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "bls-dash-sys"
+version = "1.2.5"
+source = "git+https://github.com/dashpay/bls-signatures?branch=feat/threshold_bindings#16f7873d6a49a0a7d02a4911d92b06c1bfeae9ed"
+dependencies = [
+ "bindgen 0.65.1",
+ "cc",
+ "glob",
+]
+
+[[package]]
 name = "bls-signatures"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -365,6 +398,16 @@ dependencies = [
  "sha2 0.9.9",
  "subtle",
  "thiserror",
+]
+
+[[package]]
+name = "bls-signatures"
+version = "1.2.5"
+source = "git+https://github.com/dashpay/bls-signatures?branch=feat/threshold_bindings#16f7873d6a49a0a7d02a4911d92b06c1bfeae9ed"
+dependencies = [
+ "bls-dash-sys",
+ "rand",
+ "serde",
 ]
 
 [[package]]
@@ -1090,7 +1133,7 @@ dependencies = [
  "async-trait",
  "base64 0.20.0",
  "bincode 2.0.0-rc.3",
- "bls-signatures",
+ "bls-signatures 0.13.0",
  "bs58",
  "byteorder",
  "chrono",
@@ -1166,6 +1209,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "atty",
+ "bls-signatures 1.2.5",
  "bs58",
  "bytes",
  "chrono",
@@ -1985,7 +2029,7 @@ version = "0.8.3+7.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "557b255ff04123fcc176162f56ed0c9cd42d8f357cf55b3fabeb60f7413741b3"
 dependencies = [
- "bindgen",
+ "bindgen 0.64.0",
  "bzip2-sys",
  "cc",
  "glob",
@@ -2680,6 +2724,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "prettyplease"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1ceca8aaf45b5c46ec7ed39fff75f57290368c1846d33d24a122ca81416ab058"
+dependencies = [
+ "proc-macro2",
+ "syn 2.0.15",
+]
+
+[[package]]
 name = "proc-macro-crate"
 version = "0.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2754,7 +2808,7 @@ dependencies = [
  "log",
  "multimap",
  "petgraph",
- "prettyplease",
+ "prettyplease 0.1.25",
  "prost",
  "prost-types",
  "regex",

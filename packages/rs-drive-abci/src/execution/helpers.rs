@@ -7,6 +7,7 @@ use drive::grovedb::Transaction;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::quorum::Quorum;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformState;
@@ -92,7 +93,8 @@ where
                 let quorum_info_result =
                     self.core_rpc
                         .get_quorum_info(self.config.quorum_type, key, None)?;
-                Ok((key.clone(), quorum_info_result))
+                let quorum: Quorum = quorum_info_result.try_into()?;
+                Ok((key.clone(), quorum))
             })
             .collect::<Result<Vec<_>, Error>>()?;
 

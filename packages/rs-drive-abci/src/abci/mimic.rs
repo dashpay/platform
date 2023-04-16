@@ -3,6 +3,7 @@ use crate::abci::AbciError;
 use crate::error::Error;
 use crate::execution::quorum::Quorum;
 use crate::rpc::core::CoreRPCLike;
+use dashcore::hashes::Hash;
 use dashcore_rpc::json::{MasternodeListItem, QuorumMasternodeListItem};
 use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;
@@ -25,7 +26,8 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
     pub fn mimic_execute_block(
         &self,
         proposer_pro_tx_hash: [u8; 32],
-        current_quorum: Quorum,
+        current_quorum: &Quorum,
+        next_quorum: &Quorum,
         proposed_version: ProtocolVersion,
         total_hpmns: u32,
         block_info: BlockInfo,
@@ -112,10 +114,10 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
 
         // for all proposers in the quorum we much verify each vote extension
 
-        for validator in current_quorum.validator_set.iter() {
+        for validator in current_quorum.validator_set.values() {
             let request_verify_vote_extension = RequestVerifyVoteExtension {
                 hash: [0; 32].to_vec(), //todo
-                validator_pro_tx_hash: validator.protx_hash.to_vec(),
+                validator_pro_tx_hash: validator.pro_tx_hash.to_vec(),
                 height: height as i64,
                 round: 0,
                 vote_extensions: vote_extensions.clone(),
@@ -161,8 +163,8 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                     last_block_id: None,
                     last_commit_hash: [0; 32].to_vec(),
                     data_hash: [0; 32].to_vec(),
-                    validators_hash: [0; 32].to_vec(),
-                    next_validators_hash: [0; 32].to_vec(),
+                    validators_hash: current_quorum.quorum_hash.to_vec(),
+                    next_validators_hash: next_quorum.quorum_hash.to_vec(),
                     consensus_hash: [0; 32].to_vec(),
                     next_consensus_hash: [0; 32].to_vec(),
                     app_hash,
