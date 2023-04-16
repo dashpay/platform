@@ -20,3 +20,5 @@ pub mod initialization;
 mod masternode_identities;
 /// Protocol upgrade
 pub mod protocol_upgrade;
+/// Quorum methods
+pub mod quorum;

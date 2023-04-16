@@ -20,6 +20,7 @@ mod tests {
             },
             total_hpmns: 460,
             extra_normal_mns: 0,
+            quorum_count: 24,
             upgrading_info: Some(UpgradingInfo {
                 current_protocol_version: 1,
                 proposed_protocol_versions_with_weight: vec![(2, 1)],
@@ -92,8 +93,8 @@ mod tests {
                     .current_protocol_version_in_consensus,
                 1
             );
-            assert_eq!(counter.get(&1), Some(&5)); //most nodes were hit (60 were not)
-            assert_eq!(counter.get(&2), Some(&390)); //most nodes were hit (60 were not)
+            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&19), Some(&378)));
+            //most nodes were hit (63 were not)
         }
 
         // we did not yet hit the epoch change
@@ -169,7 +170,7 @@ mod tests {
                 2
             );
             assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
-            assert_eq!(counter.get(&2), Some(&154));
+            assert_eq!(counter.get(&2), Some(&156));
         }
 
         // we locked in
@@ -231,7 +232,7 @@ mod tests {
                 2
             );
             assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
-            assert_eq!(counter.get(&2), Some(&124));
+            assert_eq!(counter.get(&2), Some(&121));
         }
     }
 
@@ -246,6 +247,7 @@ mod tests {
             },
             total_hpmns: 120,
             extra_normal_mns: 0,
+            quorum_count: 200,
             upgrading_info: Some(UpgradingInfo {
                 current_protocol_version: 1,
                 proposed_protocol_versions_with_weight: vec![(2, 1)],
@@ -260,7 +262,7 @@ mod tests {
         let config = PlatformConfig {
             verify_sum_trees: true,
             quorum_size: 40,
-            validator_set_quorum_rotation_block_count: 50,
+            validator_set_quorum_rotation_block_count: 15,
             block_spacing_ms: hour_in_ms,
             ..Default::default()
         };
@@ -286,7 +288,7 @@ mod tests {
             current_proposer_versions,
             end_time_ms,
             ..
-        } = run_chain_for_strategy(&mut platform, 2000, strategy.clone(), config.clone(), 15);
+        } = run_chain_for_strategy(&mut platform, 2500, strategy.clone(), config.clone(), 16);
         {
             let platform = abci_app.platform;
             let drive_cache = platform.drive.cache.read().unwrap();
@@ -304,7 +306,7 @@ mod tests {
                     .unwrap()
                     .epoch
                     .index,
-                4
+                5
             );
             assert_eq!(
                 platform
@@ -318,6 +320,11 @@ mod tests {
                 platform.state.read().unwrap().next_epoch_protocol_version,
                 1
             );
+            let counter = drive_cache
+                .protocol_versions_counter
+                .as_ref()
+                .expect("expected a version counter");
+            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&46), Some(&68)));
         }
 
         // we did not yet hit the required threshold to upgrade
@@ -372,7 +379,7 @@ mod tests {
                     .unwrap()
                     .epoch
                     .index,
-                8
+                9
             );
             assert_eq!(
                 platform
@@ -387,7 +394,7 @@ mod tests {
                 2
             );
             // the counter is for the current voting during that window
-            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&13), Some(&54)));
+            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&15), Some(&78)));
         }
 
         // we are now locked in, the current protocol version will change on next epoch
@@ -419,10 +426,6 @@ mod tests {
         );
         {
             let drive_cache = platform.drive.cache.read().unwrap();
-            let _counter = drive_cache
-                .protocol_versions_counter
-                .as_ref()
-                .expect("expected a version counter");
             assert_eq!(
                 platform
                     .state
@@ -433,7 +436,7 @@ mod tests {
                     .unwrap()
                     .epoch
                     .index,
-                9
+                10
             );
             assert_eq!(
                 platform
@@ -461,6 +464,7 @@ mod tests {
             },
             total_hpmns: 200,
             extra_normal_mns: 0,
+            quorum_count: 100,
             upgrading_info: Some(UpgradingInfo {
                 current_protocol_version: 1,
                 proposed_protocol_versions_with_weight: vec![(2, 1)],
@@ -475,7 +479,7 @@ mod tests {
         let mut config = PlatformConfig {
             verify_sum_trees: true,
             quorum_size: 50,
-            validator_set_quorum_rotation_block_count: 60,
+            validator_set_quorum_rotation_block_count: 30,
             block_spacing_ms: hour_in_ms,
             ..Default::default()
         };
@@ -595,12 +599,12 @@ mod tests {
                 platform.state.read().unwrap().next_epoch_protocol_version,
                 2
             );
-            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&11), Some(&105)));
+            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&14), Some(&107)));
             //not all nodes have upgraded
         }
 
         // we are now locked in, the current protocol version will change on next epoch
-        // however most nodes now rever
+        // however most nodes now revert
 
         let strategy = Strategy {
             contracts: vec![],
@@ -611,6 +615,7 @@ mod tests {
             },
             total_hpmns: 200,
             extra_normal_mns: 0,
+            quorum_count: 100,
             upgrading_info: Some(UpgradingInfo {
                 current_protocol_version: 2,
                 proposed_protocol_versions_with_weight: vec![(1, 9), (2, 1)],
@@ -662,7 +667,7 @@ mod tests {
                 .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
-            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&170), Some(&23)));
+            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&170), Some(&24)));
             //a lot nodes reverted to previous version, however this won't impact things
             assert_eq!(
                 platform
@@ -722,7 +727,7 @@ mod tests {
                 .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
-            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&22), Some(&2)));
+            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&21), Some(&3)));
             assert_eq!(
                 platform
                     .state
@@ -761,9 +766,10 @@ mod tests {
             },
             total_hpmns: 200,
             extra_normal_mns: 0,
+            quorum_count: 100,
             upgrading_info: Some(UpgradingInfo {
                 current_protocol_version: 1,
-                proposed_protocol_versions_with_weight: vec![(1, 3), (2, 95), (3, 2)],
+                proposed_protocol_versions_with_weight: vec![(1, 3), (2, 95), (3, 4)],
                 upgrade_three_quarters_life: 0.75,
             }),
             core_height_increase: Frequency {
@@ -775,7 +781,7 @@ mod tests {
         let config = PlatformConfig {
             verify_sum_trees: true,
             quorum_size: 50,
-            validator_set_quorum_rotation_block_count: 60,
+            validator_set_quorum_rotation_block_count: 30,
             block_spacing_ms: hour_in_ms,
             ..Default::default()
         };
@@ -834,7 +840,7 @@ mod tests {
             );
             assert_eq!(
                 (counter.get(&1), counter.get(&2), counter.get(&3)),
-                (Some(&3), Some(&59), Some(&4))
+                (Some(&2), Some(&73), Some(&2))
             ); //some nodes reverted to previous version
         }
 
@@ -847,6 +853,7 @@ mod tests {
             },
             total_hpmns: 200,
             extra_normal_mns: 0,
+            quorum_count: 24,
             upgrading_info: Some(UpgradingInfo {
                 current_protocol_version: 1,
                 proposed_protocol_versions_with_weight: vec![(2, 3), (3, 97)],
@@ -918,7 +925,7 @@ mod tests {
             );
             assert_eq!(
                 (counter.get(&1), counter.get(&2), counter.get(&3)),
-                (None, Some(&6), Some(&154))
+                (None, Some(&7), Some(&156))
             );
         }
     }

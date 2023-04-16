@@ -3,7 +3,7 @@ use crate::error::Error;
 use tenderdash_abci::proto::abci::{CommitInfo, Misbehavior, RequestFinalizeBlock};
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::types::{
-    Block, BlockId, Commit, CoreChainLock, Data, EvidenceList, Header, VoteExtension,
+    Block, BlockId, Commit, CoreChainLock, Data, EvidenceList, Header, PartSetHeader, VoteExtension,
 };
 use tenderdash_abci::proto::version;
 
@@ -74,7 +74,7 @@ pub struct CleanedHeader {
     pub time: Timestamp,
 
     /// Prev block info
-    pub last_block_id: Option<BlockId>,
+    pub last_block_id: Option<CleanedBlockId>,
 
     /// Hashes of block data
 
@@ -234,7 +234,9 @@ impl TryFrom<Header> for CleanedHeader {
             chain_id,
             height: height as u64,
             time,
-            last_block_id,
+            last_block_id: last_block_id
+                .map(|last_block_id| last_block_id.try_into())
+                .transpose()?,
             last_commit_hash,
             data_hash,
             validators_hash,
@@ -247,6 +249,52 @@ impl TryFrom<Header> for CleanedHeader {
             proposed_app_version,
             proposer_pro_tx_hash,
             core_chain_locked_height,
+        })
+    }
+}
+
+/// The `CleanedBlockId` struct represents a `blockId` that has been properly formatted.
+/// It stores essential data required to finalize a block in a simplified format.
+///
+#[derive(Clone, PartialEq)]
+pub struct CleanedBlockId {
+    /// The block id hash
+    pub hash: [u8; 32],
+    /// The part set header of the block id
+    pub part_set_header: PartSetHeader,
+    /// The state id
+    pub state_id: [u8; 32],
+}
+
+impl TryFrom<BlockId> for CleanedBlockId {
+    type Error = Error;
+
+    fn try_from(value: BlockId) -> Result<Self, Self::Error> {
+        let BlockId {
+            hash,
+            part_set_header,
+            state_id,
+        } = value;
+        let hash = hash.try_into().map_err(|_| {
+            Error::Abci(AbciError::BadRequestDataSize(
+                "hash is not 32 bytes long in block id".to_string(),
+            ))
+        })?;
+        let Some(part_set_header) = part_set_header else {
+            return Err(AbciError::BadRequest(
+                "block id is missing part set header".to_string(),
+            ).into());
+        };
+        let state_id = state_id.try_into().map_err(|_| {
+            Error::Abci(AbciError::BadRequestDataSize(
+                "state id is not 32 bytes long".to_string(),
+            ))
+        })?;
+
+        Ok(CleanedBlockId {
+            hash,
+            part_set_header,
+            state_id,
         })
     }
 }
@@ -325,7 +373,7 @@ pub struct FinalizeBlockCleanedRequest {
     /// The block that was finalized
     pub block: CleanedBlock,
     /// The block ID that was finalized
-    pub block_id: BlockId,
+    pub block_id: CleanedBlockId,
 }
 
 impl TryFrom<RequestFinalizeBlock> for FinalizeBlockCleanedRequest {
@@ -386,7 +434,7 @@ impl TryFrom<RequestFinalizeBlock> for FinalizeBlockCleanedRequest {
             height: height as u64,
             round: round as u32,
             block: block.try_into()?,
-            block_id,
+            block_id: block_id.try_into()?,
         })
     }
 }

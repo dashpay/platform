@@ -192,10 +192,12 @@ where
 
         //For all deleted masternodes we need to remove them from the state of the app version votes
 
-        self.drive.remove_validators_proposed_app_versions(
-            deleted_masternodes.into_iter().map(|a| a.into_inner()),
-            Some(transaction),
-        )?;
+        if !deleted_masternodes.is_empty() {
+            self.drive.remove_validators_proposed_app_versions(
+                deleted_masternodes.into_iter().map(|a| a.into_inner()),
+                Some(transaction),
+            )?;
+        }
 
         Ok(())
     }

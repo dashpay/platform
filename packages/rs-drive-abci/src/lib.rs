@@ -51,8 +51,6 @@ pub mod rpc;
 // TODO We should compile it only for tests
 /// Asset Lock
 pub mod asset_lock;
-/// Core based logic
-pub mod dash_core;
 /// Test helpers and fixtures
 pub mod test;
 /// Validator Set
