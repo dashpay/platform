@@ -195,15 +195,24 @@ impl<'a> PartialEq for WithdrawalTxs<'a> {
 }
 #[cfg(test)]
 mod test {
+    use dashcore_rpc::dashcore_rpc_json::QuorumType;
     use tenderdash_abci::proto::types::{VoteExtension, VoteExtensionType};
 
     #[test]
     fn verify_signature() {
+        const HEIGHT: u64 = 100;
+        const ROUND: u32 = 0;
+        const CHAIN_ID: &str = "test-chain";
+
+        let quorum_hash =
+            hex::decode("D6711FA18C7DA6D3FF8615D3CD3C14500EE91DA5FA942425B8E2B79A30FD8E6C")
+                .unwrap();
+
         let mut wt = super::WithdrawalTxs {
             inner: Vec::new(),
             drive_operations: Vec::new(),
         };
-        let pubkey = hex::decode("5075624b6579424c5331323338317b3832383043423636393446313831444234383643353944464130433644313244314334434132363738393334304145424144303534304646453245444541433338374143454543393739343534433243464245373546443843463034443536447d").unwrap();
+        let pubkey = hex::decode("8280cb6694f181db486c59dfa0c6d12d1c4ca26789340aebad0540ffe2edeac387aceec979454c2cfbe75fd8cf04d56d").unwrap();
         let pubkey = bls_signatures::PublicKey::from_bytes(&pubkey).unwrap();
 
         let signature = hex::decode("A1022D9503CCAFC94FF76FA2E58E10A0474E6EB46305009274FAFCE57E28C7DE57602277777D07855567FAEF6A2F27590258858A875707F4DA32936DDD556BA28455AB04D9301E5F6F0762AC5B9FC036A302EE26116B1F89B74E1457C2D7383A").unwrap();
@@ -217,6 +226,32 @@ mod test {
             .into(),
             signature,
             r#type: VoteExtensionType::ThresholdRecover.into(),
-        })
+        });
+
+        assert!(wt
+            .verify_signatures(
+                CHAIN_ID,
+                QuorumType::LlmqTest,
+                &quorum_hash,
+                HEIGHT,
+                ROUND,
+                &pubkey
+            )
+            .unwrap());
+
+        // Now break the data
+        wt.inner[0].extension[3] = 0;
+        assert_eq!(
+            false,
+            wt.verify_signatures(
+                CHAIN_ID,
+                QuorumType::LlmqTest,
+                &quorum_hash,
+                HEIGHT,
+                ROUND,
+                &pubkey
+            )
+            .unwrap()
+        );
     }
 }
