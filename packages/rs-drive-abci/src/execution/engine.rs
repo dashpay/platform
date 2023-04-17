@@ -13,13 +13,12 @@ use drive::error::Error::GroveDB;
 use drive::fee::result::FeeResult;
 use drive::grovedb::{Transaction, TransactionArg};
 use std::collections::BTreeMap;
-use tenderdash_abci::proto::abci::{ExecTxResult, RequestFinalizeBlock};
+use tenderdash_abci::proto::abci::{ExecTxResult};
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 
 use crate::abci::commit::Commit;
 use crate::abci::withdrawal::WithdrawalTxs;
 use crate::abci::AbciError;
-use crate::abci::AbciError::BlsError;
 use crate::block::{BlockExecutionContext, BlockStateInfo};
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -416,7 +415,7 @@ where
             let quorum_hash = quorum_hash.expect("quorum hash is required to verify signature");
             let validation_result = received_withdrawals.verify_signatures(
                 &self.config.abci.chain_id,
-                self.config.quorum_type,
+                self.config.quorum_type(),
                 quorum_hash,
                 height,
                 round,
@@ -445,7 +444,7 @@ where
         let public_key = self
             .core_rpc
             .get_quorum_info(
-                self.config.quorum_type,
+                self.config.quorum_type(),
                 &QuorumHash::from_inner(quorum_hash),
                 Some(false),
             )?
@@ -530,7 +529,7 @@ where
 
         // Verify commit
 
-        let quorum_type = self.config.quorum_type;
+        let quorum_type = self.config.quorum_type();
         let commit = Commit::new(
             commit_info.clone(),
             block_id.clone(),

@@ -74,7 +74,7 @@ where
             .get_quorum_listextended(Some(core_block_height))?;
         let quorum_info = quorum_list
             .quorums_by_type
-            .get(&self.config.quorum_type)
+            .get(&self.config.quorum_type())
             .ok_or(Error::Execution(ExecutionError::DashCoreBadResponseError(
                 format!(
                     "expected quorums of type {}, but did not receive any from Dash Core",
@@ -93,7 +93,7 @@ where
             .map(|(key, _)| {
                 let quorum_info_result =
                     self.core_rpc
-                        .get_quorum_info(self.config.quorum_type, key, None)?;
+                        .get_quorum_info(self.config.quorum_type(), key, None)?;
                 let quorum: Quorum = quorum_info_result.try_into()?;
                 Ok((key.clone(), quorum))
             })
