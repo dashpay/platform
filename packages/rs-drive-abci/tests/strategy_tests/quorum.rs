@@ -71,19 +71,24 @@ impl TestQuorumInfo {
                 .expect("expected to recover a private key");
         let validator_set = bls_id_private_key_pairs
             .into_iter()
-            .map(|(pro_tx_hash, key)| ValidatorInQuorum {
-                pro_tx_hash: ProTxHash::from_slice(pro_tx_hash.as_slice()).expect("expected 32 bytes for pro_tx_hash"),
-                private_key: key,
-                public_key: key.g1_element().expect("expected to get public key"),
+            .map(|(pro_tx_hash, key)| {
+                let public_key = key.g1_element().expect("expected to get public key");
+                ValidatorInQuorum {
+                    pro_tx_hash: ProTxHash::from_slice(pro_tx_hash.as_slice())
+                        .expect("expected 32 bytes for pro_tx_hash"),
+                    private_key: key,
+                    public_key,
+                }
             })
             .collect();
+        let public_key = recovered_private_key
+            .g1_element()
+            .expect("expected to get G1 Element");
         TestQuorumInfo {
             quorum_hash,
             validator_set,
             private_key: recovered_private_key,
-            public_key: recovered_private_key
-                .g1_element()
-                .expect("expected to get G1 Element"),
+            public_key,
         }
     }
 }
@@ -99,7 +104,10 @@ impl From<&TestQuorumInfo> for Quorum {
 
         Quorum {
             quorum_hash: quorum_hash.clone(),
-            validator_set: validator_set.iter().map(|v| (v.pro_tx_hash, v.into())).collect(),
+            validator_set: validator_set
+                .iter()
+                .map(|v| (v.pro_tx_hash, v.into()))
+                .collect(),
             threshold_public_key: public_key.clone(),
         }
     }
@@ -116,7 +124,10 @@ impl From<TestQuorumInfo> for Quorum {
 
         Quorum {
             quorum_hash,
-            validator_set: validator_set.iter().map(|v| (v.pro_tx_hash, v.into())).collect(),
+            validator_set: validator_set
+                .iter()
+                .map(|v| (v.pro_tx_hash, v.into()))
+                .collect(),
             threshold_public_key: public_key,
         }
     }

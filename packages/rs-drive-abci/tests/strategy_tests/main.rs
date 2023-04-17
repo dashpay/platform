@@ -38,7 +38,7 @@ use dashcore::secp256k1::SecretKey;
 use dashcore::{signer, Network, PrivateKey, ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{
     DMNState, ExtendedQuorumDetails, MasternodeListDiffWithMasternodes, MasternodeListItem,
-    MasternodeType, QuorumType,
+    MasternodeType, QuorumInfoResult, QuorumType,
 };
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::document::document_transition::document_base_transition::DocumentBaseTransition;
@@ -56,9 +56,7 @@ use dpp::platform_value::BinaryData;
 use dpp::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError,
 };
-use dpp::state_transition::{
-    StateTransition, StateTransitionIdentitySigned, StateTransitionType,
-};
+use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionType};
 use dpp::tests::fixtures::instant_asset_lock_proof_fixture;
 use dpp::version::LATEST_VERSION;
 use dpp::{NativeBlsModule, ProtocolError};
@@ -231,9 +229,10 @@ impl Signer for SimpleSigner {
                 Ok(signature.to_vec().into())
             }
             KeyType::BLS12_381 => {
-                let pk = bls_signatures::PrivateKey::from_bytes(private_key, false).map_err(|_e| {
-                    ProtocolError::Error(anyhow!("bls private key from bytes isn't correct"))
-                })?;
+                let pk =
+                    bls_signatures::PrivateKey::from_bytes(private_key, false).map_err(|_e| {
+                        ProtocolError::Error(anyhow!("bls private key from bytes isn't correct"))
+                    })?;
                 Ok(pk.sign(data).to_bytes().to_vec().into())
             }
             // the default behavior from
@@ -935,8 +934,13 @@ pub fn generate_test_masternodes(
         Vec::with_capacity((masternode_count + hpmn_count) as usize);
 
     for i in 0..masternode_count {
-        let private_key_operator = BlsPrivateKey::generate_dash(rng).expect("expected to generate a private key");
-        let pub_key_operator = private_key_operator.g1_element().expect("expected to get public key").to_bytes().to_vec();
+        let private_key_operator =
+            BlsPrivateKey::generate_dash(rng).expect("expected to generate a private key");
+        let pub_key_operator = private_key_operator
+            .g1_element()
+            .expect("expected to get public key")
+            .to_bytes()
+            .to_vec();
         let masternode_list_item = MasternodeListItem {
             node_type: MasternodeType::Regular,
             protx_hash: ProTxHash::from_inner(rng.gen::<[u8; 32]>()),
@@ -962,8 +966,13 @@ pub fn generate_test_masternodes(
     }
 
     for i in 0..hpmn_count {
-        let private_key_operator = BlsPrivateKey::generate_dash(rng).expect("expected to generate a private key");
-        let pub_key_operator = private_key_operator.g1_element().expect("expected to get public key").to_bytes().to_vec();
+        let private_key_operator =
+            BlsPrivateKey::generate_dash(rng).expect("expected to generate a private key");
+        let pub_key_operator = private_key_operator
+            .g1_element()
+            .expect("expected to get public key")
+            .to_bytes()
+            .to_vec();
         let masternode_list_item = MasternodeListItem {
             node_type: MasternodeType::HighPerformance,
             protx_hash: ProTxHash::from_inner(rng.gen::<[u8; 32]>()),
@@ -1004,7 +1013,8 @@ pub fn generate_test_quorums(
             let validator_pro_tx_hashes = proposers
                 .iter()
                 .filter(|m| m.node_type == MasternodeType::HighPerformance)
-                .choose_multiple(rng, quorum_size).iter()
+                .choose_multiple(rng, quorum_size)
+                .iter()
                 .map(|masternode| masternode.protx_hash)
                 .collect(); //choose multiple chooses out of order (as we would like)
             (
@@ -1041,44 +1051,44 @@ pub(crate) fn run_chain_for_strategy(
         &mut rng,
     );
 
-    let quorums_clone = quorums.clone();
+    let quorums_clone: HashMap<QuorumHash, ExtendedQuorumDetails> = quorums
+        .iter()
+        .map(|(quorum_hash, _)| {
+            (
+                quorum_hash.clone(),
+                ExtendedQuorumDetails {
+                    creation_height: 0,
+                    quorum_index: None,
+                    mined_block_hash: Default::default(),
+                    num_valid_members: 0,
+                    health_ratio: 0.0,
+                },
+            )
+        })
+        .collect();
 
     platform
         .core_rpc
         .expect_get_quorum_listextended()
         .returning(move |_| {
             Ok(dashcore_rpc::dashcore_rpc_json::QuorumListResult {
-                quorums_by_type: HashMap::from([(
-                    QuorumType::Llmq100_67,
-                    quorums_clone
-                        .keys()
-                        .map(|key| {
-                            (
-                                key.clone(),
-                                ExtendedQuorumDetails {
-                                    creation_height: 0,
-                                    quorum_index: None,
-                                    mined_block_hash: Default::default(),
-                                    num_valid_members: 0,
-                                    health_ratio: 0.0,
-                                },
-                            )
-                        })
-                        .collect(),
-                )]),
+                quorums_by_type: HashMap::from([(QuorumType::Llmq100_67, quorums_clone.clone())]),
             })
         });
 
-    let quorums_clone = quorums.clone();
+    let quorums_info: HashMap<QuorumHash, QuorumInfoResult> = quorums
+        .iter()
+        .map(|(quorum_hash, test_quorum_info)| (quorum_hash.clone(), test_quorum_info.into()))
+        .collect();
 
     platform
         .core_rpc
         .expect_get_quorum_info()
         .returning(move |_, quorum_hash: &QuorumHash, _| {
-            Ok(quorums_clone
+            Ok(quorums_info
                 .get(quorum_hash)
                 .unwrap_or_else(|| panic!("expected to get quorum {}", quorum_hash.to_hex()))
-                .into())
+                .clone())
         });
 
     let initial_proposers = proposers.clone();
