@@ -27,6 +27,8 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
+use std::collections::BTreeMap;
+use dashcore::Txid;
 use crate::abci::AbciError;
 use crate::error::Error;
 use crate::execution::block_proposal::BlockProposal;
@@ -134,4 +136,6 @@ pub struct BlockExecutionContext {
     pub epoch_info: EpochInfo,
     /// Total hpmn count
     pub hpmn_count: u32,
+    /// Current withdrawal transactions hash -> Transaction
+    pub withdrawal_transactions: BTreeMap<Txid, Vec<u8>>
 }

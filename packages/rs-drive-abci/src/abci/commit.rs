@@ -75,8 +75,7 @@ impl Commit {
 
 #[cfg(test)]
 mod test {
-    use super::{request_id, Commit};
-    use crate::abci::signature_verifier::Signable;
+    use super::Commit;
     use dashcore_rpc::{
         dashcore::hashes::sha256, dashcore::hashes::Hash, dashcore_rpc_json::QuorumType,
     };
@@ -111,7 +110,7 @@ mod test {
                 wantHash: tmbytes.MustHexDecode("0CA3D5F42BDFED0C4FDE7E6DE0F046CC76CDA6CEE734D65E8B2EE0E375D4C57D"),
 
              */
-  
+
     /// Verify that commit signature is correct
     #[test]
     fn test_commit_verify() {

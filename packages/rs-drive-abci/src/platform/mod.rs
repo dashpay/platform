@@ -174,8 +174,6 @@ impl<C> Platform<C> {
 
         let state = PlatformState {
             last_committed_block_info: None,
-            //todo: put current epoch
-            current_epoch: Default::default(),
             current_protocol_version_in_consensus,
             next_epoch_protocol_version,
             quorums_extended_info: Default::default(),

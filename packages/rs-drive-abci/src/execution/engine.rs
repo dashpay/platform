@@ -1,6 +1,26 @@
-use crate::abci::commit::Commit;
+use std::collections::BTreeMap;
+use bls_signatures;
+use dashcore::hashes::Hash;
+use dashcore::{QuorumHash, Txid};
+use dpp::consensus::basic::identity::IdentityInsufficientBalanceError;
+use dpp::consensus::ConsensusError;
+use dpp::state_transition::StateTransition;
+use dpp::validation::{
+    ConsensusValidationResult, SimpleConsensusValidationResult, SimpleValidationResult,
+    ValidationResult,
+};
+use drive::drive::block_info::BlockInfo;
+use drive::error::Error::GroveDB;
+use drive::fee::result::FeeResult;
+use drive::grovedb::{Transaction, TransactionArg};
+use tenderdash_abci::proto::abci::{ExecTxResult, RequestFinalizeBlock};
+use tenderdash_abci::proto::serializers::timestamp::ToMilis;
+use tenderdash_abci::proto::types::Block;
+
+use crate::abci::signature_verifier::SignatureVerifier;
 use crate::abci::withdrawal::WithdrawalTxs;
 use crate::abci::AbciError;
+use crate::abci::AbciError::BlsError;
 use crate::block::{BlockExecutionContext, BlockStateInfo};
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -14,21 +34,6 @@ use crate::execution::finalize_block_cleaned_request::{CleanedBlock, FinalizeBlo
 use crate::platform::{Platform, PlatformRef};
 use crate::rpc::core::CoreRPCLike;
 use crate::validation::state_transition::process_state_transition;
-use dashcore::hashes::Hash;
-use dashcore::QuorumHash;
-use dpp::consensus::basic::identity::IdentityInsufficientBalanceError;
-use dpp::consensus::ConsensusError;
-use dpp::state_transition::StateTransition;
-use dpp::validation::{
-    ConsensusValidationResult, SimpleConsensusValidationResult, SimpleValidationResult,
-    ValidationResult,
-};
-use drive::drive::block_info::BlockInfo;
-use drive::error::Error::GroveDB;
-use drive::fee::result::FeeResult;
-use drive::grovedb::{Transaction, TransactionArg};
-use tenderdash_abci::proto::abci::ExecTxResult;
-use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 
 /// The outcome of the block execution, either by prepare proposal, or process proposal
 #[derive(Clone)]
@@ -255,7 +260,7 @@ where
             consensus_versions,
             block_hash,
             height,
-            round: _,
+            round,
             core_chain_locked_height,
             proposed_app_version,
             proposer_pro_tx_hash,
@@ -286,6 +291,7 @@ where
             block_state_info,
             epoch_info: epoch_info.clone(),
             hpmn_count: hpmn_list_len as u32,
+            withdrawal_transactions: BTreeMap::new(),
         };
 
         // If last synced Core block height is not set instead of scanning
@@ -307,12 +313,18 @@ where
             &transaction,
         )?;
 
-        let _unsigned_withdrawal_transaction_bytes = self
+        // This takes withdrawals from the transaction queue
+        let unsigned_withdrawal_transaction_bytes = self
             .fetch_and_prepare_unsigned_withdrawal_transactions(
                 validator_set_quorum_hash,
                 &block_execution_context,
                 &transaction,
             )?;
+
+        // Set the withdrawal transactions
+        block_execution_context.withdrawal_transactions = unsigned_withdrawal_transaction_bytes.into_iter().map(|withdrawal_transaction| {
+            (Txid::hash(withdrawal_transaction.as_slice()), withdrawal_transaction)
+        }).collect();
 
         let (block_fees, tx_results) =
             self.process_raw_state_transitions(&raw_state_transitions, &block_info, transaction)?;
@@ -377,6 +389,54 @@ where
         Ok(())
     }
 
+    /// check if received withdrawal transactions are correct and match our withdrawal txs
+    pub fn check_withdrawals(
+        &self,
+        received_withdrawals: &WithdrawalTxs,
+        our_withdrawals: &WithdrawalTxs,
+        verify_with_validator_public_key: Option<&bls_signatures::PublicKey>,
+    ) -> SimpleValidationResult<AbciError> {
+        if received_withdrawals.ne(&our_withdrawals) {
+            return SimpleValidationResult::new_with_error(
+                AbciError::VoteExtensionMismatchReceived {
+                    got: received_withdrawals.to_string(),
+                    expected: our_withdrawals.to_string(),
+                },
+            );
+        }
+
+        // we only verify if verify_with_validator_public_key exists
+        if let Some(validator_public_key) = verify_with_validator_public_key {
+            let validation_result = received_withdrawals.verify_signature(validator_public_key);
+
+            // There are two types of errors,
+            // The first is that the signature was invalid and that is shown with the result bool as false
+            // The second is that the signature is malformed, and that gives a BLSError
+
+            // However for this case we want to treat both as errors
+
+            if validation_result.is_valid() {
+                let value = validation_result.into_data().expect("expected data");
+                if value == true {
+                    SimpleValidationResult::default()
+                } else {
+                    SimpleValidationResult::new_with_error(AbciError::VoteExtensionsSignatureInvalid)
+                }
+            } else {
+                SimpleValidationResult::new_with_error(
+                    validation_result
+                        .errors
+                        .into_iter()
+                        .next()
+                        .expect("expected an error")
+                        .into(),
+                )
+            }
+        } else {
+            SimpleValidationResult::default()
+        }
+    }
+
     // Retrieve quorum public key
     fn get_quorum_key(&self, quorum_hash: [u8; 32]) -> Result<bls_signatures::PublicKey, Error> {
         let public_key = self
@@ -413,12 +473,12 @@ where
         let BlockExecutionContext {
             block_state_info,
             epoch_info,
-            hpmn_count,
+            hpmn_count, withdrawal_transactions,
         } = &block_execution_context;
 
         // Let's decompose the request
         let FinalizeBlockCleanedRequest {
-            commit: commit_info,
+            commit,
             misbehavior,
             hash,
             height,
@@ -455,52 +515,43 @@ where
         }
 
         let mut state = self.state.write().unwrap();
-        if state.current_validator_set_quorum_hash.as_inner() != &commit_info.quorum_hash {
+        if state.current_validator_set_quorum_hash.as_inner() != &commit.quorum_hash {
             validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
                 "received a block for h: {} r: {} with validator set quorum hash {} expected current validator set quorum hash is {}",
-                height, round, hex::encode(commit_info.quorum_hash), hex::encode(state.current_validator_set_quorum_hash)
+                height, round, hex::encode(commit.quorum_hash), hex::encode(state.current_validator_set_quorum_hash)
             )));
         }
 
-        let quorum_public_key = self.get_quorum_key(commit_info.quorum_hash)?;
-        // Verify commit
-        let quorum_type = self.config.quorum_type;
-        let commit = Commit::new(
-            commit_info.clone(),
-            block_id.clone(),
-            height,
-            quorum_type,
-            &block_header.chain_id,
-        );
-        commit
-            .verify_signature(&commit_info.block_signature.to_vec(), &quorum_public_key)
-            .map_err(AbciError::from)?;
+        let quorum_public_key = self.get_quorum_key(commit.quorum_hash)?;
 
-        
-        // Verify vote extensions; right now, we only support withdrawal txs
-        let received_withdrawals = WithdrawalTxs::from(&commit_info.threshold_vote_extensions);
-        let our_withdrawals = WithdrawalTxs::load(Some(transaction), &self.drive)
-            .map_err(|e| AbciError::WithdrawalTransactionsDBLoadError(e.to_string()))?;
+        //todo: verify commit
+        // if let Some(block_id) = block_id {
+        //     let result = self.validate_commit(commit.clone(), block_id, quorum_public_key)?;
+        //     if !result.is_valid() {
+        //         return Ok(validation_result.into());
+        //     }
+        // } else {
+        //     validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
+        //         "received a block for h: {} r: {} without a block id",
+        //         height, round
+        //     )));
+        //     return Ok(validation_result.into());
+        // }
 
-        if received_withdrawals.ne(&our_withdrawals) {
-            return Err(AbciError::VoteExtensionMismatchReceived {
-                got: received_withdrawals.to_string(),
-                expected: our_withdrawals.to_string(),
-            }
-            .into());
-        }
-
-        // Now, verify signatures if present
-        match received_withdrawals.verify_signatures(
-            &self.config.abci.chain_id,
-            height,
-            round,
-            &quorum_public_key,
-        ) {
-            Ok(true) => (),
-            Ok(false) => return Err(AbciError::VoteExtensionsSignatureInvalid.into()),
-            Err(e) => return Err(AbciError::from(e).into()),
-        };
+        // Verify vote extensions
+        // let received_withdrawals = WithdrawalTxs::from(&commit.threshold_vote_extensions);
+        // let our_withdrawals = WithdrawalTxs::load(Some(transaction), &self.drive)
+        //     .map_err(|e| AbciError::WithdrawalTransactionsDBLoadError(e.to_string()))?;
+        //todo: reenable check
+        //
+        // if let Err(e) = self.check_withdrawals(
+        //     &received_withdrawals,
+        //     &our_withdrawals,
+        //     Some(quorum_public_key),
+        // ) {
+        //     validation_result.add_error(e);
+        //     return Ok(validation_result.into());
+        // }
 
         // Next let's check that the hash received is the same as the hash we expect
 
@@ -536,8 +587,8 @@ where
         // we need to add the block time
         to_commit_block_info.time_ms = block_header.time.to_milis() as u64;
 
-        // Finalize withdrawal processing
-        our_withdrawals.finalize(Some(transaction), &self.drive, &to_commit_block_info)?;
+        // // Finalize withdrawal processing
+        // our_withdrawals.finalize(Some(transaction), &self.drive, &to_commit_block_info)?;
 
         // At the end we update the state cache
 

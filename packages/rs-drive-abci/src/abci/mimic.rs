@@ -1,3 +1,9 @@
+use dashcore::blockdata::transaction::special_transaction::asset_unlock::qualified_asset_unlock::AssetUnlockPayload;
+use dashcore::blockdata::transaction::special_transaction::asset_unlock::request_info::AssetUnlockRequestInfo;
+use dashcore::blockdata::transaction::special_transaction::asset_unlock::unqualified_asset_unlock::{AssetUnlockBasePayload, AssetUnlockBaseTransactionInfo};
+use dashcore::blockdata::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
+use dashcore::bls_sig_utils::BLSSignature;
+use dashcore::consensus::Decodable;
 use crate::abci::server::AbciApplication;
 use crate::abci::AbciError;
 use crate::error::Error;
@@ -9,16 +15,12 @@ use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;
 use drive::drive::block_info::BlockInfo;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
-use tenderdash_abci::proto::abci::{
-    CommitInfo, RequestExtendVote, RequestFinalizeBlock, RequestPrepareProposal,
-    RequestVerifyVoteExtension, ResponsePrepareProposal,
-};
+use tenderdash_abci::proto::abci::{CommitInfo, ExtendVoteExtension, RequestExtendVote, RequestFinalizeBlock, RequestPrepareProposal, RequestVerifyVoteExtension, ResponsePrepareProposal};
 use tenderdash_abci::proto::google::protobuf::Timestamp;
-use tenderdash_abci::proto::types::{
-    Block, BlockId, Data, Evidence, EvidenceList, Header, PartSetHeader,
-};
+use tenderdash_abci::proto::types::{Block, BlockId, Data, Evidence, EvidenceList, Header, PartSetHeader, VoteExtension, VoteExtensionType};
 use tenderdash_abci::proto::version::Consensus;
 use tenderdash_abci::Application;
+use crate::error::execution::ExecutionError;
 
 impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
     /// Execute a block with various state transitions
@@ -137,12 +139,51 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             }
         }
 
+        //FixMe: This is not correct for the threshold vote extension (we need to sign and do
+        // things differently
+
+        let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
+        let block_execution_context =
+            guarded_block_execution_context
+                .as_ref()
+                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "block execution context must be set in block begin handler",
+                )))?;
+
+        let extensions = block_execution_context.withdrawal_transactions.keys().map(|tx_id| {
+            VoteExtension {
+                r#type: VoteExtensionType::ThresholdRecover as i32,
+                extension: tx_id.to_vec(),
+                signature: vec![], //todo: signature
+            }
+        }).collect();
+
+        //todo: tidy up and fix
+        let withdrawals = block_execution_context.withdrawal_transactions.iter().map(|(tx_id,transaction)| {
+            let AssetUnlockBaseTransactionInfo {
+                version, lock_time, output, base_payload
+            } = AssetUnlockBaseTransactionInfo::consensus_decode(transaction.as_slice()).expect("a");
+            dashcore::Transaction {
+                version,
+                lock_time,
+                input: vec![],
+                output,
+                special_transaction_payload: Some(AssetUnlockPayloadType(AssetUnlockPayload {
+                    base: base_payload,
+                    request_info: AssetUnlockRequestInfo { request_height: core_height, quorum_hash: current_quorum.quorum_hash },
+                    quorum_sig: BLSSignature::from([0;96].as_slice()),
+                })),
+            }
+        }).collect();
+
+        drop(guarded_block_execution_context);
+
         let request_finalize_block = RequestFinalizeBlock {
             commit: Some(CommitInfo {
                 round: 0,
                 quorum_hash: current_quorum.quorum_hash.to_vec(),
                 block_signature: [0; 96].to_vec(),
-                threshold_vote_extensions: vec![],
+                threshold_vote_extensions: extensions,
             }),
             misbehavior: vec![],
             hash: app_hash.clone(), //todo: change this to block hash
@@ -196,6 +237,6 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                 )
             });
 
-        Ok(vec![])
+        Ok(withdrawals)
     }
 }

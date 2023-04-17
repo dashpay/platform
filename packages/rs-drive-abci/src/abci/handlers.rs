@@ -39,12 +39,13 @@ use dashcore::ProTxHash;
 use drive::fee::credits::SignedCredits;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
-use tenderdash_abci::proto::abci::{self as proto, ResponseException};
+use tenderdash_abci::proto::abci::{self as proto, ExtendVoteExtension, ResponseException};
 use tenderdash_abci::proto::abci::{
     ExecTxResult, RequestCheckTx, RequestFinalizeBlock, RequestInitChain, RequestPrepareProposal,
     RequestProcessProposal, RequestQuery, ResponseCheckTx, ResponseFinalizeBlock,
     ResponseInitChain, ResponsePrepareProposal, ResponseProcessProposal, ResponseQuery, TxRecord,
 };
+use tenderdash_abci::proto::types::VoteExtensionType;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -108,6 +109,7 @@ where
         }
 
         //todo: we need to set the block hash
+
         let BlockExecutionOutcome {
             app_hash,
             tx_results,
@@ -177,7 +179,7 @@ where
         let transaction = transaction_guard.as_ref().unwrap();
 
         // We can take the core chain lock update here because it won't be used anywhere else
-        if let Some(_c) = request.core_chain_lock_update.take() {
+        if let Some(c) = request.core_chain_lock_update.take() {
             //todo: if there is a core chain lock update we need to validate it
         }
 
@@ -214,87 +216,116 @@ where
         &self,
         request: proto::RequestExtendVote,
     ) -> Result<proto::ResponseExtendVote, proto::ResponseException> {
-        let transaction_guard = self.transaction.read().unwrap();
-        let transaction = transaction_guard.as_ref().unwrap();
+        let proto::RequestExtendVote {
+            hash: block_hash, height, round
+        } = request;
+        let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
+        let block_execution_context =
+            guarded_block_execution_context
+                .as_ref()
+                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "block execution context must be set in block begin handler",
+                )))?;
 
-        self.must_match_vote_info(request.height, request.round, request.hash)?;
+        let block_state_info = &block_execution_context.block_state_info;
 
-        let withdrawals = WithdrawalTxs::load(Some(transaction), &self.platform.drive)?;
-
-        Ok(proto::ResponseExtendVote {
-            vote_extensions: withdrawals.into_vec(),
-        })
+        if !block_state_info.matches_current_block(height as u64, round as u32, block_hash)? {
+            return Err(Error::from(AbciError::RequestForWrongBlockReceived(
+                format!(
+                    "received request for height: {} rount: {}, expected height: {} round: {}",
+                    height, round, block_state_info.height, block_state_info.round
+                ),
+            )).into());
+        } else {
+            // we only want to sign the hash of the transaction
+            let extensions = block_execution_context.withdrawal_transactions.keys().map(|tx_id| {
+                ExtendVoteExtension {
+                    r#type: VoteExtensionType::ThresholdRecover as i32,
+                    extension: tx_id.to_vec(),
+                }
+            }).collect();
+            Ok(proto::ResponseExtendVote {
+                vote_extensions: extensions,
+            })
+        }
     }
 
+    /// Todo: Verify vote extension not really needed because extend vote is deterministic
     fn verify_vote_extension(
         &self,
         request: proto::RequestVerifyVoteExtension,
     ) -> Result<proto::ResponseVerifyVoteExtension, proto::ResponseException> {
-        let transaction_guard = self.transaction.read().unwrap();
-        let transaction = transaction_guard.as_ref().unwrap();
+        let proto::RequestVerifyVoteExtension {
+            hash: block_hash, validator_pro_tx_hash, height,
+            round, vote_extensions
+        } = request;
 
-        self.must_match_vote_info(request.height, request.round, request.hash)?;
+        let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
+        let block_execution_context =
+            guarded_block_execution_context
+                .as_ref()
+                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "block execution context must be set in block begin handler",
+                )))?;
 
-        let got: WithdrawalTxs = request.vote_extensions.into();
-        let expected = WithdrawalTxs::load(Some(transaction), &self.platform.drive)?;
+        let block_state_info = &block_execution_context.block_state_info;
 
-        /*
-        We don't get signatures from Tenderdash, so the logic below is not needed
+        if !block_state_info.matches_current_block(height as u64, round as u32, block_hash)? {
+            return Err(Error::from(AbciError::RequestForWrongBlockReceived(
+                format!(
+                    "received request for height: {} rount: {}, expected height: {} round: {}",
+                    height, round, block_state_info.height, block_state_info.round
+                ),
+            )).into());
+        }
 
+        let got: WithdrawalTxs = vote_extensions.into();
+        let expected = block_execution_context.withdrawal_transactions.keys().map(|tx_id| {
+            ExtendVoteExtension {
+                r#type: VoteExtensionType::ThresholdRecover as i32,
+                extension: tx_id.to_vec(),
+            }
+        }).collect::<Vec<_>>().into();
 
-                let state = self.platform.state.read().unwrap();
+        // let state = self.platform.state.read().unwrap();
+        //
+        // let quorum = state.current_validator_set()?;
 
-                let quorum = state.current_validator_set()?;
+        // let validator_pro_tx_hash = ProTxHash::from_slice(validator_pro_tx_hash.as_slice())
+        //     .map_err(|_| {
+        //         Error::Abci(AbciError::BadRequestDataSize(format!(
+        //             "invalid vote extension protxhash: {}",
+        //             hex::encode(validator_pro_tx_hash.as_slice())
+        //         )))
+        //     })?;
+        //
+        // let Some(validator) = quorum.validator_set.get(&validator_pro_tx_hash) else {
+        //     return Ok(proto::ResponseVerifyVoteExtension {
+        //         status: VerifyStatus::Unknown.into(),
+        //     });
+        // };
 
-                let validator_pro_tx_hash = ProTxHash::from_slice(request.validator_pro_tx_hash.as_slice())
-                    .map_err(|_| {
-                        Error::Abci(AbciError::BadRequestDataSize(format!(
-                            "invalid vote extension protxhash: {}",
-                            hex::encode(request.validator_pro_tx_hash.as_slice())
-                        )))
-                    })?;
+        let validation_result =
+            self.platform
+                .check_withdrawals(&got, &expected, None);
 
-                let Some(validator) =  quorum.validator_set.get(&validator_pro_tx_hash) else {
-                    return Ok(proto::ResponseVerifyVoteExtension {
-                        status: VerifyStatus::Unknown.into(),
-                    });
-                };
-
-                let validation_result =
-                    self.platform
-                        .check_withdrawals(&got, &expected, &validator.public_key);
-
-                if validation_result.is_valid() {
-                    Ok(proto::ResponseVerifyVoteExtension {
-                        status: VerifyStatus::Accept.into(),
-                    })
-                } else {
-                    tracing::error!(
-                        method = "verify_vote_extension",
-                        ?got,
-                        ?expected,
-                        "vote extension mismatch"
-                    );
-                    Ok(proto::ResponseVerifyVoteExtension {
-                        status: VerifyStatus::Reject.into(),
-                    })
-                }
-                 */
-        if got.eq(&expected) {
+        if validation_result.is_valid() {
             Ok(proto::ResponseVerifyVoteExtension {
                 status: VerifyStatus::Accept.into(),
             })
         } else {
             tracing::error!(
-                method = "verify_vote_extension",
-                ?got,
-                ?expected,
-                "vote extension mismatch"
-            );
+            method = "verify_vote_extension",
+            ?got,
+            ?expected,
+            ?validation_result.errors,
+            "vote extension mismatch"
+        );
             Ok(proto::ResponseVerifyVoteExtension {
                 status: VerifyStatus::Reject.into(),
             })
         }
+
     }
 
     fn finalize_block(
@@ -924,33 +955,3 @@ where
 //         }
 //     }
 // }
-impl<'a, C> AbciApplication<'a, C> {
-    /// Check if current state (round/height/hash) matches received message.
-    fn must_match_vote_info(
-        &self,
-        height: i64,
-        round: i32,
-        block_hash: Vec<u8>,
-    ) -> Result<(), Error> {
-        let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
-        let block_execution_context =
-            guarded_block_execution_context
-                .as_ref()
-                .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                    "block execution context must be set in block begin handler",
-                )))?;
-
-        let block_state_info = &block_execution_context.block_state_info;
-
-        if !block_state_info.matches_current_block(height as u64, round as u32, block_hash)? {
-            Err(Error::from(AbciError::RequestForWrongBlockReceived(
-                format!(
-                    "received request for height: {} rount: {}, expected height: {} round: {}",
-                    height, round, block_state_info.height, block_state_info.round
-                ),
-            )))
-        } else {
-            Ok(())
-        }
-    }
-}
