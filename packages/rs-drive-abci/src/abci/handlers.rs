@@ -223,7 +223,7 @@ where
         let withdrawals = WithdrawalTxs::load(Some(transaction), &self.platform.drive)?;
 
         Ok(proto::ResponseExtendVote {
-            vote_extensions: withdrawals.to_vec(),
+            vote_extensions: withdrawals.into_vec(),
         })
     }
 

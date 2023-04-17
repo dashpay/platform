@@ -81,7 +81,17 @@ impl<'a> WithdrawalTxs<'a> {
 
 impl<'a> WithdrawalTxs<'a> {
     /// Convert withdrawal transactions to vector of ExtendVoteExtension
-    pub fn to_vec(self) -> Vec<ExtendVoteExtension> {
+    pub fn to_vec(&self) -> Vec<ExtendVoteExtension> {
+        self.inner
+            .iter()
+            .map(|v| ExtendVoteExtension {
+                r#type: v.r#type,
+                extension: v.extension.clone(),
+            })
+            .collect::<Vec<ExtendVoteExtension>>()
+    }
+    /// Convert withdrawal transactions to vector of ExtendVoteExtension
+    pub fn into_vec(self) -> Vec<ExtendVoteExtension> {
         self.inner
             .into_iter()
             .map(|v| ExtendVoteExtension {

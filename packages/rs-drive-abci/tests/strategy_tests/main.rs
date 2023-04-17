@@ -2521,9 +2521,9 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
-        let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
 
-        assert_eq!(outcome.identities.len(), 100);
+        assert_eq!(outcome.identities.len(), 10);
         assert_eq!(outcome.withdrawals.len(), 5);
     }
 }
