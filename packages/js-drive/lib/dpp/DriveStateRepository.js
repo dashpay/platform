@@ -651,12 +651,14 @@ class DriveStateRepository {
       smlStore.getTipHeight() - offset + 1,
     );
 
+    const instantLock = new InstantLock(Buffer.from(rawInstantLock));
+
     // below is a fix for DIP 24
     // see https://github.com/dashpay/dash/pull/5158
     const llmqType = instantlockSML.getInstantSendLLMQType();
 
     if (instantlockSML.isLLMQTypeRotated(llmqType)) {
-      const quorumHash = instantLock.selectSignatoryRotatedQuorum(
+      const { quorumHash } = instantLock.selectSignatoryRotatedQuorum(
         smlStore,
         instantLock.getRequestId(),
         offset,
@@ -669,7 +671,6 @@ class DriveStateRepository {
     }
 
     try {
-      const instantLock = new InstantLock(Buffer.from(rawInstantLock));
       const { result: isVerified } = await this.coreRpcClient.verifyIsLock(
         instantLock.getRequestId().toString('hex'),
         instantLock.txid,
