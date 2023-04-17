@@ -13,7 +13,7 @@ use drive::error::Error::GroveDB;
 use drive::fee::result::FeeResult;
 use drive::grovedb::{Transaction, TransactionArg};
 use std::collections::BTreeMap;
-use tenderdash_abci::proto::abci::ExecTxResult;
+use tenderdash_abci::proto::abci::{ExecTxResult, RequestFinalizeBlock};
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 
 use crate::abci::commit::Commit;
@@ -345,8 +345,6 @@ where
             block_fees.into(),
             transaction,
         )?;
-
-        // self.update_masternode_identities(last_block_core_height, core_chain_locked_height)?;
 
         let root_hash = self
             .drive

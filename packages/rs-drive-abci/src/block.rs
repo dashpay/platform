@@ -27,15 +27,15 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
-use std::collections::BTreeMap;
-use dashcore::Txid;
 use crate::abci::AbciError;
 use crate::error::Error;
 use crate::execution::block_proposal::BlockProposal;
 use crate::execution::fee_pools::epoch::EpochInfo;
+use dashcore::Txid;
 use drive::drive::block_info::BlockInfo;
 use drive::fee::epoch::EpochIndex;
 use drive::fee_pools::epochs::Epoch;
+use std::collections::BTreeMap;
 
 /// Block info
 pub struct BlockStateInfo {
@@ -137,5 +137,5 @@ pub struct BlockExecutionContext {
     /// Total hpmn count
     pub hpmn_count: u32,
     /// Current withdrawal transactions hash -> Transaction
-    pub withdrawal_transactions: BTreeMap<Txid, Vec<u8>>
+    pub withdrawal_transactions: BTreeMap<Txid, Vec<u8>>,
 }

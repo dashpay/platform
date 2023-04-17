@@ -137,14 +137,16 @@ where
             return Ok(()); // no need to do anything
         }
 
+        let masternode_diff = self
+            .core_rpc
+            .get_protx_diff_with_masternodes(previous_core_height, core_block_height)?;
+
         let MasternodeListDiffWithMasternodes {
             added_mns,
             removed_mns,
             updated_mns,
             ..
-        } = self
-            .core_rpc
-            .get_protx_diff_with_masternodes(previous_core_height, core_block_height)?;
+        } = &masternode_diff;
 
         //todo: clean up
         let added_hpmns = added_mns.iter().filter_map(|masternode| {
@@ -158,14 +160,14 @@ where
         state.hpmn_masternode_list.extend(added_hpmns.clone());
 
         let added_masternodes = added_mns
-            .into_iter()
-            .map(|masternode| (masternode.protx_hash.clone(), masternode));
+            .iter()
+            .map(|masternode| (masternode.protx_hash.clone(), masternode.clone()));
 
-        state.full_masternode_list.extend(added_masternodes.clone());
+        state.full_masternode_list.extend(added_masternodes);
 
         let updated_masternodes = updated_mns
-            .into_iter()
-            .map(|masternode| (masternode.protx_hash.clone(), masternode.state_diff));
+            .iter()
+            .map(|masternode| (masternode.protx_hash.clone(), masternode.state_diff.clone()));
 
         updated_masternodes.for_each(|(pro_tx_hash, state_diff)| {
             if let Some(masternode_list_item) = state.full_masternode_list.get_mut(&pro_tx_hash) {
@@ -178,7 +180,7 @@ where
         });
 
         let deleted_masternodes = removed_mns
-            .into_iter()
+            .iter()
             .map(|masternode| {
                 let pro_tx_hash = masternode.protx_hash;
                 pro_tx_hash
@@ -192,14 +194,14 @@ where
             .full_masternode_list
             .retain(|key, _| !deleted_masternodes.contains(key));
 
-        //Todo: masternode identities
-        self.update_masternode_identities(
-            previous_core_height,
-            core_block_height,
-            &block_info,
-            state,
-            &transaction,
-        )?;
+        // //Todo: masternode identities
+        // self.update_masternode_identities(
+        //     previous_core_height,
+        //     core_block_height,
+        //     &block_info,
+        //     state,
+        //     &transaction,
+        // )?;
 
         //For all deleted masternodes we need to remove them from the state of the app version votes
 
