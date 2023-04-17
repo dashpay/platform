@@ -536,10 +536,7 @@ where
 
             withdrawals.insert(
                 document.id,
-                (
-                    transaction_index.to_be_bytes().to_vec(),
-                    transaction_buffer,
-                ),
+                (transaction_index.to_be_bytes().to_vec(), transaction_buffer),
             );
         }
 

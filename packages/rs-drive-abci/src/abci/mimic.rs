@@ -150,31 +150,46 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                     "block execution context must be set in block begin handler",
                 )))?;
 
-        let extensions = block_execution_context.withdrawal_transactions.keys().map(|tx_id| {
-            VoteExtension {
-                r#type: VoteExtensionType::ThresholdRecover as i32,
-                extension: tx_id.to_vec(),
-                signature: vec![], //todo: signature
-            }
-        }).collect();
+        let extensions = block_execution_context
+            .withdrawal_transactions
+            .keys()
+            .map(|tx_id| {
+                VoteExtension {
+                    r#type: VoteExtensionType::ThresholdRecover as i32,
+                    extension: tx_id.to_vec(),
+                    signature: vec![], //todo: signature
+                }
+            })
+            .collect();
 
         //todo: tidy up and fix
-        let withdrawals = block_execution_context.withdrawal_transactions.iter().map(|(tx_id,transaction)| {
-            let AssetUnlockBaseTransactionInfo {
-                version, lock_time, output, base_payload
-            } = AssetUnlockBaseTransactionInfo::consensus_decode(transaction.as_slice()).expect("a");
-            dashcore::Transaction {
-                version,
-                lock_time,
-                input: vec![],
-                output,
-                special_transaction_payload: Some(AssetUnlockPayloadType(AssetUnlockPayload {
-                    base: base_payload,
-                    request_info: AssetUnlockRequestInfo { request_height: core_height, quorum_hash: current_quorum.quorum_hash },
-                    quorum_sig: BLSSignature::from([0;96].as_slice()),
-                })),
-            }
-        }).collect();
+        let withdrawals = block_execution_context
+            .withdrawal_transactions
+            .iter()
+            .map(|(tx_id, transaction)| {
+                let AssetUnlockBaseTransactionInfo {
+                    version,
+                    lock_time,
+                    output,
+                    base_payload,
+                } = AssetUnlockBaseTransactionInfo::consensus_decode(transaction.as_slice())
+                    .expect("a");
+                dashcore::Transaction {
+                    version,
+                    lock_time,
+                    input: vec![],
+                    output,
+                    special_transaction_payload: Some(AssetUnlockPayloadType(AssetUnlockPayload {
+                        base: base_payload,
+                        request_info: AssetUnlockRequestInfo {
+                            request_height: core_height,
+                            quorum_hash: current_quorum.quorum_hash,
+                        },
+                        quorum_sig: BLSSignature::from([0; 96].as_slice()),
+                    })),
+                }
+            })
+            .collect();
 
         drop(guarded_block_execution_context);
 

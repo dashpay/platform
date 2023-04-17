@@ -31,6 +31,7 @@ where
         &self,
         previous_core_height: u32,
         current_core_height: u32,
+        masternode_diff: MasternodeListDiffWithMasternodes,
         block_info: &BlockInfo,
         state: &PlatformState,
         transaction: &Transaction,
@@ -41,9 +42,7 @@ where
                 updated_mns,
                 removed_mns,
                 ..
-            } = self
-                .core_rpc
-                .get_protx_diff_with_masternodes(previous_core_height, current_core_height)?;
+            } = masternode_diff;
 
             for masternode in added_mns {
                 let owner_identity = self.create_owner_identity(&masternode)?;
