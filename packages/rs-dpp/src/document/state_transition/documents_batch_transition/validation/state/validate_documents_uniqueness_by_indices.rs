@@ -4,6 +4,7 @@ use futures::future::join_all;
 use itertools::Itertools;
 use platform_value::string_encoding::Encoding;
 use serde_json::{json, Value as JsonValue};
+use platform_value::Value;
 
 use crate::consensus::state::document::duplicate_unique_index_error::DuplicateUniqueIndexError;
 use crate::consensus::state::state_error::StateError;
@@ -131,7 +132,14 @@ fn build_query_for_index_definition(
 
             _ => {
                 if let Some(value) = transition.get_dynamic_property(property_name) {
-                    query.push(json!([property_name, "==", value]))
+                    match value {
+                        Value::Identifier(internal) => {
+                            query.push(json!([property_name, "==", internal]))
+                        }
+                        _ => {
+                            query.push(json!([property_name, "==", value]))
+                        }
+                    }
                 }
             }
         }
