@@ -22,6 +22,14 @@ on:
         type: boolean
         default: false
         required: false
+      dockerhub-username:
+        description: DockerHub username
+        type: string
+        required: true
+      dockerhub-token:
+        description: DockerHub token
+        type: string
+        required: true
 
 jobs:
   lint:
@@ -39,8 +47,8 @@ jobs:
       - name: Login to DockerHub
         uses: docker/login-action@v2
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ inputs.dockerhub-username }}
+          password: ${{ inputs.dockerhub-token }}
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -111,8 +119,8 @@ jobs:
       - name: Login to DockerHub
         uses: docker/login-action@v2
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ inputs.dockerhub-username }}
+          password: ${{ inputs.dockerhub-token }}
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3

@@ -36,3 +36,5 @@ jobs:
       package: '@dashevo/platform-test-suite'
       skip-tests: true
       install-browsers: true
+      dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
+      dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}

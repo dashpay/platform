@@ -34,3 +34,5 @@ jobs:
       package: '@dashevo/wallet-lib'
       start-local-network: true
       install-browsers: true
+      dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
+      dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
