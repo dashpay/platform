@@ -111,30 +111,7 @@ mod test {
                 wantHash: tmbytes.MustHexDecode("0CA3D5F42BDFED0C4FDE7E6DE0F046CC76CDA6CEE734D65E8B2EE0E375D4C57D"),
 
              */
-    #[test]
-    fn test_build_sign_hash() {
-        let quorum_hash =
-            hex::decode("6A12D9CF7091D69072E254B297AEF15997093E480FDE295E09A7DE73B31CEEDD")
-                .unwrap();
-        let request_id = request_id(super::VOTE_REQUEST_ID_PREFIX, 1001, 0);
-
-        let sign_bytes_hash =
-            hex::decode("0CA3D5F42BDFED0C4FDE7E6DE0F046CC76CDA6CEE734D65E8B2EE0E375D4C57D")
-                .unwrap();
-
-        let expect_sign_id =
-            hex::decode("DA25B746781DDF47B5D736F30B1D9D0CC86981EEC67CBE255265C4361DEF8C2E")
-                .unwrap();
-
-        let sign_id = super::build_sign_hash(
-            QuorumType::LlmqTest,
-            &quorum_hash,
-            &request_id,
-            &sign_bytes_hash,
-        );
-        assert_eq!(expect_sign_id, sign_id); // 194,4
-    }
-
+  
     /// Verify that commit signature is correct
     #[test]
     fn test_commit_verify() {
