@@ -520,6 +520,8 @@ describe.skip('synchronizeMasternodeIdentitiesFactory', function main() {
     }
   });
 
+  it('should do nothing if last synced height is equal to the current height');
+
   it('should create identities for all masternodes on the first sync', async () => {
     const result = await synchronizeMasternodeIdentities(coreHeight, blockInfo);
 

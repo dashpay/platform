@@ -46,6 +46,7 @@ describe('DriveStateRepository', () => {
     coreRpcClientMock = {
       getRawTransaction: this.sinon.stub(),
       verifyIsLock: this.sinon.stub(),
+      quorum: this.sinon.stub(),
     };
 
     dataContractRepositoryMock = {
@@ -590,15 +591,35 @@ describe('DriveStateRepository', () => {
   });
 
   describe('#verifyInstantLock', () => {
-    let smlStore;
+    let smlStoreMock;
+    let instantlockSMLMock;
+    let llmqType;
+    let quorumHash;
 
-    beforeEach(() => {
+    beforeEach(function beforeEach() {
+      llmqType = 103;
+      quorumHash = 'someHash';
       blockExecutionContextMock.getHeight.returns(41);
       blockExecutionContextMock.getCoreChainLockedHeight.returns(42);
 
-      smlStore = {};
+      instantlockSMLMock = {
+        getInstantSendLLMQType: this.sinon.stub(),
+        isLLMQTypeRotated: this.sinon.stub(),
+      };
 
-      simplifiedMasternodeListMock.getStore.returns(smlStore);
+      instantlockSMLMock.getInstantSendLLMQType.returns(llmqType);
+      instantlockSMLMock.isLLMQTypeRotated.returns(false);
+
+      instantLockMock.selectSignatoryRotatedQuorum.returns(quorumHash);
+
+      smlStoreMock = {
+        getSMLbyHeight: this.sinon.stub(),
+        getTipHeight: this.sinon.stub(),
+      };
+
+      smlStoreMock.getSMLbyHeight.returns(instantlockSMLMock);
+
+      simplifiedMasternodeListMock.getStore.returns(smlStoreMock);
     });
 
     it('it should verify instant lock using Core', async () => {
@@ -613,6 +634,7 @@ describe('DriveStateRepository', () => {
         instantLockMock.signature,
         42,
       );
+      expect(coreRpcClientMock.quorum).to.have.not.been.called();
     });
 
     it('should return false if core throws Invalid address or key error', async () => {
@@ -666,6 +688,47 @@ describe('DriveStateRepository', () => {
 
       expect(result).to.be.true();
       expect(coreRpcClientMock.verifyIsLock).to.have.not.been.called();
+    });
+
+    it('should validate quorum using core', async () => {
+      smlStoreMock.getTipHeight.returns(100);
+      instantlockSMLMock.isLLMQTypeRotated.returns(true);
+      coreRpcClientMock.verifyIsLock.resolves({ result: true });
+      coreRpcClientMock.quorum.resolves({ result: { previousConsecutiveDKGFailures: 0 } });
+
+      const result = await stateRepository.verifyInstantLock(instantLockMock);
+
+      expect(result).to.equal(true);
+      expect(coreRpcClientMock.verifyIsLock).to.have.been.calledOnceWithExactly(
+        'someRequestId',
+        'someTxId',
+        'signature',
+        42,
+      );
+      expect(coreRpcClientMock.quorum).to.have.been.calledOnceWithExactly('info', llmqType, quorumHash);
+
+      expect(instantLockMock.verify).to.have.not.been.called();
+
+      expect(simplifiedMasternodeListMock.getStore).to.have.been.calledOnce();
+      expect(smlStoreMock.getSMLbyHeight).to.have.been.calledOnceWithExactly(93);
+    });
+
+    it('should return false if previousConsecutiveDKGFailures > 0', async () => {
+      smlStoreMock.getTipHeight.returns(100);
+      instantlockSMLMock.isLLMQTypeRotated.returns(true);
+      coreRpcClientMock.verifyIsLock.resolves({ result: true });
+      coreRpcClientMock.quorum.resolves({ result: { previousConsecutiveDKGFailures: 1 } });
+
+      const result = await stateRepository.verifyInstantLock(instantLockMock);
+
+      expect(result).to.equal(false);
+      expect(coreRpcClientMock.verifyIsLock).to.have.not.been.called();
+      expect(coreRpcClientMock.quorum).to.have.been.calledOnceWithExactly('info', llmqType, quorumHash);
+
+      expect(instantLockMock.verify).to.have.not.been.called();
+
+      expect(simplifiedMasternodeListMock.getStore).to.have.been.calledOnce();
+      expect(smlStoreMock.getSMLbyHeight).to.have.been.calledOnceWithExactly(93);
     });
   });
 

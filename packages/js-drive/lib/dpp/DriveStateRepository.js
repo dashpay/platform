@@ -645,6 +645,29 @@ class DriveStateRepository {
       }
     }
 
+    const smlStore = this.simplifiedMasternodeList.getStore();
+    const offset = 8;
+    const instantlockSML = smlStore.getSMLbyHeight(
+      smlStore.getTipHeight() - offset + 1,
+    );
+
+    // below is a fix for DIP 24
+    // see https://github.com/dashpay/dash/pull/5158
+    const llmqType = instantlockSML.getInstantSendLLMQType();
+
+    if (instantlockSML.isLLMQTypeRotated(llmqType)) {
+      const quorumHash = instantLock.selectSignatoryRotatedQuorum(
+        smlStore,
+        instantLock.getRequestId(),
+        offset,
+      );
+
+      const { result: quorumInfo } = await this.coreRpcClient.quorum('info', llmqType, quorumHash);
+      if (quorumInfo.previousConsecutiveDKGFailures !== 0) {
+        return false;
+      }
+    }
+
     try {
       const instantLock = new InstantLock(Buffer.from(rawInstantLock));
       const { result: isVerified } = await this.coreRpcClient.verifyIsLock(
