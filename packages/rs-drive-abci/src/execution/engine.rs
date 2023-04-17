@@ -369,7 +369,12 @@ where
         self.update_quorum_info(&mut state_cache, block_info.core_height)?;
 
         // TODO: re-enable
-        self.update_masternode_list(&mut state_cache, block_info.core_height, transaction)?;
+        self.update_masternode_list(
+            &mut state_cache,
+            block_info.core_height,
+            &block_info,
+            transaction,
+        )?;
 
         state_cache.last_committed_block_info = Some(block_info.clone());
 
