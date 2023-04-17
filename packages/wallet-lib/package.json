@@ -43,7 +43,7 @@
   "homepage": "https://github.com/dashevo/wallet-lib#readme",
   "dependencies": {
     "@dashevo/dapi-client": "workspace:*",
-    "@dashevo/dashcore-lib": "~0.20.0",
+    "@dashevo/dashcore-lib": "github:dashpay/dashcore-lib#eb06ed89bea5e287612729aac58dc22546dc252a",
     "@dashevo/grpc-common": "workspace:*",
     "@dashevo/wasm-dpp": "workspace:*",
     "cbor": "^8.0.0",
