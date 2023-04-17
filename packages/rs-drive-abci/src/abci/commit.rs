@@ -70,12 +70,15 @@ impl Commit {
 
 #[cfg(test)]
 mod test {
+    use crate::execution::finalize_block_cleaned_request::CleanedCommitInfo;
+
     use super::Commit;
+    use bls_signatures::PublicKey;
     use dashcore_rpc::{
         dashcore::hashes::sha256, dashcore::hashes::Hash, dashcore_rpc_json::QuorumType,
     };
     use tenderdash_abci::proto::{
-        abci::CommitInfo,
+        signatures::{SignBytes, SignDigest},
         types::{BlockId, PartSetHeader, StateId},
     };
 
@@ -83,13 +86,16 @@ mod test {
     #[test]
     fn test_commit_verify() {
         const HEIGHT: i64 = 12345;
-        const ROUND: i32 = 2;
+        const ROUND: u32 = 2;
         const CHAIN_ID: &str = "test_chain_id";
 
-        let ci = CommitInfo {
+        const QUORUM_HASH: [u8; 32] = [0u8; 32];
+
+        let ci = CleanedCommitInfo {
             round: ROUND,
-            quorum_hash: vec![0u8; 32],
-            ..Default::default()
+            quorum_hash: QUORUM_HASH,
+            block_signature: [0u8; 96],
+            threshold_vote_extensions: Vec::new(),
         };
         let app_hash = [1u8, 2, 3, 4].repeat(8);
 
@@ -120,12 +126,18 @@ mod test {
         )
         .unwrap();
 
-        let pubkey = dpp::bls_signatures::PublicKey::from_bytes(pubkey.as_slice()).unwrap();
+        let pubkey = PublicKey::from_bytes(pubkey.as_slice()).unwrap();
         let signature = hex::decode("95e4a532ccb549cd4feca372b61dd2a5dedea2bb5c33ac22d70e310f\
             7e38126b21029c29e6af6d00462b7c6f5e47047414dbfb2e1008fa0969a246bc38b61e96edddea9c35a01670b0ae45f0\
             8a2626b251bb2a8e937547e65994f2c72d2e8f4e").unwrap();
 
-        let commit = Commit::new(ci, block_id, HEIGHT, QuorumType::LlmqTest, CHAIN_ID);
+        let commit = Commit::new(
+            ci,
+            block_id.try_into().unwrap(),
+            HEIGHT as u64,
+            QuorumType::LlmqTest,
+            CHAIN_ID,
+        );
 
         let expect_sign_bytes = hex::decode("0200000039300000000000000200000000000000\
             35117edfe49351da1e81d1b0f2edfa0b984a7508958870337126efb352f1210711ae5fef92053e8998c37cb4\
@@ -135,9 +147,24 @@ mod test {
                 .unwrap();
         assert_eq!(
             expect_sign_bytes,
-            commit.sign_bytes(CHAIN_ID, HEIGHT, ROUND).unwrap()
+            commit
+                .inner
+                .sign_bytes(CHAIN_ID, HEIGHT, ROUND as i32)
+                .unwrap()
         );
-        assert_eq!(expect_sign_id, commit.sign_id().unwrap());
+        assert_eq!(
+            expect_sign_id,
+            commit
+                .inner
+                .sign_digest(
+                    CHAIN_ID,
+                    QuorumType::LlmqTest as u8,
+                    &QUORUM_HASH,
+                    HEIGHT,
+                    ROUND as i32
+                )
+                .unwrap()
+        );
         assert!(commit.verify_signature(&signature, &pubkey).unwrap());
 
         // mutate data and ensure it is invalid
