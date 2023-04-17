@@ -30,6 +30,8 @@ where
 
         let mut state_cache = self.state.write().unwrap();
 
+        self.update_quorum_info(&mut state_cache, request.initial_core_height)?;
+
         self.update_masternode_list(&mut state_cache, request.initial_core_height, &transaction)?;
 
         state_cache.current_validator_set_quorum_hash = QuorumHash::from_slice(

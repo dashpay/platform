@@ -1,7 +1,6 @@
 use crate::util::hash::ripemd160_sha256;
 use anyhow::bail;
 use bincode::{Decode, Encode};
-use bls_signatures::Serialize;
 use ciborium::value::Value as CborValue;
 use dashcore::secp256k1::rand::rngs::StdRng as EcdsaRng;
 use dashcore::secp256k1::rand::SeedableRng;
@@ -77,8 +76,13 @@ impl KeyType {
                 private_key.public_key(&secp).to_bytes()
             }
             KeyType::BLS12_381 => {
-                let private_key = bls_signatures::PrivateKey::generate(rng);
-                private_key.public_key().as_bytes()
+                let private_key = bls_signatures::PrivateKey::generate_dash(rng)
+                    .expect("expected to generate a bls private key"); // we assume this will never error
+                private_key
+                    .g1_element()
+                    .expect("expected to get a public key from a bls private key")
+                    .to_bytes()
+                    .to_vec()
             }
             KeyType::ECDSA_HASH160 | KeyType::BIP13_SCRIPT_HASH => {
                 (0..self.default_size()).map(|_| rng.gen::<u8>()).collect()
@@ -101,8 +105,14 @@ impl KeyType {
                 )
             }
             KeyType::BLS12_381 => {
-                let private_key = bls_signatures::PrivateKey::generate(rng);
-                (private_key.public_key().as_bytes(), private_key.as_bytes())
+                let private_key = bls_signatures::PrivateKey::generate_dash(rng)
+                    .expect("expected to generate a bls private key"); // we assume this will never error
+                let public_key_bytes = private_key
+                    .g1_element()
+                    .expect("expected to get a public key from a bls private key")
+                    .to_bytes()
+                    .to_vec();
+                (public_key_bytes, private_key.to_bytes().to_vec())
             }
             KeyType::ECDSA_HASH160 => {
                 let secp = Secp256k1::new();
