@@ -16,7 +16,6 @@ use drive::grovedb::{Transaction, TransactionArg};
 use tenderdash_abci::proto::abci::{ExecTxResult, RequestFinalizeBlock};
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 
-use crate::abci::signature_verifier::{SignatureError, SignatureVerifier};
 use crate::abci::withdrawal::WithdrawalTxs;
 use crate::abci::AbciError;
 use crate::block::{BlockExecutionContext, BlockStateInfo};
@@ -255,9 +254,9 @@ where
 
         // destructure the block proposal
         let BlockProposal {
-            block_hash:_,
+            block_hash: _,
             height,
-            round:_,
+            round: _,
             core_chain_locked_height,
             proposed_app_version,
             proposer_pro_tx_hash,
@@ -381,7 +380,7 @@ where
             .quorum_public_key;
 
         bls_signatures::PublicKey::from_bytes(public_key.as_slice())
-            .map_err(|e| AbciError::from(SignatureError::from(e)).into())
+            .map_err(|e| AbciError::from(e).into())
     }
     /// Finalize the block, this first involves validating it, then if valid
     /// it is committed to the state
@@ -465,15 +464,16 @@ where
         let quorum_public_key = self.get_quorum_key(commit_info.quorum_hash.clone())?;
 
         // Verify commit
-        let commit = Commit::new(commit_info.clone(), block_id.clone(), height);
+        let quorum_type = self.config.quorum_type;
+        let commit = Commit::new(
+            commit_info.clone(),
+            block_id.clone(),
+            height,
+            quorum_type,
+            &block_header.chain_id,
+        );
         commit
-            .verify_signature(
-                &commit_info.block_signature,
-                &block_header.chain_id,
-                height,
-                round,
-                &quorum_public_key,
-            )
+            .verify_signature(&commit_info.block_signature, &quorum_public_key)
             .map_err(AbciError::from)?;
 
         // Verify vote extensions; right now, we only support withdrawal txs

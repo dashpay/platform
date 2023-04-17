@@ -1,4 +1,3 @@
-use dashcore::{Block, BlockHash, Transaction, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
     ExtendedQuorumDetails, GetBestChainLockResult, MasternodeListDiff, ProTxHash, ProTxInfo,
     QuorumHash, QuorumInfoResult, QuorumListResult, QuorumType,
@@ -6,6 +5,7 @@ use dashcore_rpc::dashcore_rpc_json::{
 use dashcore_rpc::json::GetTransactionResult;
 use dashcore_rpc::Error;
 use dashcore_rpc::{Auth, Client, RpcApi};
+use dpp::dashcore::{Block, BlockHash, Transaction, Txid};
 use mockall::{automock, predicate::*};
 use serde_json::Value;
 use std::collections::HashMap;

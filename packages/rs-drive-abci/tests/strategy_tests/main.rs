@@ -31,11 +31,11 @@
 //!
 
 use anyhow::anyhow;
-use dashcore::secp256k1::SecretKey;
-use dashcore::{signer, Network, PrivateKey};
 use dashcore_rpc::dashcore_rpc_json::{
     ExtendedQuorumDetails, QuorumHash as QuorumHashObject, QuorumInfoResult, QuorumType,
 };
+use dpp::dashcore::secp256k1::SecretKey;
+use dpp::dashcore::{signer, Network, PrivateKey};
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::document::document_transition::document_base_transition::DocumentBaseTransition;
 use dpp::document::document_transition::{
@@ -1245,9 +1245,9 @@ pub(crate) fn continue_chain_for_strategy(
 mod tests {
     use super::*;
     use crate::DocumentAction::DocumentActionReplace;
-    use dashcore::hashes::Hash;
-    use dashcore::BlockHash;
     use dashcore_rpc::dashcore_rpc_json::{ExtendedQuorumDetails, QuorumHash};
+    use dpp::dashcore::hashes::Hash;
+    use dpp::dashcore::BlockHash;
     use drive::dpp::data_contract::extra::common::json_document_to_cbor;
     use drive::dpp::data_contract::DriveContractExt;
     use drive_abci::rpc::core::QuorumListExtendedInfo;

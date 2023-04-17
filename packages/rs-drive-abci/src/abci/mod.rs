@@ -16,7 +16,6 @@ pub mod mimic;
 mod server;
 
 pub mod commit;
-pub mod signature_verifier;
 pub mod withdrawal;
 
 pub use error::AbciError;

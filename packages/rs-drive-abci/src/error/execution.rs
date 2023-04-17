@@ -1,5 +1,5 @@
 use crate::error::data_trigger::DataTriggerError;
-use dashcore::consensus::encode::Error as DashCoreConsensusEncodeError;
+use dpp::dashcore::consensus::encode::Error as DashCoreConsensusEncodeError;
 use drive::error::Error as DriveError;
 
 /// Execution errors
