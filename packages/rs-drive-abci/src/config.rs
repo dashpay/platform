@@ -224,11 +224,9 @@ impl Default for PlatformConfig {
 
 #[cfg(test)]
 mod tests {
-    use std::env;
-
-    use dashcore_rpc::dashcore_rpc_json::QuorumType;
-
     use super::FromEnv;
+    use dashcore_rpc::dashcore_rpc_json::QuorumType;
+    use std::env;
 
     #[test]
     fn test_config_from_env() {
