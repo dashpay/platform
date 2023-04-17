@@ -109,7 +109,7 @@ fn build_query_for_index_definition(
 
         match property_name.as_str() {
             "$ownerId" => {
-                let id = owner_id.to_string(Encoding::Base58);
+                let id = owner_id.to_buffer();
                 query.push(json!([property_name, "==", id]))
             }
             "$createdAt" => {
