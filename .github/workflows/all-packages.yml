@@ -64,11 +64,21 @@ jobs:
 
   test-suite:
     name: Run Platform Test Suite
-    runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    runs-on: self-hosted # ubuntu-22.04
+    timeout-minutes: 30
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "false"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -81,105 +91,18 @@ jobs:
           toolchain: stable
           target: wasm32-unknown-unknown
 
-      - name: Run sccache-cache
+      - name: Setup Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          # Don't cache ./target, as it takes tons of space, use sccache instead.
+          cache-targets: false
+          # We set a shared key, as our cache is reusable between jobs
+          shared-key: rust-cargo
+
+      - name: Setup Rust compilation cache
         uses: mozilla-actions/sccache-action@v0.0.3
         with:
           version: "v0.4.1"
-        env:
-          SCCACHE_GHA_ENABLED: "true"
-          RUSTC_WRAPPER: "sccache"
-
-      - name: Configure sccache
-        uses: actions/github-script@v6
-        with:
-          script: |
-            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
-
-      - name: Run sccache stat for check
-        shell: bash
-        run: ${SCCACHE_PATH} --show-stats
-
-      # - name: Enable Rust cache
-      #   uses: Swatinem/rust-cache@v2
-
-      - name: Enable corepack
-        run: corepack enable
-
-      - name: Disable NPM audit
-        run: npm config set audit false
-
-      - name: Enable Yarn unplugged modules cache
-        uses: actions/cache@v3
-        with:
-          path: '.yarn/unplugged'
-          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-yarn-unplugged-
-
-      - name: Install dependencies
-        run: yarn install
-
-      - name: Build SDK
-        run: yarn build --filter "+dash"
-
-      - name: Set up Docker BuildX
-        id: buildx
-        uses: docker/setup-buildx-action@v2.5.0
-        with:
-          version: v0.10.4
-          install: true
-          driver-opts: image=moby/buildkit:buildx-stable-1
-
-      # - name: Enable buildkit cache
-      #   uses: actions/cache@v3
-      #   with:
-      #     path: /tmp/buildkit-cache/buildkit-state.tar
-      #     key: ${{ runner.os }}-buildkit-${{ github.sha }}
-      #     restore-keys: |
-      #       ${{ runner.os }}-buildkit-
-
-      # - name: Load buildkit state from cache
-      #   uses: dashevo/gh-action-cache-buildkit-state@skip-cachemount
-      #   with:
-      #     builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
-      #     cache-path: /tmp/buildkit-cache
-      #     cache-max-size: 6gb
-
-      - name: Setup local network
-        run: yarn configure
-
-      - name: Start local network
-        run: yarn start
-
-      - name: Run test suite
-        run: yarn test:suite
-
-      - name: Show Docker logs
-        if: ${{ failure() }}
-        uses: jwalton/gh-docker-logs@v2
-
-  test-suite-browsers:
-    name: Run Platform Test Suite in Browsers
-    runs-on: ubuntu-22.04
-    timeout-minutes: 60
-    steps:
-      - name: Check out repo
-        uses: actions/checkout@v3
-
-      - name: Setup Node.JS
-        uses: actions/setup-node@v3
-        with:
-          node-version: '16'
-
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: stable
-          target: wasm32-unknown-unknown
-
-      - name: Enable Rust cache
-        uses: Swatinem/rust-cache@v2
 
       - name: Enable corepack
         run: corepack enable
@@ -204,25 +127,115 @@ jobs:
       - name: Set up Docker BuildX
         id: buildx
         uses: docker/setup-buildx-action@v2
-        with:
-          version: v0.9.1
-          install: true
-          driver-opts: image=moby/buildkit:buildx-stable-1
 
-      - name: Enable buildkit cache
+      - name: Enable docker cache mount
         uses: actions/cache@v3
         with:
           path: /tmp/buildkit-cache/buildkit-state.tar
           key: ${{ runner.os }}-buildkit-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-buildkit-
+            ${{ runner.os }}-buildkit
 
-      - name: Load buildkit state from cache
-        uses: dashevo/gh-action-cache-buildkit-state@skip-cachemount
+      - name: Load docker cache mount
+        uses: dashevo/gh-action-cache-buildkit-state@v1
         with:
           builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
           cache-path: /tmp/buildkit-cache
-          cache-max-size: 6gb
+          cache-max-size: 3g
+
+      - name: Setup local network
+        run: yarn configure
+
+      - name: Start local network
+        run: yarn start
+
+      - name: Run test suite
+        run: yarn test:suite
+
+      - name: Show Docker logs
+        if: ${{ failure() }}
+        uses: jwalton/gh-docker-logs@v2
+
+  test-suite-browsers:
+    name: Run Platform Test Suite in Browsers
+    runs-on: self-hosted # ubuntu-22.04
+    timeout-minutes: 30
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "false"
+    steps:
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Check out repo
+        uses: actions/checkout@v3
+
+      - name: Setup Node.JS
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: Setup Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          # Don't cache ./target, as it takes tons of space, use sccache instead.
+          cache-targets: false
+          # We set a shared key, as our cache is reusable between jobs
+          shared-key: rust-cargo
+
+      - name: Setup Rust compilation cache
+        uses: mozilla-actions/sccache-action@v0.0.3
+        with:
+          version: "v0.4.1"
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Disable NPM audit
+        run: npm config set audit false
+
+      - name: Enable Yarn unplugged modules cache
+        uses: actions/cache@v3
+        with:
+          path: '.yarn/unplugged'
+          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-unplugged-
+
+      - name: Install dependencies
+        run: yarn install
+
+      - name: Build SDK
+        run: yarn build --filter "+dash"
+
+      - name: Set up Docker BuildX
+        id: buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Enable docker cache mount
+        uses: actions/cache@v3
+        with:
+          path: /tmp/buildkit-cache/buildkit-state.tar
+          key: ${{ runner.os }}-buildkit-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildkit
+
+      - name: Load docker cache mount
+        uses: dashevo/gh-action-cache-buildkit-state@v1
+        with:
+          builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
+          cache-path: /tmp/buildkit-cache
+          cache-max-size: 3g
 
       - name: Setup local network
         run: yarn configure
@@ -248,6 +261,12 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v3
 
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
@@ -264,10 +283,19 @@ jobs:
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
-          components: clippy
 
-      - name: Setup wasm-bindgen
-        run: cargo install -f wasm-bindgen-cli
+      - name: Setup Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          # Don't cache ./target, as it takes tons of space, use sccache instead.
+          cache-targets: false
+          # We set a shared key, as our cache is reusable between jobs
+          shared-key: rust-cargo
+
+      - name: Setup Rust compilation cache
+        uses: mozilla-actions/sccache-action@v0.0.3
+        with:
+          version: "v0.4.1"
 
       - name: Enable corepack
         run: corepack enable
@@ -287,14 +315,7 @@ jobs:
         run: yarn install
 
       - name: Build package and dependencies
-        run: yarn build --filter "+${{ inputs.package }}"
-        if: ${{ !inputs.start-local-network }}
-
-      - name: Build all packages
-        run: yarn build
-        if: ${{ inputs.start-local-network }}
+        run: yarn build --filter "+dash"
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v2
-        with:
-          category: "/language:javascript"

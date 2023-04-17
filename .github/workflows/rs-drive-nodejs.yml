@@ -37,3 +37,5 @@ jobs:
     uses: ./.github/workflows/js-checks.yml
     with:
       package: '@dashevo/rs-drive'
+      dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
+      dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}

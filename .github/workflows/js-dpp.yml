@@ -28,3 +28,5 @@ jobs:
     with:
       package: '@dashevo/dpp'
       install-browsers: true
+      dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
+      dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}

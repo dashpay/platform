@@ -1,5 +1,16 @@
 # syntax = docker/dockerfile:1.5
-FROM strophy/buildbase:0.0.4 as builder
+FROM strophy/buildbase:0.0.6 as builder
+
+# TODO: Probably should be release by default
+ARG CARGO_BUILD_PROFILE=debug
+ENV CARGO_BUILD_PROFILE ${CARGO_BUILD_PROFILE}
+
+ARG NODE_ENV=production
+ENV NODE_ENV ${NODE_ENV}
+
+ARG SCCACHE_GHA_ENABLED
+ARG ACTIONS_CACHE_URL
+ARG ACTIONS_RUNTIME_TOKEN
 
 WORKDIR /platform
 
@@ -33,7 +44,7 @@ COPY packages/rs-dpp packages/rs-dpp
 COPY packages/wasm-dpp packages/wasm-dpp
 
 # Build WASM DPP
-RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
+RUN --mount=type=cache,sharing=private,target=/root/.cache/sccache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
@@ -49,10 +60,10 @@ RUN --mount=type=cache,target=/tmp/unplugged \
     yarn workspaces focus --production dashmate && \
     cp -R /platform/.yarn/unplugged /tmp/
 
-FROM node:16-alpine3.16
+# Remove Rust sources
+RUN rm -rf packages/rs-dpp packages/rs-platform-value
 
-ARG NODE_ENV=production
-ENV NODE_ENV ${NODE_ENV}
+FROM node:16-alpine3.16
 
 RUN apk update && \
     apk --no-cache upgrade && \
@@ -64,8 +75,5 @@ LABEL description="Dashmate Helper Node.JS"
 WORKDIR /platform
 
 COPY --from=builder /platform /platform
-
-# Remove Rust sources
-RUN rm -rf packages/rs-dpp packages/rs-platform-value
 
 ENTRYPOINT ["/platform/packages/dashmate/docker/entrypoint.sh"]

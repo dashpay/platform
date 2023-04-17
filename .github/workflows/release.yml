@@ -17,10 +17,14 @@ concurrency:
 jobs:
   release-npm:
     name: Release NPM packages
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     if: github.event_name != 'workflow_dispatch'
     needs:
       - build-rs-drive-nodejs
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "false"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -36,8 +40,18 @@ jobs:
           toolchain: stable
           target: wasm32-unknown-unknown
 
-      - name: Enable Rust cache
+      - name: Setup Cargo cache
         uses: Swatinem/rust-cache@v2
+        with:
+          # Don't cache ./target, as it takes tons of space, use sccache instead.
+          cache-targets: false
+          # We set a shared key, as our cache is reusable between jobs
+          shared-key: rust-cargo
+
+      - name: Setup Rust compilation cache
+        uses: mozilla-actions/sccache-action@v0.0.3
+        with:
+          version: "v0.4.1"
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -105,10 +119,25 @@ jobs:
 
   release-drive-docker-image:
     name: Release Drive to Docker Hub
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "false"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Setup Rust compilation cache
+        uses: mozilla-actions/sccache-action@v0.0.3
+        with:
+          version: "v0.4.1"
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -134,38 +163,31 @@ jobs:
 
       - name: Build packages
         run: yarn build --filter "+@dashevo/drive"
+        env:
+          CARGO_BUILD_PROFILE: release
 
       - name: Set up QEMU to run multi-arch builds
         uses: docker/setup-qemu-action@v2
 
       - name: Set up Docker BuildX
-        id: buildx
         uses: docker/setup-buildx-action@v2
         with:
-          version: v0.9.1
           install: true
-          driver-opts: image=moby/buildkit:buildx-stable-1
 
-      - name: Enable buildkit cache
+      - name: Enable docker cache mount
         uses: actions/cache@v3
         with:
           path: /tmp/buildkit-cache/buildkit-state.tar
           key: ${{ runner.os }}-buildkit-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-buildkit-
+            ${{ runner.os }}-buildkit
 
-      - name: Load buildkit state from cache
+      - name: Load docker cache mount
         uses: dashevo/gh-action-cache-buildkit-state@v1
         with:
           builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
           cache-path: /tmp/buildkit-cache
           cache-max-size: 3g
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Get tag
         uses: actions/github-script@v6
@@ -212,14 +234,34 @@ jobs:
           push: true
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
+          build-args: |
+            SCCACHE_GHA_ENABLED=true
+            ACTIONS_CACHE_URL=${{ env.ACTIONS_CACHE_URL }}
+            ACTIONS_RUNTIME_TOKEN=${{ env.ACTIONS_RUNTIME_TOKEN }}
+            CARGO_BUILD_PROFILE=release
           platforms: linux/amd64,linux/arm64
 
   release-dapi-docker-image:
     name: Release DAPI to Docker Hub
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "false"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Setup Rust compilation cache
+        uses: mozilla-actions/sccache-action@v0.0.3
+        with:
+          version: "v0.4.1"
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -245,6 +287,8 @@ jobs:
 
       - name: Build packages
         run: yarn build --filter "+@dashevo/dapi"
+        env:
+          CARGO_BUILD_PROFILE: release
 
       - name: Set up QEMU to run multi-arch builds
         uses: docker/setup-qemu-action@v2
@@ -253,30 +297,22 @@ jobs:
         id: buildx
         uses: docker/setup-buildx-action@v2
         with:
-          version: v0.9.1
           install: true
-          driver-opts: image=moby/buildkit:buildx-stable-1
 
-      - name: Enable buildkit cache
+      - name: Enable docker cache mount
         uses: actions/cache@v3
         with:
           path: /tmp/buildkit-cache/buildkit-state.tar
           key: ${{ runner.os }}-buildkit-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-buildkit-
+            ${{ runner.os }}-buildkit
 
-      - name: Load buildkit state from cache
+      - name: Load docker cache mount
         uses: dashevo/gh-action-cache-buildkit-state@v1
         with:
           builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
           cache-path: /tmp/buildkit-cache
           cache-max-size: 3g
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Get tag
         uses: actions/github-script@v6
@@ -324,13 +360,39 @@ jobs:
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
+          build-args: |
+            SCCACHE_GHA_ENABLED=true
+            ACTIONS_CACHE_URL=${{ env.ACTIONS_CACHE_URL }}
+            ACTIONS_RUNTIME_TOKEN=${{ env.ACTIONS_RUNTIME_TOKEN }}
+            CARGO_BUILD_PROFILE=release
+          cache-from: |
+            type=gha
+          # In practice, time spent preparing images is much lower than build.
+          # We minimize cached info to leave more space for sccache cache.
+          cache-to: |
+            type=gha,mode=min
 
   release-test-suite-docker-image:
     name: Release Test Suite to Docker Hub
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "false"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Setup Rust compilation cache
+        uses: mozilla-actions/sccache-action@v0.0.3
+        with:
+          version: "v0.4.1"
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -356,6 +418,8 @@ jobs:
 
       - name: Build packages
         run: yarn build --filter "+@dashevo/platform-test-suite"
+        env:
+          CARGO_BUILD_PROFILE: release
 
       - name: Set up QEMU to run multi-arch builds
         uses: docker/setup-qemu-action@v2
@@ -364,30 +428,22 @@ jobs:
         id: buildx
         uses: docker/setup-buildx-action@v2
         with:
-          version: v0.9.1
           install: true
-          driver-opts: image=moby/buildkit:buildx-stable-1
 
-      - name: Enable buildkit cache
+      - name: Enable docker cache mount
         uses: actions/cache@v3
         with:
           path: /tmp/buildkit-cache/buildkit-state.tar
           key: ${{ runner.os }}-buildkit-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-buildkit-
+            ${{ runner.os }}-buildkit
 
-      - name: Load buildkit state from cache
+      - name: Load docker cache mount
         uses: dashevo/gh-action-cache-buildkit-state@v1
         with:
           builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
           cache-path: /tmp/buildkit-cache
           cache-max-size: 3g
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Get tag
         uses: actions/github-script@v6
@@ -435,6 +491,17 @@ jobs:
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
+          build-args: |
+            SCCACHE_GHA_ENABLED=true
+            ACTIONS_CACHE_URL=${{ env.ACTIONS_CACHE_URL }}
+            ACTIONS_RUNTIME_TOKEN=${{ env.ACTIONS_RUNTIME_TOKEN }}
+            CARGO_BUILD_PROFILE=release
+          cache-from: |
+            type=gha
+          # In practice, time spent preparing images is much lower than build.
+          # We minimize cached info to leave more space for sccache cache.
+          cache-to: |
+            type=gha,mode=min
 
   release-envoy-docker-image:
     name: Release Envoy to Docker Hub
@@ -443,6 +510,12 @@ jobs:
       - name: Check out repo
         uses: actions/checkout@v3
 
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Set up QEMU to run multi-arch builds
         uses: docker/setup-qemu-action@v2
 
@@ -450,30 +523,7 @@ jobs:
         id: buildx
         uses: docker/setup-buildx-action@v2
         with:
-          version: v0.9.1
           install: true
-          driver-opts: image=moby/buildkit:buildx-stable-1
-
-      - name: Enable buildkit cache
-        uses: actions/cache@v3
-        with:
-          path: /tmp/buildkit-cache/buildkit-state.tar
-          key: ${{ runner.os }}-buildkit-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildkit-
-
-      - name: Load buildkit state from cache
-        uses: dashevo/gh-action-cache-buildkit-state@v1
-        with:
-          builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
-          cache-path: /tmp/buildkit-cache
-          cache-max-size: 3g
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Get tag
         uses: actions/github-script@v6
@@ -521,15 +571,28 @@ jobs:
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
-          build-args: |
-            CARGO_BUILD_PROFILE=release
 
   release-dashmate-helper-docker-image:
     name: Release Dashmate helper to Docker Hub
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "false"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Setup Rust compilation cache
+        uses: mozilla-actions/sccache-action@v0.0.3
+        with:
+          version: "v0.4.1"
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -555,6 +618,8 @@ jobs:
 
       - name: Build packages
         run: yarn build --filter "+dashmate"
+        env:
+          CARGO_BUILD_PROFILE: release
 
       - name: Set up QEMU to run multi-arch builds
         uses: docker/setup-qemu-action@v2
@@ -563,30 +628,22 @@ jobs:
         id: buildx
         uses: docker/setup-buildx-action@v2
         with:
-          version: v0.9.1
           install: true
-          driver-opts: image=moby/buildkit:buildx-stable-1
 
-      - name: Enable buildkit cache
+      - name: Enable docker cache mount
         uses: actions/cache@v3
         with:
           path: /tmp/buildkit-cache/buildkit-state.tar
           key: ${{ runner.os }}-buildkit-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-buildkit-
+            ${{ runner.os }}-buildkit
 
-      - name: Load buildkit state from cache
+      - name: Load docker cache mount
         uses: dashevo/gh-action-cache-buildkit-state@v1
         with:
           builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
           cache-path: /tmp/buildkit-cache
           cache-max-size: 3g
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Get tag
         uses: actions/github-script@v6
@@ -634,7 +691,13 @@ jobs:
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
+          build-args: |
+            SCCACHE_GHA_ENABLED=true
+            ACTIONS_CACHE_URL=${{ env.ACTIONS_CACHE_URL }}
+            ACTIONS_RUNTIME_TOKEN=${{ env.ACTIONS_RUNTIME_TOKEN }}
+            CARGO_BUILD_PROFILE=release
 
+  # TODO: Implement yarn and rust cache
   build-rs-drive-nodejs:
     name: Build Drive Node.JS binding
     strategy:
@@ -670,9 +733,19 @@ jobs:
             platform: apple-darwin
 
     runs-on: ${{ matrix.os }}
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "false"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -719,8 +792,19 @@ jobs:
           toolchain: stable
           target: ${{ steps.set-target.outputs.result }}
 
-      - name: Enable Rust cache
+      - name: Setup Cargo cache
         uses: Swatinem/rust-cache@v2
+        with:
+          # Don't cache ./target, as it takes tons of space, use sccache instead.
+          cache-targets: false
+          # We set a shared key, as our cache is reusable between jobs
+          shared-key: rust-cargo
+
+      - name: Setup Rust compilation cache
+        if: ${{ runner.os == 'macOS' }}
+        uses: mozilla-actions/sccache-action@v0.0.3
+        with:
+          version: "v0.4.1"
 
       - name: Set LIBC argument
         uses: actions/github-script@v6
@@ -784,14 +868,13 @@ jobs:
             os: ubuntu-22.04
           - package_type: macos
             os: macos-12
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "false"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
-
-      - name: Setup Node.JS
-        uses: actions/setup-node@v3
-        with:
-          node-version: '16'
 
       - name: Install macOS build deps
         if: runner.os == 'macOS'
@@ -827,10 +910,28 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get install -y nsis
 
+      - name: Setup Node.JS
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
+
+      - name: Setup Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          # Don't cache ./target, as it takes tons of space, use sccache instead.
+          cache-targets: false
+          # We set a shared key, as our cache is reusable between jobs
+          shared-key: rust-cargo
+
+      - name: Setup Rust compilation cache
+        uses: mozilla-actions/sccache-action@v0.0.3
+        with:
+          version: "v0.4.1"
 
       - name: Enable corepack
         run: corepack enable
@@ -849,10 +950,9 @@ jobs:
       - name: Install dependencies
         run: yarn install
 
+      # TODO: We don't need to build it, since pack should use released npm packages
       - name: Build packages
-        run: yarn build
-        env:
-          CARGO_BUILD_PROFILE: release
+        run: yarn build --filter "+dashmate"
 
       - name: Create package
         env:

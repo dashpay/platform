@@ -28,3 +28,5 @@ jobs:
     uses: ./.github/workflows/js-checks.yml
     with:
       package: '@dashevo/dashpay-contract'
+      dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
+      dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}

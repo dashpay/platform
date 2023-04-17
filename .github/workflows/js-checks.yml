@@ -22,15 +22,33 @@ on:
         type: boolean
         default: false
         required: false
+      dockerhub-username:
+        description: DockerHub username
+        type: string
+        required: true
+      dockerhub-token:
+        description: DockerHub token
+        type: string
+        required: true
 
 jobs:
   lint:
     name: Linting
-    runs-on: ubuntu-22.04
-    timeout-minutes: 20
+    runs-on: self-hosted
+    timeout-minutes: 15
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "false"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ inputs.dockerhub-username }}
+          password: ${{ inputs.dockerhub-token }}
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -43,8 +61,18 @@ jobs:
           toolchain: stable
           target: wasm32-unknown-unknown
 
-      - name: Enable Rust cache
+      - name: Setup Cargo cache
         uses: Swatinem/rust-cache@v2
+        with:
+          # Don't cache ./target, as it takes tons of space, use sccache instead.
+          cache-targets: false
+          # We set a shared key, as our cache is reusable between jobs
+          shared-key: rust-cargo
+
+      - name: Setup Rust compilation cache
+        uses: mozilla-actions/sccache-action@v0.0.3
+        with:
+          version: "v0.4.1"
 
       - name: Enable corepack
         run: corepack enable
@@ -71,9 +99,13 @@ jobs:
 
   test:
     name: Tests
-    runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    runs-on: self-hosted
+    timeout-minutes: 30
     if: ${{ !inputs.skip-tests }}
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "false"
     steps:
       - name: Setup Firefox
         uses: browser-actions/setup-firefox@latest
@@ -83,6 +115,12 @@ jobs:
 
       - name: Check out repo
         uses: actions/checkout@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ inputs.dockerhub-username }}
+          password: ${{ inputs.dockerhub-token }}
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -95,8 +133,18 @@ jobs:
           toolchain: stable
           target: wasm32-unknown-unknown
 
-      - name: Enable Rust cache
+      - name: Setup Cargo cache
         uses: Swatinem/rust-cache@v2
+        with:
+          # Don't cache ./target, as it takes tons of space, use sccache instead.
+          cache-targets: false
+          # We set a shared key, as our cache is reusable between jobs
+          shared-key: rust-cargo
+
+      - name: Setup Rust compilation cache
+        uses: mozilla-actions/sccache-action@v0.0.3
+        with:
+          version: "v0.4.1"
 
       - name: Enable corepack
         run: corepack enable
@@ -120,6 +168,7 @@ jobs:
         env:
           NODE_ENV: test
 
+      # TODO: We build second time here, but with cache it must be quick
       - name: Build SDK
         run: yarn build --filter "+dash"
         if: ${{ inputs.start-local-network }}
@@ -133,28 +182,22 @@ jobs:
       - name: Set up Docker BuildX
         id: buildx
         uses: docker/setup-buildx-action@v2
-        with:
-          version: v0.9.1
-          install: true
-          driver-opts: image=moby/buildkit:buildx-stable-1
         if: ${{ inputs.start-local-network }}
 
-      - name: Enable buildkit cache
+      - name: Enable docker cache mount
         uses: actions/cache@v3
         with:
           path: /tmp/buildkit-cache/buildkit-state.tar
           key: ${{ runner.os }}-buildkit-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-buildkit-
-        if: ${{ inputs.start-local-network }}
+            ${{ runner.os }}-buildkit
 
-      - name: Load buildkit state from cache
+      - name: Load docker cache mount
         uses: dashevo/gh-action-cache-buildkit-state@v1
         with:
           builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
           cache-path: /tmp/buildkit-cache
           cache-max-size: 3g
-        if: ${{ inputs.start-local-network }}
 
       - name: Setup local network
         run: yarn configure

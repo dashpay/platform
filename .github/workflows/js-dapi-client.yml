@@ -32,3 +32,5 @@ jobs:
     with:
       package: '@dashevo/dapi-client'
       install-browsers: true
+      dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
+      dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}

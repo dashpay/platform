@@ -35,3 +35,5 @@ jobs:
       package: 'dash'
       start-local-network: true
       install-browsers: true
+      dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
+      dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
