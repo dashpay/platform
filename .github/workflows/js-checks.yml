@@ -22,14 +22,6 @@ on:
         type: boolean
         default: false
         required: false
-      dockerhub-username:
-        description: DockerHub username
-        type: string
-        required: true
-      dockerhub-token:
-        description: DockerHub token
-        type: string
-        required: true
 
 jobs:
   lint:
