@@ -105,6 +105,8 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::net::{IpAddr, SocketAddr};
 use std::ops::Range;
 use std::str::FromStr;
+use tenderdash_abci::proto::abci::ValidatorSetUpdate;
+use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
 
 mod quorum;
 mod upgrade_fork_tests;
@@ -1142,10 +1144,39 @@ pub(crate) fn start_chain_for_strategy(
 
     let quorum_hashes: Vec<&QuorumHash> = quorums.keys().collect();
 
-    let current_quorum_hash = **quorum_hashes.choose(&mut rng).unwrap();
+    let current_quorum_hash = **quorum_hashes
+        .choose(&mut rng)
+        .expect("expected quorums to be initialized");
+
+    let current_quorum_with_test_info = quorums
+        .get(&current_quorum_hash)
+        .expect("expected a quorum to be found");
 
     // init chain
-    let init_chain_request = static_init_chain_request();
+    let mut init_chain_request = static_init_chain_request();
+
+    init_chain_request.validator_set = Some(ValidatorSetUpdate {
+        validator_updates: current_quorum_with_test_info
+            .validator_set
+            .iter()
+            .map(
+                |validator_in_quorum| tenderdash_abci::proto::abci::ValidatorUpdate {
+                    pub_key: Some(tenderdash_abci::proto::crypto::PublicKey {
+                        sum: Some(Bls12381(validator_in_quorum.public_key.to_bytes().to_vec())),
+                    }),
+                    power: 100,
+                    pro_tx_hash: validator_in_quorum.pro_tx_hash.to_vec(),
+                    node_address: "".to_string(),
+                },
+            )
+            .collect(),
+        threshold_public_key: Some(tenderdash_abci::proto::crypto::PublicKey {
+            sum: Some(Bls12381(
+                current_quorum_with_test_info.public_key.to_bytes().to_vec(),
+            )),
+        }),
+        quorum_hash: current_quorum_hash.to_vec(),
+    });
 
     platform
         .init_chain(init_chain_request)
