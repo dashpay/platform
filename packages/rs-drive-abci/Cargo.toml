@@ -50,8 +50,8 @@ tracing-subscriber = { version = "0.3.16", default-features = false, features = 
     "ansi",
 ], optional = true }
 atty = { version = "0.2.14", optional = true }
-# tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", branch = "feat/sign-bytes", optional = true }
-tenderdash-abci = { path = "../../../rs-tenderdash-abci/abci", optional = true }
+tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", branch = "feat/sign-bytes", optional = true }
+# tenderdash-abci = { path = "../../../rs-tenderdash-abci/abci", optional = true }
 anyhow = { version = "1.0.70" }
 lazy_static = "1.4.0"
 itertools = { version = "0.10.5" }
@@ -60,7 +60,14 @@ itertools = { version = "0.10.5" }
 
 [features]
 default = ["server"]
-server = ["tenderdash-abci", "clap", "dotenvy", "tracing-subscriber", "atty", "mockall"]
+server = [
+    "tenderdash-abci",
+    "clap",
+    "dotenvy",
+    "tracing-subscriber",
+    "atty",
+    "mockall",
+]
 
 [[bin]]
 name = "drive-abci"

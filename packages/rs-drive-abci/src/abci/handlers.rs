@@ -217,7 +217,9 @@ where
         request: proto::RequestExtendVote,
     ) -> Result<proto::ResponseExtendVote, proto::ResponseException> {
         let proto::RequestExtendVote {
-            hash: block_hash, height, round
+            hash: block_hash,
+            height,
+            round,
         } = request;
         let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
         let block_execution_context =
@@ -230,20 +232,21 @@ where
         let block_state_info = &block_execution_context.block_state_info;
 
         if !block_state_info.matches_current_block(height as u64, round as u32, block_hash)? {
-            return Err(Error::from(AbciError::RequestForWrongBlockReceived(
-                format!(
-                    "received request for height: {} rount: {}, expected height: {} round: {}",
-                    height, round, block_state_info.height, block_state_info.round
-                ),
-            )).into());
+            return Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
+                "received request for height: {} rount: {}, expected height: {} round: {}",
+                height, round, block_state_info.height, block_state_info.round
+            )))
+            .into());
         } else {
             // we only want to sign the hash of the transaction
-            let extensions = block_execution_context.withdrawal_transactions.keys().map(|tx_id| {
-                ExtendVoteExtension {
+            let extensions = block_execution_context
+                .withdrawal_transactions
+                .keys()
+                .map(|tx_id| ExtendVoteExtension {
                     r#type: VoteExtensionType::ThresholdRecover as i32,
                     extension: tx_id.to_vec(),
-                }
-            }).collect();
+                })
+                .collect();
             Ok(proto::ResponseExtendVote {
                 vote_extensions: extensions,
             })
@@ -256,8 +259,11 @@ where
         request: proto::RequestVerifyVoteExtension,
     ) -> Result<proto::ResponseVerifyVoteExtension, proto::ResponseException> {
         let proto::RequestVerifyVoteExtension {
-            hash: block_hash, validator_pro_tx_hash, height,
-            round, vote_extensions
+            hash: block_hash,
+            validator_pro_tx_hash,
+            height,
+            round,
+            vote_extensions,
         } = request;
 
         let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
@@ -271,21 +277,23 @@ where
         let block_state_info = &block_execution_context.block_state_info;
 
         if !block_state_info.matches_current_block(height as u64, round as u32, block_hash)? {
-            return Err(Error::from(AbciError::RequestForWrongBlockReceived(
-                format!(
-                    "received request for height: {} rount: {}, expected height: {} round: {}",
-                    height, round, block_state_info.height, block_state_info.round
-                ),
-            )).into());
+            return Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
+                "received request for height: {} rount: {}, expected height: {} round: {}",
+                height, round, block_state_info.height, block_state_info.round
+            )))
+            .into());
         }
 
         let got: WithdrawalTxs = vote_extensions.into();
-        let expected = block_execution_context.withdrawal_transactions.keys().map(|tx_id| {
-            ExtendVoteExtension {
+        let expected = block_execution_context
+            .withdrawal_transactions
+            .keys()
+            .map(|tx_id| ExtendVoteExtension {
                 r#type: VoteExtensionType::ThresholdRecover as i32,
                 extension: tx_id.to_vec(),
-            }
-        }).collect::<Vec<_>>().into();
+            })
+            .collect::<Vec<_>>()
+            .into();
 
         // let state = self.platform.state.read().unwrap();
         //
@@ -307,7 +315,7 @@ where
 
         let validation_result =
             self.platform
-                .check_withdrawals(&got, &expected, None);
+                .check_withdrawals(&got, &expected, None, height as u64, round as u32);
 
         if validation_result.is_valid() {
             Ok(proto::ResponseVerifyVoteExtension {
@@ -315,17 +323,16 @@ where
             })
         } else {
             tracing::error!(
-            method = "verify_vote_extension",
-            ?got,
-            ?expected,
-            ?validation_result.errors,
-            "vote extension mismatch"
-        );
+                method = "verify_vote_extension",
+                ?got,
+                ?expected,
+                ?validation_result.errors,
+                "vote extension mismatch"
+            );
             Ok(proto::ResponseVerifyVoteExtension {
                 status: VerifyStatus::Reject.into(),
             })
         }
-
     }
 
     fn finalize_block(
