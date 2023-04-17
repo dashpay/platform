@@ -3,6 +3,7 @@ use dashcore::ProTxHash;
 use std::collections::BTreeSet;
 
 use dashcore_rpc::json::{MasternodeListDiffWithMasternodes, MasternodeType};
+use drive::drive::block_info::BlockInfo;
 use drive::grovedb::Transaction;
 
 use crate::error::execution::ExecutionError;
@@ -128,6 +129,7 @@ where
         &self,
         state: &mut PlatformState,
         core_block_height: u32,
+        block_info: &BlockInfo,
         transaction: &Transaction,
     ) -> Result<(), Error> {
         let previous_core_height = state.core_height();
@@ -191,6 +193,13 @@ where
             .retain(|key, _| !deleted_masternodes.contains(key));
 
         //Todo: masternode identities
+        self.update_masternode_identities(
+            previous_core_height,
+            core_block_height,
+            &block_info,
+            state,
+            &transaction,
+        )?;
 
         //For all deleted masternodes we need to remove them from the state of the app version votes
 

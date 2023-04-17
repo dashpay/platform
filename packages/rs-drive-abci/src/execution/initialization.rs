@@ -5,6 +5,7 @@ use crate::rpc::core::CoreRPCLike;
 use dashcore::hashes::Hash;
 use dashcore::QuorumHash;
 use dpp::identity::TimestampMillis;
+use drive::drive::block_info::BlockInfo;
 use tenderdash_abci::proto::abci::RequestInitChain;
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 
@@ -32,7 +33,12 @@ where
 
         self.update_quorum_info(&mut state_cache, request.initial_core_height)?;
 
-        self.update_masternode_list(&mut state_cache, request.initial_core_height, &transaction)?;
+        self.update_masternode_list(
+            &mut state_cache,
+            request.initial_core_height,
+            &BlockInfo::genesis(),
+            &transaction,
+        )?;
 
         state_cache.current_validator_set_quorum_hash = QuorumHash::from_slice(
             request
