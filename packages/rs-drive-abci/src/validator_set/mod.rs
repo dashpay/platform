@@ -227,9 +227,10 @@ impl Quorum {
 mod tests {
     use dashcore::hashes::sha256d;
     use dashcore_rpc::dashcore::{hashes::Hash, BlockHash};
-    use dashcore_rpc::dashcore_rpc_json::{ExtendedQuorumDetails, QuorumHash, QuorumInfoResult};
+    use dashcore_rpc::dashcore_rpc_json::{ExtendedQuorumDetails, QuorumInfoResult};
     use dashcore_rpc::json::QuorumType;
     use std::collections::HashMap;
+    use dashcore::QuorumHash;
     use tenderdash_abci::proto::abci::ValidatorSetUpdate;
 
     use crate::{config::PlatformConfig, rpc::core::QuorumListExtendedInfo};
@@ -240,7 +241,7 @@ mod tests {
         for i in 0..n {
             let i_bytes = [i as u8; 32];
 
-            let hash = QuorumHash(sha256d::Hash::from_inner(i_bytes));
+            let hash = QuorumHash::from_inner(i_bytes);
 
             let details = ExtendedQuorumDetails {
                 creation_height: i,

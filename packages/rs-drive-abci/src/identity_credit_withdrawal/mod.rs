@@ -652,6 +652,7 @@ mod tests {
                     is_epoch_change: false,
                 },
                 hpmn_count: 100,
+                withdrawal_transactions: Default::default(),
             };
 
             let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
@@ -808,6 +809,7 @@ mod tests {
                         is_epoch_change: false,
                     },
                     hpmn_count: 100,
+                    withdrawal_transactions: Default::default(),
                 });
 
             let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
