@@ -21,7 +21,7 @@ impl TPublicKeysSignaturesValidator for SignaturesValidatorMock {
         &self,
         _raw_state_transition: &Value,
         _raw_public_keys: impl IntoIterator<Item = &'a Value>,
-    ) -> Result<crate::validation::SimpleValidationResult, crate::NonConsensusError> {
+    ) -> Result<SimpleValidationResult, crate::NonConsensusError> {
         Ok(SimpleValidationResult::default())
     }
 }
@@ -84,18 +84,22 @@ mod validate_identity_create_transition_basic_factory {
     use crate::tests::fixtures::PublicKeysValidatorMock;
     use crate::validation::ValidationResult;
 
+    use crate::consensus::basic::basic_error::BasicError;
+    use crate::consensus::ConsensusError;
+
     pub use super::setup_test;
 
     mod protocol_version {
+        use super::*;
+
         use std::sync::Arc;
 
         use jsonschema::error::ValidationErrorKind;
 
-        use crate::consensus::ConsensusError;
         use crate::identity::validation::RequiredPurposeAndSecurityLevelValidator;
         use crate::state_repository::MockStateRepositoryLike;
         use crate::tests::fixtures::get_public_keys_validator_for_transition;
-        use crate::{assert_consensus_errors, NonConsensusError};
+        use crate::{assert_basic_consensus_errors, NonConsensusError};
 
         use super::setup_test;
 
@@ -114,18 +118,13 @@ mod validate_identity_create_transition_basic_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"protocolVersion\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.instance_path(), "");
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "protocolVersion");
         }
 
         #[tokio::test]
@@ -144,12 +143,12 @@ mod validate_identity_create_transition_basic_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/protocolVersion");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.instance_path(), "/protocolVersion");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -184,12 +183,13 @@ mod validate_identity_create_transition_basic_factory {
     }
 
     mod type_a {
+        use super::*;
+
         use std::sync::Arc;
 
         use jsonschema::error::ValidationErrorKind;
 
-        use crate::assert_consensus_errors;
-        use crate::consensus::ConsensusError;
+        use crate::assert_basic_consensus_errors;
         use crate::identity::validation::RequiredPurposeAndSecurityLevelValidator;
         use crate::state_repository::MockStateRepositoryLike;
         use crate::tests::fixtures::get_public_keys_validator_for_transition;
@@ -209,19 +209,13 @@ mod validate_identity_create_transition_basic_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"type\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.instance_path(), "");
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "type");
         }
 
         #[tokio::test]
@@ -238,28 +232,29 @@ mod validate_identity_create_transition_basic_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/type");
-            assert_eq!(error.keyword().unwrap(), "const");
+            let allowed_value: u32 = error
+                .params()
+                .get_integer("allowedValue")
+                .expect("should get allowedValue");
 
-            match error.kind() {
-                ValidationErrorKind::Constant { expected_value } => {
-                    assert_eq!(expected_value.as_u64().unwrap(), 2u64);
-                }
-                _ => panic!("Expected to have a constant value"),
-            }
+            assert_eq!(error.instance_path(), "/type");
+            assert_eq!(error.keyword(), "const");
+            assert_eq!(allowed_value, 2);
         }
     }
 
     mod asset_lock_proof {
+        use super::*;
+
         use std::sync::Arc;
 
         use jsonschema::error::ValidationErrorKind;
 
-        use crate::assert_consensus_errors;
+        use crate::assert_basic_consensus_errors;
         use crate::consensus::ConsensusError;
         use crate::identity::validation::RequiredPurposeAndSecurityLevelValidator;
         use crate::state_repository::MockStateRepositoryLike;
@@ -281,19 +276,13 @@ mod validate_identity_create_transition_basic_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"assetLockProof\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.instance_path(), "");
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "assetLockProof");
         }
 
         #[tokio::test]
@@ -312,12 +301,12 @@ mod validate_identity_create_transition_basic_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/assetLockProof");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.instance_path(), "/assetLockProof");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -339,22 +328,23 @@ mod validate_identity_create_transition_basic_factory {
                 .validate(&raw_state_transition, &Default::default())
                 .await
                 .unwrap();
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/transaction");
+            assert_eq!(error.instance_path(), "/transaction");
         }
     }
 
     mod public_keys {
+        use super::*;
+
         use std::sync::Arc;
 
         use jsonschema::error::ValidationErrorKind;
         use platform_value::Value;
 
-        use crate::assert_consensus_errors;
-        use crate::consensus::basic::TestConsensusError;
+        use crate::consensus::test_consensus_error::TestConsensusError;
         use crate::consensus::ConsensusError;
         use crate::identity::validation::RequiredPurposeAndSecurityLevelValidator;
         use crate::state_repository::MockStateRepositoryLike;
@@ -362,6 +352,7 @@ mod validate_identity_create_transition_basic_factory {
             get_public_keys_validator_for_transition, PublicKeysValidatorMock,
         };
         use crate::validation::ValidationResult;
+        use crate::{assert_basic_consensus_errors, assert_consensus_errors};
 
         use super::super::setup_test;
 
@@ -379,19 +370,13 @@ mod validate_identity_create_transition_basic_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"publicKeys\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.instance_path(), "");
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "publicKeys");
         }
 
         #[tokio::test]
@@ -410,12 +395,12 @@ mod validate_identity_create_transition_basic_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.keyword().unwrap(), "minItems");
-            assert_eq!(error.instance_path().to_string(), "/publicKeys");
+            assert_eq!(error.keyword(), "minItems");
+            assert_eq!(error.instance_path(), "/publicKeys");
         }
 
         #[tokio::test]
@@ -440,12 +425,12 @@ mod validate_identity_create_transition_basic_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 2);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 2);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.keyword().unwrap(), "maxItems");
-            assert_eq!(error.instance_path().to_string(), "/publicKeys");
+            assert_eq!(error.keyword(), "maxItems");
+            assert_eq!(error.instance_path(), "/publicKeys");
         }
 
         #[tokio::test]
@@ -467,12 +452,12 @@ mod validate_identity_create_transition_basic_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.keyword().unwrap(), "uniqueItems");
-            assert_eq!(error.instance_path().to_string(), "/publicKeys");
+            assert_eq!(error.keyword(), "uniqueItems");
+            assert_eq!(error.instance_path(), "/publicKeys");
         }
 
         #[tokio::test]
@@ -480,9 +465,9 @@ mod validate_identity_create_transition_basic_factory {
             let pk_validator_mock = Arc::new(PublicKeysValidatorMock::new());
             let pk_error = TestConsensusError::new("test");
             pk_validator_mock.returns_fun(move || {
-                Ok(ValidationResult::new(Some(vec![ConsensusError::from(
-                    TestConsensusError::new("test"),
-                )])))
+                Ok(ValidationResult::new_with_errors(vec![
+                    ConsensusError::from(TestConsensusError::new("test")),
+                ]))
             });
 
             let (raw_state_transition, validator) = setup_test(
@@ -513,9 +498,9 @@ mod validate_identity_create_transition_basic_factory {
             let pk_validator_mock = Arc::new(PublicKeysValidatorMock::new());
             let pk_error = TestConsensusError::new("test");
             pk_validator_mock.returns_fun(move || {
-                Ok(ValidationResult::new(Some(vec![ConsensusError::from(
-                    TestConsensusError::new("test"),
-                )])))
+                Ok(ValidationResult::new_with_errors(vec![
+                    ConsensusError::from(TestConsensusError::new("test")),
+                ]))
             });
 
             let (raw_state_transition, validator) = setup_test(
@@ -542,11 +527,13 @@ mod validate_identity_create_transition_basic_factory {
     }
 
     mod signature {
+        use super::*;
+
         use std::sync::Arc;
 
         use jsonschema::error::ValidationErrorKind;
 
-        use crate::assert_consensus_errors;
+        use crate::assert_basic_consensus_errors;
         use crate::consensus::ConsensusError;
         use crate::identity::validation::RequiredPurposeAndSecurityLevelValidator;
         use crate::state_repository::MockStateRepositoryLike;
@@ -568,19 +555,13 @@ mod validate_identity_create_transition_basic_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"signature\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.instance_path(), "");
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "signature");
         }
 
         #[tokio::test]
@@ -599,12 +580,12 @@ mod validate_identity_create_transition_basic_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 65);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 65);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/signature/0");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.instance_path(), "/signature/0");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -623,12 +604,12 @@ mod validate_identity_create_transition_basic_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/signature");
-            assert_eq!(error.keyword().unwrap(), "minItems");
+            assert_eq!(error.keyword(), "minItems");
         }
 
         #[tokio::test]
@@ -647,12 +628,12 @@ mod validate_identity_create_transition_basic_factory {
                 .await
                 .unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/signature");
-            assert_eq!(error.keyword().unwrap(), "maxItems");
+            assert_eq!(error.keyword(), "maxItems");
         }
     }
 

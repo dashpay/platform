@@ -1,4 +1,5 @@
 use crate::bls_adapter::BlsAdapter;
+use std::convert::TryInto;
 
 use crate::state_repository::{ExternalStateRepositoryLike, ExternalStateRepositoryLikeWrapper};
 use crate::state_transition_factory::StateTransitionFactoryWasm;
@@ -7,11 +8,17 @@ use crate::validation::ValidationResultWasm;
 use crate::with_js_error;
 use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use dpp::state_transition::{
-    StateTransitionConvert, StateTransitionFacade, StateTransitionLike, ValidateOptions,
+    StateTransitionConvert, StateTransitionFacade, StateTransitionLike, StateTransitionType,
+    ValidateOptions,
 };
 use dpp::version::ProtocolVersionValidator;
 use serde::Deserialize;
 
+use crate::errors::protocol_error::from_protocol_error;
+use crate::errors::value_error::PlatformValueErrorWasm;
+use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use dpp::document::DocumentsBatchTransition;
+use dpp::ProtocolError;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
@@ -55,7 +62,21 @@ impl StateTransitionFacadeWasm {
             Default::default()
         };
 
-        let raw_state_transition = raw_state_transition.with_serde_to_platform_value()?;
+        let mut raw_state_transition = raw_state_transition.with_serde_to_platform_value()?;
+        let state_transition_type: StateTransitionType = raw_state_transition
+            .get_integer::<u8>("type")
+            .map_err(|e| PlatformValueErrorWasm::from(e))?
+            .try_into()
+            .map_err(|_| JsValue::from_str("Invalid state transition type"))?;
+
+        // TODO(wasm-dpp): clean values of other transitions as well?
+        match state_transition_type {
+            StateTransitionType::DataContractUpdate => {
+                DataContractUpdateTransition::clean_value(&mut raw_state_transition)
+                    .map_err(|e| PlatformValueErrorWasm::from(e))?;
+            }
+            _ => {}
+        }
 
         let result = self
             .0
@@ -213,6 +234,20 @@ impl StateTransitionFacadeWasm {
             .with_js_error()?;
 
         Ok(validation_result.map(|_| JsValue::undefined()).into())
+    }
+
+    #[wasm_bindgen]
+    pub async fn apply(&self, state_transition_js: JsValue) -> Result<JsValue, JsValue> {
+        let state_transition =
+            super::super::conversion::create_state_transition_from_wasm_instance(
+                &state_transition_js,
+            )?;
+
+        self.0
+            .apply(&state_transition)
+            .await
+            .map(|_| JsValue::undefined())
+            .map_err(from_protocol_error)
     }
 }
 

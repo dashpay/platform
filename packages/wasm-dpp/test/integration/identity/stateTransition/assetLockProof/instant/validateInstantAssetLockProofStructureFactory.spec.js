@@ -276,7 +276,7 @@ describe('validateInstantAssetLockProofStructureFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.getCode()).to.equal(1038);
-      expect(error.getValidationError()).to.exist();
+      expect(error.getErrorMessage()).to.be.not.empty();
 
       expect(stateRepositoryMock.verifyInstantLock).to.be.calledOnce();
     });

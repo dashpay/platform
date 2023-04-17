@@ -1,7 +1,7 @@
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
-const getInstantAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
-const getChainAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getChainAssetLockProofFixture');
 const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+const getInstantAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
+const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const getChainAssetLockProofFixture = require('../../../lib/test/fixtures/getChainAssetLockProofFixture');
 const { default: loadWasmDpp } = require('../../../dist');
 const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
 
@@ -19,7 +19,7 @@ describe('IdentityFactory', () => {
   let IdentityCreateTransition;
   let IdentityTopUpTransition;
   let IdentityUpdateTransition;
-  let IdentityPublicKeyCreateTransition;
+  let IdentityPublicKeyWithWitness;
   let InvalidIdentityError;
   let PlatformValueError;
   let UnsupportedProtocolVersionError;
@@ -29,7 +29,7 @@ describe('IdentityFactory', () => {
     ({
       Identity, IdentityFactory, IdentityValidator,
       InstantAssetLockProof, ChainAssetLockProof, IdentityUpdateTransition,
-      IdentityCreateTransition, IdentityTopUpTransition, IdentityPublicKeyCreateTransition,
+      IdentityCreateTransition, IdentityTopUpTransition, IdentityPublicKeyWithWitness,
       InvalidIdentityError, UnsupportedProtocolVersionError, PlatformValueError,
     } = await loadWasmDpp());
   });
@@ -235,7 +235,7 @@ describe('IdentityFactory', () => {
     it('should create IdentityUpdateTransition', () => {
       const revision = 1;
       const disablePublicKeys = [identity.getPublicKeyById(0)];
-      const addPublicKeys = [new IdentityPublicKeyCreateTransition({
+      const addPublicKeys = [new IdentityPublicKeyWithWitness({
         id: 0,
         type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
         data: Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64'),

@@ -73,7 +73,7 @@ class CoreStatusCommand extends ConfigBaseCommand {
   }
 }
 
-CoreStatusCommand.description = 'Show core status details';
+CoreStatusCommand.description = 'Show Core status details';
 
 CoreStatusCommand.flags = {
   ...ConfigBaseCommand.flags,

@@ -6,7 +6,7 @@ const GroupBaseCommand = require('../../oclif/command/GroupBaseCommand');
 const printObject = require('../../printers/printObject');
 const printArrayOfObjects = require('../../printers/printArrayOfObjects');
 const colors = require('../../status/colors');
-const ServiceStatusEnum = require('../../enums/serviceStatus');
+const ServiceStatusEnum = require('../../status/enums/serviceStatus');
 
 class GroupStatusCommand extends GroupBaseCommand {
   /**
@@ -64,7 +64,7 @@ class GroupStatusCommand extends GroupBaseCommand {
           } else {
             plain['Platform Status'] = colors.status(scope.platform.tenderdash.serviceStatus)(scope.platform.tenderdash.serviceStatus);
             plain['Platform Version'] = scope.platform.tenderdash.version;
-            plain['Platform Block Height'] = scope.platform.tenderdash.lastBlockHeight;
+            plain['Platform Block Height'] = scope.platform.tenderdash.latestBlockHeight;
             plain['Platform Peers'] = scope.platform.tenderdash.peers;
             plain['Platform Network'] = scope.platform.tenderdash.network;
           }

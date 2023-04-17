@@ -2,7 +2,6 @@ pub use from::*;
 pub use js_conversion::*;
 
 pub mod consensus;
-pub mod consensus_error;
 
 mod from;
 mod js_conversion;
@@ -14,5 +13,5 @@ pub use public_key_validation_error::*;
 mod compatible_protocol_version_is_not_defined_error;
 pub mod data_contract_not_present_error;
 pub mod dpp_error;
-mod value_error;
+pub mod value_error;
 pub use compatible_protocol_version_is_not_defined_error::*;

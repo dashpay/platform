@@ -242,7 +242,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
       $type: documentTransition.getType(),
       $dataContractId: documentTransition.getDataContractId(),
       $ownerId: ownerId,
-      $createdAt: documentTransition.getUpdatedAt(),
+      $createdAt: documentTransition.getUpdatedAt().getTime(),
       ...documentTransition.getData(),
     }, documentTransition.getDataContract());
 

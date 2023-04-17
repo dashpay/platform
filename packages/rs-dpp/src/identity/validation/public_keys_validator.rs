@@ -4,11 +4,11 @@ use dashcore::PublicKey;
 use lazy_static::lazy_static;
 
 use crate::errors::consensus::basic::identity::{
-    DuplicatedIdentityPublicKeyError, DuplicatedIdentityPublicKeyIdError,
+    DuplicatedIdentityPublicKeyBasicError, DuplicatedIdentityPublicKeyIdBasicError,
     InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError,
 };
 use crate::identity::{IdentityPublicKey, KeyID, KeyType};
-use crate::validation::{JsonSchemaValidator, ValidationResult};
+use crate::validation::{JsonSchemaValidator, SimpleValidationResult};
 use crate::{
     BlsModule, DashPlatformProtocolInitError, NonConsensusError, PublicKeyValidationError,
 };
@@ -33,7 +33,7 @@ pub trait TPublicKeysValidator {
     fn validate_keys(
         &self,
         raw_public_keys: &[Value],
-    ) -> Result<ValidationResult<()>, NonConsensusError>;
+    ) -> Result<SimpleValidationResult, NonConsensusError>;
 }
 
 pub struct PublicKeysValidator<T: BlsModule> {
@@ -45,8 +45,8 @@ impl<T: BlsModule> TPublicKeysValidator for PublicKeysValidator<T> {
     fn validate_keys(
         &self,
         raw_public_keys: &[Value],
-    ) -> Result<ValidationResult<()>, NonConsensusError> {
-        let mut result = ValidationResult::new(None);
+    ) -> Result<SimpleValidationResult, NonConsensusError> {
+        let mut result = SimpleValidationResult::default();
 
         // TODO: convert buffers to arrays?
         // Validate public key structure
@@ -69,14 +69,16 @@ impl<T: BlsModule> TPublicKeysValidator for PublicKeysValidator<T> {
         let duplicated_ids = duplicated_key_ids(&public_keys);
 
         if !duplicated_ids.is_empty() {
-            result.add_error(DuplicatedIdentityPublicKeyIdError::new(duplicated_ids));
+            result.add_error(DuplicatedIdentityPublicKeyIdBasicError::new(duplicated_ids));
         }
 
         // Check that there's no duplicated keys
         let duplicated_key_ids = duplicated_keys(&public_keys);
 
         if !duplicated_key_ids.is_empty() {
-            result.add_error(DuplicatedIdentityPublicKeyError::new(duplicated_key_ids));
+            result.add_error(DuplicatedIdentityPublicKeyBasicError::new(
+                duplicated_key_ids,
+            ));
         }
 
         let mut validation_error: Option<PublicKeyValidationError>;
@@ -106,11 +108,7 @@ impl<T: BlsModule> TPublicKeysValidator for PublicKeysValidator<T> {
             };
 
             if let Some(error) = validation_error {
-                result.add_error(InvalidIdentityPublicKeyDataError::new(
-                    public_key.id,
-                    error.to_string(),
-                    Some(error),
-                ));
+                result.add_error(InvalidIdentityPublicKeyDataError::new(public_key.id, error));
             }
         }
 
@@ -175,7 +173,7 @@ impl<T: BlsModule> PublicKeysValidator<T> {
     pub fn validate_public_key_structure(
         &self,
         public_key: &Value,
-    ) -> Result<ValidationResult<()>, NonConsensusError> {
+    ) -> Result<SimpleValidationResult, NonConsensusError> {
         self.public_key_schema_validator.validate(
             &public_key
                 .try_to_validating_json()

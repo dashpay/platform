@@ -46,9 +46,11 @@ pub struct IdentityCreateTransition {
     // Own ST fields
     pub public_keys: Vec<IdentityPublicKeyWithWitness>,
     pub asset_lock_proof: AssetLockProof,
+    #[serde(skip)]
     pub identity_id: Identifier,
     // Generic identity ST fields
     pub protocol_version: u32,
+    #[serde(rename = "type")]
     pub transition_type: StateTransitionType,
     pub signature: BinaryData,
     #[serde(skip)]
@@ -121,6 +123,12 @@ impl IdentityCreateTransition {
 
         if let Some(proof) = transition_map.get(property_names::ASSET_LOCK_PROOF) {
             state_transition.set_asset_lock_proof(AssetLockProof::try_from(proof)?)?;
+        }
+
+        if let Some(signature) =
+            transition_map.get_optional_binary_data(property_names::SIGNATURE)?
+        {
+            state_transition.set_signature(signature);
         }
 
         state_transition.protocol_version =

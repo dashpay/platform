@@ -5,7 +5,6 @@ use chrono::Utc;
 use platform_value::Value;
 
 use crate::{
-    codes::ErrorWithCode,
     consensus::ConsensusError,
     data_contract::DataContract,
     document::{
@@ -16,17 +15,19 @@ use crate::{
     prelude::ProtocolError,
     state_repository::MockStateRepositoryLike,
     state_transition::StateTransitionLike,
-    StateError,
     tests::{
         fixtures::{
             get_data_contract_fixture, get_document_transitions_fixture,
         },
-        utils::{generate_random_identifier_struct},
-    }, validation::ValidationResult,
+        utils::generate_random_identifier_struct,
+    },
 };
+use crate::consensus::state::state_error::StateError;
 use crate::document::{Document, ExtendedDocument};
+use crate::errors::consensus::codes::ErrorWithCode;
 use crate::identity::TimestampMillis;
 use crate::tests::fixtures::get_extended_documents_fixture;
+use crate::validation::ValidationResult;
 
 struct TestData {
     owner_id: Identifier,
@@ -86,13 +87,16 @@ fn setup_test() -> TestData {
     }
 }
 
-fn get_state_error(result: &ValidationResult<()>, error_number: usize) -> &StateError {
+fn get_state_error<TData: Clone>(
+    result: &ValidationResult<TData>,
+    error_number: usize,
+) -> &StateError {
     match result
         .errors
         .get(error_number)
         .expect("error should be found")
     {
-        ConsensusError::StateError(state_error) => state_error,
+        ConsensusError::StateError(state_error) => &*state_error,
         _ => panic!(
             "error '{:?}' isn't a basic error",
             result.errors[error_number]
@@ -132,7 +136,7 @@ async fn should_throw_error_if_data_contract_was_not_found() {
         &state_repository_mock,
         &data_contract.id,
         owner_id,
-        document_transitions,
+        document_transitions.iter().collect::<Vec<_>>().as_slice(),
         &Default::default(),
     )
     .await
@@ -178,7 +182,7 @@ async fn should_return_invalid_result_if_document_transition_with_action_delete_
             .expect("documents batch state transition should be created");
 
     state_repository_mock
-        .expect_fetch_extended_documents()
+        .expect_fetch_documents()
         .returning(move |_, _, _, _| Ok(vec![]));
 
     let validation_result =
@@ -187,10 +191,10 @@ async fn should_return_invalid_result_if_document_transition_with_action_delete_
             .expect("validation result should be returned");
 
     let state_error = get_state_error(&validation_result, 0);
-    assert_eq!(4005, state_error.get_code());
+    assert_eq!(4005, state_error.code());
     assert!(matches!(
         state_error,
-        StateError::DocumentNotFoundError { document_id } if document_id == &transition_id
+        StateError::DocumentNotFoundError(e) if e.document_id() == &transition_id
     ));
 }
 
@@ -251,8 +255,8 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
             .expect("documents batch state transition should be created");
 
     state_repository_mock
-        .expect_fetch_extended_documents()
-        .returning(move |_, _, _, _| Ok(vec![extended_documents[0].clone()]));
+        .expect_fetch_documents()
+        .returning(move |_, _, _, _| Ok(vec![documents[0].clone()]));
 
     let validation_result =
         validate_document_batch_transition_state(&state_repository_mock, &state_transition)
@@ -260,12 +264,12 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
             .expect("validation result should be returned");
     let state_error = get_state_error(&validation_result, 0);
 
-    assert_eq!(4010, state_error.get_code());
+    assert_eq!(4010, state_error.code());
     assert!(matches!(
         state_error,
-        StateError::InvalidDocumentRevisionError { document_id, current_revision }  if  {
-            document_id == &transition_id &&
-            current_revision == &Some(1)
+        StateError::InvalidDocumentRevisionError(e)  if  {
+            e.document_id() == &transition_id &&
+            e.current_revision() == &Some(1)
         }
     ));
 }
@@ -328,22 +332,21 @@ async fn should_return_invalid_result_if_document_transition_with_action_replace
             .expect("documents batch state transition should be created");
 
     state_repository_mock
-        .expect_fetch_extended_documents()
-        .returning(move |_, _, _, _| Ok(vec![fetched_document.clone()]));
+        .expect_fetch_documents()
+        .returning(move |_, _, _, _| Ok(vec![fetched_document.document.clone()]));
 
     let validation_result =
         validate_document_batch_transition_state(&state_repository_mock, &state_transition)
             .await
             .expect("validation result should be returned");
     let state_error = get_state_error(&validation_result, 0);
-    assert_eq!(4006, state_error.get_code());
+    assert_eq!(4006, state_error.code());
     assert!(matches!(
         state_error,
-        StateError::DocumentOwnerIdMismatchError { document_id, document_owner_id, existing_document_owner_id } if  {
-            document_id == &transition_id &&
-            existing_document_owner_id == &another_owner_id &&
-            document_owner_id ==  &owner_id
-
+        StateError::DocumentOwnerIdMismatchError(e) if  {
+            e.document_id() == &transition_id &&
+            e.existing_document_owner_id() == &another_owner_id &&
+            e.document_owner_id() ==  &owner_id
         }
     ));
 }
@@ -402,7 +405,7 @@ async fn should_return_invalid_result_if_timestamps_mismatch() {
         .for_each(|t| set_updated_at(t, Some(now_ts)));
 
     state_repository_mock
-        .expect_fetch_extended_documents()
+        .expect_fetch_documents()
         .returning(move |_, _, _, _| Ok(vec![]));
 
     let validation_result =
@@ -411,11 +414,11 @@ async fn should_return_invalid_result_if_timestamps_mismatch() {
             .expect("validation result should be returned");
 
     let state_error = get_state_error(&validation_result, 0);
-    assert_eq!(4007, state_error.get_code());
+    assert_eq!(4007, state_error.code());
     assert!(matches!(
         state_error,
-        StateError::DocumentTimestampsMismatchError { document_id }  if  {
-            document_id == &transition_id
+        StateError::DocumentTimestampsMismatchError(e)  if  {
+            e.document_id() == &transition_id
         }
     ));
 }
@@ -462,7 +465,7 @@ async fn should_return_invalid_result_if_crated_at_has_violated_time_window() {
         .for_each(|t| set_created_at(t, Some(now_ts_minus_6_mins)));
 
     state_repository_mock
-        .expect_fetch_extended_documents()
+        .expect_fetch_documents()
         .returning(move |_, _, _, _| Ok(vec![]));
 
     let validation_result =
@@ -471,12 +474,12 @@ async fn should_return_invalid_result_if_crated_at_has_violated_time_window() {
             .expect("validation result should be returned");
 
     let state_error = get_state_error(&validation_result, 0);
-    assert_eq!(4008, state_error.get_code());
+    assert_eq!(4008, state_error.code());
     assert!(matches!(
         state_error,
-        StateError::DocumentTimestampWindowViolationError { timestamp_name, document_id, .. }   if  {
-            document_id == &transition_id &&
-            timestamp_name == "createdAt"
+        StateError::DocumentTimestampWindowViolationError(e)   if  {
+            e.document_id() == &transition_id &&
+            e.timestamp_name() == "createdAt"
         }
     ));
 }
@@ -523,7 +526,7 @@ async fn should_not_validate_time_in_block_window_on_dry_run() {
         .for_each(|t| set_created_at(t, Some(now_ts_minus_6_mins)));
 
     state_repository_mock
-        .expect_fetch_extended_documents()
+        .expect_fetch_documents()
         .returning(move |_, _, _, _| Ok(vec![]));
 
     let result =
@@ -576,7 +579,7 @@ async fn should_return_invalid_result_if_updated_at_has_violated_time_window() {
     });
 
     state_repository_mock
-        .expect_fetch_extended_documents()
+        .expect_fetch_documents()
         .returning(move |_, _, _, _| Ok(vec![]));
 
     let validation_result =
@@ -585,12 +588,12 @@ async fn should_return_invalid_result_if_updated_at_has_violated_time_window() {
             .expect("validation result should be returned");
 
     let state_error = get_state_error(&validation_result, 0);
-    assert_eq!(4008, state_error.get_code());
+    assert_eq!(4008, state_error.code());
     assert!(matches!(
         state_error,
-        StateError::DocumentTimestampWindowViolationError { timestamp_name, document_id, .. }   if  {
-            document_id == &transition_id &&
-            timestamp_name == "updatedAt"
+        StateError::DocumentTimestampWindowViolationError(e)   if  {
+            e.document_id() == &transition_id &&
+            e.timestamp_name() == "updatedAt"
         }
     ));
 }
@@ -612,9 +615,12 @@ async fn should_return_valid_result_if_document_transitions_are_valid() {
     fetched_document_2.document.owner_id = owner_id;
 
     state_repository_mock
-        .expect_fetch_extended_documents()
+        .expect_fetch_documents()
         .returning(move |_, _, _, _| {
-            Ok(vec![fetched_document_1.clone(), fetched_document_2.clone()])
+            Ok(vec![
+                fetched_document_1.document.clone(),
+                fetched_document_2.document.clone(),
+            ])
         });
     let document_transitions = get_document_transitions_fixture([
         (Action::Create, vec![]),

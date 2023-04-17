@@ -14,6 +14,7 @@ use dpp::identity::validation::PublicKeysValidator;
 use crate::state_transition_facade::StateTransitionFacadeWasm;
 use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
 
+use crate::entropy_generator::ExternalEntropyGenerator;
 use serde::{Deserialize, Serialize};
 
 #[wasm_bindgen(js_name=DashPlatformProtocol)]
@@ -26,6 +27,7 @@ pub struct DashPlatformProtocol {
     state_repository: ExternalStateRepositoryLike,
     public_keys_validator: Arc<PublicKeysValidator<BlsAdapter>>,
     bls: BlsAdapter,
+    entropy_generator: ExternalEntropyGenerator,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -40,8 +42,13 @@ impl DashPlatformProtocol {
     pub fn new(
         bls_adapter: JsBlsAdapter,
         state_repository: ExternalStateRepositoryLike,
+        entropy_generator: ExternalEntropyGenerator,
         maybe_protocol_version: Option<u32>,
     ) -> Result<DashPlatformProtocol, JsValue> {
+        if cfg!(debug_assertions) {
+            wasm_logger::init(wasm_logger::Config::new(log::Level::Debug));
+        }
+
         let bls = BlsAdapter(bls_adapter);
         let protocol_version = maybe_protocol_version.unwrap_or(LATEST_VERSION);
         let public_keys_validator = Arc::new(PublicKeysValidator::new(bls.clone()).unwrap());
@@ -52,6 +59,7 @@ impl DashPlatformProtocol {
                 protocol_version,
                 state_repository.clone(),
                 bls.clone(),
+                entropy_generator.clone(),
             )?;
 
         Ok(Self {
@@ -63,6 +71,7 @@ impl DashPlatformProtocol {
             state_repository,
             public_keys_validator,
             bls,
+            entropy_generator,
         })
     }
 
@@ -102,6 +111,7 @@ impl DashPlatformProtocol {
             protocol_version,
             self.state_repository.clone(),
             self.bls.clone(),
+            self.entropy_generator.clone(),
         )
     }
 
@@ -110,7 +120,12 @@ impl DashPlatformProtocol {
         &mut self,
         state_repository: ExternalStateRepositoryLike,
     ) -> Result<(), JsValue> {
-        self.init(self.protocol_version, state_repository, self.bls.clone())
+        self.init(
+            self.protocol_version,
+            state_repository,
+            self.bls.clone(),
+            self.entropy_generator.clone(),
+        )
     }
 
     #[wasm_bindgen(js_name = getStateRepository)]
@@ -123,6 +138,7 @@ impl DashPlatformProtocol {
         protocol_version: u32,
         state_repository: ExternalStateRepositoryLike,
         bls_adapter: BlsAdapter,
+        entropy_generator: ExternalEntropyGenerator,
     ) -> Result<(), JsValue> {
         let (identity_facade, document_facade, data_contract_facade, state_transition_facade) =
             create_facades(
@@ -130,6 +146,7 @@ impl DashPlatformProtocol {
                 protocol_version,
                 state_repository.clone(),
                 bls_adapter,
+                entropy_generator,
             )?;
 
         self.protocol_version = protocol_version;
@@ -148,6 +165,7 @@ fn create_facades(
     protocol_version: u32,
     state_repository: ExternalStateRepositoryLike,
     bls_adapter: BlsAdapter,
+    entropy_generator: ExternalEntropyGenerator,
 ) -> Result<
     (
         IdentityFacadeWasm,
@@ -172,10 +190,14 @@ fn create_facades(
         protocol_version,
         protocol_version_validator.clone(),
         wrapped_state_repository,
+        entropy_generator.clone(),
     );
 
-    let data_contract_facade =
-        DataContractFacadeWasm::new(protocol_version, protocol_version_validator.clone());
+    let data_contract_facade = DataContractFacadeWasm::new(
+        protocol_version,
+        protocol_version_validator.clone(),
+        entropy_generator,
+    );
 
     let state_transition_facade =
         StateTransitionFacadeWasm::new(state_repository, bls_adapter, protocol_version_validator)?;
@@ -192,12 +214,14 @@ fn init_document_facade(
     protocol_version: u32,
     protocol_version_validator: Arc<ProtocolVersionValidator>,
     state_repository: ExternalStateRepositoryLikeWrapper,
+    entropy_generator: ExternalEntropyGenerator,
 ) -> DocumentFacadeWasm {
     let document_validator = DocumentValidatorWasm::new_with_arc(protocol_version_validator);
 
     let document_factory = DocumentFactoryWASM::new_with_state_repository_wrapper(
         protocol_version,
         document_validator.clone(),
+        entropy_generator,
         state_repository.clone(),
     );
 

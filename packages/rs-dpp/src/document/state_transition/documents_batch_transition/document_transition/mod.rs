@@ -10,10 +10,15 @@ use crate::{
 };
 use document_base_transition::DocumentBaseTransition;
 
+mod action;
 pub mod document_base_transition;
+mod document_base_transition_action;
 pub mod document_create_transition;
+mod document_create_transition_action;
 pub mod document_delete_transition;
+mod document_delete_transition_action;
 pub mod document_replace_transition;
+mod document_replace_transition_action;
 
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
@@ -23,6 +28,13 @@ pub use document_delete_transition::DocumentDeleteTransition;
 pub use document_replace_transition::DocumentReplaceTransition;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::Value;
+
+pub use document_base_transition_action::DocumentBaseTransitionAction;
+pub use document_create_transition_action::DocumentCreateTransitionAction;
+pub use document_delete_transition_action::DocumentDeleteTransitionAction;
+pub use document_replace_transition_action::DocumentReplaceTransitionAction;
+
+pub use action::{DocumentTransitionAction, DOCUMENT_TRANSITION_ACTION_VERSION};
 
 /// the initial revision of newly created document
 pub const INITIAL_REVISION: u64 = 1;

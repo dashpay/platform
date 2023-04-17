@@ -3,14 +3,22 @@ use platform_value::Value;
 use std::convert::TryInto;
 use std::sync::Arc;
 
-use crate::consensus::signature::{IdentityNotFoundError, SignatureError};
+use crate::consensus::signature::IdentityNotFoundError;
+use crate::consensus::signature::SignatureError;
+use crate::consensus::state::identity::identity_public_key_disabled_at_window_violation_error::IdentityPublicKeyDisabledAtWindowViolationError;
+use crate::consensus::state::identity::identity_public_key_is_disabled_error::IdentityPublicKeyIsDisabledError;
+use crate::consensus::state::identity::identity_public_key_is_read_only_error::IdentityPublicKeyIsReadOnlyError;
+use crate::consensus::state::identity::invalid_identity_public_key_id_error::InvalidIdentityPublicKeyIdError;
+use crate::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
+use crate::consensus::state::state_error::StateError;
+use crate::identity::state_transition::identity_update_transition::IdentityUpdateTransitionAction;
 use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
     identity::validation::{RequiredPurposeAndSecurityLevelValidator, TPublicKeysValidator},
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike,
-    validation::SimpleValidationResult,
-    NonConsensusError, StateError,
+    validation::ValidationResult,
+    NonConsensusError,
 };
 
 use super::identity_update_transition::{property_names, IdentityUpdateTransition};
@@ -35,8 +43,8 @@ where
     pub async fn validate(
         &self,
         state_transition: &IdentityUpdateTransition,
-    ) -> Result<SimpleValidationResult, NonConsensusError> {
-        let mut validation_result = SimpleValidationResult::default();
+    ) -> Result<ValidationResult<IdentityUpdateTransitionAction>, NonConsensusError> {
+        let mut validation_result = ValidationResult::default();
 
         let maybe_stored_identity = self
             .state_repository
@@ -51,12 +59,13 @@ where
             .map_err(|e| {
                 NonConsensusError::StateRepositoryFetchError(format!(
                     "state repository fetch identity for identity update validation error: {}",
-                    e.to_string()
+                    e
                 ))
             })?;
 
         if state_transition.get_execution_context().is_dry_run() {
-            return Ok(validation_result);
+            let action: IdentityUpdateTransitionAction = state_transition.into();
+            return Ok(action.into());
         }
 
         let stored_identity = match maybe_stored_identity {
@@ -73,30 +82,37 @@ where
         let mut identity = stored_identity.clone();
 
         // Check revision
-        if identity.get_revision() != (state_transition.get_revision() - 1) {
-            validation_result.add_error(StateError::InvalidIdentityRevisionError {
-                identity_id: state_transition.get_identity_id().to_owned(),
-                current_revision: identity.get_revision(),
-            });
+        if identity.get_revision()
+            != (state_transition.get_revision().checked_sub(1).ok_or(
+                NonConsensusError::Overflow("unable subtract 1 from revision"),
+            )?)
+        {
+            validation_result.add_error(StateError::InvalidIdentityRevisionError(
+                InvalidIdentityRevisionError::new(
+                    state_transition.get_identity_id().to_owned(),
+                    identity.get_revision(),
+                ),
+            ));
             return Ok(validation_result);
         }
 
         for key_id in state_transition.get_public_key_ids_to_disable().iter() {
             match identity.get_public_key_by_id(*key_id) {
                 None => {
-                    validation_result
-                        .add_error(StateError::InvalidIdentityPublicKeyIdError { id: *key_id });
+                    validation_result.add_error(StateError::InvalidIdentityPublicKeyIdError(
+                        InvalidIdentityPublicKeyIdError::new(*key_id),
+                    ));
                 }
                 Some(public_key_to_disable) => {
                     if public_key_to_disable.read_only {
-                        validation_result.add_error(StateError::IdentityPublicKeyIsReadOnlyError {
-                            public_key_index: *key_id,
-                        })
+                        validation_result.add_error(StateError::IdentityPublicKeyIsReadOnlyError(
+                            IdentityPublicKeyIsReadOnlyError::new(*key_id),
+                        ))
                     }
                     if public_key_to_disable.is_disabled() {
-                        validation_result.add_error(StateError::IdentityPublicKeyIsDisabledError {
-                            public_key_index: *key_id,
-                        })
+                        validation_result.add_error(StateError::IdentityPublicKeyIsDisabledError(
+                            IdentityPublicKeyIsDisabledError::new(*key_id),
+                        ))
                     }
                 }
             }
@@ -113,7 +129,7 @@ where
                 .map_err(|e| {
                     NonConsensusError::StateRepositoryFetchError(format!(
                         "state repository fetch latest platform block time error: {}",
-                        e.to_string()
+                        e
                     ))
                 })?;
 
@@ -123,15 +139,17 @@ where
                 },
             )?;
             let window_validation_result =
-                validate_time_in_block_time_window(last_block_header_time, disabled_at_ms);
+                validate_time_in_block_time_window(last_block_header_time, disabled_at_ms)?;
 
             if !window_validation_result.is_valid() {
                 validation_result.add_error(
-                    StateError::IdentityPublicKeyDisabledAtWindowViolationError {
-                        disabled_at: disabled_at_ms,
-                        time_window_start: window_validation_result.time_window_start,
-                        time_window_end: window_validation_result.time_window_end,
-                    },
+                    StateError::IdentityPublicKeyDisabledAtWindowViolationError(
+                        IdentityPublicKeyDisabledAtWindowViolationError::new(
+                            disabled_at_ms,
+                            window_validation_result.time_window_start,
+                            window_validation_result.time_window_end,
+                        ),
+                    ),
                 );
                 return Ok(validation_result);
             }
@@ -167,10 +185,18 @@ where
             .public_keys_validator
             .validate_keys(raw_public_keys.as_slice())?;
         if !result.is_valid() {
-            return Ok(result);
+            validation_result.add_errors(result.errors);
+            return Ok(validation_result);
         }
 
         let validator = RequiredPurposeAndSecurityLevelValidator {};
-        validator.validate_keys(&raw_public_keys)
+        let result = validator.validate_keys(&raw_public_keys)?;
+        if !result.is_valid() {
+            validation_result.add_errors(result.errors);
+            return Ok(validation_result);
+        }
+
+        let action: IdentityUpdateTransitionAction = state_transition.into();
+        Ok(action.into())
     }
 }

@@ -5,7 +5,7 @@ use grovedb::{
 
 use crate::{
     drive::{
-        batch::{drive_op_batch::WithdrawalOperationType, DriveOperationType},
+        batch::{drive_op_batch::WithdrawalOperationType, DriveOperation},
         Drive, RootTree,
     },
     error::{drive::DriveError, Error},
@@ -19,7 +19,7 @@ impl Drive {
     /// Get and remove latest withdrawal index in a queue
     pub fn fetch_and_remove_latest_withdrawal_transaction_index_operations(
         &self,
-        drive_operation_types: &mut Vec<DriveOperationType>,
+        drive_operation_types: &mut Vec<DriveOperation>,
         transaction: TransactionArg,
     ) -> Result<u64, Error> {
         let mut inner_query = Query::new();
@@ -47,7 +47,7 @@ impl Drive {
             if let QueryResultElement::KeyElementPairResultItem((key, _)) =
                 expired_index_element_pair
             {
-                drive_operation_types.push(DriveOperationType::WithdrawalOperation(
+                drive_operation_types.push(DriveOperation::WithdrawalOperation(
                     WithdrawalOperationType::DeleteExpiredIndex { key: key.clone() },
                 ));
 
@@ -98,9 +98,9 @@ impl Drive {
     pub fn add_update_withdrawal_index_counter_operation(
         &self,
         value: u64,
-        drive_operation_types: &mut Vec<DriveOperationType>,
+        drive_operation_types: &mut Vec<DriveOperation>,
     ) {
-        drive_operation_types.push(DriveOperationType::WithdrawalOperation(
+        drive_operation_types.push(DriveOperation::WithdrawalOperation(
             WithdrawalOperationType::UpdateIndexCounter { index: value },
         ));
     }
@@ -109,9 +109,9 @@ impl Drive {
     pub fn add_insert_expired_index_operation(
         &self,
         transaction_index: u64,
-        drive_operation_types: &mut Vec<DriveOperationType>,
+        drive_operation_types: &mut Vec<DriveOperation>,
     ) {
-        drive_operation_types.push(DriveOperationType::WithdrawalOperation(
+        drive_operation_types.push(DriveOperation::WithdrawalOperation(
             WithdrawalOperationType::InsertExpiredIndex {
                 index: transaction_index,
             },

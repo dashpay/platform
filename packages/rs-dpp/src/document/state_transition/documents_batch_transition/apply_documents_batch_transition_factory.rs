@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use crate::document::{Document, ExtendedDocument};
 use crate::prelude::TimestampMillis;
@@ -9,22 +10,23 @@ use crate::{
 
 use super::{
     document_transition::{Action, DocumentReplaceTransition, DocumentTransition},
-    validation::state::fetch_extended_documents::fetch_extended_documents,
+    validation::state::fetch_documents::fetch_extended_documents,
     DocumentsBatchTransition,
 };
 
+#[derive(Clone)]
 pub struct ApplyDocumentsBatchTransition<SR>
 where
     SR: StateRepositoryLike,
 {
-    state_repository: SR,
+    state_repository: Arc<SR>,
 }
 
 impl<SR> ApplyDocumentsBatchTransition<SR>
 where
     SR: StateRepositoryLike,
 {
-    pub fn new(state_repository: SR) -> ApplyDocumentsBatchTransition<SR>
+    pub fn new(state_repository: Arc<SR>) -> ApplyDocumentsBatchTransition<SR>
     where
         SR: StateRepositoryLike,
     {
@@ -35,7 +37,7 @@ where
         &self,
         state_transition: &DocumentsBatchTransition,
     ) -> Result<(), ProtocolError> {
-        apply_documents_batch_transition(&self.state_repository, state_transition).await
+        apply_documents_batch_transition(self.state_repository.as_ref(), state_transition).await
     }
 }
 
@@ -43,14 +45,15 @@ pub async fn apply_documents_batch_transition(
     state_repository: &impl StateRepositoryLike,
     state_transition: &DocumentsBatchTransition,
 ) -> Result<(), ProtocolError> {
-    let replace_transitions = state_transition
-        .get_transitions()
-        .iter()
-        .filter(|dt| dt.base().action == Action::Replace);
+    let replace_transitions: Vec<_> = state_transition
+        .get_transitions_slice()
+        .into_iter()
+        .filter(|dt| dt.base().action == Action::Replace)
+        .collect();
 
     let fetched_documents = fetch_extended_documents(
         state_repository,
-        replace_transitions,
+        replace_transitions.as_slice(),
         &state_transition.execution_context,
     )
     .await?;

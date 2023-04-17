@@ -2,10 +2,14 @@ use anyhow::Context;
 use std::convert::TryInto;
 
 use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
+use crate::consensus::fee::balance_is_not_enough_error::BalanceIsNotEnoughError;
+use crate::consensus::fee::fee_error::FeeError;
 use crate::data_contract::errors::IdentityNotPresentError;
+use crate::state_transition::fee::calculate_state_transition_fee_factory::calculate_state_transition_fee;
+use crate::state_transition::fee::{Credits, FeeResult};
 use crate::state_transition::StateTransitionType;
+use crate::NonConsensusError;
 use crate::{
-    consensus::fee::FeeError,
     identity::{
         convert_satoshi_to_credits,
         state_transition::asset_lock_proof::AssetLockTransactionOutputFetcher,
@@ -39,9 +43,22 @@ where
         &self,
         state_transition: &StateTransition,
     ) -> Result<SimpleValidationResult, ProtocolError> {
+        self.validate_with_custom_calculator(state_transition, calculate_state_transition_fee)
+            .await
+    }
+
+    async fn validate_with_custom_calculator(
+        &self,
+        state_transition: &StateTransition,
+        calculate_state_transition_fee_fn: impl Fn(
+            &StateTransition,
+        ) -> Result<FeeResult, NonConsensusError>,
+    ) -> Result<SimpleValidationResult, ProtocolError> {
         let mut result = SimpleValidationResult::default();
 
         let execution_context = state_transition.get_execution_context();
+        let required_fee = calculate_state_transition_fee_fn(state_transition)?;
+
         let balance = match state_transition {
             StateTransition::IdentityCreate(st) => {
                 let output = self
@@ -54,7 +71,7 @@ where
                             st.get_asset_lock_proof()
                         )
                     })?;
-                convert_satoshi_to_credits(output.value)
+                convert_satoshi_to_credits(output.value)?
             }
             StateTransition::IdentityTopUp(st) => {
                 let output = self
@@ -67,15 +84,12 @@ where
                             st.get_asset_lock_proof()
                         )
                     })?;
-                let balance = convert_satoshi_to_credits(output.value);
+                let balance = convert_satoshi_to_credits(output.value)?;
                 let identity_id = st.get_owner_id();
-                let identity = self
+                let identity_balance: i64 = self
                     .state_repository
-                    .fetch_identity(identity_id, Some(st.get_execution_context()))
+                    .fetch_identity_balance_with_debt(identity_id, Some(execution_context))
                     .await?
-                    .map(TryInto::try_into)
-                    .transpose()
-                    .map_err(Into::into)?
                     .ok_or_else(|| {
                         ProtocolError::IdentityNotPresentError(IdentityNotPresentError::new(
                             *identity_id,
@@ -85,7 +99,26 @@ where
                 if execution_context.is_dry_run() {
                     return Ok(result);
                 }
-                balance + identity.get_balance()
+
+                if identity_balance.is_negative() && identity_balance.unsigned_abs() > balance {
+                    result.add_error(BalanceIsNotEnoughError::new(0, required_fee.desired_amount));
+
+                    return Ok(result);
+                }
+
+                if identity_balance.is_negative() {
+                    balance.checked_sub(identity_balance.unsigned_abs()).ok_or(
+                        ProtocolError::Overflow(
+                            "can't subtract identity balance from the state transition balance",
+                        ),
+                    )?
+                } else {
+                    balance.checked_add(identity_balance as Credits).ok_or(
+                        ProtocolError::Overflow(
+                            "can't add identity balance to state transition balance",
+                        ),
+                    )?
+                }
             }
             StateTransition::DataContractCreate(st) => {
                 let balance = self.get_identity_owner_balance(st).await?;
@@ -129,10 +162,11 @@ where
             return Ok(result);
         }
 
-        let fee = state_transition.calculate_fee();
         // ? make sure Fee cannot be negative and refunds are handled differently
-        if (balance as i64) < fee {
-            result.add_error(FeeError::BalanceIsNotEnoughError { balance, fee })
+        if balance < required_fee.desired_amount {
+            result.add_error(FeeError::BalanceIsNotEnoughError(
+                BalanceIsNotEnoughError::new(balance, required_fee.desired_amount),
+            ))
         }
 
         Ok(result)
@@ -160,15 +194,21 @@ where
 
 #[cfg(test)]
 mod test {
+    use super::*;
+    use crate::tests::fixtures::{
+        identity_create_transition_fixture, identity_topup_transition_fixture,
+    };
     use std::sync::Arc;
 
     use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
+    use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
+    use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;
     use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
-    use crate::state_transition::StateTransitionLike;
-    use crate::tests::fixtures::identity_topup_transition_fixture;
+    use crate::identity::RATIO;
+    use crate::state_transition::fee::{Credits, FeeResult};
+    use crate::state_transition::StateTransition;
     use crate::ProtocolError;
     use crate::{
-        consensus::fee::FeeError,
         document::{document_transition::Action, DocumentsBatchTransition},
         identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
         state_repository::MockStateRepositoryLike,
@@ -188,15 +228,30 @@ mod test {
     use super::StateTransitionFeeValidator;
 
     fn execution_context_with_cost(
-        storage_cost: i64,
-        processing_cost: i64,
+        storage_cost: Credits,
+        processing_cost: Credits,
     ) -> StateTransitionExecutionContext {
         let ctx = StateTransitionExecutionContext::default();
         ctx.add_operation(Operation::PreCalculated(PreCalculatedOperation::new(
             storage_cost,
             processing_cost,
+            vec![],
         )));
         ctx
+    }
+
+    macro_rules! get_output_amount_from_identity_transition {
+        ($transition:ident) => {
+            if let AssetLockProof::Instant(lock_proof) = $transition.get_asset_lock_proof() {
+                let satoshis = lock_proof
+                    .output()
+                    .expect("output must be present in instant lock proof")
+                    .value;
+                satoshis * RATIO
+            } else {
+                panic!("identity must have an instant lock proof")
+            }
+        };
     }
 
     #[tokio::test]
@@ -224,12 +279,7 @@ mod test {
             .expect("the validation result should be returned");
 
         let fee_error = get_fee_error_from_result(&result, 0);
-        assert!(
-            matches!(fee_error, FeeError::BalanceIsNotEnoughError { balance, fee } if {
-                *balance == 1 &&
-                *fee == 90
-            })
-        );
+        assert!(matches!(fee_error, FeeError::BalanceIsNotEnoughError(e) if e.balance() == 1));
     }
 
     #[tokio::test]
@@ -237,7 +287,7 @@ mod test {
         let mut identity = identity_fixture();
         let mut state_repository_mock = MockStateRepositoryLike::new();
 
-        identity.balance = 90;
+        identity.balance = 52;
         state_repository_mock
             .expect_fetch_identity()
             .returning(move |_, _| Ok(Some(identity.clone())));
@@ -286,12 +336,7 @@ mod test {
             .expect("the validation result should be returned");
 
         let fee_error = get_fee_error_from_result(&result, 0);
-        assert!(
-            matches!(fee_error, FeeError::BalanceIsNotEnoughError { balance, fee } if {
-                *balance == 1 &&
-                *fee == 90
-            })
-        );
+        assert!(matches!(fee_error, FeeError::BalanceIsNotEnoughError(e) if e.balance() == 1));
     }
 
     #[tokio::test]
@@ -356,30 +401,116 @@ mod test {
     }
 
     #[tokio::test]
-    async fn identity_top_up_transition_should_return_invalid_result_if_balance_is_not_enough() {
-        let mut identity = identity_fixture();
-        let mut state_repository_mock = MockStateRepositoryLike::new();
-        identity.balance = 1;
-        state_repository_mock
-            .expect_fetch_identity()
-            .returning(move |_, _| Ok(Some(identity.clone())));
-
-        let mut identity_topup_transition =
-            IdentityTopUpTransition::new(identity_topup_transition_fixture(None)).unwrap();
-        identity_topup_transition.set_execution_context(execution_context_with_cost(45000000, 5));
+    async fn identity_create_transition_should_return_invalid_result_if_asset_lock_output_amount_is_not_enough(
+    ) {
+        let identity_create_transition =
+            IdentityCreateTransition::new(identity_create_transition_fixture(None)).unwrap();
+        let output_amount = get_output_amount_from_identity_transition!(identity_create_transition);
+        let state_repository_mock = MockStateRepositoryLike::new();
+        let calculate_state_transition_fee_mock = |_: &StateTransition| {
+            Ok(FeeResult {
+                desired_amount: output_amount + 1,
+                ..Default::default()
+            })
+        };
 
         let validator = StateTransitionFeeValidator::new(Arc::new(state_repository_mock));
         let result = validator
-            .validate(&identity_topup_transition.into())
+            .validate_with_custom_calculator(
+                &identity_create_transition.into(),
+                calculate_state_transition_fee_mock,
+            )
             .await
             .expect("the validation result should be returned");
         let fee_error = get_fee_error_from_result(&result, 0);
+
         assert!(
-            matches!(fee_error, FeeError::BalanceIsNotEnoughError { balance, fee } if {
-                *balance == 90000001 &&
-                *fee == 90000010
-            })
+            matches!(fee_error, FeeError::BalanceIsNotEnoughError(e) if e.balance() == output_amount)
         );
+    }
+
+    #[tokio::test]
+    async fn identity_create_transition_should_return_valid_result() {
+        let identity_create_transition =
+            IdentityCreateTransition::new(identity_create_transition_fixture(None)).unwrap();
+        let output_amount = get_output_amount_from_identity_transition!(identity_create_transition);
+        let state_repository_mock = MockStateRepositoryLike::new();
+        let calculate_state_transition_fee_mock = |_: &StateTransition| {
+            Ok(FeeResult {
+                desired_amount: output_amount,
+                ..Default::default()
+            })
+        };
+        let validator = StateTransitionFeeValidator::new(Arc::new(state_repository_mock));
+        let result = validator
+            .validate_with_custom_calculator(
+                &identity_create_transition.into(),
+                calculate_state_transition_fee_mock,
+            )
+            .await
+            .expect("the validation result should be returned");
+        assert!(result.is_valid())
+    }
+
+    #[tokio::test]
+    async fn identity_top_up_transition_should_return_invalid_result_if_balance_is_not_enough() {
+        let mut state_repository_mock = MockStateRepositoryLike::new();
+        state_repository_mock
+            .expect_fetch_identity_balance_with_debt()
+            .returning(move |_, _| Ok(Some(1)));
+
+        let identity_topup_transition =
+            IdentityTopUpTransition::new(identity_topup_transition_fixture(None)).unwrap();
+        let output_amount = get_output_amount_from_identity_transition!(identity_topup_transition);
+
+        let calculate_state_transition_fee_mock = |_: &StateTransition| {
+            Ok(FeeResult {
+                desired_amount: output_amount + 2,
+                ..Default::default()
+            })
+        };
+
+        let validator = StateTransitionFeeValidator::new(Arc::new(state_repository_mock));
+        let result = validator
+            .validate_with_custom_calculator(
+                &identity_topup_transition.into(),
+                calculate_state_transition_fee_mock,
+            )
+            .await
+            .expect("the validation result should be returned");
+
+        let fee_error = get_fee_error_from_result(&result, 0);
+
+        assert!(
+            matches!(fee_error, FeeError::BalanceIsNotEnoughError(e) if e.balance() == output_amount + 1)
+        );
+    }
+
+    #[tokio::test]
+    async fn identity_top_up_transition_should_return_valid_result() {
+        let mut state_repository_mock = MockStateRepositoryLike::new();
+        state_repository_mock
+            .expect_fetch_identity_balance_with_debt()
+            .returning(move |_, _| Ok(Some(41)));
+
+        let identity_topup_transition =
+            IdentityTopUpTransition::new(identity_topup_transition_fixture(None)).unwrap();
+        let output_amount = get_output_amount_from_identity_transition!(identity_topup_transition);
+
+        let calculation_mock = |_: &StateTransition| {
+            Ok(FeeResult {
+                desired_amount: output_amount - 1,
+                ..Default::default()
+            })
+        };
+
+        let validator = StateTransitionFeeValidator::new(Arc::new(state_repository_mock));
+        let result = validator
+            .validate_with_custom_calculator(&identity_topup_transition.into(), calculation_mock)
+            .await
+            .expect("the validation result should be returned");
+
+        assert!(result.is_valid())
     }
 
     #[tokio::test]

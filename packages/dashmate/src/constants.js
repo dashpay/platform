@@ -9,9 +9,9 @@ const networks = {
 };
 
 const presets = {
-  PRESET_LOCAL: 'local',
-  PRESET_TESTNET: 'testnet',
   PRESET_MAINNET: 'mainnet',
+  PRESET_TESTNET: 'testnet',
+  PRESET_LOCAL: 'local',
 };
 
 const nodeTypes = {
@@ -40,10 +40,10 @@ const OUTPUT_FORMATS = {
   PLAIN: 'plain',
 };
 
-const sslProviders = {
+const SSL_PROVIDERS = {
   ZEROSSL: 'zerossl',
-  MANUL: 'manual',
-  SELF_SIGNED: 'selfSigned',
+  FILE: 'file',
+  SELF_SIGNED: 'self-signed',
 };
 
 module.exports = {
@@ -61,5 +61,6 @@ module.exports = {
   HOME_DIR_PATH,
   CONFIG_FILE_PATH,
   OUTPUT_FORMATS,
-  SSL_PROVIDERS: Object.values(sslProviders),
+  SSL_PROVIDERS,
+  SSL_PROVIDERS_LIST: Object.values(SSL_PROVIDERS),
 };

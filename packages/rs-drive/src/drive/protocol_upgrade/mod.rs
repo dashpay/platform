@@ -7,7 +7,7 @@ use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::error::Error::GroveDB;
-use crate::fee::op::DriveOperation;
+use crate::fee::op::LowLevelDriveOperation;
 use crate::query::QueryItem;
 use dpp::util::deserializer::ProtocolVersion;
 use grovedb::query_result_type::QueryResultType;
@@ -63,9 +63,10 @@ impl Drive {
     /// Clear all version information from the backing store, this is done on epoch change in
     /// execution logic
     pub fn clear_version_information(&self, transaction: TransactionArg) -> Result<(), Error> {
-        let mut batch_operations: Vec<DriveOperation> = vec![];
+        let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
         self.clear_version_information_operations(transaction, &mut batch_operations)?;
-        let grove_db_operations = DriveOperation::grovedb_operations_batch(&batch_operations);
+        let grove_db_operations =
+            LowLevelDriveOperation::grovedb_operations_batch(&batch_operations);
         if !grove_db_operations.is_empty() {
             self.apply_batch_grovedb_operations(
                 None,
@@ -85,7 +86,7 @@ impl Drive {
         next_version: ProtocolVersion,
         transaction: TransactionArg,
     ) -> Result<(), Error> {
-        let mut batch_operations: Vec<DriveOperation> = vec![];
+        let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
         self.clear_version_information_operations(transaction, &mut batch_operations)?;
         self.set_current_protocol_version_operations(
             current_version,
@@ -97,7 +98,8 @@ impl Drive {
             transaction,
             &mut batch_operations,
         )?;
-        let grove_db_operations = DriveOperation::grovedb_operations_batch(&batch_operations);
+        let grove_db_operations =
+            LowLevelDriveOperation::grovedb_operations_batch(&batch_operations);
         if !grove_db_operations.is_empty() {
             self.apply_batch_grovedb_operations(
                 None,
@@ -114,7 +116,7 @@ impl Drive {
     pub fn clear_version_information_operations(
         &self,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         let path_query = PathQuery::new_unsized(
             versions_counter_path_vec(),
@@ -201,7 +203,7 @@ impl Drive {
         version: ProtocolVersion,
         transaction: TransactionArg,
     ) -> Result<bool, Error> {
-        let mut batch_operations: Vec<DriveOperation> = vec![];
+        let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
         let inserted = self.update_validator_proposed_app_version_operations(
             validator_pro_tx_hash,
             version,
@@ -209,7 +211,8 @@ impl Drive {
             &mut batch_operations,
         )?;
 
-        let grove_db_operations = DriveOperation::grovedb_operations_batch(&batch_operations);
+        let grove_db_operations =
+            LowLevelDriveOperation::grovedb_operations_batch(&batch_operations);
         if !grove_db_operations.is_empty() {
             self.apply_batch_grovedb_operations(
                 None,
@@ -228,7 +231,7 @@ impl Drive {
         validator_pro_tx_hash: [u8; 32],
         version: ProtocolVersion,
         transaction: TransactionArg,
-        drive_operations: &mut Vec<DriveOperation>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<bool, Error> {
         let mut cache = self.cache.borrow_mut();
         let version_counter = cache

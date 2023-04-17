@@ -1,8 +1,8 @@
 const { PrivateKey } = require('@dashevo/dashcore-lib');
 
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
 
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const { expectValidationError, expectJsonSchemaError } = require('../../../../../../../lib/test/expect/expectError');
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 const getBlsAdapterMock = require('../../../../../../../lib/test/mocks/getBlsAdapterMock');
@@ -12,7 +12,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
   let stateTransition;
 
   let stateRepositoryMock;
-  let mockIdentityPublicKeyCreateTransition;
+  let mockIdentityPublicKeyWithWitness;
   let executionContext;
 
   let validateIdentityCreateTransitionBasic;
@@ -26,7 +26,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
   let InvalidIdentityPublicKeyDataError;
   let InvalidIdentityKeySignatureError;
   let IdentityCreateTransitionBasicValidator;
-  let IdentityPublicKeyCreateTransition;
+  let IdentityPublicKeyWithWitness;
 
   before(async () => {
     ({
@@ -37,13 +37,13 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
       InvalidIdentityPublicKeySecurityLevelError,
       InvalidIdentityPublicKeyDataError,
       InvalidIdentityKeySignatureError,
-      IdentityPublicKeyCreateTransition,
+      IdentityPublicKeyWithWitness,
       IdentityCreateTransitionBasicValidator,
       IdentityPublicKey,
     } = await loadWasmDpp());
 
-    mockIdentityPublicKeyCreateTransition = (publicKey, opts = {}) => (
-      new IdentityPublicKeyCreateTransition({
+    mockIdentityPublicKeyWithWitness = (publicKey, opts = {}) => (
+      new IdentityPublicKeyWithWitness({
         id: 0,
         type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
         data: publicKey,
@@ -74,7 +74,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     const privateKey = new PrivateKey('9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2');
     const publicKey = privateKey.toPublicKey();
 
-    const identityPublicKey = mockIdentityPublicKeyCreateTransition(publicKey.toBuffer());
+    const identityPublicKey = mockIdentityPublicKeyWithWitness(publicKey.toBuffer());
 
     stateTransition.setPublicKeys([identityPublicKey]);
 
@@ -299,7 +299,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
       const privateKey = new PrivateKey();
 
       // Mess up public key
-      const identityPublicKey = mockIdentityPublicKeyCreateTransition(Buffer.alloc(33));
+      const identityPublicKey = mockIdentityPublicKeyWithWitness(Buffer.alloc(33));
 
       stateTransition.setPublicKeys([identityPublicKey]);
       await stateTransition.signByPrivateKey(
@@ -323,7 +323,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
       const privateKey = new PrivateKey();
 
       // Mess up public key's purpose
-      const identityPublicKey = mockIdentityPublicKeyCreateTransition(
+      const identityPublicKey = mockIdentityPublicKeyWithWitness(
         privateKey.toPublicKey().toBuffer(),
       );
 

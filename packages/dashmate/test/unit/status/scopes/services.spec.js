@@ -10,7 +10,11 @@ describe('getServicesScopeFactory', () => {
     beforeEach(async function it() {
       mockDockerCompose = { inspectService: this.sinon.stub() };
 
-      config = { get: this.sinon.stub(), toEnvs: this.sinon.stub() };
+      config = {
+        get: this.sinon.stub(),
+        toEnvs: this.sinon.stub(),
+      };
+
       getServicesScope = getServicesScopeFactory(mockDockerCompose);
     });
 

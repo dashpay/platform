@@ -20,8 +20,12 @@ use crate::{
 
 use super::property_names::*;
 
+mod action;
 pub mod apply_data_contract_update_transition_factory;
 pub mod validation;
+pub use action::{
+    DataContractUpdateTransitionAction, DATA_CONTRACT_UPDATE_TRANSITION_ACTION_VERSION,
+};
 
 pub mod property_names {
     pub const PROTOCOL_VERSION: &str = "protocolVersion";
@@ -53,8 +57,6 @@ pub struct DataContractUpdateTransition {
     pub protocol_version: u32,
     #[serde(rename = "type")]
     pub transition_type: StateTransitionType,
-    // we want to skip serialization of transitions, as we does it manually in `to_object()`  and `to_json()`
-    #[serde(skip_serializing)]
     pub data_contract: DataContract,
     pub signature_public_key_id: KeyID,
     pub signature: BinaryData,

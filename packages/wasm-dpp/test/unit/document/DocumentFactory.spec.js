@@ -1,12 +1,12 @@
 const bs58 = require('bs58');
 
 const DocumentCreateTransition = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/documentTransition/DocumentCreateTransition');
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const DocumentFactoryJS = require('@dashevo/dpp/lib/document/DocumentFactory');
 
+const getDataContractFixtureJs = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDocumentsFixtureJs = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
 const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRepositoryMock');
 const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
 
@@ -62,15 +62,15 @@ describe('DocumentFactory', () => {
     const protocolValidator = new ProtocolVersionValidator();
     documentValidator = new DocumentValidator(protocolValidator);
 
-    ({ ownerId: ownerIdJs } = getDocumentsFixture);
+    ([{ ownerId: ownerIdJs }] = getDocumentsFixtureJs());
     ownerId = Identifier.from(ownerIdJs);
 
-    dataContractJs = getDataContractFixture();
+    dataContractJs = getDataContractFixtureJs();
     dataContract = DataContract.fromBuffer(dataContractJs.toBuffer());
     const dc = DataContract.fromBuffer(dataContractJs.toBuffer());
     dataContractId = dataContractJs.getId().toBuffer();
 
-    documentsJs = getDocumentsFixture(dataContractJs);
+    documentsJs = getDocumentsFixtureJs(dataContractJs);
     documents = documentsJs.map((d) => {
       const doc = new ExtendedDocument(d.toObject(), dataContract);
       doc.setEntropy(d.entropy);
@@ -154,7 +154,7 @@ describe('DocumentFactory', () => {
       // in a true unit test. Not here.
       expect(newDocument.getEntropy()).not.to.deep.be.equal(Buffer.alloc(32));
 
-      expect(newDocument.getCreatedAt()).to.be.an('number');
+      expect(newDocument.getCreatedAt()).to.be.an.instanceOf(Date);
     });
 
     it('should throw an error if type is not defined', () => {
@@ -348,7 +348,7 @@ describe('DocumentFactory', () => {
     });
 
     it('should create DocumentsBatchTransition with passed documents', async () => {
-      const [newDocumentJs] = getDocumentsFixture(dataContractJs);
+      const [newDocumentJs] = getDocumentsFixtureJs(dataContractJs);
       const newDocument = new ExtendedDocument(newDocumentJs.toObject(), dataContract);
 
       const stateTransition = factory.createStateTransition({

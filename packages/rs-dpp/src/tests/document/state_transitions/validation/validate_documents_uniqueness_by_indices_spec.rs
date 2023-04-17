@@ -5,14 +5,17 @@ use serde_json::json;
 use crate::{consensus::ConsensusError, data_contract::DataContract, document::{
     document_transition::{Action, DocumentTransition},
     state_transition::documents_batch_transition::validation::state::validate_documents_uniqueness_by_indices::*,
-}, prelude::Identifier, state_repository::MockStateRepositoryLike, state_transition::state_transition_execution_context::StateTransitionExecutionContext, StateError, tests::{
+}, prelude::Identifier, state_repository::MockStateRepositoryLike, state_transition::state_transition_execution_context::StateTransitionExecutionContext, tests::{
     fixtures::{
         get_data_contract_fixture, get_document_transitions_fixture,
     },
     utils::generate_random_identifier_struct,
-}, validation::ValidationResult};
+}};
+use crate::consensus::codes::ErrorWithCode;
+use crate::consensus::state::state_error::StateError;
 use crate::document::{Document, ExtendedDocument};
 use crate::tests::fixtures::get_extended_documents_fixture;
+use crate::validation::ValidationResult;
 
 struct TestData {
     owner_id: Identifier,
@@ -61,7 +64,7 @@ async fn should_return_valid_result_if_documents_have_no_unique_indices() {
     let validation_result = validate_documents_uniqueness_by_indices(
         &state_repository_mock,
         &owner_id,
-        &document_transitions,
+        document_transitions.iter(),
         &data_contract,
         &Default::default(),
     )
@@ -119,7 +122,7 @@ async fn should_return_valid_result_if_document_has_unique_indices_and_there_are
     let validation_result = validate_documents_uniqueness_by_indices(
         &state_repository_mock,
         &owner_id,
-        &document_transitions,
+        document_transitions.iter(),
         &data_contract,
         &Default::default(),
     )
@@ -212,7 +215,7 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
     let validation_result = validate_documents_uniqueness_by_indices(
         &state_repository_mock,
         &owner_id,
-        &document_transitions,
+        document_transitions.iter(),
         &data_contract,
         &Default::default(),
     )
@@ -226,12 +229,12 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
     let state_error_1 = get_state_error(&validation_result, 0);
     assert!(matches!(
         state_error_1,
-        StateError::DuplicateUniqueIndexError { document_id, .. } if  document_id == &document_transitions[0].base().id
+        StateError::DuplicateUniqueIndexError(e) if  e.document_id() == &document_transitions[0].base().id
     ));
     let state_error_3 = get_state_error(&validation_result, 2);
     assert!(matches!(
         state_error_3 ,
-        StateError::DuplicateUniqueIndexError { document_id, .. } if  document_id == &document_transitions[1].base().id
+        StateError::DuplicateUniqueIndexError(e) if  e.document_id() == &document_transitions[1].base().id
     ));
 }
 
@@ -323,7 +326,7 @@ async fn should_return_valid_result_in_dry_run_if_document_has_unique_indices_an
     let result = validate_documents_uniqueness_by_indices(
         &state_repository_mock,
         &owner_id,
-        &document_transitions,
+        document_transitions.iter(),
         &data_contract,
         &execution_context,
     )
@@ -381,7 +384,7 @@ async fn should_return_valid_result_if_document_has_undefined_field_from_index()
     let validation_result = validate_documents_uniqueness_by_indices(
         &state_repository_mock,
         &owner_id,
-        &document_transitions,
+        document_transitions.iter(),
         &data_contract,
         &Default::default(),
     )
@@ -423,7 +426,7 @@ async fn should_return_valid_result_if_document_being_created_and_has_created_at
     let validation_result = validate_documents_uniqueness_by_indices(
         &state_repository_mock,
         &owner_id,
-        &document_transitions,
+        document_transitions.iter(),
         &data_contract,
         &Default::default(),
     )
@@ -432,13 +435,16 @@ async fn should_return_valid_result_if_document_being_created_and_has_created_at
     assert!(validation_result.is_valid());
 }
 
-fn get_state_error(result: &ValidationResult<()>, error_number: usize) -> &StateError {
+fn get_state_error<TData: Clone>(
+    result: &ValidationResult<TData>,
+    error_number: usize,
+) -> &StateError {
     match result
         .errors
         .get(error_number)
         .expect("error should be found")
     {
-        ConsensusError::StateError(state_error) => state_error,
+        ConsensusError::StateError(state_error) => &*state_error,
         _ => panic!(
             "error '{:?}' isn't a basic error",
             result.errors[error_number]

@@ -17,7 +17,7 @@ module.exports = lodashMerge({}, baseConfig, {
   },
   core: {
     docker: {
-      image: 'dashpay/dashd:18.2.0',
+      image: 'dashpay/dashd:19.0.0-rc.7',
     },
     p2p: {
       port: 19999,
@@ -27,6 +27,13 @@ module.exports = lodashMerge({}, baseConfig, {
     },
   },
   platform: {
+    dapi: {
+      envoy: {
+        http: {
+          port: 1443,
+        },
+      },
+    },
     drive: {
       abci: {
         log: {
@@ -44,14 +51,18 @@ module.exports = lodashMerge({}, baseConfig, {
             {
               id: '74907790a03b51ac062c8a1453dafd72a08668a3',
               host: '34.209.100.240',
-              port: 26656,
+              port: 36656,
             },
             {
               id: '2006632eb20e670923d13d4f53abc24468eaad4d',
               host: '54.213.254.17',
-              port: 26656,
+              port: 36656,
             },
           ],
+          port: 36656,
+        },
+        rpc: {
+          port: 36657,
         },
         genesis: {
           genesis_time: '2021-07-22T12:57:05.429Z',
@@ -102,7 +113,7 @@ module.exports = lodashMerge({}, baseConfig, {
               pro_tx_hash: 'F3D506822A24E7E4BE318A6ED7371CC1E1527880A594FE04629F50A1618DB8E7',
             },
           ],
-          threshold_public_key: {
+          validator_quorum_threshold_public_key: {
             type: 'tendermint/PubKeyBLS12381',
             value: 'imxjukh5hRY91Mvm/sfhQp6iSnICyvKMMdhY5Sq6Ej0QJyB3vtN4UfYwvmxdzOVM',
           },
@@ -127,6 +138,10 @@ module.exports = lodashMerge({}, baseConfig, {
     masternodeRewardShares: {
       masterPublicKey: '0211234327aed200b2771788aec1c7d6a799f534d02dd6766c6de53e3fd7152dfc',
       secondPublicKey: '035655d53d061275314535b74bfbbfb74cf640023a5cc466283e83881876cb9a3f',
+    },
+    withdrawals: {
+      masterPublicKey: '0211234327aed200b2771788aec1c7d6a799f5343a5cfab7b7ca8135d6e06b5ec2',
+      secondPublicKey: '03aff4e943e005a2549757fdd3fbbfb74cf640023a5cc466283e83881876cb9a3f',
     },
   },
   network: NETWORK_TESTNET,

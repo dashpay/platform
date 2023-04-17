@@ -1,12 +1,8 @@
-const MetadataJs = require('@dashevo/dpp/lib/Metadata');
-
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
+const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
 
 const { default: loadWasmDpp } = require('../../../dist');
 
-let ExtendedDocument;
-let DataContract;
 let Metadata;
 let Identifier;
 
@@ -17,24 +13,14 @@ describe('ExtendedDocument', () => {
 
   beforeEach(async () => {
     ({
-      ExtendedDocument,
-      DataContract,
       Metadata,
       Identifier,
     } = await loadWasmDpp());
 
-    const dataContractJs = getDataContractFixture();
-    dataContract = new DataContract(dataContractJs.toObject());
+    dataContract = await getDataContractFixture();
 
-    const [documentJs] = getDocumentsFixture(dataContractJs).slice(8);
-    document = new ExtendedDocument(documentJs.toObject(), dataContract);
-
-    const metadataFixtureJs = new MetadataJs({
-      blockHeight: 42,
-      coreChainLockedHeight: 0,
-      timeMs: new Date().getTime(),
-      protocolVersion: 1,
-    });
+    const documents = await getDocumentsFixture(dataContract);
+    [document] = documents.slice(8);
 
     metadataFixture = Metadata.from({
       blockHeight: 42,
@@ -43,20 +29,18 @@ describe('ExtendedDocument', () => {
       protocolVersion: 1,
     });
 
-    documentJs.setMetadata(metadataFixtureJs);
     document.setMetadata(metadataFixture);
   });
 
   describe('#toJSON', () => {
     it('should return json document - Rust', () => {
-      console.log(document);
       const result = document.toJSON();
 
       expect(result).to.deep.equal({
         $protocolVersion: document.getProtocolVersion(),
         $dataContractId: dataContract.getId().toString(),
         $id: document.getId().toString(),
-        $ownerId: getDocumentsFixture.ownerId.toString(),
+        $ownerId: document.getOwnerId().toString(),
         $revision: 1,
         $type: 'withByteArrays',
         byteArrayField: document.get('byteArrayField').toString('base64'),
@@ -73,7 +57,7 @@ describe('ExtendedDocument', () => {
         $protocolVersion: document.getProtocolVersion(),
         $dataContractId: dataContract.getId().toBuffer(),
         $id: document.getId().toBuffer(),
-        $ownerId: getDocumentsFixture.ownerId,
+        $ownerId: document.getOwnerId().toBuffer(),
         $revision: 1,
         $type: 'withByteArrays',
         byteArrayField: document.get('byteArrayField'),
@@ -91,7 +75,7 @@ describe('ExtendedDocument', () => {
 
       expect(result.$dataContractId.toBuffer()).to.deep.equal(dataContract.getId().toBuffer());
       expect(result.$id.toBuffer()).to.deep.equal(document.getId().toBuffer());
-      expect(result.$ownerId.toBuffer()).to.deep.equal(getDocumentsFixture.ownerId.toBuffer());
+      expect(result.$ownerId.toBuffer()).to.deep.equal(document.getOwnerId().toBuffer());
       expect(result.identifierField.toBuffer()).to.deep.equal(document.get('identifierField').toBuffer());
       expect(result.$protocolVersion).to.deep.equal(document.getProtocolVersion());
       expect(result.$revision).to.deep.equal(document.getRevision());

@@ -12,7 +12,7 @@ use crate::buffer::Buffer;
 use crate::identifier::IdentifierWrapper;
 use crate::lodash::lodash_set;
 use crate::utils::{try_to_u64, WithJsError};
-use crate::utils::{with_serde_to_json_value, Inner, ToSerdeJSONExt};
+use crate::utils::{with_serde_to_json_value, ToSerdeJSONExt};
 use crate::with_js_error;
 use crate::DataContractWasm;
 
@@ -33,6 +33,7 @@ use dpp::document::{Document, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS, IDENTIFIER_FI
 pub use extended_document::ExtendedDocumentWasm;
 
 use dpp::document::extended_document::property_names;
+use dpp::identity::TimestampMillis;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
 use dpp::platform_value::ReplacementType;
@@ -106,12 +107,12 @@ impl DocumentWasm {
 
     #[wasm_bindgen(js_name=setId)]
     pub fn set_id(&mut self, js_id: IdentifierWrapper) {
-        self.0.id = js_id.into_inner();
+        self.0.id = js_id.into();
     }
 
     #[wasm_bindgen(js_name=setOwnerId)]
     pub fn set_owner_id(&mut self, owner_id: IdentifierWrapper) {
-        self.0.owner_id = owner_id.into_inner();
+        self.0.owner_id = owner_id.into();
     }
 
     #[wasm_bindgen(js_name=getOwnerId)]
@@ -194,32 +195,27 @@ impl DocumentWasm {
     }
 
     #[wasm_bindgen(js_name=setCreatedAt)]
-    pub fn set_created_at(&mut self, number: JsValue) -> Result<(), JsValue> {
-        let ts = try_to_u64(number)
-            .context("setting createdAt in Document")
-            .with_js_error()?;
-
-        self.0.created_at = Some(ts);
-        Ok(())
+    pub fn set_created_at(&mut self, created_at: Option<js_sys::Date>) {
+        self.0.created_at = created_at.map(|timestamp| timestamp.get_time() as TimestampMillis);
     }
 
     #[wasm_bindgen(js_name=setUpdatedAt)]
-    pub fn set_updated_at(&mut self, number: JsValue) -> Result<(), JsValue> {
-        let ts = try_to_u64(number)
-            .context("setting updatedAt in Document")
-            .with_js_error()?;
-        self.0.updated_at = Some(ts);
-        Ok(())
+    pub fn set_updated_at(&mut self, updated_at: Option<js_sys::Date>) {
+        self.0.updated_at = updated_at.map(|timestamp| timestamp.get_time() as TimestampMillis);
     }
 
     #[wasm_bindgen(js_name=getCreatedAt)]
-    pub fn get_created_at(&self) -> Option<f64> {
-        self.0.created_at.map(|v| v as f64)
+    pub fn get_created_at(&self) -> Option<js_sys::Date> {
+        self.0
+            .created_at
+            .map(|v| js_sys::Date::new(&JsValue::from_f64(v as f64)))
     }
 
     #[wasm_bindgen(js_name=getUpdatedAt)]
-    pub fn get_updated_at(&self) -> Option<f64> {
-        self.0.updated_at.map(|v| v as f64)
+    pub fn get_updated_at(&self) -> Option<js_sys::Date> {
+        self.0
+            .updated_at
+            .map(|v| js_sys::Date::new(&JsValue::from_f64(v as f64)))
     }
 
     #[wasm_bindgen(js_name=toObject)]
@@ -251,7 +247,7 @@ impl DocumentWasm {
                 if !options.skip_identifiers_conversion {
                     lodash_set(&js_value, path, buffer.into());
                 } else {
-                    let id = IdentifierWrapper::new(buffer.into())?;
+                    let id = IdentifierWrapper::new(buffer.into());
                     lodash_set(&js_value, path, id.into());
                 }
             }

@@ -11,8 +11,10 @@ use crate::consensus::basic::data_contract::{
     SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
     UniqueIndicesLimitReachedError,
 };
+use crate::consensus::ConsensusError;
+use crate::validation::{SimpleValidationResult, ValidationResult};
 use crate::{
-    consensus::basic::{BasicError, IndexError},
+    consensus::basic::BasicError,
     data_contract::{
         enrich_data_contract_with_base_schema::enrich_data_contract_with_base_schema,
         enrich_data_contract_with_base_schema::PREFIX_BYTE_0,
@@ -22,7 +24,7 @@ use crate::{
         json_schema::{Index, JsonSchemaExt},
         json_value::JsonValueExt,
     },
-    validation::{DataValidator, JsonSchemaValidator, ValidationResult},
+    validation::{DataValidator, JsonSchemaValidator},
     version::ProtocolVersionValidator,
     ProtocolError,
 };
@@ -53,10 +55,7 @@ pub struct DataContractValidator {
 impl DataValidator for DataContractValidator {
     type Item = Value;
 
-    fn validate(
-        &self,
-        data: &Self::Item,
-    ) -> Result<crate::validation::SimpleValidationResult, ProtocolError> {
+    fn validate(&self, data: &Self::Item) -> Result<SimpleValidationResult, ProtocolError> {
         self.validate(data)
     }
 }
@@ -71,7 +70,7 @@ impl DataContractValidator {
     pub fn validate(
         &self,
         raw_data_contract: &Value,
-    ) -> Result<ValidationResult<()>, ProtocolError> {
+    ) -> Result<SimpleValidationResult, ProtocolError> {
         let mut result = ValidationResult::default();
 
         trace!("validating against data contract meta validator");
@@ -169,7 +168,7 @@ fn validate_index_definitions(
     indices: &[Index],
     document_type: &str,
     document_schema: &JsonValue,
-) -> (ValidationResult<()>, bool) {
+) -> (SimpleValidationResult, bool) {
     let mut result = ValidationResult::default();
     let mut indices_fingerprints: Vec<String> = vec![];
 
@@ -235,10 +234,10 @@ fn validate_index_definitions(
                 .all(|field| !required_fields.contains(&field.as_str()));
 
             if !all_are_required && !all_are_not_required {
-                result.add_error(BasicError::IndexError(
-                    IndexError::InvalidCompoundIndexError(InvalidCompoundIndexError::new(
+                result.add_error(ConsensusError::BasicError(
+                    BasicError::InvalidCompoundIndexError(InvalidCompoundIndexError::new(
                         document_type.to_owned(),
-                        index_definition.clone(),
+                        index_definition.name.to_owned(),
                     )),
                 ));
             }
@@ -247,8 +246,11 @@ fn validate_index_definitions(
             let indices_fingerprint = serde_json::to_string(&index_definition.properties)
                 .expect("fingerprint creation shouldn't fail");
             if indices_fingerprints.contains(&indices_fingerprint) {
-                result.add_error(BasicError::IndexError(IndexError::DuplicateIndexError(
-                    DuplicateIndexError::new(document_type.to_owned(), index_definition.clone()),
+                result.add_error(ConsensusError::BasicError(BasicError::DuplicateIndexError(
+                    DuplicateIndexError::new(
+                        document_type.to_owned(),
+                        index_definition.name.to_owned(),
+                    ),
                 )));
             }
             indices_fingerprints.push(indices_fingerprint)
@@ -262,8 +264,8 @@ fn validate_property_definition(
     maybe_property_definition: Option<&JsonValue>,
     document_type: &str,
     index_definition: &Index,
-) -> ValidationResult<()> {
-    let mut result = ValidationResult::default();
+) -> SimpleValidationResult {
+    let mut result = SimpleValidationResult::default();
 
     // we are allowed to use unwrap as we return if some of the properties definitions is None
     let property_definition = maybe_property_definition.unwrap();
@@ -293,12 +295,12 @@ fn validate_property_definition(
     }
 
     if !invalid_property_type.is_empty() {
-        result.add_error(BasicError::IndexError(
-            IndexError::InvalidIndexPropertyTypeError(InvalidIndexPropertyTypeError::new(
+        result.add_error(ConsensusError::BasicError(
+            BasicError::InvalidIndexPropertyTypeError(InvalidIndexPropertyTypeError::new(
                 document_type.to_owned(),
-                index_definition.clone(),
+                index_definition.name.to_owned(),
                 property_name.to_owned(),
-                invalid_property_type.clone(),
+                invalid_property_type.to_owned(),
             )),
         ));
     }
@@ -340,11 +342,11 @@ fn validate_property_definition(
         };
 
         if max_items.is_none() || max_items.unwrap() > max_limit as u64 {
-            result.add_error(BasicError::IndexError(
-                IndexError::InvalidIndexedPropertyConstraintError(
+            result.add_error(ConsensusError::BasicError(
+                BasicError::InvalidIndexedPropertyConstraintError(
                     InvalidIndexedPropertyConstraintError::new(
                         document_type.to_owned(),
-                        index_definition.clone(),
+                        index_definition.name.to_owned(),
                         property_name.to_owned(),
                         String::from("maxItems"),
                         format!("should be less or equal {}", max_limit),
@@ -358,11 +360,11 @@ fn validate_property_definition(
         let max_length = property_definition.get_u64("maxLength").ok();
 
         if max_length.is_none() || max_length.unwrap() > MAX_INDEXED_STRING_PROPERTY_LENGTH as u64 {
-            result.add_error(BasicError::IndexError(
-                IndexError::InvalidIndexedPropertyConstraintError(
+            result.add_error(ConsensusError::BasicError(
+                BasicError::InvalidIndexedPropertyConstraintError(
                     InvalidIndexedPropertyConstraintError::new(
                         document_type.to_owned(),
-                        index_definition.clone(),
+                        index_definition.name.to_owned(),
                         property_name.to_owned(),
                         String::from("maxLength"),
                         format!(
@@ -383,14 +385,14 @@ fn validate_not_defined_properties(
     properties: &HashMap<&String, Option<&JsonValue>>,
     index_definition: &Index,
     document_type: &str,
-) -> ValidationResult<()> {
-    let mut result = ValidationResult::default();
+) -> SimpleValidationResult {
+    let mut result = SimpleValidationResult::default();
     for (property_name, definition) in properties {
         if definition.is_none() {
-            result.add_error(BasicError::IndexError(
-                IndexError::UndefinedIndexPropertyError(UndefinedIndexPropertyError::new(
+            result.add_error(ConsensusError::BasicError(
+                BasicError::UndefinedIndexPropertyError(UndefinedIndexPropertyError::new(
                     document_type.to_owned(),
-                    index_definition.clone(),
+                    index_definition.name.to_owned(),
                     property_name.to_owned().to_owned(),
                 )),
             ))
@@ -403,8 +405,8 @@ fn validate_not_defined_properties(
 fn validate_index_naming_duplicates(
     indices: &[Index],
     document_type: &str,
-) -> ValidationResult<()> {
-    let mut result = ValidationResult::default();
+) -> SimpleValidationResult {
+    let mut result = SimpleValidationResult::default();
     for duplicate_index in indices.iter().map(|i| &i.name).duplicates() {
         result.add_error(BasicError::DuplicateIndexNameError(
             DuplicateIndexNameError::new(document_type.to_owned(), duplicate_index.to_owned()),
@@ -414,11 +416,11 @@ fn validate_index_naming_duplicates(
 }
 
 /// checks the limit of unique indexes defined in the data contract
-fn validate_max_unique_indices(indices: &[Index], document_type: &str) -> ValidationResult<()> {
-    let mut result = ValidationResult::default();
+fn validate_max_unique_indices(indices: &[Index], document_type: &str) -> SimpleValidationResult {
+    let mut result = SimpleValidationResult::default();
     if indices.iter().filter(|i| i.unique).count() > UNIQUE_INDEX_LIMIT {
-        result.add_error(BasicError::IndexError(
-            IndexError::UniqueIndicesLimitReachedError(UniqueIndicesLimitReachedError::new(
+        result.add_error(ConsensusError::BasicError(
+            BasicError::UniqueIndicesLimitReachedError(UniqueIndicesLimitReachedError::new(
                 document_type.to_owned(),
                 UNIQUE_INDEX_LIMIT,
             )),
@@ -432,16 +434,16 @@ fn validate_max_unique_indices(indices: &[Index], document_type: &str) -> Valida
 fn validate_no_system_indices(
     index_definition: &Index,
     document_type: &str,
-) -> ValidationResult<()> {
-    let mut result = ValidationResult::default();
+) -> SimpleValidationResult {
+    let mut result = SimpleValidationResult::default();
 
     for property in index_definition.properties.iter() {
         if NOT_ALLOWED_SYSTEM_PROPERTIES.contains(&property.name.as_str()) {
-            result.add_error(BasicError::IndexError(
-                IndexError::SystemPropertyIndexAlreadyPresentError(
+            result.add_error(ConsensusError::BasicError(
+                BasicError::SystemPropertyIndexAlreadyPresentError(
                     SystemPropertyIndexAlreadyPresentError::new(
                         document_type.to_owned(),
-                        index_definition.clone(),
+                        index_definition.name.to_owned(),
                         property.name.to_owned(),
                     ),
                 ),

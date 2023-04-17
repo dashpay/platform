@@ -8,6 +8,8 @@ use super::{
 use crate::data_contract::document_type::{property_names, ArrayFieldType};
 use crate::data_contract::errors::{DataContractError, StructureError};
 
+use crate::document::document_transition::INITIAL_REVISION;
+use crate::prelude::Revision;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::Value;
@@ -336,6 +338,14 @@ impl DocumentType {
 
     pub fn field_can_be_null(&self, name: &str) -> bool {
         !self.required_fields.contains(name)
+    }
+
+    pub fn initial_revision(&self) -> Option<Revision> {
+        if self.documents_mutable {
+            Some(INITIAL_REVISION)
+        } else {
+            None
+        }
     }
 }
 

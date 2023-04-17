@@ -11,6 +11,7 @@ logips={{=it.core.logIps }}
 server=1
 rpcuser={{=it.core.rpc.user}}
 rpcpassword={{=it.core.rpc.password}}
+rpcwallet=main
 
 {{~it.core.rpc.allowIps :host}}
 rpcallowip={{=host}}{{~}}
@@ -22,8 +23,10 @@ rpcthreads=16
 listen=1
 dnsseed=0
 allowprivatenet=0
+{{?it.externalIp }}
 externalip={{=it.externalIp}}
-{{? it.network === 'local'}}
+{{?}}
+{{? it.network === 'local' && it.externalIp }}
 whitelist={{=it.externalIp}}
 {{?}}
 
@@ -37,6 +40,7 @@ spentindex=1
 # ZeroMQ notifications
 zmqpubrawtx=tcp://0.0.0.0:29998
 zmqpubrawtxlock=tcp://0.0.0.0:29998
+zmqpubrawblock=tcp://0.0.0.0:29998
 zmqpubhashblock=tcp://0.0.0.0:29998
 zmqpubrawchainlocksig=tcp://0.0.0.0:29998
 zmqpubrawchainlock=tcp://0.0.0.0:29998
@@ -56,19 +60,21 @@ regtest=1
 {{? it.core.miner.mediantime}}mocktime={{=it.core.miner.mediantime}}{{?}}
 
 {{?? it.network === 'devnet'}}
-devnet={{=it.core.devnetName}}
+devnet={{=it.core.devnet.name}}
 [devnet]
 {{? it.core.spork.address}}sporkaddr={{=it.core.spork.address}}{{?}}
 {{? it.core.spork.privateKey}}sporkkey={{=it.core.spork.privateKey}}{{?}}
 
 # devnet-specific
-powtargetspacing={{=it.core.powTargetSpacing}}
-minimumdifficultyblocks={{=it.core.minimumDifficultyBlocks}}
+powtargetspacing={{=it.core.devnet.powTargetSpacing}}
+minimumdifficultyblocks={{=it.core.devnet.minimumDifficultyBlocks}}
 highsubsidyblocks=500
 highsubsidyfactor=10
 llmqchainlocks=llmq_devnet
 llmqinstantsend=llmq_devnet
-llmqinstantsenddip0024=llmq_devnet_dip0024{{?}}
+llmqinstantsenddip0024=llmq_devnet_dip0024
+llmqplatform=llmq_devnet_platform{{?}}
+
 
 {{~it.core.p2p.seeds :seed}}
 addnode={{=seed.host}}:{{=seed.port}}{{~}}

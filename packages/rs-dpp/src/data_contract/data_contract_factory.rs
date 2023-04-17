@@ -15,7 +15,7 @@ use crate::state_transition::StateTransitionType;
 use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
 use crate::{
     data_contract::{self, generate_data_contract_id},
-    decode_protocol_entity_factory::DecodeProtocolEntity,
+    encoding::decode_protocol_entity_factory::DecodeProtocolEntity,
     errors::ProtocolError,
     prelude::Identifier,
 };
@@ -178,7 +178,7 @@ impl DataContractFactory {
         data_contract: DataContract,
     ) -> Result<DataContractCreateTransition, ProtocolError> {
         //todo: is this right for entropy?
-        let entropy = data_contract.entropy.clone();
+        let entropy = data_contract.entropy;
         Ok(DataContractCreateTransition {
             protocol_version: self.protocol_version,
             transition_type: StateTransitionType::DataContractCreate,

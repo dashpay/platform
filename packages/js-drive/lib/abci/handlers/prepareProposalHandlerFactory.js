@@ -162,7 +162,7 @@ function prepareProposalHandlerFactory(
         invalidTxCount,
         mempoolTxCount,
       },
-      `Prepared block proposal for height #${height} with appHash ${appHash.toString('hex').toUpperCase()}`
+      `Prepared proposal #${height} with appHash ${appHash.toString('hex').toUpperCase()}`
       + ` in ${roundExecutionTime} seconds (valid txs = ${validTxCount}, invalid txs = ${invalidTxCount}, mempool txs = ${mempoolTxCount})`,
     );
 

@@ -15,7 +15,7 @@ const createDIContainer = require('../src/createDIContainer');
   const [configName] = args;
 
   // eslint-disable-next-line no-console
-  console.info('Starting Dashmate helper');
+  console.info('Starting dashmate helper');
 
   const container = await createDIContainer();
 
@@ -27,12 +27,12 @@ const createDIContainer = require('../src/createDIContainer');
 
   const configFile = await configFileRepository.read();
 
+  const config = configFile.getConfig(configName);
+
   // Register config collection in the container
   container.register({
     configFile: asValue(configFile),
   });
-
-  const config = configFile.getConfig(configName);
 
   const provider = config.get('platform.dapi.envoy.ssl.provider');
 
@@ -42,5 +42,17 @@ const createDIContainer = require('../src/createDIContainer');
   } else {
     // prevent infinite restarts
     setInterval(() => {}, 60 * 1000);
+  }
+
+  if (config.get('dashmate.helper.api.enable')) {
+    const createHttpApiServer = container.resolve('createHttpApiServer');
+
+    const httpAPIServer = createHttpApiServer();
+
+    const port = config.get('dashmate.helper.api.port');
+
+    httpAPIServer
+      // eslint-disable-next-line no-console
+      .listen(port, () => console.log(`Dashmate JSON-RPC API started on port ${port}`));
   }
 }());

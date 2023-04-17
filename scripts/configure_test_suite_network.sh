@@ -42,7 +42,8 @@ PATH_TO_CONFIGS=$(realpath $DASH_NETWORK_CONFIGS_PATH)
 INVENTORY=${PATH_TO_CONFIGS}/${NETWORK_STRING}.inventory
 CONFIG=${PATH_TO_CONFIGS}/${NETWORK_STRING}.yml
 
-DAPI_SEED=$(awk -F '[= ]' '/^masternode/ {print $5}' "$INVENTORY" | awk NF | shuf -n1)
+DAPI_SEED=$(awk -F '[= ]' '/^hp-masternode/ {print $5}' "$INVENTORY" | awk NF | shuf -n1)
+DAPI_PORT=1443
 
 echo "Running against node ${DAPI_SEED}"
 
@@ -55,7 +56,7 @@ FEATURE_FLAGS_OWNER_PRIVATE_KEY=$(yq .feature_flags_hd_private_key "$CONFIG")
 MASTERNODE_NAME=$(grep "$DAPI_SEED" "$INVENTORY" | awk '{print $1;}')
 
 MASTERNODE_OWNER_PRO_REG_TX_HASH=$(grep "$DAPI_SEED" "$INVENTORY" | awk -F "=" '{print $6;}')
-MASTERNODE_OWNER_MASTER_PRIVATE_KEY=$(yq .masternodes."$MASTERNODE_NAME".owner.private_key "$CONFIG")
+MASTERNODE_OWNER_MASTER_PRIVATE_KEY=$(yq .hp_masternodes."$MASTERNODE_NAME".owner.private_key "$CONFIG")
 
 if [[ "$NETWORK_STRING" == "devnet"* ]]; then
   NETWORK=devnet
@@ -80,7 +81,7 @@ then
   exit 1
 fi
 
-echo "DAPI_SEED=${DAPI_SEED}
+echo "DAPI_SEED=${DAPI_SEED}:${DAPI_PORT}:self-signed
 FAUCET_ADDRESS=${FAUCET_ADDRESS}
 FAUCET_PRIVATE_KEY=${FAUCET_PRIVATE_KEY}
 DPNS_OWNER_PRIVATE_KEY=${DPNS_OWNER_PRIVATE_KEY}

@@ -4,7 +4,7 @@ use serde_json::Value as JsonValue;
 use std::sync::Arc;
 
 use crate::identity::validation::TPublicKeysValidator;
-use crate::validation::{JsonSchemaValidator, ValidationResult};
+use crate::validation::{JsonSchemaValidator, SimpleValidationResult};
 use crate::version::ProtocolVersionValidator;
 use crate::{DashPlatformProtocolInitError, NonConsensusError};
 use crate::identity::state_transition::identity_update_transition::identity_update_transition::property_names::PROTOCOL_VERSION;
@@ -40,7 +40,7 @@ impl<T: TPublicKeysValidator> IdentityValidator<T> {
     pub fn validate_identity_object(
         &self,
         identity_object: &Value,
-    ) -> Result<ValidationResult<()>, NonConsensusError> {
+    ) -> Result<SimpleValidationResult, NonConsensusError> {
         let mut validation_result = self.json_schema_validator.validate(
             &identity_object
                 .try_to_validating_json()

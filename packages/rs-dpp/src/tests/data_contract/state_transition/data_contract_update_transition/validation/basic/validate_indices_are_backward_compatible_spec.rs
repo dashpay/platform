@@ -1,10 +1,11 @@
 use crate::{
     consensus::basic::BasicError,
     data_contract::state_transition::data_contract_update_transition::validation::basic::validate_indices_are_backward_compatible,
-    validation::ValidationResult,
 };
 use std::collections::BTreeMap;
 
+use crate::consensus::codes::ErrorWithCode;
+use crate::validation::SimpleValidationResult;
 use crate::{
     consensus::ConsensusError, data_contract::DataContract,
     tests::fixtures::get_data_contract_fixture, util::json_value::JsonValueExt,
@@ -61,7 +62,7 @@ fn setup_test() -> TestData {
     }
 }
 
-fn get_basic_error(result: &ValidationResult<()>, error_number: usize) -> &BasicError {
+fn get_basic_error(result: &SimpleValidationResult, error_number: usize) -> &BasicError {
     match result
         .errors
         .get(error_number)
@@ -92,15 +93,15 @@ fn should_return_invalid_result_if_some_of_unique_indices_have_changed() {
     )
     .expect("validation result should be returned");
 
-    assert_eq!(1, result.errors().len());
-    assert_eq!(1053, result.errors()[0].code());
+    assert_eq!(1, result.errors.len());
+    assert_eq!(1053, result.errors[0].code());
 
     let basic_error = get_basic_error(&result, 0);
 
     match basic_error {
         BasicError::DataContractUniqueIndicesChangedError(err) => {
-            assert_eq!(err.document_type(), "indexedDocument".to_string());
-            assert_eq!(err.index_name(), "index1".to_string());
+            assert_eq!(err.document_type().clone(), "indexedDocument".to_string());
+            assert_eq!(err.index_name().clone(), "index1".to_string());
         }
         _ => panic!(
             "Expected DataContractUniqueIndicesChangedError, got {}",
@@ -125,16 +126,15 @@ fn should_return_invalid_result_if_non_unique_index_update_failed_due_to_changed
     )
     .expect("validation result should be returned");
 
-    assert_eq!(1, result.errors().len());
-    // TODO the error doesn't have assigned error code
-    assert_eq!(0, result.errors()[0].code());
+    assert_eq!(1, result.errors.len());
+    assert_eq!(1054, result.errors[0].code());
 
     let basic_error = get_basic_error(&result, 0);
 
     match basic_error {
         BasicError::DataContractInvalidIndexDefinitionUpdateError(err) => {
-            assert_eq!(err.document_type(), "indexedDocument".to_string());
-            assert_eq!(err.index_name(), "index3".to_string());
+            assert_eq!(err.document_type().clone(), "indexedDocument".to_string());
+            assert_eq!(err.index_name().clone(), "index3".to_string());
         }
         _ => panic!(
             "Expected DataContractInvalidIndexDefinitionUpdateError, got {}",
@@ -160,9 +160,8 @@ fn should_return_invalid_result_if_already_indexed_properties_are_added_to_exist
     )
     .expect("validation result should be returned");
 
-    assert_eq!(1, result.errors().len());
-    // TODO the error doesn't have assigned error code
-    assert_eq!(0, result.errors()[0].code());
+    assert_eq!(1, result.errors.len());
+    assert_eq!(1054, result.errors[0].code());
 
     let basic_error = get_basic_error(&result, 0);
     match basic_error {
@@ -201,9 +200,8 @@ fn should_return_invalid_result_if_one_of_new_indices_contains_old_properties_in
     )
     .expect("validation result should be returned");
 
-    assert_eq!(1, result.errors().len());
-    // TODO the error doesn't have assigned error code
-    assert_eq!(0, result.errors()[0].code());
+    assert_eq!(1, result.errors.len());
+    assert_eq!(1054, result.errors[0].code());
 
     let basic_error = get_basic_error(&result, 0);
 
@@ -244,9 +242,8 @@ fn should_return_invalid_result_if_one_of_new_indices_is_unique() {
     )
     .expect("validation result should be returned");
 
-    assert_eq!(1, result.errors().len());
-    // TODO the error doesn't have assigned error code
-    assert_eq!(0, result.errors()[0].code());
+    assert_eq!(1, result.errors.len());
+    assert_eq!(1055, result.errors[0].code());
 
     let basic_error = get_basic_error(&result, 0);
 
@@ -313,9 +310,8 @@ fn should_return_invalid_result_if_non_unique_index_added_for_non_indexed_proper
     )
     .expect("validation result should be returned");
 
-    assert_eq!(result.errors().len(), 1);
-    // TODO the error doesn't have assigned error code
-    assert_eq!(result.errors()[0].code(), 0);
+    assert_eq!(result.errors.len(), 1);
+    assert_eq!(result.errors[0].code(), 1054);
 
     let basic_error = get_basic_error(&result, 0);
 

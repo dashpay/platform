@@ -2,7 +2,7 @@ use dpp::document::document_transition::document_base_transition::JsonValue;
 use dpp::document::{ExtendedDocument, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS};
 
 use dpp::platform_value::{Bytes32, Value};
-use dpp::prelude::{Identifier, Revision};
+use dpp::prelude::{Identifier, Revision, TimestampMillis};
 use dpp::util::json_schema::JsonSchemaExt;
 use dpp::util::json_value::JsonValueExt;
 
@@ -17,8 +17,8 @@ use crate::document::BinaryType;
 use crate::errors::RustConversionError;
 use crate::identifier::{identifier_from_js_value, IdentifierWrapper};
 use crate::lodash::lodash_set;
-use crate::utils::{with_serde_to_platform_value, Inner, ToSerdeJSONExt, WithJsError};
-use crate::{with_js_error, ConversionOptions};
+use crate::utils::{with_serde_to_platform_value, IntoWasm, ToSerdeJSONExt, WithJsError};
+use crate::{with_js_error, ConversionOptions, DocumentWasm};
 use crate::{DataContractWasm, MetadataWasm};
 
 #[wasm_bindgen(js_name=ExtendedDocument)]
@@ -77,7 +77,7 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=setId)]
     pub fn set_id(&mut self, js_id: IdentifierWrapper) {
-        self.0.document.id = js_id.into_inner();
+        self.0.document.id = js_id.into();
     }
 
     #[wasm_bindgen(js_name=getType)]
@@ -102,9 +102,14 @@ impl ExtendedDocumentWasm {
         Ok(())
     }
 
+    #[wasm_bindgen(js_name=getDocument)]
+    pub fn get_document(&self) -> DocumentWasm {
+        self.0.document.clone().into()
+    }
+
     #[wasm_bindgen(js_name=setOwnerId)]
     pub fn set_owner_id(&mut self, owner_id: IdentifierWrapper) {
-        self.0.document.owner_id = owner_id.into_inner();
+        self.0.document.owner_id = owner_id.into();
     }
 
     #[wasm_bindgen(js_name=getOwnerId)]
@@ -212,23 +217,37 @@ impl ExtendedDocumentWasm {
     }
 
     #[wasm_bindgen(js_name=setCreatedAt)]
-    pub fn set_created_at(&mut self, ts: f64) {
-        self.0.document.created_at = Some(ts as u64);
+    pub fn set_created_at(&mut self, ts: Option<js_sys::Date>) {
+        if let Some(ts) = ts {
+            self.0.document.created_at = Some(ts.get_time() as TimestampMillis);
+        } else {
+            self.0.document.created_at = None;
+        }
     }
 
     #[wasm_bindgen(js_name=setUpdatedAt)]
-    pub fn set_updated_at(&mut self, ts: f64) {
-        self.0.document.updated_at = Some(ts as u64);
+    pub fn set_updated_at(&mut self, ts: Option<js_sys::Date>) {
+        if let Some(ts) = ts {
+            self.0.document.updated_at = Some(ts.get_time() as TimestampMillis);
+        } else {
+            self.0.document.updated_at = None;
+        }
     }
 
     #[wasm_bindgen(js_name=getCreatedAt)]
-    pub fn get_created_at(&self) -> Option<f64> {
-        self.0.document.created_at.map(|v| v as f64)
+    pub fn get_created_at(&self) -> Option<js_sys::Date> {
+        self.0
+            .document
+            .created_at
+            .map(|v| js_sys::Date::new(&JsValue::from_f64(v as f64)))
     }
 
     #[wasm_bindgen(js_name=getUpdatedAt)]
-    pub fn get_updated_at(&self) -> Option<f64> {
-        self.0.document.updated_at.map(|v| v as f64)
+    pub fn get_updated_at(&self) -> Option<js_sys::Date> {
+        self.0
+            .document
+            .updated_at
+            .map(|v| js_sys::Date::new(&JsValue::from_f64(v as f64)))
     }
 
     #[wasm_bindgen(js_name=getMetadata)]
@@ -237,8 +256,15 @@ impl ExtendedDocumentWasm {
     }
 
     #[wasm_bindgen(js_name=setMetadata)]
-    pub fn set_metadata(&mut self, metadata: &MetadataWasm) {
-        self.0.metadata = Some(metadata.to_owned().into());
+    pub fn set_metadata(&mut self, metadata: JsValue) -> Result<(), JsValue> {
+        self.0.metadata = if !metadata.is_falsy() {
+            let metadata = metadata.to_wasm::<MetadataWasm>("Metadata")?;
+            Some(metadata.to_owned().into())
+        } else {
+            None
+        };
+
+        Ok(())
     }
 
     #[wasm_bindgen(js_name=toObject)]
@@ -265,7 +291,7 @@ impl ExtendedDocumentWasm {
                 if !options.skip_identifiers_conversion {
                     lodash_set(&js_value, path, buffer.into());
                 } else {
-                    let id = IdentifierWrapper::new(buffer.into())?;
+                    let id = IdentifierWrapper::new(buffer.into());
                     lodash_set(&js_value, path, id.into());
                 }
             }

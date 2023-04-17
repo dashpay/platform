@@ -15,8 +15,10 @@ use crate::identity::state_transition::validate_public_key_signatures::PublicKey
 use crate::identity::validation::{PUBLIC_KEY_SCHEMA_FOR_TRANSITION, PublicKeysValidator};
 
 use crate::state_repository::StateRepositoryLike;
+use crate::state_transition::apply_state_transition::ApplyStateTransition;
 use crate::state_transition::{
-    StateTransition, StateTransitionConvert, StateTransitionFactory, StateTransitionFactoryOptions,
+    StateTransition, StateTransitionAction, StateTransitionConvert, StateTransitionFactory,
+    StateTransitionFactoryOptions,
 };
 
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
@@ -27,7 +29,7 @@ use crate::state_transition::validation::validate_state_transition_identity_sign
 use crate::state_transition::validation::validate_state_transition_key_signature::StateTransitionKeySignatureValidator;
 use crate::state_transition::validation::validate_state_transition_state::StateTransitionStateValidator;
 use crate::validation::{
-    AsyncDataValidator, AsyncDataValidatorWithContext, SimpleValidationResult,
+    AsyncDataValidator, AsyncDataValidatorWithContext, SimpleValidationResult, ValidationResult,
 };
 use crate::version::ProtocolVersionValidator;
 
@@ -45,6 +47,7 @@ where
     fee_validator: Arc<StateTransitionFeeValidator<SR>>,
     bls: BLS,
     factory: Arc<StateTransitionFactory<SR, BLS>>,
+    apply_state_transition: ApplyStateTransition<SR>,
 }
 
 impl<SR, BLS> StateTransitionFacade<SR, BLS>
@@ -161,13 +164,14 @@ where
             state_transition_basic_validator.clone(),
         );
 
-        let state_transition_key_signature_validator = {
-            let asset_lock_transaction_output_fetcher =
-                AssetLockTransactionOutputFetcher::new(wrapped_state_repository.clone());
+        let asset_lock_transaction_output_fetcher = Arc::new(
+            AssetLockTransactionOutputFetcher::new(wrapped_state_repository.clone()),
+        );
 
+        let state_transition_key_signature_validator = {
             let asset_public_key_hash_fetcher = AssetLockPublicKeyHashFetcher::new(
                 wrapped_state_repository.clone(),
-                asset_lock_transaction_output_fetcher,
+                asset_lock_transaction_output_fetcher.clone(),
             );
 
             StateTransitionKeySignatureValidator::new(
@@ -182,13 +186,17 @@ where
         let state_transition_state_validator = StateTransitionStateValidator::new(state_repository);
 
         Ok(Self {
-            state_repository: wrapped_state_repository,
+            state_repository: wrapped_state_repository.clone(),
             factory: Arc::new(state_transition_factory),
             basic_validator: state_transition_basic_validator,
             key_signature_validator: Arc::new(state_transition_key_signature_validator),
             fee_validator: Arc::new(state_transition_fee_validator),
             state_validator: Arc::new(state_transition_state_validator),
             bls: adapter,
+            apply_state_transition: ApplyStateTransition::new(
+                wrapped_state_repository,
+                asset_lock_transaction_output_fetcher,
+            ),
         })
     }
 
@@ -223,42 +231,41 @@ where
         state_transition: &StateTransition,
         execution_context: &StateTransitionExecutionContext,
         options: ValidateOptions,
-    ) -> Result<SimpleValidationResult, ProtocolError> {
-        let mut result = SimpleValidationResult::default();
-
+    ) -> Result<ValidationResult<Option<StateTransitionAction>>, ProtocolError> {
+        let mut result = ValidationResult::<Option<StateTransitionAction>>::new_with_data(None);
         if options.basic {
             let state_transition_cleaned = state_transition.to_cleaned_object(false)?;
             result.merge(
                 self.validate_basic(&state_transition_cleaned, execution_context)
                     .await?,
             );
-        }
 
-        if !result.is_valid() {
-            return Ok(result);
+            if !result.is_valid() {
+                return Ok(result);
+            }
         }
 
         if options.signature {
             result.merge(self.validate_signature(state_transition.clone()).await?);
-        }
 
-        if !result.is_valid() {
-            return Ok(result);
+            if !result.is_valid() {
+                return Ok(result);
+            }
         }
 
         if options.fee {
             result.merge(self.validate_fee(state_transition).await?);
-        }
 
-        if !result.is_valid() {
-            return Ok(result);
+            if !result.is_valid() {
+                return Ok(result);
+            }
         }
 
         if options.state {
-            result.merge(self.validate_state(state_transition).await?);
+            Ok(self.validate_state(state_transition).await?.map(Some))
+        } else {
+            Ok(result)
         }
-
-        Ok(result)
     }
 
     pub async fn validate_basic(
@@ -335,8 +342,12 @@ where
     pub async fn validate_state(
         &self,
         state_transition: &StateTransition,
-    ) -> Result<SimpleValidationResult, ProtocolError> {
+    ) -> Result<ValidationResult<StateTransitionAction>, ProtocolError> {
         self.state_validator.validate(state_transition).await
+    }
+
+    pub async fn apply(&self, state_transition: &StateTransition) -> Result<(), ProtocolError> {
+        self.apply_state_transition.apply(state_transition).await
     }
 }
 

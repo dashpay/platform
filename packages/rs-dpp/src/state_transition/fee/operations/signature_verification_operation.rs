@@ -1,7 +1,11 @@
 use serde::{Deserialize, Serialize};
 
 use super::OperationLike;
-use crate::{identity::KeyType, state_transition::fee::constants::signature_verify_cost};
+use crate::{
+    identity::KeyType,
+    state_transition::fee::{constants::signature_verify_cost, Credits, Refunds},
+    NonConsensusError,
+};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -16,11 +20,15 @@ impl SignatureVerificationOperation {
 }
 
 impl OperationLike for SignatureVerificationOperation {
-    fn get_processing_cost(&self) -> i64 {
-        signature_verify_cost(self.signature_type)
+    fn get_processing_cost(&self) -> Result<Credits, NonConsensusError> {
+        Ok(signature_verify_cost(self.signature_type))
     }
 
-    fn get_storage_cost(&self) -> i64 {
-        0
+    fn get_storage_cost(&self) -> Result<Credits, NonConsensusError> {
+        Ok(0)
+    }
+
+    fn get_refunds(&self) -> Option<&Vec<Refunds>> {
+        None
     }
 }

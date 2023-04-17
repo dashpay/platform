@@ -4,7 +4,8 @@ use async_trait::async_trait;
 use platform_value::Value;
 
 use crate::consensus::basic::state_transition::{
-    InvalidStateTransitionTypeError, StateTransitionMaxSizeExceededError,
+    InvalidStateTransitionTypeError, MissingStateTransitionTypeError,
+    StateTransitionMaxSizeExceededError,
 };
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
@@ -60,7 +61,7 @@ where
         let Ok(state_transition_type) = raw_state_transition.get_integer("type") else {
             result.add_error(
                 ConsensusError::BasicError(
-                    Box::new(BasicError::MissingStateTransitionTypeError)
+                    BasicError::MissingStateTransitionTypeError(MissingStateTransitionTypeError::new())
                 )
             );
 
@@ -70,9 +71,7 @@ where
         let Ok(state_transition_type) = StateTransitionType::try_from(state_transition_type) else {
             result.add_error(
                 ConsensusError::BasicError(
-                    Box::new(
                         BasicError::InvalidStateTransitionTypeError(InvalidStateTransitionTypeError::new(state_transition_type))
-                    )
                 )
             );
 
@@ -125,6 +124,8 @@ mod test {
 
     use super::StateTransitionBasicValidator;
 
+    use crate::consensus::basic::state_transition::MissingStateTransitionTypeError;
+    use crate::validation::SimpleValidationResult;
     use crate::{
         consensus::basic::BasicError,
         data_contract::{
@@ -137,7 +138,6 @@ mod test {
             StateTransitionConvert, StateTransitionLike,
         },
         tests::{fixtures::get_data_contract_fixture, utils::get_basic_error_from_result},
-        validation::ValidationResult,
         version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
         NativeBlsModule,
     };
@@ -217,7 +217,7 @@ mod test {
 
         assert!(matches!(
             basic_error,
-            BasicError::MissingStateTransitionTypeError
+            BasicError::MissingStateTransitionTypeError(MissingStateTransitionTypeError { .. })
         ));
     }
 
@@ -307,7 +307,7 @@ mod test {
         let mut validate_by_type_mock = MockValidatorByStateTransitionType::new();
         validate_by_type_mock
             .expect_validate()
-            .returning(|_, _, _| Ok(ValidationResult::<()>::default()));
+            .returning(|_, _, _| Ok(SimpleValidationResult::default()));
 
         for i in 0..500 {
             let document_type_name = format!("anotherDocument{}", i);
@@ -352,7 +352,7 @@ mod test {
         let mut validate_by_type_mock = MockValidatorByStateTransitionType::new();
         validate_by_type_mock
             .expect_validate()
-            .returning(|_, _, _| Ok(ValidationResult::<()>::default()));
+            .returning(|_, _, _| Ok(SimpleValidationResult::default()));
 
         let validator = StateTransitionBasicValidator::new(
             Arc::new(state_repository_mock),

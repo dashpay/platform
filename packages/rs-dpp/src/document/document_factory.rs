@@ -1,10 +1,11 @@
 use anyhow::Context;
 use chrono::Utc;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 
 use itertools::Itertools;
 
-use platform_value::{Bytes32, Value};
+use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
+use platform_value::{Bytes32, ReplacementType, Value};
 
 use serde::{Deserialize, Serialize};
 
@@ -18,7 +19,7 @@ use crate::identity::TimestampMillis;
 use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
 use crate::{
     data_contract::{errors::DataContractError, DataContract},
-    decode_protocol_entity_factory::DecodeProtocolEntity,
+    encoding::decode_protocol_entity_factory::DecodeProtocolEntity,
     prelude::Identifier,
     state_repository::StateRepositoryLike,
     ProtocolError,
@@ -157,7 +158,7 @@ where
             (None, None)
         };
 
-        let document = Document {
+        let mut document = Document {
             id: document_id,
             owner_id,
             properties: data
@@ -167,6 +168,13 @@ where
             created_at,
             updated_at,
         };
+
+        let (identifiers, _): (HashSet<_>, HashSet<_>) =
+            data_contract.get_identifiers_and_binary_paths_owned(document_type_name.as_str())?;
+
+        document
+            .properties
+            .replace_at_paths(identifiers, ReplacementType::Identifier)?;
 
         // let json_value = document.to_json_with_identifiers_using_bytes()?;
         // let validation_result =
@@ -268,13 +276,11 @@ where
         let result = DecodeProtocolEntity::decode_protocol_entity(buffer);
 
         match result {
-            Err(ProtocolError::AbstractConsensusError(err)) => {
-                Err(DocumentError::InvalidDocumentError {
-                    errors: vec![*err],
-                    raw_document: Value::Null,
-                }
-                .into())
+            Err(ProtocolError::ConsensusError(err)) => Err(DocumentError::InvalidDocumentError {
+                errors: vec![*err],
+                raw_document: Value::Null,
             }
+            .into()),
             Err(err) => Err(err),
             Ok((version, mut raw_document)) => {
                 raw_document.set_value(property_names::PROTOCOL_VERSION, Value::U32(version))?;
@@ -300,7 +306,7 @@ where
         raw_document: &Value,
         options: FactoryOptions,
     ) -> Result<DataContract, ProtocolError> {
-        let mut result = self
+        let result = self
             .data_contract_fetcher_and_validator
             .validate_extended(raw_document)
             .await?;
@@ -314,7 +320,7 @@ where
             )));
         }
         let data_contract = result
-            .take_data()
+            .into_data()
             .context("Validator didn't return Data Contract. This shouldn't happen")?;
 
         if !options.skip_validation {
@@ -395,6 +401,18 @@ where
             );
             let new_revision = document_revision + 1;
             map.insert(PROPERTY_REVISION.to_string(), Value::U64(new_revision));
+
+            // If document have an originally set `updatedAt`
+            // we should update it then
+            let contains_updated_at = document
+                .document_type()?
+                .required_fields
+                .contains(PROPERTY_UPDATED_AT);
+
+            if contains_updated_at {
+                let now = Utc::now().timestamp_millis() as TimestampMillis;
+                map.insert(PROPERTY_UPDATED_AT.to_string(), Value::U64(now));
+            }
 
             raw_transitions.push(map.into());
         }

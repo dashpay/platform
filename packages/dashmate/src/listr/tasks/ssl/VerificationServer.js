@@ -20,7 +20,7 @@ class VerificationServer {
   }
 
   /**
-   * Setup verification server
+   * Set up verification server
    *
    * @param {Config} config
    * @param {string} route

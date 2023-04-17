@@ -2,7 +2,8 @@ use dpp::data_trigger::DataTriggerExecutionResult;
 use js_sys::Array;
 use wasm_bindgen::prelude::*;
 
-use crate::{errors::consensus_error::from_state_error, utils::Inner};
+use crate::errors::consensus::consensus_error::from_state_error;
+use crate::utils::Inner;
 
 #[wasm_bindgen(js_name=DataTriggerExecutionResult)]
 pub struct DataTriggerExecutionResultWasm(DataTriggerExecutionResult);

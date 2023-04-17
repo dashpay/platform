@@ -18,7 +18,7 @@ fi
 OUTPUT_DIR="$PWD/wasm"
 OUTPUT_FILE="$OUTPUT_DIR/wasm_dpp_bg.wasm"
 OUTPUT_FILE_JS="$OUTPUT_DIR/wasm_dpp_bg.js"
-BUILD_COMMAND="cargo build --target=$TARGET $PROFILE_ARG"
+BUILD_COMMAND="cargo build --config net.git-fetch-with-cli=true --target=$TARGET $PROFILE_ARG"
 BINDGEN_COMMAND="wasm-bindgen --out-dir=$OUTPUT_DIR --target=web --omit-default-module-path ../../target/$TARGET/$PROFILE/wasm_dpp.wasm"
 
 DIST_TYPINGS="$PWD/dist/wasm/wasm_dpp.d.ts"
@@ -57,7 +57,7 @@ fi
 #fi
 
 # Converting wasm into base64 so it can be bundled
-echo "Converting wasm binary into base64 module for bundling with Webpack"
+echo "Converting wasm binary into base64 module for building with TypeScript"
 WASM_BUILD_BASE_64=$(base64 -i "$OUTPUT_FILE")
 echo 'module.exports = "'${WASM_BUILD_BASE_64}'"' > "$OUTPUT_FILE_JS"
 

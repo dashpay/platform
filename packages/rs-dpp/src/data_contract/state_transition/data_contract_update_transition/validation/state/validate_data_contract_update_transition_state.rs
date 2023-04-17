@@ -3,7 +3,10 @@ use std::convert::TryInto;
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::consensus::basic::invalid_data_contract_version_error::InvalidDataContractVersionError;
+use crate::consensus::basic::data_contract::InvalidDataContractVersionError;
+use crate::consensus::basic::document::DataContractNotPresentError;
+use crate::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransitionAction;
+use crate::validation::{AsyncDataValidator, ValidationResult};
 use crate::{
     data_contract::{
         state_transition::data_contract_update_transition::DataContractUpdateTransition,
@@ -12,7 +15,6 @@ use crate::{
     errors::consensus::basic::BasicError,
     state_repository::StateRepositoryLike,
     state_transition::StateTransitionLike,
-    validation::{AsyncDataValidator, SimpleValidationResult, ValidationResult},
     ProtocolError,
 };
 
@@ -29,10 +31,11 @@ where
     SR: StateRepositoryLike,
 {
     type Item = DataContractUpdateTransition;
+    type ResultItem = DataContractUpdateTransitionAction;
     async fn validate(
         &self,
         state_transition: &DataContractUpdateTransition,
-    ) -> Result<SimpleValidationResult, ProtocolError> {
+    ) -> Result<ValidationResult<Self::ResultItem>, ProtocolError> {
         validate_data_contract_update_transition_state(&self.state_repository, state_transition)
             .await
     }
@@ -50,8 +53,8 @@ where
 pub async fn validate_data_contract_update_transition_state(
     state_repository: &impl StateRepositoryLike,
     state_transition: &DataContractUpdateTransition,
-) -> Result<ValidationResult<()>, ProtocolError> {
-    let mut result = ValidationResult::default();
+) -> Result<ValidationResult<DataContractUpdateTransitionAction>, ProtocolError> {
+    let mut result = ValidationResult::<DataContractUpdateTransitionAction>::default();
 
     // Data contract should exist
     let maybe_existing_data_contract: Option<DataContract> = state_repository
@@ -65,14 +68,13 @@ pub async fn validate_data_contract_update_transition_state(
         .map_err(Into::into)?;
 
     if state_transition.execution_context.is_dry_run() {
-        return Ok(result);
+        let action: DataContractUpdateTransitionAction = state_transition.into();
+        return Ok(action.into());
     }
 
     let existing_data_contract: DataContract = match maybe_existing_data_contract {
         None => {
-            let err = BasicError::DataContractNotPresent {
-                data_contract_id: state_transition.data_contract.id,
-            };
+            let err = DataContractNotPresentError::new(state_transition.data_contract.id);
             result.add_error(err);
             return Ok(result);
         }
@@ -88,9 +90,11 @@ pub async fn validate_data_contract_update_transition_state(
             InvalidDataContractVersionError::new(old_version + 1, new_version),
         );
         result.add_error(err);
+        Ok(result)
+    } else {
+        let action: DataContractUpdateTransitionAction = state_transition.into();
+        Ok(action.into())
     }
-
-    Ok(result)
 }
 
 #[cfg(test)]

@@ -2,10 +2,10 @@ use std::convert::TryInto;
 
 use crate::consensus::basic::data_contract::{
     DataContractImmutablePropertiesUpdateError, IncompatibleDataContractSchemaError,
+    InvalidDataContractVersionError,
 };
 use crate::consensus::basic::decode::ProtocolVersionParsingError;
-use crate::consensus::basic::invalid_data_contract_version_error::InvalidDataContractVersionError;
-use crate::consensus::ConsensusError;
+use crate::consensus::basic::document::DataContractNotPresentError;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::validation::AsyncDataValidatorWithContext;
 use crate::{
@@ -96,11 +96,9 @@ where
             match raw_state_transition.get_integer(property_names::PROTOCOL_VERSION) {
                 Ok(v) => v,
                 Err(parsing_error) => {
-                    return Ok(SimpleValidationResult::new(Some(vec![
-                        ConsensusError::ProtocolVersionParsingError(
-                            ProtocolVersionParsingError::new(parsing_error.into()),
-                        ),
-                    ])))
+                    return Ok(SimpleValidationResult::new_with_errors(vec![
+                        ProtocolVersionParsingError::new(parsing_error.to_string()).into(),
+                    ]))
                 }
             };
 
@@ -138,15 +136,22 @@ where
         {
             Some(data_contract) => data_contract,
             None => {
-                validation_result
-                    .add_error(BasicError::DataContractNotPresent { data_contract_id });
+                validation_result.add_error(DataContractNotPresentError::new(data_contract_id));
                 return Ok(validation_result);
             }
         };
 
-        let new_version = new_data_contract_object.get_integer(contract_property_names::VERSION)?;
+        let new_version: u32 =
+            new_data_contract_object.get_integer(contract_property_names::VERSION)?;
         let old_version = existing_data_contract.version;
-        if (new_version - old_version) != 1 {
+
+        if (new_version
+            .checked_sub(old_version)
+            .ok_or(ProtocolError::Overflow(
+                "comparing protocol versions failed",
+            ))?)
+            != 1
+        {
             validation_result.add_error(BasicError::InvalidDataContractVersionError(
                 InvalidDataContractVersionError::new(old_version + 1, new_version),
             ))
@@ -177,14 +182,6 @@ where
                 DataContractImmutablePropertiesUpdateError::new(
                     operation.to_owned(),
                     property_name.to_owned(),
-                    existing_data_contract_object
-                        .get(property_name.split_at(1).1)?
-                        .cloned()
-                        .unwrap_or(Value::Null),
-                    new_base_data_contract
-                        .get(property_name.split_at(1).1)?
-                        .cloned()
-                        .unwrap_or(Value::Null),
                 ),
             ))
         }
@@ -213,8 +210,6 @@ where
                             existing_data_contract.id,
                             operation_name.to_owned(),
                             property_name.to_owned(),
-                            document_schema.clone(),
-                            new_document_schema.clone(),
                         ),
                     ));
                 }

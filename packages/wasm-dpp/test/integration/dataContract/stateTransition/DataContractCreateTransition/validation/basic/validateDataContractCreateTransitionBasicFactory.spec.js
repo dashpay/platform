@@ -2,7 +2,7 @@ const crypto = require('crypto');
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const { expectJsonSchemaError, expectValidationError, expectPlatformValueError } = require('../../../../../../../lib/test/expect/expectError');
+const { expectJsonSchemaError, expectValidationError, expectValueError } = require('../../../../../../../lib/test/expect/expectError');
 
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 
@@ -15,7 +15,7 @@ describe('validateDataContractCreateTransitionBasicFactory', () => {
   let DataContractCreateTransition;
   let validateDataContractCreateTransitionBasic;
   let ValidationResult;
-  let PlatformValueError;
+  let ValueError;
   let InvalidDataContractIdError;
 
   before(async () => {
@@ -23,7 +23,7 @@ describe('validateDataContractCreateTransitionBasicFactory', () => {
       DataContractCreateTransition,
       validateDataContractCreateTransitionBasic,
       ValidationResult,
-      PlatformValueError,
+      ValueError,
       InvalidDataContractIdError,
     } = await loadWasmDpp());
   });
@@ -63,11 +63,11 @@ describe('validateDataContractCreateTransitionBasicFactory', () => {
 
       const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
 
-      await expectPlatformValueError(result);
+      await expectValueError(result);
 
       const [error] = result.getErrors();
 
-      expect(error).to.be.an.instanceOf(PlatformValueError);
+      expect(error).to.be.an.instanceOf(ValueError);
     });
 
     it('should be valid', async () => {
@@ -76,7 +76,7 @@ describe('validateDataContractCreateTransitionBasicFactory', () => {
       const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
 
       const [error] = result.getErrors();
-      expect(error).to.be.an.instanceOf(PlatformValueError);
+      expect(error).to.be.an.instanceOf(ValueError);
     });
   });
 
@@ -127,7 +127,6 @@ describe('validateDataContractCreateTransitionBasicFactory', () => {
 
     it('should be valid', async () => {
       const result = await validateDataContractCreateTransitionBasic(rawStateTransition);
-      console.log(result.errorsText());
       expect(result).to.be.an.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.true();
     });
