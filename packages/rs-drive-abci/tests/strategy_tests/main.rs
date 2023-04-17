@@ -40,8 +40,6 @@ use dashcore_rpc::dashcore_rpc_json::{
     DMNState, ExtendedQuorumDetails, MasternodeListDiffWithMasternodes, MasternodeListItem,
     MasternodeType, QuorumInfoResult, QuorumType,
 };
-use dpp::dashcore::secp256k1::SecretKey;
-use dpp::dashcore::{signer, Network, PrivateKey};
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::document::document_transition::document_base_transition::DocumentBaseTransition;
 use dpp::document::document_transition::{
