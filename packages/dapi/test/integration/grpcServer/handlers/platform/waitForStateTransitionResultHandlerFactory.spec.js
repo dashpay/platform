@@ -16,7 +16,7 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 const getIdentityCreateTransitionFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
-const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
+const { default: loadWasmDpp, DashPlatformProtocol } = require('@dashevo/wasm-dpp');
 
 const { EventEmitter } = require('events');
 
@@ -48,10 +48,8 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
   let createGrpcErrorFromDriveResponseMock;
   let errorInfo;
 
-  let DashPlatformProtocol;
-
   before(async () => {
-    ({ DashPlatformProtocol } = await loadWasmDpp());
+    await loadWasmDpp();
   });
 
   beforeEach(async function beforeEach() {
@@ -273,11 +271,10 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
 
     expect(merkleProof).to.deep.equal(proofFixture.merkleProof);
 
-    const { identityIds } = driveClientMock.fetchProofs.firstCall.firstArg;
-    expect(identityIds).to.deep.equal(
-      stateTransitionFixture.getModifiedDataIds()
+    expect(driveClientMock.fetchProofs).to.be.calledOnceWithExactly({
+      identityIds: stateTransitionFixture.getModifiedDataIds()
         .map((identifier) => identifier.toBuffer()),
-    );
+    });
   });
 
   it('should wait for state transition and return result with error', (done) => {

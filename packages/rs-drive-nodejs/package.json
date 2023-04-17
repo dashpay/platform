@@ -19,7 +19,6 @@
   "devDependencies": {
     "@dashevo/bls": "~1.2.9",
     "@dashevo/dashcore-lib": "~0.20.0",
-    "@dashevo/wasm-dpp": "workspace:*",
     "@dashevo/withdrawals-contract": "workspace:*",
     "chai": "^4.3.4",
     "chai-as-promised": "^7.1.1",
@@ -49,6 +48,7 @@
   "homepage": "https://github.com/dashevo/rs-drive#readme",
   "dependencies": {
     "@dashevo/dpp": "workspace:*",
+    "@dashevo/wasm-dpp": "workspace:*",
     "cargo-cp-artifact": "^0.1.6",
     "cbor": "^8.0.0",
     "neon-load-or-build": "^2.2.2",

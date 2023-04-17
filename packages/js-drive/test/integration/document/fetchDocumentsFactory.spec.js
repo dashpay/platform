@@ -19,7 +19,7 @@ describe('fetchDocumentsFactory', () => {
   let blockInfo;
 
   beforeEach(async function beforeEach() {
-    container = await createTestDIContainer(this.blsAdapter, this.dppWasm);
+    container = await createTestDIContainer(this.blsAdapter);
 
     dataContractRepository = container.resolve('dataContractRepository');
     documentRepository = container.resolve('documentRepository');

@@ -1,3 +1,10 @@
+const {
+  InvalidStateTransitionTypeError,
+  InvalidStateTransitionError,
+  BalanceIsNotEnoughError,
+  ValidationResult,
+  IdentityNotFoundError,
+} = require('@dashevo/wasm-dpp');
 const getIdentityCreateTransitionFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
 const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 
@@ -13,22 +20,6 @@ describe('unserializeStateTransitionFactory', () => {
   let dppMock;
   let noopLoggerMock;
   let stateTransition;
-  let InvalidStateTransitionTypeError;
-  let InvalidStateTransitionError;
-  let BalanceIsNotEnoughError;
-  let ValidationResult;
-  let IdentityNotFoundError;
-
-  before(function before() {
-    ({
-      InvalidStateTransitionTypeError,
-      InvalidStateTransitionError,
-      BalanceIsNotEnoughError,
-      ValidationResult,
-      IdentityNotFoundError,
-      ValidationResult,
-    } = this.dppWasm);
-  });
 
   beforeEach(async function beforeEach() {
     stateTransition = await getIdentityCreateTransitionFixture();
@@ -50,7 +41,7 @@ describe('unserializeStateTransitionFactory', () => {
     noopLoggerMock = new LoggerMock(this.sinon);
 
     unserializeStateTransition = unserializeStateTransitionFactory(
-      dppMock, noopLoggerMock, this.dppWasm,
+      dppMock, noopLoggerMock,
     );
   });
 

@@ -8,13 +8,14 @@ const {
 
 const cbor = require('cbor');
 
+const { Identifier } = require('@dashevo/wasm-dpp');
+
 /**
  *
  * @param {BlockExecutionContext} latestBlockExecutionContext
  * @param {IdentityStoreRepository} identityRepository
  * @param {DataContractStoreRepository} dataContractRepository
  * @param {DocumentRepository} documentRepository
- * @param {WebAssembly.Instance} dppWasm
  * @return {getProofsQueryHandler}
  */
 function getProofsQueryHandlerFactory(
@@ -22,7 +23,6 @@ function getProofsQueryHandlerFactory(
   identityRepository,
   dataContractRepository,
   documentRepository,
-  dppWasm,
 ) {
   /**
    * @typedef getProofsQueryHandler
@@ -74,7 +74,7 @@ function getProofsQueryHandlerFactory(
 
     if (identityIds && identityIds.length) {
       const identitiesProof = await identityRepository.proveMany(
-        identityIds.map((identityId) => dppWasm.Identifier.from(identityId)),
+        identityIds.map((identityId) => Identifier.from(identityId)),
       );
 
       response.identitiesProof = {
@@ -87,7 +87,7 @@ function getProofsQueryHandlerFactory(
 
     if (dataContractIds && dataContractIds.length) {
       const dataContractsProof = await dataContractRepository.proveMany(
-        dataContractIds.map((dataContractId) => dppWasm.Identifier.from(dataContractId)),
+        dataContractIds.map((dataContractId) => Identifier.from(dataContractId)),
       );
 
       response.dataContractsProof = {

@@ -132,7 +132,7 @@ describe('Dash - Client', function suite() {
     }
   });
 
-  describe('#platform.identities.register ', async () => {
+  describe('#platform.identities.register', async () => {
     it('should register an identity', async () => {
       const accountIdentitiesCountBeforeTest = account.identities.getIdentityIds().length;
 
@@ -245,7 +245,6 @@ describe('Dash - Client', function suite() {
 
   describe('#platform.identities.update', async () => {
     it('should update an identity', async () => {
-      // Registering an identity we're going to top up
       const identity = await client.platform.identities.register(1000);
 
       const privateKey = new PrivateKey(privateKeyFixture);

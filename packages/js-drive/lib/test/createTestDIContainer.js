@@ -1,6 +1,6 @@
 const createDIContainer = require('../createDIContainer');
 
-async function createTestDIContainer(blsAdapter, dppWasm, dashCore = undefined) {
+async function createTestDIContainer(blsAdapter, dashCore = undefined) {
   let coreOptions = {};
   if (dashCore) {
     coreOptions = {
@@ -11,7 +11,7 @@ async function createTestDIContainer(blsAdapter, dppWasm, dashCore = undefined) 
     };
   }
 
-  const container = createDIContainer(blsAdapter, dppWasm, {
+  const container = createDIContainer(blsAdapter, {
     ...process.env,
     GROVEDB_LATEST_FILE: './db/latest_state_test',
     EXTERNAL_STORE_LEVEL_DB_FILE: './db/external_leveldb_test',

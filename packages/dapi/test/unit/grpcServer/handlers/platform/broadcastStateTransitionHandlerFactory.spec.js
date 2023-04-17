@@ -13,7 +13,7 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
+const { default: loadWasmDpp, DashPlatformProtocol } = require('@dashevo/wasm-dpp');
 const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
 
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
@@ -34,10 +34,9 @@ describe('broadcastStateTransitionHandlerFactory', () => {
   let log;
   let code;
   let createGrpcErrorFromDriveResponseMock;
-  let DashPlatformProtocol;
 
   before(async () => {
-    ({ DashPlatformProtocol } = await loadWasmDpp());
+    await loadWasmDpp();
   });
 
   beforeEach(async function beforeEach() {

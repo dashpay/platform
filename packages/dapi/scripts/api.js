@@ -14,7 +14,7 @@ const {
   getPlatformDefinition,
 } = require('@dashevo/dapi-grpc');
 
-const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
+const { default: loadWasmDpp, DashPlatformProtocol } = require('@dashevo/wasm-dpp');
 
 const { client: RpcClient } = require('jayson/promise');
 
@@ -40,7 +40,7 @@ const platformHandlersFactory = require(
 );
 
 async function main() {
-  const { DashPlatformProtocol } = await loadWasmDpp();
+  await loadWasmDpp();
   const blsSignatures = await loadBLS();
 
   /* Application start */
@@ -98,10 +98,6 @@ async function main() {
   log.info(`JSON RPC server is listening on port ${config.rpcServer.port}`);
 
   const dpp = new DashPlatformProtocol(blsSignatures, driveStateRepository);
-  // const dpp = new DashPlatformProtocolJS({
-  //   stateRepository: driveStateRepository,
-  // });
-  // await dpp.initialize();
 
   // Start GRPC server
   log.info('Starting GRPC server');

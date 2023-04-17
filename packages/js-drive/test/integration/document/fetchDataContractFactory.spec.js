@@ -1,4 +1,4 @@
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
 const InvalidQueryError = require('../../../lib/document/errors/InvalidQueryError');
@@ -16,11 +16,11 @@ describe('fetchDataContractFactory', () => {
   let blockInfo;
 
   beforeEach(async function beforeEach() {
-    container = await createTestDIContainer(this.blsAdapter, this.dppWasm);
+    container = await createTestDIContainer(this.blsAdapter);
 
     dataContractRepository = container.resolve('dataContractRepository');
 
-    dataContract = getDataContractFixture();
+    dataContract = await getDataContractFixture();
 
     contractId = dataContract.getId();
 

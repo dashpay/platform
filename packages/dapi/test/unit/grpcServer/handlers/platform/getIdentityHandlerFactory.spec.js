@@ -60,7 +60,7 @@ describe('getIdentityHandlerFactory', () => {
     );
   });
 
-  it('should return valid result', async function it() {
+  it('should return valid result', async () => {
     response.setProof(null);
     driveStateRepositoryMock.fetchIdentity.resolves(response.serializeBinary());
 
@@ -68,16 +68,13 @@ describe('getIdentityHandlerFactory', () => {
 
     expect(result).to.be.an.instanceOf(GetIdentityResponse);
     expect(result.getIdentity()).to.deep.equal(identity.toBuffer());
-    expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(
-      this.sinon.match((arg) => arg.equals(id.toBuffer())),
-      false,
-    );
+    expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(id.toBuffer(), false);
 
     const proof = result.getProof();
     expect(proof).to.be.undefined();
   });
 
-  it('should return proof', async function it() {
+  it('should return proof', async () => {
     call.request.getProve.returns(true);
 
     const result = await getIdentityHandler(call);
@@ -91,10 +88,7 @@ describe('getIdentityHandlerFactory', () => {
 
     expect(merkleProof).to.deep.equal(proofFixture.merkleProof);
 
-    expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(
-      this.sinon.match((arg) => arg.equals(id.toBuffer())),
-      true,
-    );
+    expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(id.toBuffer(), true);
   });
 
   it('should throw an InvalidArgumentGrpcError if id is not specified', async () => {
@@ -111,7 +105,7 @@ describe('getIdentityHandlerFactory', () => {
     }
   });
 
-  it('should throw an error when fetchIdentity throws unknown error', async function it() {
+  it('should throw an error when fetchIdentity throws unknown error', async () => {
     const error = new Error('Unknown error');
 
     driveStateRepositoryMock.fetchIdentity.throws(error);
@@ -122,10 +116,7 @@ describe('getIdentityHandlerFactory', () => {
       expect.fail('should throw an error');
     } catch (e) {
       expect(e).to.equal(error);
-      expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(
-        this.sinon.match((arg) => arg.equals(id.toBuffer())),
-        false,
-      );
+      expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(id.toBuffer());
     }
   });
 });

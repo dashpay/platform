@@ -53,9 +53,7 @@ describe('getDataContractHandlerFactory', () => {
 
     response = new GetDataContractResponse();
     response.setProof(proofMock);
-    // TODO: Identifier/buffer issue - problem with Buffer shim:
-    //  Without Buffer.from it throws AssertionError: Failure: Type not convertible to Uint8Array.
-    response.setDataContract(Buffer.from(dataContractFixture.toBuffer()));
+    response.setDataContract(dataContractFixture.toBuffer());
 
     driveStateRepositoryMock = {
       fetchDataContract: this.sinon.stub().resolves(response.serializeBinary()),
@@ -66,7 +64,7 @@ describe('getDataContractHandlerFactory', () => {
     );
   });
 
-  it('should return valid data', async function it() {
+  it('should return valid data', async () => {
     const result = await getDataContractHandler(call);
 
     expect(result).to.be.an.instanceOf(GetDataContractResponse);
@@ -83,13 +81,10 @@ describe('getDataContractHandlerFactory', () => {
 
     expect(merkleProof).to.deep.equal(proofFixture.merkleProof);
 
-    expect(driveStateRepositoryMock.fetchDataContract).to.be.calledOnceWith(
-      this.sinon.match((identifier) => identifier.equals(id.toBuffer())),
-      true,
-    );
+    expect(driveStateRepositoryMock.fetchDataContract).to.be.calledOnceWith(id.toBuffer(), true);
   });
 
-  it('should not include proof', async function it() {
+  it('should not include proof', async () => {
     request.getProve.returns(false);
     response.setProof(null);
     driveStateRepositoryMock.fetchDataContract.resolves(response.serializeBinary());
@@ -101,10 +96,7 @@ describe('getDataContractHandlerFactory', () => {
 
     expect(proof).to.be.undefined();
 
-    expect(driveStateRepositoryMock.fetchDataContract).to.be.calledOnceWith(
-      this.sinon.match((identifier) => identifier.equals(id.toBuffer())),
-      false,
-    );
+    expect(driveStateRepositoryMock.fetchDataContract).to.be.calledOnceWith(id.toBuffer(), false);
   });
 
   it('should throw InvalidArgumentGrpcError error if id is not specified', async () => {

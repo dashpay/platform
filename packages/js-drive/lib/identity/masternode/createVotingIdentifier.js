@@ -1,14 +1,14 @@
+const { Identifier } = require('@dashevo/wasm-dpp');
 const { hash } = require('@dashevo/dpp/lib/util/hash');
 const Address = require('@dashevo/dashcore-lib/lib/address');
 
 /**
  * @param {SimplifiedMNListEntry} smlEntry
- * @param {WebAssembly.Instance} dppWasm
  */
-function createVotingIdentifier(smlEntry, dppWasm) {
+function createVotingIdentifier(smlEntry) {
   const votingPubKeyHash = Address.fromString(smlEntry.votingAddress).hashBuffer;
 
-  return dppWasm.Identifier.from(
+  return Identifier.from(
     hash(
       Buffer.concat([
         Buffer.from(smlEntry.proRegTxHash, 'hex'),

@@ -50,7 +50,7 @@ function makeTxStreamEmitISLocksForTransactions(transportMock, txStreamMock) {
  * @param {Client} client
  * @param dapiClientMock
  */
-async function makeGetIdentityRespondWithIdentity(client, dapiClientMock, sinon) {
+async function makeGetIdentityRespondWithIdentity(client, dapiClientMock) {
   dapiClientMock.platform.broadcastStateTransition.callsFake(async (stBuffer) => {
     const interceptedIdentityStateTransition = await client
       .platform.dpp.stateTransition.createFromBuffer(stBuffer);
@@ -64,9 +64,7 @@ async function makeGetIdentityRespondWithIdentity(client, dapiClientMock, sinon)
         balance: interceptedIdentityStateTransition.getAssetLockProof().getOutput().satoshis,
         revision: 0,
       });
-      dapiClientMock.platform.getIdentity.withArgs(
-        sinon.match((id) => id.equals(identityToResolve.getId().toBuffer())),
-      )
+      dapiClientMock.platform.getIdentity.withArgs(identityToResolve.getId())
         .resolves(new GetIdentityResponse(
           identityToResolve.toBuffer(),
           getResponseMetadataFixture(),
@@ -106,7 +104,7 @@ export async function createAndAttachTransportMocksToClient(client, sinon) {
   // Putting data in transport stubs
   transportMock.getIdentitiesByPublicKeyHashes.resolves([]);
   makeTxStreamEmitISLocksForTransactions(transportMock, txStreamMock);
-  await makeGetIdentityRespondWithIdentity(client, dapiClientMock, sinon);
+  await makeGetIdentityRespondWithIdentity(client, dapiClientMock);
 
   return { txStreamMock, transportMock, dapiClientMock };
 }

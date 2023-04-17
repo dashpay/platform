@@ -1,4 +1,6 @@
 const { InstantLock } = require('@dashevo/dashcore-lib');
+const { ReadOperation, SignatureVerificationOperation, KeyType } = require('@dashevo/wasm-dpp');
+
 const BlockInfo = require('../blockExecution/BlockInfo');
 
 /**
@@ -19,7 +21,6 @@ class DriveStateRepository {
    * @param {BlockExecutionContext} blockExecutionContext
    * @param {SimplifiedMasternodeList} simplifiedMasternodeList
    * @param {Drive} rsDrive
-   * @param {WebAssembly.Instance} dppWasm
    * @param {Object} [options]
    * @param {Object} [options.useTransaction=false]
    */
@@ -35,7 +36,6 @@ class DriveStateRepository {
     blockExecutionContext,
     simplifiedMasternodeList,
     rsDrive,
-    dppWasm,
     options = {},
   ) {
     this.identityRepository = identityRepository;
@@ -49,7 +49,6 @@ class DriveStateRepository {
     this.blockExecutionContext = blockExecutionContext;
     this.simplifiedMasternodeList = simplifiedMasternodeList;
     this.rsDrive = rsDrive;
-    this.dppWasm = dppWasm;
     this.#options = options;
   }
 
@@ -62,10 +61,6 @@ class DriveStateRepository {
    * @return {Promise<Identity|null>}
    */
   async fetchIdentity(id, executionContext = undefined) {
-    // TODO: TEST - remove
-    console.log('DriveStateRepository.fetchIdentity() start', {
-      id, executionContext,
-    });
     const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
 
     const result = await this.identityRepository.fetch(
@@ -82,10 +77,7 @@ class DriveStateRepository {
       }
     }
 
-    const value = result.getValue();
-    // TODO: TEST - remove
-    console.log('DriveStateRepository.fetchIdentity() finished', value);
-    return value;
+    return result.getValue();
   }
 
   /**
@@ -97,10 +89,6 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async createIdentity(identity, executionContext = undefined) {
-    // TODO: TEST - remove
-    console.log('DriveStateRepository.createIdentity() start', {
-      identity, executionContext,
-    });
     const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
 
     const result = await this.identityRepository.create(
@@ -114,9 +102,6 @@ class DriveStateRepository {
         executionContext.addOperation(operation);
       }
     }
-
-    // TODO: TEST - remove
-    console.log('DriveStateRepository.createIdentity() end');
   }
 
   /**
@@ -128,10 +113,6 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async addKeysToIdentity(identityId, keys, executionContext = undefined) {
-    // TODO: TEST - remove
-    console.log('DriveStateRepository.addKeysToIdentity() start', {
-      identityId, keys, executionContext,
-    });
     const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
 
     const result = await this.identityPublicKeyRepository.add(
@@ -146,9 +127,6 @@ class DriveStateRepository {
         executionContext.addOperation(operation);
       }
     }
-
-    // TODO: TEST - remove
-    console.log('DriveStateRepository.addKeysToIdentity() end');
   }
 
   /**
@@ -159,10 +137,6 @@ class DriveStateRepository {
    * @returns {Promise<number|null>}
    */
   async fetchIdentityBalance(identityId, executionContext = undefined) {
-    // TODO: TEST - remove
-    console.log('DriveStateRepository.fetchIdentityBalance() start', {
-      identityId, executionContext,
-    });
     const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
 
     const result = await this.identityBalanceRepository.fetch(
@@ -179,13 +153,7 @@ class DriveStateRepository {
       }
     }
 
-    const value = result.getValue();
-    // TODO: TEST - remove
-    console.log('DriveStateRepository.fetchIdentityBalance() end', {
-      value,
-    });
-
-    return value;
+    return result.getValue();
   }
 
   /**
@@ -196,10 +164,6 @@ class DriveStateRepository {
    * @returns {Promise<number|null>} - Balance can be negative in case of debt
    */
   async fetchIdentityBalanceWithDebt(identityId, executionContext = undefined) {
-    // TODO: TEST - remove
-    console.log('DriveStateRepository.fetchIdentityBalanceWitDebt() start', {
-      identityId, executionContext,
-    });
     const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
 
     const result = await this.identityBalanceRepository.fetchWithDebt(
@@ -214,12 +178,7 @@ class DriveStateRepository {
       }
     }
 
-    const value = result.getValue();
-    // TODO: TEST - remove
-    console.log('DriveStateRepository.fetchIdentityBalanceWithDebt() end', {
-      identityId, executionContext,
-    });
-    return value;
+    return result.getValue();
   }
 
   /**
@@ -231,10 +190,6 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async addToIdentityBalance(identityId, amount, executionContext = undefined) {
-    // TODO: TEST - remove
-    console.log('DriveStateRepository.addToIdentityBalance() start', {
-      identityId, amount, executionContext,
-    });
     const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
 
     const result = await this.identityBalanceRepository.add(
@@ -249,9 +204,6 @@ class DriveStateRepository {
         executionContext.addOperation(operation);
       }
     }
-
-    // TODO: TEST - remove
-    console.log('DriveStateRepository.addToIdentityBalance() end', {});
   }
 
   /**
@@ -262,10 +214,6 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async addToSystemCredits(amount, executionContext = undefined) {
-    // TODO: TEST - remove
-    console.log('DriveStateRepository.addToSystemCredits() start', {
-      amount, executionContext,
-    });
     if (executionContext.isDryRun()) {
       return;
     }
@@ -274,8 +222,6 @@ class DriveStateRepository {
       amount,
       this.#options.useTransaction || false,
     );
-
-    console.log('DriveStateRepository.addToSystemCredits() end', {});
   }
 
   /**
@@ -288,9 +234,6 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async disableIdentityKeys(identityId, keyIds, disableAt, executionContext = undefined) {
-    console.log('DriveStateRepository.disableIdentityKeys() start', {
-      identityId, keyIds, disableAt, executionContext,
-    });
     const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
 
     const result = await this.identityPublicKeyRepository.disable(
@@ -306,8 +249,6 @@ class DriveStateRepository {
         executionContext.addOperation(operation);
       }
     }
-
-    console.log('DriveStateRepository.disableIdentityKeys() end');
   }
 
   /**
@@ -319,9 +260,6 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async updateIdentityRevision(identityId, revision, executionContext = undefined) {
-    console.log('DriveStateRepository.updateIdentityRevision() start', {
-      identityId, revision, executionContext,
-    });
     const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
 
     const result = await this.identityRepository.updateRevision(
@@ -336,9 +274,6 @@ class DriveStateRepository {
         executionContext.addOperation(operation);
       }
     }
-
-    console.log('DriveStateRepository.updateIdentityRevision() end', {
-    });
   }
 
   /**
@@ -350,9 +285,6 @@ class DriveStateRepository {
    * @return {Promise<void>}
    */
   async markAssetLockTransactionOutPointAsUsed(outPointBuffer, executionContext = undefined) {
-    console.log('DriveStateRepository.markAssetLockTransactionOutPointAsUsed() start', {
-      outPointBuffer, executionContext,
-    });
     const result = await this.spentAssetLockTransactionsRepository.store(
       outPointBuffer,
       this.#createRepositoryOptions(executionContext),
@@ -363,8 +295,6 @@ class DriveStateRepository {
         executionContext.addOperation(operation);
       }
     }
-
-    console.log('DriveStateRepository.markAssetLockTransactionOutPointAsUsed() end', {});
   }
 
   /**
@@ -376,9 +306,6 @@ class DriveStateRepository {
    * @return {Promise<boolean>}
    */
   async isAssetLockTransactionOutPointAlreadyUsed(outPointBuffer, executionContext = undefined) {
-    console.log('DriveStateRepository.isAssetLockTransactionOutPointAlreadyUsed() start', {
-      outPointBuffer, executionContext,
-    });
     const result = await this.spentAssetLockTransactionsRepository.fetch(
       outPointBuffer,
       this.#createRepositoryOptions(executionContext),
@@ -390,13 +317,7 @@ class DriveStateRepository {
       }
     }
 
-    const value = !result.isNull();
-
-    console.log('DriveStateRepository.isAssetLockTransactionOutPointAlreadyUsed() end', {
-      value,
-    });
-
-    return value;
+    return !result.isNull();
   }
 
   /**
@@ -408,9 +329,6 @@ class DriveStateRepository {
    * @returns {Promise<DataContract|null>}
    */
   async fetchDataContract(id, executionContext = undefined) {
-    console.log('DriveStateRepository.fetchDataContract() start', {
-      id, executionContext,
-    });
     const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
 
     const result = await this.dataContractRepository.fetch(
@@ -430,13 +348,7 @@ class DriveStateRepository {
       }
     }
 
-    const value = result.getValue();
-
-    console.log('DriveStateRepository.fetchDataContract() end', {
-      value,
-    });
-
-    return value;
+    return result.getValue();
   }
 
   /**
@@ -448,9 +360,6 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async createDataContract(dataContract, executionContext = undefined) {
-    console.log('DriveStateRepository.createDataContract() start', {
-      dataContract, executionContext,
-    });
     const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
 
     const result = await this.dataContractRepository.create(
@@ -464,8 +373,6 @@ class DriveStateRepository {
         executionContext.addOperation(operation);
       }
     }
-
-    console.log('DriveStateRepository.createDataContract() end', {});
   }
 
   /**
@@ -477,9 +384,6 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async updateDataContract(dataContract, executionContext = undefined) {
-    console.log('DriveStateRepository.updateDataContract() start', {
-      dataContract, executionContext,
-    });
     const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
 
     const result = await this.dataContractRepository.update(
@@ -493,9 +397,6 @@ class DriveStateRepository {
         executionContext.addOperation(operation);
       }
     }
-
-    console.log('DriveStateRepository.updateDataContract() end', {
-    });
   }
 
   /**
@@ -509,10 +410,6 @@ class DriveStateRepository {
    * @returns {Promise<Document[]>}
    */
   async fetchDocuments(contractId, type, options = {}, executionContext = undefined) {
-    console.log('DriveStateRepository.fetchDocuments() start', {
-      contractId, type, executionContext,
-    });
-    console.dir({ options }, { depth: null });
     const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
 
     const result = await this.fetchDocumentsFunction(
@@ -531,11 +428,7 @@ class DriveStateRepository {
       }
     }
 
-    const value = result.getValue();
-    console.log('DriveStateRepository.fetchDocuments() end', {
-      value,
-    });
-    return value;
+    return result.getValue();
   }
 
   /**
@@ -549,10 +442,6 @@ class DriveStateRepository {
    * @returns {Promise<ExtendedDocument[]>}
    */
   async fetchExtendedDocuments(contractId, type, options = {}, executionContext = undefined) {
-    console.log('DriveStateRepository.fetchExtendedDocuments() start', {
-      contractId, type, executionContext,
-    });
-    console.dir({ options }, { depth: null });
     const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
 
     const result = await this.fetchDocumentsFunction(
@@ -572,11 +461,7 @@ class DriveStateRepository {
       }
     }
 
-    const value = result.getValue();
-    console.log('DriveStateRepository.fetchExtendedDocuments() end', {
-      value,
-    });
-    return value;
+    return result.getValue();
   }
 
   /**
@@ -588,9 +473,6 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async createDocument(document, executionContext = undefined) {
-    console.log('DriveStateRepository.createDocument() start', {
-      document, executionContext,
-    });
     const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
 
     const result = await this.documentRepository.create(
@@ -604,9 +486,6 @@ class DriveStateRepository {
         executionContext.addOperation(operation);
       }
     }
-
-    console.log('DriveStateRepository.createDocument() end', {
-    });
   }
 
   /**
@@ -618,9 +497,6 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async updateDocument(document, executionContext = undefined) {
-    console.log('DriveStateRepository.updateDocument() start', {
-      document, executionContext,
-    });
     const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
 
     const result = await this.documentRepository.update(
@@ -634,10 +510,6 @@ class DriveStateRepository {
         executionContext.addOperation(operation);
       }
     }
-
-    console.log('DriveStateRepository.updateDocument() end', {
-
-    });
   }
 
   /**
@@ -651,10 +523,6 @@ class DriveStateRepository {
    * @returns {Promise<void>}
    */
   async removeDocument(dataContract, type, id, executionContext = undefined) {
-    console.log('DriveStateRepository.removeDocument() start', {
-      dataContract, type, id, executionContext,
-    });
-
     const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
 
     const result = await this.documentRepository.delete(
@@ -670,9 +538,6 @@ class DriveStateRepository {
         executionContext.addOperation(operation);
       }
     }
-
-    console.log('DriveStateRepository.removeDocument() end', {
-    });
   }
 
   /**
@@ -684,14 +549,10 @@ class DriveStateRepository {
    * @returns {Promise<Object|null>}
    */
   async fetchTransaction(id, executionContext = undefined) {
-    console.log('DriveStateRepository.fetchTransaction() start', {
-      id, executionContext,
-    });
-
     if (executionContext && executionContext.isDryRun()) {
       executionContext.addOperation(
         // TODO: Revisit this value
-        new this.dppWasm.ReadOperation(512),
+        new ReadOperation(512),
       );
 
       return {
@@ -707,13 +568,9 @@ class DriveStateRepository {
 
       if (executionContext) {
         executionContext.addOperation(
-          new this.dppWasm.ReadOperation(data.length),
+          new ReadOperation(data.length),
         );
       }
-
-      console.log('DriveStateRepository.fetchTransaction() end', {
-        data, height: transaction.height,
-      });
 
       return {
         data,
@@ -735,14 +592,7 @@ class DriveStateRepository {
    * @return {Promise<Long>}
    */
   async fetchLatestPlatformBlockHeight() {
-    console.log('DriveStateRepository.fetchLatestPlatformBlockHeight() start', {});
-
-    const value = this.blockExecutionContext.getHeight();
-
-    console.log('DriveStateRepository.fetchLatestPlatformBlockHeight() end', {
-      value,
-    });
-    return value;
+    return this.blockExecutionContext.getHeight();
   }
 
   /**
@@ -751,16 +601,12 @@ class DriveStateRepository {
    * @return {Promise<number>}
    */
   async fetchLatestPlatformBlockTime() {
-    console.log('DriveStateRepository.fetchLatestPlatformBlockTime() start', {});
     const timeMs = this.blockExecutionContext.getTimeMs();
 
     if (!timeMs) {
       throw new Error('Time is not set');
     }
 
-    console.log('DriveStateRepository.fetchLatestPlatformBlockTime() end', {
-      timeMs,
-    });
     return timeMs;
   }
 
@@ -770,12 +616,7 @@ class DriveStateRepository {
    * @return {Promise<number>}
    */
   async fetchLatestPlatformCoreChainLockedHeight() {
-    console.log('DriveStateRepository.fetchLatestPlatformCoreChainLockedHeight() start', {});
-    const value = this.blockExecutionContext.getCoreChainLockedHeight();
-    console.log('DriveStateRepository.fetchLatestPlatformCoreChainLockedHeight() end', {
-      value,
-    });
-    return value;
+    return this.blockExecutionContext.getCoreChainLockedHeight();
   }
 
   /**
@@ -788,9 +629,6 @@ class DriveStateRepository {
    */
   // eslint-disable-next-line no-unused-vars
   async verifyInstantLock(rawInstantLock, executionContext = undefined) {
-    console.log('DriveStateRepository.verifyInstantLock() start', {
-      rawInstantLock, executionContext,
-    });
     const coreChainLockedHeight = this.blockExecutionContext.getCoreChainLockedHeight();
 
     if (coreChainLockedHeight === null) {
@@ -799,7 +637,7 @@ class DriveStateRepository {
 
     if (executionContext) {
       executionContext.addOperation(
-        new this.dppWasm.SignatureVerificationOperation(this.dppWasm.KeyType.ECDSA_SECP256K1),
+        new SignatureVerificationOperation(KeyType.ECDSA_SECP256K1),
       );
 
       if (executionContext.isDryRun()) {
@@ -808,8 +646,6 @@ class DriveStateRepository {
     }
 
     try {
-      // TODO: Identifier/buffer issue - problem with Buffer shim:
-      //  Without Buffer.from will fail
       const instantLock = new InstantLock(Buffer.from(rawInstantLock));
       const { result: isVerified } = await this.coreRpcClient.verifyIsLock(
         instantLock.getRequestId().toString('hex'),
@@ -817,10 +653,6 @@ class DriveStateRepository {
         instantLock.signature,
         coreChainLockedHeight,
       );
-
-      console.log('DriveStateRepository.verifyInstantLock() end', {
-        isVerified,
-      });
 
       return isVerified;
     } catch (e) {
@@ -841,10 +673,7 @@ class DriveStateRepository {
    * @return {Promise<SimplifiedMNListStore>}
    */
   async fetchSMLStore() {
-    console.log('DriveStateRepository.fetchSMLStore() start');
-    const store = this.simplifiedMasternodeList.getStore();
-    console.log('DriveStateRepository.fetchSMLStore() end');
-    return store;
+    return this.simplifiedMasternodeList.getStore();
   }
 
   /**

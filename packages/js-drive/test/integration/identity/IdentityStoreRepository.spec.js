@@ -1,8 +1,7 @@
 const fs = require('fs');
 const Drive = require('@dashevo/rs-drive');
 
-// TODO: should we take it from other place?
-const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
+const { Identity, IdentityPublicKey, decodeProtocolEntity } = require('@dashevo/wasm-dpp');
 const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 
@@ -16,18 +15,11 @@ describe('IdentityStoreRepository', () => {
   let rsDrive;
   let store;
   let repository;
-  let decodeProtocolEntity;
   let identity;
   let blockInfo;
   let publicKeyHashes;
-  let Identity;
-  let IdentityPublicKey;
 
-  before(function before() {
-    ({ Identity, IdentityPublicKey } = this.dppWasm);
-  });
-
-  beforeEach(async function beforeEach() {
+  beforeEach(async () => {
     rsDrive = new Drive('./db/grovedb_test', {
       drive: {
         dataContractsGlobalCacheSize: 500,
@@ -40,15 +32,13 @@ describe('IdentityStoreRepository', () => {
           password: '',
         },
       },
-    }, this.dppWasm);
+    });
 
     await rsDrive.createInitialStateStructure();
 
     store = new GroveDBStore(rsDrive, logger);
 
-    decodeProtocolEntity = decodeProtocolEntityFactory();
-
-    repository = new IdentityStoreRepository(store, decodeProtocolEntity, this.dppWasm);
+    repository = new IdentityStoreRepository(store, decodeProtocolEntity);
     identity = await getIdentityFixture();
 
     blockInfo = new BlockInfo(1, 1, Date.now());

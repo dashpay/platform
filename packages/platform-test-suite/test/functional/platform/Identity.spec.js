@@ -19,7 +19,14 @@ const {
     StateTransitionBroadcastError,
   },
   PlatformProtocol: {
+    Identity,
+    Identifier,
     IdentityPublicKey,
+    InvalidInstantAssetLockProofSignatureError,
+    IdentityAssetLockTransactionOutPointAlreadyExistsError,
+    BalanceIsNotEnoughError,
+    InvalidIdentityKeySignatureError,
+    IdentityPublicKeyWithWitness,
   },
 } = Dash;
 
@@ -49,10 +56,6 @@ describe('Platform', () => {
 
     it('should fail to create an identity if instantLock is not valid', async () => {
       await client.platform.initialize();
-
-      const {
-        InvalidInstantAssetLockProofSignatureError,
-      } = client.platform.dppModule;
 
       const {
         transaction,
@@ -91,8 +94,6 @@ describe('Platform', () => {
     });
 
     it('should fail to create an identity with already used asset lock output', async () => {
-      const { IdentityAssetLockTransactionOutPointAlreadyExistsError } = client.platform.dppModule;
-
       const {
         transaction,
         privateKey,
@@ -101,8 +102,7 @@ describe('Platform', () => {
 
       const account = await client.getWalletAccount();
 
-      // TODO(wasm-dpp): fix or add task to research this problem.
-      // For some reason when we `await` for this call, it does not propagate instant locks
+      // Do not `await` for this call, it does not propagate instant locks
       // and createAsstLockProof falls back to chain lock instead which is not what we want
       account.broadcastTransaction(transaction);
 
@@ -155,8 +155,6 @@ describe('Platform', () => {
     });
 
     it('should not be able to create an identity without key proof', async () => {
-      const { InvalidIdentityKeySignatureError } = client.platform.dppModule;
-
       const {
         transaction,
         privateKey,
@@ -165,8 +163,7 @@ describe('Platform', () => {
 
       const account = await client.getWalletAccount();
 
-      // TODO(wasm-dpp): fix or add task to research this problem.
-      // For some reason when we `await` for this call, it does not propagate instant locks
+      // Do not `await` for this call, it does not propagate instant locks
       // and createAsstLockProof falls back to chain lock instead which is not what we want
       account.broadcastTransaction(transaction);
 
@@ -262,7 +259,7 @@ describe('Platform', () => {
 
         const { height: transactionHeight } = await metadataPromise;
 
-        // Change endianness of raw txId bytes in outPoint to match expectations of dashcore-rust
+        // Changing endianness of raw txId bytes in outPoint to match expectations of dashcore-rust
         let outPointBuffer = transaction.getOutPointBuffer(outputIndex);
         const txIdBuffer = outPointBuffer.slice(0, 32);
         const outputIndexBuffer = outPointBuffer.slice(32);
@@ -337,8 +334,6 @@ describe('Platform', () => {
       });
 
       it('should fail to create more documents if there are no more credits', async () => {
-        const { BalanceIsNotEnoughError } = client.platform.dppModule;
-
         const lowBalanceIdentity = await client.platform.identities.register(50000);
 
         const document = await client.platform.documents.create(
@@ -447,10 +442,6 @@ describe('Platform', () => {
 
       it('should fail to top up an identity with already used asset lock output', async () => {
         const {
-          IdentityAssetLockTransactionOutPointAlreadyExistsError,
-        } = client.platform.dppModule;
-
-        const {
           transaction,
           privateKey,
           outputIndex,
@@ -498,7 +489,6 @@ describe('Platform', () => {
 
     describe('Update', () => {
       it('should be able to add public key to the identity', async () => {
-        const { Identity } = client.platform.dppModule;
         const identityBeforeUpdate = new Identity(identity.toObject());
 
         expect(identityBeforeUpdate.getPublicKeyById(2)).to.not.exist();
@@ -511,8 +501,6 @@ describe('Platform', () => {
           .getIdentityHDKeyByIndex(identityIndex, 1);
 
         const identityPublicKey = identityPrivateKey.toPublicKey().toBuffer();
-
-        const { IdentityPublicKeyWithWitness } = client.platform.dppModule;
 
         const newPublicKey = new IdentityPublicKeyWithWitness(
           {
@@ -555,9 +543,8 @@ describe('Platform', () => {
       });
 
       it('should be able to disable public key of the identity', async () => {
-        const now = new Date().getTime();
+        const now = new Date();
 
-        const { Identity } = client.platform.dppModule;
         const identityBeforeUpdate = new Identity(identity.toObject());
 
         const publicKeyToDisable = identityBeforeUpdate.getPublicKeyById(2);
@@ -578,7 +565,7 @@ describe('Platform', () => {
 
         expect(identity.getRevision()).to.equal(identityBeforeUpdate.getRevision() + 1);
         expect(identity.getPublicKeyById(2)).to.exist();
-        expect(identity.getPublicKeyById(2).getDisabledAt().getTime()).to.be.at.least(now);
+        expect(identity.getPublicKeyById(2).getDisabledAt()).to.be.at.least(now);
 
         expect(identity.getPublicKeyById(0)).to.exist();
         expect(identity.getPublicKeyById(0).getDisabledAt()).to.be.undefined();
@@ -608,7 +595,6 @@ describe('Platform', () => {
         );
 
         for (const masternodeEntry of mnList) {
-          const { Identifier } = client.platform.dppModule;
           const masternodeIdentityId = Identifier.from(
             Buffer.from(masternodeEntry.proRegTxHash, 'hex'),
           );

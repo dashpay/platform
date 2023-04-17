@@ -1,3 +1,4 @@
+const { ReadOperation, StateTransitionExecutionContext } = require('@dashevo/wasm-dpp');
 const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
 const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
@@ -35,12 +36,6 @@ describe('DriveStateRepository', () => {
   let rsDriveMock;
   let blockHeight;
   let timeMs;
-  let ReadOperation;
-  let StateTransitionExecutionContext;
-
-  before(function before() {
-    ({ ReadOperation, StateTransitionExecutionContext } = this.dppWasm);
-  });
 
   beforeEach(async function beforeEach() {
     identity = await getIdentityFixture();
@@ -131,7 +126,6 @@ describe('DriveStateRepository', () => {
       blockExecutionContextMock,
       simplifiedMasternodeListMock,
       rsDriveMock,
-      this.dppWasm,
       repositoryOptions,
     );
 

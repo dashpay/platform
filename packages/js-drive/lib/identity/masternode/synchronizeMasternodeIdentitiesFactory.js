@@ -1,5 +1,6 @@
 const Address = require('@dashevo/dashcore-lib/lib/address');
 const Script = require('@dashevo/dashcore-lib/lib/script');
+const { Identifier } = require('@dashevo/wasm-dpp');
 const createOperatorIdentifier = require('./createOperatorIdentifier');
 
 /**
@@ -33,7 +34,6 @@ function mergeEntities(result, newData) {
  *
  * @param {DataContractStoreRepository} dataContractRepository
  * @param {SimplifiedMasternodeList} simplifiedMasternodeList
- * @param {dppWasm.Identifier} masternodeRewardSharesContractId
  * @param {handleNewMasternode} handleNewMasternode
  * @param {handleUpdatedPubKeyOperator} handleUpdatedPubKeyOperator
  * @param {handleRemovedMasternode} handleRemovedMasternode
@@ -42,7 +42,6 @@ function mergeEntities(result, newData) {
  * @param {number} smlMaxListsLimit
  * @param {LastSyncedCoreHeightRepository} lastSyncedCoreHeightRepository
  * @param {fetchSimplifiedMNList} fetchSimplifiedMNList
- * @param {WebAssembly.Instance} dppWasm
  * @return {synchronizeMasternodeIdentities}
  */
 function synchronizeMasternodeIdentitiesFactory(
@@ -57,7 +56,6 @@ function synchronizeMasternodeIdentitiesFactory(
   smlMaxListsLimit,
   lastSyncedCoreHeightRepository,
   fetchSimplifiedMNList,
-  dppWasm,
 ) {
   let lastSyncedCoreHeight = 0;
 
@@ -170,7 +168,7 @@ function synchronizeMasternodeIdentitiesFactory(
               : undefined;
 
             const affectedEntities = await handleUpdatedScriptPayout(
-              dppWasm.Identifier.from(Buffer.from(mnEntry.proRegTxHash, 'hex')),
+              Identifier.from(Buffer.from(mnEntry.proRegTxHash, 'hex')),
               newPayoutScript,
               blockInfo,
               previousPayoutScript,
@@ -197,7 +195,7 @@ function synchronizeMasternodeIdentitiesFactory(
               : undefined;
 
             const affectedEntities = await handleUpdatedScriptPayout(
-              createOperatorIdentifier(dppWasm, mnEntry),
+              createOperatorIdentifier(mnEntry),
               new Script(newOperatorPayoutAddress),
               blockInfo,
               previousOperatorPayoutScript,
@@ -230,7 +228,7 @@ function synchronizeMasternodeIdentitiesFactory(
       .concat(currentMNList.filter((currentMnListEntry) => !currentMnListEntry.isValid));
 
     for (const masternodeEntry of disappearedOrInvalidMasterNodes) {
-      const masternodeIdentifier = dppWasm.Identifier.from(
+      const masternodeIdentifier = Identifier.from(
         Buffer.from(masternodeEntry.proRegTxHash, 'hex'),
       );
 

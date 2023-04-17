@@ -1,4 +1,7 @@
 const { createHash } = require('crypto');
+const {
+  PreCalculatedOperation,
+} = require('@dashevo/wasm-dpp');
 
 const StorageResult = require('../storage/StorageResult');
 
@@ -7,13 +10,11 @@ class DataContractStoreRepository {
    *
    * @param {GroveDBStore} groveDBStore
    * @param {decodeProtocolEntity} decodeProtocolEntity
-   * @param {WebAssembly.Instance} dppWasm
    * @param {BaseLogger} [logger]
    */
-  constructor(groveDBStore, decodeProtocolEntity, dppWasm, logger = undefined) {
+  constructor(groveDBStore, decodeProtocolEntity, logger = undefined) {
     this.storage = groveDBStore;
     this.decodeProtocolEntity = decodeProtocolEntity;
-    this.dppWasm = dppWasm;
     this.logger = logger;
   }
 
@@ -40,7 +41,7 @@ class DataContractStoreRepository {
       return new StorageResult(
         undefined,
         [
-          new this.dppWasm.PreCalculatedOperation(
+          new PreCalculatedOperation(
             feeResult.storageFee,
             feeResult.processingFee,
             feeResult.feeRefunds,
@@ -85,7 +86,7 @@ class DataContractStoreRepository {
       return new StorageResult(
         undefined,
         [
-          new this.dppWasm.PreCalculatedOperation(
+          new PreCalculatedOperation(
             feeResult.storageFee,
             feeResult.processingFee,
             feeResult.feeRefunds,
@@ -134,7 +135,7 @@ class DataContractStoreRepository {
 
     const operations = [];
     if (feeResult) {
-      operations.push(new this.dppWasm.PreCalculatedOperation(
+      operations.push(new PreCalculatedOperation(
         feeResult.storageFee,
         feeResult.processingFee,
         feeResult.feeRefunds,

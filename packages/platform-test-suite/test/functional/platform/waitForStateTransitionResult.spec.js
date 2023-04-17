@@ -9,14 +9,10 @@ const hashFunction = require('../../../lib/proofHashFunction');
 
 describe.skip('Platform', () => {
   describe('waitForStateTransitionResult', () => {
-    // let dpp;
     let client;
     let blake3;
 
     before(async () => {
-      // dpp = new Dash.PlatformProtocol();
-      // await dpp.initialize();
-
       await hashFunction.init();
       blake3 = hashFunction.hashFunction;
 

@@ -6,7 +6,7 @@ const {
   },
 } = require('@dashevo/abci/types');
 
-const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
+const getIdentityCreateTransitionFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
 
 const checkTxHandlerFactory = require('../../../../lib/abci/handlers/checkTxHandlerFactory');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
@@ -19,8 +19,8 @@ describe('checkTxHandlerFactory', () => {
   let loggerMock;
   let createContextLoggerMock;
 
-  beforeEach(function beforeEach() {
-    stateTransitionFixture = getIdentityCreateTransitionFixture();
+  beforeEach(async function beforeEach() {
+    stateTransitionFixture = await getIdentityCreateTransitionFixture();
 
     request = {
       tx: stateTransitionFixture.toBuffer(),

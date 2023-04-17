@@ -1,4 +1,5 @@
 const { createHash } = require('crypto');
+const { PreCalculatedOperation } = require('@dashevo/wasm-dpp');
 
 const lodashCloneDeep = require('lodash/cloneDeep');
 
@@ -10,16 +11,13 @@ class DocumentRepository {
   /**
    *
    * @param {GroveDBStore} groveDBStore
-   * @param {WebAssembly.Instance} dppWasm
    * @param {BaseLogger} [logger]
    */
   constructor(
     groveDBStore,
-    dppWasm,
     logger = undefined,
   ) {
     this.storage = groveDBStore;
-    this.dppWasm = dppWasm;
     this.logger = logger;
   }
 
@@ -63,7 +61,7 @@ class DocumentRepository {
     return new StorageResult(
       undefined,
       [
-        new this.dppWasm.PreCalculatedOperation(
+        new PreCalculatedOperation(
           feeResult.storageFee,
           feeResult.processingFee,
           feeResult.feeRefunds,
@@ -112,7 +110,7 @@ class DocumentRepository {
     return new StorageResult(
       undefined,
       [
-        new this.dppWasm.PreCalculatedOperation(
+        new PreCalculatedOperation(
           feeResult.storageFee,
           feeResult.processingFee,
           feeResult.feeRefunds,
@@ -181,7 +179,7 @@ class DocumentRepository {
       return new StorageResult(
         documents,
         [
-          new this.dppWasm.PreCalculatedOperation(0, processingCost, []),
+          new PreCalculatedOperation(0, processingCost, []),
         ],
       );
     } catch (e) {
@@ -230,7 +228,7 @@ class DocumentRepository {
       return new StorageResult(
         undefined,
         [
-          new this.dppWasm.PreCalculatedOperation(
+          new PreCalculatedOperation(
             feeResult.storageFee,
             feeResult.processingFee,
             feeResult.feeRefunds,
@@ -288,7 +286,7 @@ class DocumentRepository {
       return new StorageResult(
         prove,
         [
-          new this.dppWasm.PreCalculatedOperation(0, processingCost, []),
+          new PreCalculatedOperation(0, processingCost, []),
         ],
       );
     } catch (e) {

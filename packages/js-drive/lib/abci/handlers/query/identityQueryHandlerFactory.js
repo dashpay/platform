@@ -12,6 +12,7 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
+const { Identifier, IdentifierError } = require('@dashevo/wasm-dpp');
 const NotFoundAbciError = require('../../errors/NotFoundAbciError');
 const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
 
@@ -19,13 +20,11 @@ const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError'
  *
  * @param {IdentityStoreRepository} identityRepository
  * @param {createQueryResponse} createQueryResponse
- * @param {WebAssembly.Instance} dppWasm
  * @return {identityQueryHandler}
  */
 function identityQueryHandlerFactory(
   identityRepository,
   createQueryResponse,
-  dppWasm,
 ) {
   /**
    * @typedef identityQueryHandler
@@ -38,9 +37,9 @@ function identityQueryHandlerFactory(
   async function identityQueryHandler(params, { id }, request) {
     let identifier;
     try {
-      identifier = new dppWasm.Identifier(id);
+      identifier = new Identifier(id);
     } catch (e) {
-      if (e instanceof dppWasm.IdentifierError) {
+      if (e instanceof IdentifierError) {
         throw new InvalidArgumentAbciError('id must be a valid identifier (32 bytes long)');
       }
 

@@ -83,10 +83,10 @@ export async function update(
   }
   this.logger.silly('[Identity#update] Validated IdentityUpdateTransition');
 
-  // TODO: add skipValidation flag?
-  //  Basic validation already happening above
-  // Broadcast ST
-  await broadcastStateTransition(this, identityUpdateTransition);
+  // Skipping validation because it's already done above
+  await broadcastStateTransition(this, identityUpdateTransition, {
+    skipValidation: true,
+  });
 
   this.logger.silly('[Identity#update] Broadcasted IdentityUpdateTransition');
 

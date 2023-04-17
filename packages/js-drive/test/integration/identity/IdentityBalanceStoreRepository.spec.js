@@ -2,8 +2,7 @@ const fs = require('fs');
 const Drive = require('@dashevo/rs-drive');
 const { FeeResult } = require('@dashevo/rs-drive');
 
-// TODO: should we take it from other place?
-const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
+const { decodeProtocolEntity } = require('@dashevo/wasm-dpp');
 const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 
 const GroveDBStore = require('../../../lib/storage/GroveDBStore');
@@ -18,11 +17,10 @@ describe('IdentityBalanceStoreRepository', () => {
   let store;
   let balanceRepository;
   let identityRepository;
-  let decodeProtocolEntity;
   let identity;
   let blockInfo;
 
-  beforeEach(async function beforeEach() {
+  beforeEach(async () => {
     rsDrive = new Drive('./db/grovedb_test', {
       drive: {
         dataContractsGlobalCacheSize: 500,
@@ -35,18 +33,16 @@ describe('IdentityBalanceStoreRepository', () => {
           password: '',
         },
       },
-    }, this.dppWasm);
+    });
 
     await rsDrive.createInitialStateStructure();
 
     store = new GroveDBStore(rsDrive, logger);
 
-    decodeProtocolEntity = decodeProtocolEntityFactory();
-
     balanceRepository = new IdentityBalanceStoreRepository(
-      store, decodeProtocolEntity, this.dppWasm,
+      store, decodeProtocolEntity,
     );
-    identityRepository = new IdentityStoreRepository(store, decodeProtocolEntity, this.dppWasm);
+    identityRepository = new IdentityStoreRepository(store, decodeProtocolEntity);
     identity = await getIdentityFixture();
 
     blockInfo = new BlockInfo(1, 1, Date.now());

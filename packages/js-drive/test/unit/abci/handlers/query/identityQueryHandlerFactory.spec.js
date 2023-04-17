@@ -13,7 +13,7 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const identityQueryHandlerFactory = require('../../../../../lib/abci/handlers/query/identityQueryHandlerFactory');
@@ -29,7 +29,7 @@ describe('identityQueryHandlerFactory', () => {
   let createQueryResponseMock;
   let responseMock;
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     identityRepositoryMock = {
       fetch: this.sinon.stub(),
       prove: this.sinon.stub(),
@@ -45,10 +45,9 @@ describe('identityQueryHandlerFactory', () => {
     identityQueryHandler = identityQueryHandlerFactory(
       identityRepositoryMock,
       createQueryResponseMock,
-      this.dppWasm,
     );
 
-    identity = getIdentityFixture();
+    identity = await getIdentityFixture();
 
     params = {};
     data = {

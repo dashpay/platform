@@ -1,3 +1,4 @@
+const { KeyType } = require('@dashevo/wasm-dpp');
 const Address = require('@dashevo/dashcore-lib/lib/address');
 const createVotingIdentifier = require('./createVotingIdentifier');
 
@@ -6,14 +7,12 @@ const createVotingIdentifier = require('./createVotingIdentifier');
  * @param {IdentityStoreRepository} identityRepository
  * @param {createMasternodeIdentity} createMasternodeIdentity
  * @param {fetchTransaction} fetchTransaction
- * @param {WebAssembly.Instance} dppWasm
  * @return {handleUpdatedVotingAddress}
  */
 function handleUpdatedVotingAddressFactory(
   identityRepository,
   createMasternodeIdentity,
   fetchTransaction,
-  dppWasm,
 ) {
   /**
    * @typedef handleUpdatedVotingAddress
@@ -47,7 +46,7 @@ function handleUpdatedVotingAddressFactory(
     }
 
     // Create a voting identity if there is no identity exist with the same ID
-    const votingIdentifier = createVotingIdentifier(masternodeEntry, dppWasm);
+    const votingIdentifier = createVotingIdentifier(masternodeEntry);
 
     const votingIdentityResult = await identityRepository.fetch(
       votingIdentifier,
@@ -64,7 +63,7 @@ function handleUpdatedVotingAddressFactory(
           blockInfo,
           votingIdentifier,
           votingPublicKeyHash,
-          dppWasm.KeyType.ECDSA_HASH160,
+          KeyType.ECDSA_HASH160,
         ),
       );
     }

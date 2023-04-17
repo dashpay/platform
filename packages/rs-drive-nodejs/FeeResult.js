@@ -90,7 +90,7 @@ class FeeResult {
    * @returns {FeeResult}
    */
   static create(storageFee, processingFee, feeRefunds) {
-    // TODO: until we use Neon version 1 we  can't really use BigInt
+    // TODO: until we use Neon version 1 we can't really use BigInt
     const storageFeeBuffer = Buffer.allocUnsafe(8);
     storageFeeBuffer.writeBigInt64BE(storageFee, 0);
 

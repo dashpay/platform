@@ -16,13 +16,13 @@ describe('BlockExecutionContextRepository', () => {
   let store;
   let options;
 
-  beforeEach(async function beforeEach() {
+  beforeEach(async () => {
     const dataContract = await getDataContractFixture();
     delete dataContract.entropy;
 
-    const plainObject = getBlockExecutionContextObjectFixture(dataContract);
+    const plainObject = await getBlockExecutionContextObjectFixture(dataContract);
 
-    blockExecutionContext = new BlockExecutionContext(this.dppWasm);
+    blockExecutionContext = new BlockExecutionContext();
     blockExecutionContext.fromObject(plainObject);
 
     rsDrive = new Drive('./db/grovedb_test', {
@@ -37,11 +37,11 @@ describe('BlockExecutionContextRepository', () => {
           password: '',
         },
       },
-    }, this.dppWasm);
+    });
 
     store = new GroveDBStore(rsDrive, noopLogger);
 
-    blockExecutionContextRepository = new BlockExecutionContextRepository(store, this.dppWasm);
+    blockExecutionContextRepository = new BlockExecutionContextRepository(store);
 
     options = {};
   });

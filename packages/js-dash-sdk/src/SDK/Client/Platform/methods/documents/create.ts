@@ -1,3 +1,4 @@
+import { ExtendedDocument } from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
 
 declare interface CreateOpts {
@@ -17,7 +18,7 @@ export async function create(
   typeLocator: string,
   identity: any,
   data: CreateOpts = {},
-): Promise<any> {
+): Promise<ExtendedDocument> {
   this.logger.debug(`[Document#create] Create document "${typeLocator}"`);
   await this.initialize();
 

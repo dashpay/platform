@@ -156,7 +156,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
         williamType,
         {
           where: [
-            ['$ownerId', '==', ownerId.toJSON()],
+            ['$ownerId', '==', Array.from(ownerId)],
             ['firstName', '==', william.get('firstName')],
           ],
         },
@@ -169,7 +169,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
         williamType,
         {
           where: [
-            ['$ownerId', '==', ownerId.toJSON()],
+            ['$ownerId', '==', Array.from(ownerId)],
             ['lastName', '==', william.get('lastName')],
           ],
         },
@@ -182,7 +182,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
         leonType,
         {
           where: [
-            ['$ownerId', '==', ownerId.toJSON()],
+            ['$ownerId', '==', Array.from(ownerId)],
             ['firstName', '==', leon.get('firstName')],
           ],
         },
@@ -195,7 +195,7 @@ describe('validateDocumentsUniquenessByIndices', () => {
         leonType,
         {
           where: [
-            ['$ownerId', '==', ownerId.toJSON()],
+            ['$ownerId', '==', Array.from(ownerId)],
             ['lastName', '==', leon.get('lastName')],
           ],
         },

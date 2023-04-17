@@ -13,6 +13,9 @@ const {
   Errors: {
     StateTransitionBroadcastError,
   },
+  PlatformProtocol: {
+    InvalidDocumentTypeError,
+  },
 } = Dash;
 
 describe('Platform', () => {
@@ -56,8 +59,6 @@ describe('Platform', () => {
     });
 
     it('should fail to create new document with an unknown type', async () => {
-      const { InvalidDocumentTypeError } = client.platform.dppModule;
-
       // Add undefined document type for
       client.getApps().get('customContracts').contract.setDocumentSchema('undefinedType', {
         type: 'object',
@@ -278,7 +279,7 @@ describe('Platform', () => {
         { where: [['$id', '==', document.getId()]] },
       );
 
-      const updatedAt = new Date(storedDocument.getUpdatedAt());
+      const updatedAt = storedDocument.getUpdatedAt();
 
       updatedAt.setMinutes(updatedAt.getMinutes() - 10);
 
@@ -335,7 +336,7 @@ describe('Platform', () => {
         },
       );
 
-      const timestamp = new Date(document.getCreatedAt());
+      const timestamp = document.getCreatedAt();
 
       timestamp.setMinutes(timestamp.getMinutes() - 10);
 

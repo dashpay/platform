@@ -4,16 +4,17 @@ use crate::{
     js_value_to_data_contract_value, DataContractCreateTransitionWasm,
     DataContractUpdateTransitionWasm, DataContractWasm,
 };
-use dpp::data_contract::DataContractFacade;
+use dpp::data_contract::{DataContract, DataContractFacade};
 use dpp::identifier::Identifier;
 use dpp::version::ProtocolVersionValidator;
 
 use crate::entropy_generator::ExternalEntropyGenerator;
-use crate::utils::{get_bool_from_options, WithJsError, SKIP_VALIDATION_PROPERTY_NAME};
+use crate::utils::{get_bool_from_options, IntoWasm, WithJsError, SKIP_VALIDATION_PROPERTY_NAME};
 use crate::validation::ValidationResultWasm;
 use dpp::platform_value::Value;
-use dpp::ProtocolError;
+use dpp::{Convertible, ProtocolError};
 use std::sync::Arc;
+use wasm_bindgen::__rt::Ref;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=DataContractFacade)]
@@ -135,7 +136,14 @@ impl DataContractFacadeWasm {
         &self,
         js_raw_data_contract: JsValue,
     ) -> Result<ValidationResultWasm, JsValue> {
-        let raw_data_contract = js_value_to_data_contract_value(js_raw_data_contract)?;
+        let raw_data_contract = if let Ok(data_contract_ref) =
+            js_raw_data_contract.to_wasm::<DataContractWasm>("DataContract")
+        {
+            let data_contract: DataContract = data_contract_ref.to_owned().into();
+            data_contract.to_cleaned_object().with_js_error()?
+        } else {
+            js_value_to_data_contract_value(js_raw_data_contract)?
+        };
 
         self.0
             .validate(raw_data_contract)

@@ -2,6 +2,9 @@
 const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
 const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
+const {
+  Identity, IdentityPublicKey, KeyPurpose, KeyType, KeySecurityLevel,
+} = require('@dashevo/wasm-dpp');
 
 const Script = require('@dashevo/dashcore-lib/lib/script');
 const handleUpdatedScriptPayoutFactory = require('../../../../lib/identity/masternode/handleUpdatedScriptPayoutFactory');
@@ -16,17 +19,6 @@ describe('handleUpdatedScriptPayoutFactory', () => {
   let blockInfo;
   let identityRepositoryMock;
   let identityPublicKeyRepositoryMock;
-  let IdentityPublicKey;
-  let Identity;
-  let KeyPurpose;
-  let KeyType;
-  let KeySecurityLevel;
-
-  before(function before() {
-    ({
-      Identity, IdentityPublicKey, KeyPurpose, KeyType, KeySecurityLevel,
-    } = this.dppWasm);
-  });
 
   beforeEach(async function beforeEach() {
     identity = await getIdentityFixture();
@@ -54,7 +46,6 @@ describe('handleUpdatedScriptPayoutFactory', () => {
       identityPublicKeyRepositoryMock,
       getWithdrawPubKeyTypeFromPayoutScriptMock,
       getPublicKeyFromPayoutScriptMock,
-      this.dppWasm,
     );
   });
 
