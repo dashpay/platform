@@ -49,10 +49,9 @@ impl Commit {
         public_key: &bls_signatures::PublicKey,
     ) -> Result<bool, AbciError> {
         // We could have received a fake commit, so signature validation needs to be returned if error as a simple validation result
-        let signature = match bls_signatures::Signature::from_bytes(signature.as_slice()) {
-            Ok(signature) => signature,
-            Err(e) => return Err(AbciError::from(e)),
-        };
+        let signature =
+            bls_signatures::Signature::from_bytes(&signature).map_err(AbciError::from)?;
+
         let hash = self
             .inner
             .sign_digest(

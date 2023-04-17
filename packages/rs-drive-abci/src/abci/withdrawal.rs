@@ -1,7 +1,7 @@
 //! Withdrawal transactions definitions and processing
 
-use bls_signatures::{self, BlsError};
-use dpp::validation::ValidationResult;
+use bls_signatures;
+use dashcore_rpc::dashcore_rpc_json::QuorumType;
 use drive::{
     drive::{batch::DriveOperation, block_info::BlockInfo, Drive},
     fee::result::FeeResult,
@@ -10,6 +10,7 @@ use drive::{
 use std::fmt::Display;
 use tenderdash_abci::proto::{
     abci::ExtendVoteExtension,
+    signatures::SignDigest,
     types::{VoteExtension, VoteExtensionType},
 };
 
@@ -105,16 +106,27 @@ impl<'a> WithdrawalTxs<'a> {
     pub fn verify_signatures(
         &self,
         chain_id: &str,
+        quorum_type: QuorumType,
+        quorum_hash: &[u8],
         height: u64,
         round: u32,
-        quorum_public_key: &bls_signatures::PublicKey,
+        public_key: &bls_signatures::PublicKey,
     ) -> Result<bool, AbciError> {
-        // self.inner.all(|s| s.verify_signature())
         for s in &self.inner {
-            // TODO: fix
-            // if !s.verify_signature(&s.signature, &quorum_public_key)? {
-            //     return Ok(false);
-            // }
+            let hash = s
+                .sign_digest(
+                    chain_id,
+                    quorum_type as u8,
+                    quorum_hash,
+                    height as i64,
+                    round as i32,
+                )
+                .map_err(AbciError::TenderdashProto)?;
+            let signature =
+                bls_signatures::Signature::from_bytes(&s.signature).map_err(AbciError::from)?;
+            if !public_key.verify(&signature, &hash) {
+                return Ok(false);
+            }
         }
 
         Ok(true)
@@ -178,6 +190,33 @@ impl<'a> PartialEq for WithdrawalTxs<'a> {
                 && (left.signature.len() == 0
                     || right.signature.len() == 0
                     || left.signature == right.signature)
+        })
+    }
+}
+#[cfg(test)]
+mod test {
+    use tenderdash_abci::proto::types::{VoteExtension, VoteExtensionType};
+
+    #[test]
+    fn verify_signature() {
+        let mut wt = super::WithdrawalTxs {
+            inner: Vec::new(),
+            drive_operations: Vec::new(),
+        };
+        let pubkey = hex::decode("5075624b6579424c5331323338317b3832383043423636393446313831444234383643353944464130433644313244314334434132363738393334304145424144303534304646453245444541433338374143454543393739343534433243464245373546443843463034443536447d").unwrap();
+        let pubkey = bls_signatures::PublicKey::from_bytes(&pubkey).unwrap();
+
+        let signature = hex::decode("A1022D9503CCAFC94FF76FA2E58E10A0474E6EB46305009274FAFCE57E28C7DE57602277777D07855567FAEF6A2F27590258858A875707F4DA32936DDD556BA28455AB04D9301E5F6F0762AC5B9FC036A302EE26116B1F89B74E1457C2D7383A").unwrap();
+        // check if signature is correct
+        bls_signatures::Signature::from_bytes(&signature).unwrap();
+        wt.inner.push(VoteExtension {
+            extension: [
+                82u8, 79, 29, 3, 209, 216, 30, 148, 160, 153, 4, 39, 54, 212, 11, 217, 104, 27,
+                134, 115, 33, 68, 63, 245, 138, 69, 104, 226, 116, 219, 216, 59,
+            ]
+            .into(),
+            signature,
+            r#type: VoteExtensionType::ThresholdRecover.into(),
         })
     }
 }

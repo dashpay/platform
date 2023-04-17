@@ -313,9 +313,14 @@ where
         //     });
         // };
 
-        let validation_result =
-            self.platform
-                .check_withdrawals(&got, &expected, None, height as u64, round as u32);
+        let validation_result = self.platform.check_withdrawals(
+            &got,
+            &expected,
+            height as u64,
+            round as u32,
+            None,
+            None,
+        );
 
         if validation_result.is_valid() {
             Ok(proto::ResponseVerifyVoteExtension {

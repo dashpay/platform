@@ -397,9 +397,10 @@ where
         &self,
         received_withdrawals: &WithdrawalTxs,
         our_withdrawals: &WithdrawalTxs,
-        verify_with_validator_public_key: Option<&bls_signatures::PublicKey>,
         height: u64,
         round: u32,
+        verify_with_validator_public_key: Option<&bls_signatures::PublicKey>,
+        quorum_hash: Option<&[u8]>,
     ) -> SimpleValidationResult<AbciError> {
         if received_withdrawals.ne(&our_withdrawals) {
             return SimpleValidationResult::new_with_error(
@@ -412,8 +413,11 @@ where
 
         // we only verify if verify_with_validator_public_key exists
         if let Some(validator_public_key) = verify_with_validator_public_key {
+            let quorum_hash = quorum_hash.expect("quorum hash is required to verify signature");
             let validation_result = received_withdrawals.verify_signatures(
                 &self.config.abci.chain_id,
+                self.config.quorum_type,
+                quorum_hash,
                 height,
                 round,
                 validator_public_key,

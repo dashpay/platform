@@ -684,16 +684,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "console_error_panic_hook"
-version = "0.1.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a06aeb73f470f66dcdbf7223caeebb85984942f22f1adb2a088cf9668146bbbc"
-dependencies = [
- "cfg-if",
- "wasm-bindgen",
-]
-
-[[package]]
 name = "constant_time_eq"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -955,7 +945,7 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc"
 version = "0.15.0"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=feat/quorumListImprovement#4362e2f90677fac3a53cb5b5a9f3e52a9b1665b2"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=feat/quorumListImprovement#03b1c43b33670644971e1557ce97dc17bf55e868"
 dependencies = [
  "dashcore-rpc-json",
  "env_logger 0.10.0",
@@ -968,7 +958,7 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc-json"
 version = "0.15.0"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=feat/quorumListImprovement#4362e2f90677fac3a53cb5b5a9f3e52a9b1665b2"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=feat/quorumListImprovement#03b1c43b33670644971e1557ce97dc17bf55e868"
 dependencies = [
  "dashcore",
  "hex",
@@ -3127,16 +3117,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "serde-wasm-bindgen"
-version = "0.5.0"
-source = "git+https://github.com/QuantumExplorer/serde-wasm-bindgen?branch=feat/not_human_readable#121d1f7fbf62cb97f74b91626a1b23851098cc82"
-dependencies = [
- "js-sys",
- "serde",
- "wasm-bindgen",
-]
-
-[[package]]
 name = "serde_bytes"
 version = "0.11.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3441,7 +3421,7 @@ dependencies = [
 [[package]]
 name = "tenderdash-abci"
 version = "0.12.0-dev.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=feat/sign-bytes#ae1a80905e487207ef3d196d32b9d5f3ff99630e"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=feat/sign-bytes#ad697e3b17bcc65fdf952731d90e756426030949"
 dependencies = [
  "bytes",
  "prost",
@@ -3456,7 +3436,7 @@ dependencies = [
 [[package]]
 name = "tenderdash-proto"
 version = "0.12.0-dev.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=feat/sign-bytes#ae1a80905e487207ef3d196d32b9d5f3ff99630e"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=feat/sign-bytes#ad697e3b17bcc65fdf952731d90e756426030949"
 dependencies = [
  "bytes",
  "chrono",
@@ -3475,7 +3455,7 @@ dependencies = [
 [[package]]
 name = "tenderdash-proto-compiler"
 version = "0.1.0"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=feat/sign-bytes#ae1a80905e487207ef3d196d32b9d5f3ff99630e"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=feat/sign-bytes#ad697e3b17bcc65fdf952731d90e756426030949"
 dependencies = [
  "fs_extra",
  "prost-build",
@@ -3933,18 +3913,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "wasm-bindgen-futures"
-version = "0.4.34"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f219e0d211ba40266969f6dbdd90636da12f75bee4fc9d6c23d1260dadb51454"
-dependencies = [
- "cfg-if",
- "js-sys",
- "wasm-bindgen",
- "web-sys",
-]
-
-[[package]]
 name = "wasm-bindgen-macro"
 version = "0.2.84"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3972,25 +3940,6 @@ name = "wasm-bindgen-shared"
 version = "0.2.84"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0046fef7e28c3804e5e38bfa31ea2a0f73905319b677e57ebe37e49358989b5d"
-
-[[package]]
-name = "wasm-dpp"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "console_error_panic_hook",
- "dpp",
- "itertools",
- "js-sys",
- "serde",
- "serde-wasm-bindgen",
- "serde_json",
- "thiserror",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
-]
 
 [[package]]
 name = "web-sys"
