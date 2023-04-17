@@ -389,7 +389,7 @@ where
         &self,
         received_withdrawals: &WithdrawalTxs,
         our_withdrawals: &WithdrawalTxs,
-        validator_public_key: &bls_signatures::PublicKey,
+        verify_with_validator_public_key: Option<&bls_signatures::PublicKey>,
     ) -> SimpleValidationResult<AbciError> {
         if received_withdrawals.ne(&our_withdrawals) {
             return SimpleValidationResult::new_with_error(
@@ -400,29 +400,35 @@ where
             );
         }
 
-        let validation_result = received_withdrawals.verify_signature(validator_public_key);
-        // There are two types of errors,
-        // The first is that the signature was invalid and that is shown with the result bool as false
-        // The second is that the signature is malformed, and that gives a BLSError
+        // we only verify if verify_with_validator_public_key exists
+        if let Some(validator_public_key) = verify_with_validator_public_key {
+            let validation_result = received_withdrawals.verify_signature(validator_public_key);
 
-        // However for this case we want to treat both as errors
+            // There are two types of errors,
+            // The first is that the signature was invalid and that is shown with the result bool as false
+            // The second is that the signature is malformed, and that gives a BLSError
 
-        if validation_result.is_valid() {
-            let value = validation_result.into_data().expect("expected data");
-            if value == true {
-                SimpleValidationResult::default()
+            // However for this case we want to treat both as errors
+
+            if validation_result.is_valid() {
+                let value = validation_result.into_data().expect("expected data");
+                if value == true {
+                    SimpleValidationResult::default()
+                } else {
+                    SimpleValidationResult::new_with_error(AbciError::VoteExtensionsSignatureInvalid)
+                }
             } else {
-                SimpleValidationResult::new_with_error(AbciError::VoteExtensionsSignatureInvalid)
+                SimpleValidationResult::new_with_error(
+                    validation_result
+                        .errors
+                        .into_iter()
+                        .next()
+                        .expect("expected an error")
+                        .into(),
+                )
             }
         } else {
-            SimpleValidationResult::new_with_error(
-                validation_result
-                    .errors
-                    .into_iter()
-                    .next()
-                    .expect("expected an error")
-                    .into(),
-            )
+            SimpleValidationResult::default()
         }
     }
 

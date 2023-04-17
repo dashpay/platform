@@ -250,6 +250,7 @@ where
         }
     }
 
+    /// Todo: Verify vote extension not really needed because extend vote is deterministic
     fn verify_vote_extension(
         &self,
         request: proto::RequestVerifyVoteExtension,
@@ -258,8 +259,6 @@ where
             hash: block_hash, validator_pro_tx_hash, height,
             round, vote_extensions
         } = request;
-        let transaction_guard = self.transaction.read().unwrap();
-        let transaction = transaction_guard.as_ref().unwrap();
 
         let guarded_block_execution_context = self.platform.block_execution_context.read().unwrap();
         let block_execution_context =
@@ -288,27 +287,27 @@ where
             }
         }).collect::<Vec<_>>().into();
 
-        let state = self.platform.state.read().unwrap();
+        // let state = self.platform.state.read().unwrap();
+        //
+        // let quorum = state.current_validator_set()?;
 
-        let quorum = state.current_validator_set()?;
-
-        let validator_pro_tx_hash = ProTxHash::from_slice(validator_pro_tx_hash.as_slice())
-            .map_err(|_| {
-                Error::Abci(AbciError::BadRequestDataSize(format!(
-                    "invalid vote extension protxhash: {}",
-                    hex::encode(validator_pro_tx_hash.as_slice())
-                )))
-            })?;
-
-        let Some(validator) = quorum.validator_set.get(&validator_pro_tx_hash) else {
-            return Ok(proto::ResponseVerifyVoteExtension {
-                status: VerifyStatus::Unknown.into(),
-            });
-        };
+        // let validator_pro_tx_hash = ProTxHash::from_slice(validator_pro_tx_hash.as_slice())
+        //     .map_err(|_| {
+        //         Error::Abci(AbciError::BadRequestDataSize(format!(
+        //             "invalid vote extension protxhash: {}",
+        //             hex::encode(validator_pro_tx_hash.as_slice())
+        //         )))
+        //     })?;
+        //
+        // let Some(validator) = quorum.validator_set.get(&validator_pro_tx_hash) else {
+        //     return Ok(proto::ResponseVerifyVoteExtension {
+        //         status: VerifyStatus::Unknown.into(),
+        //     });
+        // };
 
         let validation_result =
             self.platform
-                .check_withdrawals(&got, &expected, &validator.public_key);
+                .check_withdrawals(&got, &expected, None);
 
         if validation_result.is_valid() {
             Ok(proto::ResponseVerifyVoteExtension {
