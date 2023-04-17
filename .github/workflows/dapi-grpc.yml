@@ -22,7 +22,6 @@ jobs:
   js-checks:
     name: JS
     uses: ./.github/workflows/js-checks.yml
+    secrets: inherit
     with:
       package: '@dashevo/dapi-grpc'
-      dockerhub-username: ${{ secrets.DOCKERHUB_USERNAME }}
-      dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
