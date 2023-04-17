@@ -36,7 +36,6 @@ use crate::abci::server::AbciApplication;
 use crate::rpc::core::CoreRPCLike;
 use dashcore::hashes::Hash;
 use dashcore::ProTxHash;
-use dpp::ProtocolError;
 use drive::fee::credits::SignedCredits;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
@@ -321,7 +320,7 @@ where
     }
 
     fn check_tx(&self, request: RequestCheckTx) -> Result<ResponseCheckTx, ResponseException> {
-        let RequestCheckTx { tx, r#type } = request;
+        let RequestCheckTx { tx, .. } = request;
         let validation_result = self.platform.check_tx(tx)?;
 
         // If there are no execution errors the code will be 0

@@ -33,11 +33,12 @@
 extern crate core;
 
 use anyhow::anyhow;
+use bls_signatures::PrivateKey as BlsPrivateKey;
 use dashcore::secp256k1::SecretKey;
 use dashcore::{signer, Network, PrivateKey, ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{
     DMNState, ExtendedQuorumDetails, MasternodeListDiffWithMasternodes, MasternodeListItem,
-    MasternodeType, QuorumInfoResult, QuorumType,
+    MasternodeType, QuorumType,
 };
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::document::document_transition::document_base_transition::DocumentBaseTransition;
@@ -56,7 +57,7 @@ use dpp::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError,
 };
 use dpp::state_transition::{
-    StateTransition, StateTransitionIdentitySigned, StateTransitionLike, StateTransitionType,
+    StateTransition, StateTransitionIdentitySigned, StateTransitionType,
 };
 use dpp::tests::fixtures::instant_asset_lock_proof_fixture;
 use dpp::version::LATEST_VERSION;
@@ -230,10 +231,10 @@ impl Signer for SimpleSigner {
                 Ok(signature.to_vec().into())
             }
             KeyType::BLS12_381 => {
-                let pk = bls_signatures::PrivateKey::from_bytes(private_key).map_err(|_e| {
+                let pk = bls_signatures::PrivateKey::from_bytes(private_key, false).map_err(|_e| {
                     ProtocolError::Error(anyhow!("bls private key from bytes isn't correct"))
                 })?;
-                Ok(pk.sign(data).as_bytes().into())
+                Ok(pk.sign(data).to_bytes().to_vec().into())
             }
             // the default behavior from
             // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L187
@@ -934,8 +935,8 @@ pub fn generate_test_masternodes(
         Vec::with_capacity((masternode_count + hpmn_count) as usize);
 
     for i in 0..masternode_count {
-        let private_key_operator = bls_signatures::PrivateKey::generate(rng);
-        let pub_key_operator = private_key_operator.public_key().as_bytes();
+        let private_key_operator = BlsPrivateKey::generate_dash(rng).expect("expected to generate a private key");
+        let pub_key_operator = private_key_operator.g1_element().expect("expected to get public key").to_bytes().to_vec();
         let masternode_list_item = MasternodeListItem {
             node_type: MasternodeType::Regular,
             protx_hash: ProTxHash::from_inner(rng.gen::<[u8; 32]>()),
@@ -961,8 +962,8 @@ pub fn generate_test_masternodes(
     }
 
     for i in 0..hpmn_count {
-        let private_key_operator = bls_signatures::PrivateKey::generate(rng);
-        let pub_key_operator = private_key_operator.public_key().as_bytes();
+        let private_key_operator = BlsPrivateKey::generate_dash(rng).expect("expected to generate a private key");
+        let pub_key_operator = private_key_operator.g1_element().expect("expected to get public key").to_bytes().to_vec();
         let masternode_list_item = MasternodeListItem {
             node_type: MasternodeType::HighPerformance,
             protx_hash: ProTxHash::from_inner(rng.gen::<[u8; 32]>()),
@@ -1003,7 +1004,7 @@ pub fn generate_test_quorums(
             let validator_pro_tx_hashes = proposers
                 .iter()
                 .filter(|m| m.node_type == MasternodeType::HighPerformance)
-                .choose_multiple(rng, quorum_size)
+                .choose_multiple(rng, quorum_size).iter()
                 .map(|masternode| masternode.protx_hash)
                 .collect(); //choose multiple chooses out of order (as we would like)
             (
@@ -1288,7 +1289,7 @@ pub(crate) fn continue_chain_for_strategy(
                     next_protocol_version,
                     change_block_height,
                 } = proposer_versions
-                    .get(&proposer.protx_hash)
+                    .get(&proposer.pro_tx_hash)
                     .expect("expected to have version");
                 if &block_height >= change_block_height {
                     *next_protocol_version
@@ -1300,9 +1301,9 @@ pub(crate) fn continue_chain_for_strategy(
 
         let mut withdrawals_this_block = abci_app
             .mimic_execute_block(
-                proposer.protx_hash.into_inner(),
-                current_quorum,
-                next_quorum,
+                proposer.pro_tx_hash.into_inner(),
+                &current_quorum,
+                &next_quorum,
                 proposed_version,
                 proposer_count,
                 block_info,

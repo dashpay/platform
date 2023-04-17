@@ -72,7 +72,7 @@ impl TestQuorumInfo {
         let validator_set = bls_id_private_key_pairs
             .into_iter()
             .map(|(pro_tx_hash, key)| ValidatorInQuorum {
-                pro_tx_hash: pro_tx_hash.try_into().unwrap(),
+                pro_tx_hash: ProTxHash::from_slice(pro_tx_hash.as_slice()).expect("expected 32 bytes for pro_tx_hash"),
                 private_key: key,
                 public_key: key.g1_element().expect("expected to get public key"),
             })
@@ -99,7 +99,7 @@ impl From<&TestQuorumInfo> for Quorum {
 
         Quorum {
             quorum_hash: quorum_hash.clone(),
-            validator_set: validator_set.iter().map(|v| v.into()).collect(),
+            validator_set: validator_set.iter().map(|v| (v.pro_tx_hash, v.into())).collect(),
             threshold_public_key: public_key.clone(),
         }
     }
@@ -116,7 +116,7 @@ impl From<TestQuorumInfo> for Quorum {
 
         Quorum {
             quorum_hash,
-            validator_set: validator_set.iter().map(|v| v.into()).collect(),
+            validator_set: validator_set.iter().map(|v| (v.pro_tx_hash, v.into())).collect(),
             threshold_public_key: public_key,
         }
     }
