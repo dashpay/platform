@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - name: Test secret
-        run: echo ${{ secrets.TEST_SECRET }}
+        run: echo ${{ secrets.TEST_SECRET }} && echo ${{ secrets.DOCKERHUB_USERNAME }} && echo  ${{ secrets.DOCKERHUB_TOKEN }}
 
   deps-versions:
     name: JS dependency versions check
