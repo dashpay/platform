@@ -84,7 +84,7 @@
   "dependencies": {
     "@apidevtools/json-schema-ref-parser": "^8.0.0",
     "@dashevo/bls": "~1.2.9",
-    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#ef49bebe11f0bf03fd3e138d4c86023f6b8aa0e3",
+    "@dashevo/dashcore-lib": "~0.20.2",
     "@dashevo/dashpay-contract": "workspace:*",
     "@dashevo/dpns-contract": "workspace:*",
     "@dashevo/feature-flags-contract": "workspace:*",

@@ -17,7 +17,7 @@
   ],
   "license": "MIT",
   "devDependencies": {
-    "@dashevo/dashcore-lib": "github:dashevo/dashcore-lib#ef49bebe11f0bf03fd3e138d4c86023f6b8aa0e3",
+    "@dashevo/dashcore-lib": "~0.20.2",
     "@dashevo/withdrawals-contract": "workspace:*",
     "chai": "^4.3.4",
     "dirty-chai": "^2.0.1",
