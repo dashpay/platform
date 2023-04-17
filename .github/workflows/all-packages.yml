@@ -18,6 +18,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  test-secret:
+    name: Test secret
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Test secret
+        run: echo ${{ secrets.TEST_SECRET }}
+
   deps-versions:
     name: JS dependency versions check
     runs-on: ubuntu-22.04
