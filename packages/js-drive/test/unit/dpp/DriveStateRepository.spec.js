@@ -7,6 +7,7 @@ const getInstantLockFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIn
 
 const Long = require('long');
 
+const QuorumEntry = require('@dashevo/dashcore-lib/lib/deterministicmnlist/QuorumEntry');
 const DriveStateRepository = require('../../../lib/dpp/DriveStateRepository');
 const StorageResult = require('../../../lib/storage/StorageResult');
 const BlockExecutionContextMock = require('../../../lib/test/mock/BlockExecutionContextMock');
@@ -28,7 +29,7 @@ describe('DriveStateRepository', () => {
   let dataContract;
   let blockExecutionContextMock;
   let simplifiedMasternodeListMock;
-  let instantLockMock;
+  let instantLockFixture;
   let repositoryOptions;
   let executionContext;
   let operations;
@@ -46,6 +47,7 @@ describe('DriveStateRepository', () => {
     coreRpcClientMock = {
       getRawTransaction: this.sinon.stub(),
       verifyIsLock: this.sinon.stub(),
+      quorum: this.sinon.stub(),
     };
 
     dataContractRepositoryMock = {
@@ -129,7 +131,9 @@ describe('DriveStateRepository', () => {
       repositoryOptions,
     );
 
-    instantLockMock = getInstantLockFixture();
+    instantLockFixture = getInstantLockFixture();
+
+    instantLockFixture.selectSignatoryRotatedQuorum = this.sinon.stub();
 
     executionContext = new StateTransitionExecutionContext();
     operations = [new ReadOperation(1)];
@@ -590,29 +594,80 @@ describe('DriveStateRepository', () => {
   });
 
   describe('#verifyInstantLock', () => {
-    let smlStore;
+    let smlStoreMock;
+    let instantlockSMLMock;
+    let llmqType;
+    let quorumHash;
+    // let instantLockMock;
 
-    beforeEach(() => {
+    beforeEach(function beforeEach() {
+      llmqType = 103;
+      quorumHash = 'someHash';
       blockExecutionContextMock.getHeight.returns(41);
       blockExecutionContextMock.getCoreChainLockedHeight.returns(42);
 
-      smlStore = {};
+      instantlockSMLMock = {
+        getInstantSendLLMQType: this.sinon.stub(),
+        isLLMQTypeRotated: this.sinon.stub(),
+        getQuorumsOfType: this.sinon.stub(),
+      };
 
-      simplifiedMasternodeListMock.getStore.returns(smlStore);
+      instantlockSMLMock.getInstantSendLLMQType.returns(llmqType);
+      instantlockSMLMock.isLLMQTypeRotated.returns(false);
+      instantlockSMLMock.getQuorumsOfType.returns([
+        new QuorumEntry({
+          version: 4,
+          llmqType: 105,
+          quorumHash: '0000059f6b83762d1801d74e9ece78790a4fedabc79e69f614957dde04b2c3dd',
+          signersCount: 8,
+          signers: 'ff',
+          validMembersCount: 8,
+          validMembers: 'ff',
+          quorumPublicKey: 'b9f86173367775b411340f1c911bf5478ae10feb11029700e645f12fa6fad54c615783f3c3a742b792c8de6853a30137',
+          quorumVvecHash: 'd1caaf60458073036a7616ec85e16a21fb16f79ccf764ad7eb26650d082aac2f',
+          quorumSig: 'ad378a9df7711b5439c04b5b726d635427d6e3fbb1b37f31c06adafabaabd94007442dfad3c1f7da9c7221ddca9ae1bc096aa8dff900d477add6a4aafd2ad1afe4ba702f37ad1415cab513e9775e3fd1f5398a807e64a5a70b9a408140b92f2c',
+          membersSig: '90a7a0e92d860dfd1644182b819bcb2edfcc6ff0331b70cb1baab9de8f760aa39f2cd1c878ea7547de79dd95702b00db0495675ed6d2538d33c659d308566866a017ea5c58203e396433b681e3d636afb6a11b25dd5f49111160354fe759f3c6',
+          quorumIndex: 1,
+        }),
+        new QuorumEntry({
+          version: 4,
+          llmqType: 105,
+          quorumHash: '00000084db75bc85dc66d6fd7f569283415b06afc4a5d33e746b96470339359b',
+          signersCount: 8,
+          signers: 'ff',
+          validMembersCount: 8,
+          validMembers: 'ff',
+          quorumPublicKey: 'a67f842d6130f0cafa6c035ab8c0d53dcf1fb78dd01f40a93db709b68db761c6a88912b3408ed1a63cdf1020fdb285a4',
+          quorumVvecHash: '5a9f2daa1f2f833fbf3b03bb0e2b12b5313a3fb917ba369ff84c2e23849cdb2a',
+          quorumSig: 'a075da563cac4013fbc95d3231dd2bc3563bf6c43dabd4f066ec5846b28f1694dbc602dc417b34aa8d97e52c11c4348002c7793133404f1792aa8eb3e4c5811d57bfd8fb46667dd559be2f4a4459854ab4aa2b8741534edf247a3d671a8bc68c',
+          membersSig: 'b6a4c84a1d182f1f3c66b680f4cc4e15bffaa5c71d9da12284054f22661bded5231d7294f5d24ddbc7908e647636ecbd0492f366560fd29bfb7fa91908902099e223e7f754cb2d9f77c388fb4150f812c9dcbcc688c084ad05ecd3f80ce7b9b5',
+          quorumIndex: 0,
+        }),
+      ]);
+
+      smlStoreMock = {
+        getSMLbyHeight: this.sinon.stub(),
+        getTipHeight: this.sinon.stub(),
+      };
+
+      smlStoreMock.getSMLbyHeight.returns(instantlockSMLMock);
+
+      simplifiedMasternodeListMock.getStore.returns(smlStoreMock);
     });
 
     it('it should verify instant lock using Core', async () => {
       coreRpcClientMock.verifyIsLock.resolves({ result: true });
 
-      const result = await stateRepository.verifyInstantLock(instantLockMock.toBuffer());
+      const result = await stateRepository.verifyInstantLock(instantLockFixture.toBuffer());
 
       expect(result).to.equal(true);
       expect(coreRpcClientMock.verifyIsLock).to.have.been.calledOnceWithExactly(
-        instantLockMock.getRequestId().toString('hex'),
-        instantLockMock.txid,
-        instantLockMock.signature,
+        instantLockFixture.getRequestId().toString('hex'),
+        instantLockFixture.txid,
+        instantLockFixture.signature,
         42,
       );
+      expect(coreRpcClientMock.quorum).to.have.not.been.called();
     });
 
     it('should return false if core throws Invalid address or key error', async () => {
@@ -621,13 +676,13 @@ describe('DriveStateRepository', () => {
 
       coreRpcClientMock.verifyIsLock.throws(error);
 
-      const result = await stateRepository.verifyInstantLock(instantLockMock.toBuffer());
+      const result = await stateRepository.verifyInstantLock(instantLockFixture.toBuffer());
 
       expect(result).to.equal(false);
       expect(coreRpcClientMock.verifyIsLock).to.have.been.calledOnceWithExactly(
-        instantLockMock.getRequestId().toString('hex'),
-        instantLockMock.txid,
-        instantLockMock.signature,
+        instantLockFixture.getRequestId().toString('hex'),
+        instantLockFixture.txid,
+        instantLockFixture.signature,
         42,
       );
     });
@@ -638,13 +693,13 @@ describe('DriveStateRepository', () => {
 
       coreRpcClientMock.verifyIsLock.throws(error);
 
-      const result = await stateRepository.verifyInstantLock(instantLockMock.toBuffer());
+      const result = await stateRepository.verifyInstantLock(instantLockFixture.toBuffer());
 
       expect(result).to.equal(false);
       expect(coreRpcClientMock.verifyIsLock).to.have.been.calledOnceWithExactly(
-        instantLockMock.getRequestId().toString('hex'),
-        instantLockMock.txid,
-        instantLockMock.signature,
+        instantLockFixture.getRequestId().toString('hex'),
+        instantLockFixture.txid,
+        instantLockFixture.signature,
         42,
       );
     });
@@ -652,7 +707,7 @@ describe('DriveStateRepository', () => {
     it('should return false if coreChainLockedHeight is null', async () => {
       blockExecutionContextMock.getCoreChainLockedHeight.returns(null);
 
-      const result = await stateRepository.verifyInstantLock(instantLockMock.toBuffer());
+      const result = await stateRepository.verifyInstantLock(instantLockFixture.toBuffer());
 
       expect(result).to.be.false();
     });
@@ -660,12 +715,53 @@ describe('DriveStateRepository', () => {
     it('should return true on dry run', async () => {
       executionContext.enableDryRun();
 
-      const result = await stateRepository.verifyInstantLock(instantLockMock, executionContext);
+      const result = await stateRepository.verifyInstantLock(instantLockFixture, executionContext);
 
       executionContext.disableDryRun();
 
       expect(result).to.be.true();
       expect(coreRpcClientMock.verifyIsLock).to.have.not.been.called();
+    });
+
+    it('should validate quorum using core', async () => {
+      smlStoreMock.getTipHeight.returns(100);
+      instantlockSMLMock.isLLMQTypeRotated.returns(true);
+      coreRpcClientMock.verifyIsLock.resolves({ result: true });
+      coreRpcClientMock.quorum.resolves({ result: { previousConsecutiveDKGFailures: 0 } });
+
+      const result = await stateRepository.verifyInstantLock(instantLockFixture.toBuffer());
+
+      expect(result).to.equal(true);
+      expect(coreRpcClientMock.verifyIsLock).to.have.been.calledOnceWithExactly(
+        'bbbb1cfeb55396d7e5f9bebdb220670d23dbb0b47e22b1cd5357afe1ef33f559',
+        instantLockFixture.txid,
+        '8967c46529a967b3822e1ba8a173066296d02593f0f59b3a78a30a7eef9c8a120847729e62e4a32954339286b79fe7590221331cd28d576887a263f45b595d499272f656c3f5176987c976239cac16f972d796ad82931d532102a4f95eec7d80',
+        42,
+      );
+      expect(coreRpcClientMock.quorum).to.have.been.calledOnceWithExactly('info', llmqType, '0000059f6b83762d1801d74e9ece78790a4fedabc79e69f614957dde04b2c3dd');
+
+      expect(simplifiedMasternodeListMock.getStore).to.have.been.calledOnce();
+      expect(smlStoreMock.getSMLbyHeight).to.have.been.calledTwice();
+      expect(smlStoreMock.getSMLbyHeight.getCall(0)).to.have.been.calledWithExactly(93);
+      expect(smlStoreMock.getSMLbyHeight.getCall(1)).to.have.been.calledWithExactly(93);
+    });
+
+    it('should return false if previousConsecutiveDKGFailures > 0', async () => {
+      smlStoreMock.getTipHeight.returns(100);
+      instantlockSMLMock.isLLMQTypeRotated.returns(true);
+      coreRpcClientMock.verifyIsLock.resolves({ result: true });
+      coreRpcClientMock.quorum.resolves({ result: { previousConsecutiveDKGFailures: 1 } });
+
+      const result = await stateRepository.verifyInstantLock(instantLockFixture.toBuffer());
+
+      expect(result).to.equal(false);
+      expect(coreRpcClientMock.verifyIsLock).to.have.not.been.called();
+      expect(coreRpcClientMock.quorum).to.have.been.calledOnceWithExactly('info', llmqType, '0000059f6b83762d1801d74e9ece78790a4fedabc79e69f614957dde04b2c3dd');
+
+      expect(simplifiedMasternodeListMock.getStore).to.have.been.calledOnce();
+      expect(smlStoreMock.getSMLbyHeight).to.have.been.calledTwice();
+      expect(smlStoreMock.getSMLbyHeight.getCall(0)).to.have.been.calledWithExactly(93);
+      expect(smlStoreMock.getSMLbyHeight.getCall(1)).to.have.been.calledWithExactly(93);
     });
   });
 
