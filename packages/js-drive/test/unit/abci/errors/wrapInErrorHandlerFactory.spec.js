@@ -1,3 +1,4 @@
+const { MissingStateTransitionTypeError } = require('@dashevo/wasm-dpp');
 const wrapInErrorHandlerFactory = require('../../../../lib/abci/errors/wrapInErrorHandlerFactory');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 const InternalAbciError = require('../../../../lib/abci/errors/InternalAbciError');
@@ -11,11 +12,6 @@ describe('wrapInErrorHandlerFactory', () => {
   let request;
   let handler;
   let wrapInErrorHandler;
-  let MissingStateTransitionTypeError;
-
-  before(function before() {
-    MissingStateTransitionTypeError = this.dppWasm.MissingStateTransitionTypeError;
-  });
 
   beforeEach(function beforeEach() {
     request = {

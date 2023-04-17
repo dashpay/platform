@@ -15,7 +15,7 @@
     "tsc": "tsc",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "clean": "yarn exec build/clean.sh"
+    "clean": "yarn exec scripts/clean.sh"
   },
   "ultra": {
     "concurrent": [

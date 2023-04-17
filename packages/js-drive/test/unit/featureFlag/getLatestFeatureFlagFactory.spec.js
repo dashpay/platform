@@ -1,4 +1,5 @@
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const { Identifier } = require('@dashevo/wasm-dpp');
+const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
 
 const Long = require('long');
 
@@ -10,16 +11,11 @@ describe('getLatestFeatureFlagFactory', () => {
   let fetchDocumentsMock;
   let getLatestFeatureFlag;
   let document;
-  let Identifier;
 
-  before(function before() {
-    ({ Identifier } = this.dppWasm);
-  });
-
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     featureFlagDataContractId = Identifier.from(Buffer.alloc(32, 1));
 
-    ([document] = getDocumentsFixture());
+    ([document] = await getDocumentsFixture());
 
     fetchDocumentsMock = this.sinon.stub();
     fetchDocumentsMock.resolves(

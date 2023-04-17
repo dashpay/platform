@@ -1,4 +1,6 @@
 const { InstantLock } = require('@dashevo/dashcore-lib');
+const { ReadOperation, SignatureVerificationOperation, KeyType } = require('@dashevo/wasm-dpp');
+
 const BlockInfo = require('../blockExecution/BlockInfo');
 
 /**
@@ -19,7 +21,6 @@ class DriveStateRepository {
    * @param {BlockExecutionContext} blockExecutionContext
    * @param {SimplifiedMasternodeList} simplifiedMasternodeList
    * @param {Drive} rsDrive
-   * @param {WebAssembly.Instance} dppWasm
    * @param {Object} [options]
    * @param {Object} [options.useTransaction=false]
    */
@@ -35,7 +36,6 @@ class DriveStateRepository {
     blockExecutionContext,
     simplifiedMasternodeList,
     rsDrive,
-    dppWasm,
     options = {},
   ) {
     this.identityRepository = identityRepository;
@@ -49,7 +49,6 @@ class DriveStateRepository {
     this.blockExecutionContext = blockExecutionContext;
     this.simplifiedMasternodeList = simplifiedMasternodeList;
     this.rsDrive = rsDrive;
-    this.dppWasm = dppWasm;
     this.#options = options;
   }
 
@@ -553,7 +552,7 @@ class DriveStateRepository {
     if (executionContext && executionContext.isDryRun()) {
       executionContext.addOperation(
         // TODO: Revisit this value
-        new this.dppWasm.ReadOperation(512),
+        new ReadOperation(512),
       );
 
       return {
@@ -569,7 +568,7 @@ class DriveStateRepository {
 
       if (executionContext) {
         executionContext.addOperation(
-          new this.dppWasm.ReadOperation(data.length),
+          new ReadOperation(data.length),
         );
       }
 
@@ -638,7 +637,7 @@ class DriveStateRepository {
 
     if (executionContext) {
       executionContext.addOperation(
-        new this.dppWasm.SignatureVerificationOperation(this.dppWasm.KeyType.ECDSA_SECP256K1),
+        new SignatureVerificationOperation(KeyType.ECDSA_SECP256K1),
       );
 
       if (executionContext.isDryRun()) {
@@ -647,7 +646,7 @@ class DriveStateRepository {
     }
 
     try {
-      const instantLock = new InstantLock(rawInstantLock);
+      const instantLock = new InstantLock(Buffer.from(rawInstantLock));
       const { result: isVerified } = await this.coreRpcClient.verifyIsLock(
         instantLock.getRequestId().toString('hex'),
         instantLock.txid,

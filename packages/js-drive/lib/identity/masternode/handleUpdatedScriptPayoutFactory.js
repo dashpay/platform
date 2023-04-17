@@ -1,3 +1,4 @@
+const { IdentityPublicKey, KeyPurpose, KeySecurityLevel } = require('@dashevo/wasm-dpp');
 const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
 
 /**
@@ -6,7 +7,6 @@ const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
  * @param {IdentityPublicKeyStoreRepository} identityPublicKeyRepository
  * @param {getWithdrawPubKeyTypeFromPayoutScript} getWithdrawPubKeyTypeFromPayoutScript
  * @param {getPublicKeyFromPayoutScript} getPublicKeyFromPayoutScript
- * @param {WebAssembly.Instance} dppWasm
  * @returns {handleUpdatedScriptPayout}
  */
 function handleUpdatedScriptPayoutFactory(
@@ -14,7 +14,6 @@ function handleUpdatedScriptPayoutFactory(
   identityPublicKeyRepository,
   getWithdrawPubKeyTypeFromPayoutScript,
   getPublicKeyFromPayoutScript,
-  dppWasm,
 ) {
   /**
    * @typedef handleUpdatedScriptPayout
@@ -56,7 +55,6 @@ function handleUpdatedScriptPayoutFactory(
     if (previousPayoutScript) {
       const previousPubKeyType = getWithdrawPubKeyTypeFromPayoutScript(previousPayoutScript);
       const previousPubKeyData = getPublicKeyFromPayoutScript(
-        dppWasm,
         previousPayoutScript,
         previousPubKeyType,
       );
@@ -80,15 +78,15 @@ function handleUpdatedScriptPayoutFactory(
 
     // add new
     const withdrawPubKeyType = getWithdrawPubKeyTypeFromPayoutScript(newPayoutScript);
-    const pubKeyData = getPublicKeyFromPayoutScript(newPayoutScript, withdrawPubKeyType, dppWasm);
+    const pubKeyData = getPublicKeyFromPayoutScript(newPayoutScript, withdrawPubKeyType);
 
-    const newWithdrawalIdentityPublicKey = new dppWasm.IdentityPublicKey({
+    const newWithdrawalIdentityPublicKey = new IdentityPublicKey({
       id: identity.getPublicKeyMaxId() + 1,
       type: withdrawPubKeyType,
       data: pubKeyData,
-      purpose: dppWasm.KeyPurpose.WITHDRAW,
+      purpose: KeyPurpose.WITHDRAW,
       readOnly: true,
-      securityLevel: dppWasm.KeySecurityLevel.MASTER,
+      securityLevel: KeySecurityLevel.MASTER,
     });
 
     await identityPublicKeyRepository.add(

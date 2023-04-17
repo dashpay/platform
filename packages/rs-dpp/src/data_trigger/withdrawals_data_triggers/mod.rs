@@ -38,7 +38,7 @@ where
             withdrawals_contract::document_types::WITHDRAWAL,
             json!({
                 "where" : [
-                    ["$id", "==", dt_delete.base.id.to_buffer()],
+                    ["$id", "==", dt_delete.base.id],
                 ]
             }),
             Some(context.state_transition_execution_context),

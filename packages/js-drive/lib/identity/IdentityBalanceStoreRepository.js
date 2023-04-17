@@ -1,3 +1,5 @@
+const { PreCalculatedOperation } = require('@dashevo/wasm-dpp');
+
 const StorageResult = require('../storage/StorageResult');
 
 class IdentityBalanceStoreRepository {
@@ -5,12 +7,10 @@ class IdentityBalanceStoreRepository {
    *
    * @param {GroveDBStore} groveDBStore
    * @param {decodeProtocolEntity} decodeProtocolEntity
-   * @param {WebAssembly.Instance} dppWasm
    */
-  constructor(groveDBStore, decodeProtocolEntity, dppWasm) {
+  constructor(groveDBStore, decodeProtocolEntity) {
     this.storage = groveDBStore;
     this.decodeProtocolEntity = decodeProtocolEntity;
-    this.dppWasm = dppWasm;
   }
 
   /**
@@ -35,7 +35,7 @@ class IdentityBalanceStoreRepository {
       return new StorageResult(
         balance,
         [
-          new this.dppWasm.PreCalculatedOperation(
+          new PreCalculatedOperation(
             feeResult.storageFee,
             feeResult.processingFee,
             feeResult.feeRefunds,
@@ -80,7 +80,7 @@ class IdentityBalanceStoreRepository {
     return new StorageResult(
       balance,
       [
-        new this.dppWasm.PreCalculatedOperation(
+        new PreCalculatedOperation(
           feeResult.storageFee,
           feeResult.processingFee,
           feeResult.feeRefunds,
@@ -114,7 +114,7 @@ class IdentityBalanceStoreRepository {
       return new StorageResult(
         undefined,
         [
-          new this.dppWasm.PreCalculatedOperation(
+          new PreCalculatedOperation(
             feeResult.storageFee,
             feeResult.processingFee,
             feeResult.feeRefunds,
@@ -199,7 +199,7 @@ class IdentityBalanceStoreRepository {
       return new StorageResult(
         undefined,
         [
-          new this.dppWasm.PreCalculatedOperation(
+          new PreCalculatedOperation(
             feeResult.storageFee,
             feeResult.processingFee,
             feeResult.feeRefunds,

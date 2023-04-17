@@ -112,7 +112,7 @@ where
                     withdrawals_contract::document_types::WITHDRAWAL,
                     json!({
                         "where": [
-                            ["$id", "==", document_id.to_buffer()],
+                            ["$id", "==", document_id],
                         ],
                     }),
                     Some(&state_transition.execution_context),

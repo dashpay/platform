@@ -15,6 +15,9 @@ const {
   Core: {
     PrivateKey,
   },
+  PlatformProtocol: {
+    Identifier,
+  },
 } = Dash;
 
 function executeProof() {
@@ -22,7 +25,6 @@ function executeProof() {
 }
 
 describe('Platform', () => {
-  let Identifier;
   describe('Proofs', () => {
     let blake3;
     let dashClient;
@@ -35,7 +37,6 @@ describe('Platform', () => {
       dashClient = await createClientWithFundedWallet(400000);
 
       await dashClient.platform.initialize();
-      ({ Identifier } = dashClient.platform.dppModule);
 
       contractId = Identifier.from(dpnsContractId);
     });

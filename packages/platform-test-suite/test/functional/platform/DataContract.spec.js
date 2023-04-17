@@ -9,6 +9,11 @@ const {
   Errors: {
     StateTransitionBroadcastError,
   },
+  PlatformProtocol: {
+    IdentityNotFoundError,
+    InvalidDataContractVersionError,
+    IncompatibleDataContractSchemaError,
+  },
 } = Dash;
 
 describe('Platform', () => {
@@ -33,8 +38,6 @@ describe('Platform', () => {
     });
 
     it('should fail to create new data contract with unknown owner', async () => {
-      const { IdentityNotFoundError } = client.platform.dppModule;
-
       // if no identity is specified
       // random is generated within the function
       dataContractFixture = await getDataContractFixture();
@@ -71,8 +74,6 @@ describe('Platform', () => {
     });
 
     it('should not be able to update an existing data contract if version is incorrect', async () => {
-      const { InvalidDataContractVersionError } = client.platform.dppModule;
-
       // Additional wait time to mitigate testnet latency
       await waitForSTPropagated();
 
@@ -96,8 +97,6 @@ describe('Platform', () => {
     });
 
     it('should not be able to update an existing data contract if schema is not backward compatible', async () => {
-      const { IncompatibleDataContractSchemaError } = client.platform.dppModule;
-
       // Additional wait time to mitigate testnet latency
       await waitForSTPropagated();
 

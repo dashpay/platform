@@ -1,3 +1,4 @@
+const { Identity, IdentityPublicKey } = require('@dashevo/wasm-dpp');
 const InvalidMasternodeIdentityError = require('./errors/InvalidMasternodeIdentityError');
 
 /**
@@ -5,12 +6,10 @@ const InvalidMasternodeIdentityError = require('./errors/InvalidMasternodeIdenti
  * @param {IdentityStoreRepository} identityRepository
  * @param {getWithdrawPubKeyTypeFromPayoutScript} getWithdrawPubKeyTypeFromPayoutScript
  * @param {getPublicKeyFromPayoutScript} getPublicKeyFromPayoutScript
- * @param {WebAssembly.Instance} dppWasm
  * @return {createMasternodeIdentity}
  */
 function createMasternodeIdentityFactory(
   dpp,
-  dppWasm,
   identityRepository,
   // getWithdrawPubKeyTypeFromPayoutScript,
   // getPublicKeyFromPayoutScript,
@@ -34,8 +33,8 @@ function createMasternodeIdentityFactory(
     const publicKeys = [{
       id: 0,
       type: pubKeyType,
-      purpose: dppWasm.IdentityPublicKey.PURPOSES.AUTHENTICATION,
-      securityLevel: dppWasm.IdentityPublicKey.SECURITY_LEVELS.MASTER,
+      purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+      securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
       readOnly: true,
       // Copy data buffer
       data: Buffer.from(pubKeyData),
@@ -55,7 +54,7 @@ function createMasternodeIdentityFactory(
     //   });
     // }
 
-    const identity = new dppWasm.Identity({
+    const identity = new Identity({
       protocolVersion: dpp.getProtocolVersion(),
       id: identifier,
       publicKeys,

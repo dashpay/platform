@@ -1,5 +1,5 @@
 // @ts-ignore
-import loadWasmDpp, { DPPModule, DashPlatformProtocol } from '@dashevo/wasm-dpp';
+import loadWasmDpp, { DashPlatformProtocol } from '@dashevo/wasm-dpp';
 import crypto from 'crypto';
 
 import { latestVersion as latestProtocolVersion } from '@dashevo/dpp/lib/version/protocolVersion';
@@ -103,19 +103,13 @@ interface DataContracts {
  * @param contracts - contracts
  */
 export class Platform {
-  // TODO: revisit this. Do we want to refactor all methods to check
-  //  whether dppModule is initialized?
-  // @ts-ignore
-  dppModule: DPPModule;
-
-  // TODO: revisit this. Do we want to refactor all methods to check
-  //  whether dppModule is initialized?
+  // TODO: Address in further type system improvements
+  //  Do we want to refactor all methods to check
+  //  whether dpp is initialized instead of ts-ignoring?
   // @ts-ignore
   dpp: DashPlatformProtocol;
 
   protocolVersion: number;
-
-  options: PlatformOpts;
 
   public documents: Records;
 
@@ -160,8 +154,6 @@ export class Platform {
      * @param {PlatformOpts} options - options for Platform
      */
   constructor(options: PlatformOpts) {
-    this.options = { ...options };
-
     this.documents = {
       broadcast: broadcastDocument.bind(this),
       create: createDocument.bind(this),
@@ -212,7 +204,7 @@ export class Platform {
 
   async initialize() {
     if (!this.dpp) {
-      this.dppModule = await Platform.initializeDppModule();
+      await Platform.initializeDppModule();
 
       const bls = await getBlsAdapter();
       const stateRepository = new StateRepository(this.client);

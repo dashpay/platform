@@ -6,11 +6,9 @@ class BlockExecutionContextRepository {
   /**
    *
    * @param {GroveDBStore} groveDBStore
-   * @param {WebAssembly.Instance} dppWasm
    */
-  constructor(groveDBStore, dppWasm) {
+  constructor(groveDBStore) {
     this.db = groveDBStore;
-    this.dppWasm = dppWasm;
   }
 
   /**
@@ -50,7 +48,7 @@ class BlockExecutionContextRepository {
 
     const blockExecutionContextEncoded = blockExecutionContextEncodedResult.getValue();
 
-    const blockExecutionContext = new BlockExecutionContext(this.dppWasm);
+    const blockExecutionContext = new BlockExecutionContext();
 
     if (!blockExecutionContextEncoded) {
       return blockExecutionContext;
@@ -58,7 +56,7 @@ class BlockExecutionContextRepository {
 
     const rawBlockExecutionContext = cbor.decode(blockExecutionContextEncoded);
 
-    const context = new BlockExecutionContext(this.dppWasm);
+    const context = new BlockExecutionContext();
 
     context.fromObject(rawBlockExecutionContext);
 

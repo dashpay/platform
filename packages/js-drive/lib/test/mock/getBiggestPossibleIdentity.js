@@ -2,13 +2,13 @@ const identityCreateTransitionSchema = require('@dashevo/dpp/schema/identity/sta
 
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
+const {
+  KeySecurityLevel, KeyType, KeyPurpose, Identity,
+} = require('@dashevo/wasm-dpp');
+
 let identity;
 
-/**
- * @param {WebAssembly.Instance} dppWasm
- * @return {dppWasm.Identity}
- */
-function getBiggestPossibleIdentity(dppWasm) {
+function getBiggestPossibleIdentity() {
   if (identity) {
     return identity;
   }
@@ -17,20 +17,20 @@ function getBiggestPossibleIdentity(dppWasm) {
 
   for (let i = 0; i < identityCreateTransitionSchema.properties.publicKeys.maxItems; i++) {
     const securityLevel = i === 0
-      ? dppWasm.KeySecurityLevel.MASTER
-      : dppWasm.KeySecurityLevel.HIGH;
+      ? KeySecurityLevel.MASTER
+      : KeySecurityLevel.HIGH;
 
     publicKeys.push({
       id: i,
-      type: dppWasm.KeyType.BLS12_381,
-      purpose: dppWasm.KeyPurpose.AUTHENTICATION,
+      type: KeyType.BLS12_381,
+      purpose: KeyPurpose.AUTHENTICATION,
       securityLevel,
       readOnly: false,
       data: Buffer.alloc(48).fill(i),
     });
   }
 
-  identity = new dppWasm.Identity({
+  identity = new Identity({
     protocolVersion: 1,
     id: generateRandomIdentifier().toBuffer(),
     publicKeys,

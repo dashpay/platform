@@ -1,5 +1,6 @@
 const Address = require('@dashevo/dashcore-lib/lib/address');
 const Script = require('@dashevo/dashcore-lib/lib/script');
+const { KeyType, Identifier } = require('@dashevo/wasm-dpp');
 const createOperatorIdentifier = require('./createOperatorIdentifier');
 const createVotingIdentifier = require('./createVotingIdentifier');
 
@@ -9,7 +10,6 @@ const createVotingIdentifier = require('./createVotingIdentifier');
  * @param {createMasternodeIdentity} createMasternodeIdentity
  * @param {createRewardShareDocument} createRewardShareDocument
  * @param {fetchTransaction} fetchTransaction
- * @param {WebAssembly.Instance} dppWasm
  * @return {handleNewMasternode}
  */
 function handleNewMasternodeFactory(
@@ -17,7 +17,6 @@ function handleNewMasternodeFactory(
   createMasternodeIdentity,
   createRewardShareDocument,
   fetchTransaction,
-  dppWasm,
 ) {
   /**
    * @typedef handleNewMasternode
@@ -45,7 +44,7 @@ function handleNewMasternodeFactory(
     }
 
     // Create a masternode identity
-    const masternodeIdentifier = dppWasm.Identifier.from(
+    const masternodeIdentifier = Identifier.from(
       proRegTxHash,
     );
 
@@ -56,7 +55,7 @@ function handleNewMasternodeFactory(
         blockInfo,
         masternodeIdentifier,
         ownerPublicKeyHash,
-        dppWasm.KeyType.ECDSA_HASH160,
+        KeyType.ECDSA_HASH160,
         payoutScript,
       ),
     );
@@ -72,14 +71,14 @@ function handleNewMasternodeFactory(
         operatorPayoutScript = new Script(operatorPayoutAddress);
       }
 
-      const operatorIdentifier = createOperatorIdentifier(dppWasm, masternodeEntry);
+      const operatorIdentifier = createOperatorIdentifier(masternodeEntry);
 
       createdEntities.push(
         await createMasternodeIdentity(
           blockInfo,
           operatorIdentifier,
           operatorPubKey,
-          dppWasm.KeyType.BLS12_381,
+          KeyType.BLS12_381,
           operatorPayoutScript,
         ),
       );
@@ -103,14 +102,14 @@ function handleNewMasternodeFactory(
     // don't need to create a separate Identity in case we don't have
     // voting public key (keyIDVoting === keyIDOwner)
     if (!votingPubKeyHash.equals(ownerPublicKeyHash)) {
-      const votingIdentifier = createVotingIdentifier(masternodeEntry, dppWasm);
+      const votingIdentifier = createVotingIdentifier(masternodeEntry);
 
       createdEntities.push(
         await createMasternodeIdentity(
           blockInfo,
           votingIdentifier,
           votingPubKeyHash,
-          dppWasm.KeyType.ECDSA_HASH160,
+          KeyType.ECDSA_HASH160,
         ),
       );
     }

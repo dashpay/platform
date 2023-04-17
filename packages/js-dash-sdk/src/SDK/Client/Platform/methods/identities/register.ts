@@ -38,9 +38,10 @@ export default async function register(
 
   this.logger.silly(`[Identity#register] Created IdentityCreateTransition with asset lock tx "${assetLockTransaction.hash}"`);
 
-  // TODO: add skipValidation flag?
-  //  Basic validation already happening in createIdentityCreateTransition
-  await broadcastStateTransition(this, identityCreateTransition);
+  // Skipping validation because it's already done in createIdentityCreateTransition
+  await broadcastStateTransition(this, identityCreateTransition, {
+    skipValidation: true,
+  });
   this.logger.silly('[Identity#register] Broadcasted IdentityCreateTransition');
 
   // If state transition was broadcast without any errors, import identity to the account

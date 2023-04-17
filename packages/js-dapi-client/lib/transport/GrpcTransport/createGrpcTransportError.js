@@ -3,7 +3,7 @@ const cbor = require('cbor');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const { parseMetadata } = require('@dashevo/dapi-grpc');
 
-let {
+const {
   deserializeConsensusError,
 } = require('@dashevo/wasm-dpp');
 const { default: loadWasmDpp } = require('@dashevo/wasm-dpp');
@@ -47,7 +47,7 @@ const errorClasses = {
  * @returns {ResponseError}
  */
 async function createGrpcTransportError(grpcError, dapiAddress) {
-  ({ deserializeConsensusError } = await loadWasmDpp());
+  await loadWasmDpp();
 
   // Extract error code and data
   let data = {};
