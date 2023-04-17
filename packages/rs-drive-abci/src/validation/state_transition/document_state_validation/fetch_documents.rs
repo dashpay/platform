@@ -70,7 +70,7 @@ pub(super) fn fetch_documents_for_transitions_knowing_contract_id_and_document_t
     let add_to_cache_if_pulled = transaction.is_some();
     let (_, contract_fetch_info) = drive.get_contract_with_fetch_info(
         contract_id.to_buffer(),
-        Some(&platform.state.current_epoch),
+        Some(&platform.state.epoch()),
         add_to_cache_if_pulled,
         transaction,
     )?;

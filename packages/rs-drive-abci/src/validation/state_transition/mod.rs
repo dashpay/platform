@@ -54,7 +54,7 @@ pub fn process_state_transition<'a, C: CoreRPCLike>(
     // Validating state
     let result = state_transition.validate_state(platform, transaction)?;
 
-    result.map_result(|action| (maybe_identity, action, &platform.state.current_epoch).try_into())
+    result.map_result(|action| (maybe_identity, action, &platform.state.epoch()).try_into())
 }
 
 pub trait StateTransitionValidation {

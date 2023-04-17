@@ -1,6 +1,7 @@
+use std::collections::BTreeMap;
 use bls_signatures;
 use dashcore::hashes::Hash;
-use dashcore::QuorumHash;
+use dashcore::{QuorumHash, Txid};
 use dpp::consensus::basic::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::ConsensusError;
 use dpp::state_transition::StateTransition;
@@ -290,6 +291,7 @@ where
             block_state_info,
             epoch_info: epoch_info.clone(),
             hpmn_count: hpmn_list_len as u32,
+            withdrawal_transactions: BTreeMap::new(),
         };
 
         // If last synced Core block height is not set instead of scanning
@@ -311,12 +313,18 @@ where
             &transaction,
         )?;
 
+        // This takes withdrawals from the transaction queue
         let unsigned_withdrawal_transaction_bytes = self
             .fetch_and_prepare_unsigned_withdrawal_transactions(
                 validator_set_quorum_hash,
                 &block_execution_context,
                 &transaction,
             )?;
+
+        // Set the withdrawal transactions
+        block_execution_context.withdrawal_transactions = unsigned_withdrawal_transaction_bytes.into_iter().map(|withdrawal_transaction| {
+            (Txid::hash(withdrawal_transaction.as_slice()), withdrawal_transaction)
+        }).collect();
 
         let (block_fees, tx_results) =
             self.process_raw_state_transitions(&raw_state_transitions, &block_info, transaction)?;
@@ -454,7 +462,7 @@ where
         let BlockExecutionContext {
             block_state_info,
             epoch_info,
-            hpmn_count,
+            hpmn_count, withdrawal_transactions,
         } = &block_execution_context;
 
         // Let's decompose the request
@@ -520,9 +528,9 @@ where
         // }
 
         // Verify vote extensions
-        let received_withdrawals = WithdrawalTxs::from(&commit.threshold_vote_extensions);
-        let our_withdrawals = WithdrawalTxs::load(Some(transaction), &self.drive)
-            .map_err(|e| AbciError::WithdrawalTransactionsDBLoadError(e.to_string()))?;
+        // let received_withdrawals = WithdrawalTxs::from(&commit.threshold_vote_extensions);
+        // let our_withdrawals = WithdrawalTxs::load(Some(transaction), &self.drive)
+        //     .map_err(|e| AbciError::WithdrawalTransactionsDBLoadError(e.to_string()))?;
         //todo: reenable check
         //
         // if let Err(e) = self.check_withdrawals(
@@ -568,8 +576,8 @@ where
         // we need to add the block time
         to_commit_block_info.time_ms = block_header.time.to_milis() as u64;
 
-        // Finalize withdrawal processing
-        our_withdrawals.finalize(Some(transaction), &self.drive, &to_commit_block_info)?;
+        // // Finalize withdrawal processing
+        // our_withdrawals.finalize(Some(transaction), &self.drive, &to_commit_block_info)?;
 
         // At the end we update the state cache
 

@@ -538,7 +538,7 @@ where
                 document.id,
                 (
                     transaction_index.to_be_bytes().to_vec(),
-                    transaction_buffer.clone(),
+                    transaction_buffer,
                 ),
             );
         }
