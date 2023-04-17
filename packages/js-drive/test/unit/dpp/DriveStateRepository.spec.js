@@ -597,12 +597,9 @@ describe('DriveStateRepository', () => {
     let smlStoreMock;
     let instantlockSMLMock;
     let llmqType;
-    let quorumHash;
-    // let instantLockMock;
 
     beforeEach(function beforeEach() {
       llmqType = 103;
-      quorumHash = 'someHash';
       blockExecutionContextMock.getHeight.returns(41);
       blockExecutionContextMock.getCoreChainLockedHeight.returns(42);
 
