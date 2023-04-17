@@ -233,7 +233,7 @@ where
 
         if !block_state_info.matches_current_block(height as u64, round as u32, block_hash)? {
             return Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
-                "received request for height: {} rount: {}, expected height: {} round: {}",
+                "received request for height: {} round: {}, expected height: {} round: {}",
                 height, round, block_state_info.height, block_state_info.round
             )))
             .into());
@@ -278,7 +278,7 @@ where
 
         if !block_state_info.matches_current_block(height as u64, round as u32, block_hash)? {
             return Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
-                "received request for height: {} rount: {}, expected height: {} round: {}",
+                "received request for height: {} round: {}, expected height: {} round: {}",
                 height, round, block_state_info.height, block_state_info.round
             )))
             .into());

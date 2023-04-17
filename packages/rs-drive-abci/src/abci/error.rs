@@ -40,7 +40,7 @@ pub enum AbciError {
     Tenderdash(#[from] tenderdash_abci::Error),
 
     /// Error occurred during protobuf data manipulation
-    #[error("tenderdash protobuf: {0}")]
+    #[error("tenderdash data: {0}")]
     TenderdashProto(tenderdash_abci::proto::Error),
 
     /// Error occurred during signature verification or deserializing a BLS primitive

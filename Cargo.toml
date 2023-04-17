@@ -2,7 +2,7 @@
 
 members = [
     "packages/rs-dpp",
-    # "packages/wasm-dpp",
+    "packages/wasm-dpp",
     "packages/rs-drive",
     "packages/rs-platform-value",
     "packages/rs-drive-abci",
@@ -14,4 +14,3 @@ members = [
     "packages/dpns-contract",
     "packages/data-contracts",
 ]
-exclude = ["packages/wasm-dpp"]
