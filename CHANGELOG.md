@@ -1,3 +1,5 @@
+## [0.24.0-dev.19](https://github.com/dashpay/platform/compare/v0.24.0-dev.18...v0.24.0-dev.19) (2023-04-17)
+
 ## [0.24.0-dev.18](https://github.com/dashpay/platform/compare/v0.24.0-dev.17...v0.24.0-dev.18) (2023-04-14)
 
 
