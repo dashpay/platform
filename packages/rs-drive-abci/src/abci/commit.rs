@@ -1,7 +1,7 @@
 //! Tenderdash commit logic
+use crate::execution::finalize_block_cleaned_request::{CleanedBlockId, CleanedCommitInfo};
 use dashcore_rpc::dashcore_rpc_json::QuorumType;
-use dpp::bls_signatures::Serialize;
-use tenderdash_abci::proto::{self, abci::CommitInfo, signatures::SignDigest, types::BlockId};
+use tenderdash_abci::proto::{self, signatures::SignDigest};
 
 use super::AbciError;
 
@@ -15,9 +15,9 @@ pub struct Commit {
 impl Commit {
     /// Create new Commit struct based on commit info and block id received from Tenderdash
     pub fn new(
-        ci: CommitInfo,
-        block_id: BlockId,
-        height: i64,
+        ci: CleanedCommitInfo,
+        block_id: CleanedBlockId,
+        height: u64,
         quorum_type: QuorumType,
         chain_id: &str,
     ) -> Self {
@@ -26,12 +26,12 @@ impl Commit {
             quorum_type: quorum_type,
 
             inner: proto::types::Commit {
-                block_id: Some(block_id),
-                height,
-                round: ci.round,
-                quorum_hash: ci.quorum_hash,
-                threshold_block_signature: ci.block_signature,
-                threshold_vote_extensions: ci.threshold_vote_extensions,
+                block_id: Some(block_id.try_into().expect("cannot convert block id")),
+                height: height as i64,
+                round: ci.round as i32,
+                quorum_hash: ci.quorum_hash.to_vec(),
+                threshold_block_signature: ci.block_signature.to_vec(),
+                threshold_vote_extensions: ci.threshold_vote_extensions.to_vec(),
             },
         }
     }
@@ -46,10 +46,10 @@ impl Commit {
     pub fn verify_signature(
         &self,
         signature: &Vec<u8>,
-        public_key: &dpp::bls_signatures::PublicKey,
+        public_key: &bls_signatures::PublicKey,
     ) -> Result<bool, AbciError> {
         // We could have received a fake commit, so signature validation needs to be returned if error as a simple validation result
-        let signature = match dpp::bls_signatures::Signature::from_bytes(signature.as_slice()) {
+        let signature = match bls_signatures::Signature::from_bytes(signature.as_slice()) {
             Ok(signature) => signature,
             Err(e) => return Err(AbciError::from(e)),
         };
@@ -58,13 +58,13 @@ impl Commit {
             .sign_digest(
                 &self.chain_id,
                 self.quorum_type as u8,
-                self.inner.quorum_hash,
+                &self.inner.quorum_hash,
                 self.inner.height,
                 self.inner.round,
             )
             .map_err(AbciError::TenderdashProto)?;
 
-        Ok(public_key.verify(signature, hash))
+        Ok(public_key.verify(&signature, &hash))
     }
 }
 // impl SignBytes for Commit {

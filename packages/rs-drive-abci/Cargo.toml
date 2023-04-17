@@ -24,8 +24,9 @@ thiserror = "1.0.30"
 rand = "0.8.5"
 tempfile = "3.3.0"
 bs58 = "0.4.0"
-base64 = "0.13.0"
 hex = "0.4.3"
+sha2 = "0.10.6"
+bls-signatures = { git = "https://github.com/dashpay/bls-signatures", branch = "feat/threshold_bindings" }
 dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
     "std",
     "secp-recovery",
@@ -37,12 +38,10 @@ dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", branch = 
 dpp = { path = "../rs-dpp", features = ["fixtures-and-mocks"] }
 rust_decimal = "1.2.5"
 rust_decimal_macros = "1.25.0"
-mockall = { version = "0.11" }
+mockall = { version = "0.11", optional = true }
 bytes = { version = "1.4.0", default-features = false }
 prost = { version = "0.11.6", default-features = false }
 tracing = { version = "0.1.37", default-features = false, features = [] }
-flex-error = { version = "0.4.4", default-features = false }
-structopt = { version = "0.3.26", optional = true, default-features = false }
 clap = { version = "4.1.8", optional = true, features = ["derive"] }
 envy = { version = "0.4.2" }
 dotenvy = { version = "0.15.6", optional = true }
@@ -61,7 +60,7 @@ itertools = { version = "0.10.5" }
 
 [features]
 default = ["server"]
-server = ["tenderdash-abci", "clap", "dotenvy", "tracing-subscriber", "atty"]
+server = ["tenderdash-abci", "clap", "dotenvy", "tracing-subscriber", "atty", "mockall"]
 
 [[bin]]
 name = "drive-abci"

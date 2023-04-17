@@ -179,6 +179,7 @@ impl<C> Platform<C> {
             current_protocol_version_in_consensus,
             next_epoch_protocol_version,
             quorums_extended_info: Default::default(),
+            current_validator_set_quorum_hash: Default::default(),
             validator_sets: Default::default(),
             full_masternode_list: Default::default(),
             hpmn_masternode_list: Default::default(),

@@ -34,6 +34,8 @@
 
 use crate::abci::server::AbciApplication;
 use crate::rpc::core::CoreRPCLike;
+use dashcore::hashes::Hash;
+use dashcore::ProTxHash;
 use drive::fee::credits::SignedCredits;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
@@ -220,7 +222,7 @@ where
         let withdrawals = WithdrawalTxs::load(Some(transaction), &self.platform.drive)?;
 
         Ok(proto::ResponseExtendVote {
-            vote_extensions: withdrawals.to_vec(),
+            vote_extensions: withdrawals.into_vec(),
         })
     }
 
@@ -236,7 +238,53 @@ where
         let got: WithdrawalTxs = request.vote_extensions.into();
         let expected = WithdrawalTxs::load(Some(transaction), &self.platform.drive)?;
 
-        if got.ne(&expected) {
+        /*
+        We don't get signatures from Tenderdash, so the logic below is not needed
+
+
+                let state = self.platform.state.read().unwrap();
+
+                let quorum = state.current_validator_set()?;
+
+                let validator_pro_tx_hash = ProTxHash::from_slice(request.validator_pro_tx_hash.as_slice())
+                    .map_err(|_| {
+                        Error::Abci(AbciError::BadRequestDataSize(format!(
+                            "invalid vote extension protxhash: {}",
+                            hex::encode(request.validator_pro_tx_hash.as_slice())
+                        )))
+                    })?;
+
+                let Some(validator) =  quorum.validator_set.get(&validator_pro_tx_hash) else {
+                    return Ok(proto::ResponseVerifyVoteExtension {
+                        status: VerifyStatus::Unknown.into(),
+                    });
+                };
+
+                let validation_result =
+                    self.platform
+                        .check_withdrawals(&got, &expected, &validator.public_key);
+
+                if validation_result.is_valid() {
+                    Ok(proto::ResponseVerifyVoteExtension {
+                        status: VerifyStatus::Accept.into(),
+                    })
+                } else {
+                    tracing::error!(
+                        method = "verify_vote_extension",
+                        ?got,
+                        ?expected,
+                        "vote extension mismatch"
+                    );
+                    Ok(proto::ResponseVerifyVoteExtension {
+                        status: VerifyStatus::Reject.into(),
+                    })
+                }
+                 */
+        if got.eq(&expected) {
+            Ok(proto::ResponseVerifyVoteExtension {
+                status: VerifyStatus::Accept.into(),
+            })
+        } else {
             tracing::error!(
                 method = "verify_vote_extension",
                 ?got,
@@ -245,10 +293,6 @@ where
             );
             Ok(proto::ResponseVerifyVoteExtension {
                 status: VerifyStatus::Reject.into(),
-            })
-        } else {
-            Ok(proto::ResponseVerifyVoteExtension {
-                status: VerifyStatus::Accept.into(),
             })
         }
     }
@@ -267,7 +311,7 @@ where
 
         let block_finalization_outcome = self
             .platform
-            .finalize_block_proposal(request, transaction)?;
+            .finalize_block_proposal(request.try_into()?, transaction)?;
 
         //FIXME: tell tenderdash about the problem instead
         // This can not go to production!
@@ -294,7 +338,7 @@ where
     }
 
     fn check_tx(&self, request: RequestCheckTx) -> Result<ResponseCheckTx, ResponseException> {
-        let RequestCheckTx { tx, r#type: _ } = request;
+        let RequestCheckTx { tx, .. } = request;
         let validation_result = self.platform.check_tx(tx)?;
 
         // If there are no execution errors the code will be 0

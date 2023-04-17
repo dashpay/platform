@@ -1,21 +1,4 @@
 use crate::abci::commit::Commit;
-use dashcore_rpc::json::QuorumHash;
-use dpp::bls_signatures;
-use dpp::bls_signatures::Serialize;
-use dpp::consensus::basic::identity::IdentityInsufficientBalanceError;
-use dpp::consensus::ConsensusError;
-use dpp::state_transition::StateTransition;
-use dpp::validation::{
-    ConsensusValidationResult, SimpleConsensusValidationResult, SimpleValidationResult,
-    ValidationResult,
-};
-use drive::drive::block_info::BlockInfo;
-use drive::error::Error::GroveDB;
-use drive::fee::result::FeeResult;
-use drive::grovedb::{Transaction, TransactionArg};
-use tenderdash_abci::proto::abci::{ExecTxResult, RequestFinalizeBlock};
-use tenderdash_abci::proto::serializers::timestamp::ToMilis;
-
 use crate::abci::withdrawal::WithdrawalTxs;
 use crate::abci::AbciError;
 use crate::block::{BlockExecutionContext, BlockStateInfo};
@@ -27,9 +10,25 @@ use crate::execution::execution_event::ExecutionResult::{
 };
 use crate::execution::execution_event::{ExecutionEvent, ExecutionResult};
 use crate::execution::fee_pools::epoch::EpochInfo;
+use crate::execution::finalize_block_cleaned_request::{CleanedBlock, FinalizeBlockCleanedRequest};
 use crate::platform::{Platform, PlatformRef};
 use crate::rpc::core::CoreRPCLike;
 use crate::validation::state_transition::process_state_transition;
+use dashcore::hashes::Hash;
+use dashcore::QuorumHash;
+use dpp::consensus::basic::identity::IdentityInsufficientBalanceError;
+use dpp::consensus::ConsensusError;
+use dpp::state_transition::StateTransition;
+use dpp::validation::{
+    ConsensusValidationResult, SimpleConsensusValidationResult, SimpleValidationResult,
+    ValidationResult,
+};
+use drive::drive::block_info::BlockInfo;
+use drive::error::Error::GroveDB;
+use drive::fee::result::FeeResult;
+use drive::grovedb::{Transaction, TransactionArg};
+use tenderdash_abci::proto::abci::ExecTxResult;
+use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 
 /// The outcome of the block execution, either by prepare proposal, or process proposal
 #[derive(Clone)]
@@ -205,19 +204,19 @@ where
         Ok((aggregate_fee_result, exec_tx_results))
     }
 
-    /// Update of the masternode identities
-    pub fn update_masternode_identities(
-        &self,
-        previous_core_height: u32,
-        current_core_height: u32,
-    ) -> Result<(), Error> {
-        if previous_core_height != current_core_height {
-            //todo:
-            // self.drive.fetch_full_identity()
-            // self.drive.add_new_non_unique_keys_to_identity()
-        }
-        Ok(())
-    }
+    // /// Update of the masternode identities
+    // pub fn update_masternode_identities(
+    //     &self,
+    //     previous_core_height: u32,
+    //     current_core_height: u32,
+    // ) -> Result<(), Error> {
+    //     if previous_core_height != current_core_height {
+    //         //todo:
+    //         // self.drive.fetch_full_identity()
+    //         // self.drive.add_new_non_unique_keys_to_identity()
+    //     }
+    //     Ok(())
+    // }
 
     /// Run a block proposal, either from process proposal, or prepare proposal
     /// Errors returned in the validation result are consensus errors, any error here means that
@@ -235,8 +234,7 @@ where
             state.known_height_or((self.config.abci.genesis_height as u64).saturating_sub(1));
         let last_block_core_height =
             state.known_core_height_or(self.config.abci.genesis_core_height);
-        //todo: fix this
-        let hpmn_list_len = 100; //state.hpmn_list_len();
+        let hpmn_list_len = state.hpmn_list_len();
         drop(state);
 
         // Init block execution context
@@ -254,7 +252,8 @@ where
 
         // destructure the block proposal
         let BlockProposal {
-            block_hash: _,
+            consensus_versions,
+            block_hash,
             height,
             round: _,
             core_chain_locked_height,
@@ -264,6 +263,7 @@ where
             block_time_ms,
             raw_state_transitions,
         } = block_proposal;
+        // todo: verify that we support the consensus versions
         // We start by getting the epoch we are in
         let genesis_time_ms = self.get_genesis_time(height, block_time_ms, &transaction)?;
 
@@ -329,7 +329,7 @@ where
             transaction,
         )?;
 
-        self.update_masternode_identities(last_block_core_height, core_chain_locked_height)?;
+        // self.update_masternode_identities(last_block_core_height, core_chain_locked_height)?;
 
         let root_hash = self
             .drive
@@ -355,13 +355,22 @@ where
     pub fn update_state_cache_and_quorums(
         &self,
         block_info: BlockInfo,
+        updated_validator_hash: QuorumHash,
         transaction: &Transaction,
     ) -> Result<(), Error> {
         let mut state_cache = self.state.write().unwrap();
 
+        state_cache.current_validator_set_quorum_hash = updated_validator_hash;
+
         self.update_quorum_info(&mut state_cache, block_info.core_height)?;
 
-        //self.update_masternode_list(&mut state_cache, block_info.core_height, transaction)?;
+        // TODO: re-enable
+        self.update_masternode_list(
+            &mut state_cache,
+            block_info.core_height,
+            &block_info,
+            transaction,
+        )?;
 
         state_cache.last_committed_block_info = Some(block_info.clone());
 
@@ -369,12 +378,12 @@ where
     }
 
     // Retrieve quorum public key
-    fn get_quorum_key(&self, quorum_hash: Vec<u8>) -> Result<bls_signatures::PublicKey, Error> {
+    fn get_quorum_key(&self, quorum_hash: [u8; 32]) -> Result<bls_signatures::PublicKey, Error> {
         let public_key = self
             .core_rpc
             .get_quorum_info(
                 self.config.quorum_type,
-                &QuorumHash { 0: quorum_hash },
+                &QuorumHash::from_inner(quorum_hash),
                 Some(false),
             )?
             .quorum_public_key;
@@ -382,11 +391,12 @@ where
         bls_signatures::PublicKey::from_bytes(public_key.as_slice())
             .map_err(|e| AbciError::from(e).into())
     }
+
     /// Finalize the block, this first involves validating it, then if valid
     /// it is committed to the state
     pub fn finalize_block_proposal(
         &self,
-        request_finalize_block: RequestFinalizeBlock,
+        request_finalize_block: FinalizeBlockCleanedRequest,
         transaction: &Transaction,
     ) -> Result<BlockFinalizationOutcome, Error> {
         let mut validation_result = SimpleValidationResult::<AbciError>::new_with_errors(vec![]);
@@ -407,7 +417,7 @@ where
         } = &block_execution_context;
 
         // Let's decompose the request
-        let RequestFinalizeBlock {
+        let FinalizeBlockCleanedRequest {
             commit: commit_info,
             misbehavior,
             hash,
@@ -417,40 +427,23 @@ where
             block_id,
         } = request_finalize_block;
 
-        //todo: block and header should not be optional
-        let block = block.ok_or(Error::Abci(AbciError::WrongFinalizeBlockReceived(
-            "empty block".into(),
-        )))?;
-        let block_header =
-            block
-                .header
-                .ok_or(Error::Abci(AbciError::WrongFinalizeBlockReceived(
-                    "missing block header".into(),
-                )))?;
-        let block_id = block_id.ok_or(Error::Abci(AbciError::WrongFinalizeBlockReceived(
-            "missing block id".into(),
-        )))?;
-        let commit_info = commit_info.ok_or(Error::Abci(AbciError::WrongFinalizeBlockReceived(
-            "missing commit".into(),
-        )))?;
-
-        let Ok(proposer_protx_hash) = block_header.proposer_pro_tx_hash.try_into() else {
-            validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
-                "received a block for h: {} r: {}, expected h: {} r: {}",
-                height, round, block_state_info.height, block_state_info.round
-            )));
-            return Ok(validation_result.into());
-        };
+        let CleanedBlock {
+            header: block_header,
+            data,
+            evidence,
+            last_commit,
+            core_chain_lock,
+        } = block;
 
         //// Verification that commit is for our current executed block
         // When receiving the finalized block, we need to make sure that info matches our current block
 
         // First let's check the basics, height, round and hash
         if !block_state_info.matches_expected_block_info(
-            height as u64,
-            round as u32,
+            height,
+            round,
             block_header.core_chain_locked_height,
-            proposer_protx_hash,
+            block_header.proposer_pro_tx_hash,
             hash,
         )? {
             // we are on the wrong height or round
@@ -461,8 +454,15 @@ where
             return Ok(validation_result.into());
         }
 
-        let quorum_public_key = self.get_quorum_key(commit_info.quorum_hash.clone())?;
+        let mut state = self.state.write().unwrap();
+        if state.current_validator_set_quorum_hash.as_inner() != &commit_info.quorum_hash {
+            validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
+                "received a block for h: {} r: {} with validator set quorum hash {} expected current validator set quorum hash is {}",
+                height, round, hex::encode(commit_info.quorum_hash), hex::encode(state.current_validator_set_quorum_hash)
+            )));
+        }
 
+        let quorum_public_key = self.get_quorum_key(commit_info.quorum_hash)?;
         // Verify commit
         let quorum_type = self.config.quorum_type;
         let commit = Commit::new(
@@ -473,9 +473,10 @@ where
             &block_header.chain_id,
         );
         commit
-            .verify_signature(&commit_info.block_signature, &quorum_public_key)
+            .verify_signature(&commit_info.block_signature.to_vec(), &quorum_public_key)
             .map_err(AbciError::from)?;
 
+        
         // Verify vote extensions; right now, we only support withdrawal txs
         let received_withdrawals = WithdrawalTxs::from(&commit_info.threshold_vote_extensions);
         let our_withdrawals = WithdrawalTxs::load(Some(transaction), &self.drive)
@@ -494,7 +495,7 @@ where
             &self.config.abci.chain_id,
             height,
             round,
-            quorum_public_key,
+            &quorum_public_key,
         ) {
             Ok(true) => (),
             Ok(false) => return Err(AbciError::VoteExtensionsSignatureInvalid.into()),
@@ -509,7 +510,6 @@ where
 
         // Determine a new protocol version if enough proposers voted
         let changed_protocol_version = if epoch_info.is_epoch_change_but_not_genesis() {
-            let mut state = self.state.write().unwrap();
             // Set current protocol version to the version from upcoming epoch
             state.current_protocol_version_in_consensus = state.next_epoch_protocol_version;
 
@@ -523,25 +523,29 @@ where
             }
 
             let current_protocol_version_in_consensus = state.current_protocol_version_in_consensus;
-            drop(state);
 
             Some(current_protocol_version_in_consensus)
         } else {
             None
         };
+        drop(state);
 
         let mut to_commit_block_info =
             block_state_info.to_block_info(epoch_info.current_epoch_index);
 
         // we need to add the block time
-        to_commit_block_info.time_ms = block_header.time.unwrap().to_milis() as u64;
+        to_commit_block_info.time_ms = block_header.time.to_milis() as u64;
 
         // Finalize withdrawal processing
         our_withdrawals.finalize(Some(transaction), &self.drive, &to_commit_block_info)?;
 
         // At the end we update the state cache
 
-        self.update_state_cache_and_quorums(to_commit_block_info, transaction)?;
+        self.update_state_cache_and_quorums(
+            to_commit_block_info,
+            QuorumHash::from_inner(block_header.next_validators_hash),
+            transaction,
+        )?;
 
         let mut drive_cache = self.drive.cache.write().unwrap();
 

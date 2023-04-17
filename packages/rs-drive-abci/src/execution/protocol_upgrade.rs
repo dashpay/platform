@@ -51,7 +51,8 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             ));
         }
 
-        if versions_passing_threshold.len() == 1 {
+        if !versions_passing_threshold.is_empty() {
+            // same as equals 1
             let new_version = versions_passing_threshold.remove(0);
             // Persist current and next epoch protocol versions
             // we also drop all protocol version votes information

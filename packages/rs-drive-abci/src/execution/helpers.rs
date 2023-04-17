@@ -1,10 +1,14 @@
+use dashcore::hashes::Hash;
+use dashcore::ProTxHash;
 use std::collections::BTreeSet;
 
-use dashcore_rpc::dashcore_rpc_json::ProTxHash;
+use dashcore_rpc::json::{MasternodeListDiffWithMasternodes, MasternodeType};
+use drive::drive::block_info::BlockInfo;
 use drive::grovedb::Transaction;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::quorum::Quorum;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformState;
@@ -85,12 +89,13 @@ where
 
         let mut new_quorums = quorum_info
             .iter()
-            .filter(|(key, _)| !state.validator_sets.contains_key(key))
+            .filter(|(key, _)| !state.validator_sets.contains_key(key.as_ref()))
             .map(|(key, _)| {
                 let quorum_info_result =
                     self.core_rpc
                         .get_quorum_info(self.config.quorum_type, key, None)?;
-                Ok((key.clone(), quorum_info_result))
+                let quorum: Quorum = quorum_info_result.try_into()?;
+                Ok((key.clone(), quorum))
             })
             .collect::<Result<Vec<_>, Error>>()?;
 
@@ -100,6 +105,8 @@ where
         state.quorums_extended_info = quorum_list.quorums_by_type;
         return Ok(());
     }
+
+    // TODO: re-enable
 
     /// Updates the masternode list in the platform state based on changes in the masternode list
     /// from Dash Core between two block heights.
@@ -122,6 +129,7 @@ where
         &self,
         state: &mut PlatformState,
         core_block_height: u32,
+        block_info: &BlockInfo,
         transaction: &Transaction,
     ) -> Result<(), Error> {
         let previous_core_height = state.core_height();
@@ -129,30 +137,50 @@ where
             return Ok(()); // no need to do anything
         }
 
-        let masternode_list_diff = self
+        let MasternodeListDiffWithMasternodes {
+            added_mns,
+            removed_mns,
+            updated_mns,
+            ..
+        } = self
             .core_rpc
-            .get_protx_diff(previous_core_height, core_block_height)?;
+            .get_protx_diff_with_masternodes(previous_core_height, core_block_height)?;
+
         //todo: clean up
-        let updated_masternodes = masternode_list_diff.mn_list.into_iter().map(|masternode| {
-            let pro_tx_hash =
-                ProTxHash::from(hex::encode(masternode.pro_reg_tx_hash.clone()).as_str());
-            (pro_tx_hash, masternode)
+        let added_hpmns = added_mns.iter().filter_map(|masternode| {
+            if masternode.node_type == MasternodeType::HighPerformance {
+                Some((masternode.protx_hash.clone(), masternode.clone()))
+            } else {
+                None
+            }
         });
 
-        //filter updated masternodes between hpmns and non hpmns
+        state.hpmn_masternode_list.extend(added_hpmns.clone());
 
-        state
-            .full_masternode_list
-            .extend(updated_masternodes.clone());
-        //FIXME: Filter updated masternodes for HPMNs
-        state.hpmn_masternode_list.extend(updated_masternodes);
+        let added_masternodes = added_mns
+            .into_iter()
+            .map(|masternode| (masternode.protx_hash.clone(), masternode));
 
-        let deleted_masternodes = masternode_list_diff
-            .deleted_mns
+        state.full_masternode_list.extend(added_masternodes.clone());
+
+        let updated_masternodes = updated_mns
+            .into_iter()
+            .map(|masternode| (masternode.protx_hash.clone(), masternode.state_diff));
+
+        updated_masternodes.for_each(|(pro_tx_hash, state_diff)| {
+            if let Some(masternode_list_item) = state.full_masternode_list.get_mut(&pro_tx_hash) {
+                if let Some(masternode_list_item) = state.hpmn_masternode_list.get_mut(&pro_tx_hash)
+                {
+                    masternode_list_item.state.apply_diff(state_diff.clone());
+                }
+                masternode_list_item.state.apply_diff(state_diff);
+            }
+        });
+
+        let deleted_masternodes = removed_mns
             .into_iter()
             .map(|masternode| {
-                let pro_tx_hash =
-                    ProTxHash::from(hex::encode(masternode.pro_reg_tx_hash.clone()).as_str());
+                let pro_tx_hash = masternode.protx_hash;
                 pro_tx_hash
             })
             .collect::<BTreeSet<ProTxHash>>();
@@ -165,15 +193,22 @@ where
             .retain(|key, _| !deleted_masternodes.contains(key));
 
         //Todo: masternode identities
+        self.update_masternode_identities(
+            previous_core_height,
+            core_block_height,
+            &block_info,
+            state,
+            &transaction,
+        )?;
 
         //For all deleted masternodes we need to remove them from the state of the app version votes
 
-        self.drive.remove_validators_proposed_app_versions(
-            deleted_masternodes
-                .into_iter()
-                .map(|a| a.0.try_into().unwrap()),
-            Some(transaction),
-        )?;
+        if !deleted_masternodes.is_empty() {
+            self.drive.remove_validators_proposed_app_versions(
+                deleted_masternodes.into_iter().map(|a| a.into_inner()),
+                Some(transaction),
+            )?;
+        }
 
         Ok(())
     }

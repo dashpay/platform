@@ -1,4 +1,5 @@
 use crate::validator_set::ValidatorSetError;
+use bls_signatures::BlsError;
 
 /// Error returned within ABCI server
 #[derive(Debug, thiserror::Error)]
@@ -42,9 +43,9 @@ pub enum AbciError {
     #[error("tenderdash protobuf: {0}")]
     TenderdashProto(tenderdash_abci::proto::Error),
 
-    /// Error during BLS cryptographic processing
-    #[error("bls crypto processing: {0}")]
-    BlsError(#[from] dpp::bls_signatures::Error),
+    /// Error occurred during signature verification or deserializing a BLS primitive
+    #[error("bls error: {0}")]
+    BlsError(#[from] BlsError),
 
     /// Error occurred during validator set creation
     #[error("validator set: {0}")]

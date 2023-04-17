@@ -15,7 +15,7 @@ on:
       - packages/masternode-reward-shares-contract/**
       - packages/rs-dpp/**
   schedule:
-    - cron: '30 4 * * *'
+    - cron: "30 4 * * *"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -31,13 +31,10 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@master
+        uses: ./.github/actions/rust
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
-
-      - name: Enable Rust Cache
-        uses: Swatinem/rust-cache@v2
 
       - run: cargo check --package=drive --no-default-features --features=verify
 
@@ -45,4 +42,4 @@ jobs:
     name: Rust
     uses: ./.github/workflows/rs-checks.yml
     with:
-      package: 'drive'
+      package: "drive"
