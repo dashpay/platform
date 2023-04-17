@@ -1,7 +1,7 @@
-use dashcore::{Block, BlockHash, Transaction, Txid};
+use dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
-    ExtendedQuorumDetails, GetBestChainLockResult, MasternodeListDiff, ProTxHash, ProTxInfo,
-    QuorumHash, QuorumInfoResult, QuorumListResult, QuorumType,
+    ExtendedQuorumDetails, GetBestChainLockResult, MasternodeListDiff, ProTxInfo, QuorumInfoResult,
+    QuorumListResult, QuorumType,
 };
 use dashcore_rpc::json::{GetTransactionResult, MasternodeListDiffWithMasternodes};
 use dashcore_rpc::{Auth, Client, Error, RpcApi};

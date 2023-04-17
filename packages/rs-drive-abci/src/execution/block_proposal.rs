@@ -2,10 +2,13 @@ use crate::abci::AbciError;
 use crate::error::Error;
 use tenderdash_abci::proto::abci::{RequestPrepareProposal, RequestProcessProposal};
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
+use tenderdash_abci::proto::version::Consensus;
 
 /// The block proposal is the combination of information that a proposer will propose,
 /// Or that a validator or full node will process
 pub struct BlockProposal<'a> {
+    /// Consensus Versions
+    pub consensus_versions: Consensus,
     /// Block hash
     pub block_hash: Option<[u8; 32]>,
     /// Block height
@@ -45,6 +48,12 @@ impl<'a> TryFrom<&'a RequestPrepareProposal> for BlockProposal<'a> {
             version,
             quorum_hash,
         } = value;
+        let consensus_versions = version
+            .as_ref()
+            .ok_or(AbciError::BadRequest(
+                "request is missing version".to_string(),
+            ))?
+            .clone();
         let block_time_ms = time
             .as_ref()
             .ok_or(AbciError::BadRequest(
@@ -64,7 +73,21 @@ impl<'a> TryFrom<&'a RequestPrepareProposal> for BlockProposal<'a> {
                 hex::encode(e)
             ))
         })?;
+
+        if *height < 0 {
+            return Err(AbciError::BadRequest(
+                "height is negative in request prepare proposal".to_string(),
+            )
+            .into());
+        }
+        if *round < 0 {
+            return Err(AbciError::BadRequest(
+                "round is negative in request prepare proposal".to_string(),
+            )
+            .into());
+        }
         Ok(Self {
+            consensus_versions,
             block_hash: None,
             height: *height as u64,
             round: *round as u32,
@@ -99,6 +122,12 @@ impl<'a> TryFrom<&'a RequestProcessProposal> for BlockProposal<'a> {
             version,
             quorum_hash,
         } = value;
+        let consensus_versions = version
+            .as_ref()
+            .ok_or(AbciError::BadRequest(
+                "process proposal request is missing version".to_string(),
+            ))?
+            .clone();
         let block_time_ms = time
             .as_ref()
             .ok_or(Error::Abci(AbciError::BadRequest(
@@ -125,7 +154,20 @@ impl<'a> TryFrom<&'a RequestProcessProposal> for BlockProposal<'a> {
                 hex::encode(e)
             )))
         })?;
+        if *height < 0 {
+            return Err(AbciError::BadRequest(
+                "height is negative in request process proposal".to_string(),
+            )
+            .into());
+        }
+        if *round < 0 {
+            return Err(AbciError::BadRequest(
+                "round is negative in request process proposal".to_string(),
+            )
+            .into());
+        }
         Ok(Self {
+            consensus_versions,
             block_hash: Some(block_hash),
             height: *height as u64,
             round: *round as u32,

@@ -8,12 +8,12 @@ authors = ["Anton Suprunchuk <anton.suprunchuk@gmail.com>"]
 anyhow = { version = "1.0.70"}
 async-trait = { version = "0.1"}
 base64 = "0.20.0"
-bls-signatures = { version = "0.13.0" }
+bls-signatures = { git = "https://github.com/dashpay/bls-signatures", branch = "feat/threshold_bindings" }
 bs58 = "0.4.0"
 byteorder = { version="1.4"}
 chrono = { version="0.4.20", default-features=false, features=["wasmbind", "clock"]}
 ciborium = { git="https://github.com/qrayven/ciborium", branch="feat-ser-null-as-undefined"}
-dashcore = { git="https://github.com/dashpay/rust-dashcore", features=["std", "secp-recovery", "rand", "signer", "use-serde"], default-features = false, rev = "51548a4a1b9eca7430f5f3caf94d9784886ff2e9" }
+dashcore = { git="https://github.com/dashpay/rust-dashcore", features=["std", "secp-recovery", "rand", "signer", "use-serde"], default-features = false, branch = "feat/addons" }
 env_logger = { version="0.9"}
 futures = { version ="0.3"}
 getrandom= { version="0.2", features=["js"]}

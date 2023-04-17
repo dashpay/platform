@@ -63,6 +63,5 @@ pub mod prelude {
 }
 
 pub use bincode;
-pub use bls_signatures;
 pub use jsonschema;
 pub use platform_value;

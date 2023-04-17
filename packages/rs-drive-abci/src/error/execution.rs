@@ -25,6 +25,10 @@ pub enum ExecutionError {
     #[error("platform corrupted code execution error: {0}")]
     CorruptedCodeExecution(&'static str),
 
+    /// The platform encountered a corrupted cache state error.
+    #[error("platform corrupted cached state error: {0}")]
+    CorruptedCachedState(&'static str),
+
     /// An error occurred during initialization.
     #[error("initialization error: {0}")]
     InitializationError(&'static str),

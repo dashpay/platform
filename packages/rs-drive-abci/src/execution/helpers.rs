@@ -1,11 +1,13 @@
+use dashcore::hashes::Hash;
+use dashcore::ProTxHash;
 use std::collections::BTreeSet;
 
-use dashcore_rpc::dashcore_rpc_json::ProTxHash;
 use dashcore_rpc::json::{MasternodeListDiffWithMasternodes, MasternodeType};
 use drive::grovedb::Transaction;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::quorum::Quorum;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformState;
@@ -86,12 +88,13 @@ where
 
         let mut new_quorums = quorum_info
             .iter()
-            .filter(|(key, _)| !state.validator_sets.contains_key(key))
+            .filter(|(key, _)| !state.validator_sets.contains_key(key.as_ref()))
             .map(|(key, _)| {
                 let quorum_info_result =
                     self.core_rpc
                         .get_quorum_info(self.config.quorum_type, key, None)?;
-                Ok((key.clone(), quorum_info_result))
+                let quorum: Quorum = quorum_info_result.try_into()?;
+                Ok((key.clone(), quorum))
             })
             .collect::<Result<Vec<_>, Error>>()?;
 
@@ -191,12 +194,12 @@ where
 
         //For all deleted masternodes we need to remove them from the state of the app version votes
 
-        self.drive.remove_validators_proposed_app_versions(
-            deleted_masternodes
-                .into_iter()
-                .map(|a| a.0.try_into().unwrap()),
-            Some(transaction),
-        )?;
+        if !deleted_masternodes.is_empty() {
+            self.drive.remove_validators_proposed_app_versions(
+                deleted_masternodes.into_iter().map(|a| a.into_inner()),
+                Some(transaction),
+            )?;
+        }
 
         Ok(())
     }

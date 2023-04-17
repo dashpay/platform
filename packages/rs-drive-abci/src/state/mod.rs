@@ -1,7 +1,9 @@
+use crate::error::execution::ExecutionError;
+use crate::error::Error;
+use crate::execution::quorum::Quorum;
 use crate::rpc::core::QuorumListExtendedInfo;
-use dashcore_rpc::dashcore_rpc_json::{
-    MasternodeListItem, ProTxHash, QuorumHash, QuorumInfoResult,
-};
+use dashcore::{ProTxHash, QuorumHash};
+use dashcore_rpc::dashcore_rpc_json::{MasternodeListItem, QuorumInfoResult};
 use dashcore_rpc::json::{QuorumMasternodeListItem, QuorumType};
 use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::drive::block_info::BlockInfo;
@@ -23,10 +25,12 @@ pub struct PlatformState {
     pub next_epoch_protocol_version: ProtocolVersion,
     /// current quorums
     pub quorums_extended_info: HashMap<QuorumType, QuorumListExtendedInfo>,
+    /// current quorum
+    pub current_validator_set_quorum_hash: QuorumHash,
     /// current validator set quorums
     /// The validator set quorums are a subset of the quorums, but they also contain the list of
     /// all members
-    pub validator_sets: HashMap<QuorumHash, QuorumInfoResult>,
+    pub validator_sets: HashMap<QuorumHash, Quorum>,
 
     /// current full masternode list
     pub full_masternode_list: BTreeMap<ProTxHash, MasternodeListItem>,
@@ -86,5 +90,14 @@ impl PlatformState {
     /// HPMN list len
     pub fn hpmn_list_len(&self) -> usize {
         self.hpmn_masternode_list.len()
+    }
+
+    /// Get the current quorum
+    pub fn current_validator_set(&self) -> Result<&Quorum, Error> {
+        self.validator_sets
+            .get(&self.current_validator_set_quorum_hash)
+            .ok_or(Error::Execution(ExecutionError::CorruptedCachedState(
+                "current validator quorum hash not in current known validator sets",
+            )))
     }
 }

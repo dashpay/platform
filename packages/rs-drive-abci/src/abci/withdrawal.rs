@@ -1,6 +1,7 @@
 //! Withdrawal transactions definitions and processing
 
-use dpp::bls_signatures::{self};
+use bls_signatures::{self, BlsError};
+use dpp::validation::ValidationResult;
 use drive::{
     drive::{batch::DriveOperation, block_info::BlockInfo, Drive},
     fee::result::FeeResult,
@@ -12,10 +13,7 @@ use tenderdash_abci::proto::{
     types::{VoteExtension, VoteExtensionType},
 };
 
-use super::{
-    signature_verifier::{SignatureError, SignatureVerifier},
-    AbciError,
-};
+use super::{signature_verifier::SignatureVerifier, AbciError};
 
 const MAX_WITHDRAWAL_TXS: u16 = 16;
 
@@ -83,7 +81,17 @@ impl<'a> WithdrawalTxs<'a> {
 
 impl<'a> WithdrawalTxs<'a> {
     /// Convert withdrawal transactions to vector of ExtendVoteExtension
-    pub fn to_vec(self) -> Vec<ExtendVoteExtension> {
+    pub fn to_vec(&self) -> Vec<ExtendVoteExtension> {
+        self.inner
+            .iter()
+            .map(|v| ExtendVoteExtension {
+                r#type: v.r#type,
+                extension: v.extension.clone(),
+            })
+            .collect::<Vec<ExtendVoteExtension>>()
+    }
+    /// Convert withdrawal transactions to vector of ExtendVoteExtension
+    pub fn into_vec(self) -> Vec<ExtendVoteExtension> {
         self.inner
             .into_iter()
             .map(|v| ExtendVoteExtension {
@@ -144,8 +152,8 @@ impl<'a> PartialEq for WithdrawalTxs<'a> {
 impl<'a> SignatureVerifier for WithdrawalTxs<'a> {
     fn verify_signature(
         &self,
-        quorum_public_key: bls_signatures::PublicKey,
-    ) -> Result<bool, SignatureError> {
-        self.inner.verify_signature(quorum_public_key)
+        public_key: &bls_signatures::PublicKey,
+    ) -> ValidationResult<bool, BlsError> {
+        self.inner.verify_signature(public_key)
     }
 }

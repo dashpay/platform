@@ -30,11 +30,15 @@
 //! Execution Tests
 //!
 
+extern crate core;
+
 use anyhow::anyhow;
+use bls_signatures::PrivateKey as BlsPrivateKey;
 use dashcore::secp256k1::SecretKey;
-use dashcore::{signer, Network, PrivateKey};
+use dashcore::{signer, Network, PrivateKey, ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{
-    ExtendedQuorumDetails, QuorumHash as QuorumHashObject, QuorumInfoResult, QuorumType,
+    DMNState, ExtendedQuorumDetails, MasternodeListDiffWithMasternodes, MasternodeListItem,
+    MasternodeType, QuorumInfoResult, QuorumType,
 };
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::document::document_transition::document_base_transition::DocumentBaseTransition;
@@ -45,22 +49,17 @@ use dpp::document::DocumentsBatchTransition;
 use dpp::identity::signer::Signer;
 
 use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransition;
+use dpp::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::identity::KeyType::ECDSA_SECP256K1;
 use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
 use dpp::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError,
 };
-use dpp::state_transition::{
-    StateTransition, StateTransitionIdentitySigned, StateTransitionLike, StateTransitionType,
-};
+use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionType};
 use dpp::tests::fixtures::instant_asset_lock_proof_fixture;
 use dpp::version::LATEST_VERSION;
-use dpp::{bls_signatures, NativeBlsModule, ProtocolError};
-use dpp::{
-    bls_signatures::{PrivateKey as BlsPrivateKey, PublicKey as BlsPublicKey, Serialize},
-    identity::state_transition::identity_topup_transition::IdentityTopUpTransition,
-};
+use dpp::{NativeBlsModule, ProtocolError};
 use drive::common::helpers::identities::{create_test_identities_with_rng, generate_pro_tx_hashes};
 use drive::contract::{Contract, CreateRandomDocument, DocumentType};
 use drive::dpp::document::Document;
@@ -71,6 +70,9 @@ use drive::drive::defaults::PROTOCOL_VERSION;
 use drive::drive::flags::StorageFlags::SingleEpoch;
 
 use crate::FinalizeBlockOperation::IdentityAddKeys;
+use dashcore::hashes::hex::ToHex;
+use dashcore::hashes::Hash;
+use dashcore_rpc::json::QuorumMember;
 use dpp::data_contract::generate_data_contract_id;
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::state_transition::identity_credit_withdrawal_transition::{
@@ -87,55 +89,27 @@ use drive::fee_pools::epochs::Epoch;
 use drive::query::DriveQuery;
 use drive_abci::abci::AbciApplication;
 use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
+use drive_abci::execution::quorum::{Quorum, ValidatorWithPublicKeyShare};
 use drive_abci::platform::Platform;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use drive_abci::test::fixture::abci::static_init_chain_request;
 use drive_abci::test::helpers::setup::TestPlatformBuilder;
 use drive_abci::{config::PlatformConfig, test::helpers::setup::TempPlatform};
+use quorum::{TestQuorumInfo, ValidatorInQuorum};
 use rand::prelude::IteratorRandom;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::net::{IpAddr, SocketAddr};
 use std::ops::Range;
 use std::str::FromStr;
+use tenderdash_abci::proto::abci::ValidatorSetUpdate;
+use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
 
+mod quorum;
 mod upgrade_fork_tests;
-
-pub type QuorumHash = [u8; 32];
-pub type ProTxHash = [u8; 32];
-
-#[derive(Clone)]
-pub struct TestQuorumInfo {
-    quorum_hash: QuorumHash,
-    validator_set: Vec<ProTxHash>,
-    // in reality quorums don't have a private key,
-    // however for these tests, we can just sign with a private key to mimic threshold signing
-    private_key: BlsPrivateKey,
-    public_key: BlsPublicKey,
-}
-
-impl From<&TestQuorumInfo> for QuorumInfoResult {
-    fn from(value: &TestQuorumInfo) -> Self {
-        let TestQuorumInfo {
-            quorum_hash,
-            validator_set: _,
-            private_key: _,
-            public_key,
-        } = value;
-        QuorumInfoResult {
-            height: 0,
-            quorum_type: QuorumType::Llmq25_67,
-            quorum_hash: QuorumHashObject(quorum_hash.to_vec()),
-            quorum_index: 0,
-            mined_block: vec![],
-            members: vec![],
-            quorum_public_key: public_key.as_bytes(),
-            secret_key_share: None,
-        }
-    }
-}
 
 #[derive(Clone, Debug)]
 pub struct Frequency {
@@ -258,10 +232,10 @@ impl Signer for SimpleSigner {
             }
             KeyType::BLS12_381 => {
                 let pk =
-                    dpp::bls_signatures::PrivateKey::from_bytes(private_key).map_err(|_e| {
+                    bls_signatures::PrivateKey::from_bytes(private_key, false).map_err(|_e| {
                         ProtocolError::Error(anyhow!("bls private key from bytes isn't correct"))
                     })?;
-                Ok(pk.sign(data).as_bytes().into())
+                Ok(pk.sign(data).to_bytes().to_vec().into())
             }
             // the default behavior from
             // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L187
@@ -281,6 +255,8 @@ pub struct Strategy {
     operations: Vec<Operation>,
     identities_inserts: Frequency,
     total_hpmns: u16,
+    extra_normal_mns: u16,
+    quorum_count: u16,
     upgrading_info: Option<UpgradingInfo>,
     core_height_increase: Frequency,
 }
@@ -307,10 +283,10 @@ pub struct ValidatorVersionMigration {
 impl UpgradingInfo {
     fn apply_to_proposers(
         &self,
-        proposers: Vec<[u8; 32]>,
+        proposers: Vec<ProTxHash>,
         blocks_per_epoch: u64,
         rng: &mut StdRng,
-    ) -> HashMap<[u8; 32], ValidatorVersionMigration> {
+    ) -> HashMap<ProTxHash, ValidatorVersionMigration> {
         let expected_blocks = blocks_per_epoch as f64 * self.upgrade_three_quarters_life;
         proposers
             .into_iter()
@@ -922,20 +898,21 @@ pub struct ChainExecutionOutcome<'a> {
     pub abci_app: AbciApplication<'a, MockCoreRPCLike>,
     pub masternode_identity_balances: BTreeMap<[u8; 32], Credits>,
     pub identities: Vec<Identity>,
-    pub proposers: Vec<ProTxHash>,
+    pub proposers: Vec<MasternodeListItem>,
     pub quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
     pub current_quorum_hash: QuorumHash,
     pub current_proposer_versions: Option<HashMap<ProTxHash, ValidatorVersionMigration>>,
     pub end_epoch_index: u16,
     pub end_time_ms: u64,
     pub strategy: Strategy,
+    pub withdrawals: Vec<dashcore::Transaction>,
 }
 
 pub struct ChainExecutionParameters {
     pub block_start: u64,
     pub core_height_start: u32,
     pub block_count: u64,
-    pub proposers: Vec<[u8; 32]>,
+    pub proposers: Vec<MasternodeListItem>,
     pub quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
     pub current_quorum_hash: QuorumHash,
     // the first option is if it is set
@@ -949,6 +926,111 @@ pub enum StrategyRandomness {
     RNGEntropy(StdRng),
 }
 
+/// Creates a list of test Masternode identities of size `count` with random data
+pub fn generate_test_masternodes(
+    masternode_count: u16,
+    hpmn_count: u16,
+    rng: &mut StdRng,
+) -> Vec<MasternodeListItem> {
+    let mut masternodes: Vec<MasternodeListItem> =
+        Vec::with_capacity((masternode_count + hpmn_count) as usize);
+
+    for i in 0..masternode_count {
+        let private_key_operator =
+            BlsPrivateKey::generate_dash(rng).expect("expected to generate a private key");
+        let pub_key_operator = private_key_operator
+            .g1_element()
+            .expect("expected to get public key")
+            .to_bytes()
+            .to_vec();
+        let masternode_list_item = MasternodeListItem {
+            node_type: MasternodeType::Regular,
+            protx_hash: ProTxHash::from_inner(rng.gen::<[u8; 32]>()),
+            collateral_hash: rng.gen::<[u8; 32]>(),
+            collateral_index: 0,
+            operator_reward: 0,
+            state: DMNState {
+                service: SocketAddr::from_str(format!("1.0.{}.{}:1234", i / 256, i % 256).as_str())
+                    .unwrap(),
+                registered_height: 0,
+                pose_revived_height: 0,
+                pose_ban_height: 0,
+                revocation_reason: 0,
+                owner_address: rng.gen::<[u8; 20]>(),
+                voting_address: rng.gen::<[u8; 20]>(),
+                payout_address: rng.gen::<[u8; 20]>(),
+                pub_key_operator,
+                operator_payout_address: None,
+                platform_node_id: None,
+            },
+        };
+        masternodes.push(masternode_list_item);
+    }
+
+    for i in 0..hpmn_count {
+        let private_key_operator =
+            BlsPrivateKey::generate_dash(rng).expect("expected to generate a private key");
+        let pub_key_operator = private_key_operator
+            .g1_element()
+            .expect("expected to get public key")
+            .to_bytes()
+            .to_vec();
+        let masternode_list_item = MasternodeListItem {
+            node_type: MasternodeType::HighPerformance,
+            protx_hash: ProTxHash::from_inner(rng.gen::<[u8; 32]>()),
+            collateral_hash: rng.gen::<[u8; 32]>(),
+            collateral_index: 0,
+            operator_reward: 0,
+            state: DMNState {
+                service: SocketAddr::from_str(format!("1.1.{}.{}:1234", i / 256, i % 256).as_str())
+                    .unwrap(),
+                registered_height: 0,
+                pose_revived_height: 0,
+                pose_ban_height: 0,
+                revocation_reason: 0,
+                owner_address: rng.gen::<[u8; 20]>(),
+                voting_address: rng.gen::<[u8; 20]>(),
+                payout_address: rng.gen::<[u8; 20]>(),
+                pub_key_operator,
+                operator_payout_address: None,
+                platform_node_id: Some(rng.gen::<[u8; 20]>()),
+            },
+        };
+        masternodes.push(masternode_list_item);
+    }
+
+    masternodes
+}
+
+pub fn generate_test_quorums(
+    count: usize,
+    proposers: &Vec<MasternodeListItem>,
+    quorum_size: usize,
+    rng: &mut StdRng,
+) -> BTreeMap<QuorumHash, TestQuorumInfo> {
+    (0..count)
+        .into_iter()
+        .map(|_| {
+            let quorum_hash: QuorumHash = QuorumHash::from_inner(rng.gen());
+            let validator_pro_tx_hashes = proposers
+                .iter()
+                .filter(|m| m.node_type == MasternodeType::HighPerformance)
+                .choose_multiple(rng, quorum_size)
+                .iter()
+                .map(|masternode| masternode.protx_hash)
+                .collect(); //choose multiple chooses out of order (as we would like)
+            (
+                quorum_hash,
+                TestQuorumInfo::from_quorum_hash_and_pro_tx_hashes(
+                    quorum_hash,
+                    validator_pro_tx_hashes,
+                    rng,
+                ),
+            )
+        })
+        .collect()
+}
+
 pub(crate) fn run_chain_for_strategy(
     platform: &mut TempPlatform<MockCoreRPCLike>,
     block_count: u64,
@@ -956,81 +1038,87 @@ pub(crate) fn run_chain_for_strategy(
     config: PlatformConfig,
     seed: u64,
 ) -> ChainExecutionOutcome {
-    let quorum_count = 24; // We assume 24 quorums
+    let quorum_count = strategy.quorum_count; // We assume 24 quorums
     let quorum_size = config.quorum_size;
 
     let mut rng = StdRng::seed_from_u64(seed);
 
-    let proposers = generate_pro_tx_hashes(strategy.total_hpmns, &mut rng);
+    let proposers =
+        generate_test_masternodes(strategy.extra_normal_mns, strategy.total_hpmns, &mut rng);
 
-    let quorums: BTreeMap<QuorumHash, TestQuorumInfo> = (0..quorum_count)
-        .into_iter()
-        .map(|_| {
-            let quorum_hash: [u8; 32] = rng.gen();
-            let validator_set = proposers
-                .choose_multiple(&mut rng, quorum_size as usize)
-                .cloned()
-                .collect();
-            let private_key = bls_signatures::PrivateKey::generate(&mut rng);
-            let public_key = private_key.public_key();
+    let quorums = generate_test_quorums(
+        quorum_count as usize,
+        &proposers,
+        quorum_size as usize,
+        &mut rng,
+    );
 
+    let quorums_clone: HashMap<QuorumHash, ExtendedQuorumDetails> = quorums
+        .iter()
+        .map(|(quorum_hash, _)| {
             (
-                quorum_hash,
-                TestQuorumInfo {
-                    quorum_hash,
-                    validator_set,
-                    private_key,
-                    public_key,
+                quorum_hash.clone(),
+                ExtendedQuorumDetails {
+                    creation_height: 0,
+                    quorum_index: None,
+                    mined_block_hash: Default::default(),
+                    num_valid_members: 0,
+                    health_ratio: 0.0,
                 },
             )
         })
         .collect();
-
-    let quorums_clone = quorums.clone();
 
     platform
         .core_rpc
         .expect_get_quorum_listextended()
         .returning(move |_| {
             Ok(dashcore_rpc::dashcore_rpc_json::QuorumListResult {
-                quorums_by_type: HashMap::from([(
-                    QuorumType::Llmq100_67,
-                    quorums_clone
-                        .keys()
-                        .map(|key| {
-                            (
-                                dashcore_rpc::dashcore_rpc_json::QuorumHash::from(
-                                    hex::encode(key).as_str(),
-                                ),
-                                ExtendedQuorumDetails {
-                                    creation_height: 0,
-                                    quorum_index: None,
-                                    mined_block_hash: Default::default(),
-                                    num_valid_members: 0,
-                                    health_ratio: 0.0,
-                                },
-                            )
-                        })
-                        .collect(),
-                )]),
+                quorums_by_type: HashMap::from([(QuorumType::Llmq100_67, quorums_clone.clone())]),
             })
         });
 
-    let quorums_clone = quorums.clone();
+    let quorums_info: HashMap<QuorumHash, QuorumInfoResult> = quorums
+        .iter()
+        .map(|(quorum_hash, test_quorum_info)| (quorum_hash.clone(), test_quorum_info.into()))
+        .collect();
 
-    platform.core_rpc.expect_get_quorum_info().returning(
-        move |_, quorum_hash: &QuorumHashObject, _| {
-            Ok(quorums_clone
-                .get(quorum_hash.0.as_slice())
-                .unwrap_or_else(|| {
-                    panic!(
-                        "expected to get quorum {}",
-                        hex::encode(quorum_hash.0.as_slice())
-                    )
-                })
-                .into())
-        },
-    );
+    platform
+        .core_rpc
+        .expect_get_quorum_info()
+        .returning(move |_, quorum_hash: &QuorumHash, _| {
+            Ok(quorums_info
+                .get(quorum_hash)
+                .unwrap_or_else(|| panic!("expected to get quorum {}", quorum_hash.to_hex()))
+                .clone())
+        });
+
+    let initial_proposers = proposers.clone();
+
+    platform
+        .core_rpc
+        .expect_get_protx_diff_with_masternodes()
+        .returning(move |base_block, block| {
+            let diff = if base_block == 0 {
+                MasternodeListDiffWithMasternodes {
+                    base_height: base_block,
+                    block_height: block,
+                    added_mns: initial_proposers.clone(),
+                    removed_mns: vec![],
+                    updated_mns: vec![],
+                }
+            } else {
+                MasternodeListDiffWithMasternodes {
+                    base_height: base_block,
+                    block_height: block,
+                    added_mns: vec![],
+                    removed_mns: vec![],
+                    updated_mns: vec![],
+                }
+            };
+
+            Ok(diff)
+        });
 
     start_chain_for_strategy(
         platform,
@@ -1046,7 +1134,7 @@ pub(crate) fn run_chain_for_strategy(
 pub(crate) fn start_chain_for_strategy(
     platform: &TempPlatform<MockCoreRPCLike>,
     block_count: u64,
-    proposers: Vec<[u8; 32]>,
+    proposers: Vec<MasternodeListItem>,
     quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
     strategy: Strategy,
     config: PlatformConfig,
@@ -1056,10 +1144,39 @@ pub(crate) fn start_chain_for_strategy(
 
     let quorum_hashes: Vec<&QuorumHash> = quorums.keys().collect();
 
-    let current_quorum_hash = **quorum_hashes.choose(&mut rng).unwrap();
+    let current_quorum_hash = **quorum_hashes
+        .choose(&mut rng)
+        .expect("expected quorums to be initialized");
+
+    let current_quorum_with_test_info = quorums
+        .get(&current_quorum_hash)
+        .expect("expected a quorum to be found");
 
     // init chain
-    let init_chain_request = static_init_chain_request();
+    let mut init_chain_request = static_init_chain_request();
+
+    init_chain_request.validator_set = Some(ValidatorSetUpdate {
+        validator_updates: current_quorum_with_test_info
+            .validator_set
+            .iter()
+            .map(
+                |validator_in_quorum| tenderdash_abci::proto::abci::ValidatorUpdate {
+                    pub_key: Some(tenderdash_abci::proto::crypto::PublicKey {
+                        sum: Some(Bls12381(validator_in_quorum.public_key.to_bytes().to_vec())),
+                    }),
+                    power: 100,
+                    pro_tx_hash: validator_in_quorum.pro_tx_hash.to_vec(),
+                    node_address: "".to_string(),
+                },
+            )
+            .collect(),
+        threshold_public_key: Some(tenderdash_abci::proto::crypto::PublicKey {
+            sum: Some(Bls12381(
+                current_quorum_with_test_info.public_key.to_bytes().to_vec(),
+            )),
+        }),
+        quorum_hash: current_quorum_hash.to_vec(),
+    });
 
     platform
         .init_chain(init_chain_request)
@@ -1067,7 +1184,14 @@ pub(crate) fn start_chain_for_strategy(
 
     platform.create_mn_shares_contract(None);
 
-    create_test_identities_with_rng(&platform.drive, proposers.clone(), &mut rng, None);
+    create_test_identities_with_rng(
+        &platform.drive,
+        proposers
+            .iter()
+            .map(|masternode_list_item| masternode_list_item.protx_hash.into_inner()),
+        &mut rng,
+        None,
+    );
 
     continue_chain_for_strategy(
         abci_application,
@@ -1122,13 +1246,38 @@ pub(crate) fn continue_chain_for_strategy(
 
     let proposer_versions = current_proposer_versions.unwrap_or(
         strategy.upgrading_info.as_ref().map(|upgrading_info| {
-            upgrading_info.apply_to_proposers(proposers.clone(), blocks_per_epoch, &mut rng)
+            upgrading_info.apply_to_proposers(
+                proposers
+                    .iter()
+                    .map(|masternode_list_item| masternode_list_item.protx_hash.clone())
+                    .collect(),
+                blocks_per_epoch,
+                &mut rng,
+            )
         }),
     );
 
     let mut current_core_height = core_height_start;
 
+    let mut total_withdrawals = vec![];
+
+    let mut current_quorum_with_test_info = quorums.get(&current_quorum_hash).unwrap();
+
+    let mut current_quorum = current_quorum_with_test_info.into();
+
+    let mut next_quorum_hash = current_quorum_hash;
+
+    let mut next_quorum_with_test_info = quorums.get(&next_quorum_hash).unwrap();
+
+    let mut next_quorum = next_quorum_with_test_info.into();
+
     for block_height in block_start..(block_start + block_count) {
+        let needs_rotation_on_next_block = block_height % quorum_rotation_block_count == 0;
+        if needs_rotation_on_next_block {
+            let quorum_hashes: Vec<&QuorumHash> = quorums.keys().collect();
+
+            next_quorum_hash = **quorum_hashes.choose(&mut rng).unwrap();
+        }
         let epoch_info = EpochInfo::calculate(
             first_block_time,
             current_time_ms,
@@ -1150,10 +1299,17 @@ pub(crate) fn continue_chain_for_strategy(
             core_height: current_core_height,
             epoch: Epoch::new(epoch_info.current_epoch_index),
         };
+        if current_quorum_with_test_info.quorum_hash != current_quorum_hash {
+            current_quorum_with_test_info = quorums.get(&current_quorum_hash).unwrap();
+            current_quorum = current_quorum_with_test_info.into();
+        }
 
-        let proposer = quorums
-            .get(current_quorum_hash.as_slice())
-            .unwrap()
+        if next_quorum_with_test_info.quorum_hash != next_quorum_hash {
+            next_quorum_with_test_info = quorums.get(&next_quorum_hash).unwrap();
+            next_quorum = next_quorum_with_test_info.into();
+        }
+
+        let proposer = current_quorum_with_test_info
             .validator_set
             .get(i as usize)
             .unwrap();
@@ -1174,7 +1330,7 @@ pub(crate) fn continue_chain_for_strategy(
                     next_protocol_version,
                     change_block_height,
                 } = proposer_versions
-                    .get(proposer)
+                    .get(&proposer.pro_tx_hash)
                     .expect("expected to have version");
                 if &block_height >= change_block_height {
                     *next_protocol_version
@@ -1184,10 +1340,11 @@ pub(crate) fn continue_chain_for_strategy(
             })
             .unwrap_or(1);
 
-        abci_app
+        let mut withdrawals_this_block = abci_app
             .mimic_execute_block(
-                *proposer,
-                current_quorum_hash,
+                proposer.pro_tx_hash.into_inner(),
+                &current_quorum,
+                &next_quorum,
                 proposed_version,
                 proposer_count,
                 block_info,
@@ -1195,6 +1352,8 @@ pub(crate) fn continue_chain_for_strategy(
                 state_transitions,
             )
             .expect("expected to execute a block");
+
+        total_withdrawals.append(&mut withdrawals_this_block);
 
         for finalize_block_operation in finalize_block_operations {
             match finalize_block_operation {
@@ -1214,17 +1373,20 @@ pub(crate) fn continue_chain_for_strategy(
         current_time_ms += config.block_spacing_ms;
         i += 1;
         i %= quorum_size;
-        let needs_rotation = block_height % quorum_rotation_block_count == 0;
-        if needs_rotation {
-            let quorum_hashes: Vec<&QuorumHash> = quorums.keys().collect();
-
-            current_quorum_hash = **quorum_hashes.choose(&mut rng).unwrap();
+        if needs_rotation_on_next_block {
+            current_quorum_hash = next_quorum_hash;
         }
     }
 
     let masternode_identity_balances = platform
         .drive
-        .fetch_identities_balances(&proposers, None)
+        .fetch_identities_balances(
+            &proposers
+                .iter()
+                .map(|proposer| proposer.protx_hash.into_inner())
+                .collect(),
+            None,
+        )
         .expect("expected to get balances");
 
     let end_epoch_index = platform
@@ -1247,6 +1409,7 @@ pub(crate) fn continue_chain_for_strategy(
         end_epoch_index,
         end_time_ms: current_time_ms,
         strategy,
+        withdrawals: total_withdrawals,
     }
 }
 
@@ -1256,7 +1419,7 @@ mod tests {
     use crate::DocumentAction::DocumentActionReplace;
     use dashcore::hashes::Hash;
     use dashcore::BlockHash;
-    use dashcore_rpc::dashcore_rpc_json::{ExtendedQuorumDetails, QuorumHash};
+    use dashcore_rpc::dashcore_rpc_json::ExtendedQuorumDetails;
     use drive::dpp::data_contract::extra::common::json_document_to_cbor;
     use drive::dpp::data_contract::DriveContractExt;
     use drive_abci::rpc::core::QuorumListExtendedInfo;
@@ -1268,7 +1431,7 @@ mod tests {
         for i in 0..n {
             let i_bytes = [i as u8; 32];
 
-            let hash = QuorumHash(i_bytes.to_vec());
+            let hash = QuorumHash::from_inner(i_bytes);
 
             let details = ExtendedQuorumDetails {
                 creation_height: i,
@@ -1295,6 +1458,8 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -1335,6 +1500,8 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -1371,7 +1538,7 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99876087140)
+        assert_eq!(balance, 99876372860)
     }
 
     #[test]
@@ -1384,6 +1551,8 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: 1..3,
@@ -1424,6 +1593,8 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -1465,6 +1636,8 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -1521,6 +1694,8 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -1596,6 +1771,8 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -1658,6 +1835,8 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -1748,6 +1927,8 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -1838,6 +2019,8 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -1929,6 +2112,8 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -1960,7 +2145,7 @@ mod tests {
                 })
             });
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
-        assert_eq!(outcome.identities.len() as u64, 464);
+        assert_eq!(outcome.identities.len() as u64, 466);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
@@ -2038,6 +2223,8 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -2069,7 +2256,7 @@ mod tests {
                 })
             });
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
-        assert_eq!(outcome.identities.len() as u64, 88);
+        assert_eq!(outcome.identities.len() as u64, 93);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
@@ -2095,6 +2282,8 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -2159,6 +2348,8 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -2224,6 +2415,8 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -2300,6 +2493,8 @@ mod tests {
                 chance_per_block: None,
             },
             total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -2326,8 +2521,9 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
-        let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 15);
+        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
 
-        assert_eq!(outcome.identities.len(), 100);
+        assert_eq!(outcome.identities.len(), 10);
+        assert_eq!(outcome.withdrawals.len(), 5);
     }
 }

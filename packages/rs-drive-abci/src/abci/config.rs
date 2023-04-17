@@ -28,7 +28,7 @@ pub struct AbciConfig {
 
     /// Height of genesis block; defaults to 1
     #[serde(default = "AbciConfig::default_genesis_height")]
-    pub genesis_height: i64,
+    pub genesis_height: u64,
 
     /// Height of core at genesis
     #[serde(default = "AbciConfig::default_genesis_core_height")]
@@ -36,7 +36,7 @@ pub struct AbciConfig {
 }
 
 impl AbciConfig {
-    fn default_genesis_height() -> i64 {
+    fn default_genesis_height() -> u64 {
         1
     }
 

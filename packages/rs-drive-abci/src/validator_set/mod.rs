@@ -4,12 +4,11 @@
 
 mod error;
 
+use dashcore::QuorumHash;
 pub use error::ValidatorSetError;
 
 use dashcore_rpc::dashcore::hashes::{sha256, Hash, HashEngine};
-use dashcore_rpc::dashcore_rpc_json::{
-    ExtendedQuorumDetails, QuorumHash, QuorumInfoResult, QuorumType,
-};
+use dashcore_rpc::dashcore_rpc_json::{ExtendedQuorumDetails, QuorumInfoResult, QuorumType};
 use tenderdash_abci::proto::{abci, crypto as abci_crypto};
 
 use crate::{
@@ -46,7 +45,7 @@ impl From<ValidatorSet> for tenderdash_abci::proto::abci::ValidatorSetUpdate {
                 node_address: Default::default(),
                 power: 100,      // FIXME: double-check
                 pub_key: pubkey, // FIXME: double-check if it should be pub_key_share
-                pro_tx_hash: validator.pro_tx_hash.0,
+                pro_tx_hash: validator.pro_tx_hash.to_vec(),
             };
 
             validator_updates.push(vu);
@@ -55,7 +54,7 @@ impl From<ValidatorSet> for tenderdash_abci::proto::abci::ValidatorSetUpdate {
         Self {
             validator_updates,
             threshold_public_key: Some(u8_to_bls12381_pubkey(value.quorum_info.quorum_public_key)),
-            quorum_hash: value.quorum_info.quorum_hash.0,
+            quorum_hash: value.quorum_info.quorum_hash.to_vec(),
         }
     }
 }
@@ -97,7 +96,7 @@ impl ValidatorSet {
         let quorum =
             Self::choose_random_quorum(config, core_height, &quorum_type, &quorums, &entropy)?;
         let quorum_info = client
-            .get_quorum_info(quorum_type.clone().into(), &quorum.into(), Some(false))
+            .get_quorum_info(quorum_type.clone().into(), &quorum.quorum_hash, Some(false))
             .map_err(|e| ValidatorSetError::RpcError(e))?;
 
         Ok(Self { quorum_info })
@@ -162,18 +161,13 @@ impl ValidatorSet {
     }
 }
 
-impl From<Quorum> for QuorumHash {
-    fn from(value: Quorum) -> Self {
-        QuorumHash(value.quorum_hash)
-    }
-}
 /// Quorum info with additional weight details. Easy to sort by weight.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone)]
 struct Quorum {
     // ensure weight is first, as it metters when sorting
     weight: Vec<u8>,
 
-    quorum_hash: Vec<u8>,
+    quorum_hash: QuorumHash,
 
     creation_height: u32,
     quorum_index: Option<u32>,
@@ -191,7 +185,7 @@ impl Quorum {
         Quorum {
             weight: Self::calculate_weight(quorum_hash, entropy),
 
-            quorum_hash: quorum_hash.0.clone(),
+            quorum_hash: quorum_hash.clone(),
             creation_height: quorum_details.creation_height,
             // To avoid playing with floats, which don't implement Ord, we just multiply health ratio by 10^6
             health_ratio: (quorum_details.health_ratio * 1000000.0).round() as i32,
@@ -202,7 +196,7 @@ impl Quorum {
 
     /// Calculate weight to use when sorting.
     fn calculate_weight(quorum_hash: &QuorumHash, entropy: &Vec<u8>) -> Vec<u8> {
-        let mut hash = quorum_hash.0.clone();
+        let mut hash = quorum_hash.to_vec();
         hash.extend(entropy);
 
         let mut hasher = sha256::HashEngine::default();
@@ -231,6 +225,7 @@ impl Quorum {
 
 #[cfg(test)]
 mod tests {
+    use dashcore::hashes::sha256d;
     use dashcore_rpc::dashcore::{hashes::Hash, BlockHash};
     use dashcore_rpc::dashcore_rpc_json::{ExtendedQuorumDetails, QuorumHash, QuorumInfoResult};
     use dashcore_rpc::json::QuorumType;
@@ -245,7 +240,7 @@ mod tests {
         for i in 0..n {
             let i_bytes = [i as u8; 32];
 
-            let hash = QuorumHash(i_bytes.to_vec());
+            let hash = QuorumHash(sha256d::Hash::from_inner(i_bytes));
 
             let details = ExtendedQuorumDetails {
                 creation_height: i,

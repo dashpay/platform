@@ -26,13 +26,14 @@ tempfile = "3.3.0"
 bs58 = "0.4.0"
 hex = "0.4.3"
 sha2 = "0.10.6"
+bls-signatures = { git = "https://github.com/dashpay/bls-signatures", branch = "feat/threshold_bindings" }
 dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
     "std",
     "secp-recovery",
     "rand",
     "signer",
     "use-serde",
-], default-features = false, rev = "51548a4a1b9eca7430f5f3caf94d9784886ff2e9" }
+], default-features = false, branch = "feat/addons" }
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", branch = "feat/quorumListImprovement" }
 dpp = { path = "../rs-dpp", features = ["fixtures-and-mocks"] }
 rust_decimal = "1.2.5"

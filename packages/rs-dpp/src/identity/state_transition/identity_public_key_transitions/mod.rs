@@ -6,7 +6,6 @@ use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 
 use bincode::{Decode, Encode};
-use bls_signatures::Serialize as BlsSerialize;
 
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
@@ -385,8 +384,13 @@ impl IdentityPublicKeyInCreationWithWitness {
                             ));
                         }
                     };
-                if !public_key.verify(signature, signable_data.as_slice()) {
-                    // dbg!(format!("error with signature {} data {} public key {}",hex::encode(self.signature.as_slice()),  hex::encode(signable_data), hex::encode(self.data.as_slice())));
+                if !public_key.verify(&signature, signable_data.as_slice()) {
+                    // dbg!(format!(
+                    //     "error with signature {} data {} public key {}",
+                    //     hex::encode(self.signature.as_slice()),
+                    //     hex::encode(signable_data),
+                    //     hex::encode(self.data.as_slice())
+                    // ));
                     Ok(SimpleConsensusValidationResult::new_with_error(
                         ConsensusError::SignatureError(SignatureError::BasicBLSError(
                             "bls signature was incorrect".to_string(),

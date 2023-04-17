@@ -2,8 +2,9 @@ use crate::error::Error;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use chrono::Utc;
+use dashcore::hashes::Hash;
 use dashcore_rpc::json::{
-    Masternode, MasternodeListItem, ProTxHash, QuorumMasternodeListItem, UpdatedMasternodeItem,
+    Masternode, MasternodeListItem, QuorumMasternodeListItem, UpdatedMasternodeItem,
 };
 use dpp::identifier::Identifier;
 use dpp::identity::factory::IDENTITY_PROTOCOL_VERSION;
@@ -43,7 +44,7 @@ where
     }
 
     fn create_voter_identity(&self, masternode: &MasternodeListItem) -> Result<Identity, Error> {
-        let protx_hash = &masternode.protx_hash.0;
+        let protx_hash = masternode.protx_hash.into_inner();
         let voting_identifier = Self::get_voter_identifier(&protx_hash, &masternode)?;
         let mut identity = Self::create_basic_identity(voting_identifier);
         identity.add_public_keys([self.get_voter_identity_key(&masternode)?]);
@@ -66,7 +67,7 @@ where
     }
 
     fn create_operator_identity(&self, masternode: &MasternodeListItem) -> Result<Identity, Error> {
-        let protx_hash = &masternode.protx_hash.0;
+        let protx_hash = &masternode.protx_hash.into_inner();
         let operator_identifier = Self::get_operator_identifier(&protx_hash, &masternode)?;
         let mut identity = Self::create_basic_identity(operator_identifier);
         identity.add_public_keys(self.get_operator_identity_keys(&masternode)?);
@@ -121,12 +122,12 @@ where
     // TODO: this should take in a trait, so we can re-use this, right now we have to duplicate
     fn get_owner_identifier(masternode: &MasternodeListItem) -> Result<[u8; 32], Error> {
         // TODO: do proper error handling
-        let masternode_identifier: [u8; 32] = masternode.protx_hash.clone().0.try_into().unwrap();
+        let masternode_identifier: [u8; 32] = masternode.protx_hash.clone().into_inner();
         Ok(masternode_identifier)
     }
 
     fn get_operator_identifier(
-        protx_hash: &[u8],
+        protx_hash: &[u8; 32],
         masternode: &MasternodeListItem,
     ) -> Result<[u8; 32], Error> {
         let operator_pub_key = masternode.state.pub_key_operator.as_slice();
@@ -135,7 +136,7 @@ where
     }
 
     fn get_voter_identifier(
-        protx_hash: &[u8],
+        protx_hash: &[u8; 32],
         masternode: &MasternodeListItem,
     ) -> Result<[u8; 32], Error> {
         let voting_address = masternode.state.voting_address.as_slice();
@@ -143,7 +144,7 @@ where
         Ok(voting_identifier)
     }
 
-    fn hash_concat_protxhash(protx_hash: &[u8], key_data: &[u8]) -> Result<[u8; 32], Error> {
+    fn hash_concat_protxhash(protx_hash: &[u8; 32], key_data: &[u8]) -> Result<[u8; 32], Error> {
         let mut hasher = Sha256::new();
         hasher.update(protx_hash);
         hasher.update(key_data);
@@ -181,7 +182,7 @@ where
         // sadly can't pass the updated master node item directly, so have to generate
         // the owner identifier here again
         // TODO: fix this!!!!
-        let owner_identifier: [u8; 32] = masternode.protx_hash.clone().0.try_into().unwrap();
+        let owner_identifier: [u8; 32] = masternode.protx_hash.clone().into_inner();
         // we need to get the full identity
         // TODO: return an actual error if the identity is None, as it should be Some
         let owner_identity = self
@@ -262,7 +263,7 @@ where
         // sadly can't pass the updated master node item directly, so have to generate
         // the owner identifier here again
         // TODO: fix this!!!!
-        let owner_identifier: [u8; 32] = masternode.protx_hash.clone().0.try_into().unwrap();
+        let owner_identifier: [u8; 32] = masternode.protx_hash.clone().into_inner();
         // we need to get the full identity
         // TODO: return an actual error if the identity is None, as it should be Some
         let owner_identity = self
@@ -336,7 +337,7 @@ where
 
             // for the added masternodes, we just want to create the required identities
             for masternode in added_masternodes {
-                let protx_hash = hex::decode(&masternode.protx_hash.0).unwrap();
+                let protx_hash = hex::decode(&masternode.protx_hash.into_inner()).unwrap();
 
                 let owner_identity = self.create_owner_identity(&masternode)?;
                 let voter_identity = self.create_voter_identity(&masternode)?;
