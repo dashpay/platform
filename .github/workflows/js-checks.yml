@@ -105,11 +105,6 @@ jobs:
         with:
           firefox-version: 'latest'
 
-      - name: Install Chrome
-        uses: browser-actions/setup-chrome@v1
-        with:
-          chrome-version: stable
-
       - name: Check out repo
         uses: actions/checkout@v3
 

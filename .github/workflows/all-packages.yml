@@ -165,11 +165,6 @@ jobs:
       RUSTC_WRAPPER: "sccache"
       CARGO_INCREMENTAL: "false"
     steps:
-      - name: Install Chrome
-        uses: browser-actions/setup-chrome@v1
-        with:
-          chrome-version: stable
-
       - name: Login to DockerHub
         uses: docker/login-action@v2
         with:
