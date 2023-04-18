@@ -1,7 +1,7 @@
-use bincode;
 use bls_signatures;
 use dashcore::hashes::Hash;
 use dashcore::{QuorumHash, Txid};
+use dpp::bincode;
 use dpp::consensus::basic::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::ConsensusError;
 use dpp::state_transition::StateTransition;
@@ -379,7 +379,13 @@ where
         transaction: &Transaction,
     ) -> Result<(), Error> {
         // we need to serialize the block info
-        let serialized_block_info = bincode::serialize(block_info).map_err(|_| {
+        let mut serialized_block_info = vec![];
+        bincode::encode_into_slice(
+            block_info,
+            serialized_block_info.as_mut_slice(),
+            bincode::config::standard(),
+        )
+        .map_err(|_| {
             Error::Serialization(SerializationError::CorruptedSerialization(
                 "failed to serialize block info".to_string(),
             ))

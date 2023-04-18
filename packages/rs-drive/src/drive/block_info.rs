@@ -1,9 +1,9 @@
 use dpp::dashcore::QuorumHash;
 use crate::fee_pools::epochs::Epoch;
-use serde::{Serialize, Deserialize};
+use dpp::bincode::{Encode, Decode};
 
 /// Block information
-#[derive(Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Default, Encode, Decode)]
 pub struct BlockInfo {
     /// Block time in milliseconds
     pub time_ms: u64,

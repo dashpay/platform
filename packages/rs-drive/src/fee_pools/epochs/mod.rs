@@ -37,12 +37,13 @@ pub mod paths;
 
 use crate::fee::epoch::EpochIndex;
 use serde::{Deserialize, Serialize};
+use bincode::{Encode, Decode};
 
 // TODO: I would call it EpochTree because it represent pool,
 //  not just Epoch which is more abstract thing that we will probably need in future too
 
 /// Epoch struct
-#[derive(Serialize, Deserialize, Default, Clone, Eq, PartialEq, Copy)]
+#[derive(Serialize, Deserialize, Default, Clone, Eq, PartialEq, Copy, Encode, Decode)]
 #[serde(rename_all = "camelCase")]
 pub struct Epoch {
     /// Epoch index

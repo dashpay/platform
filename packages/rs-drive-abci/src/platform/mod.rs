@@ -48,6 +48,7 @@ use crate::rpc::core::MockCoreRPCLike;
 use dashcore::hashes::hex::FromHex;
 use dashcore::hashes::Hash;
 use dashcore::{BlockHash, QuorumHash};
+use dpp::bincode;
 use drive::drive::block_info::BlockInfo;
 use drive::error::drive::DriveError;
 use drive::error::Error::GroveDB;
@@ -220,11 +221,14 @@ impl<C> Platform<C> {
     where
         C: CoreRPCLike,
     {
-        let block_info: BlockInfo = bincode::deserialize(&serialized_block_info).map_err(|e| {
-            Serialization(SerializationError::CorruptedDeserialization(
-                "failed to deserialize saved state".to_string(),
-            ))
-        })?;
+        let block_info: BlockInfo =
+            bincode::decode_from_slice(&serialized_block_info, bincode::config::standard())
+                .map_err(|e| {
+                    Serialization(SerializationError::CorruptedDeserialization(
+                        "failed to deserialize saved state".to_string(),
+                    ))
+                })?
+                .0;
 
         let maybe_quorum_hash = drive
             .grove
