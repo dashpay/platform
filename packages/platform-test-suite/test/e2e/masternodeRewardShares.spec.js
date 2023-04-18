@@ -21,7 +21,7 @@ describe('Masternode Reward Shares', () => {
     await dpp.initialize();
 
     client = await createClientWithFundedWallet(
-      8000000,
+      10000000,
     );
 
     const masternodeRewardSharesContract = await client.platform.contracts.get(
@@ -89,7 +89,7 @@ describe('Masternode Reward Shares', () => {
       // Masternode identity should exist
       expect(masternodeOwnerIdentity).to.exist();
 
-      await client.platform.identities.topUp(masternodeOwnerIdentity.getId(), 1900000);
+      await client.platform.identities.topUp(masternodeOwnerIdentity.getId(), 2000000);
 
       // Since we cannot create "High" level key for masternode Identities automatically,
       // (this key is used to sign state transitions, other than "update")
