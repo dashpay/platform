@@ -1,3 +1,15 @@
+## [0.24.0-dev.20](https://github.com/dashpay/platform/compare/v0.24.0-dev.19...v0.24.0-dev.20) (2023-04-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* wasm-dpp integration (#848)
+
+### Features
+
+* **drive:** handle quorum rotation failure ([#858](https://github.com/dashpay/platform/issues/858))
+* wasm-dpp integration ([#848](https://github.com/dashpay/platform/issues/848))
+
 ## [0.24.0-dev.19](https://github.com/dashpay/platform/compare/v0.24.0-dev.18...v0.24.0-dev.19) (2023-04-17)
 
 ## [0.24.0-dev.18](https://github.com/dashpay/platform/compare/v0.24.0-dev.17...v0.24.0-dev.18) (2023-04-14)
