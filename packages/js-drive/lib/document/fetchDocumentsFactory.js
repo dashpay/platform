@@ -10,16 +10,17 @@ function fetchDocumentsFactory(
   fetchDataContract,
 ) {
   /**
-   * Fetch original Documents by Contract ID and type
+   * Fetch original Documents or Extended Documents by Contract ID and type
    *
    * @typedef {Promise} fetchDocuments
    * @param {Buffer|Identifier} dataContractId
    * @param {string} type
    * @param {Object} [options] options
    * @param {boolean} [options.useTransaction=false]
-   * @returns {Promise<Document[]>}
+   * @param {boolean} [extended=false]
+   * @returns {Promise<Document[]|ExtendedDocument[]>}
    */
-  async function fetchDocuments(dataContractId, type, options) {
+  async function fetchDocuments(dataContractId, type, options, extended = false) {
     const dataContractResult = await fetchDataContract(dataContractId);
 
     const dataContract = dataContractResult.getValue();
@@ -33,6 +34,7 @@ function fetchDocumentsFactory(
       dataContract,
       type,
       options,
+      extended,
     );
 
     result.addOperation(...operations);

@@ -15,6 +15,7 @@ export default async function publish(
   dataContract: any,
   identity: any,
 ): Promise<any> {
+  this.logger.debug(`[Contracts#publish] publish data contract ${dataContract.getId()}`);
   await this.initialize();
 
   const { dpp } = this;
@@ -22,8 +23,12 @@ export default async function publish(
   const dataContractCreateTransition = dpp.dataContract
     .createDataContractCreateTransition(dataContract);
 
+  this.logger.silly(`[Contracts#publish] created data contract create transition ${dataContract.getId()}`);
+
   await signStateTransition(this, dataContractCreateTransition, identity, 1);
   await broadcastStateTransition(this, dataContractCreateTransition);
+
+  this.logger.debug(`[Contracts#publish] publish data contract ${dataContract.getId()}`);
 
   return dataContractCreateTransition;
 }

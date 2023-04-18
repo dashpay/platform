@@ -1,14 +1,15 @@
 const crypto = require('crypto');
 const Dash = require('dash');
 
-const { PlatformProtocol: { Identifier } } = Dash;
+const { Platform } = Dash;
 
 /**
  * Generate random identity ID
  *
  * @return {Identifier}
  */
-function generateRandomIdentifier() {
+async function generateRandomIdentifier() {
+  const { Identifier } = await Platform.initializeDppModule();
   return new Identifier(crypto.randomBytes(32));
 }
 

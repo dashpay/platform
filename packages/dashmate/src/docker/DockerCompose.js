@@ -122,6 +122,7 @@ class DockerCompose {
    *
    * @param {Object} envs
    * @param {string} [serviceName]
+   * @param {Array} [options]
    * @return {Observable<{string}>}
    */
   // eslint-disable-next-line no-unused-vars
@@ -144,6 +145,7 @@ class DockerCompose {
           await dockerCompose.buildAll({
             ...this.getOptions(envs),
             callback,
+            commandOptions: options,
           });
         }
 

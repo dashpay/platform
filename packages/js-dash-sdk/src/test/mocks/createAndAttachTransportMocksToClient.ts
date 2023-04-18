@@ -1,7 +1,7 @@
 import { Transaction } from '@dashevo/dashcore-lib';
 import DAPIClient from '@dashevo/dapi-client';
 import stateTransitionTypes from '@dashevo/dpp/lib/stateTransition/stateTransitionTypes';
-import Identity from '@dashevo/dpp/lib/identity/Identity';
+import { Identity } from '@dashevo/wasm-dpp';
 
 import { createFakeInstantLock } from '../../utils/createFakeIntantLock';
 import getResponseMetadataFixture from '../fixtures/getResponseMetadataFixture';
@@ -50,14 +50,14 @@ function makeTxStreamEmitISLocksForTransactions(transportMock, txStreamMock) {
  * @param {Client} client
  * @param dapiClientMock
  */
-function makeGetIdentityRespondWithIdentity(client, dapiClientMock) {
+async function makeGetIdentityRespondWithIdentity(client, dapiClientMock) {
   dapiClientMock.platform.broadcastStateTransition.callsFake(async (stBuffer) => {
     const interceptedIdentityStateTransition = await client
       .platform.dpp.stateTransition.createFromBuffer(stBuffer);
 
     if (interceptedIdentityStateTransition.getType() === stateTransitionTypes.IDENTITY_CREATE) {
       const identityToResolve = new Identity({
-        protocolVersion: interceptedIdentityStateTransition.getProtocolVersion(),
+        protocolVersion: client.platform.dpp.getProtocolVersion(),
         id: interceptedIdentityStateTransition.getIdentityId().toBuffer(),
         publicKeys: interceptedIdentityStateTransition
           .getPublicKeys().map((key) => key.toObject({ skipSignature: true })),
@@ -74,6 +74,8 @@ function makeGetIdentityRespondWithIdentity(client, dapiClientMock) {
 }
 
 export async function createAndAttachTransportMocksToClient(client, sinon) {
+  await client.platform.initialize();
+
   const txStreamMock = new TxStreamMock();
   const transportMock = new TransportMock(sinon, txStreamMock);
   const dapiClientMock = createDapiClientMock(sinon);
@@ -102,7 +104,7 @@ export async function createAndAttachTransportMocksToClient(client, sinon) {
   // Putting data in transport stubs
   transportMock.getIdentitiesByPublicKeyHashes.resolves([]);
   makeTxStreamEmitISLocksForTransactions(transportMock, txStreamMock);
-  makeGetIdentityRespondWithIdentity(client, dapiClientMock);
+  await makeGetIdentityRespondWithIdentity(client, dapiClientMock);
 
   return { txStreamMock, transportMock, dapiClientMock };
 }

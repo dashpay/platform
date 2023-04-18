@@ -26,7 +26,7 @@ export async function signStateTransition(
 
   await stateTransition.sign(
     identity.getPublicKeyById(keyIndex),
-    privateKey,
+    privateKey.toBuffer(),
   );
 
   return stateTransition;

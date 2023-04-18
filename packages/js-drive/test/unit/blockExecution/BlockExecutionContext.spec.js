@@ -11,7 +11,7 @@ const {
 
 const Long = require('long');
 
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
 const BlockExecutionContext = require('../../../lib/blockExecution/BlockExecutionContext');
 const getBlockExecutionContextObjectFixture = require('../../../lib/test/fixtures/getBlockExecutionContextObjectFixture');
 
@@ -29,12 +29,12 @@ describe('BlockExecutionContext', () => {
   let prepareProposalResult;
   let proposedAppVersion;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     blockExecutionContext = new BlockExecutionContext();
-    dataContract = getDataContractFixture();
+    dataContract = await getDataContractFixture();
     delete dataContract.entropy;
 
-    plainObject = getBlockExecutionContextObjectFixture(dataContract);
+    plainObject = await getBlockExecutionContextObjectFixture(dataContract);
 
     lastCommitInfo = CommitInfo.fromObject(plainObject.lastCommitInfo);
 
@@ -410,8 +410,8 @@ describe('BlockExecutionContext', () => {
         blockExecutionContext.dataContracts[0].$defs = {};
       }
 
-      expect(blockExecutionContext.dataContracts).to.have.deep.members(
-        [dataContract],
+      expect(blockExecutionContext.dataContracts[0].toObject()).to.deep.equal(
+        dataContract.toObject(),
       );
       expect(blockExecutionContext.lastCommitInfo).to.deep.equal(lastCommitInfo);
       expect(blockExecutionContext.height).to.deep.equal(height);

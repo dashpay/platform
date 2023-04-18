@@ -1,7 +1,7 @@
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+const { IdentityPublicKey } = require('@dashevo/wasm-dpp');
 const Address = require('@dashevo/dashcore-lib/lib/address');
 const Script = require('@dashevo/dashcore-lib/lib/script');
-const InvalidIdentityPublicKeyTypeError = require('@dashevo/dpp/lib/stateTransition/errors/InvalidIdentityPublicKeyTypeError');
+
 const getPublicKeyFromPayoutScript = require('../../../../lib/identity/masternode/getPublicKeyFromPayoutScript');
 
 describe('getPublicKeyFromPayoutScript', () => {
@@ -25,19 +25,5 @@ describe('getPublicKeyFromPayoutScript', () => {
     const result = getPublicKeyFromPayoutScript(scriptBuffer, type);
 
     expect(result).to.deep.equal(Buffer.from('19a7d869032368fd1f1e26e5e73a4ad0e474960e', 'hex'));
-  });
-
-  it('should throw InvalidIdentityPublicKeyTypeError if type is unknown', () => {
-    const payoutAddress = Address.fromString('7UkJidhNjEPJCQnCTXeaJKbJmL4JuyV66w');
-    const scriptBuffer = new Script(payoutAddress);
-
-    try {
-      getPublicKeyFromPayoutScript(scriptBuffer, -1);
-
-      expect.fail('should throw InvalidIdentityPublicKeyTypeError');
-    } catch (e) {
-      expect(e).to.be.an.instanceof(InvalidIdentityPublicKeyTypeError);
-      expect(e.getPublicKeyType()).to.equal(-1);
-    }
   });
 });

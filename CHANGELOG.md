@@ -1,3 +1,62 @@
+## [0.24.0-dev.20](https://github.com/dashpay/platform/compare/v0.24.0-dev.19...v0.24.0-dev.20) (2023-04-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* Some wasm-dpp APIs are different to js-dpp ones. The only visible divergencies were addressed, but many others might've been left unnoticed (#848)
+
+### Features
+
+* **drive:** handle quorum rotation failure ([#858](https://github.com/dashpay/platform/issues/858))
+* wasm-dpp integration ([#848](https://github.com/dashpay/platform/issues/848))
+
+## [0.24.0-dev.19](https://github.com/dashpay/platform/compare/v0.24.0-dev.18...v0.24.0-dev.19) (2023-04-17)
+
+### Continuous Integration
+
+* test release workflow
+
+## [0.24.0-dev.18](https://github.com/dashpay/platform/compare/v0.24.0-dev.17...v0.24.0-dev.18) (2023-04-14)
+
+
+### Features
+
+* **dashmate:** build linux tarballs ([#887](https://github.com/dashpay/platform/issues/887))
+* **dashmate:** build services before restart ([#894](https://github.com/dashpay/platform/issues/894))
+* **dashmate:** exit status with 2 if it's not running ([#896](https://github.com/dashpay/platform/issues/896))
+* **dashmate:** implement http json rpc api ([#888](https://github.com/dashpay/platform/issues/888))
+* **dashmate:** tenderdash latest block time in status ([#906](https://github.com/dashpay/platform/issues/906))
+* **dpp:** serialize consensus errors ([#871](https://github.com/dashpay/platform/issues/871))
+* drive verification c bindings ([#860](https://github.com/dashpay/platform/issues/860))
+
+
+### Bug Fixes
+
+* DAPI still expected on normal masternodes ([#904](https://github.com/dashpay/platform/issues/904))
+* **dapi-client:** platform port is ignored from SML ([#903](https://github.com/dashpay/platform/issues/903))
+* **dashmate:** api binds to all interfaces ([#893](https://github.com/dashpay/platform/issues/893))
+* **dashmate:** dashmate helper is running under root user ([#895](https://github.com/dashpay/platform/issues/895))
+* **dashmate:** dashmate logic doesn't recognize it's ran from helper ([#902](https://github.com/dashpay/platform/issues/902))
+* **dashmate:** missing rawblock zmq message in core config ([#770](https://github.com/dashpay/platform/issues/770))
+* **dashmate:** undefined wallet for dash-cli ([#786](https://github.com/dashpay/platform/issues/786))
+* **dpp:** various fixes in DPP and system contracts ([#907](https://github.com/dashpay/platform/issues/907))
+* **drive:** non-deterministic run of mn identities sync ([#910](https://github.com/dashpay/platform/issues/910))
+* **drive:** total HPMNs contains all masternodes ([#911](https://github.com/dashpay/platform/issues/911))
+* identifier deserialization doesn't work for bincode ([#885](https://github.com/dashpay/platform/issues/885))
+* llmqType must be equal to one of the allowed values ([#884](https://github.com/dashpay/platform/issues/884))
+* possible overflow issues ([#877](https://github.com/dashpay/platform/issues/877))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** update production dashcore versions for mainnet and testnet ([#840](https://github.com/dashpay/platform/issues/840))
+* **sdk:** add eslint ([#829](https://github.com/dashpay/platform/issues/829))
+
+
+### Continuous Integration
+
+* sign MacOs Dashmate release ([#890](https://github.com/dashpay/platform/issues/890))
+
 ## [0.24.0-dev.17](https://github.com/dashpay/platform/compare/v0.24.0-dev.16...v0.24.0-dev.17) (2023-04-04)
 
 

@@ -13,7 +13,7 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 
 const identitiesByPublicKeyHashesQueryHandlerFactory = require(
   '../../../../../lib/abci/handlers/query/identitiesByPublicKeyHashesQueryHandlerFactory',
@@ -32,7 +32,7 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
   let params;
   let data;
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     identityRepositoryMock = {
       proveManyByPublicKeyHashes: this.sinon.stub(),
       fetchManyByPublicKeyHashes: this.sinon.stub(),
@@ -60,8 +60,8 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
     ];
 
     identities = [
-      getIdentityFixture(),
-      getIdentityFixture(),
+      await getIdentityFixture(),
+      await getIdentityFixture(),
     ];
 
     identityRepositoryMock

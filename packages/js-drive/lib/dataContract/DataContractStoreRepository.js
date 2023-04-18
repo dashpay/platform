@@ -1,6 +1,8 @@
 const { createHash } = require('crypto');
+const {
+  PreCalculatedOperation,
+} = require('@dashevo/wasm-dpp');
 
-const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/PreCalculatedOperation');
 const StorageResult = require('../storage/StorageResult');
 
 class DataContractStoreRepository {
@@ -39,7 +41,11 @@ class DataContractStoreRepository {
       return new StorageResult(
         undefined,
         [
-          new PreCalculatedOperation(feeResult),
+          new PreCalculatedOperation(
+            feeResult.storageFee,
+            feeResult.processingFee,
+            feeResult.feeRefunds,
+          ),
         ],
       );
     } finally {
@@ -80,7 +86,11 @@ class DataContractStoreRepository {
       return new StorageResult(
         undefined,
         [
-          new PreCalculatedOperation(feeResult),
+          new PreCalculatedOperation(
+            feeResult.storageFee,
+            feeResult.processingFee,
+            feeResult.feeRefunds,
+          ),
         ],
       );
     } finally {
@@ -125,7 +135,11 @@ class DataContractStoreRepository {
 
     const operations = [];
     if (feeResult) {
-      operations.push(new PreCalculatedOperation(feeResult));
+      operations.push(new PreCalculatedOperation(
+        feeResult.storageFee,
+        feeResult.processingFee,
+        feeResult.feeRefunds,
+      ));
     }
 
     return new StorageResult(

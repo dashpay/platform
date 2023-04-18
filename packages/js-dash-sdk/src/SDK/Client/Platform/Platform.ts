@@ -1,7 +1,10 @@
 // @ts-ignore
-import DashPlatformProtocol from '@dashevo/dpp';
+import loadWasmDpp, { DashPlatformProtocol } from '@dashevo/wasm-dpp';
+import crypto from 'crypto';
 
 import { latestVersion as latestProtocolVersion } from '@dashevo/dpp/lib/version/protocolVersion';
+import getBlsAdapter from '../../../bls/getBlsAdapter';
+
 import Client from '../Client';
 import { IStateTransitionResult } from './IStateTransitionResult';
 
@@ -95,12 +98,18 @@ interface DataContracts {
  * Class for Dash Platform
  *
  * @param documents - documents
- * @param identities - identites
+ * @param identities - identities
  * @param names - names
  * @param contracts - contracts
  */
 export class Platform {
+  // TODO: Address in further type system improvements
+  //  Do we want to refactor all methods to check
+  //  whether dpp is initialized instead of ts-ignoring?
+  // @ts-ignore
   dpp: DashPlatformProtocol;
+
+  protocolVersion: number;
 
   public documents: Records;
 
@@ -188,20 +197,30 @@ export class Platform {
     // use mapped one otherwise
     // fallback to one that set in dpp as the last option
     // eslint-disable-next-line
-    const driveProtocolVersion = options.driveProtocolVersion !== undefined
+    this.protocolVersion = options.driveProtocolVersion !== undefined
       ? options.driveProtocolVersion
       : (mappedProtocolVersion !== undefined ? mappedProtocolVersion : latestProtocolVersion);
-
-    const stateRepository = new StateRepository(this.client);
-
-    this.dpp = new DashPlatformProtocol({
-      stateRepository,
-      protocolVersion: driveProtocolVersion,
-      ...options,
-    });
   }
 
   async initialize() {
-    await this.dpp.initialize();
+    if (!this.dpp) {
+      await Platform.initializeDppModule();
+
+      const bls = await getBlsAdapter();
+      const stateRepository = new StateRepository(this.client);
+
+      this.dpp = new DashPlatformProtocol(
+        bls,
+        stateRepository,
+        {
+          generate: () => crypto.randomBytes(32),
+        },
+        this.protocolVersion,
+      );
+    }
+  }
+
+  static async initializeDppModule() {
+    return loadWasmDpp();
   }
 }

@@ -22,26 +22,21 @@ const {
     Identity,
     Identifier,
     IdentityPublicKey,
-    ConsensusErrors: {
-      InvalidInstantAssetLockProofSignatureError,
-      IdentityAssetLockTransactionOutPointAlreadyExistsError,
-      BalanceIsNotEnoughError,
-      InvalidIdentityKeySignatureError,
-    },
+    InvalidInstantAssetLockProofSignatureError,
+    IdentityAssetLockTransactionOutPointAlreadyExistsError,
+    BalanceIsNotEnoughError,
+    InvalidIdentityKeySignatureError,
+    IdentityPublicKeyWithWitness,
   },
 } = Dash;
 
 describe('Platform', () => {
   describe('Identity', () => {
-    let dpp;
     let client;
     let identity;
     let walletAccount;
 
     before(async () => {
-      dpp = new Dash.PlatformProtocol();
-      await dpp.initialize();
-
       client = await createClientWithFundedWallet(700000);
 
       walletAccount = await client.getWalletAccount();
@@ -60,6 +55,8 @@ describe('Platform', () => {
     });
 
     it('should fail to create an identity if instantLock is not valid', async () => {
+      await client.platform.initialize();
+
       const {
         transaction,
         privateKey,
@@ -67,9 +64,9 @@ describe('Platform', () => {
       } = await client.platform.identities.utils.createAssetLockTransaction(1);
 
       const invalidInstantLock = createFakeInstantLock(transaction.hash);
-      const assetLockProof = await dpp.identity.createInstantAssetLockProof(
-        invalidInstantLock,
-        transaction,
+      const assetLockProof = await client.platform.dpp.identity.createInstantAssetLockProof(
+        invalidInstantLock.toBuffer(),
+        transaction.toBuffer(),
         outputIndex,
       );
 
@@ -90,6 +87,7 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
+      expect(broadcastError.getCause().getCode()).to.equal(1042);
       expect(broadcastError.getCause()).to.be.an.instanceOf(
         InvalidInstantAssetLockProofSignatureError,
       );
@@ -104,7 +102,9 @@ describe('Platform', () => {
 
       const account = await client.getWalletAccount();
 
-      await account.broadcastTransaction(transaction);
+      // Do not `await` for this call, it does not propagate instant locks
+      // and createAsstLockProof falls back to chain lock instead which is not what we want
+      account.broadcastTransaction(transaction);
 
       // Creating normal transition
       const assetLockProof = await client.platform.identities.utils
@@ -148,6 +148,7 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
+      expect(broadcastError.getCause().getCode()).to.equal(1033);
       expect(broadcastError.getCause()).to.be.an.instanceOf(
         IdentityAssetLockTransactionOutPointAlreadyExistsError,
       );
@@ -162,7 +163,9 @@ describe('Platform', () => {
 
       const account = await client.getWalletAccount();
 
-      await account.broadcastTransaction(transaction);
+      // Do not `await` for this call, it does not propagate instant locks
+      // and createAsstLockProof falls back to chain lock instead which is not what we want
+      account.broadcastTransaction(transaction);
 
       // Creating normal transition
       const assetLockProof = await client.platform.identities.utils.createAssetLockProof(
@@ -178,8 +181,10 @@ describe('Platform', () => {
 
       // Remove signature
 
-      const [masterKey] = identityCreateTransition.getPublicKeys();
+      const keys = identityCreateTransition.getPublicKeys();
+      const [masterKey] = keys;
       masterKey.setSignature(Buffer.alloc(65));
+      identityCreateTransition.setPublicKeys(keys);
 
       // Broadcast
 
@@ -195,6 +200,7 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
+      expect(broadcastError.getCause().getCode()).to.equal(1056);
       expect(broadcastError.getCause()).to.be.an.instanceOf(
         InvalidIdentityKeySignatureError,
       );
@@ -235,6 +241,8 @@ describe('Platform', () => {
       this.timeout(850000);
 
       it('should create identity using chainLock', async () => {
+        await client.platform.initialize();
+
         // Broadcast Asset Lock transaction
         const {
           transaction,
@@ -251,10 +259,16 @@ describe('Platform', () => {
 
         const { height: transactionHeight } = await metadataPromise;
 
-        const outPoint = transaction.getOutPointBuffer(outputIndex);
-        const assetLockProof = await dpp.identity.createChainAssetLockProof(
+        // Changing endianness of raw txId bytes in outPoint to match expectations of dashcore-rust
+        let outPointBuffer = transaction.getOutPointBuffer(outputIndex);
+        const txIdBuffer = outPointBuffer.slice(0, 32);
+        const outputIndexBuffer = outPointBuffer.slice(32);
+        txIdBuffer.reverse();
+        outPointBuffer = Buffer.concat([txIdBuffer, outputIndexBuffer]);
+
+        const assetLockProof = await client.platform.dpp.identity.createChainAssetLockProof(
           transactionHeight,
-          outPoint,
+          outPointBuffer,
         );
 
         // Wait for platform chain to sync core height up to transaction height
@@ -354,14 +368,16 @@ describe('Platform', () => {
         } = await client.platform.identity.utils.createAssetLockTransaction(15);
 
         const instantLock = createFakeInstantLock(transaction.hash);
-        const assetLockProof = await dpp.identity.createInstantAssetLockProof(instantLock);
+        const assetLockProof = await client.platform.dpp.identity
+          .createInstantAssetLockProof(instantLock);
 
-        const identityTopUpTransition = dpp.identity.createIdentityTopUpTransition(
-          identity.getId(),
-          transaction,
-          outputIndex,
-          assetLockProof,
-        );
+        const identityTopUpTransition = client.platform.dpp.identity
+          .createIdentityTopUpTransition(
+            identity.getId(),
+            transaction,
+            outputIndex,
+            assetLockProof,
+          );
         await identityTopUpTransition.signByPrivateKey(
           privateKey,
           IdentityPublicKey.TYPES.ECDSA_SECP256K1,
@@ -486,7 +502,7 @@ describe('Platform', () => {
 
         const identityPublicKey = identityPrivateKey.toPublicKey().toBuffer();
 
-        const newPublicKey = new IdentityPublicKey(
+        const newPublicKey = new IdentityPublicKeyWithWitness(
           {
             id: 2,
             type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
@@ -494,6 +510,7 @@ describe('Platform', () => {
             securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
             data: identityPublicKey,
             readOnly: false,
+            signature: Buffer.alloc(0),
           },
         );
 
@@ -518,13 +535,15 @@ describe('Platform', () => {
         expect(identity.getRevision()).to.equal(identityBeforeUpdate.getRevision() + 1);
         expect(identity.getPublicKeyById(2)).to.exist();
 
+        const newPublicKeyObject = newPublicKey.toObject();
+        delete newPublicKeyObject.signature;
         expect(identity.getPublicKeyById(2).toObject()).to.deep.equal(
-          newPublicKey.toObject(),
+          newPublicKeyObject,
         );
       });
 
       it('should be able to disable public key of the identity', async () => {
-        const now = new Date().getTime();
+        const now = new Date();
 
         const identityBeforeUpdate = new Identity(identity.toObject());
 
@@ -565,6 +584,8 @@ describe('Platform', () => {
       });
 
       it('should receive masternode identities', async () => {
+        await client.platform.initialize();
+
         const bestBlockHash = await dapiClient.core.getBestBlockHash();
         const baseBlockHash = await dapiClient.core.getBlockHash(1);
 

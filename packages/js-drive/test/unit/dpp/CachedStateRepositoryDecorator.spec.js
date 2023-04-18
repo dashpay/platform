@@ -1,6 +1,6 @@
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
 const CachedStateRepositoryDecorator = require('../../../lib/dpp/CachedStateRepositoryDecorator');
@@ -13,11 +13,11 @@ describe('CachedStateRepositoryDecorator', () => {
   let documents;
   let dataContract;
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     id = 'id';
-    identity = getIdentityFixture();
-    documents = getDocumentsFixture();
-    dataContract = getDataContractFixture();
+    identity = await getIdentityFixture();
+    documents = await getDocumentsFixture();
+    dataContract = await getDataContractFixture();
 
     stateRepositoryMock = createStateRepositoryMock(this.sinon);
 
@@ -49,9 +49,10 @@ describe('CachedStateRepositoryDecorator', () => {
     it('should store identity to repository', async () => {
       await cachedStateRepository.addKeysToIdentity(identity.getId(), identity.getPublicKeys());
 
-      expect(stateRepositoryMock.addKeysToIdentity).to.be.calledOnceWith(
+      expect(stateRepositoryMock.addKeysToIdentity).to.be.calledOnceWithExactly(
         identity.getId(),
         identity.getPublicKeys(),
+        undefined,
       );
     });
   });

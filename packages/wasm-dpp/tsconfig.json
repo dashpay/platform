@@ -4,7 +4,8 @@
     "noImplicitAny": true,
     "module": "commonjs",
     "target": "es2015",
-    "allowJs": true,
+    "rootDir": "./lib",
+    "allowJs": false,
     "moduleResolution": "node",
     "esModuleInterop": true,
     "declaration": true,
@@ -13,5 +14,5 @@
       "dom"
     ]
   },
-  "include": ["index.ts", "lib/**/*.ts", "wasm/wasm_dpp.js"],
+  "include": ["lib/**/*.ts"],
 }

@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/platform",
-  "version": "0.24.0-dev.17",
+  "version": "0.24.0-dev.20",
   "private": true,
   "scripts": {
     "setup": "yarn install && yarn run build && yarn run configure",
@@ -78,5 +78,8 @@
     "engine.io": "^6.2.1",
     "ua-parser-js": "^1.0.33",
     "dns-packet": "^5.4.0"
+  },
+  "dependencies": {
+    "node-gyp": "^9.3.1"
   }
 }

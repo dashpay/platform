@@ -1,5 +1,5 @@
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
+const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
 const StorageResult = require('../../../lib/storage/StorageResult');
 const InvalidQueryError = require('../../../lib/document/errors/InvalidQueryError');
@@ -16,27 +16,31 @@ describe('proveDocumentsFactory', () => {
   let container;
   let blockInfo;
 
-  beforeEach(async () => {
-    container = await createTestDIContainer();
+  beforeEach(async function beforeEach() {
+    container = await createTestDIContainer(this.blsAdapter);
 
     dataContractRepository = container.resolve('dataContractRepository');
     documentRepository = container.resolve('documentRepository');
 
-    dataContract = getDataContractFixture();
+    dataContract = await getDataContractFixture();
 
     contractId = dataContract.getId();
 
-    [document] = getDocumentsFixture(dataContract);
+    [document] = await getDocumentsFixture(dataContract);
 
     documentType = document.getType();
 
-    dataContract.documents[documentType].indices = [
+    const documents = dataContract.getDocuments();
+
+    documents[documentType].indices = [
       {
         properties: [
           { name: 'asc' },
         ],
       },
     ];
+
+    dataContract.setDocuments(documents);
 
     blockInfo = new BlockInfo(1, 0, Date.now());
 
@@ -101,7 +105,7 @@ describe('proveDocumentsFactory', () => {
   });
 
   it('should return proof by an equal date', async () => {
-    const indexedDocument = getDocumentsFixture(dataContract)[3];
+    const [, , , indexedDocument] = await getDocumentsFixture(dataContract);
 
     await documentRepository.create(indexedDocument, blockInfo);
 
@@ -123,7 +127,7 @@ describe('proveDocumentsFactory', () => {
   });
 
   it('should return proof by a date range', async () => {
-    const [, , , indexedDocument] = getDocumentsFixture(dataContract);
+    const [, , , indexedDocument] = await getDocumentsFixture(dataContract);
 
     await documentRepository.create(indexedDocument, blockInfo);
 
@@ -153,7 +157,7 @@ describe('proveDocumentsFactory', () => {
   });
 
   it('should fetch empty array in case date is out of range', async () => {
-    const [, , , indexedDocument] = getDocumentsFixture(dataContract);
+    const [, , , indexedDocument] = await getDocumentsFixture(dataContract);
 
     await documentRepository.create(indexedDocument, blockInfo);
 

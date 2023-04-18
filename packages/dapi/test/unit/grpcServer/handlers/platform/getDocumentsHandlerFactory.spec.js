@@ -16,8 +16,8 @@ const {
 } = require('@dashevo/dapi-grpc');
 
 /* eslint-disable import/no-extraneous-dependencies */
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const generateRandomIdentifierAsync = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
+const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
 
 const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
 
@@ -43,13 +43,13 @@ describe('getDocumentsHandlerFactory', () => {
   let response;
   let proofMock;
 
-  beforeEach(function beforeEach() {
-    dataContractId = generateRandomIdentifier();
+  beforeEach(async function beforeEach() {
+    dataContractId = await generateRandomIdentifierAsync();
     documentType = 'document';
     where = [['name', '==', 'John']];
     orderBy = [{ order: 'asc' }];
     limit = 20;
-    startAfter = new Uint8Array(generateRandomIdentifier().toBuffer());
+    startAfter = new Uint8Array((await generateRandomIdentifierAsync()).toBuffer());
     startAt = new Uint8Array([]);
 
     request = {
@@ -65,7 +65,7 @@ describe('getDocumentsHandlerFactory', () => {
 
     call = new GrpcCallMock(this.sinon, request);
 
-    const [document] = getDocumentsFixture();
+    const [document] = await getDocumentsFixture();
 
     documentsFixture = [document];
 

@@ -35,5 +35,6 @@ jobs:
   js-checks:
     name: JS
     uses: ./.github/workflows/js-checks.yml
+    secrets: inherit
     with:
       package: '@dashevo/rs-drive'

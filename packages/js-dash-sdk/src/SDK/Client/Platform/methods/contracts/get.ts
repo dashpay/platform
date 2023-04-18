@@ -1,6 +1,5 @@
 // @ts-ignore
-import Identifier from '@dashevo/dpp/lib/Identifier';
-import Metadata from '@dashevo/dpp/lib/Metadata';
+import { Identifier, Metadata } from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
 
 const NotFoundError = require('@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError');
@@ -15,6 +14,7 @@ declare type ContractIdentifier = string | Identifier;
  * @returns contracts
  */
 export async function get(this: Platform, identifier: ContractIdentifier): Promise<any> {
+  this.logger.debug(`[Contracts#get] Get Data Contract "${identifier}"`);
   await this.initialize();
 
   const contractId : Identifier = Identifier.from(identifier);
@@ -31,7 +31,9 @@ export async function get(this: Platform, identifier: ContractIdentifier): Promi
   // Fetch contract otherwise
   let dataContractResponse;
   try {
-    dataContractResponse = await this.client.getDAPIClient().platform.getDataContract(contractId);
+    dataContractResponse = await this.client.getDAPIClient()
+      .platform.getDataContract(contractId);
+    this.logger.silly(`[Contracts#get] Fetched Data Contract "${identifier}"`);
   } catch (e) {
     if (e instanceof NotFoundError) {
       return null;
@@ -43,7 +45,7 @@ export async function get(this: Platform, identifier: ContractIdentifier): Promi
   const contract = await this.dpp.dataContract
     .createFromBuffer(dataContractResponse.getDataContract());
 
-  let metadata = null;
+  let metadata;
   const responseMetadata = dataContractResponse.getMetadata();
   if (responseMetadata) {
     metadata = new Metadata({
@@ -63,6 +65,8 @@ export async function get(this: Platform, identifier: ContractIdentifier): Promi
       appDefinition.contract = contract;
     }
   }
+
+  this.logger.debug(`[Contracts#get] Obtained Data Contract "${identifier}"`);
 
   return contract;
 }

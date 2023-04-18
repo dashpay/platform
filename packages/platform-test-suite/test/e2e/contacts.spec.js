@@ -34,7 +34,7 @@ describe('e2e', () => {
           properties: {
             avatarUrl: {
               type: 'string',
-              format: 'url',
+              format: 'uri',
               maxLength: 255,
             },
             about: {

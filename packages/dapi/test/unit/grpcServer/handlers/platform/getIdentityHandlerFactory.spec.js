@@ -14,8 +14,8 @@ const {
 } = require('@dashevo/dapi-grpc');
 
 /* eslint-disable import/no-extraneous-dependencies */
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const generateRandomIdentifierAsync = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 
 const getIdentityHandlerFactory = require('../../../../../lib/grpcServer/handlers/platform/getIdentityHandlerFactory');
 
@@ -31,14 +31,14 @@ describe('getIdentityHandlerFactory', () => {
   let proofMock;
   let response;
 
-  beforeEach(function beforeEach() {
-    id = generateRandomIdentifier();
+  beforeEach(async function beforeEach() {
+    id = await generateRandomIdentifierAsync();
     call = new GrpcCallMock(this.sinon, {
       getId: this.sinon.stub().returns(id),
       getProve: this.sinon.stub().returns(false),
     });
 
-    identity = getIdentityFixture();
+    identity = await getIdentityFixture();
 
     proofFixture = {
       merkleProof: Buffer.alloc(1, 1),

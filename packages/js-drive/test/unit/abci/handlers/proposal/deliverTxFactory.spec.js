@@ -2,20 +2,20 @@ const Long = require('long');
 
 const crypto = require('crypto');
 
-const DashPlatformProtocol = require('@dashevo/dpp');
-
 const { FeeResult } = require('@dashevo/rs-drive');
-
-const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
+const {
+  DashPlatformProtocol,
+  StateTransitionExecutionContext,
+  ValidationResult,
+  MissingStateTransitionTypeError,
+} = require('@dashevo/wasm-dpp');
 
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
+const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
+const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
+
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
-
-const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
-
-const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
 
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
 
@@ -51,11 +51,14 @@ describe('deliverTxFactory', () => {
 
   beforeEach(async function beforeEach() {
     round = 42;
-    const dataContractFixture = getDataContractFixture();
-    const documentFixture = getDocumentsFixture();
+    const dataContractFixture = await getDataContractFixture();
+    const documentFixture = await getDocumentsFixture();
 
-    dpp = new DashPlatformProtocol();
-    await dpp.initialize();
+    const stateRepositoryMock = createStateRepositoryMock(this.sinon);
+
+    dpp = new DashPlatformProtocol(this.blsAdapter, stateRepositoryMock, {
+      generate: () => Buffer.alloc(32),
+    });
 
     documentsBatchTransitionFixture = dpp.document.createStateTransition({
       create: documentFixture,
@@ -68,16 +71,20 @@ describe('deliverTxFactory', () => {
 
     stateTransitionExecutionContextMock = new StateTransitionExecutionContext();
 
-    processingFee = 10;
-    storageFee = 100;
-    const totalRefunds = 15;
+    processingFee = BigInt(10);
+    storageFee = BigInt(100);
+    const totalRefunds = BigInt(15);
     refundsPerEpoch = {
       1: totalRefunds,
     };
+    const refundMap = new Map();
+    refundMap.set('1', totalRefunds);
     feeRefunds = [
       {
-        identifier: Buffer.alloc(32),
-        creditsPerEpoch: { 1: totalRefunds },
+        toObject: () => ({
+          identifier: Buffer.alloc(32),
+          creditsPerEpoch: refundMap,
+        }),
       },
     ];
 
@@ -161,9 +168,12 @@ describe('deliverTxFactory', () => {
     expect(response).to.deep.equal({
       code: 0,
       fees: {
-        processingFee,
-        storageFee,
-        refundsPerEpoch,
+        processingFee: Number(processingFee),
+        storageFee: Number(storageFee),
+        refundsPerEpoch: Object.entries(refundsPerEpoch).reduce((o, [key, value]) => ({
+          [key]: Number(value),
+          ...o,
+        }), {}),
       },
     });
 
@@ -197,16 +207,23 @@ describe('deliverTxFactory', () => {
 
     expect(feeResult).to.be.an.instanceOf(FeeResult);
 
-    expect(feeResult.storageFee).to.equals(storageFee);
-    expect(feeResult.processingFee).to.equals(processingFee);
-    expect(feeResult.feeRefunds).to.deep.equals(feeRefunds);
+    expect(feeResult.storageFee).to.equals(Number(storageFee));
+    expect(feeResult.processingFee).to.equals(Number(processingFee));
+    expect(feeResult.feeRefunds).to.deep.equals([
+      {
+        identifier: Buffer.alloc(32),
+        creditsPerEpoch: {
+          1: 15,
+        },
+      },
+    ]);
 
     expect(applyFeesToBalanceArgs[2]).to.deep.equals({ useTransaction: true });
 
     expect(proposalBlockExecutionContextMock.addDataContract).to.not.be.called();
 
     expect(
-      dataContractCreateTransitionFixture.getExecutionContext().dryOperations,
+      dataContractCreateTransitionFixture.getExecutionContext().getDryOperations(),
     ).to.have.length(0);
 
     const stHash = crypto
@@ -228,9 +245,12 @@ describe('deliverTxFactory', () => {
     expect(response).to.deep.equal({
       code: 0,
       fees: {
-        processingFee,
-        storageFee,
-        refundsPerEpoch,
+        processingFee: Number(processingFee),
+        storageFee: Number(storageFee),
+        refundsPerEpoch: Object.entries(refundsPerEpoch).reduce((o, [key, value]) => ({
+          [key]: Number(value),
+          ...o,
+        }), {}),
       },
     });
 
@@ -264,17 +284,24 @@ describe('deliverTxFactory', () => {
 
     expect(feeResult).to.be.an.instanceOf(FeeResult);
 
-    expect(feeResult.storageFee).to.equals(storageFee);
-    expect(feeResult.processingFee).to.equals(processingFee);
-    expect(feeResult.feeRefunds).to.deep.equals(feeRefunds);
+    expect(feeResult.storageFee).to.equals(Number(storageFee));
+    expect(feeResult.processingFee).to.equals(Number(processingFee));
+    expect(feeResult.feeRefunds).to.deep.equals([
+      {
+        identifier: Buffer.alloc(32),
+        creditsPerEpoch: {
+          1: 15,
+        },
+      },
+    ]);
 
     expect(applyFeesToBalanceArgs[2]).to.deep.equals({ useTransaction: true });
 
     expect(
-      dataContractCreateTransitionFixture.getExecutionContext().dryOperations,
+      dataContractCreateTransitionFixture.getExecutionContext().getDryOperations(),
     ).to.have.length(0);
 
-    expect(proposalBlockExecutionContextMock.addDataContract).to.be.calledOnceWith(
+    expect(proposalBlockExecutionContextMock.addDataContract).to.be.calledOnceWithExactly(
       dataContractCreateTransitionFixture.getDataContract(),
     );
   });
@@ -282,9 +309,9 @@ describe('deliverTxFactory', () => {
   it('should throw DPPValidationAbciError if a state transition is invalid against state', async () => {
     unserializeStateTransitionMock.resolves(dataContractCreateTransitionFixture);
 
-    const error = new SomeConsensusError('Consensus error');
+    const error = new MissingStateTransitionTypeError();
 
-    validationResult.addError(error);
+    validationResult.addError(error.serialize());
 
     try {
       await deliverTx(documentTx, round, loggerMock);
@@ -294,7 +321,7 @@ describe('deliverTxFactory', () => {
       expect(e).to.be.instanceOf(DPPValidationAbciError);
       expect(e.getCode()).to.equal(error.getCode());
       expect(e.getData()).to.deep.equal({
-        arguments: ['Consensus error'],
+        serializedError: error.serialize(),
       });
     }
   });
