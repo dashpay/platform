@@ -34,7 +34,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         current_quorum: &Quorum,
         next_quorum: &Quorum,
         proposed_version: ProtocolVersion,
-        total_hpmns: u32,
+        _total_hpmns: u32,
         block_info: BlockInfo,
         expect_validation_errors: bool,
         state_transitions: Vec<StateTransition>,
@@ -48,7 +48,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             time_ms,
             height,
             core_height,
-            epoch,
+            epoch: _,
         } = block_info;
 
         let request_prepare_proposal = RequestPrepareProposal {
@@ -82,9 +82,9 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             tx_records,
             app_hash,
             tx_results,
-            consensus_param_updates,
-            core_chain_lock_update,
-            validator_set_update,
+            consensus_param_updates: _,
+            core_chain_lock_update: _,
+            validator_set_update: _,
         } = response_prepare_proposal;
 
         if expect_validation_errors == false {

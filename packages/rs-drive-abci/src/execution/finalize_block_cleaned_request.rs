@@ -299,6 +299,16 @@ impl TryFrom<BlockId> for CleanedBlockId {
     }
 }
 
+impl From<CleanedBlockId> for BlockId {
+    fn from(value: CleanedBlockId) -> Self {
+        Self {
+            hash: value.hash.to_vec(),
+            part_set_header: Some(value.part_set_header),
+            state_id: value.state_id.to_vec(),
+        }
+    }
+}
+
 /// The `CleanedBlock` struct represents a block that has been properly formatted.
 /// It stores essential data required to finalize a block in a simplified format.
 ///

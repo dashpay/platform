@@ -15,7 +15,7 @@ pub mod mimic;
 #[cfg(any(feature = "server", test))]
 mod server;
 
-pub mod signature_verifier;
+pub mod commit;
 pub mod withdrawal;
 
 pub use error::AbciError;

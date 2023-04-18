@@ -43,8 +43,8 @@ use std::path::Path;
 use std::sync::RwLock;
 
 use crate::rpc::core::MockCoreRPCLike;
-use dashcore::hashes::hex::FromHex;
-use dashcore::BlockHash;
+use dpp::dashcore::hashes::hex::FromHex;
+use dpp::dashcore::BlockHash;
 use serde_json::json;
 
 mod state_repository;
