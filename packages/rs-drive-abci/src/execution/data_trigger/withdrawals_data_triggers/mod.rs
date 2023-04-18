@@ -117,7 +117,7 @@ mod tests {
     use crate::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
-    use dpp::platform_value::platform_value;
+    use dpp::platform_value::{platform_value, Bytes20};
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dpp::tests::fixtures::{get_data_contract_fixture, get_withdrawal_document_fixture};
@@ -152,20 +152,19 @@ mod tests {
 
         let result =
             delete_withdrawal_data_trigger(&document_transition, &data_trigger_context, None)
-                .expect("the execution result should be returned");
+                .expect_err("the execution result should be returned");
 
-        assert!(!result.is_valid());
-
-        let error = result.get_error(0).unwrap();
-
-        assert_eq!(error.to_string(), "Withdrawal document was not found");
+        assert_eq!(
+            result.to_string(),
+            "protocol: document type not found: can not get document type from contract"
+        );
     }
 
     #[test]
     fn should_throw_error_if_withdrawal_has_wrong_status() {
         let mut platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
-            .set_initial_state_structure();
+            .set_genesis_state();
         let state_read_guard = platform.state.read().unwrap();
 
         let platform_ref = PlatformStateRef {
@@ -195,10 +194,11 @@ mod tests {
                 "status": withdrawals_contract::WithdrawalStatus::BROADCASTED as u8,
                 "transactionIndex": 1u64,
                 "transactionSignHeight": 93u64,
-                "transactionId": vec![1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                "transactionId": Bytes20::new([1;20]),
             }),
             None,
-        ).expect("expected withdrawal document");
+        )
+        .expect("expected withdrawal document");
 
         platform
             .drive
