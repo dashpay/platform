@@ -1,4 +1,3 @@
-const stripAnsi = require('strip-ansi');
 const { table } = require('table');
 
 const { OUTPUT_FORMATS } = require('../constants');
@@ -20,11 +19,7 @@ function printObject(object, format) {
       break;
     }
     case OUTPUT_FORMATS.JSON: {
-      const cleanObject = {};
-      Object.keys(object).forEach((key) => {
-        cleanObject[key] = stripAnsi(object[key]);
-      });
-      output = JSON.stringify(cleanObject);
+      output = JSON.stringify(object);
       break;
     }
     default: {
@@ -34,6 +29,8 @@ function printObject(object, format) {
 
   // eslint-disable-next-line no-console
   console.log(output);
+
+  return output;
 }
 
 module.exports = printObject;

@@ -1,15 +1,17 @@
 const {
   tendermint: {
     abci: {
-      LastCommitInfo,
+      CommitInfo,
     },
-    types: {
-      Header,
+    version: {
+      Consensus,
     },
   },
 } = require('@dashevo/abci/types');
 
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const Long = require('long');
+
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
 const BlockExecutionContext = require('../../../lib/blockExecution/BlockExecutionContext');
 const getBlockExecutionContextObjectFixture = require('../../../lib/test/fixtures/getBlockExecutionContextObjectFixture');
 
@@ -17,34 +19,33 @@ describe('BlockExecutionContext', () => {
   let blockExecutionContext;
   let dataContract;
   let lastCommitInfo;
-  let header;
   let logger;
-  let cumulativeProcessingFee;
-  let cumulativeStorageFee;
   let plainObject;
-  let validTxs;
-  let invalidTxs;
+  let height;
+  let coreChainLockedHeight;
+  let version;
   let epochInfo;
   let timeMs;
+  let prepareProposalResult;
+  let proposedAppVersion;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     blockExecutionContext = new BlockExecutionContext();
-    dataContract = getDataContractFixture();
+    dataContract = await getDataContractFixture();
     delete dataContract.entropy;
 
-    plainObject = getBlockExecutionContextObjectFixture(dataContract);
+    plainObject = await getBlockExecutionContextObjectFixture(dataContract);
 
-    lastCommitInfo = LastCommitInfo.fromObject(plainObject.lastCommitInfo);
+    lastCommitInfo = CommitInfo.fromObject(plainObject.lastCommitInfo);
 
-    header = Header.fromObject(plainObject.header);
-
-    logger = plainObject.consensusLogger;
-    cumulativeProcessingFee = plainObject.cumulativeProcessingFee;
-    cumulativeStorageFee = plainObject.cumulativeStorageFee;
-    validTxs = plainObject.validTxs;
-    invalidTxs = plainObject.invalidTxs;
+    logger = plainObject.contextLogger;
+    height = Long.fromNumber(plainObject.height);
+    proposedAppVersion = Long.fromNumber(plainObject.proposedAppVersion);
+    coreChainLockedHeight = plainObject.coreChainLockedHeight;
+    version = Consensus.fromObject(plainObject.version);
     epochInfo = plainObject.epochInfo;
     timeMs = plainObject.timeMs;
+    prepareProposalResult = plainObject.prepareProposalResult;
   });
 
   describe('#addDataContract', () => {
@@ -88,62 +89,6 @@ describe('BlockExecutionContext', () => {
     });
   });
 
-  describe('#getCumulativeProcessingFee', () => {
-    it('should get cumulative fees', async () => {
-      let result = blockExecutionContext.getCumulativeProcessingFee();
-
-      expect(result).to.equal(0);
-
-      blockExecutionContext.cumulativeProcessingFee = cumulativeProcessingFee;
-
-      result = blockExecutionContext.getCumulativeProcessingFee();
-
-      expect(result).to.equal(cumulativeProcessingFee);
-    });
-  });
-
-  describe('#getCumulativeStorageFee', () => {
-    it('should get cumulative fees', async () => {
-      let result = blockExecutionContext.getCumulativeStorageFee();
-
-      expect(result).to.equal(0);
-
-      blockExecutionContext.cumulativeStorageFee = cumulativeStorageFee;
-
-      result = blockExecutionContext.getCumulativeStorageFee();
-
-      expect(result).to.equal(cumulativeStorageFee);
-    });
-  });
-
-  describe('#incrementCumulativeProcessingFee', () => {
-    it('should increment cumulative fees', async () => {
-      let result = blockExecutionContext.getCumulativeProcessingFee();
-
-      expect(result).to.equal(0);
-
-      blockExecutionContext.incrementCumulativeProcessingFee(15);
-
-      result = blockExecutionContext.getCumulativeProcessingFee();
-
-      expect(result).to.equal(15);
-    });
-  });
-
-  describe('#incrementCumulativeStorageFee', () => {
-    it('should increment cumulative fees', async () => {
-      let result = blockExecutionContext.getCumulativeStorageFee();
-
-      expect(result).to.equal(0);
-
-      blockExecutionContext.incrementCumulativeStorageFee(15);
-
-      result = blockExecutionContext.getCumulativeStorageFee();
-
-      expect(result).to.equal(15);
-    });
-  });
-
   describe('#reset', () => {
     it('should reset state', () => {
       blockExecutionContext.addDataContract(dataContract);
@@ -154,25 +99,85 @@ describe('BlockExecutionContext', () => {
 
       expect(blockExecutionContext.getDataContracts()).to.have.lengthOf(0);
 
-      expect(blockExecutionContext.getHeader()).to.be.null();
+      expect(blockExecutionContext.getHeight()).to.be.null();
+      expect(blockExecutionContext.getCoreChainLockedHeight()).to.be.null();
+      expect(blockExecutionContext.getVersion()).to.be.null();
+      expect(blockExecutionContext.getTimeMs()).to.be.null();
+      expect(blockExecutionContext.getLastCommitInfo()).to.be.null();
+      expect(blockExecutionContext.getProposedAppVersion()).to.be.null();
+      expect(blockExecutionContext.getWithdrawalTransactionsMap()).to.deep.equal({});
     });
   });
 
-  describe('#setHeader', () => {
-    it('should set header', async () => {
-      const result = blockExecutionContext.setHeader(header);
+  describe('#setCoreChainLockedHeight', () => {
+    it('should set coreChainLockedHeight', async () => {
+      const result = blockExecutionContext.setCoreChainLockedHeight(coreChainLockedHeight);
 
       expect(result).to.equal(blockExecutionContext);
 
-      expect(blockExecutionContext.header).to.deep.equal(header);
+      expect(blockExecutionContext.coreChainLockedHeight).to.deep.equal(coreChainLockedHeight);
     });
   });
 
-  describe('#getHeader', () => {
-    it('should get header', async () => {
-      blockExecutionContext.header = header;
+  describe('#getCoreChainLockedHeight', () => {
+    it('should get coreChainLockedHeight', async () => {
+      blockExecutionContext.coreChainLockedHeight = coreChainLockedHeight;
 
-      expect(blockExecutionContext.getHeader()).to.deep.equal(header);
+      expect(blockExecutionContext.getCoreChainLockedHeight()).to.deep.equal(coreChainLockedHeight);
+    });
+  });
+
+  describe('#setHeight', () => {
+    it('should set height', async () => {
+      const result = blockExecutionContext.setHeight(height);
+
+      expect(result).to.equal(blockExecutionContext);
+
+      expect(blockExecutionContext.height).to.deep.equal(height);
+    });
+  });
+
+  describe('#getHeight', () => {
+    it('should get height', async () => {
+      blockExecutionContext.height = height;
+
+      expect(blockExecutionContext.getHeight()).to.deep.equal(height);
+    });
+  });
+
+  describe('#setProposedAppVersion', () => {
+    it('should set proposed app version', async () => {
+      const result = blockExecutionContext.setProposedAppVersion(proposedAppVersion);
+
+      expect(result).to.equal(blockExecutionContext);
+
+      expect(blockExecutionContext.proposedAppVersion).to.deep.equal(proposedAppVersion);
+    });
+  });
+
+  describe('#getProposedAppVersion', () => {
+    it('should get proposed app version', async () => {
+      blockExecutionContext.proposedAppVersion = proposedAppVersion;
+
+      expect(blockExecutionContext.getProposedAppVersion()).to.deep.equal(proposedAppVersion);
+    });
+  });
+
+  describe('#setVersion', () => {
+    it('should set version', async () => {
+      const result = blockExecutionContext.setVersion(version);
+
+      expect(result).to.equal(blockExecutionContext);
+
+      expect(blockExecutionContext.version).to.deep.equal(version);
+    });
+  });
+
+  describe('#getVersion', () => {
+    it('should get version', async () => {
+      blockExecutionContext.version = version;
+
+      expect(blockExecutionContext.getVersion()).to.deep.equal(version);
     });
   });
 
@@ -194,12 +199,92 @@ describe('BlockExecutionContext', () => {
     });
   });
 
+  describe('#setWithdrawalTransactionsMap', () => {
+    it('should set withdrawalTransactionsMap', async () => {
+      const result = blockExecutionContext.setWithdrawalTransactionsMap(
+        plainObject.withdrawalTransactionsMap,
+      );
+
+      expect(result).to.equal(blockExecutionContext);
+
+      expect(blockExecutionContext.withdrawalTransactionsMap).to.deep.equal(
+        plainObject.withdrawalTransactionsMap,
+      );
+    });
+  });
+
+  describe('#getWithdrawalTransactionsMap', () => {
+    it('should get withdrawalTransactionsMap', async () => {
+      blockExecutionContext.withdrawalTransactionsMap = plainObject.withdrawalTransactionsMap;
+
+      expect(blockExecutionContext.getWithdrawalTransactionsMap()).to.deep.equal(
+        plainObject.withdrawalTransactionsMap,
+      );
+    });
+  });
+
+  describe('#setRound', () => {
+    it('should set round', async () => {
+      const result = blockExecutionContext.setRound(
+        plainObject.round,
+      );
+
+      expect(result).to.equal(blockExecutionContext);
+
+      expect(blockExecutionContext.round).to.deep.equal(
+        plainObject.round,
+      );
+    });
+  });
+
+  describe('#getRound', () => {
+    it('should get round', async () => {
+      blockExecutionContext.round = plainObject.round;
+
+      expect(blockExecutionContext.getRound()).to.deep.equal(
+        plainObject.round,
+      );
+    });
+  });
+
+  describe('#setPrepareProposalResult', () => {
+    it('should set PrepareProposal result', async () => {
+      const result = blockExecutionContext.setPrepareProposalResult(
+        plainObject.prepareProposalResult,
+      );
+
+      expect(result).to.equal(blockExecutionContext);
+
+      expect(blockExecutionContext.prepareProposalResult).to.deep.equal(
+        plainObject.prepareProposalResult,
+      );
+    });
+  });
+
+  describe('#getPrepareProposalResult', () => {
+    it('should get PrepareProposal result', async () => {
+      blockExecutionContext.prepareProposalResult = plainObject.prepareProposalResult;
+
+      expect(blockExecutionContext.getPrepareProposalResult()).to.deep.equal(
+        plainObject.prepareProposalResult,
+      );
+    });
+  });
+
   describe('#setTimeMs', () => {
-    it('should time in milliseconds');
+    it('should set time', async () => {
+      blockExecutionContext.setTimeMs(timeMs);
+
+      expect(blockExecutionContext.timeMs).to.deep.equal(timeMs);
+    });
   });
 
   describe('#getTimeMs', () => {
-    it('should return time in milliseconds');
+    it('should get time', async () => {
+      blockExecutionContext.timeMs = timeMs;
+
+      expect(blockExecutionContext.getTimeMs()).to.deep.equal(timeMs);
+    });
   });
 
   describe('#setEpochInfo', () => {
@@ -216,12 +301,12 @@ describe('BlockExecutionContext', () => {
 
       anotherBlockExecutionContext.dataContracts = [dataContract];
       anotherBlockExecutionContext.lastCommitInfo = lastCommitInfo;
-      anotherBlockExecutionContext.cumulativeProcessingFee = cumulativeProcessingFee;
-      anotherBlockExecutionContext.cumulativeStorageFee = cumulativeStorageFee;
-      anotherBlockExecutionContext.header = header;
-      anotherBlockExecutionContext.validTxs = validTxs;
-      anotherBlockExecutionContext.invalidTxs = invalidTxs;
-      anotherBlockExecutionContext.consensusLogger = logger;
+      anotherBlockExecutionContext.height = height;
+      anotherBlockExecutionContext.version = version;
+      anotherBlockExecutionContext.coreChainLockedHeight = coreChainLockedHeight;
+      anotherBlockExecutionContext.contextLogger = logger;
+      anotherBlockExecutionContext.withdrawalTransactionsMap = plainObject
+        .withdrawalTransactionsMap;
       anotherBlockExecutionContext.epochInfo = epochInfo;
       anotherBlockExecutionContext.timeMs = timeMs;
 
@@ -233,23 +318,20 @@ describe('BlockExecutionContext', () => {
       expect(blockExecutionContext.lastCommitInfo).to.equal(
         anotherBlockExecutionContext.lastCommitInfo,
       );
-      expect(blockExecutionContext.cumulativeProcessingFee).to.equal(
-        anotherBlockExecutionContext.cumulativeProcessingFee,
+      expect(blockExecutionContext.height).to.equal(
+        anotherBlockExecutionContext.height,
       );
-      expect(blockExecutionContext.cumulativeStorageFee).to.equal(
-        anotherBlockExecutionContext.cumulativeStorageFee,
+      expect(blockExecutionContext.version).to.equal(
+        anotherBlockExecutionContext.version,
       );
-      expect(blockExecutionContext.header).to.equal(
-        anotherBlockExecutionContext.header,
+      expect(blockExecutionContext.coreChainLockedHeight).to.equal(
+        anotherBlockExecutionContext.coreChainLockedHeight,
       );
-      expect(blockExecutionContext.validTxs).to.equal(
-        anotherBlockExecutionContext.validTxs,
+      expect(blockExecutionContext.contextLogger).to.equal(
+        anotherBlockExecutionContext.contextLogger,
       );
-      expect(blockExecutionContext.invalidTxs).to.equal(
-        anotherBlockExecutionContext.invalidTxs,
-      );
-      expect(blockExecutionContext.consensusLogger).to.equal(
-        anotherBlockExecutionContext.consensusLogger,
+      expect(blockExecutionContext.withdrawalTransactionsMap).to.equal(
+        anotherBlockExecutionContext.withdrawalTransactionsMap,
       );
       expect(blockExecutionContext.epochInfo).to.equal(
         anotherBlockExecutionContext.epochInfo,
@@ -264,33 +346,57 @@ describe('BlockExecutionContext', () => {
     it('should return a plain object', () => {
       blockExecutionContext.dataContracts = [dataContract];
       blockExecutionContext.lastCommitInfo = lastCommitInfo;
-      blockExecutionContext.cumulativeProcessingFee = cumulativeProcessingFee;
-      blockExecutionContext.cumulativeStorageFee = cumulativeStorageFee;
-      blockExecutionContext.header = header;
-      blockExecutionContext.validTxs = validTxs;
-      blockExecutionContext.invalidTxs = invalidTxs;
-      blockExecutionContext.consensusLogger = logger;
+      blockExecutionContext.height = height;
+      blockExecutionContext.coreChainLockedHeight = coreChainLockedHeight;
+      blockExecutionContext.version = version;
+      blockExecutionContext.contextLogger = logger;
       blockExecutionContext.epochInfo = epochInfo;
       blockExecutionContext.timeMs = timeMs;
+      blockExecutionContext.withdrawalTransactionsMap = plainObject.withdrawalTransactionsMap;
+      blockExecutionContext.round = plainObject.round;
+      blockExecutionContext.prepareProposalResult = plainObject.prepareProposalResult;
+      blockExecutionContext.proposedAppVersion = proposedAppVersion;
 
       expect(blockExecutionContext.toObject()).to.deep.equal(plainObject);
     });
 
-    it('should skipConsensusLogger if the option passed', () => {
+    it('should skipContextLogger if the option passed', () => {
       blockExecutionContext.dataContracts = [dataContract];
       blockExecutionContext.lastCommitInfo = lastCommitInfo;
-      blockExecutionContext.cumulativeProcessingFee = cumulativeProcessingFee;
-      blockExecutionContext.cumulativeStorageFee = cumulativeStorageFee;
-      blockExecutionContext.header = header;
-      blockExecutionContext.validTxs = validTxs;
-      blockExecutionContext.invalidTxs = invalidTxs;
-      blockExecutionContext.consensusLogger = logger;
+      blockExecutionContext.height = height;
+      blockExecutionContext.coreChainLockedHeight = coreChainLockedHeight;
+      blockExecutionContext.version = version;
+      blockExecutionContext.contextLogger = logger;
+      blockExecutionContext.withdrawalTransactionsMap = plainObject.withdrawalTransactionsMap;
+      blockExecutionContext.round = plainObject.round;
       blockExecutionContext.epochInfo = epochInfo;
       blockExecutionContext.timeMs = timeMs;
+      blockExecutionContext.prepareProposalResult = prepareProposalResult;
+      blockExecutionContext.proposedAppVersion = proposedAppVersion;
 
-      const result = blockExecutionContext.toObject({ skipConsensusLogger: true });
+      const result = blockExecutionContext.toObject({ skipContextLogger: true });
 
-      delete plainObject.consensusLogger;
+      delete plainObject.contextLogger;
+
+      expect(result).to.deep.equal(plainObject);
+    });
+
+    it('should skipPrepareProposalResult if the option passed', () => {
+      blockExecutionContext.dataContracts = [dataContract];
+      blockExecutionContext.lastCommitInfo = lastCommitInfo;
+      blockExecutionContext.height = height;
+      blockExecutionContext.coreChainLockedHeight = coreChainLockedHeight;
+      blockExecutionContext.version = version;
+      blockExecutionContext.contextLogger = logger;
+      blockExecutionContext.withdrawalTransactionsMap = plainObject.withdrawalTransactionsMap;
+      blockExecutionContext.round = plainObject.round;
+      blockExecutionContext.epochInfo = epochInfo;
+      blockExecutionContext.timeMs = timeMs;
+      blockExecutionContext.proposedAppVersion = proposedAppVersion;
+
+      const result = blockExecutionContext.toObject({ skipPrepareProposalResult: true });
+
+      delete plainObject.prepareProposalResult;
 
       expect(result).to.deep.equal(plainObject);
     });
@@ -304,16 +410,17 @@ describe('BlockExecutionContext', () => {
         blockExecutionContext.dataContracts[0].$defs = {};
       }
 
-      expect(blockExecutionContext.dataContracts).to.have.deep.members(
-        [dataContract],
+      expect(blockExecutionContext.dataContracts[0].toObject()).to.deep.equal(
+        dataContract.toObject(),
       );
       expect(blockExecutionContext.lastCommitInfo).to.deep.equal(lastCommitInfo);
-      expect(blockExecutionContext.cumulativeProcessingFee).to.equal(cumulativeProcessingFee);
-      expect(blockExecutionContext.cumulativeStorageFee).to.equal(cumulativeStorageFee);
-      expect(blockExecutionContext.header).to.deep.equal(header);
-      expect(blockExecutionContext.validTxs).to.equal(validTxs);
-      expect(blockExecutionContext.invalidTxs).to.equal(invalidTxs);
-      expect(blockExecutionContext.consensusLogger).to.equal(logger);
+      expect(blockExecutionContext.height).to.deep.equal(height);
+      expect(blockExecutionContext.version).to.deep.equal(version);
+      expect(blockExecutionContext.coreChainLockedHeight).to.deep.equal(coreChainLockedHeight);
+      expect(blockExecutionContext.contextLogger).to.equal(logger);
+      expect(blockExecutionContext.withdrawalTransactionsMap).to.deep.equal(
+        plainObject.withdrawalTransactionsMap,
+      );
       expect(blockExecutionContext.timeMs).to.equal(timeMs);
     });
   });

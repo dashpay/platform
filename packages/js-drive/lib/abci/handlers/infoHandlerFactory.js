@@ -11,24 +11,23 @@ const Long = require('long');
 const { version: driveVersion } = require('../../../package.json');
 
 /**
- * @param {BlockExecutionContextStack} blockExecutionContextStack
- * @param {BlockExecutionContextStackRepository} blockExecutionContextStackRepository
- * @param {BlockExecutionContext} blockExecutionContext
+ * @param {BlockExecutionContext} latestBlockExecutionContext
+ * @param {BlockExecutionContextRepository} blockExecutionContextRepository
  * @param {Long} latestProtocolVersion
  * @param {updateSimplifiedMasternodeList} updateSimplifiedMasternodeList
  * @param {BaseLogger} logger
  * @param {GroveDBStore} groveDBStore
- * @param {BlockExecutionContextStackRepository} blockExecutionContextStackRepository
+ * @param {createContextLogger} createContextLogger
  * @return {infoHandler}
  */
 function infoHandlerFactory(
-  blockExecutionContextStack,
-  blockExecutionContextStackRepository,
-  blockExecutionContext,
+  latestBlockExecutionContext,
+  blockExecutionContextRepository,
   latestProtocolVersion,
   updateSimplifiedMasternodeList,
   logger,
   groveDBStore,
+  createContextLogger,
 ) {
   /**
    * Info ABCI handler
@@ -39,46 +38,32 @@ function infoHandlerFactory(
    * @return {Promise<ResponseInfo>}
    */
   async function infoHandler(request) {
-    let contextLogger = logger.child({
+    let contextLogger = createContextLogger(logger, {
       abciMethod: 'info',
     });
 
     contextLogger.debug('Info ABCI method requested');
     contextLogger.trace({ abciRequest: request });
 
-    // Initialize Block Execution Contexts
-
-    const persistedBlockExecutionContextStack = await blockExecutionContextStackRepository.fetch();
-
-    blockExecutionContextStack.setContexts(persistedBlockExecutionContextStack.getContexts());
-
-    const previousContext = blockExecutionContextStack.getFirst();
-
-    // Populate current execution context with previous context
-    // until block begin called with a new block.
-    if (previousContext) {
-      blockExecutionContext.populate(previousContext);
-    }
-
     // Initialize current heights
 
     let lastHeight = Long.fromNumber(0);
     let lastCoreChainLockedHeight = 0;
 
-    if (previousContext) {
-      const lastHeader = blockExecutionContext.getHeader();
+    // Initialize latest Block Execution Context
+    const persistedBlockExecutionContext = await blockExecutionContextRepository.fetch();
+    if (!persistedBlockExecutionContext.isEmpty()) {
+      latestBlockExecutionContext.populate(persistedBlockExecutionContext);
 
-      lastHeight = lastHeader.height;
-      lastCoreChainLockedHeight = lastHeader.coreChainLockedHeight;
-    }
+      lastHeight = latestBlockExecutionContext.getHeight();
+      lastCoreChainLockedHeight = latestBlockExecutionContext.getCoreChainLockedHeight();
 
-    contextLogger = contextLogger.child({
-      height: lastHeight.toString(),
-    });
+      contextLogger = createContextLogger(contextLogger, {
+        height: lastHeight.toString(),
+      });
 
-    // Update SML store to latest saved core chain lock to make sure
-    // that verify chain lock handler has updated SML Store to verify signatures
-    if (previousContext) {
+      // Update SML store to latest saved core chain lock to make sure
+      // that verify chain lock handler has updated SML Store to verify signatures
       await updateSimplifiedMasternodeList(lastCoreChainLockedHeight, {
         logger: contextLogger,
       });

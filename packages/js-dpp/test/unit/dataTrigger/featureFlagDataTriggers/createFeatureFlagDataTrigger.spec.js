@@ -21,9 +21,7 @@ describe('createFeatureFlagDataTrigger', () => {
     topLevelIdentityId = getIdentityFixture().getId();
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchLatestPlatformBlockHeader.resolves({
-      height: new Long(42),
-    });
+    stateRepositoryMock.fetchLatestPlatformBlockHeight.resolves(new Long(42));
 
     const [document] = getFeatureFlagsDocumentsFixture();
 
@@ -96,6 +94,6 @@ describe('createFeatureFlagDataTrigger', () => {
     expect(result.isOk()).to.be.true();
 
     expect(contextMock.getOwnerId).to.not.be.called();
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader).to.not.be.called();
+    expect(stateRepositoryMock.fetchLatestPlatformBlockHeight).to.not.be.called();
   });
 });

@@ -5,35 +5,32 @@ const DAPIAddressHostMissingError = require(
 
 describe('DAPIAddress', () => {
   let host;
-  let httpPort;
-  let grpcPort;
+  let port;
 
   beforeEach(() => {
     host = '127.0.0.1';
-    httpPort = DAPIAddress.DEFAULT_HTTP_PORT + 1;
-    grpcPort = DAPIAddress.DEFAULT_GRPC_PORT + 1;
+    port = DAPIAddress.DEFAULT_PORT + 1;
   });
 
   describe('#constructor', () => {
     it('should construct DAPIAddress from string with host and both ports', () => {
-      const dapiAddress = new DAPIAddress(`${host}:${httpPort}:${grpcPort}`);
+      const dapiAddress = new DAPIAddress(`${host}:${port}:no-ssl`);
 
       expect(dapiAddress).to.be.an.instanceOf(DAPIAddress);
       expect(dapiAddress.host).to.equal(host);
-      expect(dapiAddress.httpPort).to.equal(httpPort);
-      expect(dapiAddress.grpcPort).to.equal(grpcPort);
+      expect(dapiAddress.port).to.equal(port);
       expect(dapiAddress.proRegTxHash).to.be.undefined();
       expect(dapiAddress.banCount).to.equal(0);
       expect(dapiAddress.banStartTime).to.be.undefined();
+      expect(dapiAddress.protocol).to.equal('http');
     });
 
     it('should construct DAPIAddress from string with host and HTTP port', () => {
-      const dapiAddress = new DAPIAddress(`${host}:${httpPort}`);
+      const dapiAddress = new DAPIAddress(`${host}:${port}`);
 
       expect(dapiAddress).to.be.an.instanceOf(DAPIAddress);
       expect(dapiAddress.host).to.equal(host);
-      expect(dapiAddress.httpPort).to.equal(httpPort);
-      expect(dapiAddress.grpcPort).to.equal(DAPIAddress.DEFAULT_GRPC_PORT);
+      expect(dapiAddress.port).to.equal(port);
       expect(dapiAddress.proRegTxHash).to.be.undefined();
       expect(dapiAddress.banCount).to.equal(0);
       expect(dapiAddress.banStartTime).to.be.undefined();
@@ -55,9 +52,7 @@ describe('DAPIAddress', () => {
 
       expect(dapiAddress).to.be.an.instanceOf(DAPIAddress);
       expect(dapiAddress.host).to.equal(host);
-      expect(dapiAddress.httpPort).to.equal(DAPIAddress.DEFAULT_HTTP_PORT);
-      expect(dapiAddress.grpcPort).to.equal(DAPIAddress.DEFAULT_GRPC_PORT);
-      expect(dapiAddress.proRegTxHash).to.be.undefined();
+      expect(dapiAddress.port).to.equal(DAPIAddress.DEFAULT_PORT);
       expect(dapiAddress.banCount).to.equal(0);
       expect(dapiAddress.banStartTime).to.be.undefined();
     });
@@ -67,8 +62,7 @@ describe('DAPIAddress', () => {
 
       const dapiAddress = new DAPIAddress({
         host,
-        httpPort,
-        grpcPort,
+        port,
         proRegTxHash,
       });
 
@@ -76,10 +70,11 @@ describe('DAPIAddress', () => {
       expect(dapiAddress.banCount).to.equal(0);
       expect(dapiAddress.banStartTime).to.be.undefined();
       expect(dapiAddress.toJSON()).to.deep.equal({
-        grpcPort,
         host,
-        httpPort,
+        port,
         proRegTxHash,
+        protocol: DAPIAddress.DEFAULT_PROTOCOL,
+        allowSelfSignedCertificate: false,
       });
     });
 
@@ -126,43 +121,23 @@ describe('DAPIAddress', () => {
     });
   });
 
-  describe('#getHttpPort', () => {
-    it('should get HTTP port', () => {
+  describe('#getPort', () => {
+    it('should get port', () => {
       const dapiAddress = new DAPIAddress({
         host,
-        httpPort,
+        port,
       });
 
-      expect(dapiAddress.getHttpPort()).to.equal(httpPort);
+      expect(dapiAddress.getPort()).to.equal(port);
     });
   });
 
-  describe('#setHttpPort', () => {
-    it('should set HTTP port', () => {
+  describe('#setPort', () => {
+    it('should set port', () => {
       const dapiAddress = new DAPIAddress(host);
-      dapiAddress.setHttpPort(httpPort);
+      dapiAddress.setPort(port);
 
-      expect(dapiAddress.getHttpPort()).to.equal(httpPort);
-    });
-  });
-
-  describe('#getGrpcPort', () => {
-    it('should get GRPC port', () => {
-      const dapiAddress = new DAPIAddress({
-        host,
-        grpcPort,
-      });
-
-      expect(dapiAddress.getGrpcPort()).to.equal(grpcPort);
-    });
-  });
-
-  describe('#setGrpcPort', () => {
-    it('should set GRPC port', () => {
-      const dapiAddress = new DAPIAddress(host);
-      dapiAddress.setGrpcPort(grpcPort);
-
-      expect(dapiAddress.getGrpcPort()).to.equal(grpcPort);
+      expect(dapiAddress.getPort()).to.equal(port);
     });
   });
 
@@ -188,6 +163,17 @@ describe('DAPIAddress', () => {
 
       const banStartTime = dapiAddress.getBanStartTime();
       expect(banStartTime).to.equal(now);
+    });
+  });
+
+  describe('#getProtocol', () => {
+    it('should get protocol', () => {
+      const dapiAddress = new DAPIAddress(host);
+
+      dapiAddress.protocol = 'http';
+
+      const protocol = dapiAddress.getProtocol();
+      expect(protocol).to.equal('http');
     });
   });
 
@@ -242,15 +228,36 @@ describe('DAPIAddress', () => {
     });
   });
 
+  describe('#isSelfSigned', () => {
+    it('should return true if address uses self signed certificate', () => {
+      const dapiAddress = new DAPIAddress(host);
+
+      dapiAddress.allowSelfSignedCertificate = true;
+
+      const isSelfSigned = dapiAddress.isSelfSignedCertificateAllowed();
+      expect(isSelfSigned).to.be.true();
+    });
+
+    it('should return true if address doesn\'t use self signed certificate', () => {
+      const dapiAddress = new DAPIAddress(host);
+
+      dapiAddress.allowSelfSignedCertificate = false;
+
+      const isSelfSigned = dapiAddress.isSelfSignedCertificateAllowed();
+      expect(isSelfSigned).to.be.false();
+    });
+  });
+
   describe('#toJSON', () => {
     it('should return RawDAPIAddress', () => {
       const dapiAddress = new DAPIAddress(host);
 
       expect(dapiAddress.toJSON()).to.deep.equal({
         host: dapiAddress.getHost(),
-        httpPort: dapiAddress.getHttpPort(),
-        grpcPort: dapiAddress.getGrpcPort(),
+        port: dapiAddress.getPort(),
         proRegTxHash: dapiAddress.getProRegTxHash(),
+        protocol: DAPIAddress.DEFAULT_PROTOCOL,
+        allowSelfSignedCertificate: false,
       });
     });
   });
@@ -259,8 +266,8 @@ describe('DAPIAddress', () => {
     it('should return a string representation', () => {
       const dapiAddress = new DAPIAddress(host);
 
-      const dapiAddressString = `${dapiAddress.getHost()}:`
-        + `${dapiAddress.getHttpPort()}:${dapiAddress.getGrpcPort()}`;
+      const dapiAddressString = `${dapiAddress.getProtocol()}://${dapiAddress.getHost()}:`
+        + `${dapiAddress.getPort()}`;
 
       expect(`${dapiAddress}`).to.equal(dapiAddressString);
     });

@@ -1,11 +1,12 @@
 const { expect } = require('chai');
 
-const Identifier = require('@dashevo/dpp/lib/Identifier');
+const { Identifier } = require('@dashevo/wasm-dpp');
 
 const {
   Networks,
 } = require('@dashevo/dashcore-lib');
 
+// eslint-disable-next-line
 const Dash = require(typeof process === 'undefined' ? '../../src/index.ts' : '../../');
 
 describe('SDK', function suite() {
@@ -27,8 +28,8 @@ describe('SDK', function suite() {
       apps: {
         dpns: {
           contractId: dpnsContractId,
-        }
-      }
+        },
+      },
     };
 
     clientInstance = new Dash.Client(clientOpts);
@@ -38,10 +39,10 @@ describe('SDK', function suite() {
     expect(clientInstance.network).to.equal(process.env.NETWORK);
 
     expect(clientInstance.defaultAccountIndex).to.equal(0);
-
     expect(clientInstance.getApps().has('dpns')).to.be.true;
     expect(clientInstance.getApps().get('dpns')).to.deep.equal({
       contractId: dpnsContractId,
+      contract: undefined,
     });
 
     const network = Networks.get(process.env.NETWORK).name;
@@ -58,12 +59,13 @@ describe('SDK', function suite() {
     account = await clientInstance.getWalletAccount();
 
     expect(account.index).to.equal(0);
-  })
+  });
 
-  it('should sign and verify a message', async function () {
+  it('should sign and verify a message', async () => {
     const idKey = account.identities.getIdentityHDKeyByIndex(0, 0);
     // This transforms from a Wallet-Lib.PrivateKey to a Dashcore-lib.PrivateKey.
-    // It will quickly be annoying to perform this, and we therefore need to find a better solution for that.
+    // It will quickly be annoying to perform this,
+    // and we therefore need to find a better solution for that.
     const privateKey = Dash.Core.PrivateKey(idKey.privateKey);
     const message = Dash.Core.Message('hello, world');
     const signed = message.sign(privateKey);
@@ -71,7 +73,7 @@ describe('SDK', function suite() {
     expect(verify).to.equal(true);
   });
 
-  it('should disconnect', async function () {
+  it('should disconnect', async () => {
     await clientInstance.disconnect();
   });
 });

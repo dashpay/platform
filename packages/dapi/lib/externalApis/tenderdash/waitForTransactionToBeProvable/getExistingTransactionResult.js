@@ -26,9 +26,9 @@ function getExistingTransactionResultFactory(rpcClient) {
       );
     }
 
-    const TransactionResultClass = result.tx_result.code === 0
-      ? TransactionOkResult
-      : TransactionErrorResult;
+    const TransactionResultClass = (result.tx_result.code || 0) > 0
+      ? TransactionErrorResult
+      : TransactionOkResult;
 
     return new TransactionResultClass(
       result.tx_result,

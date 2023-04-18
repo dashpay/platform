@@ -7,6 +7,11 @@
 #import <ProtoRPC/ProtoRPCLegacy.h>
 #import <RxLibrary/GRXWriter+Immediate.h>
 
+#if defined(GPB_USE_PROTOBUF_FRAMEWORK_IMPORTS) && GPB_USE_PROTOBUF_FRAMEWORK_IMPORTS
+#import <Protobuf/GPBTimestamp.pbobjc.h>
+#else
+#import "GPBTimestamp.pbobjc.h"
+#endif
 
 @implementation Platform
 

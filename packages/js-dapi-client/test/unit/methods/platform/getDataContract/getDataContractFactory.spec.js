@@ -37,6 +37,8 @@ describe('getDataContractFactory', () => {
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
     metadata.setCoreChainLockedHeight(metadataFixture.coreChainLockedHeight);
+    metadata.setTimeMs(metadataFixture.timeMs);
+    metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
     response.setMetadata(metadata);
 
@@ -52,9 +54,10 @@ describe('getDataContractFactory', () => {
 
     proof = new Proof();
 
-    proof.setSignatureLlmqHash(proofFixture.signatureLLMQHash);
+    proof.setQuorumHash(proofFixture.quorumHash);
     proof.setSignature(proofFixture.signature);
     proof.setMerkleProof(proofFixture.merkleProof);
+    proof.setRound(proofFixture.round);
   });
 
   it('should return data contract', async () => {
@@ -102,8 +105,9 @@ describe('getDataContractFactory', () => {
     expect(result.getDataContract()).to.deep.equal(Buffer.alloc(0));
     expect(result.getProof()).to.be.an.instanceOf(ProofClass);
     expect(result.getProof().getMerkleProof()).to.deep.equal(proofFixture.merkleProof);
-    expect(result.getProof().getSignatureLLMQHash()).to.deep.equal(proofFixture.signatureLLMQHash);
+    expect(result.getProof().getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
     expect(result.getProof().getSignature()).to.deep.equal(proofFixture.signature);
+    expect(result.getProof().getRound()).to.deep.equal(proofFixture.round);
     expect(result.getMetadata()).to.deep.equal(metadataFixture);
     expect(result.getMetadata().getHeight()).to.equal(metadataFixture.height);
     expect(result.getMetadata().getCoreChainLockedHeight()).to.equal(

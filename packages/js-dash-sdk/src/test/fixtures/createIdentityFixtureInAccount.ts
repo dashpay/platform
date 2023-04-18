@@ -1,37 +1,43 @@
-import IdentityPublicKey from "@dashevo/dpp/lib/identity/IdentityPublicKey";
-// @ts-ignore
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+import loadWasmDpp, { IdentityPublicKey } from '@dashevo/wasm-dpp';
 
-export function createIdentityFixtureInAccount(account) {
-    const identityFixture = getIdentityFixture();
-    const identityFixtureIndex = 0;
-    const { privateKey: identityMasterPrivateKey } = account.identities.getIdentityHDKeyByIndex(identityFixtureIndex, 0);
-    const { privateKey: identitySecondPrivateKey } = account.identities.getIdentityHDKeyByIndex(identityFixtureIndex, 1);
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 
-    identityFixture.publicKeys[0] = new IdentityPublicKey({
-        id: 0,
-        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-        data: identityMasterPrivateKey.toPublicKey().toBuffer(),
-        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-        readOnly: false,
-    });
+export async function createIdentityFixtureInAccount(account) {
+  await loadWasmDpp();
 
-    identityFixture.publicKeys[1] = new IdentityPublicKey({
-      id: 1,
-      type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-      data: identitySecondPrivateKey.toPublicKey().toBuffer(),
-      purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-      securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
-      readOnly: false,
-    });
+  const identityFixture = await getIdentityFixture();
+  const identityFixtureIndex = 0;
+  const { privateKey: identityMasterPrivateKey } = account
+    .identities.getIdentityHDKeyByIndex(identityFixtureIndex, 0);
+  const { privateKey: identitySecondPrivateKey } = account
+    .identities.getIdentityHDKeyByIndex(identityFixtureIndex, 1);
 
-    account.storage
-      .getWalletStore(account.walletId)
-      .insertIdentityIdAtIndex(
-        identityFixture.getId().toString(),
-        identityFixtureIndex,
+  const publicKeyOne = new IdentityPublicKey({
+    id: 0,
+    type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+    data: identityMasterPrivateKey.toPublicKey().toBuffer(),
+    purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+    securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+    readOnly: false,
+  });
+
+  const publicKeyOneTwo = new IdentityPublicKey({
+    id: 1,
+    type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+    data: identitySecondPrivateKey.toPublicKey().toBuffer(),
+    purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+    securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
+    readOnly: false,
+  });
+
+  identityFixture.setPublicKeys([publicKeyOne, publicKeyOneTwo]);
+
+  account.storage
+    .getWalletStore(account.walletId)
+    .insertIdentityIdAtIndex(
+      identityFixture.getId().toString(),
+      identityFixtureIndex,
     );
 
-    return identityFixture;
+  return identityFixture;
 }

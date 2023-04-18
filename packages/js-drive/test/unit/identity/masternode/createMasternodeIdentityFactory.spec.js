@@ -1,25 +1,28 @@
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
-const Identity = require('@dashevo/dpp/lib/identity/Identity');
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
-const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
+
 const Address = require('@dashevo/dashcore-lib/lib/address');
 const Script = require('@dashevo/dashcore-lib/lib/script');
+const {
+  Identity, IdentityPublicKey, ValidationResult, MissingStateTransitionTypeError,
+} = require('@dashevo/wasm-dpp');
+
 const createMasternodeIdentityFactory = require('../../../../lib/identity/masternode/createMasternodeIdentityFactory');
 const InvalidMasternodeIdentityError = require('../../../../lib/identity/masternode/errors/InvalidMasternodeIdentityError');
+const BlockInfo = require('../../../../lib/blockExecution/BlockInfo');
 
 describe('createMasternodeIdentityFactory', () => {
   let createMasternodeIdentity;
   let dppMock;
-  let stateRepositoryMock;
   let validationResult;
   let getWithdrawPubKeyTypeFromPayoutScriptMock;
   let getPublicKeyFromPayoutScriptMock;
+  let identityRepositoryMock;
+  let blockInfo;
 
   beforeEach(function beforeEach() {
     dppMock = createDPPMock(this.sinon);
-    stateRepositoryMock = createStateRepositoryMock(this.sinon);
+
     getWithdrawPubKeyTypeFromPayoutScriptMock = this.sinon.stub().returns(
       IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH,
     );
@@ -32,23 +35,27 @@ describe('createMasternodeIdentityFactory', () => {
 
     dppMock.identity.validate.resolves(validationResult);
 
+    identityRepositoryMock = {
+      create: this.sinon.stub(),
+    };
+
     createMasternodeIdentity = createMasternodeIdentityFactory(
       dppMock,
-      stateRepositoryMock,
-      getWithdrawPubKeyTypeFromPayoutScriptMock,
-      getPublicKeyFromPayoutScriptMock,
+      identityRepositoryMock,
     );
+
+    blockInfo = new BlockInfo(1, 0, Date.now());
   });
 
   it('should create masternode identity', async () => {
     const identityId = generateRandomIdentifier();
-    const pubKeyData = Buffer.from([0]);
-    const pubKeyType = IdentityPublicKey.TYPES.ECDSA_HASH160;
+    const pubKeyData = Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64');
+    const pubKeyType = IdentityPublicKey.TYPES.ECDSA_SECP256K1;
 
-    const result = await createMasternodeIdentity(identityId, pubKeyData, pubKeyType);
+    const result = await createMasternodeIdentity(blockInfo, identityId, pubKeyData, pubKeyType);
 
     const identity = new Identity({
-      protocolVersion: dppMock.getProtocolVersion(),
+      protocolVersion: 1,
       id: identityId,
       publicKeys: [{
         id: 0,
@@ -57,39 +64,36 @@ describe('createMasternodeIdentityFactory', () => {
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
         readOnly: true,
         // Copy data buffer
-        data: Buffer.from([0]),
+        data: pubKeyData,
       }],
       balance: 0,
       revision: 0,
     });
 
-    expect(result).to.deep.equal(identity);
+    expect(result).to.deep.equals(identity);
 
-    expect(stateRepositoryMock.createIdentity).to.have.been.calledOnceWithExactly(identity);
-    expect(getWithdrawPubKeyTypeFromPayoutScriptMock).to.not.be.called();
-    expect(getPublicKeyFromPayoutScriptMock).to.not.be.called();
-
-    const publicKeyHashes = identity
-      .getPublicKeys()
-      .map((publicKey) => publicKey.hash());
-
-    expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.have.been.calledOnceWithExactly(
-      identity.getId(),
-      publicKeyHashes,
+    expect(identityRepositoryMock.create).to.have.been.calledOnceWithExactly(
+      identity,
+      blockInfo,
+      { useTransaction: true },
     );
+
+    expect(getWithdrawPubKeyTypeFromPayoutScriptMock).to.not.be.called();
+
+    expect(getPublicKeyFromPayoutScriptMock).to.not.be.called();
 
     expect(dppMock.identity.validate).to.be.calledOnceWithExactly(identity);
   });
 
   it('should store identity and public key hashed to the previous store', async () => {
     const identityId = generateRandomIdentifier();
-    const pubKeyData = Buffer.from([0]);
-    const pubKeyType = IdentityPublicKey.TYPES.ECDSA_HASH160;
+    const pubKeyData = Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64');
+    const pubKeyType = IdentityPublicKey.TYPES.ECDSA_SECP256K1;
 
-    const result = await createMasternodeIdentity(identityId, pubKeyData, pubKeyType);
+    const result = await createMasternodeIdentity(blockInfo, identityId, pubKeyData, pubKeyType);
 
     const identity = new Identity({
-      protocolVersion: dppMock.getProtocolVersion(),
+      protocolVersion: 1,
       id: identityId,
       publicKeys: [{
         id: 0,
@@ -98,58 +102,60 @@ describe('createMasternodeIdentityFactory', () => {
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
         readOnly: true,
         // Copy data buffer
-        data: Buffer.from([0]),
+        data: pubKeyData,
       }],
       balance: 0,
       revision: 0,
     });
 
-    expect(result).to.deep.equal(identity);
+    expect(result).to.deep.equals(identity);
 
-    expect(stateRepositoryMock.createIdentity).to.have.been.calledOnceWithExactly(identity);
-
-    const publicKeyHashes = identity
-      .getPublicKeys()
-      .map((publicKey) => publicKey.hash());
-
-    expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.have.been.calledOnceWithExactly(
-      identity.getId(),
-      publicKeyHashes,
+    expect(identityRepositoryMock.create).to.have.been.calledOnceWithExactly(
+      identity,
+      blockInfo,
+      { useTransaction: true },
     );
-
-    expect(dppMock.identity.validate).to.be.calledOnceWithExactly(identity);
   });
 
   it('should throw DPPValidationAbciError if identity is not valid', async () => {
-    const validationError = new Error('Validation error');
+    const validationError = new MissingStateTransitionTypeError();
 
-    validationResult.addError(validationError);
+    validationResult.addError(validationError.serialize());
+
+    dppMock.identity.validate.resolves(validationResult);
 
     const identityId = generateRandomIdentifier();
-    const pubKeyData = Buffer.from([0]);
-    const pubKeyType = IdentityPublicKey.TYPES.ECDSA_HASH160;
+    const pubKeyData = Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64');
+    const pubKeyType = IdentityPublicKey.TYPES.ECDSA_SECP256K1;
 
     try {
-      await createMasternodeIdentity(identityId, pubKeyData, pubKeyType);
+      await createMasternodeIdentity(blockInfo, identityId, pubKeyData, pubKeyType);
 
       expect.fail('should fail with an error');
     } catch (e) {
       expect(e).to.be.an.instanceof(InvalidMasternodeIdentityError);
       expect(e.message).to.be.equal('Invalid masternode identity');
-      expect(e.getValidationError()).to.be.deep.equal(validationError);
+      expect(e.getValidationError()).to.be.deep.equals(validationError);
     }
   });
 
-  it('should create masternode identity with payoutScript public key', async () => {
+  // TODO: Enable keys when we have support of non unique keys in DPP
+  it.skip('should create masternode identity with payoutScript public key', async () => {
     const identityId = generateRandomIdentifier();
     const pubKeyData = Buffer.from([0]);
     const pubKeyType = IdentityPublicKey.TYPES.ECDSA_HASH160;
     const payoutScript = new Script(Address.fromString('7UkJidhNjEPJCQnCTXeaJKbJmL4JuyV66w'));
 
-    const result = await createMasternodeIdentity(identityId, pubKeyData, pubKeyType, payoutScript);
+    const result = await createMasternodeIdentity(
+      blockInfo,
+      identityId,
+      pubKeyData,
+      pubKeyType,
+      payoutScript,
+    );
 
     const identity = new Identity({
-      protocolVersion: dppMock.getProtocolVersion(),
+      protocolVersion: 1,
       id: identityId,
       publicKeys: [{
         id: 0,
@@ -172,18 +178,15 @@ describe('createMasternodeIdentityFactory', () => {
 
     expect(result).to.deep.equal(identity);
 
-    expect(stateRepositoryMock.createIdentity).to.have.been.calledOnceWithExactly(identity);
-    expect(getWithdrawPubKeyTypeFromPayoutScriptMock).to.be.calledOnce();
-    expect(getPublicKeyFromPayoutScriptMock).to.be.calledOnce();
-
-    const publicKeyHashes = identity
-      .getPublicKeys()
-      .map((publicKey) => publicKey.hash());
-
-    expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.have.been.calledOnceWithExactly(
-      identity.getId(),
-      publicKeyHashes,
+    expect(identityRepositoryMock.create).to.have.been.calledOnceWithExactly(
+      identity,
+      blockInfo,
+      { useTransaction: true },
     );
+
+    expect(getWithdrawPubKeyTypeFromPayoutScriptMock).to.be.calledOnce();
+
+    expect(getPublicKeyFromPayoutScriptMock).to.be.calledOnce();
 
     expect(dppMock.identity.validate).to.be.calledOnceWithExactly(identity);
   });

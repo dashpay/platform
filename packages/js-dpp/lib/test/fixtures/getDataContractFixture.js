@@ -89,6 +89,10 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
           type: 'string',
           maxLength: 63,
         },
+        otherProperty: {
+          type: 'string',
+          maxLength: 42,
+        },
       },
       required: ['firstName', '$createdAt', '$updatedAt', 'lastName'],
       additionalProperties: false,
@@ -235,7 +239,7 @@ module.exports = function getDataContractFixture(ownerId = randomOwnerId) {
     },
   };
 
-  const factory = new DataContractFactory(createDPPMock(), () => {});
+  const factory = new DataContractFactory(createDPPMock(), () => { });
 
   const dataContract = factory.create(ownerId, documents);
 

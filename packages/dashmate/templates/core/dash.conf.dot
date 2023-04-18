@@ -5,6 +5,7 @@ logtimestamps=1
 maxconnections=256
 printtoconsole=1
 debug={{=it.core.debug }}
+logips={{=it.core.logIps }}
 
 # JSONRPC
 server=1
@@ -12,9 +13,8 @@ rpcuser={{=it.core.rpc.user}}
 rpcpassword={{=it.core.rpc.password}}
 rpcwallet=main
 
-rpcallowip=127.0.0.1
-rpcallowip=172.16.0.0/12
-rpcallowip=192.168.0.0/16
+{{~it.core.rpc.allowIps :host}}
+rpcallowip={{=host}}{{~}}
 
 rpcworkqueue=64
 rpcthreads=16
@@ -23,12 +23,14 @@ rpcthreads=16
 listen=1
 dnsseed=0
 allowprivatenet=0
+{{?it.externalIp }}
 externalip={{=it.externalIp}}
-{{? it.network === 'local'}}
+{{?}}
+{{? it.network === 'local' && it.externalIp }}
 whitelist={{=it.externalIp}}
 {{?}}
 
-{{? it.network !== 'mainnet'}}# Indices
+{{? it.core.indexes }}# Indices
 txindex=1
 addressindex=1
 timestampindex=1
@@ -53,23 +55,31 @@ masternodeblsprivkey={{=it.core.masternode.operator.privateKey}}
 {{?? it.network === 'local'}}
 regtest=1
 [regtest]
-sporkaddr={{=it.core.spork.address}}
+{{? it.core.spork.address}}sporkaddr={{=it.core.spork.address}}{{?}}
 {{? it.core.spork.privateKey}}sporkkey={{=it.core.spork.privateKey}}{{?}}
 {{? it.core.miner.mediantime}}mocktime={{=it.core.miner.mediantime}}{{?}}
-{{~it.core.p2p.seeds :seed}}
-addnode={{=seed.host}}:{{=seed.port}}{{~}}
+llmqinstantsend=llmq_test
+llmqinstantsenddip0024=llmq_test_instantsend
+
 {{?? it.network === 'devnet'}}
-devnet={{=it.core.devnetName}}
+devnet={{=it.core.devnet.name}}
+[devnet]
+{{? it.core.spork.address}}sporkaddr={{=it.core.spork.address}}{{?}}
+{{? it.core.spork.privateKey}}sporkkey={{=it.core.spork.privateKey}}{{?}}
+
+# devnet-specific
+powtargetspacing={{=it.core.devnet.powTargetSpacing}}
+minimumdifficultyblocks={{=it.core.devnet.minimumDifficultyBlocks}}
+highsubsidyblocks=500
+highsubsidyfactor=10
 llmqchainlocks=llmq_devnet
 llmqinstantsend=llmq_devnet
-[devnet]
+llmqinstantsenddip0024=llmq_devnet_dip0024
+llmqplatform=llmq_devnet_platform{{?}}
+
+
 {{~it.core.p2p.seeds :seed}}
 addnode={{=seed.host}}:{{=seed.port}}{{~}}
-
-sporkaddr={{=it.core.spork.address}}
-minimumdifficultyblocks=1000
-highsubsidyblocks=500
-highsubsidyfactor=10{{?}}
 
 # network
 port={{=it.core.p2p.port}}

@@ -2,14 +2,12 @@
 const webpack = require('webpack');
 const dotenvResult = require('dotenv-safe').config();
 
-const webpackBaseConfig = require("./webpack.base.config");
-
 const karmaMocha = require('karma-mocha');
 const karmaMochaReporter = require('karma-mocha-reporter');
 const karmaChai = require('karma-chai');
 const karmaChromeLauncher = require('karma-chrome-launcher');
-const karmaFirefoxLauncher = require('karma-firefox-launcher');
 const karmaWebpack = require('karma-webpack');
+const webpackBaseConfig = require('./webpack.base.config');
 
 if (dotenvResult.error) {
   throw dotenvResult.error;
@@ -43,7 +41,7 @@ module.exports = (config) => {
     colors: true,
     logLevel: config.LOG_INFO,
     autoWatch: false,
-    browsers: ['ChromeHeadless', 'FirefoxHeadless'],
+    browsers: ['chromeWithoutSecurity'],
     singleRun: false,
     concurrency: Infinity,
     browserNoActivityTimeout: 7 * 60 * 1000, // 30000 default
@@ -54,13 +52,13 @@ module.exports = (config) => {
       karmaMochaReporter,
       karmaChai,
       karmaChromeLauncher,
-      karmaFirefoxLauncher,
       karmaWebpack,
     ],
     customLaunchers: {
-      FirefoxHeadless: {
-        base: 'Firefox',
-        flags: ['-headless'],
+      chromeWithoutSecurity: {
+        base: 'ChromeHeadless',
+        flags: ['--allow-insecure-localhost'],
+        displayName: 'Chrome w/o security',
       },
     },
   });

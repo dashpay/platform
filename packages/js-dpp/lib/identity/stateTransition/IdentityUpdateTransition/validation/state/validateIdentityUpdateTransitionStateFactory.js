@@ -89,7 +89,7 @@ function validateIdentityUpdateTransitionStateFactory(
 
       // Calculate time window for timestamps
 
-      const lastBlockHeaderTime = stateRepository.getTimeMs();
+      const lastBlockHeaderTime = await stateRepository.fetchLatestPlatformBlockTime();
 
       const disabledAtTime = stateTransition.getPublicKeysDisabledAt();
 

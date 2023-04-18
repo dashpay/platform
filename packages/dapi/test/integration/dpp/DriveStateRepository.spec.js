@@ -4,10 +4,10 @@ const sinon = require('sinon');
 const chaiAsPromised = require('chai-as-promised');
 const dirtyChai = require('dirty-chai');
 
-const DashPlatformProtocol = require('@dashevo/dpp');
+const { default: loadWasmDpp, DashPlatformProtocol } = require('@dashevo/wasm-dpp');
 
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const generateRandomIdentifierAsync = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
 
 const {
   v0: {
@@ -29,12 +29,14 @@ describe('DriveStateRepository', () => {
   let dataContractFixture;
   let proto;
 
-  beforeEach(async function before() {
-    dataContractFixture = getDataContractFixture();
+  before(async () => {
+    await loadWasmDpp();
+  });
 
-    dpp = new DashPlatformProtocol();
-    await dpp.initialize();
-    sinon.spy(dpp.dataContract, 'createFromBuffer');
+  beforeEach(async function before() {
+    dataContractFixture = await getDataContractFixture();
+
+    dpp = new DashPlatformProtocol({}, null, null);
 
     proto = new GetDataContractResponse();
     proto.setDataContract(dataContractFixture.toBuffer());
@@ -49,17 +51,10 @@ describe('DriveStateRepository', () => {
 
   describe('#fetchDataContract', () => {
     it('should fetch and parse data contract', async () => {
-      const contractId = generateRandomIdentifier();
+      const contractId = await generateRandomIdentifierAsync();
       const result = await stateRepository.fetchDataContract(contractId);
 
       expect(result.toObject()).to.be.deep.equal(dataContractFixture.toObject());
-
-      expect(dpp.dataContract.createFromBuffer).to.be.calledOnceWithExactly(
-        proto.getDataContract_asU8(),
-        {
-          skipValidation: true,
-        },
-      );
 
       expect(driveClientMock.fetchDataContract).to.be.calledOnce();
       expect(driveClientMock.fetchDataContract).to.be.calledWithExactly(contractId, false);

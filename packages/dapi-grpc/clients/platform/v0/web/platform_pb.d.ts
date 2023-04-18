@@ -2,6 +2,7 @@
 // file: platform.proto
 
 import * as jspb from "google-protobuf";
+import * as google_protobuf_timestamp_pb from "google-protobuf/google/protobuf/timestamp_pb";
 
 export class Proof extends jspb.Message {
   getMerkleProof(): Uint8Array | string;
@@ -9,15 +10,18 @@ export class Proof extends jspb.Message {
   getMerkleProof_asB64(): string;
   setMerkleProof(value: Uint8Array | string): void;
 
-  getSignatureLlmqHash(): Uint8Array | string;
-  getSignatureLlmqHash_asU8(): Uint8Array;
-  getSignatureLlmqHash_asB64(): string;
-  setSignatureLlmqHash(value: Uint8Array | string): void;
+  getQuorumHash(): Uint8Array | string;
+  getQuorumHash_asU8(): Uint8Array;
+  getQuorumHash_asB64(): string;
+  setQuorumHash(value: Uint8Array | string): void;
 
   getSignature(): Uint8Array | string;
   getSignature_asU8(): Uint8Array;
   getSignature_asB64(): string;
   setSignature(value: Uint8Array | string): void;
+
+  getRound(): number;
+  setRound(value: number): void;
 
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): Proof.AsObject;
@@ -32,8 +36,9 @@ export class Proof extends jspb.Message {
 export namespace Proof {
   export type AsObject = {
     merkleProof: Uint8Array | string,
-    signatureLlmqHash: Uint8Array | string,
+    quorumHash: Uint8Array | string,
     signature: Uint8Array | string,
+    round: number,
   }
 }
 
@@ -43,6 +48,12 @@ export class ResponseMetadata extends jspb.Message {
 
   getCoreChainLockedHeight(): number;
   setCoreChainLockedHeight(value: number): void;
+
+  getTimeMs(): number;
+  setTimeMs(value: number): void;
+
+  getProtocolVersion(): number;
+  setProtocolVersion(value: number): void;
 
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): ResponseMetadata.AsObject;
@@ -58,6 +69,8 @@ export namespace ResponseMetadata {
   export type AsObject = {
     height: number,
     coreChainLockedHeight: number,
+    timeMs: number,
+    protocolVersion: number,
   }
 }
 

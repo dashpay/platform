@@ -1,0 +1,121 @@
+const rimraf = require('rimraf');
+const cbor = require('cbor');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
+const Drive = require('@dashevo/rs-drive');
+const getBlockExecutionContextObjectFixture = require('../../../lib/test/fixtures/getBlockExecutionContextObjectFixture');
+const BlockExecutionContext = require('../../../lib/blockExecution/BlockExecutionContext');
+const GroveDBStore = require('../../../lib/storage/GroveDBStore');
+const noopLogger = require('../../../lib/util/noopLogger');
+const BlockExecutionContextRepository = require('../../../lib/blockExecution/BlockExecutionContextRepository');
+
+describe('BlockExecutionContextRepository', () => {
+  // let container;
+  let blockExecutionContextRepository;
+  let blockExecutionContext;
+  let rsDrive;
+  let store;
+  let options;
+
+  beforeEach(async () => {
+    const dataContract = await getDataContractFixture();
+    delete dataContract.entropy;
+
+    const plainObject = await getBlockExecutionContextObjectFixture(dataContract);
+
+    blockExecutionContext = new BlockExecutionContext();
+    blockExecutionContext.fromObject(plainObject);
+
+    rsDrive = new Drive('./db/grovedb_test', {
+      drive: {
+        dataContractsGlobalCacheSize: 500,
+        dataContractsBlockCacheSize: 500,
+      },
+      core: {
+        rpc: {
+          url: '127.0.0.1',
+          username: '',
+          password: '',
+        },
+      },
+    });
+
+    store = new GroveDBStore(rsDrive, noopLogger);
+
+    blockExecutionContextRepository = new BlockExecutionContextRepository(store);
+
+    options = {};
+  });
+
+  afterEach(async () => {
+    await rsDrive.close();
+    rimraf.sync('./db/grovedb_test');
+  });
+
+  it('should store blockExecutionContext', async () => {
+    const result = await blockExecutionContextRepository.store(blockExecutionContext, options);
+
+    expect(result).to.be.instanceOf(BlockExecutionContextRepository);
+
+    const encodedResult = await store.getAux(
+      BlockExecutionContextRepository.EXTERNAL_STORE_KEY_NAME,
+      options,
+    );
+
+    const blockExecutionContextEncoded = encodedResult.getValue();
+
+    const rawBlockExecutionContext = cbor.decode(blockExecutionContextEncoded);
+
+    expect(rawBlockExecutionContext).to.deep.equal(blockExecutionContext.toObject({
+      skipContextLogger: true,
+      skipPrepareProposalResult: true,
+    }));
+  });
+
+  it('should fetch blockExecutionContext', async () => {
+    await store.putAux(
+      BlockExecutionContextRepository.EXTERNAL_STORE_KEY_NAME,
+      await cbor.encodeAsync(blockExecutionContext.toObject({
+        skipContextLogger: true,
+      })),
+      options,
+    );
+
+    const fetchedBlockExecutionContext = await blockExecutionContextRepository.fetch(options);
+
+    expect(fetchedBlockExecutionContext).to.be.instanceOf(BlockExecutionContext);
+
+    expect(fetchedBlockExecutionContext.toObject({
+      skipContextLogger: true,
+      skipPrepareProposalResult: true,
+    })).to.deep.equal(blockExecutionContext.toObject({
+      skipContextLogger: true,
+      skipPrepareProposalResult: true,
+    }));
+  });
+
+  it('should fetch blockExecutionContext stored in transaction', async () => {
+    await store.startTransaction();
+
+    await blockExecutionContextRepository.store(blockExecutionContext, { useTransaction: true });
+
+    let fetchedBlockExecutionContext = await blockExecutionContextRepository.fetch();
+
+    expect(fetchedBlockExecutionContext).to.be.instanceOf(BlockExecutionContext);
+
+    expect(fetchedBlockExecutionContext.isEmpty()).to.be.true();
+
+    await store.commitTransaction();
+
+    fetchedBlockExecutionContext = await blockExecutionContextRepository.fetch();
+
+    expect(fetchedBlockExecutionContext).to.be.instanceOf(BlockExecutionContext);
+
+    expect(fetchedBlockExecutionContext.toObject({
+      skipContextLogger: true,
+      skipPrepareProposalResult: true,
+    })).to.deep.equal(blockExecutionContext.toObject({
+      skipContextLogger: true,
+      skipPrepareProposalResult: true,
+    }));
+  });
+});

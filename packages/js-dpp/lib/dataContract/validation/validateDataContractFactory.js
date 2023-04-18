@@ -210,18 +210,18 @@ module.exports = function validateDataContractFactory(
             if (propertyType === 'array' && !isByteArray) {
               invalidPropertyType = 'array';
 
-            // const isInvalidPrefixItems = prefixItems
-            //   && (
-            // prefixItems.some((prefixItem) =>
+              // const isInvalidPrefixItems = prefixItems
+              //   && (
+              // prefixItems.some((prefixItem) =>
               // prefixItem.type === 'object' || prefixItem.type === 'array')
-            //     || !prefixItems.every((prefixItem) => prefixItem.type === prefixItems[0].type)
-            //   );
-            //
-            // const isInvalidItemTypes = items.type === 'object' || items.type === 'array';
-            //
-            // if (isInvalidPrefixItems || isInvalidItemTypes) {
-            //   invalidPropertyType = 'array';
-            // }
+              //     || !prefixItems.every((prefixItem) => prefixItem.type === prefixItems[0].type)
+              //   );
+              //
+              // const isInvalidItemTypes = items.type === 'object' || items.type === 'array';
+              //
+              // if (isInvalidPrefixItems || isInvalidItemTypes) {
+              //   invalidPropertyType = 'array';
+              // }
             }
 
             if (invalidPropertyType) {
@@ -300,7 +300,7 @@ module.exports = function validateDataContractFactory(
           });
 
           // Make sure that compound unique indices contain all fields
-          if (indexPropertyNames.length > 1) {
+          if (indexDefinition.unique && indexPropertyNames.length > 1) {
             const requiredFields = documentSchema.required || [];
             const allAreRequired = indexPropertyNames
               .every((propertyName) => requiredFields.includes(propertyName));

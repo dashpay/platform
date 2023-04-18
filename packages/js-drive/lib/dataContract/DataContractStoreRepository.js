@@ -1,7 +1,8 @@
-const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
 const { createHash } = require('crypto');
+const {
+  PreCalculatedOperation,
+} = require('@dashevo/wasm-dpp');
 
-const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/PreCalculatedOperation');
 const StorageResult = require('../storage/StorageResult');
 
 class DataContractStoreRepository {
@@ -30,19 +31,20 @@ class DataContractStoreRepository {
    */
   async create(dataContract, blockInfo, options = {}) {
     try {
-      const { storageFee, processingFee } = await this.storage.getDrive().createContract(
+      const feeResult = await this.storage.getDrive().createContract(
         dataContract,
-        blockInfo,
+        blockInfo.toObject(),
         Boolean(options.useTransaction),
-        Boolean(options.dryRun), // TODO rs-drive doesn't support this
+        Boolean(options.dryRun),
       );
 
       return new StorageResult(
         undefined,
         [
           new PreCalculatedOperation(
-            storageFee,
-            processingFee,
+            feeResult.storageFee,
+            feeResult.processingFee,
+            feeResult.feeRefunds,
           ),
         ],
       );
@@ -74,19 +76,20 @@ class DataContractStoreRepository {
    */
   async update(dataContract, blockInfo, options = {}) {
     try {
-      const { storageFee, processingFee } = await this.storage.getDrive().updateContract(
+      const feeResult = await this.storage.getDrive().updateContract(
         dataContract,
-        blockInfo,
+        blockInfo.toObject(),
         Boolean(options.useTransaction),
-        Boolean(options.dryRun), // TODO rs-drive doesn't support this
+        Boolean(options.dryRun),
       );
 
       return new StorageResult(
         undefined,
         [
           new PreCalculatedOperation(
-            storageFee,
-            processingFee,
+            feeResult.storageFee,
+            feeResult.processingFee,
+            feeResult.feeRefunds,
           ),
         ],
       );
@@ -124,34 +127,23 @@ class DataContractStoreRepository {
       );
     }
 
-    const result = await this.storage.getDrive().fetchContract(
+    const [dataContract, feeResult] = await this.storage.getDrive().fetchContract(
       id,
       options && options.blockInfo ? options.blockInfo.epoch : undefined,
       Boolean(options.useTransaction),
     );
 
-    if (result.length === 0) {
-      return new StorageResult(
-        null,
-        [],
-      );
-    }
-
-    const [encodedDataContract, feeResult] = result;
-
-    const [protocolVersion, rawDataContract] = this.decodeProtocolEntity(
-      encodedDataContract,
-    );
-
-    rawDataContract.protocolVersion = protocolVersion;
-
     const operations = [];
     if (feeResult) {
-      operations.push(new PreCalculatedOperation(feeResult.storageFee, feeResult.processingFee));
+      operations.push(new PreCalculatedOperation(
+        feeResult.storageFee,
+        feeResult.processingFee,
+        feeResult.feeRefunds,
+      ));
     }
 
     return new StorageResult(
-      new DataContract(rawDataContract),
+      dataContract,
       operations,
     );
   }
@@ -187,14 +179,16 @@ class DataContractStoreRepository {
       query: {
         query: {
           items,
-          subqueryKey: DataContractStoreRepository.DATA_CONTRACT_KEY,
+          subqueryPath: [
+            DataContractStoreRepository.DATA_CONTRACT_KEY,
+          ],
         },
       },
     }, options);
   }
 }
 
-DataContractStoreRepository.TREE_PATH = [Buffer.from([1])];
+DataContractStoreRepository.TREE_PATH = [Buffer.from([64])];
 DataContractStoreRepository.DATA_CONTRACT_KEY = Buffer.from([0]);
 DataContractStoreRepository.DOCUMENTS_TREE_KEY = Buffer.from([0]);
 

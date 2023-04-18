@@ -6,37 +6,45 @@ const {
 
 const BlockExecutionContextMock = require('../../../../../../lib/test/mock/BlockExecutionContextMock');
 const createQueryResponseFactory = require('../../../../../../lib/abci/handlers/query/response/createQueryResponseFactory');
-const BlockExecutionContextStackMock = require('../../../../../../lib/test/mock/BlockExecutionContextStackMock');
 
 describe('createQueryResponseFactory', () => {
-  let blockExecutionContextStackMock;
   let createQueryResponse;
   let metadata;
   let lastCommitInfo;
   let blockExecutionContextMock;
+  let timeMs;
 
   beforeEach(function beforeEach() {
-    metadata = {
-      height: 1,
-      coreChainLockedHeight: 1,
+    const version = {
+      app: 1,
     };
 
-    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
-    blockExecutionContextMock.getHeader.returns(metadata);
-
-    blockExecutionContextStackMock = new BlockExecutionContextStackMock(this.sinon);
-
-    blockExecutionContextStackMock.getFirst.returns(blockExecutionContextMock);
+    timeMs = Date.now();
 
     lastCommitInfo = {
       quorumHash: Buffer.alloc(12).fill(1),
-      stateSignature: Buffer.alloc(12).fill(2),
+      blockSignature: Buffer.alloc(12).fill(2),
     };
 
+    metadata = {
+      height: 1,
+      coreChainLockedHeight: 1,
+      timeMs,
+      protocolVersion: version.app,
+    };
+
+    blockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
+
+    blockExecutionContextMock.getHeight.returns(metadata.height);
+    blockExecutionContextMock.getCoreChainLockedHeight.returns(metadata.coreChainLockedHeight);
+    blockExecutionContextMock.getTimeMs.returns(timeMs);
+    blockExecutionContextMock.getVersion.returns(version);
     blockExecutionContextMock.getLastCommitInfo.returns(lastCommitInfo);
+    blockExecutionContextMock.isEmpty.returns(false);
+    blockExecutionContextMock.getRound.returns(42);
 
     createQueryResponse = createQueryResponseFactory(
-      blockExecutionContextStackMock,
+      blockExecutionContextMock,
     );
   });
 
@@ -46,7 +54,6 @@ describe('createQueryResponseFactory', () => {
     response.serializeBinary();
 
     expect(response).to.be.instanceOf(GetDataContractResponse);
-
     expect(response.getMetadata().toObject()).to.deep.equal(metadata);
     expect(response.getProof()).to.undefined();
   });
@@ -61,9 +68,10 @@ describe('createQueryResponseFactory', () => {
     expect(response.getMetadata().toObject()).to.deep.equal(metadata);
 
     expect(response.getProof().toObject()).to.deep.equal({
-      signatureLlmqHash: lastCommitInfo.quorumHash.toString('base64'),
-      signature: lastCommitInfo.stateSignature.toString('base64'),
+      quorumHash: lastCommitInfo.quorumHash.toString('base64'),
+      signature: lastCommitInfo.blockSignature.toString('base64'),
       merkleProof: '',
+      round: 42,
     });
   });
 });

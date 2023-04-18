@@ -66,7 +66,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchDataContract.resolves(dataContract);
-    stateRepositoryMock.getTimeMs.returns(blockTimeMs);
+    stateRepositoryMock.fetchLatestPlatformBlockTime.resolves(blockTimeMs);
 
     fetchDocumentsMock = this.sinonSandbox.stub();
     fetchDocumentsMock.resolves([
@@ -146,7 +146,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
 
     stateTransition.getExecutionContext().disableDryRun();
 
-    expect(stateRepositoryMock.getTimeMs).to.have.been.calledOnceWith();
+    expect(stateRepositoryMock.fetchLatestPlatformBlockTime).to.have.been.calledOnceWith();
 
     const [documentTransition] = stateTransition.getTransitions();
     const newDocument = new Document({

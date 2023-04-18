@@ -8,7 +8,8 @@ const {
 
 const Docker = require('dockerode');
 
-const ensureHomeDirFactory = require('./ensureHomeDirFactory');
+const ensureHomeDirFactory = require('./config/ensureHomeDirFactory');
+const getConnectionHostFactory = require('./docker/getConnectionHostFactory');
 const ConfigFileJsonRepository = require('./config/configFile/ConfigFileJsonRepository');
 const createSystemConfigsFactory = require('./config/systemConfigs/createSystemConfigsFactory');
 const isSystemConfigFactory = require('./config/systemConfigs/isSystemConfigFactory');
@@ -44,22 +45,27 @@ const sendToAddress = require('./core/wallet/sendToAddress');
 const registerMasternode = require('./core/wallet/registerMasternode');
 const waitForBalanceToConfirm = require('./core/wallet/waitForBalanceToConfirm');
 
+const getCoreScopeFactory = require('./status/scopes/core');
+const getMasternodeScopeFactory = require('./status/scopes/masternode');
+const getPlatformScopeFactory = require('./status/scopes/platform');
+const getOverviewScopeFactory = require('./status/scopes/overview');
+const getServicesScopeFactory = require('./status/scopes/services');
+const getHostScopeFactory = require('./status/scopes/host');
+
 const generateToAddressTaskFactory = require('./listr/tasks/wallet/generateToAddressTaskFactory');
 const registerMasternodeTaskFactory = require('./listr/tasks/registerMasternodeTaskFactory');
 const featureFlagTaskFactory = require('./listr/tasks/platform/featureFlagTaskFactory');
-const tenderdashInitTaskFactory = require('./listr/tasks/platform/tenderdashInitTaskFactory');
 const startNodeTaskFactory = require('./listr/tasks/startNodeTaskFactory');
 
 const createTenderdashRpcClient = require('./tenderdash/createTenderdashRpcClient');
-const initializeTenderdashNodeFactory = require('./tenderdash/initializeTenderdashNodeFactory');
 const setupLocalPresetTaskFactory = require('./listr/tasks/setup/setupLocalPresetTaskFactory');
 const setupRegularPresetTaskFactory = require('./listr/tasks/setup/setupRegularPresetTaskFactory');
-const outputStatusOverviewFactory = require('./status/outputStatusOverviewFactory');
 const stopNodeTaskFactory = require('./listr/tasks/stopNodeTaskFactory');
 const restartNodeTaskFactory = require('./listr/tasks/restartNodeTaskFactory');
 const resetNodeTaskFactory = require('./listr/tasks/resetNodeTaskFactory');
 const configureCoreTaskFactory = require('./listr/tasks/setup/local/configureCoreTaskFactory');
 const configureTenderdashTaskFactory = require('./listr/tasks/setup/local/configureTenderdashTaskFactory');
+const obtainSelfSignedCertificateTaskFactory = require('./listr/tasks/ssl/selfSigned/obtainSelfSignedCertificateTaskFactory');
 const waitForNodeToBeReadyTaskFactory = require('./listr/tasks/platform/waitForNodeToBeReadyTaskFactory');
 const enableCoreQuorumsTaskFactory = require('./listr/tasks/setup/local/enableCoreQuorumsTaskFactory');
 const startGroupNodesTaskFactory = require('./listr/tasks/startGroupNodesTaskFactory');
@@ -67,6 +73,26 @@ const buildServicesTaskFactory = require('./listr/tasks/buildServicesTaskFactory
 const reindexNodeTaskFactory = require('./listr/tasks/reindexNodeTaskFactory');
 
 const generateHDPrivateKeys = require('./util/generateHDPrivateKeys');
+
+const obtainZeroSSLCertificateTaskFactory = require('./listr/tasks/ssl/zerossl/obtainZeroSSLCertificateTaskFactory');
+const renewZeroSSLCertificateTaskFactory = require('./listr/tasks/ssl/zerossl/renewZeroSSLCertificateTaskFactory');
+const VerificationServer = require('./listr/tasks/ssl/VerificationServer');
+const saveCertificateTask = require('./listr/tasks/ssl/saveCertificateTask');
+
+const createZeroSSLCertificate = require('./ssl/zerossl/createCertificate');
+const verifyDomain = require('./ssl/zerossl/verifyDomain');
+const downloadCertificate = require('./ssl/zerossl/downloadCertificate');
+const getCertificate = require('./ssl/zerossl/getCertificate');
+const listCertificates = require('./ssl/zerossl/listCertificates');
+const generateCsr = require('./ssl/zerossl/generateCsr');
+const generateKeyPair = require('./ssl/generateKeyPair');
+const createSelfSignedCertificate = require('./ssl/selfSigned/createCertificate');
+
+const scheduleRenewZeroSslCertificateFactory = require('./helper/scheduleRenewZeroSslCertificateFactory');
+const registerMasternodeGuideTaskFactory = require('./listr/tasks/setup/regular/registerMasternodeGuideTaskFactory');
+const configureNodeTaskFactory = require('./listr/tasks/setup/regular/configureNodeTaskFactory');
+const configureSSLCertificateTaskFactory = require('./listr/tasks/setup/regular/configureSSLCertificateTaskFactory');
+const createHttpApiServerFactory = require('./helper/api/createHttpApiServerFactory');
 
 async function createDIContainer() {
   const container = createAwilixContainer({
@@ -83,6 +109,8 @@ async function createDIContainer() {
     createSystemConfigs: asFunction(createSystemConfigsFactory).singleton(),
     isSystemConfig: asFunction(isSystemConfigFactory).singleton(),
     migrateConfigFile: asValue(migrateConfigFile),
+    isHelper: asValue(process.env.DASHMATE_HELPER === '1'),
+    getConnectionHost: asClass(getConnectionHostFactory).singleton(),
     // `configFile` and `config` are registering on command init
   });
 
@@ -99,6 +127,21 @@ async function createDIContainer() {
   container.register({
     renderServiceTemplates: asFunction(renderServiceTemplatesFactory).singleton(),
     writeServiceConfigs: asFunction(writeServiceConfigsFactory).singleton(),
+  });
+
+  /**
+   * SSL
+   */
+  container.register({
+    createZeroSSLCertificate: asValue(createZeroSSLCertificate),
+    generateCsr: asValue(generateCsr),
+    generateKeyPair: asValue(generateKeyPair),
+    verifyDomain: asValue(verifyDomain),
+    downloadCertificate: asValue(downloadCertificate),
+    getCertificate: asValue(getCertificate),
+    listCertificates: asValue(listCertificates),
+    createSelfSignedCertificate: asValue(createSelfSignedCertificate),
+    verificationServer: asClass(VerificationServer).singleton(),
   });
 
   /**
@@ -152,7 +195,6 @@ async function createDIContainer() {
    */
   container.register({
     createTenderdashRpcClient: asValue(createTenderdashRpcClient),
-    initializeTenderdashNode: asFunction(initializeTenderdashNodeFactory).singleton(),
   });
 
   /**
@@ -164,7 +206,6 @@ async function createDIContainer() {
     generateToAddressTask: asFunction(generateToAddressTaskFactory).singleton(),
     registerMasternodeTask: asFunction(registerMasternodeTaskFactory).singleton(),
     featureFlagTask: asFunction(featureFlagTaskFactory).singleton(),
-    tenderdashInitTask: asFunction(tenderdashInitTaskFactory).singleton(),
     startNodeTask: asFunction(startNodeTaskFactory).singleton(),
     stopNodeTask: asFunction(stopNodeTaskFactory).singleton(),
     restartNodeTask: asFunction(restartNodeTaskFactory).singleton(),
@@ -173,10 +214,30 @@ async function createDIContainer() {
     setupRegularPresetTask: asFunction(setupRegularPresetTaskFactory).singleton(),
     configureCoreTask: asFunction(configureCoreTaskFactory).singleton(),
     configureTenderdashTask: asFunction(configureTenderdashTaskFactory).singleton(),
-    outputStatusOverview: asFunction(outputStatusOverviewFactory),
     waitForNodeToBeReadyTask: asFunction(waitForNodeToBeReadyTaskFactory).singleton(),
     enableCoreQuorumsTask: asFunction(enableCoreQuorumsTaskFactory).singleton(),
+    registerMasternodeGuideTask: asFunction(registerMasternodeGuideTaskFactory).singleton(),
+    obtainZeroSSLCertificateTask: asFunction(obtainZeroSSLCertificateTaskFactory).singleton(),
+    renewZeroSSLCertificateTask: asFunction(renewZeroSSLCertificateTaskFactory).singleton(),
+    obtainSelfSignedCertificateTask: asFunction(obtainSelfSignedCertificateTaskFactory).singleton(),
+    saveCertificateTask: asValue(saveCertificateTask),
     reindexNodeTask: asFunction(reindexNodeTaskFactory).singleton(),
+    getCoreScope: asFunction(getCoreScopeFactory).singleton(),
+    getMasternodeScope: asFunction(getMasternodeScopeFactory).singleton(),
+    getPlatformScope: asFunction(getPlatformScopeFactory).singleton(),
+    getOverviewScope: asFunction(getOverviewScopeFactory).singleton(),
+    getServicesScope: asFunction(getServicesScopeFactory).singleton(),
+    getHostScope: asFunction(getHostScopeFactory).singleton(),
+    configureNodeTask: asFunction(configureNodeTaskFactory).singleton(),
+    configureSSLCertificateTask: asFunction(configureSSLCertificateTaskFactory).singleton(),
+  });
+
+  /**
+   * Helper
+   */
+  container.register({
+    scheduleRenewZeroSslCertificate: asFunction(scheduleRenewZeroSslCertificateFactory).singleton(),
+    createHttpApiServer: asFunction(createHttpApiServerFactory).singleton(),
   });
 
   return container;

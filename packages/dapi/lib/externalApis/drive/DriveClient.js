@@ -54,7 +54,7 @@ class DriveClient {
       return Buffer.from(response.value, 'base64');
     }
 
-    throw createGrpcErrorFromDriveResponse(response.code, response.info);
+    throw await createGrpcErrorFromDriveResponse(response.code, response.info);
   }
 
   /**
@@ -147,24 +147,6 @@ class DriveClient {
   async fetchIdentitiesByPublicKeyHashes(publicKeyHashes, prove) {
     return this.request(
       '/identities/by-public-key-hash',
-      {
-        publicKeyHashes,
-      },
-      prove,
-    );
-  }
-
-  /**
-   * Fetch serialized identity ids by it's public key hashes
-   *
-   * @param {Buffer[]} publicKeyHashes
-   * @param {boolean} prove - include proofs into the response
-   *
-   * @return {Promise<Buffer[]>}
-   */
-  async fetchIdentityIdsByPublicKeyHashes(publicKeyHashes, prove) {
-    return this.request(
-      '/identities/by-public-key-hash/id',
       {
         publicKeyHashes,
       },

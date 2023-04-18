@@ -9,6 +9,7 @@ class StateTransitionExecutionContext {
      */
     this.dryOperations = [];
     this.dryRun = false;
+    this.lastCalculatedFees = null;
   }
 
   /**

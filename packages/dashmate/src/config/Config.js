@@ -2,9 +2,10 @@ const Ajv = require('ajv');
 
 const nodePath = require('path');
 
-const lodashGet = require('lodash.get');
-const lodashSet = require('lodash.set');
-const lodashCloneDeep = require('lodash.clonedeep');
+const lodashGet = require('lodash/get');
+const lodashSet = require('lodash/set');
+const lodashCloneDeep = require('lodash/cloneDeep');
+const lodashIsEqual = require('lodash/isEqual');
 
 const addFormats = require('ajv-formats');
 const configJsonSchema = require('../../configs/schema/configJsonSchema');
@@ -140,6 +141,16 @@ class Config {
   }
 
   /**
+   * Compare two configs
+   *
+   * @param {Config} config
+   * @returns {boolean}
+   */
+  isEqual(config) {
+    return lodashIsEqual(this.getOptions(), config.getOptions());
+  }
+
+  /**
    *
    * @return {{CONFIG_NAME: string, COMPOSE_PROJECT_NAME: string}}
    */
@@ -150,7 +161,7 @@ class Config {
       dockerComposeFiles.push('docker-compose.sentinel.yml');
     }
 
-    if (this.has('platform')) {
+    if (this.get('platform.enable')) {
       dockerComposeFiles.push('docker-compose.platform.yml');
 
       if (this.get('platform.sourcePath') !== null) {
@@ -164,10 +175,11 @@ class Config {
       COMPOSE_FILE: dockerComposeFiles.join(':'),
       COMPOSE_PATH_SEPARATOR: ':',
       DOCKER_BUILDKIT: 1,
+      COMPOSE_DOCKER_CLI_BUILD: 1,
       ...convertObjectToEnvs(this.getOptions()),
     };
 
-    if (this.has('platform')) {
+    if (this.get('platform.enable')) {
       envs = {
         ...envs,
 

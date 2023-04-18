@@ -69,7 +69,6 @@ const applyIdentityUpdateTransitionFactory = require(
   '../identity/stateTransition/IdentityUpdateTransition/applyIdentityUpdateTransitionFactory',
 );
 const validateInstantAssetLockProofStructureFactory = require('../identity/stateTransition/assetLockProof/instant/validateInstantAssetLockProofStructureFactory');
-const calculateStateTransitionFee = require('./fee/calculateStateTransitionFee');
 const InstantAssetLockProof = require('../identity/stateTransition/assetLockProof/instant/InstantAssetLockProof');
 const ChainAssetLockProof = require('../identity/stateTransition/assetLockProof/chain/ChainAssetLockProof');
 const validateChainAssetLockProofStructureFactory = require('../identity/stateTransition/assetLockProof/chain/validateChainAssetLockProofStructureFactory');
@@ -93,6 +92,9 @@ const getPropertyDefinitionByPath = require('../dataContract/getPropertyDefiniti
 const identityJsonSchema = require('../../schema/identity/stateTransition/publicKey.json');
 const validatePublicKeySignaturesFactory = require('../identity/stateTransition/validatePublicKeySignaturesFactory');
 const StateTransitionExecutionContext = require('./StateTransitionExecutionContext');
+const calculateStateTransitionFeeFactory = require('./fee/calculateStateTransitionFeeFactory');
+const calculateOperationFees = require('./fee/calculateOperationFees');
+const calculateStateTransitionFeeFromOperationsFactory = require('./fee/calculateStateTransitionFeeFromOperationsFactory');
 
 class StateTransitionFacade {
   /**
@@ -297,6 +299,16 @@ class StateTransitionFacade {
       [stateTransitionTypes.IDENTITY_TOP_UP]: validateIdentityTopUpTransitionState,
       [stateTransitionTypes.IDENTITY_UPDATE]: validateIdentityUpdateTransitionState,
     });
+
+    const calculateStateTransitionFeeFromOperations = (
+      calculateStateTransitionFeeFromOperationsFactory(
+        calculateOperationFees,
+      )
+    );
+
+    const calculateStateTransitionFee = calculateStateTransitionFeeFactory(
+      calculateStateTransitionFeeFromOperations,
+    );
 
     this.validateStateTransitionFee = validateStateTransitionFeeFactory(
       this.stateRepository,

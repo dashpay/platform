@@ -35,7 +35,7 @@ describe('waitForTransactionResult', () => {
       code: 0,
     };
 
-    const data = { data: { value: { TxResult: { result, tx, height } } } };
+    const data = { data: { value: { result, tx, height } } };
 
     blockchainListenerMock.emit(topic, data);
 
@@ -56,7 +56,7 @@ describe('waitForTransactionResult', () => {
       code: 1,
     };
 
-    const data = { data: { value: { TxResult: { result, tx, height } } } };
+    const data = { data: { value: { result, tx, height } } };
 
     blockchainListenerMock.emit(topic, data);
 

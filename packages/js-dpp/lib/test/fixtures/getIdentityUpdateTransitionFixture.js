@@ -9,7 +9,8 @@ module.exports = function getIdentityUpdateTransitionFixture() {
   const rawStateTransition = {
     protocolVersion: protocolVersion.latestVersion,
     type: stateTransitionTypes.IDENTITY_UPDATE,
-    assetLockProof: getInstantAssetLockProofFixture().toObject(),
+    assetLockProof: getInstantAssetLockProofFixture()
+      .toObject(),
     identityId: generateRandomIdentifier(),
     revision: 0,
     addPublicKeys: [
@@ -19,6 +20,7 @@ module.exports = function getIdentityUpdateTransitionFixture() {
         data: Buffer.from('AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH', 'base64'),
         purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+        signature: Buffer.alloc(0),
         readOnly: false,
       },
     ],

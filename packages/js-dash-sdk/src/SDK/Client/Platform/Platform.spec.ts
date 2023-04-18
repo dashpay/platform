@@ -1,27 +1,27 @@
 import { expect } from 'chai';
-import { Platform } from "./index";
+import { latestVersion as latestProtocolVersion } from '@dashevo/dpp/lib/version/protocolVersion';
+import { Platform } from './index';
 import 'mocha';
 import Client from '../Client';
-import { latestVersion as latestProtocolVersion } from "@dashevo/dpp/lib/version/protocolVersion";
 
 describe('Dash - Platform', () => {
-
-  it('should provide expected class', function () {
-    expect(Platform.name).to.be.equal('Platform')
-    expect(Platform.constructor.name).to.be.equal('Function')
+  it('should provide expected class', () => {
+    expect(Platform.name).to.be.equal('Platform');
+    expect(Platform.constructor.name).to.be.equal('Function');
   });
 
-  it('should set protocol version for DPP though options', () => {
+  it('should set protocol version for DPP though options', async () => {
     const platform = new Platform({
       client: new Client(),
       network: 'testnet',
       driveProtocolVersion: 42,
     });
 
-    expect(platform.dpp.protocolVersion).to.equal(42);
+    await platform.initialize();
+    expect(platform.dpp.getProtocolVersion()).to.equal(42);
   });
 
-  it('should set protocol version for DPP using mapping', () => {
+  it('should set protocol version for DPP using mapping', async () => {
     const platform = new Platform({
       client: new Client(),
       network: 'testnet',
@@ -30,15 +30,17 @@ describe('Dash - Platform', () => {
     // @ts-ignore
     const testnetProtocolVersion = Platform.networkToProtocolVersion.get('testnet');
 
-    expect(platform.dpp.protocolVersion).to.equal(testnetProtocolVersion);
+    await platform.initialize();
+    expect(platform.dpp.getProtocolVersion()).to.equal(testnetProtocolVersion);
   });
 
-  it('should set protocol version for DPP using latest version', () => {
+  it('should set protocol version for DPP using latest version', async () => {
     const platform = new Platform({
       client: new Client(),
       network: 'unknown',
     });
 
-    expect(platform.dpp.protocolVersion).to.equal(latestProtocolVersion);
+    await platform.initialize();
+    expect(platform.dpp.getProtocolVersion()).to.equal(latestProtocolVersion);
   });
 });

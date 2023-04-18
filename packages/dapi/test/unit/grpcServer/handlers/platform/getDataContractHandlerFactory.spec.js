@@ -14,8 +14,8 @@ const {
 } = require('@dashevo/dapi-grpc');
 
 /* eslint-disable import/no-extraneous-dependencies */
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const generateRandomIdentifierAsync = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
 
 const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
 
@@ -34,8 +34,8 @@ describe('getDataContractHandlerFactory', () => {
   let proofMock;
   let response;
 
-  beforeEach(function beforeEach() {
-    id = generateRandomIdentifier();
+  beforeEach(async function beforeEach() {
+    id = await generateRandomIdentifierAsync();
     request = {
       getId: this.sinon.stub().returns(id),
       getProve: this.sinon.stub().returns(true),
@@ -43,7 +43,7 @@ describe('getDataContractHandlerFactory', () => {
 
     call = new GrpcCallMock(this.sinon, request);
 
-    dataContractFixture = getDataContractFixture();
+    dataContractFixture = await getDataContractFixture();
     proofFixture = {
       merkleProof: Buffer.alloc(1, 1),
     };

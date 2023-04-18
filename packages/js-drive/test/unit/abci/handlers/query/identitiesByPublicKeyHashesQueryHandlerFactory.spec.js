@@ -13,7 +13,7 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 
 const identitiesByPublicKeyHashesQueryHandlerFactory = require(
   '../../../../../lib/abci/handlers/query/identitiesByPublicKeyHashesQueryHandlerFactory',
@@ -23,7 +23,7 @@ const StorageResult = require('../../../../../lib/storage/StorageResult');
 
 describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
   let identitiesByPublicKeyHashesQueryHandler;
-  let signedPublicKeyToIdentitiesRepositoryMock;
+  let identityRepositoryMock;
   let publicKeyHashes;
   let identities;
   let maxIdentitiesPerRequest;
@@ -32,10 +32,10 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
   let params;
   let data;
 
-  beforeEach(function beforeEach() {
-    signedPublicKeyToIdentitiesRepositoryMock = {
-      fetchManyBuffers: this.sinon.stub(),
-      proveMany: this.sinon.stub(),
+  beforeEach(async function beforeEach() {
+    identityRepositoryMock = {
+      proveManyByPublicKeyHashes: this.sinon.stub(),
+      fetchManyByPublicKeyHashes: this.sinon.stub(),
     };
 
     maxIdentitiesPerRequest = 5;
@@ -48,7 +48,7 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
     createQueryResponseMock.returns(responseMock);
 
     identitiesByPublicKeyHashesQueryHandler = identitiesByPublicKeyHashesQueryHandlerFactory(
-      signedPublicKeyToIdentitiesRepositoryMock,
+      identityRepositoryMock,
       maxIdentitiesPerRequest,
       createQueryResponseMock,
     );
@@ -60,13 +60,13 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
     ];
 
     identities = [
-      getIdentityFixture(),
-      getIdentityFixture(),
+      await getIdentityFixture(),
+      await getIdentityFixture(),
     ];
 
-    signedPublicKeyToIdentitiesRepositoryMock
-      .fetchManyBuffers.resolves(
-        new StorageResult([identities[0].toBuffer(), identities[1].toBuffer()]),
+    identityRepositoryMock
+      .fetchManyByPublicKeyHashes.resolves(
+        new StorageResult([identities[0], identities[1]]),
       );
 
     params = {};
@@ -77,7 +77,7 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
     maxIdentitiesPerRequest = 1;
 
     identitiesByPublicKeyHashesQueryHandler = identitiesByPublicKeyHashesQueryHandlerFactory(
-      signedPublicKeyToIdentitiesRepositoryMock,
+      identityRepositoryMock,
       maxIdentitiesPerRequest,
       createQueryResponseMock,
     );
@@ -99,7 +99,7 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
 
     const result = await identitiesByPublicKeyHashesQueryHandler(params, data, {});
 
-    expect(signedPublicKeyToIdentitiesRepositoryMock.fetchManyBuffers).to.be.calledOnceWithExactly(
+    expect(identityRepositoryMock.fetchManyByPublicKeyHashes).to.be.calledOnceWithExactly(
       publicKeyHashes,
     );
 
@@ -118,7 +118,7 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
 
     const proof = Buffer.alloc(20, 1);
 
-    signedPublicKeyToIdentitiesRepositoryMock.proveMany.resolves(
+    identityRepositoryMock.proveManyByPublicKeyHashes.resolves(
       new StorageResult(proof),
     );
 
@@ -128,7 +128,7 @@ describe('identitiesByPublicKeyHashesQueryHandlerFactory', () => {
     expect(result.code).to.equal(0);
     expect(result.value).to.deep.equal(responseMock.serializeBinary());
 
-    expect(signedPublicKeyToIdentitiesRepositoryMock.proveMany).to.be.calledOnceWithExactly(
+    expect(identityRepositoryMock.proveManyByPublicKeyHashes).to.be.calledOnceWithExactly(
       data.publicKeyHashes,
     );
   });

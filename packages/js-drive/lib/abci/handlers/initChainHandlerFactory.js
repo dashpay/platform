@@ -18,9 +18,11 @@ const protoTimestampToMillis = require('../../util/protoTimestampToMillis');
  * @param {createValidatorSetUpdate} createValidatorSetUpdate
  * @param {synchronizeMasternodeIdentities} synchronizeMasternodeIdentities
  * @param {BaseLogger} logger
- * @param {registerSystemDataContracts} registerSystemDataContracts
  * @param {GroveDBStore} groveDBStore
  * @param {RSAbci} rsAbci
+ * @param {createCoreChainLockUpdate} createCoreChainLockUpdate
+ * @param {createContextLogger} createContextLogger
+ * @param {SystemIdentityPublicKeys} systemIdentityPublicKeys
  * @return {initChainHandler}
  */
 function initChainHandlerFactory(
@@ -30,9 +32,11 @@ function initChainHandlerFactory(
   createValidatorSetUpdate,
   synchronizeMasternodeIdentities,
   logger,
-  registerSystemDataContracts,
   groveDBStore,
   rsAbci,
+  createCoreChainLockUpdate,
+  createContextLogger,
+  systemIdentityPublicKeys,
 ) {
   /**
    * @typedef initChainHandler
@@ -42,18 +46,19 @@ function initChainHandlerFactory(
    */
   async function initChainHandler(request) {
     const { time } = request;
+    const timeMs = protoTimestampToMillis(time);
 
-    const consensusLogger = logger.child({
+    const contextLogger = createContextLogger(logger, {
       height: request.initialHeight.toString(),
       abciMethod: 'initChain',
     });
 
-    consensusLogger.debug('InitChain ABCI method requested');
-    consensusLogger.trace({ abciRequest: request });
+    contextLogger.debug('InitChain ABCI method requested');
+    contextLogger.trace({ abciRequest: request });
 
     await updateSimplifiedMasternodeList(
       initialCoreChainLockedHeight, {
-        logger: consensusLogger,
+        logger: contextLogger,
       },
     );
 
@@ -63,17 +68,21 @@ function initChainHandlerFactory(
 
     // Call RS ABCI
 
-    logger.debug('Request RS Drive\'s InitChain method');
+    const initChainRequest = {
+      genesisTimeMs: timeMs,
+      systemIdentityPublicKeys,
+    };
 
-    await rsAbci.initChain({ }, true);
+    logger.debug('Request RS Drive\'s InitChain method');
+    logger.trace(initChainRequest);
+
+    await rsAbci.initChain(initChainRequest, true);
 
     const blockInfo = new BlockInfo(
       0,
       0,
-      protoTimestampToMillis(time),
+      timeMs,
     );
-
-    await registerSystemDataContracts(consensusLogger, blockInfo);
 
     const synchronizeMasternodeIdentitiesResult = await synchronizeMasternodeIdentities(
       initialCoreChainLockedHeight,
@@ -84,11 +93,11 @@ function initChainHandlerFactory(
       createdEntities, updatedEntities, removedEntities, fromHeight, toHeight,
     } = synchronizeMasternodeIdentitiesResult;
 
-    consensusLogger.info(
+    contextLogger.info(
       `Masternode identities are synced for heights from ${fromHeight} to ${toHeight}: ${createdEntities.length} created, ${updatedEntities.length} updated, ${removedEntities.length} removed`,
     );
 
-    consensusLogger.trace(
+    contextLogger.trace(
       {
         createdEntities: createdEntities.map((item) => item.toJSON()),
         updatedEntities: updatedEntities.map((item) => item.toJSON()),
@@ -96,10 +105,6 @@ function initChainHandlerFactory(
       },
       'Synchronized masternode identities',
     );
-
-    await groveDBStore.commitTransaction();
-
-    const appHash = await groveDBStore.getRootHash();
 
     // Set initial validator set
 
@@ -109,9 +114,19 @@ function initChainHandlerFactory(
 
     const validatorSetUpdate = createValidatorSetUpdate(validatorSet);
 
-    consensusLogger.trace(validatorSetUpdate, `Validator set initialized with ${quorumHash} quorum`);
+    const coreChainLockUpdate = await createCoreChainLockUpdate(
+      initialCoreChainLockedHeight,
+      0,
+      contextLogger,
+    );
 
-    consensusLogger.info(
+    const appHash = await groveDBStore.getRootHash({ useTransaction: true });
+
+    await groveDBStore.commitTransaction();
+
+    contextLogger.trace(validatorSetUpdate, `Validator set initialized with ${quorumHash} quorum`);
+
+    contextLogger.info(
       {
         chainId: request.chainId,
         appHash: appHash.toString('hex').toUpperCase(),
@@ -125,6 +140,7 @@ function initChainHandlerFactory(
       appHash,
       validatorSetUpdate,
       initialCoreHeight: initialCoreChainLockedHeight,
+      nextCoreChainLockUpdate: coreChainLockUpdate,
     });
   }
 

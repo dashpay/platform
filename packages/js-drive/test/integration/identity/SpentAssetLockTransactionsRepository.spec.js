@@ -16,8 +16,17 @@ describe('SpentAssetLockTransactionsRepository', () => {
     outPointBuffer = Buffer.from([42]);
 
     rsDrive = new Drive('./db/grovedb_test', {
-      dataContractsGlobalCacheSize: 500,
-      dataContractsTransactionalCacheSize: 500,
+      drive: {
+        dataContractsGlobalCacheSize: 500,
+        dataContractsBlockCacheSize: 500,
+      },
+      core: {
+        rpc: {
+          url: '127.0.0.1',
+          username: '',
+          password: '',
+        },
+      },
     });
 
     store = new GroveDBStore(rsDrive, logger);
@@ -34,9 +43,7 @@ describe('SpentAssetLockTransactionsRepository', () => {
 
   describe('#store', () => {
     it('should store outpoint', async () => {
-      const result = await repository.store(outPointBuffer, {
-        useTransaction: true,
-      });
+      const result = await repository.store(outPointBuffer);
 
       expect(result).to.be.instanceOf(StorageResult);
       expect(result.getOperations().length).to.equal(0);

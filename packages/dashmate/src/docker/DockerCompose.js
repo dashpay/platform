@@ -1,5 +1,8 @@
+const os = require('os');
 const path = require('path');
 const { Observable } = require('rxjs');
+
+const isWsl = require('is-wsl');
 
 const dockerCompose = require('@dashevo/docker-compose');
 
@@ -119,6 +122,7 @@ class DockerCompose {
    *
    * @param {Object} envs
    * @param {string} [serviceName]
+   * @param {Array} [options]
    * @return {Observable<{string}>}
    */
   // eslint-disable-next-line no-unused-vars
@@ -141,6 +145,7 @@ class DockerCompose {
           await dockerCompose.buildAll({
             ...this.getOptions(envs),
             callback,
+            commandOptions: options,
           });
         }
 
@@ -395,16 +400,43 @@ class DockerCompose {
    * @return {{cwd: string, env: Object}}
    */
   getOptions(envs) {
+    const { uid, gid } = os.userInfo();
+
     const env = {
       ...process.env,
       ...envs,
       DASHMATE_HOME_DIR: HOME_DIR_PATH,
+      LOCAL_UID: uid,
+      LOCAL_GID: gid,
     };
+
+    if (isWsl) {
+      // Solving issue under WSL when after restart container volume is not being mounted properly
+      // https://github.com/docker/for-win/issues/4812
+      // Following fix forces container recreation
+      env.WSL2_FIX = (new Date()).getTime();
+    }
 
     return {
       cwd: path.join(__dirname, '..', '..'),
       env,
     };
+  }
+
+  /**
+   * Resolve container internal IP
+   *
+   * @param {Object} envs
+   * @param {string} serviceName
+   * @return {Promise<string>}
+   */
+  async getContainerIp(envs, serviceName) {
+    const containerInfo = await this.inspectService(envs, serviceName);
+
+    const [firstNetwork] = Object.keys(containerInfo.NetworkSettings.Networks);
+    const { IPAddress: containerIP } = containerInfo.NetworkSettings.Networks[firstNetwork];
+
+    return containerIP;
   }
 }
 

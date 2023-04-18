@@ -55,17 +55,15 @@ class GroupResetCommand extends GroupBaseCommand {
             task: (ctx) => {
               ctx.skipPlatformInitialization = true;
 
-              if (config.has('platform')) {
-                config.set('platform.dpns', baseConfig.platform.dpns);
-                config.set('platform.dashpay', baseConfig.platform.dashpay);
-                config.set('platform.featureFlags', baseConfig.platform.featureFlags);
-                config.set('platform.masternodeRewardShares', baseConfig.platform.masternodeRewardShares);
+              config.set('platform.dpns', baseConfig.platform.dpns);
+              config.set('platform.dashpay', baseConfig.platform.dashpay);
+              config.set('platform.featureFlags', baseConfig.platform.featureFlags);
+              config.set('platform.masternodeRewardShares', baseConfig.platform.masternodeRewardShares);
 
-                // TODO: Should stay the same
-                config.set('platform.drive.tenderdash.nodeId', baseConfig.platform.drive.tenderdash.nodeId);
-                config.set('platform.drive.tenderdash.nodeKey', baseConfig.platform.drive.tenderdash.nodeKey);
-                config.set('platform.drive.tenderdash.genesis', baseConfig.platform.drive.tenderdash.genesis);
-              }
+              // TODO: Should stay the same
+              config.set('platform.drive.tenderdash.node.id', baseConfig.platform.drive.tenderdash.node.id);
+              config.set('platform.drive.tenderdash.node.key', baseConfig.platform.drive.tenderdash.node.key);
+              config.set('platform.drive.tenderdash.genesis', baseConfig.platform.drive.tenderdash.genesis);
 
               if (!ctx.isPlatformOnlyReset) {
                 config.set('core.masternode.operator.privateKey', baseConfig.core.masternode.operator.privateKey);

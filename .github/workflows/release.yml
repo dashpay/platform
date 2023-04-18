@@ -10,19 +10,48 @@ on:
         description: 'Version (i.e. v0.22.3-pre.2)'
         required: true
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   release-npm:
     name: Release NPM packages
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
     if: github.event_name != 'workflow_dispatch'
+    needs:
+      - build-rs-drive-nodejs
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "false"
     steps:
       - name: Check out repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Check package version matches tag
         uses: geritol/match-tag-to-package-version@0.2.0
         env:
           TAG_PREFIX: v
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: Setup Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          # Don't cache ./target, as it takes tons of space, use sccache instead.
+          cache-targets: false
+          # We set a shared key, as our cache is reusable between jobs
+          shared-key: rust-cargo
+
+      - name: Setup Rust compilation cache
+        uses: mozilla-actions/sccache-action@v0.0.3
+        with:
+          version: "v0.4.1"
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -48,6 +77,14 @@ jobs:
 
       - name: Build packages
         run: yarn build
+        env:
+          CARGO_BUILD_PROFILE: release
+
+      - name: Download prebuild artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: prebuilds
+          path: packages/rs-drive-nodejs/prebuilds
 
       - name: Set suffix
         uses: actions/github-script@v6
@@ -82,10 +119,25 @@ jobs:
 
   release-drive-docker-image:
     name: Release Drive to Docker Hub
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "false"
     steps:
       - name: Check out repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Setup Rust compilation cache
+        uses: mozilla-actions/sccache-action@v0.0.3
+        with:
+          version: "v0.4.1"
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -111,38 +163,31 @@ jobs:
 
       - name: Build packages
         run: yarn build --filter "+@dashevo/drive"
+        env:
+          CARGO_BUILD_PROFILE: release
 
       - name: Set up QEMU to run multi-arch builds
         uses: docker/setup-qemu-action@v2
 
       - name: Set up Docker BuildX
-        id: buildx
         uses: docker/setup-buildx-action@v2
         with:
-          version: v0.9.1
           install: true
-          driver-opts: image=moby/buildkit:buildx-stable-1
 
-      - name: Enable buildkit cache
+      - name: Enable docker cache mount
         uses: actions/cache@v3
         with:
           path: /tmp/buildkit-cache/buildkit-state.tar
           key: ${{ runner.os }}-buildkit-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-buildkit-
+            ${{ runner.os }}-buildkit
 
-      - name: Load buildkit state from cache
-        uses: dashevo/gh-action-cache-buildkit-state@v1
+      - name: Load docker cache mount
+        uses: dashevo/gh-action-cache-buildkit-state@master
         with:
           builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
           cache-path: /tmp/buildkit-cache
           cache-max-size: 3g
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Get tag
         uses: actions/github-script@v6
@@ -189,14 +234,34 @@ jobs:
           push: true
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
+          build-args: |
+            SCCACHE_GHA_ENABLED=true
+            ACTIONS_CACHE_URL=${{ env.ACTIONS_CACHE_URL }}
+            ACTIONS_RUNTIME_TOKEN=${{ env.ACTIONS_RUNTIME_TOKEN }}
+            CARGO_BUILD_PROFILE=release
           platforms: linux/amd64,linux/arm64
 
   release-dapi-docker-image:
     name: Release DAPI to Docker Hub
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "false"
     steps:
       - name: Check out repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Setup Rust compilation cache
+        uses: mozilla-actions/sccache-action@v0.0.3
+        with:
+          version: "v0.4.1"
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -222,6 +287,8 @@ jobs:
 
       - name: Build packages
         run: yarn build --filter "+@dashevo/dapi"
+        env:
+          CARGO_BUILD_PROFILE: release
 
       - name: Set up QEMU to run multi-arch builds
         uses: docker/setup-qemu-action@v2
@@ -230,30 +297,22 @@ jobs:
         id: buildx
         uses: docker/setup-buildx-action@v2
         with:
-          version: v0.9.1
           install: true
-          driver-opts: image=moby/buildkit:buildx-stable-1
 
-      - name: Enable buildkit cache
+      - name: Enable docker cache mount
         uses: actions/cache@v3
         with:
           path: /tmp/buildkit-cache/buildkit-state.tar
           key: ${{ runner.os }}-buildkit-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-buildkit-
+            ${{ runner.os }}-buildkit
 
-      - name: Load buildkit state from cache
-        uses: dashevo/gh-action-cache-buildkit-state@v1
+      - name: Load docker cache mount
+        uses: dashevo/gh-action-cache-buildkit-state@master
         with:
           builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
           cache-path: /tmp/buildkit-cache
           cache-max-size: 3g
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Get tag
         uses: actions/github-script@v6
@@ -301,13 +360,39 @@ jobs:
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
+          build-args: |
+            SCCACHE_GHA_ENABLED=true
+            ACTIONS_CACHE_URL=${{ env.ACTIONS_CACHE_URL }}
+            ACTIONS_RUNTIME_TOKEN=${{ env.ACTIONS_RUNTIME_TOKEN }}
+            CARGO_BUILD_PROFILE=release
+          cache-from: |
+            type=gha
+          # In practice, time spent preparing images is much lower than build.
+          # We minimize cached info to leave more space for sccache cache.
+          cache-to: |
+            type=gha,mode=min
 
   release-test-suite-docker-image:
     name: Release Test Suite to Docker Hub
-    runs-on: ubuntu-22.04
+    runs-on: self-hosted
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "false"
     steps:
       - name: Check out repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Setup Rust compilation cache
+        uses: mozilla-actions/sccache-action@v0.0.3
+        with:
+          version: "v0.4.1"
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -333,6 +418,8 @@ jobs:
 
       - name: Build packages
         run: yarn build --filter "+@dashevo/platform-test-suite"
+        env:
+          CARGO_BUILD_PROFILE: release
 
       - name: Set up QEMU to run multi-arch builds
         uses: docker/setup-qemu-action@v2
@@ -341,30 +428,22 @@ jobs:
         id: buildx
         uses: docker/setup-buildx-action@v2
         with:
-          version: v0.9.1
           install: true
-          driver-opts: image=moby/buildkit:buildx-stable-1
 
-      - name: Enable buildkit cache
+      - name: Enable docker cache mount
         uses: actions/cache@v3
         with:
           path: /tmp/buildkit-cache/buildkit-state.tar
           key: ${{ runner.os }}-buildkit-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-buildkit-
+            ${{ runner.os }}-buildkit
 
-      - name: Load buildkit state from cache
-        uses: dashevo/gh-action-cache-buildkit-state@v1
+      - name: Load docker cache mount
+        uses: dashevo/gh-action-cache-buildkit-state@master
         with:
           builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
           cache-path: /tmp/buildkit-cache
           cache-max-size: 3g
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Get tag
         uses: actions/github-script@v6
@@ -412,46 +491,113 @@ jobs:
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
+          build-args: |
+            SCCACHE_GHA_ENABLED=true
+            ACTIONS_CACHE_URL=${{ env.ACTIONS_CACHE_URL }}
+            ACTIONS_RUNTIME_TOKEN=${{ env.ACTIONS_RUNTIME_TOKEN }}
+            CARGO_BUILD_PROFILE=release
+          cache-from: |
+            type=gha
+          # In practice, time spent preparing images is much lower than build.
+          # We minimize cached info to leave more space for sccache cache.
+          cache-to: |
+            type=gha,mode=min
 
-  release-dashmate:
-    name: Release Dashmate packages
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - package_type: tarballs
-            os: ubuntu-22.04
-          - package_type: win
-            os: ubuntu-22.04
-          - package_type: deb
-            os: ubuntu-22.04
-          - package_type: macos
-            os: macos-12
+  release-envoy-docker-image:
+    name: Release Envoy to Docker Hub
+    runs-on: ubuntu-22.04
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up QEMU to run multi-arch builds
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker BuildX
+        id: buildx
+        uses: docker/setup-buildx-action@v2
+        with:
+          install: true
+
+      - name: Get tag
+        uses: actions/github-script@v6
+        id: tag
+        with:
+          result-encoding: string
+          script: "return context.eventName === 'workflow_dispatch' ? core.getInput('tag') : context.payload.release.tag_name;"
+
+      - name: Set suffix
+        uses: actions/github-script@v6
+        id: suffix
+        with:
+          result-encoding: string
+          script: |
+            const fullTag = '${{steps.tag.outputs.result}}';
+            if (fullTag.includes('-')) {
+              const [, fullSuffix] = fullTag.split('-');
+              const [suffix] = fullSuffix.split('.');
+              return `-${suffix}`;
+            } else {
+              return '';
+            }
+
+      - name: Set Docker tags and labels
+        id: docker_meta
+        uses: docker/metadata-action@v4
+        with:
+          images: dashpay/envoy
+          tags: |
+            type=match,pattern=v(\d+),group=1,value=${{steps.tag.outputs.result}}
+            type=match,pattern=v(\d+.\d+),group=1,value=${{steps.tag.outputs.result}}
+            type=match,pattern=v(\d+.\d+.\d+),group=1,value=${{steps.tag.outputs.result}}
+            type=match,pattern=v(.*),group=1,value=${{steps.tag.outputs.result}},suffix=
+          flavor: |
+            suffix=${{ steps.suffix.outputs.result }},onlatest=true
+            latest=${{ github.event_name == 'release' }}
+
+      - name: Build and push Docker image for Envoy
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          builder: ${{ steps.buildx.outputs.name }}
+          file: ./packages/dashmate/docker/envoy/Dockerfile
+          push: true
+          tags: ${{ steps.docker_meta.outputs.tags }}
+          labels: ${{ steps.docker_meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
+
+  release-dashmate-helper-docker-image:
+    name: Release Dashmate helper to Docker Hub
+    runs-on: self-hosted
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "false"
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Setup Rust compilation cache
+        uses: mozilla-actions/sccache-action@v0.0.3
+        with:
+          version: "v0.4.1"
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
           node-version: '16'
-
-      - name: Install macOS build deps
-        if: runner.os == 'macOS'
-        run: |
-          brew install llvm docker colima
-          colima start
-          echo "/usr/local/opt/llvm/bin" >> $GITHUB_PATH
-
-      - name: Install Linux build deps
-        if: runner.os == 'Linux'
-        run: sudo apt-get install -y nsis
-
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: stable
-          target: wasm32-unknown-unknown
 
       - name: Enable corepack
         run: corepack enable
@@ -467,26 +613,351 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-yarn-unplugged-
 
-      # Workaround for lack of yarn 3 support in oclif
-      - name: Patch package-json
-        run: |
-          echo "$(jq '. |= .+ { "dependencies": {"debug": "^4.3.4", "lodash": "^4.17.21", "strip-ansi": "^6.0.1", "fs-extra": "^8.1" },}' package.json)" > package.json
+      - name: Install dependencies
+        run: yarn install
+
+      - name: Build packages
+        run: yarn build --filter "+dashmate"
+        env:
+          CARGO_BUILD_PROFILE: release
+
+      - name: Set up QEMU to run multi-arch builds
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker BuildX
+        id: buildx
+        uses: docker/setup-buildx-action@v2
+        with:
+          install: true
+
+      - name: Enable docker cache mount
+        uses: actions/cache@v3
+        with:
+          path: /tmp/buildkit-cache/buildkit-state.tar
+          key: ${{ runner.os }}-buildkit-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildkit
+
+      - name: Load docker cache mount
+        uses: dashevo/gh-action-cache-buildkit-state@master
+        with:
+          builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
+          cache-path: /tmp/buildkit-cache
+          cache-max-size: 3g
+
+      - name: Get tag
+        uses: actions/github-script@v6
+        id: tag
+        with:
+          result-encoding: string
+          script: "return context.eventName === 'workflow_dispatch' ? core.getInput('tag') : context.payload.release.tag_name;"
+
+      - name: Set suffix
+        uses: actions/github-script@v6
+        id: suffix
+        with:
+          result-encoding: string
+          script: |
+            const fullTag = '${{steps.tag.outputs.result}}';
+            if (fullTag.includes('-')) {
+              const [, fullSuffix] = fullTag.split('-');
+              const [suffix] = fullSuffix.split('.');
+              return `-${suffix}`;
+            } else {
+              return '';
+            }
+
+      - name: Set Docker tags and labels
+        id: docker_meta
+        uses: docker/metadata-action@v4
+        with:
+          images: dashpay/dashmate-helper
+          tags: |
+            type=match,pattern=v(\d+),group=1,value=${{steps.tag.outputs.result}}
+            type=match,pattern=v(\d+.\d+),group=1,value=${{steps.tag.outputs.result}}
+            type=match,pattern=v(\d+.\d+.\d+),group=1,value=${{steps.tag.outputs.result}}
+            type=match,pattern=v(.*),group=1,value=${{steps.tag.outputs.result}},suffix=
+          flavor: |
+            suffix=${{ steps.suffix.outputs.result }},onlatest=true
+            latest=${{ github.event_name == 'release' }}
+
+      - name: Build and push Docker image for Dashmate helper
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          builder: ${{ steps.buildx.outputs.name }}
+          file: ./packages/dashmate/Dockerfile
+          push: true
+          tags: ${{ steps.docker_meta.outputs.tags }}
+          labels: ${{ steps.docker_meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            SCCACHE_GHA_ENABLED=true
+            ACTIONS_CACHE_URL=${{ env.ACTIONS_CACHE_URL }}
+            ACTIONS_RUNTIME_TOKEN=${{ env.ACTIONS_RUNTIME_TOKEN }}
+            CARGO_BUILD_PROFILE=release
+
+  # TODO: Implement yarn and rust cache
+  build-rs-drive-nodejs:
+    name: Build Drive Node.JS binding
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            arch: x86_64
+            node_arch: x64
+            compiler: gnu
+            platform: unknown-linux
+          - os: ubuntu-22.04
+            arch: x86_64
+            node_arch: x64
+            compiler: musl
+            platform: unknown-linux
+          - os: ubuntu-22.04
+            arch: aarch64
+            node_arch: arm64
+            compiler: gnu
+            platform: unknown-linux
+          - os: ubuntu-22.04
+            arch: aarch64
+            node_arch: arm64
+            compiler: musl
+            platform: unknown-linux
+          - os: macos-11
+            arch: x86_64
+            platform: apple-darwin
+          - os: macos-11
+            arch: aarch64
+            node_arch: arm64
+            platform: apple-darwin
+
+    runs-on: ${{ matrix.os }}
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "false"
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Setup Node.JS
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Disable NPM audit
+        run: npm config set audit false
+
+      - name: Enable Yarn unplugged modules cache
+        uses: actions/cache@v3
+        with:
+          path: '.yarn/unplugged'
+          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-unplugged-
 
       - name: Install dependencies
         run: yarn install
-        env:
-          YARN_ENABLE_IMMUTABLE_INSTALLS: false
 
-      - name: Build packages
-        run: yarn build
+      - name: Set target name
+        uses: actions/github-script@v6
+        id: set-target
+        with:
+          script: |
+            let target = '${{ matrix.arch }}-${{ matrix.platform }}';
+
+            if ('${{ matrix.compiler }}') {
+              target += '-${{ matrix.compiler }}';
+            }
+
+            core.info(`Set target ${target}`);
+
+            return target;
+          result-encoding: string
+
+      - name: Setup Rust toolchain and target
+        if: ${{ runner.os == 'macOS' }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          target: ${{ steps.set-target.outputs.result }}
+
+      - name: Setup Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          # Don't cache ./target, as it takes tons of space, use sccache instead.
+          cache-targets: false
+          # We set a shared key, as our cache is reusable between jobs
+          shared-key: rust-cargo
+
+      - name: Setup Rust compilation cache
+        if: ${{ runner.os == 'macOS' }}
+        uses: mozilla-actions/sccache-action@v0.0.3
+        with:
+          version: "v0.4.1"
+
+      - name: Set LIBC argument
+        uses: actions/github-script@v6
+        id: set-libc-arg
+        with:
+          script: |
+            let env = '';
+
+            if (${{ matrix.compiler == 'musl' }}) {
+              env = '-l musl'
+            }
+
+            core.info(`Set LIBC env to "${env}"`);
+
+            return env;
+          result-encoding: string
+
+      - name: Build for Linux (x86)
+        if: ${{ runner.os == 'Linux' && matrix.arch == 'x86_64' }}
+        uses: docker://messense/rust-musl-cross:x86_64-musl
+        with:
+          workdir: /github/workspace/
+          entrypoint: packages/rs-drive-nodejs/docker/build.sh
+          args: -a ${{ matrix.node_arch }} -t ${{ steps.set-target.outputs.result }} ${{ steps.set-libc-arg.outputs.result }}
+
+      - name: Build for Linux (aarch64)
+        if: ${{ runner.os == 'Linux' && matrix.arch == 'aarch64' }}
+        uses: docker://messense/rust-musl-cross:aarch64-musl
+        with:
+          workdir: /github/workspace/
+          entrypoint: packages/rs-drive-nodejs/docker/build.sh
+          args: -a ${{ matrix.node_arch }} -t ${{ steps.set-target.outputs.result }} ${{ steps.set-libc-arg.outputs.result }}
+
+      - name: Build for Mac OS
+        if: ${{ runner.os == 'macOS' }}
+        run: yarn workspace @dashevo/rs-drive run build
         env:
+          ARCH: ${{ matrix.node_arch }} # Overwrite current arch with target one
+          CARGO_BUILD_TARGET: ${{ steps.set-target.outputs.result }}
           CARGO_BUILD_PROFILE: release
-      
-      - name: Generate manifest JSON
-        run: yarn workspace dashmate oclif manifest
+
+      - name: Upload prebuild artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: prebuilds
+          path: packages/rs-drive-nodejs/prebuilds/
+
+  release-dashmate:
+    name: Release Dashmate packages
+    runs-on: ${{ matrix.os }}
+    needs: release-npm
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package_type: tarballs
+            os: ubuntu-22.04
+          - package_type: win
+            os: ubuntu-22.04
+          - package_type: deb
+            os: ubuntu-22.04
+          - package_type: macos
+            os: macos-12
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "false"
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v3
+
+      - name: Install macOS build deps
+        if: runner.os == 'macOS'
+        run: |
+          brew install llvm docker colima coreutils
+          colima start
+          echo "/usr/local/opt/llvm/bin" >> $GITHUB_PATH
+
+      - name: Install the Apple certificate
+        if: runner.os == 'macOS'
+        env:
+          BUILD_CERTIFICATE_BASE64: ${{ secrets.MACOS_BUILD_CERTIFICATE_BASE64 }}
+          P12_PASSWORD: ${{ secrets.MACOS_P12_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.MACOS_KEYCHAIN_PASSWORD }}
+        run: |
+          # create variables
+          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+
+          # import certificate and provisioning profile from secrets
+          echo -n "$BUILD_CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
+
+           # create temporary keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+
+          # import certificate to keychain
+          security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
+
+      - name: Install Linux build deps
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y nsis
+
+      - name: Setup Node.JS
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: Setup Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          # Don't cache ./target, as it takes tons of space, use sccache instead.
+          cache-targets: false
+          # We set a shared key, as our cache is reusable between jobs
+          shared-key: rust-cargo
+
+      - name: Setup Rust compilation cache
+        uses: mozilla-actions/sccache-action@v0.0.3
+        with:
+          version: "v0.4.1"
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Disable NPM audit
+        run: npm config set audit false
+
+      - name: Enable Yarn unplugged modules cache
+        uses: actions/cache@v3
+        with:
+          path: '.yarn/unplugged'
+          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-unplugged-
+
+      - name: Install dependencies
+        run: yarn install
+
+      # TODO: We don't need to build it, since pack should use released npm packages
+      - name: Build packages
+        run: yarn build --filter "+dashmate"
 
       - name: Create package
-        run: yarn workspace dashmate oclif pack ${{ matrix.package_type }}
+        env:
+          OSX_KEYCHAIN: $RUNNER_TEMP/app-signing.keychain-db
+        run: "${GITHUB_WORKSPACE}/scripts/pack_dashmate.sh ${{ matrix.package_type }}"
 
       - name: Upload artifacts to action summary
         uses: actions/upload-artifact@v3

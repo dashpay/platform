@@ -1,4 +1,4 @@
-const lodashClone = require('lodash.clonedeep');
+const lodashClone = require('lodash/cloneDeep');
 
 const jsonPatch = require('fast-json-patch');
 const jsonSchemaDiffValidator = require('json-schema-diff-validator');

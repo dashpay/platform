@@ -4,7 +4,8 @@ const { Observable } = require('rxjs');
 
 const {
   NETWORK_LOCAL,
-  MASTERNODE_DASH_AMOUNT,
+  MASTERNODE_COLLATERAL_AMOUNT,
+  HPMN_COLLATERAL_AMOUNT,
 } = require('../../constants');
 
 /**
@@ -42,10 +43,13 @@ function registerMasternodeTaskFactory(
   /**
    * @typedef {registerMasternodeTask}
    * @param {Config} config
-   * @param {number} operatorReward
+   * @param {boolean} [hp=false] - Register high-performance masternode
+   * @param {string} [operatorReward='0.00']
    * @return {Listr}
    */
-  function registerMasternodeTask(config, operatorReward = 0) {
+  function registerMasternodeTask(config, hp = false, operatorReward = '0.00') {
+    const collateralAmount = hp ? HPMN_COLLATERAL_AMOUNT : MASTERNODE_COLLATERAL_AMOUNT;
+
     return new Listr([
       {
         title: 'Start Core',
@@ -103,8 +107,8 @@ function registerMasternodeTaskFactory(
 
           const balance = await getAddressBalance(ctx.coreService, ctx.fundingAddress);
 
-          if (balance <= MASTERNODE_DASH_AMOUNT) {
-            throw new Error(`You need to have more than ${MASTERNODE_DASH_AMOUNT} Dash on your funding address`);
+          if (balance <= collateralAmount) {
+            throw new Error(`You need to have more than ${collateralAmount} Dash on your funding address`);
           }
         },
       },
@@ -170,14 +174,14 @@ function registerMasternodeTaskFactory(
         ),
       },
       {
-        title: `Send ${MASTERNODE_DASH_AMOUNT} dash from funding address to collateral address`,
+        title: `Send ${collateralAmount} dash from funding address to collateral address`,
         task: async (ctx, task) => {
           ctx.collateralTxId = await sendToAddress(
             ctx.coreService,
             ctx.fundingPrivateKeyString,
             ctx.fundingAddress,
             ctx.collateral.address,
-            MASTERNODE_DASH_AMOUNT,
+            collateralAmount,
           );
 
           // eslint-disable-next-line no-param-reassign
@@ -236,6 +240,7 @@ function registerMasternodeTaskFactory(
             ctx.reward.address,
             operatorReward,
             config,
+            hp,
           );
 
           // eslint-disable-next-line no-param-reassign

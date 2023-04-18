@@ -18,6 +18,7 @@ describe('createContactRequestDataTrigger', () => {
   let dataContract;
   let contactRequestDocument;
   let documentTransition;
+  let identityBalance;
 
   beforeEach(function beforeEach() {
     contactRequestDocument = getContactRequestDocumentFixture();
@@ -27,10 +28,11 @@ describe('createContactRequestDataTrigger', () => {
       create: [contactRequestDocument],
     });
 
+    identityBalance = 100;
+
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
-    stateRepositoryMock.fetchLatestPlatformBlockHeader.resolves({
-      coreChainLockedHeight: 42,
-    });
+    stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight.resolves(42);
+    stateRepositoryMock.fetchIdentityBalance.resolves(identityBalance);
 
     context = new DataTriggerExecutionContext(
       stateRepositoryMock,
@@ -54,7 +56,7 @@ describe('createContactRequestDataTrigger', () => {
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader).to.be.calledOnce();
+    expect(stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight).to.be.calledOnce();
     expect(result.isOk()).to.be.true();
   });
 
@@ -64,7 +66,7 @@ describe('createContactRequestDataTrigger', () => {
     );
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader).to.be.not.called();
+    expect(stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight).to.be.not.called();
     expect(result.isOk()).to.be.true();
   });
 
@@ -103,7 +105,42 @@ describe('createContactRequestDataTrigger', () => {
     context.getStateTransitionExecutionContext().disableDryRun();
 
     expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
-    expect(stateRepositoryMock.fetchLatestPlatformBlockHeader).to.be.not.called();
+    expect(stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight).to.be.not.called();
     expect(result.isOk()).to.be.true();
+  });
+
+  it('should fail if ownerId equals toUserId', async () => {
+    contactRequestDocument.data.toUserId = contactRequestDocument.ownerId;
+    [documentTransition] = getDocumentTransitionFixture({
+      create: [contactRequestDocument],
+    });
+
+    const result = await createContactRequestDataTrigger(
+      documentTransition, context, dashPayIdentity,
+    );
+
+    expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
+    expect(result.isOk()).to.be.false();
+
+    const [error] = result.getErrors();
+
+    expect(error).to.be.an.instanceOf(DataTriggerConditionError);
+    expect(error.message).to.equal(`Identity ${contactRequestDocument.ownerId.toString()} must not be equal to the owner`);
+  });
+
+  it('should fail if toUserId does not exist', async () => {
+    stateRepositoryMock.fetchIdentityBalance.resolves(null);
+
+    const result = await createContactRequestDataTrigger(
+      documentTransition, context, dashPayIdentity,
+    );
+
+    expect(result).to.be.an.instanceOf(DataTriggerExecutionResult);
+    expect(result.isOk()).to.be.false();
+
+    const [error] = result.getErrors();
+
+    expect(error).to.be.an.instanceOf(DataTriggerConditionError);
+    expect(error.message).to.equal(`Identity ${contactRequestDocument.data.toUserId.toString()} doesn't exist`);
   });
 });

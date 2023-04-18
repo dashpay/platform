@@ -1,4 +1,4 @@
-const sample = require('lodash.sample');
+const sample = require('lodash/sample');
 const networks = require('@dashevo/dashcore-lib/lib/networks');
 
 class ListDAPIAddressProvider {
@@ -30,15 +30,16 @@ class ListDAPIAddressProvider {
     }
 
     // This is a temporary fix for a localhost masternode.
-    // On mac os, internal docker IP is used to register masternode, and it's
+    // On macOS, internal docker IP is used to register masternode, and it's
     // not really possible to bind to that address, so that workaround is introduced.
     const network = networks.get(this.options.network);
     if (network && network.regtestEnabled) {
       const randomNodeIndex = Math.floor(Math.random() * liveAddresses.length);
 
+      liveAddress.protocol = 'https';
       liveAddress.host = '127.0.0.1';
-      liveAddress.httpPort = 3000 + randomNodeIndex * 100;
-      liveAddress.grpcPort = 3010 + randomNodeIndex * 100;
+      liveAddress.allowSelfSignedCertificate = true;
+      liveAddress.port = 2443 + randomNodeIndex * 100;
     }
 
     return liveAddress;

@@ -42,8 +42,11 @@ function waitForStateTransitionResultHandlerFactory(
    * @param {Object} txDeliverResult
    * @return {StateTransitionBroadcastError}
    */
-  function createStateTransitionDeliverError(txDeliverResult) {
-    const grpcError = createGrpcErrorFromDriveResponse(txDeliverResult.code, txDeliverResult.info);
+  async function createStateTransitionDeliverError(txDeliverResult) {
+    const grpcError = await createGrpcErrorFromDriveResponse(
+      txDeliverResult.code,
+      txDeliverResult.info,
+    );
 
     const error = new StateTransitionBroadcastError();
 
@@ -95,7 +98,9 @@ function waitForStateTransitionResultHandlerFactory(
     const response = new WaitForStateTransitionResultResponse();
 
     if (result instanceof TransactionErrorResult) {
-      const error = createStateTransitionDeliverError(result.getResult());
+      const error = await createStateTransitionDeliverError(
+        result.getResult(),
+      );
 
       response.setError(error);
 
@@ -109,19 +114,21 @@ function waitForStateTransitionResultHandlerFactory(
       );
 
       const { proof: proofObject, metadata } = await fetchProofForStateTransition(stateTransition);
-
       const responseMetadata = new ResponseMetadata();
 
       responseMetadata.setHeight(metadata.height);
       responseMetadata.setCoreChainLockedHeight(metadata.coreChainLockedHeight);
+      responseMetadata.setTimeMs(metadata.timeMs);
+      responseMetadata.setProtocolVersion(metadata.protocolVersion);
 
       response.setMetadata(responseMetadata);
 
       const proof = new Proof();
 
       proof.setMerkleProof(proofObject.merkleProof);
-      proof.setSignatureLlmqHash(proofObject.signatureLlmqHash);
+      proof.setQuorumHash(proofObject.quorumHash);
       proof.setSignature(proofObject.signature);
+      proof.setRound(proofObject.round);
 
       response.setProof(proof);
     }

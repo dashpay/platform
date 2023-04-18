@@ -36,6 +36,8 @@ describe('getIdentityFactory', () => {
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
     metadata.setCoreChainLockedHeight(metadataFixture.coreChainLockedHeight);
+    metadata.setTimeMs(metadataFixture.timeMs);
+    metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
     response = new GetIdentityResponse();
     response.setIdentity(identityFixture.toBuffer());
@@ -43,9 +45,10 @@ describe('getIdentityFactory', () => {
 
     proofResponse = new ProofResponse();
 
-    proofResponse.setSignatureLlmqHash(proofFixture.signatureLLMQHash);
+    proofResponse.setQuorumHash(proofFixture.quorumHash);
     proofResponse.setSignature(proofFixture.signature);
     proofResponse.setMerkleProof(proofFixture.merkleProof);
+    proofResponse.setRound(proofFixture.round);
 
     grpcTransportMock = {
       request: this.sinon.stub().resolves(response),
@@ -100,8 +103,9 @@ describe('getIdentityFactory', () => {
 
     expect(result.getProof()).to.be.an.instanceOf(Proof);
     expect(result.getProof().getMerkleProof()).to.deep.equal(proofFixture.merkleProof);
-    expect(result.getProof().getSignatureLLMQHash()).to.deep.equal(proofFixture.signatureLLMQHash);
+    expect(result.getProof().getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
     expect(result.getProof().getSignature()).to.deep.equal(proofFixture.signature);
+    expect(result.getProof().getRound()).to.deep.equal(proofFixture.round);
     expect(result.getMetadata()).to.deep.equal(metadataFixture);
     expect(result.getMetadata().getHeight()).to.equal(metadataFixture.height);
     expect(result.getMetadata().getCoreChainLockedHeight()).to.equal(

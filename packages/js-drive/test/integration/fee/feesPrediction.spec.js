@@ -1,23 +1,25 @@
 const crypto = require('crypto');
 
+const loadBLS = require('@dashevo/bls');
+
 const Long = require('long');
 
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
-const Identity = require('@dashevo/dpp/lib/identity/Identity');
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
-
-const getBiggestPossibleIdentity = require('@dashevo/dpp/lib/identity/getBiggestPossibleIdentity');
-const getInstantAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
+const {
+  StateTransitionExecutionContext, IdentityPublicKey, IdentityPublicKeyWithWitness, Identity,
+} = require('@dashevo/wasm-dpp');
+// TODO: should we take it from other place?
 const identityUpdateTransitionSchema = require('@dashevo/dpp/schema/identity/stateTransition/identityUpdate.json');
-const StateTransitionExecutionContext = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
+
+const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
+const getInstantAssetLockProofFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
 
 const PrivateKey = require('@dashevo/dashcore-lib/lib/privatekey');
-const BlsSignatures = require('@dashevo/dpp/lib/bls/bls');
+
+const getBiggestPossibleIdentity = require('../../../lib/test/mock/getBiggestPossibleIdentity');
 
 const createTestDIContainer = require('../../../lib/test/createTestDIContainer');
 const createDataContractDocuments = require('../../../lib/test/fixtures/createDataContractDocuments');
 const BlockInfo = require('../../../lib/blockExecution/BlockInfo');
-const millisToProtoTimestamp = require('../../../lib/util/millisToProtoTimestamp');
 
 /**
  * @param {DashPlatformProtocol} dpp
@@ -42,64 +44,71 @@ async function validateStateTransition(dpp, stateTransition) {
 }
 
 /**
- * @param {DashPlatformProtocol} dpp
- * @param {GroveDBStore} groveDBStore
- * @param {AbstractStateTransition} stateTransition
- * @return {Promise<void>}
+ * @returns expectPredictedFeeHigherOrEqualThanActual
  */
-async function expectPredictedFeeHigherOrEqualThanActual(dpp, groveDBStore, stateTransition) {
-  // Execute state transition without dry run
+function expectPredictedFeeHigherOrEqualThanActualFactory() {
+  /**
+   * @param {DashPlatformProtocol} dpp
+   * @param {GroveDBStore} groveDBStore
+   * @param {AbstractStateTransition} stateTransition
+   * @return {Promise<void>}
+   */
+  async function expectPredictedFeeHigherOrEqualThanActual(dpp, groveDBStore, stateTransition) {
+    // Execute state transition without dry run
 
-  const actualExecutionContext = new StateTransitionExecutionContext();
+    const actualExecutionContext = new StateTransitionExecutionContext();
 
-  stateTransition.setExecutionContext(actualExecutionContext);
+    stateTransition.setExecutionContext(actualExecutionContext);
 
-  await validateStateTransition(dpp, stateTransition);
+    await validateStateTransition(dpp, stateTransition);
 
-  // Execute state transition with dry run enabled
+    // Execute state transition with dry run enabled
 
-  const predictedExecutionContext = new StateTransitionExecutionContext();
+    const predictedExecutionContext = new StateTransitionExecutionContext();
 
-  predictedExecutionContext.enableDryRun();
+    predictedExecutionContext.enableDryRun();
 
-  stateTransition.setExecutionContext(predictedExecutionContext);
+    stateTransition.setExecutionContext(predictedExecutionContext);
 
-  const initialAppHash = await groveDBStore.getRootHash();
+    const initialAppHash = await groveDBStore.getRootHash();
 
-  await validateStateTransition(dpp, stateTransition);
+    await validateStateTransition(dpp, stateTransition);
 
-  // AppHash shouldn't be changed after dry run
-  const appHashAfterDryRun = await groveDBStore.getRootHash();
+    // AppHash shouldn't be changed after dry run
+    const appHashAfterDryRun = await groveDBStore.getRootHash();
 
-  expect(appHashAfterDryRun).to.deep.equal(initialAppHash);
+    expect(appHashAfterDryRun).to.deep.equal(initialAppHash);
 
-  // Compare operations
+    // Compare operations
 
-  // TODO: Processing fees are disabled for v0.23
-  // const actualOperations = actualExecutionContext.getOperations();
-  // const predictedOperations = predictedExecutionContext.getOperations();
+    // TODO: Processing fees are disabled for v0.23
+    // const actualOperations = actualExecutionContext.getOperations();
+    // const predictedOperations = predictedExecutionContext.getOperations();
 
-  // expect(predictedOperations).to.have.lengthOf(actualOperations.length);
+    // expect(predictedOperations).to.have.lengthOf(actualOperations.length);
 
-  // Compare fees
+    // Compare fees
 
-  // stateTransition.setExecutionContext(actualExecutionContext);
-  // const actualFees = calculateStateTransitionFee(stateTransition);
-  //
-  // stateTransition.setExecutionContext(predictedExecutionContext);
-  // const predictedFees = calculateStateTransitionFee(stateTransition);
-  //
-  // expect(predictedFees).to.be.greaterThanOrEqual(actualFees);
-  //
-  // predictedOperations.forEach((predictedOperation, i) => {
-  //   expect(predictedOperation.getStorageCost()).to.be.greaterThanOrEqual(
-  //     actualOperations[i].getStorageCost(),
-  //   );
-  //
-  //   expect(predictedOperation.getProcessingCost()).to.be.greaterThanOrEqual(
-  //     actualOperations[i].getProcessingCost(),
-  //   );
-  // });
+    // stateTransition.setExecutionContext(actualExecutionContext);
+    // const actualFees = calculateStateTransitionFee(stateTransition);
+    //
+    // stateTransition.setExecutionContext(predictedExecutionContext);
+    // const predictedFees = calculateStateTransitionFee(stateTransition);
+    //
+    // expect(predictedFees).to.be.greaterThanOrEqual(actualFees);
+    //
+    // predictedOperations.forEach((predictedOperation, i) => {
+    //   expect(predictedOperation.getStorageCost()).to.be.greaterThanOrEqual(
+    //     actualOperations[i].getStorageCost(),
+    //   );
+    //
+    //   expect(predictedOperation.getProcessingCost()).to.be.greaterThanOrEqual(
+    //     actualOperations[i].getProcessingCost(),
+    //   );
+    // });
+  }
+
+  return expectPredictedFeeHigherOrEqualThanActual;
 }
 
 describe('feesPrediction', () => {
@@ -109,24 +118,28 @@ describe('feesPrediction', () => {
   let identity;
   let groveDBStore;
   let blockInfo;
+  let expectPredictedFeeHigherOrEqualThanActual;
+  let blsInstance;
+
+  before(async () => {
+    blsInstance = await loadBLS();
+
+    expectPredictedFeeHigherOrEqualThanActual = expectPredictedFeeHigherOrEqualThanActualFactory();
+  });
 
   beforeEach(async function beforeEach() {
-    container = await createTestDIContainer();
+    container = await createTestDIContainer(this.blsAdapter);
 
-    const blockExecutionContext = container.resolve('blockExecutionContext');
+    const latestBlockExecutionContext = container.resolve('latestBlockExecutionContext');
 
     blockInfo = new BlockInfo(1, 0, Date.now());
 
-    blockExecutionContext.getHeader = this.sinon.stub().returns({
-      time: millisToProtoTimestamp(blockInfo.timeMs),
-      height: Long.fromNumber(blockInfo.height),
-    });
-
-    blockExecutionContext.getEpochInfo = this.sinon.stub().returns({
+    latestBlockExecutionContext.getEpochInfo = this.sinon.stub().returns({
       currentEpochIndex: blockInfo.epoch,
     });
 
-    blockExecutionContext.getTimeMs = this.sinon.stub().returns(blockInfo.timeMs);
+    latestBlockExecutionContext.getTimeMs = this.sinon.stub().returns(blockInfo.timeMs);
+    latestBlockExecutionContext.getHeight = this.sinon.stub().returns(Long.fromNumber(0));
 
     dpp = container.resolve('dpp');
 
@@ -154,31 +167,39 @@ describe('feesPrediction', () => {
     beforeEach(async function beforeEachFunction() {
       assetLockPrivateKey = new PrivateKey();
 
-      instantAssetLockProof = getInstantAssetLockProofFixture(assetLockPrivateKey);
+      instantAssetLockProof = await getInstantAssetLockProofFixture(assetLockPrivateKey);
 
       identity = getBiggestPossibleIdentity();
-      identity.id = instantAssetLockProof.createIdentifier();
       identity.setAssetLockProof(instantAssetLockProof);
 
       // Generate real keys
-      const { PrivateKey: BlsPrivateKey } = await BlsSignatures.getInstance();
+      const { BasicSchemeMPL } = blsInstance;
 
-      privateKeys = identity.getPublicKeys().map((identityPublicKey) => {
+      const identityPublicKeys = identity.getPublicKeys();
+      privateKeys = identityPublicKeys.map((identityPublicKey) => {
         const randomBytes = new Uint8Array(crypto.randomBytes(256));
-        const privateKey = BlsPrivateKey.fromBytes(randomBytes, true);
-        const publicKey = privateKey.getPublicKey();
+
+        const privateKey = BasicSchemeMPL.keyGen(randomBytes);
+        const publicKey = privateKey.getG1();
         const publicKeyBuffer = Buffer.from(publicKey.serialize());
 
         identityPublicKey.setData(publicKeyBuffer);
 
-        return Buffer.from(privateKey.serialize());
+        const result = Buffer.from(privateKey.serialize());
+
+        privateKey.delete();
+        publicKey.delete();
+
+        return result;
       });
+
+      identity.setPublicKeys(identityPublicKeys);
 
       stateRepository.verifyInstantLock = this.sinon.stub().resolves(true);
     });
 
     describe('IdentityCreateTransition', () => {
-      it('should have predicted fee more than actual fee', async () => {
+      it('should have predicted fee more than actual fee', async function it() {
         const stateTransition = dpp.identity.createIdentityCreateTransition(identity);
 
         // Sign public keys
@@ -188,6 +209,7 @@ describe('feesPrediction', () => {
           await stateTransition.signByPrivateKey(
             privateKeys[i],
             IdentityPublicKey.TYPES.BLS12_381,
+            this.blsAdapter,
           );
 
           publicKeys[i].setSignature(stateTransition.getSignature());
@@ -195,9 +217,11 @@ describe('feesPrediction', () => {
           stateTransition.setSignature(undefined);
         }
 
+        stateTransition.setPublicKeys(publicKeys);
+
         // Sign state transition
         await stateTransition.signByPrivateKey(
-          assetLockPrivateKey,
+          assetLockPrivateKey.toBuffer(),
           IdentityPublicKey.TYPES.ECDSA_SECP256K1,
         );
 
@@ -215,7 +239,7 @@ describe('feesPrediction', () => {
         );
 
         await stateTransition.signByPrivateKey(
-          assetLockPrivateKey,
+          assetLockPrivateKey.toBuffer(),
           IdentityPublicKey.TYPES.ECDSA_SECP256K1,
         );
 
@@ -224,25 +248,25 @@ describe('feesPrediction', () => {
     });
 
     describe('IdentityUpdateTransition', () => {
-      it('should have predicted fee more than actual fee', async () => {
+      it('should have predicted fee more than actual fee', async function it() {
         await stateRepository.createIdentity(identity);
 
         const newIdentityPublicKeys = [];
         const disableIdentityPublicKeys = [];
 
-        const { PrivateKey: BlsPrivateKey } = await BlsSignatures.getInstance();
+        const { BasicSchemeMPL } = blsInstance;
 
         const newPrivateKeys = [];
         for (let i = 0; i < identityUpdateTransitionSchema.properties.addPublicKeys.maxItems; i++) {
           const randomBytes = new Uint8Array(crypto.randomBytes(256));
-          const privateKey = BlsPrivateKey.fromBytes(randomBytes, true);
-          const publicKey = privateKey.getPublicKey();
+          const privateKey = BasicSchemeMPL.keyGen(randomBytes);
+          const publicKey = privateKey.getG1();
           const publicKeyBuffer = Buffer.from(publicKey.serialize());
 
-          newPrivateKeys.push(privateKey);
+          newPrivateKeys.push(Buffer.from(privateKey.serialize()));
 
           newIdentityPublicKeys.push(
-            new IdentityPublicKey({
+            new IdentityPublicKeyWithWitness({
               id: i + identity.getPublicKeys().length,
               type: IdentityPublicKey.TYPES.BLS12_381,
               data: publicKeyBuffer,
@@ -250,10 +274,13 @@ describe('feesPrediction', () => {
               securityLevel: i === 0
                 ? IdentityPublicKey.SECURITY_LEVELS.MASTER : IdentityPublicKey.SECURITY_LEVELS.HIGH,
               readOnly: false,
+              signature: Buffer.alloc(0),
             }),
           );
 
           disableIdentityPublicKeys.push(identity.getPublicKeyById(i));
+
+          publicKey.delete();
         }
 
         const stateTransition = dpp.identity.createIdentityUpdateTransition(
@@ -268,6 +295,7 @@ describe('feesPrediction', () => {
 
         const starterPromise = Promise.resolve(null);
 
+        const updatedPublicKeys = [];
         await stateTransition.getPublicKeysToAdd().reduce(
           (previousPromise, publicKey) => previousPromise.then(async () => {
             const privateKey = newPrivateKeys[publicKey.getId() - identity.getPublicKeys().length];
@@ -278,19 +306,26 @@ describe('feesPrediction', () => {
 
             stateTransition.setSignaturePublicKeyId(signerKey.getId());
 
-            await stateTransition.signByPrivateKey(privateKey, publicKey.getType());
+            await stateTransition.signByPrivateKey(
+              privateKey, publicKey.getType(), this.blsAdapter,
+            );
 
             publicKey.setSignature(stateTransition.getSignature());
 
             stateTransition.setSignature(undefined);
             stateTransition.setSignaturePublicKeyId(undefined);
+
+            updatedPublicKeys.push(publicKey);
           }),
           starterPromise,
         );
 
+        stateTransition.setPublicKeysToAdd(updatedPublicKeys);
+
         await stateTransition.sign(
           identity.getPublicKeyById(0),
           privateKeys[0],
+          this.blsAdapter,
         );
 
         await expectPredictedFeeHigherOrEqualThanActual(dpp, groveDBStore, stateTransition);
@@ -305,30 +340,26 @@ describe('feesPrediction', () => {
     beforeEach(async () => {
       // Create identity
 
-      privateKey = new PrivateKey();
+      const { BasicSchemeMPL } = blsInstance;
+
+      const randomBytes = new Uint8Array(crypto.randomBytes(256));
+      privateKey = BasicSchemeMPL.keyGen(randomBytes);
+      const publicKey = privateKey.getG1();
 
       identity = new Identity({
         protocolVersion: 1,
-        id: generateRandomIdentifier().toBuffer(),
+        id: (await generateRandomIdentifier()).toBuffer(),
         publicKeys: [
           {
             id: 0,
-            type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+            type: IdentityPublicKey.TYPES.BLS12_381,
+            data: Buffer.from(publicKey.serialize()),
             purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-            securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-            readOnly: false,
-            data: Buffer.alloc(48).fill(255),
-          },
-          {
-            id: 1,
-            type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-            purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-            securityLevel: IdentityPublicKey.SECURITY_LEVELS.HEIGHT,
-            readOnly: false,
-            data: privateKey.toPublicKey().toBuffer(),
+            securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
+            readOnly: true,
           },
         ],
-        balance: Number.MAX_VALUE,
+        balance: Math.floor(9223372036854775807 / 10000),
         revision: 0,
       });
 
@@ -342,12 +373,13 @@ describe('feesPrediction', () => {
     });
 
     describe('DataContractCreate', () => {
-      it('should have predicted fee more than actual fee', async () => {
+      it('should have predicted fee more than actual fee', async function it() {
         const stateTransition = dpp.dataContract.createDataContractCreateTransition(dataContract);
 
         await stateTransition.sign(
-          identity.getPublicKeyById(1),
-          privateKey,
+          identity.getPublicKeyById(0),
+          Buffer.from(privateKey.serialize()),
+          this.blsAdapter,
         );
 
         await expectPredictedFeeHigherOrEqualThanActual(dpp, groveDBStore, stateTransition);
@@ -355,7 +387,7 @@ describe('feesPrediction', () => {
     });
 
     describe('DataContractUpdate', () => {
-      it('should have predicted fee more than actual fee', async () => {
+      it('should have predicted fee more than actual fee', async function it() {
         await stateRepository.createDataContract(dataContract);
 
         dataContract.incrementVersion();
@@ -394,8 +426,9 @@ describe('feesPrediction', () => {
         const stateTransition = dpp.dataContract.createDataContractUpdateTransition(dataContract);
 
         await stateTransition.sign(
-          identity.getPublicKeyById(1),
-          privateKey,
+          identity.getPublicKeyById(0),
+          Buffer.from(privateKey.serialize()),
+          this.blsAdapter,
         );
 
         await expectPredictedFeeHigherOrEqualThanActual(dpp, groveDBStore, stateTransition);
@@ -411,30 +444,26 @@ describe('feesPrediction', () => {
     beforeEach(async () => {
       // Create Identity
 
-      privateKey = new PrivateKey();
+      const { BasicSchemeMPL } = blsInstance;
+
+      const randomBytes = new Uint8Array(crypto.randomBytes(256));
+      privateKey = BasicSchemeMPL.keyGen(randomBytes);
+      const publicKey = privateKey.getG1();
 
       identity = new Identity({
         protocolVersion: 1,
-        id: generateRandomIdentifier().toBuffer(),
+        id: (await generateRandomIdentifier()).toBuffer(),
         publicKeys: [
           {
             id: 0,
-            type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+            type: IdentityPublicKey.TYPES.BLS12_381,
+            data: Buffer.from(publicKey.serialize()),
             purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-            securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-            readOnly: false,
-            data: Buffer.alloc(48).fill(255),
-          },
-          {
-            id: 1,
-            type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
-            purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-            securityLevel: IdentityPublicKey.SECURITY_LEVELS.HEIGHT,
-            readOnly: false,
-            data: privateKey.toPublicKey().toBuffer(),
+            securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
+            readOnly: true,
           },
         ],
-        balance: Number.MAX_VALUE,
+        balance: Math.floor(9223372036854775807 / 10000),
         revision: 0,
       });
 
@@ -479,14 +508,15 @@ describe('feesPrediction', () => {
 
     describe('DocumentsBatchTransition', () => {
       context('create', () => {
-        it('should have predicted fee more than actual fee', async () => {
+        it('should have predicted fee more than actual fee', async function it() {
           const stateTransition = dpp.document.createStateTransition({
             create: documents,
           });
 
           await stateTransition.sign(
-            identity.getPublicKeyById(1),
-            privateKey,
+            identity.getPublicKeyById(0),
+            Buffer.from(privateKey.serialize()),
+            this.blsAdapter,
           );
 
           await expectPredictedFeeHigherOrEqualThanActual(dpp, groveDBStore, stateTransition);
@@ -494,7 +524,7 @@ describe('feesPrediction', () => {
       });
 
       context('replace', () => {
-        it('should have predicted fee more than actual fee', async () => {
+        it('should have predicted fee more than actual fee', async function it() {
           for (const document of documents) {
             await stateRepository.createDocument(document);
           }
@@ -514,8 +544,9 @@ describe('feesPrediction', () => {
           });
 
           await stateTransition.sign(
-            identity.getPublicKeyById(1),
-            privateKey,
+            identity.getPublicKeyById(0),
+            Buffer.from(privateKey.serialize()),
+            this.blsAdapter,
           );
 
           await expectPredictedFeeHigherOrEqualThanActual(dpp, groveDBStore, stateTransition);
@@ -523,7 +554,7 @@ describe('feesPrediction', () => {
       });
 
       context('delete', () => {
-        it('should have predicted fee more than actual fee', async () => {
+        it('should have predicted fee more than actual fee', async function it() {
           for (const document of documents) {
             await stateRepository.createDocument(document);
           }
@@ -533,8 +564,9 @@ describe('feesPrediction', () => {
           });
 
           await stateTransition.sign(
-            identity.getPublicKeyById(1),
-            privateKey,
+            identity.getPublicKeyById(0),
+            Buffer.from(privateKey.serialize()),
+            this.blsAdapter,
           );
 
           await expectPredictedFeeHigherOrEqualThanActual(dpp, groveDBStore, stateTransition);

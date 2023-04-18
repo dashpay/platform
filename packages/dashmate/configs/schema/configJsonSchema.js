@@ -150,6 +150,12 @@ module.exports = {
               type: 'string',
               minLength: 1,
             },
+            allowIps: {
+              type: 'array',
+              items: {
+                type: 'string',
+              },
+            },
           },
           required: ['port', 'user', 'password'],
           additionalProperties: false,
@@ -218,13 +224,35 @@ module.exports = {
           required: ['docker'],
           additionalProperties: false,
         },
-        devnetName: {
-          type: ['string', 'null'],
-          minLength: 1,
+        devnet: {
+          type: 'object',
+          properties: {
+            name: {
+              type: ['string', 'null'],
+              minLength: 1,
+            },
+            minimumDifficultyBlocks: {
+              type: 'integer',
+              minimum: 0,
+            },
+            powTargetSpacing: {
+              type: 'integer',
+              minimum: 1,
+            },
+          },
+          additionalProperties: false,
+          required: ['name', 'minimumDifficultyBlocks', 'powTargetSpacing'],
         },
         debug: {
           type: 'integer',
           enum: [0, 1],
+        },
+        logIps: {
+          type: 'integer',
+          enum: [0, 1],
+        },
+        indexes: {
+          type: 'boolean',
         },
         reindex: {
           type: 'object',
@@ -242,7 +270,8 @@ module.exports = {
           additionalProperties: false,
         },
       },
-      required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnetName', 'debug', 'reindex'],
+      required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnet',
+        'debug', 'reindex', 'logIps', 'indexes'],
       additionalProperties: false,
     },
     platform: {
@@ -258,16 +287,6 @@ module.exports = {
                   $ref: '#/definitions/docker',
                 },
                 http: {
-                  type: 'object',
-                  properties: {
-                    port: {
-                      $ref: '#/definitions/port',
-                    },
-                  },
-                  required: ['port'],
-                  additionalProperties: false,
-                },
-                grpc: {
                   type: 'object',
                   properties: {
                     port: {
@@ -299,8 +318,42 @@ module.exports = {
                   required: ['enabled', 'fillInterval', 'tokensPerFill', 'maxTokens'],
                   additionalProperties: false,
                 },
+                ssl: {
+                  type: 'object',
+                  properties: {
+                    enabled: {
+                      type: 'boolean',
+                    },
+                    provider: {
+                      type: 'string',
+                      enum: ['zerossl', 'self-signed', 'file'],
+                    },
+                    providerConfigs: {
+                      type: 'object',
+                      properties: {
+                        zerossl: {
+                          type: ['object'],
+                          properties: {
+                            apiKey: {
+                              type: ['string', 'null'],
+                              minLength: 32,
+                            },
+                            id: {
+                              type: ['string', 'null'],
+                              minLength: 32,
+                            },
+                          },
+                          required: ['apiKey'],
+                          additionalProperties: false,
+                        },
+                      },
+                    },
+                  },
+                  required: ['provider', 'providerConfigs', 'enabled'],
+                  additionalProperties: false,
+                },
               },
-              required: ['docker', 'http', 'grpc', 'rateLimiter'],
+              required: ['docker', 'http', 'rateLimiter', 'ssl'],
               additionalProperties: false,
             },
             api: {
@@ -354,8 +407,8 @@ module.exports = {
                   properties: {
                     llmqType: {
                       type: 'number',
-                      // https://github.com/dashevo/dashcore-lib/blob/286c33a9d29d33f05d874c47a9b33764a0be0cf1/lib/constants/index.js#L42-L57
-                      enum: [1, 2, 3, 4, 100, 101, 102],
+                      // https://github.com/dashpay/dashcore-lib/blob/843176fed9fc81feae43ccf319d99e2dd942fe1f/lib/constants/index.js#L50-L99
+                      enum: [1, 2, 3, 4, 5, 6, 100, 101, 102, 103, 104, 105, 106, 107],
                     },
                   },
                   additionalProperties: false,
@@ -411,41 +464,8 @@ module.exports = {
                   type: 'object',
                   properties: {
                     level: {
-                      type: 'object',
-                      properties: {
-                        'abci-client': {
-                          $ref: '#/definitions/tenderdashLogModule',
-                        },
-                        blockchain: {
-                          $ref: '#/definitions/tenderdashLogModule',
-                        },
-                        consensus: {
-                          $ref: '#/definitions/tenderdashLogModule',
-                        },
-                        main: {
-                          $ref: '#/definitions/tenderdashLogModule',
-                        },
-                        mempool: {
-                          $ref: '#/definitions/tenderdashLogModule',
-                        },
-                        p2p: {
-                          $ref: '#/definitions/tenderdashLogModule',
-                        },
-                        'rpc-server': {
-                          $ref: '#/definitions/tenderdashLogModule',
-                        },
-                        state: {
-                          $ref: '#/definitions/tenderdashLogModule',
-                        },
-                        statesync: {
-                          $ref: '#/definitions/tenderdashLogModule',
-                        },
-                        '*': {
-                          $ref: '#/definitions/tenderdashLogModule',
-                        },
-                      },
-                      minProperties: 1,
-                      additionalProperties: false,
+                      type: 'string',
+                      enum: ['trace', 'debug', 'info', 'warn', 'error'],
                     },
                     format: {
                       type: 'string',
@@ -465,17 +485,26 @@ module.exports = {
                   required: ['port'],
                   additionalProperties: false,
                 },
-                nodeKey: {
+                node: {
                   type: 'object',
+                  properties: {
+                    id: {
+                      type: ['string', 'null'],
+                    },
+                    key: {
+                      type: ['string', 'null'],
+                    },
+                  },
+                  additionalProperties: false,
+                },
+                moniker: {
+                  type: ['string', 'null'],
                 },
                 genesis: {
                   type: 'object',
                 },
-                nodeId: {
-                  type: ['string', 'null'],
-                },
               },
-              required: ['docker', 'p2p', 'rpc', 'consensus', 'nodeKey', 'genesis', 'nodeId'],
+              required: ['docker', 'p2p', 'rpc', 'consensus', 'node', 'moniker', 'genesis'],
               additionalProperties: false,
             },
           },
@@ -598,9 +627,66 @@ module.exports = {
           required: ['contract', 'masterPublicKey', 'secondPublicKey'],
           additionalProperties: false,
         },
+        withdrawals: {
+          type: 'object',
+          properties: {
+            contract: {
+              type: 'object',
+              properties: {
+                id: {
+                  type: ['string', 'null'],
+                  minLength: 1,
+                },
+              },
+              required: ['id'],
+              additionalProperties: false,
+            },
+            masterPublicKey: {
+              type: ['string', 'null'],
+              minLength: 1,
+            },
+            secondPublicKey: {
+              type: ['string', 'null'],
+              minLength: 1,
+            },
+          },
+          required: ['contract', 'masterPublicKey', 'secondPublicKey'],
+          additionalProperties: false,
+        },
+        enable: {
+          type: 'boolean',
+        },
       },
-      required: ['dapi', 'drive', 'dpns', 'dashpay', 'featureFlags', 'sourcePath', 'masternodeRewardShares'],
+      required: ['dapi', 'drive', 'dpns', 'dashpay', 'featureFlags', 'sourcePath', 'masternodeRewardShares', 'withdrawals', 'enable'],
       additionalProperties: false,
+    },
+    dashmate: {
+      type: 'object',
+      properties: {
+        helper: {
+          type: 'object',
+          properties: {
+            docker: {
+              $ref: '#/definitions/docker',
+            },
+            api: {
+              type: 'object',
+              properties: {
+                enable: {
+                  type: 'boolean',
+                },
+                port: {
+                  $ref: '#/definitions/port',
+                },
+              },
+              required: ['enable', 'port'],
+              additionalProperties: false,
+            },
+          },
+          required: ['docker', 'api'],
+          additionalProperties: false,
+        },
+      },
     },
     externalIp: {
       type: ['string', 'null'],

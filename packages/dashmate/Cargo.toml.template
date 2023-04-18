@@ -1,0 +1,14 @@
+# Workspace template with Rust packages required for Dashmate (needed for Docker build)
+[workspace]
+
+members = [
+    "packages/rs-platform-value",
+    "packages/dashpay-contract",
+    "packages/withdrawals-contract",
+    "packages/masternode-reward-shares-contract",
+    "packages/feature-flags-contract",
+    "packages/dpns-contract",
+    "packages/data-contracts",
+    "packages/rs-dpp",
+    "packages/wasm-dpp"
+]
