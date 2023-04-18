@@ -3,7 +3,7 @@
 
 ### ⚠ BREAKING CHANGES
 
-* wasm-dpp integration (#848)
+* Some wasm-dpp APIs are different to js-dpp ones. The only visible divergencies were addressed, but many others might've been left unnoticed (#848)
 
 ### Features
 
