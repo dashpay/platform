@@ -231,7 +231,7 @@ where
 
         if !block_state_info.matches_current_block(height as u64, round as u32, block_hash)? {
             return Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
-                "received request for height: {} rount: {}, expected height: {} round: {}",
+                "received request for height: {} round: {}, expected height: {} round: {}",
                 height, round, block_state_info.height, block_state_info.round
             )))
             .into());
@@ -276,7 +276,7 @@ where
 
         if !block_state_info.matches_current_block(height as u64, round as u32, block_hash)? {
             return Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
-                "received request for height: {} rount: {}, expected height: {} round: {}",
+                "received request for height: {} round: {}, expected height: {} round: {}",
                 height, round, block_state_info.height, block_state_info.round
             )))
             .into());
@@ -311,7 +311,14 @@ where
         //     });
         // };
 
-        let validation_result = self.platform.check_withdrawals(&got, &expected, None);
+        let validation_result = self.platform.check_withdrawals(
+            &got,
+            &expected,
+            height as u64,
+            round as u32,
+            None,
+            None,
+        );
 
         if validation_result.is_valid() {
             Ok(proto::ResponseVerifyVoteExtension {
