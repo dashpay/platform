@@ -2,6 +2,7 @@
 
 use bls_signatures;
 use dashcore_rpc::dashcore_rpc_json::QuorumType;
+use dpp::validation::SimpleValidationResult;
 use drive::{
     drive::{batch::DriveOperation, block_info::BlockInfo, Drive},
     fee::result::FeeResult,
@@ -103,6 +104,18 @@ impl<'a> WithdrawalTxs<'a> {
     }
 
     /// Verify signatures of all withdrawal TXs
+    ///
+    /// ## Return value
+    ///
+    /// There are the following types of errors during verification:
+    ///
+    /// 1. The signature was invalid, most likely due to change in the data; in this case,
+    /// [AbciError::VoteExtensionsSignatureInvalid] is returned.
+    /// 2. Signature or public key is malformed - in this case, [AbciError::BlsError] is returned
+    /// 3. Provided data is invalid - [AbciError::TenderdashProto] is returned
+    ///
+    /// As all these conditions, in normal circumstances, should cause processing to be terminated, they are all
+    /// treated as errors.
     pub fn verify_signatures(
         &self,
         chain_id: &str,
@@ -111,25 +124,32 @@ impl<'a> WithdrawalTxs<'a> {
         height: u64,
         round: u32,
         public_key: &bls_signatures::PublicKey,
-    ) -> Result<bool, AbciError> {
+    ) -> SimpleValidationResult<AbciError> {
         for s in &self.inner {
-            let hash = s
-                .sign_digest(
-                    chain_id,
-                    quorum_type as u8,
-                    quorum_hash,
-                    height as i64,
-                    round as i32,
-                )
-                .map_err(AbciError::TenderdashProto)?;
-            let signature =
-                bls_signatures::Signature::from_bytes(&s.signature).map_err(AbciError::from)?;
+            let hash = match s.sign_digest(
+                chain_id,
+                quorum_type as u8,
+                quorum_hash,
+                height as i64,
+                round as i32,
+            ) {
+                Ok(h) => h,
+                Err(e) => {
+                    return SimpleValidationResult::new_with_error(AbciError::TenderdashProto(e))
+                }
+            };
+
+            let signature = match bls_signatures::Signature::from_bytes(&s.signature) {
+                Ok(s) => s,
+                Err(e) => return SimpleValidationResult::new_with_error(AbciError::BlsError(e)),
+            };
+
             if !public_key.verify(&signature, &hash) {
-                return Ok(false);
+                return SimpleValidationResult::new_with_error(AbciError::VoteExtensionsSignatureInvalid);
             }
         }
 
-        Ok(true)
+        SimpleValidationResult::default()
     }
 }
 

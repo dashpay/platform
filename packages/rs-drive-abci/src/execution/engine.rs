@@ -13,7 +13,7 @@ use drive::error::Error::GroveDB;
 use drive::fee::result::FeeResult;
 use drive::grovedb::{Transaction, TransactionArg};
 use std::collections::BTreeMap;
-use tenderdash_abci::proto::abci::{ExecTxResult};
+use tenderdash_abci::proto::abci::ExecTxResult;
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 
 use crate::abci::commit::Commit;
@@ -422,17 +422,17 @@ where
                 validator_public_key,
             );
 
-            // There are two types of errors,
-            // The first is that the signature was invalid and that is shown with the result bool as false
-            // The second is that the signature is malformed, and that gives a BLSError
-
-            // However for this case we want to treat both as errors
-            match validation_result {
-                Ok(true) => SimpleValidationResult::default(),
-                Ok(false) => SimpleValidationResult::new_with_error(
-                    AbciError::VoteExtensionsSignatureInvalid,
-                ),
-                Err(e) => SimpleValidationResult::new_with_error(e),
+            if validation_result.is_valid() {
+                SimpleValidationResult::default()
+            } else {
+                SimpleValidationResult::new_with_error(
+                    validation_result
+                        .errors
+                        .into_iter()
+                        .next()
+                        .expect("expected an error")
+                        .into(),
+                )
             }
         } else {
             SimpleValidationResult::default()
