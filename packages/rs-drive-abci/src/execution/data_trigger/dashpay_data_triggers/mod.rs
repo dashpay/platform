@@ -127,8 +127,9 @@ pub fn create_contact_request_data_trigger<'a>(
 mod test {
     use crate::execution::data_trigger::dashpay_data_triggers::create_contact_request_data_trigger;
     use crate::execution::data_trigger::DataTriggerExecutionContext;
+    use crate::platform::{PlatformRef, PlatformStateRef};
+    use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::document::document_transition::Action;
-    use dpp::platform_value;
     use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
     use dpp::platform_value::platform_value;
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
@@ -136,8 +137,19 @@ mod test {
         get_contact_request_document_fixture, get_dashpay_contract_fixture,
         get_document_transitions_fixture, identity_fixture,
     };
+    use dpp::{platform_value, DataTriggerActionError};
+    use drive::drive::block_info::BlockInfo;
 
     fn should_successfully_execute_on_dry_run() {
+        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        let state_read_guard = platform.state.read().unwrap();
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &state_read_guard,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
         let mut contact_request_document = get_contact_request_document_fixture(None, None);
         contact_request_document
             .set(
@@ -153,30 +165,51 @@ mod test {
             .get(0)
             .expect("document transition should be present");
 
+        let document_create_transition = document_transition
+            .as_transition_create()
+            .expect("expected a document create transition");
+
         let data_contract = get_dashpay_contract_fixture(None);
-        let mut state_repository = MockStateRepositoryLike::new();
-        state_repository
-            .expect_fetch_identity()
-            .returning(|_, _| Ok(None));
+
         let transition_execution_context = StateTransitionExecutionContext::default();
 
         let data_trigger_context = DataTriggerExecutionContext {
+            platform: &platform_ref,
             data_contract: &data_contract,
             owner_id,
-            drive: &state_repository,
             state_transition_execution_context: &transition_execution_context,
+            transaction: None,
         };
 
         transition_execution_context.enable_dry_run();
 
-        let result =
-            create_contact_request_data_trigger(document_transition, &data_trigger_context, None)
-                .expect("the execution result should be returned");
+        let result = create_contact_request_data_trigger(
+            document_create_transition.into(),
+            &data_trigger_context,
+            None,
+        )
+        .expect("the execution result should be returned");
 
         assert!(result.is_ok());
     }
 
     fn should_fail_if_owner_id_equals_to_user_id() {
+        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        let state_write_guard = platform.state.write().unwrap();
+
+        state_write_guard.last_committed_block_info = Some(BlockInfo {
+            time_ms: 500000,
+            height: 100,
+            core_height: 42,
+            epoch: Default::default(),
+        });
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &state_write_guard,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
         let mut contact_request_document = get_contact_request_document_fixture(None, None);
         let owner_id = contact_request_document.owner_id();
         contact_request_document
@@ -190,28 +223,30 @@ mod test {
             .get(0)
             .expect("document transition should be present");
 
+        let document_create_transition = document_transition
+            .as_transition_create()
+            .expect("expected a document create transition");
+
         let transition_execution_context = StateTransitionExecutionContext::default();
         let identity_fixture = identity_fixture();
-        let mut state_repository = MockStateRepositoryLike::new();
 
-        state_repository
-            .expect_fetch_identity()
-            .returning(move |_, _| Ok(Some(identity_fixture.clone())));
-        state_repository
-            .expect_fetch_latest_platform_core_chain_locked_height()
-            .returning(|| Ok(Some(42)));
+        platform
+            .drive
+            .add_new_identity(identity_fixture, &BlockInfo::default(), true, None)
+            .expect("expected to insert identity");
 
         let data_trigger_context = DataTriggerExecutionContext {
+            platform: &platform_ref,
             data_contract: &data_contract,
             owner_id: &owner_id,
-            drive: &state_repository,
             state_transition_execution_context: &transition_execution_context,
+            transaction: None,
         };
 
         let dashpay_identity_id = data_trigger_context.owner_id.to_owned();
 
         let result = create_contact_request_data_trigger(
-            document_transition,
+            document_create_transition.into(),
             &data_trigger_context,
             Some(&dashpay_identity_id),
         )
@@ -221,7 +256,7 @@ mod test {
 
         assert!(matches!(
             &result.errors.first().unwrap(),
-            &DataTriggerError::DataTriggerConditionError { message, .. }  if {
+            &DataTriggerActionError::DataTriggerConditionError { message, .. }  if {
                 message == &format!("Identity {owner_id} must not be equal to owner id")
 
 
@@ -230,6 +265,22 @@ mod test {
     }
 
     fn should_fail_if_id_not_exists() {
+        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        let state_write_guard = platform.state.write().unwrap();
+
+        state_write_guard.last_committed_block_info = Some(BlockInfo {
+            time_ms: 500000,
+            height: 100,
+            core_height: 42,
+            epoch: Default::default(),
+        });
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &state_write_guard,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
         let contact_request_document = get_contact_request_document_fixture(None, None);
         let data_contract = get_dashpay_contract_fixture(None);
         let owner_id = contact_request_document.owner_id();
@@ -245,23 +296,24 @@ mod test {
             .get(0)
             .expect("document transition should be present");
 
+        let document_create_transition = document_transition
+            .as_transition_create()
+            .expect("expected a document create transition");
+
         let transition_execution_context = StateTransitionExecutionContext::default();
-        let mut state_repository = MockStateRepositoryLike::new();
-        state_repository
-            .expect_fetch_identity()
-            .returning(|_, _| Ok(None));
 
         let data_trigger_context = DataTriggerExecutionContext {
+            platform: &platform_ref,
             data_contract: &data_contract,
             owner_id: &owner_id,
-            drive: &state_repository,
             state_transition_execution_context: &transition_execution_context,
+            transaction: None,
         };
 
         let dashpay_identity_id = data_trigger_context.owner_id.to_owned();
 
         let result = create_contact_request_data_trigger(
-            document_transition,
+            document_create_transition.into(),
             &data_trigger_context,
             Some(&dashpay_identity_id),
         )
@@ -272,7 +324,7 @@ mod test {
 
         assert!(matches!(
             data_trigger_error,
-            &DataTriggerError::DataTriggerConditionError { message, .. }  if {
+            &DataTriggerActionError::DataTriggerConditionError { message, .. }  if {
                 message == &format!("Identity {contract_request_to_user_id} doesn't exist")
 
 

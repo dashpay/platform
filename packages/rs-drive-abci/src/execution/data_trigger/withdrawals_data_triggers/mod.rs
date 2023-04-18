@@ -117,41 +117,43 @@ pub fn delete_withdrawal_data_trigger<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
-    use crate::state_repository::MockStateRepositoryLike;
-    use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-    use crate::system_data_contracts::load_system_data_contract;
-    use crate::tests::fixtures::{get_data_contract_fixture, get_withdrawal_document_fixture};
+    use crate::platform::{PlatformRef, PlatformStateRef};
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
     use dpp::platform_value::platform_value;
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-    use dpp::system_data_contracts::load_system_data_contract;
+    use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dpp::tests::fixtures::{get_data_contract_fixture, get_withdrawal_document_fixture};
     use drive::drive::Drive;
-    use platform_value::platform_value;
 
     fn should_throw_error_if_withdrawal_not_found() {
+        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        let state_read_guard = platform.state.read().unwrap();
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &state_read_guard,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
         let transition_execution_context = StateTransitionExecutionContext::default();
-        let mut state_repository = MockStateRepositoryLike::new();
         let data_contract = get_data_contract_fixture(None);
         let owner_id = &data_contract.owner_id;
 
-        state_repository
-            .expect_fetch_documents()
-            .returning(|_, _, _, _| Ok(vec![]));
-
-        let document_transition = DocumentTransition::Delete(Default::default());
+        let document_transition = DocumentTransitionAction::DeleteAction(Default::default());
         let data_trigger_context = DataTriggerExecutionContext {
-            drive: &Drive {},
+            platform: &platform_ref,
             data_contract: &data_contract,
             owner_id,
             state_transition_execution_context: &transition_execution_context,
+            transaction: None,
         };
 
         let result =
             delete_withdrawal_data_trigger(&document_transition, &data_trigger_context, None)
                 .expect("the execution result should be returned");
 
-        assert!(!result.is_ok());
+        assert!(!result.is_valid());
 
         let error = result.get_errors().get(0).unwrap();
 
@@ -161,9 +163,8 @@ mod tests {
     fn should_throw_error_if_withdrawal_has_wrong_status() {
         let transition_execution_context = StateTransitionExecutionContext::default();
         let mut state_repository = MockStateRepositoryLike::new();
-        let data_contract =
-            load_system_data_contract(data_contracts::SystemDataContract::Withdrawals)
-                .expect("to load system data contract");
+        let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
+            .expect("to load system data contract");
         let owner_id = data_contract.owner_id;
 
         let document = get_withdrawal_document_fixture(

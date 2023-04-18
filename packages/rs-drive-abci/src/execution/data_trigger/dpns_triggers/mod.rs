@@ -308,19 +308,8 @@ pub fn create_domain_data_trigger<'a>(
 #[cfg(test)]
 mod test {
     use crate::execution::data_trigger::DataTriggerExecutionContext;
-    use crate::{
-        data_trigger::DataTriggerExecutionContext,
-        document::document_transition::Action,
-        state_repository::MockStateRepositoryLike,
-        state_transition::state_transition_execution_context::StateTransitionExecutionContext,
-        tests::{
-            fixtures::{
-                get_document_transitions_fixture, get_dpns_data_contract_fixture,
-                get_dpns_parent_document_fixture, ParentDocumentOptions,
-            },
-            utils::generate_random_identifier_struct,
-        },
-    };
+    use crate::platform::PlatformRef;
+    use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::document::document_transition::Action;
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use dpp::tests::fixtures::{
@@ -332,7 +321,16 @@ mod test {
     use super::create_domain_data_trigger;
 
     fn should_return_execution_result_on_dry_run() {
-        let mut state_repository = MockStateRepositoryLike::new();
+        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        let state_read_guard = platform.state.read().unwrap();
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &state_read_guard,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
         let transition_execution_context = StateTransitionExecutionContext::default();
         let owner_id = generate_random_identifier_struct();
         let document = get_dpns_parent_document_fixture(ParentDocumentOptions {
@@ -343,21 +341,26 @@ mod test {
         let transitions = get_document_transitions_fixture([(Action::Create, vec![document])]);
         let first_transition = transitions.get(0).expect("transition should be present");
 
-        state_repository
-            .expect_fetch_documents()
-            .returning(|_, _, _, _| Ok(vec![]));
+        let document_create_transition = first_transition
+            .as_transition_create()
+            .expect("expected a document create transition");
+
         transition_execution_context.enable_dry_run();
 
         let data_trigger_context = DataTriggerExecutionContext {
+            platform: &platform_ref,
             data_contract: &data_contract,
             owner_id: &owner_id,
-            drive: &state_repository,
             state_transition_execution_context: &transition_execution_context,
+            transaction: None,
         };
 
-        let result =
-            create_domain_data_trigger(first_transition, &data_trigger_context, Some(&owner_id))
-                .expect("the execution result should be returned");
+        let result = create_domain_data_trigger(
+            document_create_transition.into(),
+            &data_trigger_context,
+            Some(&owner_id),
+        )
+        .expect("the execution result should be returned");
         assert!(result.is_ok());
     }
 }

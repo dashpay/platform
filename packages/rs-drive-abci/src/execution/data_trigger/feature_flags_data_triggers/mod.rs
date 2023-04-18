@@ -92,41 +92,42 @@ pub fn create_feature_flag_data_trigger<'a>(
 mod test {
     use super::create_feature_flag_data_trigger;
     use crate::execution::data_trigger::DataTriggerExecutionContext;
-    use crate::{
-        data_trigger::DataTriggerExecutionContext,
-        document::document_transition::DocumentTransition,
-        state_repository::MockStateRepositoryLike,
-        state_transition::state_transition_execution_context::StateTransitionExecutionContext,
-        tests::fixtures::get_data_contract_fixture,
-    };
+    use crate::platform::PlatformRef;
+    use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::document::document_transition::DocumentTransitionAction;
     use dpp::prelude::{DocumentTransition, Identifier};
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use dpp::tests::fixtures::get_data_contract_fixture;
 
     fn should_successfully_execute_on_dry_run() {
+        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        let state_read_guard = platform.state.read().unwrap();
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &state_read_guard,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
         let transition_execution_context = StateTransitionExecutionContext::default();
-        let state_repository = MockStateRepositoryLike::new();
         let data_contract = get_data_contract_fixture(None);
         let owner_id = &data_contract.owner_id;
 
         let document_transition = DocumentTransitionAction::CreateAction(Default::default());
         let data_trigger_context = DataTriggerExecutionContext {
+            platform: &platform_ref,
             data_contract: &data_contract,
             owner_id,
-            drive: &state_repository,
             state_transition_execution_context: &transition_execution_context,
+            transaction: None,
         };
 
         transition_execution_context.enable_dry_run();
 
-        let result = create_feature_flag_data_trigger(
-            &document_transition,
-            0,
-            &data_trigger_context,
-            &Identifier::default(),
-        )
-        .expect("the execution result should be returned");
+        let result =
+            create_feature_flag_data_trigger(&document_transition, &data_trigger_context, None)
+                .expect("the execution result should be returned");
 
         assert!(result.is_ok());
     }

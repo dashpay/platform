@@ -175,6 +175,8 @@ pub fn create_masternode_reward_shares_data_trigger<'a>(
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::platform::PlatformRef;
+    use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::data_contract::DataContract;
     use dpp::document::document_transition::{Action, DocumentTransitionExt};
     use dpp::document::ExtendedDocument;
@@ -186,28 +188,7 @@ mod test {
         get_document_transitions_fixture, get_masternode_reward_shares_documents_fixture,
     };
     use dpp::tests::utils::generate_random_identifier_struct;
-
-    use platform_value::Value;
-
-    use crate::document::{Document, ExtendedDocument};
-    use crate::error::data_trigger::DataTriggerError;
-    use crate::identity::Identity;
-    use crate::{
-        data_contract::DataContract,
-        data_trigger::DataTriggerExecutionContext,
-        document::document_transition::{Action, DocumentTransition, DocumentTransitionExt},
-        mocks::{SMLEntry, SMLStore, SimplifiedMNList},
-        prelude::Identifier,
-        state_repository::MockStateRepositoryLike,
-        state_transition::state_transition_execution_context::StateTransitionExecutionContext,
-        tests::{
-            fixtures::{
-                get_document_transitions_fixture, get_masternode_reward_shares_documents_fixture,
-            },
-            utils::generate_random_identifier_struct,
-        },
-        DataTriggerError, StateError,
-    };
+    use dpp::DataTriggerActionError;
 
     struct TestData {
         top_level_identifier: Identifier,
@@ -269,24 +250,26 @@ mod test {
     }
 
     fn get_data_trigger_error(
-        result: &Result<DataTriggerExecutionResult, anyhow::Error>,
+        result: &Result<DataTriggerExecutionResult, Error>,
         error_number: usize,
-    ) -> &DataTriggerError {
+    ) -> &DataTriggerActionError {
         let execution_result = result.as_ref().expect("it should return execution result");
-        let error = execution_result
-            .get_errors()
-            .get(error_number)
-            .expect("errors should exist");
-        match error {
-            StateError::DataTriggerError(error) => error,
-            _ => {
-                panic!("the returned error is not a data trigger error")
-            }
-        }
+        execution_result
+            .get_error(error_number)
+            .expect("errors should exist")
     }
 
-    #[tokio::test]
-    async fn should_return_an_error_if_percentage_greater_than_1000() {
+    fn should_return_an_error_if_percentage_greater_than_1000() {
+        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        let state_read_guard = platform.state.read().unwrap();
+
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &state_read_guard,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
         let TestData {
             mut document_create_transition,
             extended_documents,
@@ -319,18 +302,18 @@ mod test {
 
         let execution_context = StateTransitionExecutionContext::default();
         let context = DataTriggerExecutionContext {
+            platform: &platform_ref,
             data_contract: &data_contract,
             owner_id: &top_level_identifier,
-            drive: &state_repository_mock,
             state_transition_execution_context: &execution_context,
+            transaction: None,
         };
 
         let result = create_masternode_reward_shares_data_trigger(
-            &document_create_transition,
+            &document_create_transition.into(),
             &context,
             None,
-        )
-        .await;
+        );
 
         let percentage_error = get_data_trigger_error(&result, 1);
         assert_eq!(
@@ -462,8 +445,7 @@ mod test {
         assert!(result.is_ok())
     }
 
-    #[tokio::test]
-    async fn should_return_error_if_there_are_16_stored_shares() {
+    fn should_return_error_if_there_are_16_stored_shares() {
         let TestData {
             document_create_transition,
             sml_store,
