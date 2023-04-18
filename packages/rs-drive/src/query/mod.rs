@@ -1545,7 +1545,7 @@ mod tests {
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
         drive
-            .apply_contract(
+            .apply_contract_with_serialization(
                 &contract,
                 contract_cbor,
                 BlockInfo::default(),
@@ -1576,7 +1576,7 @@ mod tests {
             .expect("expected to deserialize the contract");
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
         drive
-            .apply_contract(
+            .apply_contract_with_serialization(
                 &contract,
                 contract_cbor,
                 BlockInfo::default(),

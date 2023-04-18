@@ -1,26 +1,29 @@
-use dashcore::blockdata::transaction::special_transaction::asset_unlock::qualified_asset_unlock::AssetUnlockPayload;
-use dashcore::blockdata::transaction::special_transaction::asset_unlock::request_info::AssetUnlockRequestInfo;
-use dashcore::blockdata::transaction::special_transaction::asset_unlock::unqualified_asset_unlock::{AssetUnlockBasePayload, AssetUnlockBaseTransactionInfo};
-use dashcore::blockdata::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
-use dashcore::bls_sig_utils::BLSSignature;
-use dashcore::consensus::Decodable;
 use crate::abci::server::AbciApplication;
 use crate::abci::AbciError;
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::quorum::Quorum;
 use crate::rpc::core::CoreRPCLike;
-use dashcore::hashes::Hash;
-use dashcore_rpc::json::{MasternodeListItem, QuorumMasternodeListItem};
+use dashcore::blockdata::transaction::special_transaction::asset_unlock::qualified_asset_unlock::AssetUnlockPayload;
+use dashcore::blockdata::transaction::special_transaction::asset_unlock::request_info::AssetUnlockRequestInfo;
+use dashcore::blockdata::transaction::special_transaction::asset_unlock::unqualified_asset_unlock::AssetUnlockBaseTransactionInfo;
+use dashcore::blockdata::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
+use dashcore::bls_sig_utils::BLSSignature;
+use dashcore::consensus::Decodable;
 use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;
 use drive::drive::block_info::BlockInfo;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
-use tenderdash_abci::proto::abci::{CommitInfo, ExtendVoteExtension, RequestExtendVote, RequestFinalizeBlock, RequestPrepareProposal, RequestVerifyVoteExtension, ResponsePrepareProposal};
+use tenderdash_abci::proto::abci::{
+    CommitInfo, RequestExtendVote, RequestFinalizeBlock, RequestPrepareProposal,
+    RequestVerifyVoteExtension, ResponsePrepareProposal,
+};
 use tenderdash_abci::proto::google::protobuf::Timestamp;
-use tenderdash_abci::proto::types::{Block, BlockId, Data, Evidence, EvidenceList, Header, PartSetHeader, VoteExtension, VoteExtensionType};
+use tenderdash_abci::proto::types::{
+    Block, BlockId, Data, EvidenceList, Header, PartSetHeader, VoteExtension, VoteExtensionType,
+};
 use tenderdash_abci::proto::version::Consensus;
 use tenderdash_abci::Application;
-use crate::error::execution::ExecutionError;
 
 impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
     /// Execute a block with various state transitions
@@ -31,7 +34,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         current_quorum: &Quorum,
         next_quorum: &Quorum,
         proposed_version: ProtocolVersion,
-        total_hpmns: u32,
+        _total_hpmns: u32,
         block_info: BlockInfo,
         expect_validation_errors: bool,
         state_transitions: Vec<StateTransition>,
@@ -45,7 +48,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             time_ms,
             height,
             core_height,
-            epoch,
+            epoch: _,
         } = block_info;
 
         let request_prepare_proposal = RequestPrepareProposal {
@@ -79,9 +82,9 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             tx_records,
             app_hash,
             tx_results,
-            consensus_param_updates,
-            core_chain_lock_update,
-            validator_set_update,
+            consensus_param_updates: _,
+            core_chain_lock_update: _,
+            validator_set_update: _,
         } = response_prepare_proposal;
 
         if expect_validation_errors == false {

@@ -304,14 +304,12 @@ impl<C> Platform<C> {
             hpmn_masternode_list: Default::default(),
         };
 
-        let platform = Platform {
+        Ok(Platform {
             drive,
             state: RwLock::new(state),
             config,
             block_execution_context: RwLock::new(None),
             core_rpc,
-        };
-
-        return Ok(platform);
+        })
     }
 }

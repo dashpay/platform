@@ -34,13 +34,13 @@ impl<'a> TryFrom<&'a RequestPrepareProposal> for BlockProposal<'a> {
 
     fn try_from(value: &'a RequestPrepareProposal) -> Result<Self, Self::Error> {
         let RequestPrepareProposal {
-            max_tx_bytes,
+            max_tx_bytes: _,
             txs,
-            local_last_commit,
-            misbehavior,
+            local_last_commit: _,
+            misbehavior: _,
             height,
             time,
-            next_validators_hash,
+            next_validators_hash: _,
             round,
             core_chain_locked_height,
             proposer_pro_tx_hash,
@@ -108,15 +108,15 @@ impl<'a> TryFrom<&'a RequestProcessProposal> for BlockProposal<'a> {
     fn try_from(value: &'a RequestProcessProposal) -> Result<Self, Self::Error> {
         let RequestProcessProposal {
             txs,
-            proposed_last_commit,
-            misbehavior,
+            proposed_last_commit: _,
+            misbehavior: _,
             hash,
             height,
             round,
             time,
-            next_validators_hash,
+            next_validators_hash: _,
             core_chain_locked_height,
-            core_chain_lock_update,
+            core_chain_lock_update: _,
             proposer_pro_tx_hash,
             proposed_app_version,
             version,

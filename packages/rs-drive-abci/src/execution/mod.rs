@@ -1,9 +1,7 @@
 /// The block proposal
 pub mod block_proposal;
-/// Commit validation
-pub mod commit_validation;
-// /// Data triggers
-// pub mod data_trigger;
+/// Data triggers
+pub mod data_trigger;
 /// Engine module
 pub mod engine;
 /// An execution event

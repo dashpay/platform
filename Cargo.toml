@@ -12,5 +12,5 @@ members = [
     "packages/masternode-reward-shares-contract",
     "packages/feature-flags-contract",
     "packages/dpns-contract",
-    "packages/data-contracts"
+    "packages/data-contracts",
 ]

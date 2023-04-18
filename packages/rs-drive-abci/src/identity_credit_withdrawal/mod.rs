@@ -562,8 +562,6 @@ mod tests {
     };
 
     mod update_withdrawal_statuses {
-        use std::sync::RwLock;
-
         use crate::{block::BlockStateInfo, test::helpers::setup::TestPlatformBuilder};
         use dpp::identity::core_script::CoreScript;
         use dpp::platform_value::platform_value;
@@ -652,6 +650,7 @@ mod tests {
                     is_epoch_change: false,
                 },
                 hpmn_count: 100,
+                withdrawal_transactions: Default::default(),
             };
 
             let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
@@ -760,8 +759,6 @@ mod tests {
     }
 
     mod pool_withdrawals_into_transactions {
-        use std::sync::RwLock;
-
         use dpp::data_contract::DriveContractExt;
         use dpp::identity::core_script::CoreScript;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
@@ -808,6 +805,7 @@ mod tests {
                         is_epoch_change: false,
                     },
                     hpmn_count: 100,
+                    withdrawal_transactions: Default::default(),
                 });
 
             let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)

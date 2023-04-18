@@ -1,13 +1,15 @@
-use dpp::document::Document;
 use dpp::util::hash::hash;
+use std::collections::BTreeMap;
 
-use dpp::platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueMapPathHelper};
-use dpp::platform_value::platform_value;
-use dpp::ProtocolError;
-use dpp::{
-    document::document_transition::DocumentTransition, get_from_transition, prelude::Identifier,
-};
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use dpp::data_contract::DriveContractExt;
+use dpp::document::document_transition::DocumentTransitionAction;
+use dpp::platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueMapPathHelper};
+use dpp::platform_value::Value;
+use dpp::prelude::Identifier;
+use dpp::{get_from_transition_action, ProtocolError};
+use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 
 use super::{create_error, DataTriggerExecutionContext, DataTriggerExecutionResult};
 
@@ -21,28 +23,44 @@ const PROPERTY_RECORDS: &str = "records";
 const PROPERTY_DASH_UNIQUE_IDENTITY_ID: &str = "dashUniqueIdentityId";
 const PROPERTY_DASH_ALIAS_IDENTITY_ID: &str = "dashAliasIdentityId";
 
-pub async fn create_domain_data_trigger<'a>(
-    document_transition: &DocumentTransition,
+/// Creates a data trigger for handling domain documents.
+///
+/// The trigger is executed whenever a new domain document is created on the blockchain.
+/// It performs various actions depending on the state of the document and the context in which it was created.
+///
+/// # Arguments
+///
+/// * `document_transition` - A reference to the document transition that triggered the data trigger.
+/// * `context` - A reference to the data trigger execution context.
+/// * `top_level_identity` - An optional identifier for the top-level identity associated with the domain
+///   document (if one exists).
+///
+/// # Returns
+///
+/// A `DataTriggerExecutionResult` indicating the success or failure of the trigger execution.
+pub fn create_domain_data_trigger<'a>(
+    document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'a>,
     top_level_identity: Option<&Identifier>,
 ) -> Result<DataTriggerExecutionResult, Error> {
     let is_dry_run = context.state_transition_execution_context.is_dry_run();
-    let dt_create = match document_transition {
-        DocumentTransition::Create(d) => d,
-        _ => bail!(
-            "the Document Transition {} isn't 'CREATE'",
-            get_from_transition!(document_transition, id)
-        ),
+    let document_create_transition = match document_transition {
+        DocumentTransitionAction::CreateAction(d) => d,
+        _ => {
+            return Err(Error::Execution(ExecutionError::DataTriggerExecutionError(
+                format!(
+                    "the Document Transition {} isn't 'CREATE",
+                    get_from_transition_action!(document_transition, id)
+                ),
+            )))
+        }
     };
 
-    let data = dt_create.data.as_ref().ok_or_else(|| {
-        anyhow!(
-            "data isn't defined in Data Transition '{}'",
-            dt_create.base.id
-        )
-    })?;
+    let data = &document_create_transition.data;
 
-    let top_level_identity = top_level_identity.context("top level identity isn't provided")?;
+    let top_level_identity = top_level_identity.ok_or(Error::Execution(
+        ExecutionError::DataTriggerExecutionError("top level identity isn't provided".to_string()),
+    ))?;
     let owner_id = context.owner_id;
     let label = data
         .get_string(PROPERTY_LABEL)
@@ -59,7 +77,10 @@ pub async fn create_domain_data_trigger<'a>(
         .map_err(ProtocolError::ValueError)?;
     let records = data
         .get(PROPERTY_RECORDS)
-        .ok_or_else(|| anyhow!("property '{}' doesn't exist", PROPERTY_RECORDS))?
+        .ok_or(ExecutionError::DataTriggerExecutionError(format!(
+            "property '{}' doesn't exist",
+            PROPERTY_RECORDS
+        )))?
         .to_btree_ref_string_map()
         .map_err(ProtocolError::ValueError)?;
 
@@ -74,23 +95,23 @@ pub async fn create_domain_data_trigger<'a>(
         if full_domain_name.len() > MAX_PRINTABLE_DOMAIN_NAME_LENGTH {
             let err = create_error(
                 context,
-                dt_create,
+                document_create_transition,
                 format!(
                     "Full domain name length can not be more than {} characters long but got {}",
                     MAX_PRINTABLE_DOMAIN_NAME_LENGTH,
                     full_domain_name.len()
                 ),
             );
-            result.add_error(err.into())
+            result.add_error(err)
         }
 
         if normalized_label != label.to_lowercase() {
             let err = create_error(
                 context,
-                dt_create,
+                document_create_transition,
                 "Normalized label doesn't match label".to_string(),
             );
-            result.add_error(err.into());
+            result.add_error(err);
         }
 
         if let Some(id) = records
@@ -100,13 +121,13 @@ pub async fn create_domain_data_trigger<'a>(
             if id != owner_id {
                 let err = create_error(
                     context,
-                    dt_create,
+                    document_create_transition,
                     format!(
                         "ownerId {} doesn't match {} {}",
                         owner_id, PROPERTY_DASH_UNIQUE_IDENTITY_ID, id
                     ),
                 );
-                result.add_error(err.into())
+                result.add_error(err);
             }
         }
 
@@ -117,23 +138,23 @@ pub async fn create_domain_data_trigger<'a>(
             if id != owner_id {
                 let err = create_error(
                     context,
-                    dt_create,
+                    document_create_transition,
                     format!(
                         "ownerId {} doesn't match {} {}",
                         owner_id, PROPERTY_DASH_ALIAS_IDENTITY_ID, id
                     ),
                 );
-                result.add_error(err.into());
+                result.add_error(err);
             }
         }
 
         if normalized_parent_domain_name.is_empty() && context.owner_id != top_level_identity {
             let err = create_error(
                 context,
-                dt_create,
+                document_create_transition,
                 "Can't create top level domain for this identity".to_string(),
             );
-            result.add_error(err.into())
+            result.add_error(err);
         }
     }
 
@@ -143,33 +164,58 @@ pub async fn create_domain_data_trigger<'a>(
         let parent_domain_label = parent_domain_segments.next().unwrap().to_string();
         let grand_parent_domain_name = parent_domain_segments.collect::<Vec<&str>>().join(".");
 
-        let documents_data = context
-            .state_repository
-            .fetch_documents(
-                &context.data_contract.id,
-                &dt_create.base.document_type_name,
-                platform_value!({
-                    "where" : [
-                        ["normalizedParentDomainName", "==", grand_parent_domain_name],
-                        ["normalizedLabel", "==", parent_domain_label]
-                    ]
-                }),
-                Some(context.state_transition_execution_context),
-            )
-            .await?;
-        let documents: Vec<Document> = documents_data
-            .into_iter()
-            .map(|d| d.try_into().map_err(Into::<ProtocolError>::into))
-            .collect::<Result<Vec<Document>, ProtocolError>>()?;
+        let document_type = context
+            .data_contract
+            .document_type_for_name(document_create_transition.base.document_type_name.as_str())?;
+        let drive_query = DriveQuery {
+            contract: &context.data_contract,
+            document_type,
+            internal_clauses: InternalClauses {
+                primary_key_in_clause: None,
+                primary_key_equal_clause: None,
+                in_clause: None,
+                range_clause: None,
+                equal_clauses: BTreeMap::from([
+                    (
+                        "normalizedParentDomainName".to_string(),
+                        WhereClause {
+                            field: "normalizedParentDomainName".to_string(),
+                            operator: WhereOperator::Equal,
+                            value: Value::Text(grand_parent_domain_name),
+                        },
+                    ),
+                    (
+                        "normalizedLabel".to_string(),
+                        WhereClause {
+                            field: "normalizedLabel".to_string(),
+                            operator: WhereOperator::Equal,
+                            value: Value::Text(parent_domain_label),
+                        },
+                    ),
+                ]),
+            },
+            offset: 0,
+            limit: 0,
+            order_by: Default::default(),
+            start_at: None,
+            start_at_included: false,
+            block_time: None,
+        };
+
+        let documents = context
+            .platform
+            .drive
+            .query_documents(drive_query, None, is_dry_run, context.transaction)?
+            .documents;
 
         if !is_dry_run {
             if documents.is_empty() {
                 let err = create_error(
                     context,
-                    dt_create,
+                    document_create_transition,
                     "Parent domain is not present".to_string(),
                 );
-                result.add_error(err.into());
+                result.add_error(err);
                 return Ok(result);
             }
             let parent_domain = &documents[0];
@@ -177,24 +223,25 @@ pub async fn create_domain_data_trigger<'a>(
             if rule_allow_subdomains {
                 let err = create_error(
                     context,
-                    dt_create,
+                    document_create_transition,
                     "Allowing subdomains registration is forbidden for non top level domains"
                         .to_string(),
                 );
-                result.add_error(err.into());
+                result.add_error(err);
             }
 
             if (!parent_domain
                 .properties
-                .get_bool_at_path(PROPERTY_ALLOW_SUBDOMAINS)?)
+                .get_bool_at_path(PROPERTY_ALLOW_SUBDOMAINS)
+                .map_err(ProtocolError::ValueError)?)
                 && context.owner_id != &parent_domain.owner_id
             {
                 let err = create_error(
                     context,
-                    dt_create,
+                    document_create_transition,
                     "The subdomain can be created only by the parent domain owner".to_string(),
                 );
-                result.add_error(err.into());
+                result.add_error(err);
             }
         }
     }
@@ -205,22 +252,38 @@ pub async fn create_domain_data_trigger<'a>(
 
     let salted_domain_hash = hash(salted_domain_buffer);
 
-    let preorder_documents_data = context
-        .state_repository
-        .fetch_documents(
-            &context.data_contract.id,
-            "preorder",
-            platform_value!({
-                //? should this be a base64 encoded
-                "where" : [["saltedDomainHash", "==", salted_domain_hash]]
-            }),
-            Some(context.state_transition_execution_context),
-        )
-        .await?;
-    let preorder_documents: Vec<Document> = preorder_documents_data
-        .into_iter()
-        .map(|d| d.try_into().map_err(Into::<ProtocolError>::into))
-        .collect::<Result<Vec<Document>, ProtocolError>>()?;
+    let document_type = context.data_contract.document_type_for_name("preorder")?;
+
+    let drive_query = DriveQuery {
+        contract: &context.data_contract,
+        document_type,
+        internal_clauses: InternalClauses {
+            primary_key_in_clause: None,
+            primary_key_equal_clause: None,
+            in_clause: None,
+            range_clause: None,
+            equal_clauses: BTreeMap::from([(
+                "saltedDomainHash".to_string(),
+                WhereClause {
+                    field: "normalizedParentDomainName".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Bytes32(salted_domain_hash),
+                },
+            )]),
+        },
+        offset: 0,
+        limit: 0,
+        order_by: Default::default(),
+        start_at: None,
+        start_at_included: false,
+        block_time: None,
+    };
+
+    let preorder_documents = context
+        .platform
+        .drive
+        .query_documents(drive_query, None, is_dry_run, context.transaction)?
+        .documents;
 
     if is_dry_run {
         return Ok(result);
@@ -229,10 +292,10 @@ pub async fn create_domain_data_trigger<'a>(
     if preorder_documents.is_empty() {
         let err = create_error(
             context,
-            dt_create,
+            document_create_transition,
             "preorderDocument was not found".to_string(),
         );
-        result.add_error(err.into())
+        result.add_error(err)
     }
 
     Ok(result)
@@ -241,20 +304,9 @@ pub async fn create_domain_data_trigger<'a>(
 #[cfg(test)]
 mod test {
     use crate::execution::data_trigger::DataTriggerExecutionContext;
-    use crate::{
-        data_trigger::DataTriggerExecutionContext,
-        document::document_transition::Action,
-        state_repository::MockStateRepositoryLike,
-        state_transition::state_transition_execution_context::StateTransitionExecutionContext,
-        tests::{
-            fixtures::{
-                get_document_transitions_fixture, get_dpns_data_contract_fixture,
-                get_dpns_parent_document_fixture, ParentDocumentOptions,
-            },
-            utils::generate_random_identifier_struct,
-        },
-    };
-    use dpp::document::document_transition::Action;
+    use crate::platform::PlatformStateRef;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::document::document_transition::{Action, DocumentCreateTransitionAction};
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use dpp::tests::fixtures::{
         get_document_transitions_fixture, get_dpns_data_contract_fixture,
@@ -264,8 +316,19 @@ mod test {
 
     use super::create_domain_data_trigger;
 
+    #[test]
     fn should_return_execution_result_on_dry_run() {
-        let mut state_repository = MockStateRepositoryLike::new();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+        let state_read_guard = platform.state.read().unwrap();
+
+        let platform_ref = PlatformStateRef {
+            drive: &platform.drive,
+            state: &state_read_guard,
+            config: &platform.config,
+        };
+
         let transition_execution_context = StateTransitionExecutionContext::default();
         let owner_id = generate_random_identifier_struct();
         let document = get_dpns_parent_document_fixture(ParentDocumentOptions {
@@ -276,21 +339,26 @@ mod test {
         let transitions = get_document_transitions_fixture([(Action::Create, vec![document])]);
         let first_transition = transitions.get(0).expect("transition should be present");
 
-        state_repository
-            .expect_fetch_documents()
-            .returning(|_, _, _, _| Ok(vec![]));
+        let document_create_transition = first_transition
+            .as_transition_create()
+            .expect("expected a document create transition");
+
         transition_execution_context.enable_dry_run();
 
         let data_trigger_context = DataTriggerExecutionContext {
+            platform: &platform_ref,
             data_contract: &data_contract,
             owner_id: &owner_id,
-            drive: &state_repository,
             state_transition_execution_context: &transition_execution_context,
+            transaction: None,
         };
 
-        let result =
-            create_domain_data_trigger(first_transition, &data_trigger_context, Some(&owner_id))
-                .expect("the execution result should be returned");
-        assert!(result.is_ok());
+        let result = create_domain_data_trigger(
+            &DocumentCreateTransitionAction::from(document_create_transition).into(),
+            &data_trigger_context,
+            Some(&owner_id),
+        )
+        .expect("the execution result should be returned");
+        assert!(result.is_valid());
     }
 }

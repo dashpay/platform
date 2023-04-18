@@ -420,7 +420,6 @@ mod tests {
     use drive::common::helpers::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
 
     mod add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations {
-        use crate::rpc::core::MockCoreRPCLike;
         use crate::test::helpers::setup::TestPlatformBuilder;
 
         use super::*;
@@ -946,7 +945,6 @@ mod tests {
     }
 
     mod find_oldest_epoch_needing_payment {
-        use crate::rpc::core::MockCoreRPCLike;
         use crate::test::helpers::setup::TestPlatformBuilder;
 
         use super::*;
@@ -1218,7 +1216,6 @@ mod tests {
 
     mod add_epoch_pool_to_proposers_payout_operations {
         use super::*;
-        use crate::rpc::core::MockCoreRPCLike;
         use crate::test::helpers::{
             fee_pools::create_test_masternode_share_identities_and_documents,
             setup::TestPlatformBuilder,
@@ -1358,7 +1355,6 @@ mod tests {
     }
 
     mod add_distribute_block_fees_into_pools_operations {
-        use crate::rpc::core::MockCoreRPCLike;
         use crate::test::helpers::setup::TestPlatformBuilder;
 
         use super::*;

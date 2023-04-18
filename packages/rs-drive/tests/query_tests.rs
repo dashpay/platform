@@ -4279,7 +4279,7 @@ fn test_query_a_b_c_d_e_contract() {
         .expect("should create decode contract from cbor");
 
     drive
-        .apply_contract(
+        .apply_contract_with_serialization(
             &contract,
             contract_cbor,
             block_info,
@@ -4368,7 +4368,7 @@ fn test_query_documents_by_created_at() {
         DataContract::from_raw_object(contract).expect("should create a contract from cbor");
 
     drive
-        .apply_contract(
+        .apply_contract_with_serialization(
             &contract,
             contract_cbor.clone(),
             BlockInfo::default(),
@@ -4442,7 +4442,7 @@ fn test_query_documents_by_created_at() {
     );
 
     let query_result = drive
-        .query_documents(query, None, None)
+        .query_documents(query, None, false, None)
         .expect("should query documents");
 
     assert_eq!(query_result.documents.len(), 1);

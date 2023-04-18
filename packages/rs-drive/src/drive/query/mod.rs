@@ -54,7 +54,7 @@ use crate::drive::block_info::BlockInfo;
 use crate::fee_pools::epochs::Epoch;
 use crate::query::QueryResultEncoding::CborEncodedQueryResult;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 /// The outcome of a query
 pub struct QueryDocumentsOutcome {
     /// returned items
@@ -199,8 +199,12 @@ impl Drive {
         &self,
         query: DriveQuery,
         epoch: Option<&Epoch>,
+        dry_run: bool,
         transaction: TransactionArg,
     ) -> Result<QueryDocumentsOutcome, Error> {
+        if dry_run {
+            return Ok(QueryDocumentsOutcome::default());
+        }
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let (items, skipped) = query.execute_raw_results_no_proof_internal(
             self,
