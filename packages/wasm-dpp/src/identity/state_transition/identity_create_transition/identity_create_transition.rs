@@ -22,6 +22,7 @@ use crate::errors::from_dpp_err;
 use dpp::state_transition::StateTransitionConvert;
 
 use crate::utils::{generic_of_js_val, ToSerdeJSONExt, WithJsError};
+use dpp::identity::KeyType;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{string_encoding, BinaryData};
 use dpp::{
@@ -323,12 +324,24 @@ impl IdentityCreateTransitionWasm {
         &mut self,
         private_key: Vec<u8>,
         key_type: u8,
-        bls: JsBlsAdapter,
+        bls: Option<JsBlsAdapter>,
     ) -> Result<(), JsValue> {
-        let bls_adapter = BlsAdapter(bls);
         let key_type = key_type
             .try_into()
             .map_err(|e: anyhow::Error| e.to_string())?;
+
+        if bls.is_none() && key_type == KeyType::BLS12_381 {
+            return Err(JsError::new(
+                format!("BLS adapter is required for BLS key type '{}'", key_type).as_str(),
+            )
+            .into());
+        }
+
+        let bls_adapter = if let Some(adapter) = bls {
+            BlsAdapter(adapter)
+        } else {
+            BlsAdapter(JsValue::undefined().into())
+        };
 
         self.0
             .sign_by_private_key(private_key.as_slice(), key_type, &bls_adapter)

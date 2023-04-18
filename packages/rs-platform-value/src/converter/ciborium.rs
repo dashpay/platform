@@ -42,7 +42,8 @@ impl TryFrom<CborValue> for Value {
                 ))
             }
             CborValue::Array(array) => {
-                if !array.is_empty()
+                let len = array.len();
+                if len > 10
                     && array.iter().all(|v| {
                         let Some(int) = v.as_integer() else {
                         return false;

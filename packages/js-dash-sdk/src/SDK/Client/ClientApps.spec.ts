@@ -1,4 +1,4 @@
-import Identifier from '@dashevo/dpp/lib/Identifier';
+import { Identifier } from '@dashevo/wasm-dpp';
 import { expect } from 'chai';
 import { ClientApps } from './ClientApps';
 import 'mocha';

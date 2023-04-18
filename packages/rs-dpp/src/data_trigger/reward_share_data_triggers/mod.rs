@@ -30,7 +30,7 @@ where
 {
     let mut result = DataTriggerExecutionResult::default();
     let is_dry_run = context.state_transition_execution_context.is_dry_run();
-    let owner_id = context.owner_id.to_string(Encoding::Base58);
+    let owner_id = context.owner_id.to_buffer();
 
     let (transition_data, transition_base) = match document_transition {
         DocumentTransition::Create(document_create_transition) => (

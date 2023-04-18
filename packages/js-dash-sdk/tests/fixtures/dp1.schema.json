@@ -50,7 +50,7 @@
       },
       "avatarUrl": {
         "type": "string",
-        "format": "url"
+        "format": "uri"
       }
     },
     "additionalProperties": false

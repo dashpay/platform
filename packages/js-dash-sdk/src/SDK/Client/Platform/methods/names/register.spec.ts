@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import { ImportMock } from 'ts-mock-imports';
-import generateRandomIdentifier from '@dashevo/dpp/lib/test/utils/generateRandomIdentifier';
+import generateRandomIdentifier from '@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync';
 
 import cryptoModule from 'crypto';
 
@@ -23,12 +23,14 @@ describe('Platform', () => {
       let identityMock;
 
       beforeEach(async function beforeEach() {
+        const contractId = await generateRandomIdentifier();
+
         platformMock = {
           client: {
             getApps() {
               return new ClientApps({
                 dpns: {
-                  contractId: generateRandomIdentifier(),
+                  contractId,
                 },
               });
             },
@@ -47,7 +49,7 @@ describe('Platform', () => {
       });
 
       it('register top level domain', async () => {
-        const identityId = generateRandomIdentifier();
+        const identityId = await generateRandomIdentifier();
         identityMock.getId.returns(identityId);
 
         await register.call(platformMock, 'Dash', {
@@ -79,7 +81,7 @@ describe('Platform', () => {
       });
 
       it('should register second level domain', async () => {
-        const identityId = generateRandomIdentifier();
+        const identityId = await generateRandomIdentifier();
         identityMock.getId.returns(identityId);
 
         await register.call(platformMock, 'User.dash', {
@@ -115,7 +117,7 @@ describe('Platform', () => {
 
         try {
           await register.call(platformMock, 'user.dash', {
-            dashUniqueIdentityId: generateRandomIdentifier(),
+            dashUniqueIdentityId: await generateRandomIdentifier(),
           }, identityMock);
         } catch (e) {
           expect(e.message).to.equal('DPNS is required to register a new name.');

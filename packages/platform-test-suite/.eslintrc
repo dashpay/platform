@@ -1,6 +1,7 @@
 {
   "extends": "airbnb-base",
   "env": {
+    "es2020": true,
     "node": true,
     "mocha": true
   },

@@ -67,10 +67,10 @@ impl IdentityFacadeWasm {
     pub fn create_from_object(
         &self,
         identity_object: JsValue,
-        options: JsValue,
+        options: Option<js_sys::Object>,
     ) -> Result<IdentityWasm, JsValue> {
-        let options: FromObjectOptions = if options.is_object() {
-            with_js_error!(serde_wasm_bindgen::from_value(options))?
+        let options: FromObjectOptions = if let Some(options) = options {
+            with_js_error!(serde_wasm_bindgen::from_value(options.into()))?
         } else {
             Default::default()
         };
@@ -94,10 +94,10 @@ impl IdentityFacadeWasm {
     pub fn create_from_buffer(
         &self,
         buffer: Vec<u8>,
-        options: JsValue,
+        options: Option<js_sys::Object>,
     ) -> Result<IdentityWasm, JsValue> {
-        let options: FromObjectOptions = if options.is_object() {
-            with_js_error!(serde_wasm_bindgen::from_value(options))?
+        let options: FromObjectOptions = if let Some(options) = options {
+            with_js_error!(serde_wasm_bindgen::from_value(options.into()))?
         } else {
             Default::default()
         };

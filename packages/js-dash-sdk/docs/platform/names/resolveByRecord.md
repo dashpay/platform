@@ -16,4 +16,4 @@ const identityId = '3ge4yjGinQDhxh2aVpyLTQaoka45BkijkoybfAkDepoN';
 const document = await client.platform.names.resolveByRecord('dashUniqueIdentityId', identityId);
 ```
 
-Returns: array of Document.
+Returns: array of ExtendedDocument.

@@ -85,10 +85,27 @@ impl StateTransitionExecutionContextWasm {
         Ok(())
     }
 
+    #[wasm_bindgen(js_name=getDryOperations)]
+    pub fn get_dry_operations(&self) -> Vec<JsValue> {
+        self.0
+            .get_dry_operations()
+            .iter()
+            .map(|operation| match operation {
+                Operation::PreCalculated(operation) => {
+                    PreCalculatedOperationWasm::from(operation.to_owned()).into()
+                }
+                Operation::Read(operation) => ReadOperationWasm::from(operation.to_owned()).into(),
+                Operation::SignatureVerification(operation) => {
+                    SignatureVerificationOperationWasm::from(operation.to_owned()).into()
+                }
+            })
+            .collect()
+    }
+
     #[wasm_bindgen(js_name=getOperations)]
     pub fn get_operation(&self) -> Vec<JsValue> {
-        let operations = self.0.get_operations();
-        operations
+        self.0
+            .get_operations()
             .iter()
             .map(|operation| match operation {
                 Operation::PreCalculated(operation) => {

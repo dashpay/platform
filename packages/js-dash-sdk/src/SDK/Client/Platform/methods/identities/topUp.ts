@@ -1,4 +1,4 @@
-import Identifier from '@dashevo/dpp/lib/Identifier';
+import { Identifier } from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
 
 import broadcastStateTransition from '../../broadcastStateTransition';
@@ -16,6 +16,7 @@ export async function topUp(
   identityId: Identifier | string,
   amount: number,
 ): Promise<any> {
+  this.logger.debug(`[Identity#topUp] Top up identity ${identityId.toString()} with amount ${amount}`);
   await this.initialize();
 
   const { client } = this;
@@ -32,15 +33,21 @@ export async function topUp(
 
   // Broadcast Asset Lock transaction
   await account.broadcastTransaction(assetLockTransaction);
+  this.logger.silly(`[Identity#topUp] Broadcasted asset lock transaction "${assetLockTransaction.hash}"`);
   // Create a proof for the asset lock transaction
   const assetLockProof = await this.identities.utils
     .createAssetLockProof(assetLockTransaction, assetLockOutputIndex);
+  this.logger.silly(`[Identity#topUp] Created asset lock proof with tx "${assetLockTransaction.hash}"`);
 
   const identityTopUpTransition = await this.identities.utils
     .createIdentityTopUpTransition(assetLockProof, assetLockPrivateKey, identityId);
+  this.logger.silly(`[Identity#register] Created IdentityTopUpTransition with asset lock tx "${assetLockTransaction.hash}"`);
 
-  // Broadcast ST
-  await broadcastStateTransition(this, identityTopUpTransition);
+  // Skipping validation because it's already done in createIdentityTopUpTransition
+  await broadcastStateTransition(this, identityTopUpTransition, {
+    skipValidation: true,
+  });
+  this.logger.silly('[Identity#register] Broadcasted IdentityTopUpTransition');
 
   return true;
 }

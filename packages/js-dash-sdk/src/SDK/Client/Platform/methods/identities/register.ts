@@ -25,19 +25,24 @@ export default async function register(
     outputIndex: assetLockOutputIndex,
   } = await this.identities.utils.createAssetLockTransaction(fundingAmount);
 
-  this.logger.silly(`[Identity#register] Broadcast asset lock transaction "${assetLockTransaction.hash}"`);
   // Broadcast Asset Lock transaction
   await account.broadcastTransaction(assetLockTransaction);
+  this.logger.silly(`[Identity#register] Broadcasted asset lock transaction "${assetLockTransaction.hash}"`);
 
-  this.logger.silly(`[Identity#register] Wait for asset lock proof "${assetLockTransaction.hash}"`);
   const assetLockProof = await this.identities.utils
     .createAssetLockProof(assetLockTransaction, assetLockOutputIndex);
+  this.logger.silly(`[Identity#register] Created asset lock proof with tx "${assetLockTransaction.hash}"`);
 
   const { identity, identityCreateTransition, identityIndex } = await this.identities.utils
     .createIdentityCreateTransition(assetLockProof, assetLockPrivateKey);
 
-  this.logger.silly('[Identity#register] Broadcast identity create ST"');
-  await broadcastStateTransition(this, identityCreateTransition);
+  this.logger.silly(`[Identity#register] Created IdentityCreateTransition with asset lock tx "${assetLockTransaction.hash}"`);
+
+  // Skipping validation because it's already done in createIdentityCreateTransition
+  await broadcastStateTransition(this, identityCreateTransition, {
+    skipValidation: true,
+  });
+  this.logger.silly('[Identity#register] Broadcasted IdentityCreateTransition');
 
   // If state transition was broadcast without any errors, import identity to the account
   account.storage

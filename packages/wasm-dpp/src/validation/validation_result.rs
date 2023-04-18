@@ -48,6 +48,11 @@ impl ValidationResultWasm {
     }
 
     #[wasm_bindgen(js_name=getErrors)]
+    pub fn get_errors(&self) -> Vec<JsValue> {
+        self.0.errors.iter().map(from_consensus_error_ref).collect()
+    }
+
+    #[wasm_bindgen(getter)]
     pub fn errors(&self) -> Vec<JsValue> {
         self.0.errors.iter().map(from_consensus_error_ref).collect()
     }

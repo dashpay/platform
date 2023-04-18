@@ -64,9 +64,14 @@ impl DocumentFacadeWasm {
     pub async fn create_from_object(
         &self,
         raw_document: JsValue,
-        options: JsValue,
+        options: Option<js_sys::Object>,
     ) -> Result<ExtendedDocumentWasm, JsValue> {
-        self.factory.create_from_object(raw_document, options).await
+        self.factory
+            .create_from_object(
+                raw_document,
+                options.map(Into::into).unwrap_or(JsValue::undefined()),
+            )
+            .await
     }
 
     /// Creates Document form bytes
@@ -74,9 +79,14 @@ impl DocumentFacadeWasm {
     pub async fn create_from_buffer(
         &self,
         bytes: Vec<u8>,
-        options: JsValue,
+        options: Option<js_sys::Object>,
     ) -> Result<ExtendedDocumentWasm, JsValue> {
-        self.factory.create_from_buffer(bytes, &options).await
+        self.factory
+            .create_from_buffer(
+                bytes,
+                &options.map(Into::into).unwrap_or(JsValue::undefined()),
+            )
+            .await
     }
 
     /// Creates Documents State Transition

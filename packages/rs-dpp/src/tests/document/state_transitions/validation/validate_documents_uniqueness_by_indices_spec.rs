@@ -82,7 +82,7 @@ async fn should_return_valid_result_if_document_has_unique_indices_and_there_are
         ..
     } = setup_test();
     let william_doc = extended_documents[3].clone();
-    let owner_id_base58 = owner_id.to_string(Encoding::Base58);
+    let owner_id_buffer = owner_id.to_buffer();
     let mut state_repository_mock = MockStateRepositoryLike::default();
     let document_transitions =
         get_document_transitions_fixture([(Action::Create, vec![william_doc.clone()])]);
@@ -95,7 +95,7 @@ async fn should_return_valid_result_if_document_has_unique_indices_and_there_are
             predicate::eq("indexedDocument"),
             predicate::eq(platform_value!({
                "where" : [
-                ["$ownerId", "==", owner_id_base58 ],
+                ["$ownerId", "==", owner_id_buffer ],
                 ["firstName", "==", william_doc.get("firstName").unwrap()],
                ],
             })),
@@ -111,7 +111,7 @@ async fn should_return_valid_result_if_document_has_unique_indices_and_there_are
             predicate::eq("indexedDocument"),
             predicate::eq(platform_value!({
                "where" : [
-                ["$ownerId", "==", owner_id_base58 ],
+                ["$ownerId", "==", owner_id_buffer ],
                 ["lastName", "==", william_doc.get("lastName").unwrap()],
                ],
             })),
@@ -141,7 +141,7 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
     } = setup_test();
     let william_doc = extended_documents[3].clone();
     let leon_doc = extended_documents[4].clone();
-    let owner_id_base58 = owner_id.to_string(Encoding::Base58);
+    let owner_id_buffer = owner_id.to_buffer();
     let mut state_repository_mock = MockStateRepositoryLike::default();
     let document_transitions = get_document_transitions_fixture([(
         Action::Create,
@@ -156,7 +156,7 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
             predicate::eq("indexedDocument"),
             predicate::eq(platform_value!({
                "where" : [
-                ["$ownerId", "==", owner_id_base58 ],
+                ["$ownerId", "==", owner_id_buffer ],
                 ["firstName", "==", william_doc.get("firstName").unwrap()],
                ],
             })),
@@ -172,7 +172,7 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
             predicate::eq("indexedDocument"),
             predicate::eq(platform_value!({
                "where" : [
-                ["$ownerId", "==", owner_id_base58 ],
+                ["$ownerId", "==", owner_id_buffer ],
                 ["lastName", "==", william_doc.get("lastName").unwrap()],
                ],
             })),
@@ -188,7 +188,7 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
             predicate::eq("indexedDocument"),
             predicate::eq(platform_value!({
                "where" : [
-                ["$ownerId", "==", owner_id_base58 ],
+                ["$ownerId", "==", owner_id_buffer ],
                 ["firstName", "==", leon_doc.get("firstName").unwrap()],
                ],
             })),
@@ -204,7 +204,7 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
             predicate::eq("indexedDocument"),
             predicate::eq(platform_value!({
                "where" : [
-                ["$ownerId", "==", owner_id_base58 ],
+                ["$ownerId", "==", owner_id_buffer ],
                 ["lastName", "==", leon_doc.get("lastName").unwrap()],
                ],
             })),
@@ -346,7 +346,7 @@ async fn should_return_valid_result_if_document_has_undefined_field_from_index()
     let indexed_document = extended_documents[7].clone();
     let document_transitions =
         get_document_transitions_fixture([(Action::Create, vec![indexed_document.clone()])]);
-    let owner_id_base58 = owner_id.to_string(Encoding::Base58);
+    let owner_id_buffer = owner_id.to_buffer();
     let mut state_repository_mock = MockStateRepositoryLike::default();
 
     let expect_document: Document = indexed_document.to_owned().document;
@@ -357,7 +357,7 @@ async fn should_return_valid_result_if_document_has_undefined_field_from_index()
             predicate::eq("indexedDocument"),
             predicate::eq(platform_value!({
                "where" : [
-                ["$ownerId", "==", owner_id_base58 ],
+                ["$ownerId", "==", owner_id_buffer ],
                 ["firstName", "==", indexed_document.get("firstName").unwrap()],
                ],
             })),
@@ -373,7 +373,7 @@ async fn should_return_valid_result_if_document_has_undefined_field_from_index()
             predicate::eq("indexedDocument"),
             predicate::eq(platform_value!({
                "where" : [
-                ["$ownerId", "==", owner_id_base58 ],
+                ["$ownerId", "==", owner_id_buffer ],
                 ["lastName", "==", indexed_document.get("lastName").unwrap()],
                ],
             })),

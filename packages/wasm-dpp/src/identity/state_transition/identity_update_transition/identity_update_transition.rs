@@ -23,7 +23,7 @@ use dpp::consensus::ConsensusError::SignatureError as ConsensusSignatureErrorVar
 
 use dpp::consensus::ConsensusError;
 use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
-use dpp::identity::{KeyID, TimestampMillis};
+use dpp::identity::{KeyID, KeyType, TimestampMillis};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{string_encoding, BinaryData, Value};
 use dpp::prelude::Revision;
@@ -424,12 +424,24 @@ impl IdentityUpdateTransitionWasm {
         &mut self,
         private_key: Vec<u8>,
         key_type: u8,
-        bls: JsBlsAdapter,
+        bls: Option<JsBlsAdapter>,
     ) -> Result<(), JsValue> {
-        let bls_adapter = BlsAdapter(bls);
         let key_type = key_type
             .try_into()
             .map_err(|e: anyhow::Error| e.to_string())?;
+
+        if bls.is_none() && key_type == KeyType::BLS12_381 {
+            return Err(JsError::new(
+                format!("BLS adapter is required for BLS key type '{}'", key_type).as_str(),
+            )
+            .into());
+        }
+
+        let bls_adapter = if let Some(adapter) = bls {
+            BlsAdapter(adapter)
+        } else {
+            BlsAdapter(JsValue::undefined().into())
+        };
 
         self.0
             .sign_by_private_key(private_key.as_slice(), key_type, &bls_adapter)

@@ -76,5 +76,8 @@
     "engine.io": "^6.2.1",
     "ua-parser-js": "^1.0.33",
     "dns-packet": "^5.4.0"
+  },
+  "dependencies": {
+    "node-gyp": "^9.3.1"
   }
 }
