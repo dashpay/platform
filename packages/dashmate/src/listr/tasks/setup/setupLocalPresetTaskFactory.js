@@ -17,8 +17,7 @@ const deriveTenderdashNodeId = require('../../../tenderdash/deriveTenderdashNode
  * @param {obtainSelfSignedCertificateTask} obtainSelfSignedCertificateTask
  * @param {resolveDockerHostIp} resolveDockerHostIp
  * @param {configFileRepository} configFileRepository
- * @param {generateHDPrivateKeys} generateHDPrivateKeys
- * @param {configureContractsPrivateKeysTask} configureContractsPrivateKeysTask
+ * @param {generateSystemDataContractKeysTask} generateSystemDataContractKeysTask
  */
 function setupLocalPresetTaskFactory(
   configFile,
@@ -27,8 +26,7 @@ function setupLocalPresetTaskFactory(
   configureTenderdashTask,
   resolveDockerHostIp,
   configFileRepository,
-  generateHDPrivateKeys,
-  configureContractsPrivateKeysTask,
+  generateSystemDataContractKeysTask,
 ) {
   /**
    * @typedef {setupLocalPresetTask}
@@ -105,61 +103,6 @@ function setupLocalPresetTaskFactory(
 
           const network = ctx.configGroup[0].get('network');
 
-          const {
-            hdPrivateKey: dpnsPrivateKey,
-            derivedPrivateKeys: [
-              dpnsDerivedMasterPrivateKey,
-              dpnsDerivedSecondPrivateKey,
-            ],
-          } = await generateHDPrivateKeys(network, [0, 1]);
-
-          const {
-            hdPrivateKey: featureFlagsPrivateKey,
-            derivedPrivateKeys: [
-              featureFlagsDerivedMasterPrivateKey,
-              featureFlagsDerivedSecondPrivateKey,
-            ],
-          } = await generateHDPrivateKeys(network, [0, 1]);
-
-          const {
-            hdPrivateKey: dashpayPrivateKey,
-            derivedPrivateKeys: [
-              dashpayDerivedMasterPrivateKey,
-              dashpayDerivedSecondPrivateKey,
-            ],
-          } = await generateHDPrivateKeys(network, [0, 1]);
-
-          const {
-            hdPrivateKey: withdrawalsPrivateKey,
-            derivedPrivateKeys: [
-              withdrawalsDerivedMasterPrivateKey,
-              withdrawalsDerivedSecondPrivateKey,
-            ],
-          } = await generateHDPrivateKeys(network, [0, 1]);
-
-          const {
-            hdPrivateKey: masternodeRewardSharesPrivateKey,
-            derivedPrivateKeys: [
-              masternodeRewardSharesDerivedMasterPrivateKey,
-              masternodeRewardSharesDerivedSecondPrivateKey,
-            ],
-          } = await generateHDPrivateKeys(network, [0, 1]);
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `DPNS Private Key: ${dpnsPrivateKey.toString()}`;
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `Feature Flags Private Key: ${featureFlagsPrivateKey.toString()}`;
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `Dashpay Private Key: ${dashpayPrivateKey.toString()}`;
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `Masternode Reward Shares Private Key: ${masternodeRewardSharesPrivateKey.toString()}`;
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `Withdrawals Private Key: ${withdrawalsPrivateKey.toString()}`;
-
           const subTasks = ctx.configGroup.map((config, i) => (
             {
               title: `Create ${config.getName()} config`,
@@ -228,7 +171,7 @@ function setupLocalPresetTaskFactory(
 
                   config.set('dashmate.helper.api.port', config.get('dashmate.helper.api.port') + (i * 100));
 
-                  return configureContractsPrivateKeysTask(config, network);
+                  return generateSystemDataContractKeysTask(config, network);
                 }
               },
               options: {

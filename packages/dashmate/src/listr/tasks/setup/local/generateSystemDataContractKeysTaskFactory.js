@@ -4,14 +4,14 @@ const { Listr } = require('listr2');
  * @param {generateHDPrivateKeys} generateHDPrivateKeys
  * @return {configureTenderdashTask}
  */
-function configureContractsPrivateKeysTaskFactory(generateHDPrivateKeys) {
+function generateSystemDataContractKeysTaskFactory(generateHDPrivateKeys) {
   /**
    * @typedef {configureTenderdashTask}
    * @return {Listr}
    * @param config
    * @param network
    */
-  function configureContractsPrivateKeysTask(config, network) {
+  function generateSystemDataContractKeysTask(config, network) {
     return new Listr([
       {
         task: async (ctx, task) => {
@@ -79,7 +79,7 @@ function configureContractsPrivateKeysTaskFactory(generateHDPrivateKeys) {
     ]);
   }
 
-  return configureContractsPrivateKeysTask;
+  return generateSystemDataContractKeysTask;
 }
 
-module.exports = configureContractsPrivateKeysTaskFactory;
+module.exports = generateSystemDataContractKeysTaskFactory;
