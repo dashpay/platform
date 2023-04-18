@@ -1,10 +1,11 @@
-use crate::error::data_trigger::DataTriggerError;
+use crate::error::execution::ExecutionError;
+use crate::error::Error;
 use crate::execution::data_trigger::dashpay_data_triggers::property_names::CORE_HEIGHT_CREATED_AT;
 use crate::execution::data_trigger::{DataTriggerExecutionContext, DataTriggerExecutionResult};
+use dpp::document::document_transition::DocumentTransitionAction;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::Identifier;
-use dpp::prelude::DocumentTransition;
-use crate::error::Error;
+use dpp::{get_from_transition_action, DataTriggerActionError, ProtocolError};
 
 const BLOCKS_SIZE_WINDOW: u32 = 8;
 mod property_names {
@@ -14,7 +15,7 @@ mod property_names {
 }
 
 pub fn create_contact_request_data_trigger<'a>(
-    document_transition: &DocumentTransition,
+    document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'a>,
     _: Option<&Identifier>,
 ) -> Result<DataTriggerExecutionResult, Error> {
@@ -23,45 +24,42 @@ pub fn create_contact_request_data_trigger<'a>(
     let owner_id = context.owner_id;
 
     let document_create_transition = match document_transition {
-        DocumentTransition::Create(d) => d,
-        _ => bail!(
-            "the Document Transition {} isn't 'CREATE",
-            get_from_transition!(document_transition, id)
-        ),
+        DocumentTransitionAction::CreateAction(d) => d,
+        _ => {
+            return Err(Error::Execution(ExecutionError::DataTriggerExecutionError(
+                format!(
+                    "the Document Transition {} isn't 'CREATE",
+                    get_from_transition_action!(document_transition, id)
+                ),
+            )))
+        }
     };
-    let data = document_create_transition.data.as_ref().ok_or_else(|| {
-        anyhow!(
-            "data isn't defined in Data Transition {}",
-            document_create_transition.base.id
-        )
-    })?;
+    let data = &document_create_transition.data;
 
     let maybe_core_height_created_at: Option<u32> = data
         .get_optional_integer(CORE_HEIGHT_CREATED_AT)
         .map_err(ProtocolError::ValueError)?;
-    let to_user_id = data.get_identifier(property_names::TO_USER_ID)?;
+    let to_user_id = data
+        .get_identifier(property_names::TO_USER_ID)
+        .map_err(ProtocolError::ValueError)?;
 
     if !is_dry_run {
         if owner_id == &to_user_id {
-            let err = DataTriggerError::DataTriggerConditionError {
+            let err = DataTriggerActionError::DataTriggerConditionError {
                 data_contract_id: context.data_contract.id,
                 document_transition_id: document_create_transition.base.id,
                 message: format!("Identity {to_user_id} must not be equal to owner id"),
-                document_transition: Some(DocumentTransition::Create(
+                document_transition: Some(DocumentTransitionAction::CreateAction(
                     document_create_transition.clone(),
                 )),
                 owner_id: Some(*context.owner_id),
             };
-            result.add_error(err.into());
+            result.add_error(err);
             return Ok(result);
         }
 
         if let Some(core_height_created_at) = maybe_core_height_created_at {
-            let core_chain_locked_height = context
-                .state_repository
-                .fetch_latest_platform_core_chain_locked_height()?
-                // is unwrap_or_default necessary?
-                .unwrap_or_default();
+            let core_chain_locked_height = context.platform.state.core_height();
 
             let height_window_start = core_chain_locked_height.saturating_sub(BLOCKS_SIZE_WINDOW);
             let height_window_end = core_chain_locked_height.saturating_add(BLOCKS_SIZE_WINDOW);
@@ -69,41 +67,41 @@ pub fn create_contact_request_data_trigger<'a>(
             if core_height_created_at < height_window_start
                 || core_height_created_at > height_window_end
             {
-                let err = DataTriggerError::DataTriggerConditionError {
+                let err = DataTriggerActionError::DataTriggerConditionError {
                     data_contract_id: context.data_contract.id,
                     document_transition_id: document_create_transition.base.id,
                     message: format!(
                         "Core height {} is out of block height window from {} to {}",
                         core_height_created_at, height_window_start, height_window_end
                     ),
-                    document_transition: Some(DocumentTransition::Create(
+                    document_transition: Some(DocumentTransitionAction::CreateAction(
                         document_create_transition.clone(),
                     )),
                     owner_id: Some(*context.owner_id),
                 };
-                result.add_error(err.into());
+                result.add_error(err);
                 return Ok(result);
             }
         }
     }
 
     //  toUserId identity exits
-    let identity = context.state_repository.fetch_identity(
-        &to_user_id.into(),
-        Some(context.state_transition_execution_context),
-    )?;
+    let identity = context
+        .platform
+        .drive
+        .fetch_identity_balance(to_user_id.to_buffer(), context.transaction)?;
 
     if !is_dry_run && identity.is_none() {
-        let err = DataTriggerError::DataTriggerConditionError {
+        let err = DataTriggerActionError::DataTriggerConditionError {
             data_contract_id: context.data_contract.id,
             document_transition_id: document_create_transition.base.id,
             message: format!("Identity {to_user_id} doesn't exist"),
-            document_transition: Some(DocumentTransition::Create(
+            document_transition: Some(DocumentTransitionAction::CreateAction(
                 document_create_transition.clone(),
             )),
             owner_id: Some(*context.owner_id),
         };
-        result.add_error(err.into());
+        result.add_error(err);
         return Ok(result);
     }
 
@@ -255,10 +253,10 @@ mod test {
         .expect("data trigger result should be returned");
 
         assert!(!result.is_ok());
-        let data_trigger_error = get_data_trigger_error_from_execution_result(&result, 0);
+        let data_trigger_error = &result.errors[0];
 
         assert!(matches!(
-            &data_trigger_error,
+            data_trigger_error,
             &DataTriggerError::DataTriggerConditionError { message, .. }  if {
                 message == &format!("Identity {contract_request_to_user_id} doesn't exist")
 

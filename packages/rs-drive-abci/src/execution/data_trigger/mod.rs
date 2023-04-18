@@ -1,11 +1,12 @@
-use crate::error::data_trigger::DataTriggerError;
 use crate::error::Error;
 pub use data_trigger_execution_context::*;
-use dpp::document::document_transition::{Action, DocumentCreateTransition};
-use dpp::get_from_transition;
+use dpp::document::document_transition::{
+    Action, DocumentCreateTransition, DocumentCreateTransitionAction, DocumentTransitionAction,
+};
 use dpp::platform_value::Identifier;
 use dpp::prelude::DocumentTransition;
 use dpp::validation::SimpleValidationResult;
+use dpp::{get_from_transition, get_from_transition_action, DataTriggerActionError, StateError};
 pub use reject_data_trigger::*;
 
 use self::dashpay_data_triggers::create_contact_request_data_trigger;
@@ -34,7 +35,7 @@ macro_rules! check_data_trigger_validation_result {
     };
 }
 
-pub type DataTriggerExecutionResult = SimpleValidationResult<DataTriggerError>;
+pub type DataTriggerExecutionResult = SimpleValidationResult<DataTriggerActionError>;
 
 #[derive(Debug, Clone, Copy)]
 pub enum DataTriggerKind {
@@ -87,7 +88,7 @@ impl DataTrigger {
 
     pub fn execute<'a>(
         &self,
-        document_transition: &DocumentTransition,
+        document_transition: &DocumentTransitionAction,
         context: &DataTriggerExecutionContext<'a>,
     ) -> DataTriggerExecutionResult {
         let mut result = DataTriggerExecutionResult::default();
@@ -103,15 +104,15 @@ impl DataTrigger {
 
         match maybe_execution_result {
             Err(err) => {
-                let consensus_error = DataTriggerError::DataTriggerExecutionError {
+                let consensus_error = DataTriggerActionError::DataTriggerExecutionError {
                     data_contract_id,
-                    document_transition_id: *get_from_transition!(document_transition, id),
+                    document_transition_id: *get_from_transition_action!(document_transition, id),
                     message: err.to_string(),
-                    execution_error: err,
+                    execution_error: err.to_string(),
                     document_transition: None,
                     owner_id: None,
                 };
-                result.add_error(consensus_error.into());
+                result.add_error(consensus_error);
                 result
             }
 
@@ -122,7 +123,7 @@ impl DataTrigger {
 
 fn execute_trigger<'a>(
     trigger_kind: DataTriggerKind,
-    document_transition: &DocumentTransition,
+    document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'a>,
     identifier: Option<&Identifier>,
 ) -> Result<DataTriggerExecutionResult, Error> {
@@ -150,14 +151,14 @@ fn execute_trigger<'a>(
 
 fn create_error(
     context: &DataTriggerExecutionContext,
-    dt_create: &DocumentCreateTransition,
+    dt_create: &DocumentCreateTransitionAction,
     msg: String,
-) -> DataTriggerError {
-    DataTriggerError::DataTriggerConditionError {
+) -> DataTriggerActionError {
+    DataTriggerActionError::DataTriggerConditionError {
         data_contract_id: context.data_contract.id,
         document_transition_id: dt_create.base.id,
         message: msg,
         owner_id: Some(*context.owner_id),
-        document_transition: Some(DocumentTransition::Create(dt_create.clone())),
+        document_transition: Some(DocumentTransitionAction::CreateAction(dt_create.clone())),
     }
 }

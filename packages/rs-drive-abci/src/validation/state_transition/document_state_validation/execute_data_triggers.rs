@@ -2,12 +2,13 @@ use crate::execution::data_trigger::get_data_triggers_factory::{data_triggers, g
 use crate::execution::data_trigger::{
     DataTrigger, DataTriggerExecutionContext, DataTriggerExecutionResult,
 };
+use dpp::document::document_transition::DocumentTransitionAction;
 use dpp::prelude::DocumentTransition;
 use dpp::ProtocolError;
 use drive::drive::Drive;
 
 pub fn execute_data_triggers<'a>(
-    document_transitions: &[&DocumentTransition],
+    document_transitions: &[DocumentTransitionAction],
     context: &DataTriggerExecutionContext<'a>,
 ) -> Result<Vec<DataTriggerExecutionResult>, ProtocolError> {
     let data_triggers_list = data_triggers()?;
@@ -15,7 +16,7 @@ pub fn execute_data_triggers<'a>(
 }
 
 pub fn execute_data_triggers_with_custom_list<'a>(
-    document_transitions: &[&DocumentTransition],
+    document_transitions: &[DocumentTransitionAction],
     context: &DataTriggerExecutionContext<'a>,
     data_triggers_list: impl IntoIterator<Item = DataTrigger>,
 ) -> Result<Vec<DataTriggerExecutionResult>, ProtocolError> {
@@ -24,13 +25,12 @@ pub fn execute_data_triggers_with_custom_list<'a>(
     let data_triggers: Vec<DataTrigger> = data_triggers_list.into_iter().collect();
 
     for document_transition in document_transitions {
-        let document_transition = document_transition.as_ref();
-        let document_type = &document_transition.base().document_type_name;
-        let transition_action = document_transition.base().action;
+        let document_type_name = &document_transition.base().document_type_name;
+        let transition_action = document_transition.action();
 
         let data_triggers_for_transition = get_data_triggers(
             data_contract_id,
-            document_type,
+            document_type_name,
             transition_action,
             data_triggers.iter(),
         )?;
@@ -51,7 +51,7 @@ pub fn execute_data_triggers_with_custom_list<'a>(
 }
 
 fn execute_data_triggers_sequentially<'a>(
-    document_transition: &'a DocumentTransition,
+    document_transition: &'a DocumentTransitionAction,
     data_triggers: &[&DataTrigger],
     context: &DataTriggerExecutionContext<'a>,
     results: &'a mut Vec<DataTriggerExecutionResult>,

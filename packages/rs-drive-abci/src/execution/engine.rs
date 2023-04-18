@@ -13,14 +13,12 @@ use drive::error::Error::GroveDB;
 use drive::fee::result::FeeResult;
 use drive::grovedb::{Transaction, TransactionArg};
 use std::collections::BTreeMap;
-use tenderdash_abci::proto::abci::{ExecTxResult, RequestFinalizeBlock};
+use tenderdash_abci::proto::abci::ExecTxResult;
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
-use tenderdash_abci::proto::types::Block;
 
 use crate::abci::signature_verifier::SignatureVerifier;
 use crate::abci::withdrawal::WithdrawalTxs;
 use crate::abci::AbciError;
-use crate::abci::AbciError::BlsError;
 use crate::block::{BlockExecutionContext, BlockStateInfo};
 use crate::error::execution::ExecutionError;
 use crate::error::Error;

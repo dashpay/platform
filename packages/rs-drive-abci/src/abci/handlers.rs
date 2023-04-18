@@ -34,8 +34,6 @@
 
 use crate::abci::server::AbciApplication;
 use crate::rpc::core::CoreRPCLike;
-use dashcore::hashes::Hash;
-use dashcore::ProTxHash;
 use drive::fee::credits::SignedCredits;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;

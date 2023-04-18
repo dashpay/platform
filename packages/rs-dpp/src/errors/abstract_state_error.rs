@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 use crate::prelude::Revision;
-use crate::{identity::KeyID, prelude::Identifier};
+use crate::{DataTriggerActionError, identity::KeyID, prelude::Identifier};
 
 use super::DataTriggerError;
 
@@ -53,6 +53,9 @@ pub enum StateError {
     #[error(transparent)]
     DataTriggerError(Box<DataTriggerError>),
 
+    #[error(transparent)]
+    DataTriggerActionError(Box<DataTriggerActionError>),
+
     #[error(
         "Identity {identity_id} has invalid revision. The current revision is {current_revision}"
     )]
@@ -95,5 +98,11 @@ pub enum StateError {
 impl From<DataTriggerError> for StateError {
     fn from(v: DataTriggerError) -> Self {
         StateError::DataTriggerError(Box::new(v))
+    }
+}
+
+impl From<DataTriggerActionError> for StateError {
+    fn from(v: DataTriggerActionError) -> Self {
+        StateError::DataTriggerActionError(Box::new(v))
     }
 }

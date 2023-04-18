@@ -13,9 +13,6 @@ pub mod execution;
 /// Serialization errors module
 pub mod serialization;
 
-/// Data trigger errors module
-pub mod data_trigger;
-
 /// Errors
 #[derive(Debug, thiserror::Error)]
 pub enum Error {

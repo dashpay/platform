@@ -1,76 +1,97 @@
-use crate::error::data_trigger::DataTriggerError;
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use dpp::contracts::withdrawals_contract;
+use dpp::data_contract::DriveContractExt;
+use dpp::document::document_transition::DocumentTransitionAction;
 use dpp::document::Document;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-use dpp::platform_value::{platform_value, Identifier};
+use dpp::platform_value::{platform_value, Identifier, Value};
 use dpp::prelude::DocumentTransition;
+use dpp::{get_from_transition, get_from_transition_action, DataTriggerActionError, ProtocolError};
+use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
+use std::collections::BTreeMap;
 use std::convert::TryInto;
 
 use crate::execution::data_trigger::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
 pub fn delete_withdrawal_data_trigger<'a>(
-    document_transition: &DocumentTransition,
+    document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'a>,
     _top_level_identity: Option<&Identifier>,
 ) -> Result<DataTriggerExecutionResult, Error> {
     let mut result = DataTriggerExecutionResult::default();
 
-    let DocumentTransition::Delete(dt_delete) = document_transition else {
-        bail!(
-            "the Document Transition {} isn't 'DELETE'",
-            get_from_transition!(document_transition, id)
-        );
+    let DocumentTransitionAction::DeleteAction(dt_delete) = document_transition else {
+        return Err(Error::Execution(ExecutionError::DataTriggerExecutionError(format!(
+            "the Document Transition {} isn't 'DELETE",
+            get_from_transition_action!(document_transition, id)
+        ))));
     };
 
-    let withdrawals_not_converted = context
-        .drive
-        .fetch_documents(
-            &context.data_contract.id,
-            withdrawals_contract::document_types::WITHDRAWAL,
-            platform_value!({
-                "where" : [
-                    ["$id", "==", dt_delete.base.id],
-                ]
-            }),
-            Some(context.state_transition_execution_context),
-        )
-        .await?;
+    let document_type = context
+        .data_contract
+        .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)?;
 
-    let withdrawals: Vec<Document> = withdrawals_not_converted
-        .into_iter()
-        .map(|d| d.try_into().map_err(Into::<ProtocolError>::into))
-        .collect::<Result<Vec<Document>, ProtocolError>>()?;
+    let drive_query = DriveQuery {
+        contract: &context.data_contract,
+        document_type,
+        internal_clauses: InternalClauses {
+            primary_key_in_clause: None,
+            primary_key_equal_clause: Some(WhereClause {
+                field: "$id".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Identifier(dt_delete.base.id.to_buffer()),
+            }),
+            in_clause: None,
+            range_clause: None,
+            equal_clauses: BTreeMap::default(),
+        },
+        offset: 0,
+        limit: 0,
+        order_by: Default::default(),
+        start_at: None,
+        start_at_included: false,
+        block_time: None,
+    };
+
+    let withdrawals = context
+        .platform
+        .drive
+        .query_documents(drive_query, None, context.transaction)?
+        .documents;
 
     let Some(withdrawal) = withdrawals.get(0) else {
-        let err = DataTriggerError::DataTriggerConditionError {
+        let err = DataTriggerActionError::DataTriggerConditionError {
             data_contract_id: context.data_contract.id,
             document_transition_id: dt_delete.base.id,
             message: "Withdrawal document was not found".to_string(),
             owner_id: Some(*context.owner_id),
-            document_transition: Some(DocumentTransition::Delete(dt_delete.clone())),
+            document_transition: Some(DocumentTransitionAction::DeleteAction(dt_delete.clone())),
         };
 
-        result.add_error(err.into());
+        result.add_error(err);
 
         return Ok(result);
     };
 
-    let status: u8 = withdrawal.properties.get_integer("status")?;
+    let status: u8 = withdrawal
+        .properties
+        .get_integer("status")
+        .map_err(ProtocolError::ValueError)?;
 
     if status != withdrawals_contract::WithdrawalStatus::COMPLETE as u8
         || status != withdrawals_contract::WithdrawalStatus::EXPIRED as u8
     {
-        let err = DataTriggerError::DataTriggerConditionError {
+        let err = DataTriggerActionError::DataTriggerConditionError {
             data_contract_id: context.data_contract.id,
             document_transition_id: dt_delete.base.id,
             message: "withdrawal deletion is allowed only for COMPLETE and EXPIRED statuses"
                 .to_string(),
             owner_id: Some(*context.owner_id),
-            document_transition: Some(DocumentTransition::Delete(dt_delete.clone())),
+            document_transition: Some(DocumentTransitionAction::DeleteAction(dt_delete.clone())),
         };
 
-        result.add_error(err.into());
+        result.add_error(err);
 
         return Ok(result);
     }
@@ -89,7 +110,8 @@ mod tests {
     use dpp::platform_value::platform_value;
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use dpp::system_data_contracts::load_system_data_contract;
-    use dpp::tests::fixtures::get_data_contract_fixture;
+    use dpp::tests::fixtures::{get_data_contract_fixture, get_withdrawal_document_fixture};
+    use drive::drive::Drive;
     use platform_value::platform_value;
 
     fn should_throw_error_if_withdrawal_not_found() {
@@ -107,13 +129,11 @@ mod tests {
             drive: &Drive {},
             data_contract: &data_contract,
             owner_id,
-            state_repository: &state_repository,
             state_transition_execution_context: &transition_execution_context,
         };
 
         let result =
             delete_withdrawal_data_trigger(&document_transition, &data_trigger_context, None)
-                .await
                 .expect("the execution result should be returned");
 
         assert!(!result.is_ok());
@@ -153,15 +173,14 @@ mod tests {
 
         let document_transition = DocumentTransition::Delete(Default::default());
         let data_trigger_context = DataTriggerExecutionContext {
+            drive: &Drive {},
             data_contract: &data_contract,
             owner_id: &owner_id,
-            state_repository: &state_repository,
             state_transition_execution_context: &transition_execution_context,
         };
 
         let result =
             delete_withdrawal_data_trigger(&document_transition, &data_trigger_context, None)
-                .await
                 .expect("the execution result should be returned");
 
         assert!(!result.is_ok());

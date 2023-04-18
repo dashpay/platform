@@ -2,7 +2,9 @@ use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 
 use crate::error::Error;
+use crate::execution::data_trigger::DataTriggerExecutionContext;
 use crate::platform::PlatformStateRef;
+use crate::validation::state_transition::document_state_validation::execute_data_triggers::execute_data_triggers;
 use crate::validation::state_transition::document_state_validation::fetch_documents::fetch_documents_for_transitions_knowing_contract_and_document_type;
 use dpp::consensus::basic::BasicError;
 use dpp::data_contract::document_type::DocumentType;
@@ -207,28 +209,36 @@ fn validate_document_transitions_within_document_type(
         ConsensusValidationResult::default()
     };
 
-    Ok(document_transition_actions_result)
+    if !document_transition_actions_result.is_valid() {
+        return Ok(document_transition_actions_result);
+    }
 
-    // let data_trigger_execution_context = DataTriggerExecutionContext {
-    //     drive,
-    //     owner_id: &owner_id,
-    //     data_contract: &data_contract,
-    //     state_transition_execution_context: execution_context,
-    // };
-    // let data_trigger_execution_results =
-    //     execute_data_triggers(document_transitions, &data_trigger_execution_context)?;
-    //
-    // for execution_result in data_trigger_execution_results.into_iter() {
-    //     if !execution_result.is_ok() {
-    //         return Ok(ConsensusValidationResult::new_with_errors(
-    //             execution_result
-    //                 .errors
-    //                 .into_iter()
-    //                 .map(ConsensusError::from)
-    //                 .collect(),
-    //         ));
-    //     }
-    // }
+    let document_transition_actions = document_transition_actions_result.into_data()?;
+
+    let data_trigger_execution_context = DataTriggerExecutionContext {
+        platform,
+        transaction,
+        owner_id: &owner_id,
+        data_contract: &data_contract,
+        state_transition_execution_context: execution_context,
+    };
+    let data_trigger_execution_results = execute_data_triggers(
+        document_transition_actions.as_slice(),
+        &data_trigger_execution_context,
+    )?;
+
+    for execution_result in data_trigger_execution_results.into_iter() {
+        if !execution_result.is_valid() {
+            return Ok(ConsensusValidationResult::new_with_errors(
+                execution_result
+                    .errors
+                    .into_iter()
+                    .map(|e| ConsensusError::StateError(Box::new(e.into())))
+                    .collect(),
+            ));
+        }
+    }
+    Ok(document_transition_actions_result)
 }
 
 fn validate_transition(

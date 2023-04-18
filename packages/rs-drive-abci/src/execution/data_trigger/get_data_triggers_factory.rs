@@ -16,14 +16,14 @@ use super::{DataTrigger, DataTriggerKind};
 /// returns Date Triggers filtered out by dataContractId, documentType, transactionAction
 pub fn get_data_triggers<'a>(
     data_contract_id: &'a Identifier,
-    document_type: &'a str,
+    document_type_name: &'a str,
     transition_action: Action,
     data_triggers_list: impl IntoIterator<Item = &'a DataTrigger>,
 ) -> Result<Vec<&'a DataTrigger>, ProtocolError> {
     Ok(data_triggers_list
         .into_iter()
         .filter(|dt| {
-            dt.is_matching_trigger_for_data(data_contract_id, document_type, transition_action)
+            dt.is_matching_trigger_for_data(data_contract_id, document_type_name, transition_action)
         })
         .collect())
 }

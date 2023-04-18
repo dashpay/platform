@@ -1,11 +1,19 @@
-use dpp::document::document_transition::DocumentCreateTransition;
+use dpp::data_contract::DriveContractExt;
+use dpp::document::document_transition::{
+    DocumentCreateTransition, DocumentCreateTransitionAction, DocumentTransitionAction,
+};
 use dpp::document::Document;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::string_encoding::Encoding;
-use dpp::platform_value::{platform_value, Identifier};
+use dpp::platform_value::{platform_value, Identifier, Value};
 use dpp::prelude::DocumentTransition;
+use dpp::{get_from_transition_action, ProtocolError};
+use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
+use std::collections::BTreeMap;
 
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::data_trigger::create_error;
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
@@ -15,34 +23,40 @@ const PROPERTY_PERCENTAGE: &str = "percentage";
 const MAX_DOCUMENTS: usize = 16;
 
 pub fn create_masternode_reward_shares_data_trigger<'a>(
-    document_create_transition: &DocumentCreateTransition,
+    document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'a>,
     _top_level_identifier: Option<&Identifier>,
 ) -> Result<DataTriggerExecutionResult, Error> {
     let mut result = DataTriggerExecutionResult::default();
     let is_dry_run = context.state_transition_execution_context.is_dry_run();
-    let owner_id = context.owner_id.to_string(Encoding::Base58);
 
-    let properties = document_create_transition.data.as_ref().ok_or_else(|| {
-        anyhow!(
-            "data isn't defined in Data Transition '{}'",
-            document_create_transition.base.id
-        )
-    })?;
+    let document_create_transition = match document_transition {
+        DocumentTransitionAction::CreateAction(d) => d,
+        _ => {
+            return Err(Error::Execution(ExecutionError::DataTriggerExecutionError(
+                format!(
+                    "the Document Transition {} isn't 'CREATE",
+                    get_from_transition_action!(document_transition, id)
+                ),
+            )))
+        }
+    };
 
-    let pay_to_id = properties.get_hash256_bytes(PROPERTY_PAY_TO_ID)?;
-    let percentage = properties.get_integer(PROPERTY_PERCENTAGE)?;
+    let properties = &document_create_transition.data;
+
+    let pay_to_id = properties
+        .get_hash256_bytes(PROPERTY_PAY_TO_ID)
+        .map_err(ProtocolError::ValueError)?;
+    let percentage = properties
+        .get_integer(PROPERTY_PERCENTAGE)
+        .map_err(ProtocolError::ValueError)?;
 
     if !is_dry_run {
-        // Do not allow creating document if ownerId is not in SML
-        let sml_store: SMLStore = context.state_repository.fetch_sml_store().await?;
+        let valid_masternodes_list = &context.platform.state.hpmn_masternode_list;
 
-        let valid_master_nodes_list = sml_store.get_current_sml()?.get_valid_master_nodes();
-
-        let owner_id_in_sml = valid_master_nodes_list.iter().any(|entry| {
-            hex::decode(&entry.pro_reg_tx_hash).expect("invalid hex value")
-                == context.owner_id.to_buffer()
-        });
+        let owner_id_in_sml = valid_masternodes_list
+            .get(context.owner_id.as_slice())
+            .is_some();
 
         if !owner_id_in_sml {
             let err = create_error(
@@ -50,38 +64,61 @@ pub fn create_masternode_reward_shares_data_trigger<'a>(
                 document_create_transition,
                 "Only masternode identities can share rewards".to_string(),
             );
-            result.add_error(err.into());
+            result.add_error(err);
         }
     }
 
-    // payToId identity exists
-    let pay_to_identifier = Identifier::from(pay_to_id);
-    let maybe_identity = context.state_repository.fetch_identity(
-        &pay_to_identifier,
-        Some(context.state_transition_execution_context),
-    )?;
+    let maybe_identity = context
+        .platform
+        .drive
+        .fetch_identity_balance(pay_to_id, context.transaction)?;
 
     if !is_dry_run && maybe_identity.is_none() {
         let err = create_error(
             context,
             document_create_transition,
-            format!("Identity '{}' doesn't exist", pay_to_identifier),
+            format!(
+                "Identity '{}' doesn't exist",
+                bs58::encode(pay_to_id).into_string()
+            ),
         );
-        result.add_error(err.into())
+        result.add_error(err);
     }
 
-    let documents_data = context.state_repository.fetch_documents(
-        &context.data_contract.id,
-        &document_create_transition.base.document_type_name,
-        platform_value!({
-            "where" : [ [ "$owner_id", "==", owner_id ]]
-        }),
-        Some(context.state_transition_execution_context),
-    )?;
-    let documents: Vec<Document> = documents_data
-        .into_iter()
-        .map(|d| d.try_into().map_err(Into::<ProtocolError>::into))
-        .collect::<Result<Vec<Document>, ProtocolError>>()?;
+    let document_type = context
+        .data_contract
+        .document_type_for_name(&document_create_transition.base.document_type_name)?;
+
+    let drive_query = DriveQuery {
+        contract: &context.data_contract,
+        document_type,
+        internal_clauses: InternalClauses {
+            primary_key_in_clause: None,
+            primary_key_equal_clause: None,
+            in_clause: None,
+            range_clause: None,
+            equal_clauses: BTreeMap::from([(
+                "$ownerId".to_string(),
+                WhereClause {
+                    field: "$ownerId".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Identifier(context.owner_id.to_buffer()),
+                },
+            )]),
+        },
+        offset: 0,
+        limit: 0,
+        order_by: Default::default(),
+        start_at: None,
+        start_at_included: false,
+        block_time: None,
+    };
+
+    let documents = context
+        .platform
+        .drive
+        .query_documents(drive_query, None, context.transaction)?
+        .documents;
 
     if is_dry_run {
         return Ok(result);
@@ -96,13 +133,16 @@ pub fn create_masternode_reward_shares_data_trigger<'a>(
                 MAX_DOCUMENTS
             ),
         );
-        result.add_error(err.into());
+        result.add_error(err);
         return Ok(result);
     }
 
     let mut total_percent: u64 = percentage;
     for d in documents.iter() {
-        total_percent += d.properties.get_integer::<u64>(PROPERTY_PERCENTAGE)?;
+        total_percent += d
+            .properties
+            .get_integer::<u64>(PROPERTY_PERCENTAGE)
+            .map_err(ProtocolError::ValueError)?;
     }
 
     if total_percent > MAX_PERCENTAGE {
@@ -111,7 +151,7 @@ pub fn create_masternode_reward_shares_data_trigger<'a>(
             document_create_transition,
             format!("Percentage can not be more than {}", MAX_PERCENTAGE),
         );
-        result.add_error(err.into());
+        result.add_error(err);
     }
 
     Ok(result)
@@ -159,7 +199,7 @@ mod test {
         data_contract: DataContract,
         sml_store: SMLStore,
         extended_documents: Vec<ExtendedDocument>,
-        document_create_transition: DocumentCreateTransition,
+        document_create_transition: DocumentCreateTransitionAction,
         identity: Identity,
     }
 
@@ -208,7 +248,7 @@ mod test {
             data_contract,
             top_level_identifier,
             sml_store,
-            document_create_transition,
+            document_create_transition: document_create_transition.into(),
             identity: Identity::default(),
         }
     }
