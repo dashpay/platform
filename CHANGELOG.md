@@ -1,3 +1,311 @@
+## [0.24.0-dev.20](https://github.com/dashpay/platform/compare/v0.24.0-dev.19...v0.24.0-dev.20) (2023-04-18)
+
+
+### Features
+
+* **dpp:** rework entropy generator to return Result
+* **drive:** handle quorum rotation failure ([#858](https://github.com/dashpay/platform/issues/858))
+* integrate `wasm-dpp` into `js-drive` ([#815](https://github.com/dashpay/platform/issues/815))
+* integrate consensus errors
+* **js-drive:** add fetchExtendedDocuments
+* **platform-test-suite:** prepare proofs.spec.js and waitForStateTransitionResult.spec.js
+* **sdk:** add wasm dpp module into Platform.ts
+* **sdk:** add wasm-dpp dep
+* **sdk:** document create and get with tests
+* **sdk:** port data contract publish to wasm-dpp
+* **sdk:** port identity topUp to wasm-dpp
+* **wallet-lib:** use wasm-dpp instead of dpp
+* **wasm-dpp:** add #toBuffer to identity_topup_transition.rs
+* **wasm-dpp:** add calculateStateTransitionFeeFromOperations
+* **wasm-dpp:** add clearDryOperations to execution context
+* **wasm-dpp:** add get_execution_context to data contract transitions
+* **wasm-dpp:** add getDryOperations to StateTransactionExecutionContext
+* **wasm-dpp:** add isDryRun to StateTransitionExecutionContext
+* **wasm-dpp:** add missing API funcitonal from dashplatform tutorial
+* **wasm-dpp:** add setType for ExtendedDocument
+* **wasm-dpp:** add toBuffer to identity_create_transition.rs
+* **wasm-dpp:** add toJSON to Operations
+* **wasm-dpp:** add toObject to Refunds
+* **wasm-dpp:** add verifySignature to data_contract_create_transition
+* **wasm-dpp:** addOperation and getOperations in state_transition_execution_context
+* **wasm-dpp:** make queueable wasm dpp loader (don't trigger bundle loading on multiple invocations)
+* **wasm-dpp:** optional `options` in createFrom* functions of facades
+* **wasm-dpp:** optional document definitions in data contract facade
+* **wasm-dpp:** optional metadata
+* **wasm-dpp:** provide external entropy generator for document_factory.rs
+* **wasm-dpp:** provide external entropy generator to dash_platform_protocol.rs
+* **wasm-dpp:** refactor parsing of fee refunds by PreCalculatedOperation
+* **wasm-dpp:** use js Data class instead on numbers
+* **wasm-dpp:** use wasm-dpp in document.broadcast and contract.get
+
+
+### Bug Fixes
+
+* **dapi-client:** buffer shim bug
+* **dpp:** basic validation for identity_update_transition if no keys to be added
+* **dpp:** identity transitions bugs
+* **dpp:** missing file
+* **dpp:** updated at is not set for document replace
+* flip DashPlatformProtocol arguments
+* invalid saltedDomainHash validation
+* invalid url format in json schemas
+* invalid url format in json schemas
+* **js-drive:** documentQueryHandlerFactory.js queries non extended document
+* **js-drive:** fees BigInt Number casting
+* **js-drive:** fix feeRefunds buffer conversion
+* **js-drive:** identifier toBuffer in proofs
+* **js-drive:** ignore wasm error args parsing and fix DI for fees functions
+* **js-drive:** missing dppWasm
+* **js-drive:** missing extended flag in DocumentRepository.js
+* **js-drive:** parsing of raw instant lock
+* **js-drive:** revert buffer conversion for instant lock
+* **js-drive:** StateRepository addKeysToIdentity conversion
+* **js-drive:** update execution context for state transitions
+* merge issues
+* negative fees
+* **rs-dpp:** fetch identity balance instead of identity in fee validator
+* **rs-dpp:** ignored mn reward shared trigger on create
+* **rs-dpp:** missing execution context in validate_documents_batch_transition_state.rs
+* **rs-dpp:** missing reward share replace data trigger
+* **rs-dpp:** missing signature in identity create transition
+* **rs-dpp:** wrong schema in PublicKeysValidator for IdentityCreateST basic validator
+* **rs-drive-nodejs:** decodeProtocolEntity and missing wasm Document type
+* **rs-drive-nodejs:** identity to Buffer
+* **rs-drive-nodejs:** refunds calculation
+* **sdk:** broadcastStateTransition error message
+* **sdk:** missing contract in ClientApps
+* **sdk:** missing identifier conversion in identity get
+* **sdk:** out point buffer tx id endianness
+* **sdk:** undefined Identifier
+* **sdk:** update DPP arguments
+* various issues after merge
+* **wasm-dpp:** add is_null checks to state_repository methods
+* **wasm-dpp:** additional identifier typings
+* **wasm-dpp:** calculate_operation_fees_wasm accept instances of operations
+* **wasm-dpp:** check for fetch instead of window
+* **wasm-dpp:** clean value of DataContractUpdateTransition
+* **wasm-dpp:** data contract move in create_data_contract_update_transition
+* **wasm-dpp:** data_contract_update_transition toObject
+* **wasm-dpp:** error on unimplemented ST methods instead of hanging
+* **wasm-dpp:** identity move in IdentityFacade#validate
+* **wasm-dpp:** identity panic
+* **wasm-dpp:** logger double init
+* **wasm-dpp:** non-optional bls in signByPrivateKey
+* **wasm-dpp:** provide entropy generator for DataContractFactory fixture
+* **wasm-dpp:** return buffer in getData for identity_public_key_transitions.rs
+* **wasm-dpp:** serialization of identity_id
+* **wasm-dpp:** wrong import path for EntropyGenerator
+
+
+### Build System
+
+* **dapi:** add build step for wasm-dpp
+* **dapi:** add rs-platform-value
+* **dapi:** build wasm-dpp
+* **dapi:** cache apt-get packages
+* **dapi:** fixed missing deps for wasm-dpp
+* **dashmate:** add deterministic instant send for dash core config
+* **dashmate:** add wasm-dpp
+* **dashmate:** fix cargo git issues
+* fix wasm-bindgen-cli installation
+* **js-drive:** remove Cargo.toml.template
+* optimise installation of wasm-bindgen-cli
+* optimized docker images
+* remove unused deps
+* revert unnecessary added wasm-dpp deps in Dockerfile
+* use random sscache ports
+* **wasm-dpp:** add missing @types/bs58
+* **wasm-dpp:** add missing deps
+* **wasm-dpp:** add missing lock file update
+* **wasm-dpp:** add separate ts build
+* **wasm-dpp:** fix build command
+* **wasm-dpp:** fix rootDir
+* **wasm-dpp:** fix versions
+* **wasm-dpp:** get rid of unnecessary webpack bundle
+* **wasm-dpp:** move bs58 to deps
+* **wasm-dpp:** replace webpack with tsc
+* **wasm-dpp:** rework building procedure to produce correct typescript types
+* **wasm-dpp:** rework entry point
+* **wasm-dpp:** update lock files
+
+
+### Tests
+
+* **dapi:** fix broken tests
+* **dapi:** replace dpp fixtures with wasm-dpp in `waitForStateTransitionResultHandlerFactory.spec.js`
+* **dapi:** use DashPlatformProtocol from wasm-dpp
+* **dapi:** use generateRandomIdentifierAsync from wasm-dpp
+* **dapi:** use getDataContractFixture from wasm-dpp
+* **dapi:** use getDocumentsFixture fromw wasm-dpp
+* **dapi:** use getIdentityFixture from wasm-dpp
+* **drive:** deplace dpp fixtures with wasm-dpp fixtures
+* **drive:** replace dpp fixtures with wasm-dpp fixtures
+* feature flags tests
+* fix broken tests
+* fix broken tests
+* **js-drive:** reduce required lines coverage percentage to 87%
+* **platform-test-suite:** Document tests error handling
+* **platform-test-suite:** enable contacts.spec.js
+* **platform-test-suite:** enable DataContract update
+* **platform-test-suite:** enable document delete in Document.spec.js
+* **platform-test-suite:** enable masternodeRewardShares.spec.js
+* **platform-test-suite:** fix Document spec greaterThan
+* **platform-test-suite:** fix legacy dpp calls
+* **platform-test-suite:** fix now timestamp
+* **platform-test-suite:** partially fix masternodeRewardShares.spec.js
+* **platform-test-suite:** remove todos
+* **rs-drive:** fix broken tests
+* **rs-drive:** fix broken tests
+* **rs-drive:** fix path to EntropyGenerator
+* **sdk:** add tsconfig.mocha.json config
+* **sdk:** enable basic identity creation tests
+* **sdk:** enable data contract creation tests
+* **sdk:** enable Document update
+* **sdk:** enable identity update
+* **sdk:** enable masternode identity tests
+* **sdk:** fix identity update for disable publickeys
+* **sdk:** fixed functional test
+* **sdk:** fixed unit tests
+* **sdk:** skip problematic document tests
+* **wasm-dpp:** add `getIdentityCreateTransitionFixture.js` and `getInstantAssetLockProofFixture.js`
+* **wasm-dpp:** add getIdentityFixture.js
+* **wasm-dpp:** add tests for TS typings
+* **wasm-dpp:** fix browser tests
+* **wasm-dpp:** fix DataContractFacade.spec.js
+* **wasm-dpp:** fix unit Document.spec.js
+* **wasm-dpp:** generateTemporaryEcdsaPrivateKey.spec.js
+* **wasm-dpp:** provide real entropy generator for `getDataContractFixture.js` and `getDocumentsFixture.js`
+* **wasm-dpp:** use wasmDpp facade in top up test
+
+
+### Code Refactoring
+
+* **dapi-client:** Wasm-dpp usage
+* **dapi:** cleanup remaining tobuffer issues
+* **dapi:** fix incorrect usage of loadWasmDpp
+* **dapi:** last unnecessary tobuffer hack
+* **dpp:** revert unnecessary changes
+* **dpp:** use the same state transition basic validator for both ST factory and facade
+* get rid of unnecessary setExecutionContext calls
+* **js-dash-sdk:** usage of primitives from wasm-dpp
+* **js-drive:** get rid of dppWasm
+* **js-drive:** port BlockExecutionContext.js to wasmDpp
+* **js-drive:** rename `createDataContract` to `storeDataContract` to match rs-dpp API
+* **platform-test-suite:** cleanup
+* **platform-test-suite:** use wasm-dpp primitives directly from package
+* replace storeDataContract with createDataaContract
+* **sdk:** generate private key with wasm-dpp
+* **sdk:** get rid of DPP classes in the src/
+* **sdk:** get rid of dpp instance
+* **sdk:** get rid of toBuffer hacks
+* **sdk:** identity#register with wasm-dpp
+* **sdk:** resolve todos
+* **sdk:** revert to original one time PrivateKey
+* **sdk:** review cleanups
+* **sdk:** use WASM-DPP for identity update transition
+* use temporary consensus error
+* **wasm-dpp:** cleanup identifier rs
+* **wasm-dpp:** extend DPP module with Identifier and IdentifierError
+* **wasm-dpp:** fix lint
+* **wasm-dpp:** get rid of hacky toObject conversion in ST basic validation
+* **wasm-dpp:** return private key string instead of bytes in generate_temporary_ecdsa_private_key.rs
+* **wasm-dpp:** TS Identifier
+* **wasm-dpp:** TS IdentifierError
+* **wasm-dpp:** update paths to loadWasmDpp
+* **wasm-dpp:** verifySignature return bool in documents_batch_transition
+
+
+### Styles
+
+* fix linter
+
+
+### Continuous Integration
+
+* fix docker login
+* remove inputs
+* remove inputs
+* self-hosted runners and cache ([#912](https://github.com/dashpay/platform/issues/912))
+
+
+### Miscellaneous Chores
+
+* add bls deps
+* consensus error logging fix
+* coverage
+* **dashmate:** hide dash import
+* **dashmate:** use local user and group to start envoy
+* **dashmate:** use read-only mounts for dashd and envoy
+* disable MN REWARD SHARES
+* document repo tests
+* dpp init
+* **dpp:** fix inconsistencies after merge
+* **drive:** ignore faulty quorum for rotation
+* empty commit to fix CI
+* empty commit to fix CI
+* enable skipped contract test
+* fix
+* fix
+* fix FeeResult#create
+* fix merge artifacts
+* fix minor issues
+* fixes
+* fixes
+* fixes
+* fixes
+* fixes
+* fixes
+* hacky eslint fix
+* integration tests
+* integration tests
+* invalid use of dppWasm
+* linter
+* linter
+* linter fix
+* make bls work
+* minor
+* minor issues
+* minor issues
+* minor issues
+* missing blsAdapter
+* more integration tests
+* more integration tests
+* more unit test fixes
+* more unit tests fix
+* more unit tests fixes
+* multiple operation add
+* operations call
+* pass BigInt using Buffer
+* patching
+* remove console logs
+* remove console logs
+* remove console.log
+* remove hack
+* remove toBuffer
+* remove TODOs
+* **rs-dpp:** add todo to create DC
+* **sdk:** add more logs
+* **sdk:** improved logs for identity register
+* **sdk:** linter
+* simple logging setup for dpp
+* some integration test fixes
+* try to add some sccache info
+* try to add some sccache info
+* try to enable sccache
+* trying things
+* unit test fix
+* unit test fix
+* unit test fix
+* unit test fix
+* unit tests fixed
+* update asserions for chai
+* update dependencies
+* update fee classes
+* use `toBuffer` in Drive
+* var fix
+* **wasm-dpp:** fix clean script
+* **wasm-dpp:** rework wasm identifier with JS identifier
+
 ## [0.24.0-dev.19](https://github.com/dashpay/platform/compare/v0.24.0-dev.18...v0.24.0-dev.19) (2023-04-17)
 
 ## [0.24.0-dev.18](https://github.com/dashpay/platform/compare/v0.24.0-dev.17...v0.24.0-dev.18) (2023-04-14)
