@@ -2342,7 +2342,7 @@ mod tests {
             .expect("should create decode contract from cbor");
 
         drive
-            .apply_contract(
+            .apply_contract_with_serialization(
                 &contract,
                 contract_cbor.clone(),
                 block_info.clone(),

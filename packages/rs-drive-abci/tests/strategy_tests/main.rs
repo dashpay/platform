@@ -329,7 +329,7 @@ impl Strategy {
                 OperationType::Document(doc_op) => {
                     let serialize = doc_op.contract.to_cbor().expect("expected to serialize");
                     drive
-                        .apply_contract(
+                        .apply_contract_with_serialization(
                             &doc_op.contract,
                             serialize,
                             BlockInfo::default(),
