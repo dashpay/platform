@@ -1,8 +1,8 @@
-use derive_more::From;
 use crate::document::document_transition::document_create_transition_action::DocumentCreateTransitionAction;
 use crate::document::document_transition::document_delete_transition_action::DocumentDeleteTransitionAction;
 use crate::document::document_transition::document_replace_transition_action::DocumentReplaceTransitionAction;
 use crate::document::document_transition::{Action, DocumentBaseTransitionAction};
+use derive_more::From;
 
 pub const DOCUMENT_TRANSITION_ACTION_VERSION: u32 = 0;
 

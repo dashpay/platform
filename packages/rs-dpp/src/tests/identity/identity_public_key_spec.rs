@@ -1,5 +1,4 @@
 mod from_raw_object {
-    use bls_signatures::Serialize;
     use dashcore::PublicKey;
     use platform_value::platform_value;
     use platform_value::BinaryData;
@@ -178,9 +177,12 @@ mod from_raw_object {
     #[test]
     pub fn should_return_hash_for_bls_public_key() {
         let private_key = [1u8; 32];
-        let bls_public_key = bls_signatures::PrivateKey::new(private_key)
-            .public_key()
-            .as_bytes();
+        let bls_public_key = bls_signatures::PrivateKey::from_bytes(private_key.as_slice(), false)
+            .expect("expected to get private key")
+            .g1_element()
+            .expect("expected to make public key")
+            .to_bytes()
+            .to_vec();
 
         let public_key_json = platform_value!({
             "id": 0u32,

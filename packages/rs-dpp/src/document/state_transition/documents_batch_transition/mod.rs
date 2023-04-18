@@ -596,8 +596,11 @@ mod test {
             .expect("batch transition should be created");
 
         assert_eq!(
-            SecurityLevel::MEDIUM,
-            batch_transition.get_security_level_requirement()
+            &SecurityLevel::MEDIUM,
+            batch_transition
+                .get_security_level_requirement()
+                .first()
+                .unwrap()
         );
 
         let batch_transition = document_factory
@@ -611,8 +614,11 @@ mod test {
             .expect("batch transition should be created");
 
         assert_eq!(
-            SecurityLevel::MASTER,
-            batch_transition.get_security_level_requirement()
+            &SecurityLevel::MASTER,
+            batch_transition
+                .get_security_level_requirement()
+                .first()
+                .unwrap()
         );
 
         let batch_transition = document_factory
@@ -623,8 +629,11 @@ mod test {
             .expect("batch transition should be created");
 
         assert_eq!(
-            SecurityLevel::HIGH,
-            batch_transition.get_security_level_requirement()
+            &SecurityLevel::HIGH,
+            batch_transition
+                .get_security_level_requirement()
+                .first()
+                .unwrap()
         );
     }
 

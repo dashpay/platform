@@ -165,6 +165,7 @@ mod test {
     };
     use platform_value::BinaryData;
     use serde::{Deserialize, Serialize};
+    use std::vec;
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
     #[serde(rename_all = "camelCase")]
@@ -272,8 +273,8 @@ mod test {
             Ok(())
         }
 
-        fn get_security_level_requirement(&self) -> SecurityLevel {
-            SecurityLevel::MASTER
+        fn get_security_level_requirement(&self) -> Vec<SecurityLevel> {
+            vec![SecurityLevel::MASTER]
         }
 
         fn get_signature_public_key_id(&self) -> Option<KeyID> {

@@ -963,8 +963,14 @@ impl Drive {
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
-
-        self.apply_contract_with_serialization(contract, contract.serialize()?, block_info, apply, storage_flags, transaction)
+        self.apply_contract_with_serialization(
+            contract,
+            contract.serialize()?,
+            block_info,
+            apply,
+            storage_flags,
+            transaction,
+        )
     }
 
     /// Applies a contract and returns the fee for applying.

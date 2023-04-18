@@ -191,12 +191,12 @@ pub fn get_compressed_public_ec_key(private_key: &[u8]) -> Result<[u8; 33], Prot
 
 #[cfg(test)]
 mod test {
-    use bls_signatures::Serialize as BlsSerialize;
     use chrono::Utc;
     use platform_value::{BinaryData, Value};
     use serde::{Deserialize, Serialize};
     use serde_json::json;
     use std::convert::TryInto;
+    use std::vec;
 
     use crate::document::DocumentsBatchTransition;
     use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
@@ -276,8 +276,8 @@ mod test {
         fn get_owner_id(&self) -> &Identifier {
             &self.owner_id
         }
-        fn get_security_level_requirement(&self) -> SecurityLevel {
-            SecurityLevel::HIGH
+        fn get_security_level_requirement(&self) -> Vec<SecurityLevel> {
+            vec![SecurityLevel::HIGH]
         }
 
         fn get_signature_public_key_id(&self) -> Option<KeyID> {
@@ -327,10 +327,13 @@ mod test {
 
         let mut buffer = [0u8; 32];
         let _ = getrandom::getrandom(&mut buffer);
-        let bls_private = bls_signatures::PrivateKey::new(buffer);
-        let bls_public = bls_private.public_key();
-        let bls_private_bytes = bls_private.as_bytes();
-        let bls_public_bytes = bls_public.as_bytes();
+        let bls_private = bls_signatures::PrivateKey::from_bytes(buffer.as_slice(), false)
+            .expect("expected private key");
+        let bls_public = bls_private
+            .g1_element()
+            .expect("expected to make public key");
+        let bls_private_bytes = bls_private.to_bytes().to_vec();
+        let bls_public_bytes = bls_public.to_bytes().to_vec();
 
         let identity_public_key = IdentityPublicKey {
             id: public_key_id,
@@ -615,7 +618,7 @@ mod test {
         match result {
             ProtocolError::InvalidSignaturePublicKeySecurityLevelError(err) => {
                 assert_eq!(err.public_key_security_level(), SecurityLevel::MASTER);
-                assert_eq!(err.required_key_security_level(), SecurityLevel::HIGH);
+                assert_eq!(err.allowed_key_security_levels(), vec![SecurityLevel::HIGH]);
             }
             error => panic!(
                 "expected InvalidSignaturePublicKeySecurityLevelError, got {}",

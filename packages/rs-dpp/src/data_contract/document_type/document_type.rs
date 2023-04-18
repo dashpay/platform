@@ -271,7 +271,7 @@ impl DocumentType {
             );
         }
 
-        let index_structure  = IndexLevel::from(indices.as_slice());
+        let index_structure = IndexLevel::from(indices.as_slice());
 
         Ok(DocumentType {
             name: String::from(name),

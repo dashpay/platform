@@ -1,7 +1,7 @@
 use thiserror::Error;
 
-use crate::{document::document_transition::DocumentTransition, prelude::Identifier};
 use crate::document::document_transition::DocumentTransitionAction;
+use crate::{document::document_transition::DocumentTransition, prelude::Identifier};
 use platform_value::Error as ValueError;
 
 #[derive(Error, Debug)]
@@ -37,7 +37,6 @@ pub enum DataTriggerError {
         owner_id: Option<Identifier>,
     },
 }
-
 
 /// Data trigger errors represent issues that occur while processing data triggers.
 /// Data triggers are custom logic associated with the creation, modification, or deletion of documents.

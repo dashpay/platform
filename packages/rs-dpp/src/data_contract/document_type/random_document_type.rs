@@ -33,9 +33,9 @@
 //!
 #[derive(Clone, Copy, Debug)]
 pub struct FieldTypeWeights {
-    pub string_weight : u16,
-    pub float_weight : u16,
-    pub integer_weight : u16,
+    pub string_weight: u16,
+    pub float_weight: u16,
+    pub integer_weight: u16,
     pub date_weight: u16,
     pub boolean_weight: u16,
     pub byte_array_weight: u16,
@@ -43,18 +43,18 @@ pub struct FieldTypeWeights {
 
 #[derive(Clone, Debug)]
 pub struct FieldMinMaxBounds {
-    pub string_min_len : Range<u16>,
-    pub string_has_min_len_chance : f64,
-    pub string_max_len : Range<u16>,
-    pub string_has_max_len_chance : f64,
-    pub integer_min : Range<u16>,
-    pub integer_has_min_chance : f64,
-    pub integer_max : Range<u16>,
-    pub integer_has_max_chance : f64,
-    pub float_min : Range<f64>,
-    pub float_has_min_chance : f64,
-    pub float_max : Range<f64>,
-    pub float_has_max_chance : f64,
+    pub string_min_len: Range<u16>,
+    pub string_has_min_len_chance: f64,
+    pub string_max_len: Range<u16>,
+    pub string_has_max_len_chance: f64,
+    pub integer_min: Range<u16>,
+    pub integer_has_min_chance: f64,
+    pub integer_max: Range<u16>,
+    pub integer_has_max_chance: f64,
+    pub float_min: Range<f64>,
+    pub float_has_min_chance: f64,
+    pub float_max: Range<f64>,
+    pub float_has_max_chance: f64,
     pub date_min: i64,
     pub date_max: i64,
     pub byte_array_min_len: Range<u16>,
@@ -65,13 +65,13 @@ pub struct FieldMinMaxBounds {
 
 #[derive(Clone, Debug)]
 pub struct RandomDocumentTypeParameters {
-    pub new_fields_optional_count_range : Range<u16>,
-    pub new_fields_required_count_range : Range<u16>,
-    pub new_indexes_count_range : Range<u16>,
-    pub field_weights : FieldTypeWeights,
-    pub field_bounds : FieldMinMaxBounds,
+    pub new_fields_optional_count_range: Range<u16>,
+    pub new_fields_required_count_range: Range<u16>,
+    pub new_indexes_count_range: Range<u16>,
+    pub field_weights: FieldTypeWeights,
+    pub field_bounds: FieldMinMaxBounds,
     pub keep_history_chance: f64,
-    pub documents_mutable_chance : f64,
+    pub documents_mutable_chance: f64,
 }
 
 impl RandomDocumentTypeParameters {
@@ -79,31 +79,40 @@ impl RandomDocumentTypeParameters {
         let min_string_len = self.field_bounds.string_min_len.end;
         let max_string_len = self.field_bounds.string_max_len.start;
         if min_string_len > max_string_len {
-            return Err(ProtocolError::Generic("String min length range end is greater than max length range start".to_string()));
+            return Err(ProtocolError::Generic(
+                "String min length range end is greater than max length range start".to_string(),
+            ));
         }
 
         let min_byte_array_len = self.field_bounds.byte_array_min_len.end;
         let max_byte_array_len = self.field_bounds.byte_array_max_len.start;
         if min_byte_array_len > max_byte_array_len {
-            return Err(ProtocolError::Generic("Byte array min length range end is greater than max length range start".to_string()));
+            return Err(ProtocolError::Generic(
+                "Byte array min length range end is greater than max length range start"
+                    .to_string(),
+            ));
         }
 
         Ok(())
     }
 }
 
+use crate::data_contract::document_type::{
+    DocumentField, DocumentFieldType, DocumentType, Index, IndexLevel,
+};
+use crate::ProtocolError;
+use platform_value::Identifier;
+use rand::rngs::StdRng;
+use rand::Rng;
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
-use rand::Rng;
-use rand::rngs::StdRng;
-use platform_value::Identifier;
-use crate::data_contract::document_type::{DocumentField, DocumentFieldType, DocumentType, Index, IndexLevel};
-use crate::ProtocolError;
 
 impl DocumentType {
-
-
-    pub fn random_document_type(parameters: RandomDocumentTypeParameters, data_contract_id: Identifier, rng: &mut StdRng) -> Result<Self, ProtocolError> {
+    pub fn random_document_type(
+        parameters: RandomDocumentTypeParameters,
+        data_contract_id: Identifier,
+        rng: &mut StdRng,
+    ) -> Result<Self, ProtocolError> {
         // Call the validation function at the beginning
         parameters.validate_parameters()?;
 
@@ -134,15 +143,32 @@ impl DocumentType {
                 DocumentFieldType::String(min_len, max_len)
             } else if random_weight < field_weights.string_weight + field_weights.integer_weight {
                 DocumentFieldType::Integer
-            } else if random_weight < field_weights.string_weight + field_weights.integer_weight + field_weights.float_weight {
+            } else if random_weight
+                < field_weights.string_weight
+                    + field_weights.integer_weight
+                    + field_weights.float_weight
+            {
                 DocumentFieldType::Number
-            } else if random_weight < field_weights.string_weight + field_weights.integer_weight + field_weights.float_weight + field_weights.date_weight {
+            } else if random_weight
+                < field_weights.string_weight
+                    + field_weights.integer_weight
+                    + field_weights.float_weight
+                    + field_weights.date_weight
+            {
                 DocumentFieldType::Date
-            } else if random_weight < field_weights.string_weight + field_weights.integer_weight + field_weights.float_weight + field_weights.date_weight + field_weights.boolean_weight {
+            } else if random_weight
+                < field_weights.string_weight
+                    + field_weights.integer_weight
+                    + field_weights.float_weight
+                    + field_weights.date_weight
+                    + field_weights.boolean_weight
+            {
                 DocumentFieldType::Boolean
             } else {
-                let has_min_len = rng.gen_bool(parameters.field_bounds.byte_array_has_min_len_chance);
-                let has_max_len = rng.gen_bool(parameters.field_bounds.byte_array_has_max_len_chance);
+                let has_min_len =
+                    rng.gen_bool(parameters.field_bounds.byte_array_has_min_len_chance);
+                let has_max_len =
+                    rng.gen_bool(parameters.field_bounds.byte_array_has_max_len_chance);
                 let min_len = if has_min_len {
                     Some(rng.gen_range(parameters.field_bounds.byte_array_min_len.clone()))
                 } else {
@@ -163,8 +189,10 @@ impl DocumentType {
             }
         };
 
-        let optional_field_count = rng.gen_range(parameters.new_fields_optional_count_range.clone());
-        let required_field_count = rng.gen_range(parameters.new_fields_required_count_range.clone());
+        let optional_field_count =
+            rng.gen_range(parameters.new_fields_optional_count_range.clone());
+        let required_field_count =
+            rng.gen_range(parameters.new_fields_required_count_range.clone());
 
         let mut properties = BTreeMap::new();
         let mut required_fields = BTreeSet::new();

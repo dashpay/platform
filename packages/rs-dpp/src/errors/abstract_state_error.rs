@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 use crate::prelude::Revision;
-use crate::{DataTriggerActionError, identity::KeyID, prelude::Identifier};
+use crate::{identity::KeyID, prelude::Identifier, DataTriggerActionError};
 
 use super::DataTriggerError;
 
