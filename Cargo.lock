@@ -1102,6 +1102,7 @@ name = "drive"
 version = "0.24.0-dev.1"
 dependencies = [
  "base64 0.21.0",
+ "bincode 2.0.0-rc.3",
  "bs58",
  "byteorder",
  "chrono",

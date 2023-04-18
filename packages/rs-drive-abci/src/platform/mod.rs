@@ -34,7 +34,7 @@ use crate::block::BlockExecutionContext;
 use crate::config::PlatformConfig;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::rpc::core::DefaultCoreRPC;
+use crate::rpc::core::{CoreRPCLike, DefaultCoreRPC};
 use crate::state::PlatformState;
 use drive::drive::Drive;
 
@@ -42,9 +42,16 @@ use drive::drive::defaults::PROTOCOL_VERSION;
 use std::path::Path;
 use std::sync::RwLock;
 
+use crate::error::serialization::SerializationError;
+use crate::error::Error::Serialization;
 use crate::rpc::core::MockCoreRPCLike;
-use dpp::dashcore::hashes::hex::FromHex;
-use dpp::dashcore::BlockHash;
+use dashcore::hashes::hex::FromHex;
+use dashcore::hashes::Hash;
+use dashcore::{BlockHash, QuorumHash};
+use dpp::bincode;
+use drive::drive::block_info::BlockInfo;
+use drive::error::drive::DriveError;
+use drive::error::Error::GroveDB;
 use serde_json::json;
 
 mod state_repository;
@@ -159,7 +166,10 @@ impl<C> Platform<C> {
         path: P,
         config: Option<PlatformConfig>,
         core_rpc: C,
-    ) -> Result<Platform<C>, Error> {
+    ) -> Result<Platform<C>, Error>
+    where
+        C: CoreRPCLike,
+    {
         let config = config.unwrap_or_default();
         let drive = Drive::open(path, config.drive.clone()).map_err(Error::Drive)?;
 
@@ -172,6 +182,121 @@ impl<C> Platform<C> {
             .map_err(Error::Drive)?
             .unwrap_or(PROTOCOL_VERSION);
 
+        // TODO: factor out key so we don't duplicate
+        let maybe_serialized_block_info = drive
+            .grove
+            .get_aux(b"saved_state", None)
+            .unwrap()
+            .map_err(|e| Error::Drive(GroveDB(e)))?;
+
+        if let Some(serialized_block_info) = maybe_serialized_block_info {
+            Platform::open_with_client_saved_state::<P>(
+                drive,
+                core_rpc,
+                config,
+                serialized_block_info,
+                current_protocol_version_in_consensus,
+                next_epoch_protocol_version,
+            )
+        } else {
+            Platform::open_with_client_no_saved_state::<P>(
+                drive,
+                core_rpc,
+                config,
+                current_protocol_version_in_consensus,
+                next_epoch_protocol_version,
+            )
+        }
+    }
+
+    /// Open Platform with Drive and block execution context from saved state.
+    pub fn open_with_client_saved_state<P: AsRef<Path>>(
+        drive: Drive,
+        core_rpc: C,
+        config: PlatformConfig,
+        serialized_block_info: Vec<u8>,
+        current_protocol_version_in_consensus: u32,
+        next_epoch_protocol_version: u32,
+    ) -> Result<Platform<C>, Error>
+    where
+        C: CoreRPCLike,
+    {
+        let block_info: BlockInfo =
+            bincode::decode_from_slice(&serialized_block_info, bincode::config::standard())
+                .map_err(|e| {
+                    Serialization(SerializationError::CorruptedDeserialization(
+                        "failed to deserialize saved state".to_string(),
+                    ))
+                })?
+                .0;
+
+        let maybe_quorum_hash = drive
+            .grove
+            .get_aux(b"saved_quorum_hash", None)
+            .unwrap()
+            .map_err(|e| Error::Drive(GroveDB(e)))?;
+
+        // TODO: remove unwrap
+        let current_validator_set_quorum_hash =
+            QuorumHash::from_slice(&maybe_quorum_hash.unwrap()).unwrap();
+
+        let state = PlatformState {
+            last_committed_block_info: Some(block_info),
+            current_protocol_version_in_consensus,
+            next_epoch_protocol_version,
+            quorums_extended_info: Default::default(),
+            current_validator_set_quorum_hash,
+            validator_sets: Default::default(),
+            full_masternode_list: Default::default(),
+            hpmn_masternode_list: Default::default(),
+        };
+
+        let core_height = state.core_height();
+        let block_info = state
+            .last_committed_block_info
+            .clone()
+            .unwrap_or(BlockInfo::genesis());
+
+        let platform: Platform<C> = Platform {
+            drive,
+            state: RwLock::new(state),
+            config,
+            block_execution_context: RwLock::new(None),
+            core_rpc,
+        };
+
+        let transaction = platform.drive.grove.start_transaction();
+        let mut state_cache = platform.state.write().unwrap();
+        platform.update_quorum_info(&mut state_cache, core_height)?;
+        platform.update_masternode_list(
+            &mut state_cache,
+            core_height,
+            &block_info,
+            &transaction,
+        )?;
+        drop(state_cache);
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .map_err(|e| Error::Drive(GroveDB(e)))?;
+
+        return Ok(platform);
+    }
+
+    /// Open Platform with Drive and block execution context without saved state.
+    pub fn open_with_client_no_saved_state<P: AsRef<Path>>(
+        drive: Drive,
+        core_rpc: C,
+        config: PlatformConfig,
+        current_protocol_version_in_consensus: u32,
+        next_epoch_protocol_version: u32,
+    ) -> Result<Platform<C>, Error>
+    where
+        C: CoreRPCLike,
+    {
         let state = PlatformState {
             last_committed_block_info: None,
             current_protocol_version_in_consensus,
