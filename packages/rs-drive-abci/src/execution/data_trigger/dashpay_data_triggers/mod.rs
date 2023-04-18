@@ -140,8 +140,11 @@ mod test {
     use dpp::{platform_value, DataTriggerActionError};
     use drive::drive::block_info::BlockInfo;
 
+    #[test]
     fn should_successfully_execute_on_dry_run() {
-        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
         let state_read_guard = platform.state.read().unwrap();
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
@@ -192,8 +195,11 @@ mod test {
         assert!(result.is_valid());
     }
 
+    #[test]
     fn should_fail_if_owner_id_equals_to_user_id() {
-        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
         let mut state_write_guard = platform.state.write().unwrap();
 
         state_write_guard.last_committed_block_info = Some(BlockInfo {
@@ -262,8 +268,11 @@ mod test {
         ));
     }
 
+    #[test]
     fn should_fail_if_id_not_exists() {
-        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
         let mut state_write_guard = platform.state.write().unwrap();
 
         state_write_guard.last_committed_block_info = Some(BlockInfo {

@@ -4442,7 +4442,7 @@ fn test_query_documents_by_created_at() {
     );
 
     let query_result = drive
-        .query_documents(query, None, None)
+        .query_documents(query, None, false, None)
         .expect("should query documents");
 
     assert_eq!(query_result.documents.len(), 1);

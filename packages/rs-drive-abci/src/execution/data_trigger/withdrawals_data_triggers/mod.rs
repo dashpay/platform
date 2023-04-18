@@ -69,7 +69,7 @@ pub fn delete_withdrawal_data_trigger<'a>(
     let withdrawals = context
         .platform
         .drive
-        .query_documents(drive_query, None, context.transaction)?
+        .query_documents(drive_query, None, false, context.transaction)?
         .documents;
 
     let Some(withdrawal) = withdrawals.get(0) else {
@@ -125,8 +125,11 @@ mod tests {
     use drive::drive::object_size_info::DocumentInfo::DocumentRefWithoutSerialization;
     use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 
+    #[test]
     fn should_throw_error_if_withdrawal_not_found() {
-        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
         let state_read_guard = platform.state.read().unwrap();
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
@@ -158,8 +161,11 @@ mod tests {
         assert_eq!(error.to_string(), "Withdrawal document was not found");
     }
 
+    #[test]
     fn should_throw_error_if_withdrawal_has_wrong_status() {
-        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
         let state_read_guard = platform.state.read().unwrap();
 
         let platform_ref = PlatformStateRef {

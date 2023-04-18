@@ -131,7 +131,7 @@ pub fn create_masternode_reward_shares_data_trigger<'a>(
     let documents = context
         .platform
         .drive
-        .query_documents(drive_query, None, context.transaction)?
+        .query_documents(drive_query, None, false, context.transaction)?
         .documents;
 
     if is_dry_run {
@@ -174,8 +174,12 @@ pub fn create_masternode_reward_shares_data_trigger<'a>(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::platform::PlatformStateRef;
+    use crate::platform::{PlatformRef, PlatformStateRef};
+    use crate::state::PlatformState;
     use crate::test::helpers::setup::TestPlatformBuilder;
+    use dashcore::hashes::Hash;
+    use dashcore::ProTxHash;
+    use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem, MasternodeType};
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::data_contract::DataContract;
     use dpp::document::document_transition::Action;
@@ -188,57 +192,79 @@ mod test {
         get_document_transitions_fixture, get_masternode_reward_shares_documents_fixture,
     };
     use dpp::tests::utils::generate_random_identifier_struct;
+    use dpp::version::LATEST_VERSION;
     use dpp::DataTriggerActionError;
     use drive::drive::block_info::BlockInfo;
     use drive::drive::object_size_info::DocumentInfo::{
         DocumentRefWithoutSerialization, DocumentWithoutSerialization,
     };
     use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
+    use std::net::SocketAddr;
+    use std::str::FromStr;
 
     struct TestData {
         top_level_identifier: Identifier,
         data_contract: DataContract,
-        sml_store: SMLStore,
         extended_documents: Vec<ExtendedDocument>,
         document_create_transition: DocumentCreateTransitionAction,
-        identity: Identity,
     }
 
-    fn setup_test() -> TestData {
+    fn setup_test(platform_state: &mut PlatformState) -> TestData {
         let top_level_identifier_hex =
             "c286807d463b06c7aba3b9a60acf64c1fc03da8c1422005cd9b4293f08cf0562";
         let top_level_identifier =
             Identifier::from_bytes(&hex::decode(top_level_identifier_hex).unwrap()).unwrap();
 
-        let sml_entries: Vec<SMLEntry> = vec![
-            SMLEntry {
-          pro_reg_tx_hash: top_level_identifier_hex.to_string(),
-          confirmed_hash: "4eb56228c535db3b234907113fd41d57bcc7cdcb8e0e00e57590af27ee88c119".to_string(),
-          service: "192.168.65.2:20101".to_string(),
-          pub_key_operator: "809519c5f6f3be1c08782ac42ae9a83b6c7205eba43f9a96a4f032ec7a73f1a7c25fa78cce0d6d9c135f7e2c28527179".to_string(),
-          voting_address: "yXmprXYP51uzfMyndtWwxz96MnkCKkFc9x".to_string(),
-          is_valid: true,
-        },
+        platform_state.hpmn_masternode_list.insert(ProTxHash::from_inner(top_level_identifier.to_buffer()), MasternodeListItem {
+            node_type: MasternodeType::HighPerformance,
+            protx_hash: ProTxHash::from_inner(top_level_identifier.to_buffer()),
+            collateral_hash: hex::decode("4eb56228c535db3b234907113fd41d57bcc7cdcb8e0e00e57590af27ee88c119").expect("expected to decode collateral hash").try_into().expect("expected 32 bytes"),
+            collateral_index: 0,
+            operator_reward: 0,
+            state: DMNState {
+                service: SocketAddr::from_str("1.2.3.4:1234").unwrap(),
+                registered_height: 0,
+                pose_revived_height: 0,
+                pose_ban_height: 0,
+                revocation_reason: 0,
+                owner_address: [1;20],
+                voting_address: [2;20],
+                payout_address: [3;20],
+                pub_key_operator: hex::decode("987a4873caba62cd45a2f7d4aa6d94519ee6753e9bef777c927cb94ade768a542b0ff34a93231d3a92b4e75ffdaa366e").expect("expected to decode collateral hash").try_into().expect("expected 48 bytes"),
+                operator_payout_address: None,
+                platform_node_id: None,
+            },
+        });
 
-        SMLEntry {
-          pro_reg_tx_hash: "a3e1edc6bd352eeaf0ae58e30781ef4b127854241a3fe7fddf36d5b7e1dc2b3f".to_string(),
-          confirmed_hash: "27a0b637b56af038c45e2fd1f06c2401c8dadfa28ca5e0d19ca836cc984a8378".to_string(),
-          service: "192.168.65.2:20201".to_string(),
-          pub_key_operator: "987a4873caba62cd45a2f7d4aa6d94519ee6753e9bef777c927cb94ade768a542b0ff34a93231d3a92b4e75ffdaa366e".to_string(),
-          voting_address: "ycL7L4mhYoaZdm9TH85svvpfeKtdfo249u".to_string(),
-          is_valid: true,
-         }
-        ];
+        let pro_tx_hash = ProTxHash::from_inner(
+            hex::decode("a3e1edc6bd352eeaf0ae58e30781ef4b127854241a3fe7fddf36d5b7e1dc2b3f")
+                .expect("expected to decode collateral hash")
+                .try_into()
+                .expect("expected 32 bytes"),
+        );
+
+        platform_state.hpmn_masternode_list.insert(pro_tx_hash, MasternodeListItem {
+            node_type: MasternodeType::HighPerformance,
+            protx_hash: pro_tx_hash,
+            collateral_hash: hex::decode("4eb56228c535db3b234907113fd41d57bcc7cdcb8e0e00e57590af27ee88c119").expect("expected to decode collateral hash").try_into().expect("expected 32 bytes"),
+            collateral_index: 0,
+            operator_reward: 0,
+            state: DMNState {
+                service: SocketAddr::from_str("1.2.3.5:1234").unwrap(),
+                registered_height: 0,
+                pose_revived_height: 0,
+                pose_ban_height: 0,
+                revocation_reason: 0,
+                owner_address: [1;20],
+                voting_address: [2;20],
+                payout_address: [3;20],
+                pub_key_operator: hex::decode("a87a4873caba62cd45a2f7d4aa6d94519ee6753e9bef777c927cb94ade768a542b0ff34a93231d3a92b4e75ffdaa366e").expect("expected to decode collateral hash").try_into().expect("expected 48 bytes"),
+                operator_payout_address: None,
+                platform_node_id: None,
+            },
+        });
 
         let (documents, data_contract) = get_masternode_reward_shares_documents_fixture();
-        let sml_store = SMLStore {
-            sml_list_by_height: SimplifiedMNList {
-                masternodes: sml_entries.clone(),
-            },
-            sml_list_current: SimplifiedMNList {
-                masternodes: sml_entries,
-            },
-        };
         let document_transitions =
             get_document_transitions_fixture([(Action::Create, vec![documents[0].clone()])]);
 
@@ -250,9 +276,7 @@ mod test {
             extended_documents: documents,
             data_contract,
             top_level_identifier,
-            sml_store,
             document_create_transition: document_create_transition.into(),
-            identity: Identity::default(),
         }
     }
 
@@ -266,26 +290,29 @@ mod test {
             .expect("errors should exist")
     }
 
-    fn should_return_an_error_if_percentage_greater_than_1000() {
-        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
-        let state_read_guard = platform.state.read().unwrap();
-
-        let platform_ref = PlatformStateRef {
-            drive: &platform.drive,
-            state: &state_read_guard,
-            config: &platform.config,
-        };
-
+    #[test]
+    fn should_return_an_error_if_percentage_greater_than_10000() {
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+        let mut state_write_guard = platform.state.write().unwrap();
         let TestData {
             mut document_create_transition,
             extended_documents,
-            sml_store,
             data_contract,
             top_level_identifier,
             ..
-        } = setup_test();
+        } = setup_test(&mut state_write_guard);
 
-        for document in extended_documents.iter() {
+        let platform_ref = PlatformStateRef {
+            drive: &platform.drive,
+            state: &state_write_guard,
+            config: &platform.config,
+        };
+
+        for (i, document) in extended_documents.iter().enumerate() {
+            let document_type = document.document_type().expect("expected a document type");
+
             platform_ref
                 .drive
                 .apply_contract(
@@ -296,17 +323,41 @@ mod test {
                     None,
                 )
                 .expect("expected to apply contract");
+            let mut identity = Identity::random_identity(2, Some(i as u64));
+            identity.id = document.owner_id();
+
             platform_ref
                 .drive
-                .add_document(
-                    OwnedDocumentInfo {
-                        document_info: DocumentRefWithoutSerialization((&document.document, None)),
-                        owner_id: None,
+                .add_new_identity(identity, &BlockInfo::default(), true, None)
+                .expect("expected to add an identity");
+
+            let mut identity = Identity::random_identity(2, Some(100 - i as u64));
+            identity.id = document
+                .properties()
+                .get_identifier("payToId")
+                .expect("expected pay to id");
+
+            platform_ref
+                .drive
+                .add_new_identity(identity, &BlockInfo::default(), true, None)
+                .expect("expected to add an identity");
+
+            platform_ref
+                .drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentRefWithoutSerialization((
+                                &document.document,
+                                None,
+                            )),
+                            owner_id: None,
+                        },
+                        contract: &document.data_contract,
+                        document_type: &document_type,
                     },
-                    document.data_contract_id,
-                    document.document_type_name.as_str(),
                     false,
-                    &BlockInfo::default(),
+                    BlockInfo::default(),
                     true,
                     None,
                 )
@@ -322,7 +373,7 @@ mod test {
         // documentsFixture contains percentage = 500
         document_create_transition
             .data
-            .insert("percentage".to_string(), Value::U64(9501));
+            .insert("percentage".to_string(), Value::U64(90501));
 
         let execution_context = StateTransitionExecutionContext::default();
         let context = DataTriggerExecutionContext {
@@ -339,30 +390,31 @@ mod test {
             None,
         );
 
-        let percentage_error = get_data_trigger_error(&result, 1);
+        let percentage_error = get_data_trigger_error(&result, 0);
         assert_eq!(
             "Percentage can not be more than 10000",
             percentage_error.to_string()
         );
     }
 
+    #[test]
     fn should_return_an_error_if_pay_to_id_does_not_exists() {
-        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
-        let state_read_guard = platform.state.read().unwrap();
-
-        let platform_ref = PlatformStateRef {
-            drive: &platform.drive,
-            state: &state_read_guard,
-            config: &platform.config,
-        };
-
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+        let mut state_write_guard = platform.state.write().unwrap();
         let TestData {
             document_create_transition,
-            sml_store,
             data_contract,
             top_level_identifier,
             ..
-        } = setup_test();
+        } = setup_test(&mut state_write_guard);
+
+        let platform_ref = PlatformStateRef {
+            drive: &platform.drive,
+            state: &state_write_guard,
+            config: &platform.config,
+        };
 
         let execution_context = StateTransitionExecutionContext::default();
         let context = DataTriggerExecutionContext {
@@ -392,22 +444,24 @@ mod test {
         );
     }
 
+    #[test]
     fn should_return_an_error_if_owner_id_is_not_a_masternode_identity() {
-        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
-        let state_read_guard = platform.state.read().unwrap();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+        let mut state_write_guard = platform.state.write().unwrap();
+        let TestData {
+            document_create_transition,
+            top_level_identifier,
+            data_contract,
+            ..
+        } = setup_test(&mut state_write_guard);
 
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
-            state: &state_read_guard,
+            state: &state_write_guard,
             config: &platform.config,
         };
-
-        let TestData {
-            document_create_transition,
-            sml_store,
-            data_contract,
-            ..
-        } = setup_test();
 
         let execution_context = StateTransitionExecutionContext::default();
         let context = DataTriggerExecutionContext {
@@ -430,28 +484,35 @@ mod test {
         );
     }
 
+    #[test]
     fn should_pass() {
-        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
-        let state_read_guard = platform.state.read().unwrap();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+        let mut state_write_guard = platform.state.write().unwrap();
+        let TestData {
+            document_create_transition,
+            data_contract,
+            top_level_identifier,
+            ..
+        } = setup_test(&mut state_write_guard);
+
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
-            state: &state_read_guard,
+            state: &state_write_guard,
             config: &platform.config,
         };
 
-        let TestData {
-            document_create_transition,
-            sml_store,
-            data_contract,
-            top_level_identifier,
-            identity,
-            ..
-        } = setup_test();
+        let mut identity = Identity::random_identity(2, Some(9));
+        identity.id = document_create_transition
+            .data
+            .get_identifier("payToId")
+            .expect("expected pay to id");
 
         platform_ref
             .drive
             .add_new_identity(identity, &BlockInfo::default(), true, None)
-            .expect("should insert identity");
+            .expect("expected to add an identity");
 
         let execution_context = StateTransitionExecutionContext::default();
         let context = DataTriggerExecutionContext {
@@ -467,33 +528,32 @@ mod test {
             None,
         )
         .expect("the execution result should be returned");
-        assert!(result.is_valid())
+        assert!(result.is_valid(), "{}", result.errors.first().unwrap())
     }
 
+    #[test]
     fn should_return_error_if_there_are_16_stored_shares() {
-        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
-        let state_read_guard = platform.state.read().unwrap();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+        let mut state_write_guard = platform.state.write().unwrap();
+        let TestData {
+            document_create_transition,
+            data_contract,
+            top_level_identifier,
+            ..
+        } = setup_test(&mut state_write_guard);
 
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
-            state: &state_read_guard,
+            state: &state_write_guard,
             config: &platform.config,
         };
 
-        let TestData {
-            document_create_transition,
-            sml_store,
-            data_contract,
-            top_level_identifier,
-            identity,
-            ..
-        } = setup_test();
-
-        let owner_id = identity.id;
         platform_ref
             .drive
-            .add_new_identity(identity, &BlockInfo::default(), true, None)
-            .expect("should insert identity");
+            .apply_contract(&data_contract, BlockInfo::default(), true, None, None)
+            .expect("expected to apply contract");
 
         let document_type = data_contract
             .document_type_for_name(&document_create_transition.base.document_type_name)
@@ -501,6 +561,28 @@ mod test {
 
         for i in 0..16 {
             let document = document_type.random_document(Some(i));
+
+            let owner_id = document.owner_id;
+
+            let mut identity = Identity::random_identity(2, Some(i as u64));
+            identity.id = owner_id;
+
+            platform_ref
+                .drive
+                .add_new_identity(identity, &BlockInfo::default(), true, None)
+                .expect("expected to add an identity");
+
+            let mut identity = Identity::random_identity(2, Some(100 - i as u64));
+            identity.id = document
+                .properties
+                .get_identifier("payToId")
+                .expect("expected pay to id");
+
+            platform_ref
+                .drive
+                .add_new_identity(identity, &BlockInfo::default(), true, None)
+                .expect("expected to add an identity");
+
             platform
                 .drive
                 .add_document_for_contract(
@@ -542,22 +624,24 @@ mod test {
         );
     }
 
+    #[test]
     fn should_pass_on_dry_run() {
-        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
-        let state_read_guard = platform.state.read().unwrap();
-
-        let platform_ref = PlatformStateRef {
-            drive: &platform.drive,
-            state: &state_read_guard,
-            config: &platform.config,
-        };
-
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
+        let mut state_write_guard = platform.state.write().unwrap();
         let TestData {
             document_create_transition,
             data_contract,
             top_level_identifier,
             ..
-        } = setup_test();
+        } = setup_test(&mut state_write_guard);
+
+        let platform_ref = PlatformStateRef {
+            drive: &platform.drive,
+            state: &state_write_guard,
+            config: &platform.config,
+        };
 
         let execution_context = StateTransitionExecutionContext::default();
         execution_context.enable_dry_run();

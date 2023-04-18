@@ -205,7 +205,7 @@ pub fn create_domain_data_trigger<'a>(
         let documents = context
             .platform
             .drive
-            .query_documents(drive_query, None, context.transaction)?
+            .query_documents(drive_query, None, is_dry_run, context.transaction)?
             .documents;
 
         if !is_dry_run {
@@ -282,7 +282,7 @@ pub fn create_domain_data_trigger<'a>(
     let preorder_documents = context
         .platform
         .drive
-        .query_documents(drive_query, None, context.transaction)?
+        .query_documents(drive_query, None, is_dry_run, context.transaction)?
         .documents;
 
     if is_dry_run {
@@ -316,8 +316,11 @@ mod test {
 
     use super::create_domain_data_trigger;
 
+    #[test]
     fn should_return_execution_result_on_dry_run() {
-        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
         let state_read_guard = platform.state.read().unwrap();
 
         let platform_ref = PlatformStateRef {

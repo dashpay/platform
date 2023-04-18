@@ -95,8 +95,11 @@ mod test {
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use dpp::tests::fixtures::get_data_contract_fixture;
 
+    #[test]
     fn should_successfully_execute_on_dry_run() {
-        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        let mut platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_initial_state_structure();
         let state_read_guard = platform.state.read().unwrap();
 
         let platform_ref = PlatformStateRef {

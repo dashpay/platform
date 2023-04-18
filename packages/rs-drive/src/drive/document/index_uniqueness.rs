@@ -220,7 +220,7 @@ impl Drive {
                             block_time: None,
                         };
 
-                        let query_result = self.query_documents(query, None, transaction);
+                        let query_result = self.query_documents(query, None, false, transaction);
                         match query_result {
                             Ok(query_outcome) => {
                                 let documents = query_outcome.documents;

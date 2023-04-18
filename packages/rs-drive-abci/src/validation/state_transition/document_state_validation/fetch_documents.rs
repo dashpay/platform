@@ -129,7 +129,7 @@ pub(super) fn fetch_documents_for_transitions_knowing_contract_and_document_type
 
     //todo: deal with cost of this operation
     let documents = drive
-        .query_documents(drive_query, None, transaction)?
+        .query_documents(drive_query, None, false, transaction)?
         .documents;
 
     Ok(ConsensusValidationResult::new_with_data(documents))
