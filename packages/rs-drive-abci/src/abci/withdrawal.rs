@@ -145,7 +145,9 @@ impl<'a> WithdrawalTxs<'a> {
             };
 
             if !public_key.verify(&signature, &hash) {
-                return SimpleValidationResult::new_with_error(AbciError::VoteExtensionsSignatureInvalid);
+                return SimpleValidationResult::new_with_error(
+                    AbciError::VoteExtensionsSignatureInvalid,
+                );
             }
         }
 
@@ -248,8 +250,9 @@ mod test {
             r#type: VoteExtensionType::ThresholdRecover.into(),
         });
 
-        assert!(wt
-            .verify_signatures(
+        assert_eq!(
+            true,
+            wt.verify_signatures(
                 CHAIN_ID,
                 QuorumType::LlmqTest,
                 &quorum_hash,
@@ -257,7 +260,8 @@ mod test {
                 ROUND,
                 &pubkey
             )
-            .unwrap());
+            .is_valid()
+        );
 
         // Now break the data
         wt.inner[0].extension[3] = 0;
@@ -271,7 +275,7 @@ mod test {
                 ROUND,
                 &pubkey
             )
-            .unwrap()
+            .is_valid()
         );
     }
 }
