@@ -128,7 +128,6 @@ pub trait StateTransitionLike:
             ));
         }
         let data = self.to_cbor_buffer(true)?;
-
         signer::verify_data_signature(&data, self.get_signature().as_slice(), public_key).map_err(
             |_| {
                 ProtocolError::from(ConsensusError::SignatureError(

@@ -54,6 +54,34 @@ pub struct IndexLevel {
     pub level_identifier: u64,
 }
 
+impl From<&[Index]> for IndexLevel {
+    fn from(indices: &[Index]) -> Self {
+        let mut index_level = IndexLevel::default();
+        let mut counter: u64 = 0;
+        for index in indices {
+            let mut current_level = &mut index_level;
+            let mut properties_iter = index.properties.iter().peekable();
+            while let Some(index_part) = properties_iter.next() {
+                current_level = current_level
+                    .sub_index_levels
+                    .entry(index_part.name.clone())
+                    .or_insert_with(|| {
+                        counter += 1;
+                        IndexLevel {
+                            level_identifier: counter,
+                            ..Default::default()
+                        }
+                    });
+                if properties_iter.peek().is_none() {
+                    current_level.has_index_with_uniqueness = Some(index.unique);
+                }
+            }
+        }
+
+        index_level
+    }
+}
+
 impl DocumentType {
     pub fn new(
         data_contract_id: Identifier,
@@ -64,7 +92,7 @@ impl DocumentType {
         documents_keep_history: bool,
         documents_mutable: bool,
     ) -> Self {
-        let index_structure = Self::build_index_structure(indices.as_slice());
+        let index_structure = IndexLevel::from(indices.as_slice());
         DocumentType {
             name,
             indices,
@@ -98,32 +126,6 @@ impl DocumentType {
             }
         }
         best_index
-    }
-
-    pub fn build_index_structure(indices: &[Index]) -> IndexLevel {
-        let mut index_level = IndexLevel::default();
-        let mut counter: u64 = 0;
-        for index in indices {
-            let mut current_level = &mut index_level;
-            let mut properties_iter = index.properties.iter().peekable();
-            while let Some(index_part) = properties_iter.next() {
-                current_level = current_level
-                    .sub_index_levels
-                    .entry(index_part.name.clone())
-                    .or_insert_with(|| {
-                        counter += 1;
-                        IndexLevel {
-                            level_identifier: counter,
-                            ..Default::default()
-                        }
-                    });
-                if properties_iter.peek().is_none() {
-                    current_level.has_index_with_uniqueness = Some(index.unique);
-                }
-            }
-        }
-
-        index_level
     }
 
     pub fn unique_id_for_storage(&self) -> [u8; 32] {
@@ -269,7 +271,7 @@ impl DocumentType {
             );
         }
 
-        let index_structure = Self::build_index_structure(indices.as_slice());
+        let index_structure  = IndexLevel::from(indices.as_slice());
 
         Ok(DocumentType {
             name: String::from(name),

@@ -4,6 +4,8 @@ pub mod document_field;
 pub mod document_type;
 pub mod index;
 pub mod random_document;
+pub mod random_document_type;
+pub mod random_index;
 
 use super::errors::DataContractError;
 
