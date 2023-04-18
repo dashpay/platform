@@ -18,6 +18,6 @@ if [ -n "$NODE_ENV" ]; then
 fi
 
 cargo-cp-artifact -ac drive-nodejs native/index.node -- \
-  cargo build --message-format=json-render-diagnostics $PROFILE_ARG $FEATURE_FLAG \
+  cargo build --config net.git-fetch-with-cli=true --message-format=json-render-diagnostics $PROFILE_ARG $FEATURE_FLAG \
   && neon-tag-prebuild \
   && rm -rf native

@@ -1,5 +1,4 @@
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
-const Identity = require('@dashevo/dpp/lib/identity/Identity');
+const { Identity, IdentityPublicKey } = require('@dashevo/wasm-dpp');
 const InvalidMasternodeIdentityError = require('./errors/InvalidMasternodeIdentityError');
 
 /**
@@ -57,7 +56,7 @@ function createMasternodeIdentityFactory(
 
     const identity = new Identity({
       protocolVersion: dpp.getProtocolVersion(),
-      id: identifier.toBuffer(),
+      id: identifier,
       publicKeys,
       balance: 0,
       revision: 0,

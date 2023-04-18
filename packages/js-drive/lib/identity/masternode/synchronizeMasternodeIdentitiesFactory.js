@@ -1,6 +1,6 @@
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
 const Address = require('@dashevo/dashcore-lib/lib/address');
 const Script = require('@dashevo/dashcore-lib/lib/script');
+const { Identifier } = require('@dashevo/wasm-dpp');
 const createOperatorIdentifier = require('./createOperatorIdentifier');
 
 /**
@@ -34,7 +34,6 @@ function mergeEntities(result, newData) {
  *
  * @param {DataContractStoreRepository} dataContractRepository
  * @param {SimplifiedMasternodeList} simplifiedMasternodeList
- * @param {Identifier} masternodeRewardSharesContractId
  * @param {handleNewMasternode} handleNewMasternode
  * @param {handleUpdatedPubKeyOperator} handleUpdatedPubKeyOperator
  * @param {handleRemovedMasternode} handleRemovedMasternode

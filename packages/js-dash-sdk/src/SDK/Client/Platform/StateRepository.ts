@@ -1,6 +1,4 @@
-import DataContract from '@dashevo/dpp/lib/dataContract/DataContract';
-import Identity from '@dashevo/dpp/lib/identity/Identity';
-import Identifier from '@dashevo/dpp/lib/Identifier';
+import { DataContract, Identity, Identifier } from '@dashevo/wasm-dpp';
 import Client from '../Client';
 
 class StateRepository {

@@ -83,10 +83,42 @@ class FeeResult {
   /**
    * Create new fee result
    *
+   * @param {BigInt} storageFee
+   * @param {BigInt} processingFee
+   * @param {FeeRefund[]} feeRefunds
+   *
    * @returns {FeeResult}
    */
   static create(storageFee, processingFee, feeRefunds) {
-    const inner = feeResultCreateWithStack(storageFee, processingFee, feeRefunds);
+    // TODO: until we use Neon version 1 we can't really use BigInt
+    const storageFeeBuffer = Buffer.allocUnsafe(8);
+    storageFeeBuffer.writeBigInt64BE(storageFee, 0);
+
+    const processingFeeBuffer = Buffer.allocUnsafe(8);
+    processingFeeBuffer.writeBigInt64BE(processingFee, 0);
+
+    const feeRefundsWithBuffers = feeRefunds.map((refund) => {
+      const { identifier, creditsPerEpoch } = refund.toObject();
+
+      const creditsPerEpochWithBuffers = {};
+      creditsPerEpoch.forEach((value, key) => {
+        const refundBuffer = Buffer.allocUnsafe(8);
+        refundBuffer.writeBigInt64BE(value);
+
+        creditsPerEpochWithBuffers[key] = refundBuffer;
+      });
+
+      return {
+        identifier,
+        creditsPerEpoch: creditsPerEpochWithBuffers,
+      };
+    });
+
+    const inner = feeResultCreateWithStack(
+      storageFeeBuffer,
+      processingFeeBuffer,
+      feeRefundsWithBuffers,
+    );
 
     return new FeeResult(inner);
   }

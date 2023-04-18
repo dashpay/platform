@@ -1,4 +1,4 @@
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
+const { Identifier } = require('@dashevo/wasm-dpp');
 const { hash } = require('@dashevo/dpp/lib/util/hash');
 
 /**

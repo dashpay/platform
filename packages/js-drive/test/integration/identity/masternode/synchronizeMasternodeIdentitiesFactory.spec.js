@@ -2,10 +2,11 @@ const {
   asValue,
 } = require('awilix');
 
+const { KeyType, Identifier } = require('@dashevo/wasm-dpp');
 const SimplifiedMNListEntry = require('@dashevo/dashcore-lib/lib/deterministicmnlist/SimplifiedMNListEntry');
+
+// TODO: should we take it from other place?
 const { hash } = require('@dashevo/dpp/lib/util/hash');
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 
 const Address = require('@dashevo/dashcore-lib/lib/address');
 const Script = require('@dashevo/dashcore-lib/lib/script');
@@ -73,7 +74,7 @@ function expectOperatorIdentityFactory(
     const firstOperatorMasternodePublicKey = operatorIdentity.getPublicKeyById(0);
     expect(firstOperatorMasternodePublicKey.getType())
       .to
-      .equal(IdentityPublicKey.TYPES.BLS12_381);
+      .equal(KeyType.BLS12_381);
     expect(firstOperatorMasternodePublicKey.getData())
       .to
       .deep
@@ -159,7 +160,6 @@ function expectVotingIdentityFactory(
     proRegTx,
   ) {
     // Validate voting identity
-
     const votingIdentifier = createVotingIdentifier(smlEntry);
 
     const votingIdentityResult = await identityRepository.fetch(votingIdentifier, {
@@ -180,7 +180,7 @@ function expectVotingIdentityFactory(
       .lengthOf(1);
 
     const masternodePublicKey = votingIdentity.getPublicKeyById(0);
-    expect(masternodePublicKey.getType()).to.equal(IdentityPublicKey.TYPES.ECDSA_HASH160);
+    expect(masternodePublicKey.getType()).to.equal(KeyType.ECDSA_HASH160);
     expect(masternodePublicKey.getData()).to.deep.equal(
       Buffer.from(proRegTx.extraPayload.keyIDVoting, 'hex').reverse(),
     );
@@ -252,7 +252,7 @@ function expectMasternodeIdentityFactory(
     expect(masternodeIdentity.getPublicKeys()).to.have.lengthOf(publicKeysNum);
 
     const masternodePublicKey = masternodeIdentity.getPublicKeyById(0);
-    expect(masternodePublicKey.getType()).to.equal(IdentityPublicKey.TYPES.ECDSA_HASH160);
+    expect(masternodePublicKey.getType()).to.equal(KeyType.ECDSA_HASH160);
     expect(masternodePublicKey.getData()).to.deep.equal(
       Buffer.from(proRegTx.extraPayload.keyIDOwner, 'hex').reverse(),
     );
@@ -368,7 +368,7 @@ describe.skip('synchronizeMasternodeIdentitiesFactory', function main() {
     firstSyncAppHash = 'c55de453e3ea4481f20225efdc12d671f715f0618cf3084bb32e56e75123bfdd';
     blockInfo = new BlockInfo(10, 0, 1668702100799);
 
-    container = await createTestDIContainer();
+    container = await createTestDIContainer(this.blsAdapter);
 
     // Mock Core RPC
 

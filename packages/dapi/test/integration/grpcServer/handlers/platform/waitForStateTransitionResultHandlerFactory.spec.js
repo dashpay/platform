@@ -15,8 +15,8 @@ const {
     Proof,
   },
 } = require('@dashevo/dapi-grpc');
-const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
-const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
+const getIdentityCreateTransitionFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
+const { default: loadWasmDpp, DashPlatformProtocol } = require('@dashevo/wasm-dpp');
 
 const { EventEmitter } = require('events');
 
@@ -37,7 +37,6 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
   let driveClientMock;
   let tenderDashWsClientMock;
   let blockchainListener;
-  let dppMock;
   let hash;
   let proofFixture;
   let wsMessagesFixture;
@@ -49,7 +48,11 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
   let createGrpcErrorFromDriveResponseMock;
   let errorInfo;
 
-  beforeEach(function beforeEach() {
+  before(async () => {
+    await loadWasmDpp();
+  });
+
+  beforeEach(async function beforeEach() {
     const hashString = '56458F2D8A8617EA322931B72C103CDD93820004E534295183A6EF215B93C76E';
     hash = Buffer.from(hashString, 'hex');
 
@@ -60,6 +63,9 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
       },
     };
 
+    stateTransitionFixture = await getIdentityCreateTransitionFixture();
+    const stateTransitionBase64 = stateTransitionFixture.toBuffer().toString('base64');
+
     wsMessagesFixture = {
       success: {
         query: "tm.event = 'Tx'",
@@ -67,7 +73,7 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
           type: 'tendermint/event/Tx',
           value: {
             height: '145',
-            tx: 'pWR0eXBlA2lhc3NldExvY2ujZXByb29momR0eXBlAGtpbnN0YW50TG9ja1ilAR272lhhsS11I/IKpeDUL1LePc0tXC/pGbpntZ8FDSBuAAAAAHvUKCicVybMXMiWz60mTKDN2H7HesE1zhNhy9w+zKjYAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAa291dHB1dEluZGV4AGt0cmFuc2FjdGlvbljfAwAAAAFft1DH/7MLyiiZTQ0v9kxxx5IO+g3OowKiGXGr/gzTXAEAAABrSDBFAiEA9zBXt5ZbkZ0miGrXtJPF9abrNUHafXIGRHXeritMEZECIBO0nrmvNv/jff27bDehIf3kD+WHQACWj5UvryJNQvyAASECG117xwKATG95Jur1SvBo/vAjYHx5AnYYOwsN3zL8Wyf/////AgEAAAAAAAAAFmoU7MiTGZFsxDcto0FsSOKqkcWmk/5OiAAAAAAAABl2qRTk6MFuEOFzT3vBIbU1Hio2UuiDzYisAAAAAGlzaWduYXR1cmVYQSANwCdg67KHh/OiSv9FW8qNFj+8OBvwnm3Ybg2Ju0tGNmkw3jAkdOgHLqAkmHCtiSvqZ7IhGDXhU5YtHCk6PIOIamlkZW50aXR5SWRYIJmUCrEaSl7bW6UkE3rBhlQjTBhJ4v1m0ORUXh434DTDb3Byb3RvY29sVmVyc2lvbgA=',
+            tx: stateTransitionBase64,
             result: {},
           },
         },
@@ -110,7 +116,7 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
           type: 'tendermint/event/Tx',
           value: {
             height: '135',
-            tx: 'pWR0eXBlAmlhc3NldExvY2ujZXByb29momR0eXBlAGtpbnN0YW50TG9ja1ilAR272lhhsS11I/IKpeDUL1LePc0tXC/pGbpntZ8FDSBuAAAAAMfKlZZZ3oAHaxO0bEIYXCSEpwTuR/baTwASqjgFgDAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAa291dHB1dEluZGV4AGt0cmFuc2FjdGlvbljfAwAAAAFl5SQeBBDkK7Us9JcOU+Gp1oi4NIl/01A+5GAKeHi2JwEAAABrSDBFAiEAq9XMPgtU9J0imH6YJ/RtbxwJsavuhIpECU5Lw9h0xpoCIEgkU1njDQCe06YqRyeVYc6wK8G7Y/M5X+XicfJKo5P6ASEDK3jwtdIToEQAgTPMXxpjon4geQaNbbRNT/Xz50UgdHH/////AgEAAAAAAAAAFmoU8HHK+aRqNJOWXjNlOO3iWwvV45CDkAAAAAAAABl2qRTFVGzrfaB6ZhmvE8h2unBNgcJIMIisAAAAAGlzaWduYXR1cmVYQR/OHDEQUcSxczLBvMP9Z0HmRaDoCS6tTyFLbWhn7bAfJTlPF9hIbh13260WSCiDceJjWaYB0JuOGsqu2ZB5F0dDanB1YmxpY0tleXOBo2JpZABkZGF0YVghA85GJWE321+kW0HIwl3M6wO9BIHDxY80HlQgc1wRalT5ZHR5cGUAb3Byb3RvY29sVmVyc2lvbgA=',
+            tx: stateTransitionBase64,
             result: {
               code: 1043,
               info: cbor.encode(errorInfo).toString('base64'),
@@ -166,10 +172,7 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
     tenderDashWsClientMock = new EventEmitter();
     tenderDashWsClientMock.subscribe = this.sinon.stub();
 
-    stateTransitionFixture = getIdentityCreateTransitionFixture();
-
-    dppMock = createDPPMock(this.sinon);
-    dppMock.stateTransition.createFromBuffer.resolves(stateTransitionFixture);
+    const dpp = new DashPlatformProtocol({}, null, null);
 
     driveClientMock = {
       fetchProofs: this.sinon.stub().resolves({
@@ -208,7 +211,7 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
       fetchProofForStateTransition,
       waitForTransactionToBeProvable,
       blockchainListener,
-      dppMock,
+      dpp,
       createGrpcErrorFromDriveResponseMock,
       1000,
     );

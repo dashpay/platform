@@ -10,11 +10,9 @@ const {
     StateTransitionBroadcastError,
   },
   PlatformProtocol: {
-    ConsensusErrors: {
-      IdentityNotFoundError,
-      InvalidDataContractVersionError,
-      IncompatibleDataContractSchemaError,
-    },
+    IdentityNotFoundError,
+    InvalidDataContractVersionError,
+    IncompatibleDataContractSchemaError,
   },
 } = Dash;
 
@@ -27,6 +25,7 @@ describe('Platform', () => {
     let identity;
 
     before(async () => {
+      dataContractFixture = await getDataContractFixture();
       client = await createClientWithFundedWallet(350000);
 
       identity = await client.platform.identities.register(300000);
@@ -41,7 +40,7 @@ describe('Platform', () => {
     it('should fail to create new data contract with unknown owner', async () => {
       // if no identity is specified
       // random is generated within the function
-      dataContractFixture = getDataContractFixture();
+      dataContractFixture = await getDataContractFixture();
 
       let broadcastError;
 
@@ -52,11 +51,12 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
+      expect(broadcastError.getCause().getCode()).to.equal(2000);
       expect(broadcastError.getCause()).to.be.an.instanceOf(IdentityNotFoundError);
     });
 
     it('should create new data contract with previously created identity as an owner', async () => {
-      dataContractFixture = getDataContractFixture(identity.getId());
+      dataContractFixture = await getDataContractFixture(identity.getId());
 
       await client.platform.contracts.publish(dataContractFixture, identity);
     });
@@ -92,6 +92,7 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
+      expect(broadcastError.getCause().getCode()).to.equal(1050);
       expect(broadcastError.getCause()).to.be.an.instanceOf(InvalidDataContractVersionError);
     });
 
@@ -105,6 +106,7 @@ describe('Platform', () => {
 
       const documentSchema = fetchedDataContract.getDocumentSchema('withByteArrays');
       delete documentSchema.properties.identifierField;
+      fetchedDataContract.setDocumentSchema('withByteArrays', documentSchema);
 
       let broadcastError;
 
@@ -115,6 +117,7 @@ describe('Platform', () => {
       }
 
       expect(broadcastError).to.be.an.instanceOf(StateTransitionBroadcastError);
+      expect(broadcastError.getCause().getCode()).to.equal(1051);
       expect(broadcastError.getCause()).to.be.an.instanceOf(IncompatibleDataContractSchemaError);
     });
 

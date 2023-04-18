@@ -1,4 +1,4 @@
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+const { KeyType } = require('@dashevo/wasm-dpp');
 const Address = require('@dashevo/dashcore-lib/lib/address');
 const createVotingIdentifier = require('./createVotingIdentifier');
 
@@ -63,7 +63,7 @@ function handleUpdatedVotingAddressFactory(
           blockInfo,
           votingIdentifier,
           votingPublicKeyHash,
-          IdentityPublicKey.TYPES.ECDSA_HASH160,
+          KeyType.ECDSA_HASH160,
         ),
       );
     }

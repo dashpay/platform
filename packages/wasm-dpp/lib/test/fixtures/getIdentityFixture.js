@@ -42,7 +42,7 @@ module.exports = async function getIdentityFixture(id = staticId, publicKeys = u
     // TODO: obtain latest version from some wasm binding?
     protocolVersion: 1,
     id, // TODO: should be probably id.toBuffer(), but it causes panic in IdentityWasm
-    balance: 10,
+    balance: 10000,
     revision: 0,
     publicKeys: publicKeys === undefined ? preCreatedPublicKeys : publicKeys,
   };

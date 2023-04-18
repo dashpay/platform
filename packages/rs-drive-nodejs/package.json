@@ -17,15 +17,21 @@
   ],
   "license": "MIT",
   "devDependencies": {
-    "@dashevo/dashcore-lib": "~0.20.2",
+    "@dashevo/bls": "~1.2.9",
+    "@dashevo/dashcore-lib": "~0.20.3",
     "@dashevo/withdrawals-contract": "workspace:*",
     "chai": "^4.3.4",
+    "chai-as-promised": "^7.1.1",
+    "chai-exclude": "^2.1.0",
+    "chai-string": "^1.5.0",
     "dirty-chai": "^2.0.1",
     "eslint": "^7.32.0",
     "eslint-config-airbnb-base": "^14.2.1",
     "eslint-plugin-import": "^2.24.2",
     "mocha": "^9.1.2",
     "neon-cli": "^0.10.1",
+    "sinon": "^11.1.2",
+    "sinon-chai": "^3.7.0",
     "ultra-runner": "^3.10.5"
   },
   "repository": {
@@ -42,6 +48,7 @@
   "homepage": "https://github.com/dashevo/rs-drive#readme",
   "dependencies": {
     "@dashevo/dpp": "workspace:*",
+    "@dashevo/wasm-dpp": "workspace:*",
     "cargo-cp-artifact": "^0.1.6",
     "cbor": "^8.0.0",
     "neon-load-or-build": "^2.2.2",

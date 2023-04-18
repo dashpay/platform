@@ -83,7 +83,7 @@ class GrpcTransport {
         throw error;
       }
 
-      const responseError = this.createGrpcTransportError(error, address);
+      const responseError = await this.createGrpcTransportError(error, address);
 
       if (!(responseError instanceof RetriableResponseError)) {
         throw responseError;

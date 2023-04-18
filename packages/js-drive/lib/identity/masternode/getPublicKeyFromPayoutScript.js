@@ -1,5 +1,4 @@
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
-const InvalidIdentityPublicKeyTypeError = require('@dashevo/dpp/lib/stateTransition/errors/InvalidIdentityPublicKeyTypeError');
+const { IdentityPublicKey, InvalidIdentityPublicKeyTypeError } = require('@dashevo/wasm-dpp');
 
 /**
  * @typedef getPublicKeyFromPayoutScript
@@ -13,8 +12,9 @@ function getPublicKeyFromPayoutScript(payoutScript, type) {
       return payoutScript.toBuffer().slice(3, 23);
     case IdentityPublicKey.TYPES.BIP13_SCRIPT_HASH:
       return payoutScript.toBuffer().slice(2, 22);
-    default:
+    default: {
       throw new InvalidIdentityPublicKeyTypeError(type);
+    }
   }
 }
 

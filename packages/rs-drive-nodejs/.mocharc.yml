@@ -1,2 +1,5 @@
+file:
+  - lib/test/bootstrap.js
+recursive: true
 exit: true
 timeout: 10000

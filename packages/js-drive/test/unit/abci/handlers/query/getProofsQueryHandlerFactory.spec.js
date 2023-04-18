@@ -9,9 +9,9 @@ const {
 const Long = require('long');
 const cbor = require('cbor');
 
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
+const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
 
 const getProofsQueryHandlerFactory = require('../../../../../lib/abci/handlers/query/getProofsQueryHandlerFactory');
 const BlockExecutionContextMock = require('../../../../../lib/test/mock/BlockExecutionContextMock');
@@ -31,10 +31,10 @@ describe('getProofsQueryHandlerFactory', () => {
   let documentRepository;
   let timeMs;
 
-  beforeEach(function beforeEach() {
-    dataContract = getDataContractFixture();
-    identity = getIdentityFixture();
-    documents = getDocumentsFixture();
+  beforeEach(async function beforeEach() {
+    dataContract = await getDataContractFixture();
+    identity = await getIdentityFixture();
+    documents = await getDocumentsFixture();
 
     const version = {
       app: Long.fromInt(1),
