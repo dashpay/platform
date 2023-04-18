@@ -1,10 +1,10 @@
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
+const { Identifier, KeyType } = require('@dashevo/wasm-dpp');
+
 const Address = require('@dashevo/dashcore-lib/lib/address');
 const Script = require('@dashevo/dashcore-lib/lib/script');
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const handleNewMasternodeFactory = require('../../../../lib/identity/masternode/handleNewMasternodeFactory');
 const getSmlFixture = require('../../../../lib/test/fixtures/getSmlFixture');
 const createOperatorIdentifier = require('../../../../lib/identity/masternode/createOperatorIdentifier');
@@ -23,16 +23,16 @@ describe('handleNewMasternodeFactory', () => {
   let blockInfo;
   let identityFixture;
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     const smlFixture = getSmlFixture();
     [masternodeEntry] = smlFixture[0].mnList;
     masternodeEntry.operatorPayoutAddress = 'yTCALGQTFNsA4pMPLTKAWdaLRmxfGpbujY';
 
-    dataContract = getDataContractFixture();
+    dataContract = await getDataContractFixture();
 
     dppMock = createDPPMock(this.sinon);
 
-    identityFixture = getIdentityFixture();
+    identityFixture = await getIdentityFixture();
 
     createMasternodeIdentityMock = this.sinon.stub().resolves(identityFixture);
     createRewardShareDocumentMock = this.sinon.stub();
@@ -77,7 +77,7 @@ describe('handleNewMasternodeFactory', () => {
       blockInfo,
       Identifier.from('HYyu6DdUQyiHZwzeWpmahu7AUrsEF9MKkRcrdQnKeNSj'),
       Buffer.from('6161616161616161616161616161616161616161', 'hex'),
-      IdentityPublicKey.TYPES.ECDSA_HASH160,
+      KeyType.ECDSA_HASH160,
       payoutScript,
     );
 
@@ -85,7 +85,7 @@ describe('handleNewMasternodeFactory', () => {
       blockInfo,
       Identifier.from('GVYoKVDd29gbmHzbVGepFjCbdymCS5Jq26CCiLnWNL6C'),
       Buffer.from('6262626262626262626262626262626262626262', 'hex'),
-      IdentityPublicKey.TYPES.ECDSA_HASH160,
+      KeyType.ECDSA_HASH160,
     );
 
     expect(createRewardShareDocumentMock).to.not.be.called();
@@ -114,7 +114,7 @@ describe('handleNewMasternodeFactory', () => {
       blockInfo,
       Identifier.from('HYyu6DdUQyiHZwzeWpmahu7AUrsEF9MKkRcrdQnKeNSj'),
       Buffer.from('6161616161616161616161616161616161616161', 'hex'),
-      IdentityPublicKey.TYPES.ECDSA_HASH160,
+      KeyType.ECDSA_HASH160,
       payoutScript,
     );
 
@@ -148,7 +148,7 @@ describe('handleNewMasternodeFactory', () => {
       blockInfo,
       Identifier.from('HYyu6DdUQyiHZwzeWpmahu7AUrsEF9MKkRcrdQnKeNSj'),
       Buffer.from('6161616161616161616161616161616161616161', 'hex'),
-      IdentityPublicKey.TYPES.ECDSA_HASH160,
+      KeyType.ECDSA_HASH160,
       payoutScript,
     );
 
@@ -156,7 +156,7 @@ describe('handleNewMasternodeFactory', () => {
       blockInfo,
       operatorIdentifier,
       Buffer.from('951a3208ba531ea75aedd2dc0a9efc75f2c4d9492f1ee0a989b593bcd9722b1a101774d80a426552a9f91d24eb55af6e', 'hex'),
-      IdentityPublicKey.TYPES.BLS12_381,
+      KeyType.BLS12_381,
       operatorPayoutScript,
     );
 
@@ -164,7 +164,7 @@ describe('handleNewMasternodeFactory', () => {
       blockInfo,
       votingIdentifier,
       Buffer.from('6262626262626262626262626262626262626262', 'hex'),
-      IdentityPublicKey.TYPES.ECDSA_HASH160,
+      KeyType.ECDSA_HASH160,
     );
 
     expect(createRewardShareDocumentMock).to.be.calledOnceWithExactly(

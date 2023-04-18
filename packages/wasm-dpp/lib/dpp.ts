@@ -1,4 +1,4 @@
-import * as dpp_module from '../wasm/wasm_dpp';
+import * as dpp_module from './wasm/wasm_dpp';
 import { patchConsensusErrors } from './errors/patchConsensusErrors';
 import _Identifier from "./identifier/Identifier";
 import _IdentifierError from "./identifier/errors/IdentifierError";
@@ -18,7 +18,7 @@ dpp_module.Identifier = _Identifier;
 // @ts-ignore
 dpp_module.IdentifierError = _IdentifierError;
 
-export * from '../wasm/wasm_dpp';
+export * from './wasm/wasm_dpp';
 export * from './errors/AbstractConsensusError';
 export * from './errors/DPPError';
 

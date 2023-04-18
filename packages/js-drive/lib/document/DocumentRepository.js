@@ -1,9 +1,8 @@
 const { createHash } = require('crypto');
+const { PreCalculatedOperation } = require('@dashevo/wasm-dpp');
 
 const lodashCloneDeep = require('lodash/cloneDeep');
 
-const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/PreCalculatedOperation');
-const DummyFeeResult = require('@dashevo/dpp/lib/stateTransition/fee/DummyFeeResult');
 const InvalidQueryError = require('./errors/InvalidQueryError');
 const StorageResult = require('../storage/StorageResult');
 const DataContractStoreRepository = require('../dataContract/DataContractStoreRepository');
@@ -62,7 +61,11 @@ class DocumentRepository {
     return new StorageResult(
       undefined,
       [
-        new PreCalculatedOperation(feeResult),
+        new PreCalculatedOperation(
+          feeResult.storageFee,
+          feeResult.processingFee,
+          feeResult.feeRefunds,
+        ),
       ],
     );
   }
@@ -107,7 +110,11 @@ class DocumentRepository {
     return new StorageResult(
       undefined,
       [
-        new PreCalculatedOperation(feeResult),
+        new PreCalculatedOperation(
+          feeResult.storageFee,
+          feeResult.processingFee,
+          feeResult.feeRefunds,
+        ),
       ],
     );
   }
@@ -126,12 +133,13 @@ class DocumentRepository {
    * @param {boolean} [options.useTransaction=false]
    * @param {boolean} [options.dryRun=false]
    * @param {BlockInfo} [options.blockInfo]
+   * @param {boolean} [extended=false]
    *
    * @throws InvalidQueryError
    *
-   * @returns {Promise<StorageResult<Document[]>>}
+   * @returns {Promise<StorageResult<Document[]|ExtendedDocument[]>>}
    */
-  async find(dataContract, documentType, options = {}) {
+  async find(dataContract, documentType, options = {}, extended = false) {
     const query = lodashCloneDeep(options);
     let useTransaction = false;
 
@@ -165,12 +173,13 @@ class DocumentRepository {
           epochIndex,
           query,
           useTransaction,
+          extended,
         );
 
       return new StorageResult(
         documents,
         [
-          new PreCalculatedOperation(new DummyFeeResult(0, processingCost, [])),
+          new PreCalculatedOperation(0, processingCost, []),
         ],
       );
     } catch (e) {
@@ -219,7 +228,11 @@ class DocumentRepository {
       return new StorageResult(
         undefined,
         [
-          new PreCalculatedOperation(feeResult),
+          new PreCalculatedOperation(
+            feeResult.storageFee,
+            feeResult.processingFee,
+            feeResult.feeRefunds,
+          ),
         ],
       );
     } finally {
@@ -273,7 +286,7 @@ class DocumentRepository {
       return new StorageResult(
         prove,
         [
-          new PreCalculatedOperation(new DummyFeeResult(0, processingCost, [])),
+          new PreCalculatedOperation(0, processingCost, []),
         ],
       );
     } catch (e) {

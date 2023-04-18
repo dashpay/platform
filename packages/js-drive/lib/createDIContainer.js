@@ -1,3 +1,4 @@
+/* eslint-disable no-shadow */
 const {
   createContainer: createAwilixContainer,
   InjectionMode,
@@ -7,6 +8,8 @@ const {
 } = require('awilix');
 
 const fs = require('fs');
+
+const findMyWay = require('find-my-way');
 
 const { AsyncLocalStorage } = require('node:async_hooks');
 
@@ -18,11 +21,14 @@ const RpcClient = require('@dashevo/dashd-rpc/promise');
 
 const { PublicKey } = require('@dashevo/dashcore-lib');
 
-const DashPlatformProtocol = require('@dashevo/dpp');
-
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
-
-const findMyWay = require('find-my-way');
+const {
+  DashPlatformProtocol,
+  Identifier,
+  decodeProtocolEntity,
+  calculateOperationFees,
+  calculateStateTransitionFeeFromOperations,
+  calculateStateTransitionFee,
+} = require('@dashevo/wasm-dpp');
 
 const pino = require('pino');
 const pinoMultistream = require('pino-multi-stream');
@@ -31,10 +37,6 @@ const createABCIServer = require('@dashevo/abci');
 
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
-const calculateOperationFees = require('@dashevo/dpp/lib/stateTransition/fee/calculateOperationFees');
-const calculateStateTransitionFeeFactory = require('@dashevo/dpp/lib/stateTransition/fee/calculateStateTransitionFeeFactory');
-
-const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
 const featureFlagsSystemIds = require('@dashevo/feature-flags-contract/lib/systemIds');
 
 const featureFlagsDocuments = require('@dashevo/feature-flags-contract/schema/feature-flags-documents.json');
@@ -50,7 +52,6 @@ const dashpayDocuments = require('@dashevo/dashpay-contract/schema/dashpay.schem
 
 const withdrawalsSystemIds = require('@dashevo/withdrawals-contract/lib/systemIds');
 const withdrawalsDocuments = require('@dashevo/withdrawals-contract/schema/withdrawals-documents.json');
-const calculateStateTransitionFeeFromOperationsFactory = require('@dashevo/dpp/lib/stateTransition/fee/calculateStateTransitionFeeFromOperationsFactory');
 
 const packageJSON = require('../package.json');
 
@@ -149,7 +150,7 @@ const createContextLoggerFactory = require('./abci/errors/createContextLoggerFac
 const IdentityBalanceStoreRepository = require('./identity/IdentityBalanceStoreRepository');
 
 /**
- *
+ * @param {WebAssembly.Instance} blsSignatures
  * @param {Object} options
  * @param {string} options.ABCI_HOST
  * @param {string} options.ABCI_PORT
@@ -188,7 +189,7 @@ const IdentityBalanceStoreRepository = require('./identity/IdentityBalanceStoreR
  *
  * @return {AwilixContainer}
  */
-function createDIContainer(options) {
+function createDIContainer(blsSignatures, options) {
   if (!options.DPNS_MASTER_PUBLIC_KEY) {
     throw new Error('DPNS_MASTER_PUBLIC_KEY must be set');
   }
@@ -624,14 +625,18 @@ function createDIContainer(options) {
    * Register DPP
    */
   container.register({
-    decodeProtocolEntity: asFunction(decodeProtocolEntityFactory),
+    blsSignatures: asValue(blsSignatures),
+
+    DashPlatformProtocol: asFunction(() => DashPlatformProtocol),
+
+    decodeProtocolEntity: asValue(decodeProtocolEntity),
 
     calculateOperationFees: asValue(calculateOperationFees),
 
     calculateStateTransitionFeeFromOperations:
-      asFunction(calculateStateTransitionFeeFromOperationsFactory),
+    asValue(calculateStateTransitionFeeFromOperations),
 
-    calculateStateTransitionFee: asFunction(calculateStateTransitionFeeFactory),
+    calculateStateTransitionFee: asValue(calculateStateTransitionFee),
 
     stateRepository: asFunction((
       identityRepository,
@@ -720,18 +725,21 @@ function createDIContainer(options) {
       noopLogger,
     ) => unserializeStateTransitionFactory(transactionalDpp, noopLogger)).singleton(),
 
-    dpp: asFunction((stateRepository, dppOptions) => (
-      new DashPlatformProtocol({
-        ...dppOptions,
-        stateRepository,
-      })
+    dpp: asFunction((DashPlatformProtocol, stateRepository, dppOptions, blsSignatures) => (
+      new DashPlatformProtocol(blsSignatures, stateRepository, { generate: () => Buffer.alloc(32) })
     )).singleton(),
 
-    transactionalDpp: asFunction((transactionalStateRepository, dppOptions) => (
-      new DashPlatformProtocol({
-        ...dppOptions,
-        stateRepository: transactionalStateRepository,
-      })
+    transactionalDpp: asFunction((
+      DashPlatformProtocol,
+      transactionalStateRepository,
+      dppOptions,
+      blsSignatures,
+    ) => (
+      new DashPlatformProtocol(
+        blsSignatures,
+        transactionalStateRepository,
+        { generate: () => Buffer.alloc(32) },
+      )
     )).singleton(),
   });
 

@@ -1,5 +1,5 @@
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
+const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
 
 const InvalidQueryError = require('../../../lib/document/errors/InvalidQueryError');
 
@@ -18,27 +18,31 @@ describe('fetchDocumentsFactory', () => {
   let container;
   let blockInfo;
 
-  beforeEach(async () => {
-    container = await createTestDIContainer();
+  beforeEach(async function beforeEach() {
+    container = await createTestDIContainer(this.blsAdapter);
 
     dataContractRepository = container.resolve('dataContractRepository');
     documentRepository = container.resolve('documentRepository');
 
-    dataContract = getDataContractFixture();
+    dataContract = await getDataContractFixture();
 
     contractId = dataContract.getId();
 
-    [document] = getDocumentsFixture(dataContract);
+    [document] = await getDocumentsFixture(dataContract);
 
     documentType = document.getType();
 
-    dataContract.documents[documentType].indices = [
+    const documentSchamas = dataContract.getDocuments();
+
+    documentSchamas[documentType].indices = [
       {
         properties: [
           { name: 'asc' },
         ],
       },
     ];
+
+    dataContract.setDocuments(documentSchamas);
 
     blockInfo = new BlockInfo(1, 0, Date.now());
 
@@ -62,7 +66,7 @@ describe('fetchDocumentsFactory', () => {
   it('should fetch Documents for specified contract ID and document type', async () => {
     await documentRepository.create(document, blockInfo);
 
-    const result = await fetchDocuments(contractId, documentType);
+    const result = await fetchDocuments(contractId, documentType, undefined, true);
 
     expect(result).to.be.instanceOf(StorageResult);
     expect(result.getOperations().length).to.be.greaterThan(0);
@@ -74,7 +78,7 @@ describe('fetchDocumentsFactory', () => {
 
     const [actualDocument] = foundDocuments;
 
-    expect(actualDocument.toObject()).to.deep.equal(document.toObject());
+    expect(actualDocument).to.deep.equals(document);
   });
 
   it('should fetch Documents for specified contract id, document type and name', async () => {
@@ -82,7 +86,7 @@ describe('fetchDocumentsFactory', () => {
 
     const query = { where: [['name', '==', document.get('name')]] };
 
-    const result = await fetchDocuments(contractId, documentType, query);
+    const result = await fetchDocuments(contractId, documentType, query, true);
 
     const foundDocuments = result.getValue();
 
@@ -99,7 +103,7 @@ describe('fetchDocumentsFactory', () => {
 
     const query = { where: [['name', '==', 'unknown']] };
 
-    const result = await fetchDocuments(contractId, documentType, query);
+    const result = await fetchDocuments(contractId, documentType, query, true);
 
     expect(result).to.be.instanceOf(StorageResult);
     expect(result.getOperations().length).to.be.greaterThan(0);
@@ -110,7 +114,7 @@ describe('fetchDocumentsFactory', () => {
   });
 
   it('should fetch documents by an equal date', async () => {
-    const indexedDocument = getDocumentsFixture(dataContract)[3];
+    const indexedDocument = (await getDocumentsFixture(dataContract))[3];
 
     await documentRepository.create(indexedDocument, blockInfo);
 
@@ -120,7 +124,7 @@ describe('fetchDocumentsFactory', () => {
       ],
     };
 
-    const result = await fetchDocuments(contractId, 'indexedDocument', query);
+    const result = await fetchDocuments(contractId, 'indexedDocument', query, true);
 
     expect(result).to.be.instanceOf(StorageResult);
     expect(result.getOperations().length).to.be.greaterThan(0);
@@ -133,7 +137,7 @@ describe('fetchDocumentsFactory', () => {
   });
 
   it('should fetch documents by a date range', async () => {
-    const [, , , indexedDocument] = getDocumentsFixture(dataContract);
+    const [, , , indexedDocument] = await getDocumentsFixture(dataContract);
 
     await documentRepository.create(indexedDocument, blockInfo);
 
@@ -151,7 +155,7 @@ describe('fetchDocumentsFactory', () => {
       orderBy: [['$createdAt', 'asc']],
     };
 
-    const result = await fetchDocuments(contractId, 'indexedDocument', query);
+    const result = await fetchDocuments(contractId, 'indexedDocument', query, true);
 
     expect(result).to.be.instanceOf(StorageResult);
     expect(result.getOperations().length).to.be.greaterThan(0);
@@ -164,7 +168,7 @@ describe('fetchDocumentsFactory', () => {
   });
 
   it('should fetch empty array in case date is out of range', async () => {
-    const [, , , indexedDocument] = getDocumentsFixture(dataContract);
+    const [, , , indexedDocument] = await getDocumentsFixture(dataContract);
 
     await documentRepository.create(indexedDocument, blockInfo);
 
@@ -182,7 +186,7 @@ describe('fetchDocumentsFactory', () => {
       orderBy: [['$createdAt', 'asc']],
     };
 
-    const result = await fetchDocuments(contractId, 'indexedDocument', query);
+    const result = await fetchDocuments(contractId, 'indexedDocument', query, true);
 
     expect(result).to.be.instanceOf(StorageResult);
     expect(result.getOperations().length).to.be.greaterThan(0);
@@ -198,7 +202,7 @@ describe('fetchDocumentsFactory', () => {
     const query = { where: [['lastName', '==', 'unknown']] };
 
     try {
-      await fetchDocuments(contractId, documentType, blockInfo, query);
+      await fetchDocuments(contractId, documentType, query, true);
 
       expect.fail('should throw InvalidQueryError');
     } catch (e) {
@@ -210,7 +214,7 @@ describe('fetchDocumentsFactory', () => {
     documentType = 'Unknown';
 
     try {
-      await fetchDocuments(contractId, documentType);
+      await fetchDocuments(contractId, documentType, undefined, true);
 
       expect.fail('should throw InvalidQueryError');
     } catch (e) {

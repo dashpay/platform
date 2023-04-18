@@ -1,6 +1,6 @@
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
+const { Identifier, KeyType } = require('@dashevo/wasm-dpp');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
+
 const handleUpdatedVotingAddressFactory = require('../../../../lib/identity/masternode/handleUpdatedVotingAddressFactory');
 const StorageResult = require('../../../../lib/storage/StorageResult');
 const BlockInfo = require('../../../../lib/blockExecution/BlockInfo');
@@ -15,7 +15,7 @@ describe('handleUpdatedVotingAddressFactory', () => {
   let identityRepositoryMock;
   let blockInfo;
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     smlEntry = {
       proRegTxHash: '5557273f5922d9925e2327908ddb128bcf8e055a04d86e23431809bedd077060',
       confirmedHash: '0000003da09fd100c60ad5743c44257bb9220ad8162a9b6cae9d005c8e465dba',
@@ -35,7 +35,7 @@ describe('handleUpdatedVotingAddressFactory', () => {
 
     fetchTransactionMock = this.sinon.stub().resolves(transactionFixture);
 
-    identity = getIdentityFixture();
+    identity = await getIdentityFixture();
 
     identityRepositoryMock = {
       update: this.sinon.stub(),
@@ -67,7 +67,7 @@ describe('handleUpdatedVotingAddressFactory', () => {
       blockInfo,
       Identifier.from('G1p14MYdpNRLNWuKgQ9SjJUPxfuaJMTwYjdRWu9sLzvL'),
       Buffer.from('8fd1a9502c58ab103792693e951bf39f10ee46a9', 'hex'),
-      IdentityPublicKey.TYPES.ECDSA_HASH160,
+      KeyType.ECDSA_HASH160,
     );
     expect(fetchTransactionMock).to.be.calledWithExactly(smlEntry.proRegTxHash);
   });

@@ -1053,7 +1053,7 @@ describe('validateDataContractFactory', function main() {
           properties: {
             something: {
               type: 'string',
-              format: 'url',
+              format: 'uri',
             },
           },
           additionalProperties: false,
@@ -1076,7 +1076,7 @@ describe('validateDataContractFactory', function main() {
           properties: {
             something: {
               type: 'string',
-              format: 'url',
+              format: 'uri',
               maxLength: 60000,
             },
           },

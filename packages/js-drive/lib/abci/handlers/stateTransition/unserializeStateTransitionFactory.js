@@ -1,4 +1,7 @@
-const InvalidStateTransitionError = require('@dashevo/dpp/lib/stateTransition/errors/InvalidStateTransitionError');
+const {
+  InvalidStateTransitionError,
+} = require('@dashevo/wasm-dpp');
+
 const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
 
 const DPPValidationAbciError = require('../../errors/DPPValidationAbciError');

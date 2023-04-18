@@ -1,4 +1,4 @@
-const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/PreCalculatedOperation');
+const { PreCalculatedOperation } = require('@dashevo/wasm-dpp');
 const StorageResult = require('../storage/StorageResult');
 
 class IdentityPublicKeyStoreRepository {
@@ -42,7 +42,11 @@ class IdentityPublicKeyStoreRepository {
       return new StorageResult(
         undefined,
         [
-          new PreCalculatedOperation(feeResult),
+          new PreCalculatedOperation(
+            feeResult.storageFee,
+            feeResult.processingFee,
+            feeResult.feeRefunds,
+          ),
         ],
       );
     } finally {
@@ -89,7 +93,11 @@ class IdentityPublicKeyStoreRepository {
       return new StorageResult(
         undefined,
         [
-          new PreCalculatedOperation(feeResult),
+          new PreCalculatedOperation(
+            feeResult.storageFee,
+            feeResult.processingFee,
+            feeResult.feeRefunds,
+          ),
         ],
       );
     } finally {

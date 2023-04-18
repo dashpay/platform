@@ -41,6 +41,17 @@ impl StateTransitionExecutionContext {
         inner.actual_operations = operations
     }
 
+    /// Returns dry run operations
+    pub fn get_dry_operations(&self) -> Vec<Operation> {
+        let inner = self.inner.lock().unwrap();
+        inner
+            .dry_run_operations
+            .iter()
+            // TODO remove cloning
+            .cloned()
+            .collect()
+    }
+
     /// Returns all (actual & dry run) operations
     pub fn get_operations(&self) -> Vec<Operation> {
         let inner = self.inner.lock().unwrap();

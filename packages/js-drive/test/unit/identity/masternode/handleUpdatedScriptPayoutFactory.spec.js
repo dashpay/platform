@@ -1,8 +1,12 @@
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
-const Identity = require('@dashevo/dpp/lib/identity/Identity');
-const Script = require('@dashevo/dashcore-lib/lib/script');
+// TODO: should we take it from other place?
 const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
+const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
+const {
+  Identity, IdentityPublicKey, KeyPurpose, KeyType, KeySecurityLevel,
+} = require('@dashevo/wasm-dpp');
+
+const Script = require('@dashevo/dashcore-lib/lib/script');
 const handleUpdatedScriptPayoutFactory = require('../../../../lib/identity/masternode/handleUpdatedScriptPayoutFactory');
 const BlockInfo = require('../../../../lib/blockExecution/BlockInfo');
 const StorageResult = require('../../../../lib/storage/StorageResult');
@@ -16,13 +20,13 @@ describe('handleUpdatedScriptPayoutFactory', () => {
   let identityRepositoryMock;
   let identityPublicKeyRepositoryMock;
 
-  beforeEach(function beforeEach() {
-    identity = getIdentityFixture();
+  beforeEach(async function beforeEach() {
+    identity = await getIdentityFixture();
 
     blockInfo = new BlockInfo(1, 0, Date.now());
 
     getWithdrawPubKeyTypeFromPayoutScriptMock = this.sinon.stub().returns(
-      IdentityPublicKey.TYPES.ECDSA_HASH160,
+      KeyType.ECDSA_HASH160,
     );
 
     getPublicKeyFromPayoutScriptMock = this.sinon.stub().returns(Buffer.alloc(20, '0'));
@@ -46,19 +50,33 @@ describe('handleUpdatedScriptPayoutFactory', () => {
   });
 
   it('should not update identity if identityPublicKeys max length was reached', async () => {
+    const identifier = await generateRandomIdentifier();
+
     const { maxItems } = identitySchema.properties.publicKeys;
-    for (let i = identity.getPublicKeys().length; i < maxItems; ++i) {
-      identity.publicKeys.push({
-        data: 'fakePublicKey',
+
+    const publicKeys = [];
+    for (let i = 0; i <= maxItems; i++) {
+      publicKeys.push({
+        id: i,
+        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+        data: Buffer.from('AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di', 'base64'),
+        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+        readOnly: false,
       });
     }
+
+    identity = await getIdentityFixture(identifier, publicKeys);
+
+    identityRepositoryMock.fetch.resolves(new StorageResult(identity, []));
 
     const newPubKeyData = Buffer.alloc(20, '0');
 
     const result = await handleUpdatedScriptPayout(
       identity.getId(),
       newPubKeyData,
-      identity.publicKeys[0].getData(),
+      blockInfo,
+      identity.getPublicKeys()[0].getData(),
     );
 
     expect(result.createdEntities).to.have.lengthOf(0);
@@ -77,16 +95,17 @@ describe('handleUpdatedScriptPayoutFactory', () => {
       identity.getId(),
       newPubKeyData,
       blockInfo,
-      identity.publicKeys[0].getData(),
+      identity.getPublicKeys()[0].getData(),
     );
 
-    const newWithdrawalIdentityPublicKey = new IdentityPublicKey()
-      .setId(2)
-      .setType(IdentityPublicKey.TYPES.ECDSA_HASH160)
-      .setData(Buffer.from(newPubKeyData))
-      .setReadOnly(true)
-      .setPurpose(IdentityPublicKey.PURPOSES.WITHDRAW)
-      .setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MASTER);
+    const newWithdrawalIdentityPublicKey = new IdentityPublicKey({
+      id: 2,
+      type: KeyType.ECDSA_HASH160,
+      data: Buffer.from(newPubKeyData),
+      readOnly: true,
+      purpose: KeyPurpose.WITHDRAW,
+      securityLevel: KeySecurityLevel.MASTER,
+    });
 
     expect(identityRepositoryMock.updateRevision).to.be.calledOnceWithExactly(
       identity.getId(),
@@ -125,13 +144,14 @@ describe('handleUpdatedScriptPayoutFactory', () => {
       new Script(),
     );
 
-    const newWithdrawalIdentityPublicKey = new IdentityPublicKey()
-      .setId(2)
-      .setType(IdentityPublicKey.TYPES.ECDSA_HASH160)
-      .setData(Buffer.from(newPubKeyData))
-      .setReadOnly(true)
-      .setPurpose(IdentityPublicKey.PURPOSES.WITHDRAW)
-      .setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MASTER);
+    const newWithdrawalIdentityPublicKey = new IdentityPublicKey({
+      id: 2,
+      type: KeyType.ECDSA_HASH160,
+      data: Buffer.from(newPubKeyData),
+      readOnly: true,
+      purpose: KeyPurpose.WITHDRAW,
+      securityLevel: KeySecurityLevel.MASTER,
+    });
 
     expect(identityRepositoryMock.updateRevision).to.be.calledOnceWithExactly(
       identity.getId(),

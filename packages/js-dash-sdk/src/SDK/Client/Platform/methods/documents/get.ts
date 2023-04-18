@@ -1,22 +1,19 @@
-import Identifier from '@dashevo/dpp/lib/Identifier';
-import Metadata from '@dashevo/dpp/lib/Metadata';
-import Document from '@dashevo/dpp/lib/document/Document';
-
+import { Identifier, ExtendedDocument, Metadata } from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
 
 /**
  * @param {WhereCondition[]} [where] - where
  * @param {OrderByCondition[]} [orderBy] - order by
  * @param {number} [limit] - limit
- * @param {string|Buffer|Document|Identifier} [startAt] - start value (included)
- * @param {string|Buffer|Document|Identifier} [startAfter] - start value (not included)
+ * @param {string|Buffer|ExtendedDocument|Identifier} [startAt] - start value (included)
+ * @param {string|Buffer|ExtendedDocument|Identifier} [startAfter] - start value (not included)
  */
 declare interface FetchOpts {
   where?: WhereCondition[];
   orderBy?: OrderByCondition[];
   limit?: number;
-  startAt?: string | Buffer | Document | Identifier;
-  startAfter?: string | Buffer | Document | Identifier;
+  startAt?: string | Buffer | ExtendedDocument | Identifier;
+  startAfter?: string | Buffer | ExtendedDocument | Identifier;
 }
 
 type OrderByCondition = [
@@ -99,6 +96,7 @@ function convertIdentifierProperties(
  * @returns documents
  */
 export async function get(this: Platform, typeLocator: string, opts: FetchOpts): Promise<any> {
+  this.logger.debug(`[Documents#get] Get document(s) for "${typeLocator}"`);
   if (!typeLocator.includes('.')) throw new Error('Accessing to field is done using format: appName.fieldName');
 
   await this.initialize();
@@ -119,6 +117,7 @@ export async function get(this: Platform, typeLocator: string, opts: FetchOpts):
 
   // If not present, will fetch contract based on appName and contractId store in this.apps.
   await ensureAppContractFetched.call(this, appName);
+  this.logger.silly(`[Documents#get] Ensured app contract is fetched "${typeLocator}"`);
 
   if (opts.where) {
     const binaryProperties = appDefinition.contract.getBinaryProperties(fieldType);
@@ -129,13 +128,13 @@ export async function get(this: Platform, typeLocator: string, opts: FetchOpts):
       ));
   }
 
-  if (opts.startAt instanceof Document) {
+  if (opts.startAt instanceof ExtendedDocument) {
     opts.startAt = opts.startAt.getId();
   } else if (typeof opts.startAt === 'string') {
     opts.startAt = Identifier.from(opts.startAt);
   }
 
-  if (opts.startAfter instanceof Document) {
+  if (opts.startAfter instanceof ExtendedDocument) {
     opts.startAfter = opts.startAfter.getId();
   } else if (typeof opts.startAfter === 'string') {
     opts.startAfter = Identifier.from(opts.startAfter);
@@ -150,11 +149,13 @@ export async function get(this: Platform, typeLocator: string, opts: FetchOpts):
 
   const rawDocuments = documentsResponse.getDocuments();
 
-  return Promise.all(
+  this.logger.silly(`[Documents#get] Obtained ${rawDocuments.length} raw document(s)"`);
+
+  const result = await Promise.all(
     rawDocuments.map(async (rawDocument) => {
       const document = await this.dpp.document.createFromBuffer(rawDocument);
 
-      let metadata = null;
+      let metadata;
       const responseMetadata = documentsResponse.getMetadata();
       if (responseMetadata) {
         metadata = new Metadata({
@@ -169,6 +170,10 @@ export async function get(this: Platform, typeLocator: string, opts: FetchOpts):
       return document;
     }),
   );
+
+  this.logger.debug(`[Documents#get] Obtained ${result.length} document(s) for "${typeLocator}"`);
+
+  return result;
 }
 
 export default get;

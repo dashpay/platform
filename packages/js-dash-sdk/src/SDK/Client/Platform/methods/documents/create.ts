@@ -1,3 +1,4 @@
+import { ExtendedDocument } from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
 
 declare interface CreateOpts {
@@ -17,7 +18,8 @@ export async function create(
   typeLocator: string,
   identity: any,
   data: CreateOpts = {},
-): Promise<any> {
+): Promise<ExtendedDocument> {
+  this.logger.debug(`[Document#create] Create document "${typeLocator}"`);
   await this.initialize();
 
   const { dpp } = this;
@@ -31,17 +33,21 @@ export async function create(
   const { contractId } = this.client.getApps().get(appName);
 
   const dataContract = await this.contracts.get(contractId);
+  this.logger.silly(`[Document#create] Obtained data contract ${dataContract.getId()}`);
 
   if (dataContract === null) {
     throw new Error(`Contract ${appName} not found. Ensure contractId ${contractId} is correct.`);
   }
 
-  return dpp.document.create(
+  const document = dpp.document.create(
     dataContract,
     identity.getId(),
     fieldType,
     data,
   );
+
+  this.logger.debug(`[Document#create] Created document ${typeLocator} for data contract ${dataContract.getId()}}`);
+  return document;
 }
 
 export default create;

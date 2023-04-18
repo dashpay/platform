@@ -104,6 +104,7 @@ describe('StateTransitionFacade', () => {
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchIdentity.resolves(identity);
+    stateRepositoryMock.fetchIdentityBalance.resolves(identity.getBalance());
     stateRepositoryMock.fetchLatestPlatformBlockTime.resolves(blockTime);
     stateRepositoryMock.fetchDataContract.resolves(null);
 
@@ -170,7 +171,7 @@ describe('StateTransitionFacade', () => {
     });
 
     it('should return invalid result if not enough balance to pay fee for State Transition', async () => {
-      identity.setBalance(0);
+      stateRepositoryMock.fetchIdentityBalance.resolves(0);
       const result = await dpp.stateTransition.validate(dataContractCreateTransition);
 
       expect(result).to.be.an.instanceOf(ValidationResult);

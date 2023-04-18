@@ -32,6 +32,7 @@ jobs:
   js-checks:
     name: JS
     uses: ./.github/workflows/js-checks.yml
+    secrets: inherit
     with:
       package: '@dashevo/platform-test-suite'
       skip-tests: true

@@ -1,3 +1,4 @@
+/* eslint-disable */
 const path = require('path');
 const dotenvSafe = require('dotenv-safe');
 const dotenvExpand = require('dotenv-expand');
@@ -7,12 +8,107 @@ const sinonChai = require('sinon-chai');
 const dirtyChai = require('dirty-chai');
 const chaiAsPromised = require('chai-as-promised');
 const chaiString = require('chai-string');
+
+const lodash = require('lodash');
+
 const DashCoreOptions = require('@dashevo/dp-services-ctl/lib/services/dashCore/DashCoreOptions');
+
+const { default: loadWasmDpp, Identifier } = require('@dashevo/wasm-dpp');
+
+const getBlsAdapter = require('../bls/getBlsAdapter');
 
 use(sinonChai);
 use(chaiAsPromised);
 use(chaiString);
 use(dirtyChai);
+use(async (chai, util) => {
+  await loadWasmDpp();
+
+  const getMofifiedArgument = (argument) => {
+    if (!argument.hasOwnProperty('ptr')) {
+      return argument;
+    }
+
+    const isIdentifier = (argument instanceof Identifier);
+
+    if (isIdentifier) {
+      return argument.toBuffer();
+    }
+
+    try {
+      return argument.toJSON();
+    } catch (e) {
+      try {
+        return argument.serialize();
+      } catch (se) {
+        try {
+          return argument.toBuffer();
+        } catch (e) { }
+      }
+    }
+
+    return argument;
+  };
+
+  const transformArguments = (args, topLevelObject, basePath = '') => {
+    lodash.forIn(args, (value, key) => {
+      if (value !== undefined && value !== null && value.hasOwnProperty('ptr')) {
+        lodash.set(topLevelObject, `${basePath}${basePath === '' ? '' : '.'}${key}`, getMofifiedArgument(value));
+        return;
+      }
+
+      if (lodash.isArray(value)) {
+        value.forEach((item, index) => {
+          if (lodash.isObject(item)) {
+            if (item !== undefined && item !== null && item.hasOwnProperty('ptr')) {
+              lodash.set(topLevelObject, `${basePath}${basePath === '' ? '' : '.'}${key}[${index}]`, getMofifiedArgument(item));
+              return;
+            }
+
+            transformArguments(item, topLevelObject);
+          }
+        });
+      }
+
+      if (lodash.isObject(value)) {
+        transformArguments(value, topLevelObject, `${basePath}${basePath === '' ? '' : '.'}${key}`);
+      }
+    });
+  };
+
+  // eslint-disable-next-line
+  chai.Assertion.overwriteMethod('equals', function (_super) {
+    return function (other) {
+      const originalObject = {
+        0: this._obj,
+      };
+
+      transformArguments(originalObject, originalObject);
+      transformArguments(arguments, arguments);
+
+      new chai.Assertion(originalObject['0']).to.deep.equal(arguments['0']);
+    };
+  });
+
+  // eslint-disable-next-line
+  chai.Assertion.overwriteMethod('calledOnceWithExactly', function (_super) {
+    return function () {
+      const clonedCallArgs = lodash.cloneDeep(
+        this._obj.getCall(0).args.reduce((obj, next, index) => ({
+          ...obj,
+          [index]: next,
+        }), {}),
+      );
+      transformArguments(clonedCallArgs, clonedCallArgs);
+
+      const clonedArgs = lodash.cloneDeep(arguments);
+      transformArguments(clonedArgs, clonedArgs);
+
+      new chai.Assertion(this._obj.callCount).to.equal(1);
+      new chai.Assertion(clonedCallArgs).to.deep.equal(clonedArgs);
+    };
+  });
+});
 
 process.env.NODE_ENV = 'test';
 
@@ -61,6 +157,11 @@ DashCoreOptions.setDefaultCustomOptions({
   container: {
     image: 'dashpay/dashd:18.1.0-rc.1',
   },
+});
+
+before(async function before() {
+  this.blsAdapter = await getBlsAdapter();
+  await loadWasmDpp();
 });
 
 beforeEach(function beforeEach() {

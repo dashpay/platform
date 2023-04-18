@@ -30,6 +30,7 @@ jobs:
   js-checks:
     name: JS
     uses: ./.github/workflows/js-checks.yml
+    secrets: inherit
     with:
       package: '@dashevo/wallet-lib'
       start-local-network: true

@@ -175,6 +175,7 @@ class Config {
       COMPOSE_FILE: dockerComposeFiles.join(':'),
       COMPOSE_PATH_SEPARATOR: ':',
       DOCKER_BUILDKIT: 1,
+      COMPOSE_DOCKER_CLI_BUILD: 1,
       CORE_LOG_DIRECTORY_PATH: nodePath.dirname(
         this.get('core.log.file.path'),
       ),

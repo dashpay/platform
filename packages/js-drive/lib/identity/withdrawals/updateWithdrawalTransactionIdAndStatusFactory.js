@@ -51,7 +51,7 @@ function updateWithdrawalTransactionIdAndStatusFactory(
     };
 
     const documents = await fetchDocuments(
-      withdrawalsContractId,
+      withdrawalsContractId.toBuffer(),
       WITHDRAWALS_DOCUMENT_TYPE,
       fetchOptions,
     );

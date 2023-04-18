@@ -1,4 +1,5 @@
-const PreCalculatedOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/PreCalculatedOperation');
+const { PreCalculatedOperation } = require('@dashevo/wasm-dpp');
+
 const StorageResult = require('../storage/StorageResult');
 
 class IdentityBalanceStoreRepository {
@@ -33,7 +34,13 @@ class IdentityBalanceStoreRepository {
 
       return new StorageResult(
         balance,
-        [new PreCalculatedOperation(feeResult)],
+        [
+          new PreCalculatedOperation(
+            feeResult.storageFee,
+            feeResult.processingFee,
+            feeResult.feeRefunds,
+          ),
+        ],
       );
     }
 
@@ -72,7 +79,13 @@ class IdentityBalanceStoreRepository {
 
     return new StorageResult(
       balance,
-      [new PreCalculatedOperation(feeResult)],
+      [
+        new PreCalculatedOperation(
+          feeResult.storageFee,
+          feeResult.processingFee,
+          feeResult.feeRefunds,
+        ),
+      ],
     );
   }
 
@@ -101,7 +114,11 @@ class IdentityBalanceStoreRepository {
       return new StorageResult(
         undefined,
         [
-          new PreCalculatedOperation(feeResult),
+          new PreCalculatedOperation(
+            feeResult.storageFee,
+            feeResult.processingFee,
+            feeResult.feeRefunds,
+          ),
         ],
       );
     } finally {
@@ -182,7 +199,11 @@ class IdentityBalanceStoreRepository {
       return new StorageResult(
         undefined,
         [
-          new PreCalculatedOperation(feeResult),
+          new PreCalculatedOperation(
+            feeResult.storageFee,
+            feeResult.processingFee,
+            feeResult.feeRefunds,
+          ),
         ],
       );
     } finally {

@@ -7,7 +7,8 @@ const {
 } = require('@dashevo/abci/types');
 
 const cbor = require('cbor');
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
+
+const { Identifier } = require('@dashevo/wasm-dpp');
 
 /**
  *

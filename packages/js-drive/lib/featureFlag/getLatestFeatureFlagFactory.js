@@ -33,7 +33,7 @@ function getLatestFeatureFlagFactory(
     };
 
     const result = await fetchDocuments(
-      featureFlagsContractId,
+      featureFlagsContractId.toBuffer(),
       flagType,
       {
         ...query,
