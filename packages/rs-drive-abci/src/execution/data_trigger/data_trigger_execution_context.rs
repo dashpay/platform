@@ -1,10 +1,8 @@
 use crate::platform::PlatformStateRef;
 use dpp::{
     prelude::{DataContract, Identifier},
-    state_repository::StateRepositoryLike,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
 };
-use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 
 /// DataTriggerExecutionContext represents the context in which a data trigger is executed.

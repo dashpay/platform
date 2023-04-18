@@ -3,7 +3,6 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use bls_signatures::PublicKey as BlsPublicKey;
 use dashcore::{ProTxHash, QuorumHash};
-use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
 use dashcore_rpc::json::QuorumInfoResult;
 use std::collections::BTreeMap;
 

@@ -3,14 +3,11 @@ use crate::error::Error;
 use dpp::contracts::withdrawals_contract;
 use dpp::data_contract::DriveContractExt;
 use dpp::document::document_transition::DocumentTransitionAction;
-use dpp::document::Document;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-use dpp::platform_value::{platform_value, Identifier, Value};
-use dpp::prelude::DocumentTransition;
-use dpp::{get_from_transition, get_from_transition_action, DataTriggerActionError, ProtocolError};
+use dpp::platform_value::{Identifier, Value};
+use dpp::{get_from_transition_action, DataTriggerActionError, ProtocolError};
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 use std::collections::BTreeMap;
-use std::convert::TryInto;
 
 use crate::execution::data_trigger::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
@@ -117,23 +114,24 @@ pub fn delete_withdrawal_data_trigger<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::platform::{PlatformRef, PlatformStateRef};
+    use crate::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
     use dpp::platform_value::platform_value;
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dpp::tests::fixtures::{get_data_contract_fixture, get_withdrawal_document_fixture};
-    use drive::drive::Drive;
+    use drive::drive::block_info::BlockInfo;
+    use drive::drive::object_size_info::DocumentInfo::DocumentRefWithoutSerialization;
+    use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 
     fn should_throw_error_if_withdrawal_not_found() {
         let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
         let state_read_guard = platform.state.read().unwrap();
-        let platform_ref = PlatformRef {
+        let platform_ref = PlatformStateRef {
             drive: &platform.drive,
             state: &state_read_guard,
             config: &platform.config,
-            core_rpc: &platform.core_rpc,
         };
 
         let transition_execution_context = StateTransitionExecutionContext::default();
@@ -155,17 +153,30 @@ mod tests {
 
         assert!(!result.is_valid());
 
-        let error = result.get_errors().get(0).unwrap();
+        let error = result.get_error(0).unwrap();
 
         assert_eq!(error.to_string(), "Withdrawal document was not found");
     }
 
     fn should_throw_error_if_withdrawal_has_wrong_status() {
+        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        let state_read_guard = platform.state.read().unwrap();
+
+        let platform_ref = PlatformStateRef {
+            drive: &platform.drive,
+            state: &state_read_guard,
+            config: &platform.config,
+        };
+
         let transition_execution_context = StateTransitionExecutionContext::default();
-        let mut state_repository = MockStateRepositoryLike::new();
+
         let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
             .expect("to load system data contract");
         let owner_id = data_contract.owner_id;
+
+        let document_type = data_contract
+            .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
+            .expect("expected to get withdrawal document type");
 
         let document = get_withdrawal_document_fixture(
             &data_contract,
@@ -183,25 +194,42 @@ mod tests {
             None,
         ).expect("expected withdrawal document");
 
-        state_repository
-            .expect_fetch_documents()
-            .return_once(move |_, _, _, _| Ok(vec![document]));
+        platform
+            .drive
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefWithoutSerialization((&document, None)),
+                        owner_id: Some(owner_id.to_buffer()),
+                    },
+                    contract: &data_contract,
+                    document_type,
+                },
+                false,
+                BlockInfo::genesis(),
+                true,
+                None,
+            )
+            .expect("expected to insert a document successfully");
 
-        let document_transition = DocumentTransition::Delete(Default::default());
+        let document_transition = DocumentTransitionAction::DeleteAction(Default::default());
         let data_trigger_context = DataTriggerExecutionContext {
-            drive: &Drive {},
+            platform: &platform_ref,
             data_contract: &data_contract,
             owner_id: &owner_id,
             state_transition_execution_context: &transition_execution_context,
+            transaction: None,
         };
+        let result = delete_withdrawal_data_trigger(
+            &document_transition.into(),
+            &data_trigger_context,
+            None,
+        )
+        .expect("the execution result should be returned");
 
-        let result =
-            delete_withdrawal_data_trigger(&document_transition, &data_trigger_context, None)
-                .expect("the execution result should be returned");
+        assert!(!result.is_valid());
 
-        assert!(!result.is_ok());
-
-        let error = result.get_errors().get(0).unwrap();
+        let error = result.get_error(0).unwrap();
 
         assert_eq!(
             error.to_string(),

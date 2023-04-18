@@ -1,12 +1,9 @@
 use crate::error::Error;
 use dpp::document::document_transition::DocumentTransitionAction;
 use dpp::validation::SimpleValidationResult;
-use dpp::{
-    document::document_transition::DocumentTransition, errors::DataTriggerError,
-    get_from_transition_action, prelude::Identifier, DataTriggerActionError,
-};
+use dpp::{get_from_transition_action, prelude::Identifier, DataTriggerActionError};
 
-use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
+use super::DataTriggerExecutionContext;
 
 /// Creates a data trigger for handling document rejections.
 ///

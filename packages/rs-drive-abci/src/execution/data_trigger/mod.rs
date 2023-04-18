@@ -1,12 +1,11 @@
 use crate::error::Error;
 pub use data_trigger_execution_context::*;
 use dpp::document::document_transition::{
-    Action, DocumentCreateTransition, DocumentCreateTransitionAction, DocumentTransitionAction,
+    Action, DocumentCreateTransitionAction, DocumentTransitionAction,
 };
 use dpp::platform_value::Identifier;
-use dpp::prelude::DocumentTransition;
 use dpp::validation::SimpleValidationResult;
-use dpp::{get_from_transition, get_from_transition_action, DataTriggerActionError, StateError};
+use dpp::{get_from_transition_action, DataTriggerActionError};
 pub use reject_data_trigger::*;
 
 use self::dashpay_data_triggers::create_contact_request_data_trigger;
@@ -36,15 +35,6 @@ pub mod reward_share_data_triggers;
 pub mod withdrawals_data_triggers;
 
 mod reject_data_trigger;
-
-macro_rules! check_data_trigger_validation_result {
-    ($expr:expr) => {
-        match $expr {
-            Ok(value) => value,
-            Err(e) => return Ok(DataTriggerExecutionResult::new_with_error(e)),
-        }
-    };
-}
 
 /// A type alias for a `SimpleValidationResult` with a `DataTriggerActionError` as the error type.
 ///

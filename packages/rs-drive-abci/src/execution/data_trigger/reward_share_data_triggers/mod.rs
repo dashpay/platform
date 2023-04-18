@@ -1,11 +1,10 @@
 use dpp::data_contract::DriveContractExt;
 use dpp::document::document_transition::{
-    DocumentCreateTransition, DocumentCreateTransitionAction, DocumentTransitionAction,
+    DocumentCreateTransitionAction, DocumentTransitionAction,
 };
 use dpp::document::Document;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-use dpp::platform_value::string_encoding::Encoding;
-use dpp::platform_value::{platform_value, Identifier, Value};
+use dpp::platform_value::{Identifier, Value};
 use dpp::prelude::DocumentTransition;
 use dpp::{get_from_transition_action, ProtocolError};
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
@@ -175,10 +174,10 @@ pub fn create_masternode_reward_shares_data_trigger<'a>(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::platform::PlatformRef;
+    use crate::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::data_contract::DataContract;
-    use dpp::document::document_transition::{Action, DocumentTransitionExt};
+    use dpp::document::document_transition::Action;
     use dpp::document::ExtendedDocument;
     use dpp::identity::Identity;
     use dpp::mocks::{SMLEntry, SMLStore, SimplifiedMNList};
@@ -266,11 +265,10 @@ mod test {
         let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
         let state_read_guard = platform.state.read().unwrap();
 
-        let platform_ref = PlatformRef {
+        let platform_ref = PlatformStateRef {
             drive: &platform.drive,
             state: &state_read_guard,
             config: &platform.config,
-            core_rpc: &platform.core_rpc,
         };
 
         let TestData {
@@ -318,7 +316,8 @@ mod test {
 
         // documentsFixture contains percentage = 500
         document_create_transition
-            .insert_dynamic_property(String::from("percentage"), Value::U64(9501));
+            .data
+            .insert("percentage".to_string(), Value::U64(9501));
 
         let execution_context = StateTransitionExecutionContext::default();
         let context = DataTriggerExecutionContext {
@@ -346,11 +345,10 @@ mod test {
         let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
         let state_read_guard = platform.state.read().unwrap();
 
-        let platform_ref = PlatformRef {
+        let platform_ref = PlatformStateRef {
             drive: &platform.drive,
             state: &state_read_guard,
             config: &platform.config,
-            core_rpc: &platform.core_rpc,
         };
 
         let TestData {
@@ -376,10 +374,9 @@ mod test {
         );
 
         let error = get_data_trigger_error(&result, 0);
-        let pay_to_id_bytes = document_transition
-            .get_dynamic_property(PROPERTY_PAY_TO_ID)
-            .expect("payToId should exist")
-            .to_hash256()
+        let pay_to_id_bytes = document_create_transition
+            .data
+            .get_hash256_bytes(PROPERTY_PAY_TO_ID)
             .expect("expected to be able to get a hash");
         let pay_to_id = Identifier::from(pay_to_id_bytes);
 
@@ -393,11 +390,10 @@ mod test {
         let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
         let state_read_guard = platform.state.read().unwrap();
 
-        let platform_ref = PlatformRef {
+        let platform_ref = PlatformStateRef {
             drive: &platform.drive,
             state: &state_read_guard,
             config: &platform.config,
-            core_rpc: &platform.core_rpc,
         };
 
         let TestData {
@@ -411,7 +407,7 @@ mod test {
         let context = DataTriggerExecutionContext {
             platform: &platform_ref,
             data_contract: &data_contract,
-            owner_id: &top_level_identifier,
+            owner_id: &generate_random_identifier_struct(),
             state_transition_execution_context: &execution_context,
             transaction: None,
         };
@@ -431,13 +427,12 @@ mod test {
     fn should_pass() {
         let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
         let state_read_guard = platform.state.read().unwrap();
-
-        let platform_ref = PlatformRef {
+        let platform_ref = PlatformStateRef {
             drive: &platform.drive,
             state: &state_read_guard,
             config: &platform.config,
-            core_rpc: &platform.core_rpc,
         };
+
         let TestData {
             document_create_transition,
             sml_store,
@@ -466,18 +461,17 @@ mod test {
             None,
         )
         .expect("the execution result should be returned");
-        assert!(result.is_ok())
+        assert!(result.is_valid())
     }
 
     fn should_return_error_if_there_are_16_stored_shares() {
         let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
         let state_read_guard = platform.state.read().unwrap();
 
-        let platform_ref = PlatformRef {
+        let platform_ref = PlatformStateRef {
             drive: &platform.drive,
             state: &state_read_guard,
             config: &platform.config,
-            core_rpc: &platform.core_rpc,
         };
 
         let TestData {
@@ -532,11 +526,10 @@ mod test {
         let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
         let state_read_guard = platform.state.read().unwrap();
 
-        let platform_ref = PlatformRef {
+        let platform_ref = PlatformStateRef {
             drive: &platform.drive,
             state: &state_read_guard,
             config: &platform.config,
-            core_rpc: &platform.core_rpc,
         };
 
         let TestData {
@@ -570,6 +563,6 @@ mod test {
             None,
         )
         .expect("the execution result should be returned");
-        assert!(result.is_ok());
+        assert!(result.is_valid());
     }
 }

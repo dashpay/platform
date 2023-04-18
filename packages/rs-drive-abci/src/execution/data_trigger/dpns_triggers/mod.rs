@@ -1,17 +1,13 @@
-use anyhow::Context;
-use dpp::document::Document;
 use dpp::util::hash::hash;
 use std::collections::BTreeMap;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use dpp::data_contract::DriveContractExt;
-use dpp::document::document_transition::{DocumentCreateTransition, DocumentTransitionAction};
+use dpp::document::document_transition::DocumentTransitionAction;
 use dpp::platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueMapPathHelper};
-use dpp::platform_value::{platform_value, Value};
-use dpp::{
-    document::document_transition::DocumentTransition, get_from_transition, prelude::Identifier,
-};
+use dpp::platform_value::Value;
+use dpp::prelude::Identifier;
 use dpp::{get_from_transition_action, ProtocolError};
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 
@@ -308,9 +304,9 @@ pub fn create_domain_data_trigger<'a>(
 #[cfg(test)]
 mod test {
     use crate::execution::data_trigger::DataTriggerExecutionContext;
-    use crate::platform::PlatformRef;
+    use crate::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;
-    use dpp::document::document_transition::Action;
+    use dpp::document::document_transition::{Action, DocumentCreateTransitionAction};
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use dpp::tests::fixtures::{
         get_document_transitions_fixture, get_dpns_data_contract_fixture,
@@ -324,11 +320,10 @@ mod test {
         let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
         let state_read_guard = platform.state.read().unwrap();
 
-        let platform_ref = PlatformRef {
+        let platform_ref = PlatformStateRef {
             drive: &platform.drive,
             state: &state_read_guard,
             config: &platform.config,
-            core_rpc: &platform.core_rpc,
         };
 
         let transition_execution_context = StateTransitionExecutionContext::default();
@@ -356,11 +351,11 @@ mod test {
         };
 
         let result = create_domain_data_trigger(
-            document_create_transition.into(),
+            &DocumentCreateTransitionAction::from(document_create_transition).into(),
             &data_trigger_context,
             Some(&owner_id),
         )
         .expect("the execution result should be returned");
-        assert!(result.is_ok());
+        assert!(result.is_valid());
     }
 }

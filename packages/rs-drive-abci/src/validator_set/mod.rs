@@ -225,7 +225,6 @@ impl Quorum {
 
 #[cfg(test)]
 mod tests {
-    use dashcore::hashes::sha256d;
     use dashcore::QuorumHash;
     use dashcore_rpc::dashcore::{hashes::Hash, BlockHash};
     use dashcore_rpc::dashcore_rpc_json::{ExtendedQuorumDetails, QuorumInfoResult};

@@ -1,6 +1,5 @@
 use crate::abci::AbciError;
 use crate::error::Error;
-use crate::error::Error::Abci;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformState;
@@ -8,8 +7,8 @@ use chrono::Utc;
 use dashcore::hashes::Hash;
 use dashcore::ProTxHash;
 use dashcore_rpc::json::{
-    Masternode, MasternodeListDiffWithMasternodes, MasternodeListItem, QuorumMasternodeListItem,
-    RemovedMasternodeItem, UpdatedMasternodeItem,
+    MasternodeListDiffWithMasternodes, MasternodeListItem, RemovedMasternodeItem,
+    UpdatedMasternodeItem,
 };
 use dpp::identifier::Identifier;
 use dpp::identity::factory::IDENTITY_PROTOCOL_VERSION;
@@ -603,14 +602,11 @@ where
 #[cfg(test)]
 mod tests {
     use crate::config::PlatformConfig;
-    use crate::platform;
-    use crate::platform::Platform;
-    use crate::rpc::core::CoreRPCLike;
-    use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
+    use crate::test::helpers::setup::TestPlatformBuilder;
     use dashcore::ProTxHash;
     use dashcore_rpc::dashcore_rpc_json::MasternodeListDiffWithMasternodes;
     use dashcore_rpc::json::MasternodeType::Regular;
-    use dashcore_rpc::json::{DMNState, MasternodeListItem, UpdatedMasternodeItem};
+    use dashcore_rpc::json::{DMNState, MasternodeListItem};
     use std::net::SocketAddr;
     use std::str::FromStr;
 

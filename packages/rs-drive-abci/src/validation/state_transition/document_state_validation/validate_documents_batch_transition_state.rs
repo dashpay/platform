@@ -31,7 +31,7 @@ use dpp::{
         StateTransitionIdentitySigned,
     },
     validation::ConsensusValidationResult,
-    ProtocolError, StateError,
+    StateError,
 };
 use drive::grovedb::TransactionArg;
 

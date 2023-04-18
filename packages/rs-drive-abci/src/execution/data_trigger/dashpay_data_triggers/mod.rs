@@ -127,9 +127,9 @@ pub fn create_contact_request_data_trigger<'a>(
 mod test {
     use crate::execution::data_trigger::dashpay_data_triggers::create_contact_request_data_trigger;
     use crate::execution::data_trigger::DataTriggerExecutionContext;
-    use crate::platform::{PlatformRef, PlatformStateRef};
+    use crate::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;
-    use dpp::document::document_transition::Action;
+    use dpp::document::document_transition::{Action, DocumentCreateTransitionAction};
     use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
     use dpp::platform_value::platform_value;
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
@@ -143,11 +143,10 @@ mod test {
     fn should_successfully_execute_on_dry_run() {
         let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
         let state_read_guard = platform.state.read().unwrap();
-        let platform_ref = PlatformRef {
+        let platform_ref = PlatformStateRef {
             drive: &platform.drive,
             state: &state_read_guard,
             config: &platform.config,
-            core_rpc: &platform.core_rpc,
         };
 
         let mut contact_request_document = get_contact_request_document_fixture(None, None);
@@ -184,13 +183,13 @@ mod test {
         transition_execution_context.enable_dry_run();
 
         let result = create_contact_request_data_trigger(
-            document_create_transition.into(),
+            &DocumentCreateTransitionAction::from(document_create_transition).into(),
             &data_trigger_context,
             None,
         )
         .expect("the execution result should be returned");
 
-        assert!(result.is_ok());
+        assert!(result.is_valid());
     }
 
     fn should_fail_if_owner_id_equals_to_user_id() {
@@ -203,11 +202,10 @@ mod test {
             core_height: 42,
             epoch: Default::default(),
         });
-        let platform_ref = PlatformRef {
+        let platform_ref = PlatformStateRef {
             drive: &platform.drive,
             state: &state_write_guard,
             config: &platform.config,
-            core_rpc: &platform.core_rpc,
         };
 
         let mut contact_request_document = get_contact_request_document_fixture(None, None);
@@ -246,13 +244,13 @@ mod test {
         let dashpay_identity_id = data_trigger_context.owner_id.to_owned();
 
         let result = create_contact_request_data_trigger(
-            document_create_transition.into(),
+            &DocumentCreateTransitionAction::from(document_create_transition).into(),
             &data_trigger_context,
             Some(&dashpay_identity_id),
         )
         .expect("data trigger result should be returned");
 
-        assert!(!result.is_ok());
+        assert!(!result.is_valid());
 
         assert!(matches!(
             &result.errors.first().unwrap(),
@@ -274,11 +272,10 @@ mod test {
             core_height: 42,
             epoch: Default::default(),
         });
-        let platform_ref = PlatformRef {
+        let platform_ref = PlatformStateRef {
             drive: &platform.drive,
             state: &state_write_guard,
             config: &platform.config,
-            core_rpc: &platform.core_rpc,
         };
 
         let contact_request_document = get_contact_request_document_fixture(None, None);
@@ -313,19 +310,19 @@ mod test {
         let dashpay_identity_id = data_trigger_context.owner_id.to_owned();
 
         let result = create_contact_request_data_trigger(
-            document_create_transition.into(),
+            &DocumentCreateTransitionAction::from(document_create_transition).into(),
             &data_trigger_context,
             Some(&dashpay_identity_id),
         )
         .expect("data trigger result should be returned");
 
-        assert!(!result.is_ok());
+        assert!(!result.is_valid());
         let data_trigger_error = &result.errors[0];
 
         assert!(matches!(
             data_trigger_error,
             &DataTriggerActionError::DataTriggerConditionError { message, .. }  if {
-                message == &format!("Identity {contract_request_to_user_id} doesn't exist")
+                message == format!("Identity {contract_request_to_user_id} doesn't exist")
 
 
             }

@@ -3,9 +3,7 @@ use crate::execution::data_trigger::{
     DataTrigger, DataTriggerExecutionContext, DataTriggerExecutionResult,
 };
 use dpp::document::document_transition::DocumentTransitionAction;
-use dpp::prelude::DocumentTransition;
 use dpp::ProtocolError;
-use drive::drive::Drive;
 
 pub fn execute_data_triggers<'a>(
     document_transitions: &'a [DocumentTransitionAction],

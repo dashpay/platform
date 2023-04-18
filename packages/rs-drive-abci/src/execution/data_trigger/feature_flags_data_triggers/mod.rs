@@ -1,13 +1,10 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::data_trigger::create_error;
-use dpp::document::document_transition::{
-    DocumentCreateTransitionAction, DocumentTransitionAction,
-};
+use dpp::document::document_transition::DocumentTransitionAction;
 use dpp::get_from_transition_action;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::Identifier;
-use dpp::prelude::DocumentTransition;
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
@@ -92,10 +89,9 @@ pub fn create_feature_flag_data_trigger<'a>(
 mod test {
     use super::create_feature_flag_data_trigger;
     use crate::execution::data_trigger::DataTriggerExecutionContext;
-    use crate::platform::PlatformRef;
+    use crate::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::document::document_transition::DocumentTransitionAction;
-    use dpp::prelude::{DocumentTransition, Identifier};
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use dpp::tests::fixtures::get_data_contract_fixture;
 
@@ -103,11 +99,10 @@ mod test {
         let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
         let state_read_guard = platform.state.read().unwrap();
 
-        let platform_ref = PlatformRef {
+        let platform_ref = PlatformStateRef {
             drive: &platform.drive,
             state: &state_read_guard,
             config: &platform.config,
-            core_rpc: &platform.core_rpc,
         };
 
         let transition_execution_context = StateTransitionExecutionContext::default();
@@ -129,6 +124,6 @@ mod test {
             create_feature_flag_data_trigger(&document_transition, &data_trigger_context, None)
                 .expect("the execution result should be returned");
 
-        assert!(result.is_ok());
+        assert!(result.is_valid());
     }
 }

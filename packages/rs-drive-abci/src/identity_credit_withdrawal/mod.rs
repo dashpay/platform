@@ -562,8 +562,6 @@ mod tests {
     };
 
     mod update_withdrawal_statuses {
-        use std::sync::RwLock;
-
         use crate::{block::BlockStateInfo, test::helpers::setup::TestPlatformBuilder};
         use dpp::identity::core_script::CoreScript;
         use dpp::platform_value::platform_value;
@@ -761,8 +759,6 @@ mod tests {
     }
 
     mod pool_withdrawals_into_transactions {
-        use std::sync::RwLock;
-
         use dpp::data_contract::DriveContractExt;
         use dpp::identity::core_script::CoreScript;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
