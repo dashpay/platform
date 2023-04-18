@@ -1,7 +1,9 @@
+use dpp::dashcore::QuorumHash;
 use crate::fee_pools::epochs::Epoch;
+use serde::{Serialize, Deserialize};
 
 /// Block information
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 pub struct BlockInfo {
     /// Block time in milliseconds
     pub time_ms: u64,
@@ -14,6 +16,9 @@ pub struct BlockInfo {
 
     /// Current fee epoch
     pub epoch: Epoch,
+
+    // /// current quorum
+    // pub current_validator_set_quorum_hash: QuorumHash,
 }
 
 impl BlockInfo {

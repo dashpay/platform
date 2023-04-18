@@ -1,3 +1,4 @@
+use bincode;
 use bls_signatures;
 use dashcore::hashes::Hash;
 use dashcore::{QuorumHash, Txid};
@@ -23,6 +24,7 @@ use crate::abci::AbciError;
 use crate::abci::AbciError::BlsError;
 use crate::block::{BlockExecutionContext, BlockStateInfo};
 use crate::error::execution::ExecutionError;
+use crate::error::serialization::SerializationError;
 use crate::error::Error;
 use crate::execution::block_proposal::BlockProposal;
 use crate::execution::execution_event::ExecutionResult::{
@@ -240,6 +242,7 @@ where
         let last_block_core_height =
             state.known_core_height_or(self.config.abci.genesis_core_height);
         let hpmn_list_len = state.hpmn_list_len();
+        let quorum_hash = state.current_validator_set_quorum_hash;
         drop(state);
 
         // Init block execution context
@@ -347,6 +350,9 @@ where
             transaction,
         )?;
 
+        // Store ephemeral data
+        self.store_ephemeral_data(&block_info, &quorum_hash, transaction)?;
+
         let root_hash = self
             .drive
             .grove
@@ -365,6 +371,46 @@ where
             app_hash: root_hash,
             tx_results,
         }))
+    }
+
+    // TODO: remove function from here
+    fn store_ephemeral_data(
+        &self,
+        block_info: &BlockInfo,
+        quorum_hash: &QuorumHash,
+        transaction: &Transaction,
+    ) -> Result<(), Error> {
+        // we need to serialize the block info
+        let serialized_block_info = bincode::serialize(block_info).map_err(|_| {
+            Error::Serialization(SerializationError::CorruptedSerialization(
+                "failed to serialize block info".to_string(),
+            ))
+        })?;
+
+        // next we need to store this data in groveb
+        self.drive
+            .grove
+            .put_aux(
+                b"saved_state",
+                &serialized_block_info,
+                None,
+                Some(transaction),
+            )
+            .unwrap()
+            .map_err(|e| Error::Drive(GroveDB(e)))?;
+
+        self.drive
+            .grove
+            .put_aux(
+                b"saved_quorum_hash",
+                &quorum_hash.into_inner(),
+                None,
+                Some(&transaction),
+            )
+            .unwrap()
+            .map_err(|e| Error::Drive(GroveDB(e)))?;
+
+        Ok(())
     }
 
     /// Update the current quorums if the core_height changes

@@ -955,7 +955,7 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc"
 version = "0.15.0"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=feat/quorumListImprovement#4362e2f90677fac3a53cb5b5a9f3e52a9b1665b2"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=feat/quorumListImprovement#03b1c43b33670644971e1557ce97dc17bf55e868"
 dependencies = [
  "dashcore-rpc-json",
  "env_logger 0.10.0",
@@ -968,7 +968,7 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc-json"
 version = "0.15.0"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=feat/quorumListImprovement#4362e2f90677fac3a53cb5b5a9f3e52a9b1665b2"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=feat/quorumListImprovement#03b1c43b33670644971e1557ce97dc17bf55e868"
 dependencies = [
  "dashcore",
  "hex",
@@ -1137,6 +1137,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "atty",
+ "bincode 1.3.3",
  "bls-signatures",
  "bs58",
  "bytes",
@@ -1876,6 +1877,12 @@ name = "lazycell"
 version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "830d08ce1d1d941e6b30645f1a0eb5643013d835ce3779a5fc208261dbe10f55"
+
+[[package]]
+name = "lhash"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6df04c84bd3f83849dd23c51be4cbb22a02d80ebdea22741558fe30127d837ae"
 
 [[package]]
 name = "libc"
@@ -3435,7 +3442,7 @@ dependencies = [
 [[package]]
 name = "tenderdash-abci"
 version = "0.12.0-dev.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=master#d61717a0c6ae129f6f64da6189d1e59e176ed42c"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=master#e66a7d6683c0843f11e980f8f057ea78feccef49"
 dependencies = [
  "bytes",
  "prost",
@@ -3450,12 +3457,13 @@ dependencies = [
 [[package]]
 name = "tenderdash-proto"
 version = "0.12.0-dev.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=master#d61717a0c6ae129f6f64da6189d1e59e176ed42c"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=master#e66a7d6683c0843f11e980f8f057ea78feccef49"
 dependencies = [
  "bytes",
  "chrono",
  "derive_more",
  "flex-error",
+ "lhash",
  "num-derive",
  "num-traits",
  "prost",
@@ -3468,7 +3476,7 @@ dependencies = [
 [[package]]
 name = "tenderdash-proto-compiler"
 version = "0.1.0"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=master#d61717a0c6ae129f6f64da6189d1e59e176ed42c"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?branch=master#e66a7d6683c0843f11e980f8f057ea78feccef49"
 dependencies = [
  "fs_extra",
  "prost-build",

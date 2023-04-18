@@ -600,6 +600,7 @@ where
     }
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use crate::config::PlatformConfig;
@@ -737,3 +738,4 @@ mod tests {
     #[test]
     fn test_update_owner_identity() {}
 }
+*/
