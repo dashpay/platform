@@ -194,7 +194,7 @@ mod test {
 
     fn should_fail_if_owner_id_equals_to_user_id() {
         let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
-        let state_write_guard = platform.state.write().unwrap();
+        let mut state_write_guard = platform.state.write().unwrap();
 
         state_write_guard.last_committed_block_info = Some(BlockInfo {
             time_ms: 500000,
@@ -264,7 +264,7 @@ mod test {
 
     fn should_fail_if_id_not_exists() {
         let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
-        let state_write_guard = platform.state.write().unwrap();
+        let mut state_write_guard = platform.state.write().unwrap();
 
         state_write_guard.last_committed_block_info = Some(BlockInfo {
             time_ms: 500000,
@@ -321,8 +321,8 @@ mod test {
 
         assert!(matches!(
             data_trigger_error,
-            &DataTriggerActionError::DataTriggerConditionError { message, .. }  if {
-                message == format!("Identity {contract_request_to_user_id} doesn't exist")
+            DataTriggerActionError::DataTriggerConditionError { message, .. }  if {
+                message == &format!("Identity {contract_request_to_user_id} doesn't exist")
 
 
             }

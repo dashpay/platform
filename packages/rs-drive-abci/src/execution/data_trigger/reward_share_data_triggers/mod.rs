@@ -176,6 +176,7 @@ mod test {
     use super::*;
     use crate::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::data_contract::DataContract;
     use dpp::document::document_transition::Action;
     use dpp::document::ExtendedDocument;
@@ -189,8 +190,10 @@ mod test {
     use dpp::tests::utils::generate_random_identifier_struct;
     use dpp::DataTriggerActionError;
     use drive::drive::block_info::BlockInfo;
-    use drive::drive::object_size_info::DocumentInfo::DocumentRefWithoutSerialization;
-    use drive::drive::object_size_info::OwnedDocumentInfo;
+    use drive::drive::object_size_info::DocumentInfo::{
+        DocumentRefWithoutSerialization, DocumentWithoutSerialization,
+    };
+    use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 
     struct TestData {
         top_level_identifier: Identifier,
@@ -239,8 +242,10 @@ mod test {
         let document_transitions =
             get_document_transitions_fixture([(Action::Create, vec![documents[0].clone()])]);
 
-        let DocumentTransition::Create(document_create_transition) =
-            document_transitions[0].clone();
+        let document_create_transition = document_transitions[0]
+            .as_transition_create()
+            .unwrap()
+            .clone();
         TestData {
             extended_documents: documents,
             data_contract,
@@ -280,7 +285,7 @@ mod test {
             ..
         } = setup_test();
 
-        for document in extended_documents {
+        for document in extended_documents.iter() {
             platform_ref
                 .drive
                 .apply_contract(
@@ -367,6 +372,10 @@ mod test {
             state_transition_execution_context: &execution_context,
             transaction: None,
         };
+        let pay_to_id_bytes = document_create_transition
+            .data
+            .get_hash256_bytes(PROPERTY_PAY_TO_ID)
+            .expect("expected to be able to get a hash");
         let result = create_masternode_reward_shares_data_trigger(
             &document_create_transition.into(),
             &context,
@@ -374,10 +383,7 @@ mod test {
         );
 
         let error = get_data_trigger_error(&result, 0);
-        let pay_to_id_bytes = document_create_transition
-            .data
-            .get_hash256_bytes(PROPERTY_PAY_TO_ID)
-            .expect("expected to be able to get a hash");
+
         let pay_to_id = Identifier::from(pay_to_id_bytes);
 
         assert_eq!(
@@ -483,22 +489,36 @@ mod test {
             ..
         } = setup_test();
 
+        let owner_id = identity.id;
         platform_ref
             .drive
             .add_new_identity(identity, &BlockInfo::default(), true, None)
             .expect("should insert identity");
 
-        let mut state_repository_mock = MockStateRepositoryLike::new();
-        state_repository_mock
-            .expect_fetch_sml_store()
-            .returning(move || Ok(sml_store.clone()));
-        state_repository_mock
-            .expect_fetch_identity()
-            .returning(move |_, _| Ok(Some(identity.clone())));
-        let documents_to_return: Vec<Document> = (0..16).map(|_| Document::default()).collect();
-        state_repository_mock
-            .expect_fetch_documents()
-            .return_once(move |_, _, _, _| Ok(documents_to_return));
+        let document_type = data_contract
+            .document_type_for_name(&document_create_transition.base.document_type_name)
+            .expect("expected to get document type");
+
+        for i in 0..16 {
+            let document = document_type.random_document(Some(i));
+            platform
+                .drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentWithoutSerialization((document, None)),
+                            owner_id: Some(owner_id.to_buffer()),
+                        },
+                        contract: &data_contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::genesis(),
+                    true,
+                    None,
+                )
+                .expect("expected to insert a document successfully");
+        }
 
         let execution_context = StateTransitionExecutionContext::default();
         let context = DataTriggerExecutionContext {
@@ -538,14 +558,6 @@ mod test {
             top_level_identifier,
             ..
         } = setup_test();
-
-        let mut state_repository_mock = MockStateRepositoryLike::new();
-        state_repository_mock
-            .expect_fetch_identity()
-            .returning(move |_, _| Ok(None));
-        state_repository_mock
-            .expect_fetch_documents()
-            .returning(move |_, _, _, _| Ok(vec![]));
 
         let execution_context = StateTransitionExecutionContext::default();
         execution_context.enable_dry_run();
