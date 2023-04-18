@@ -2,7 +2,7 @@ use crate::errors::consensus::basic::{
     IncompatibleProtocolVersionErrorWasm, InvalidIdentifierErrorWasm, JsonSchemaErrorWasm,
     UnsupportedProtocolVersionErrorWasm,
 };
-use dpp::consensus::ConsensusError as DPPConsensusError;
+use dpp::consensus::{ConsensusError as DPPConsensusError, ConsensusError};
 use std::ops::Deref;
 
 use crate::errors::consensus::basic::identity::{
@@ -13,6 +13,7 @@ use crate::errors::consensus::basic::identity::{
     IdentityAssetLockTransactionOutputNotFoundErrorWasm, IdentityInsufficientBalanceErrorWasm,
     InvalidAssetLockProofCoreChainHeightErrorWasm, InvalidAssetLockProofTransactionHeightErrorWasm,
     InvalidAssetLockTransactionOutputReturnSizeErrorWasm,
+    InvalidIdentityAssetLockProofChainLockValidationErrorWasm,
     InvalidIdentityAssetLockTransactionErrorWasm,
     InvalidIdentityAssetLockTransactionOutputErrorWasm,
     InvalidIdentityCreditWithdrawalTransitionCoreFeeErrorWasm,
@@ -24,11 +25,12 @@ use crate::errors::consensus::basic::identity::{
 };
 use crate::errors::consensus::state::identity::{
     DuplicatedIdentityPublicKeyIdStateErrorWasm, DuplicatedIdentityPublicKeyStateErrorWasm,
+    MissingIdentityPublicKeyIdsErrorWasm,
 };
 use dpp::codes::ErrorWithCode;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::signature::SignatureError;
-use dpp::StateError;
+use dpp::{DataTriggerActionError, StateError};
 use wasm_bindgen::JsValue;
 
 use crate::errors::consensus::basic::data_contract::{
@@ -47,7 +49,9 @@ use crate::errors::consensus::basic::state_transition::{
 };
 use crate::errors::consensus::signature::IdentityNotFoundErrorWasm;
 use crate::errors::consensus::state::data_contract::data_trigger::{
-    DataTriggerConditionErrorWasm, DataTriggerExecutionErrorWasm,
+    DataTriggerActionConditionErrorWasm, DataTriggerActionExecutionErrorWasm,
+    DataTriggerActionInvalidResultErrorWasm, DataTriggerConditionErrorWasm,
+    DataTriggerExecutionErrorWasm,
 };
 use crate::errors::consensus::state::data_contract::DataContractAlreadyPresentErrorWasm;
 use crate::errors::consensus::state::document::{
@@ -195,6 +199,9 @@ pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
             PlatformValueErrorWasm::new(value_error.clone()).into()
         }
         DPPConsensusError::DefaultError => panic!(), //not possible
+        DPPConsensusError::InvalidIdentityAssetLockProofChainLockValidationError(e) => {
+            InvalidIdentityAssetLockProofChainLockValidationErrorWasm::from(e).into()
+        }
     }
 }
 
@@ -332,6 +339,58 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
             )
             .into(),
         },
+        StateError::DataTriggerActionError(data_trigger_error) => {
+            match data_trigger_error.deref() {
+                DataTriggerActionError::DataTriggerConditionError {
+                    data_contract_id,
+                    document_transition_id,
+                    message,
+                    owner_id,
+                    ..
+                } => DataTriggerActionConditionErrorWasm::new(
+                    *data_contract_id,
+                    *document_transition_id,
+                    message.clone(),
+                    *owner_id,
+                    code,
+                )
+                .into(),
+                DataTriggerActionError::DataTriggerExecutionError {
+                    data_contract_id,
+                    document_transition_id,
+                    message,
+                    execution_error,
+                    owner_id,
+                    ..
+                } => DataTriggerActionExecutionErrorWasm::new(
+                    *data_contract_id,
+                    *document_transition_id,
+                    message.clone(),
+                    wasm_bindgen::JsError::new(execution_error.to_string().as_ref()),
+                    *owner_id,
+                    code,
+                )
+                .into(),
+                DataTriggerActionError::DataTriggerInvalidResultError {
+                    data_contract_id,
+                    document_transition_id,
+                    owner_id,
+                    ..
+                } => DataTriggerActionInvalidResultErrorWasm::new(
+                    *data_contract_id,
+                    *document_transition_id,
+                    *owner_id,
+                    code,
+                )
+                .into(),
+                DataTriggerActionError::ValueError(value_error) => {
+                    PlatformValueErrorWasm::new(value_error.clone()).into()
+                }
+            }
+        }
+        StateError::MissingIdentityPublicKeyIdsError { ids } => {
+            MissingIdentityPublicKeyIdsErrorWasm::new(ids.clone()).into()
+        }
     }
 }
 
@@ -544,7 +603,7 @@ fn from_signature_error(signature_error: &SignatureError) -> JsValue {
         SignatureError::InvalidSignaturePublicKeySecurityLevelError(err) => {
             InvalidSignaturePublicKeySecurityLevelErrorWasm::new(
                 err.public_key_security_level(),
-                err.required_key_security_level(),
+                err.allowed_key_security_levels(),
                 code,
             )
             .into()
@@ -566,6 +625,15 @@ fn from_signature_error(signature_error: &SignatureError) -> JsValue {
             code,
         )
         .into(),
+        SignatureError::SignatureShouldNotBePresent(_) => {
+            todo!()
+        }
+        SignatureError::BasicECDSAError(_) => {
+            todo!()
+        }
+        SignatureError::BasicBLSError(_) => {
+            todo!()
+        }
     }
 }
 
