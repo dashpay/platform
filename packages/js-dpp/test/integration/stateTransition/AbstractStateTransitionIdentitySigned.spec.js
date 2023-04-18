@@ -1,7 +1,6 @@
 const { PrivateKey, crypto: { Hash } } = require('@dashevo/dashcore-lib');
 
 const crypto = require('crypto');
-const calculateStateTransitionFee = require('../../../lib/stateTransition/fee/calculateStateTransitionFee');
 
 const StateTransitionMock = require('../../../lib/test/mocks/StateTransitionMock');
 const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');
@@ -42,11 +41,11 @@ describe('AbstractStateTransitionIdentitySigned', () => {
 
     blsInstance = await BlsSignatures.getInstance();
     const {
-      PrivateKey: BlsPrivateKey,
+      BasicSchemeMPL,
     } = blsInstance;
 
     const randomBytes = new Uint8Array(crypto.randomBytes(256));
-    blsPrivateKey = BlsPrivateKey.fromBytes(randomBytes, true);
+    blsPrivateKey = BasicSchemeMPL.keyGen(randomBytes);
     blsPrivateKeyHex = Buffer.from(blsPrivateKey.serialize()).toString('hex');
 
     identityPublicKey = new IdentityPublicKey()
@@ -55,6 +54,12 @@ describe('AbstractStateTransitionIdentitySigned', () => {
       .setData(publicKey)
       .setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.HIGH)
       .setPurpose(IdentityPublicKey.PURPOSES.AUTHENTICATION);
+  });
+
+  afterEach(() => {
+    if (blsPrivateKey) {
+      blsPrivateKey.delete();
+    }
   });
 
   describe('#toObject', () => {
@@ -226,8 +231,12 @@ describe('AbstractStateTransitionIdentitySigned', () => {
 
     it('should sign data and validate signature with BLS12_381 identityPublicKey', async () => {
       identityPublicKey.setType(IdentityPublicKey.TYPES.BLS12_381);
-      identityPublicKey.setData(Buffer.from(blsPrivateKey.getPublicKey().serialize()));
 
+      const publicKey = blsPrivateKey.getG1();
+
+      identityPublicKey.setData(Buffer.from(publicKey.serialize()));
+
+      publicKey.delete();
       await stateTransition.sign(identityPublicKey, blsPrivateKeyHex);
 
       expect(stateTransition.signature).to.be.an.instanceOf(Buffer);
@@ -252,17 +261,21 @@ describe('AbstractStateTransitionIdentitySigned', () => {
 
     it('should sign and validate with BLS private key', async () => {
       identityPublicKey.setType(IdentityPublicKey.TYPES.BLS12_381);
-      identityPublicKey.setData(Buffer.from(blsPrivateKey.getPublicKey().serialize()));
+      const publicKey = blsPrivateKey.getG1();
+
+      identityPublicKey.setData(Buffer.from(publicKey.serialize()));
 
       await stateTransition.signByPrivateKey(blsPrivateKeyHex, IdentityPublicKey.TYPES.BLS12_381);
 
       expect(stateTransition.signature).to.be.an.instanceOf(Buffer);
 
       const isValid = await stateTransition.verifyBLSSignatureByPublicKey(
-        blsPrivateKey.getPublicKey(),
+        publicKey,
       );
 
       expect(isValid).to.be.true();
+
+      publicKey.delete();
     });
   });
 
@@ -355,7 +368,10 @@ describe('AbstractStateTransitionIdentitySigned', () => {
 
     it('should validate BLS signature', async () => {
       identityPublicKey.setType(IdentityPublicKey.TYPES.BLS12_381);
-      identityPublicKey.setData(Buffer.from(blsPrivateKey.getPublicKey().serialize()));
+
+      const publicKey = blsPrivateKey.getG1();
+
+      identityPublicKey.setData(Buffer.from(publicKey.serialize()));
 
       await stateTransition.sign(identityPublicKey, blsPrivateKeyHex);
 
@@ -364,6 +380,8 @@ describe('AbstractStateTransitionIdentitySigned', () => {
       const isValid = await stateTransition.verifySignature(identityPublicKey);
 
       expect(isValid).to.be.true();
+
+      publicKey.delete();
     });
 
     it('should throw PublicKeyIsDisabledError if public key is disabled', async () => {
@@ -452,7 +470,7 @@ describe('AbstractStateTransitionIdentitySigned', () => {
 
   describe('#verifyBLSSignatureByPublicKey', () => {
     it('should validate sign by public key', async () => {
-      const publicKey = blsPrivateKey.getPublicKey();
+      const publicKey = blsPrivateKey.getG1();
 
       identityPublicKey.setType(IdentityPublicKey.TYPES.BLS12_381);
       identityPublicKey.setData(Buffer.from(publicKey.serialize()));
@@ -462,17 +480,22 @@ describe('AbstractStateTransitionIdentitySigned', () => {
       const isValid = await stateTransition.verifyBLSSignatureByPublicKey(publicKey);
 
       expect(isValid).to.be.true();
+
+      publicKey.delete();
     });
 
     it('should throw an StateTransitionIsNotSignedError error if transition is not signed', async () => {
-      const publicKey = Buffer.from(blsPrivateKey.getPublicKey().serialize());
+      const publicKey = blsPrivateKey.getG1();
+
       try {
-        await stateTransition.verifyBLSSignatureByPublicKey(publicKey);
+        await stateTransition.verifyBLSSignatureByPublicKey(Buffer.from(publicKey.serialize()));
 
         expect.fail('should throw StateTransitionIsNotSignedError');
       } catch (e) {
         expect(e).to.be.instanceOf(StateTransitionIsNotSignedError);
         expect(e.getStateTransition()).to.equal(stateTransition);
+      } finally {
+        publicKey.delete();
       }
     });
   });
@@ -492,16 +515,6 @@ describe('AbstractStateTransitionIdentitySigned', () => {
       stateTransition.setSignaturePublicKeyId(signaturePublicKeyId);
 
       expect(stateTransition.signaturePublicKeyId).to.equal(signaturePublicKeyId);
-    });
-  });
-
-  describe('#calculateFee', () => {
-    it('should calculate fee', () => {
-      const result = stateTransition.calculateFee();
-
-      const fee = calculateStateTransitionFee(stateTransition);
-
-      expect(result).to.equal(fee);
     });
   });
 });

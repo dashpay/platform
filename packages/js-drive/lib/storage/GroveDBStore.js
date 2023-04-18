@@ -197,8 +197,8 @@ class GroveDBStore {
       ));
     } catch (e) {
       if (
-        e.message.startsWith('path key not found')
-        || e.message.startsWith('path not found')
+        e.message.startsWith('grovedb: path key not found')
+        || e.message.startsWith('grovedb: path not found')
       ) {
         return new StorageResult(
           null,
@@ -231,6 +231,7 @@ class GroveDBStore {
    *
    * @param {PathQuery} query
    * @param {Object} [options]
+   * @param {boolean} [options.skipCache=false]
    * @param {boolean} [options.useTransaction=false]
    * @return {Promise<StorageResult<Buffer|null>>}
    */
@@ -240,12 +241,13 @@ class GroveDBStore {
     try {
       [items] = await this.db.query(
         query,
+        options.skipCache || false,
         options.useTransaction || false,
       );
     } catch (e) {
       if (
-        e.message.startsWith('path key not found')
-        || e.message.startsWith('path not found')
+        e.message.startsWith('grovedb: path key not found')
+        || e.message.startsWith('grovedb: path not found')
       ) {
         return new StorageResult(
           null,
@@ -358,7 +360,7 @@ class GroveDBStore {
         options.useTransaction || false,
       );
     } catch (e) {
-      if (e.message.startsWith('path key not found')) {
+      if (e.message.startsWith('grovedb: path key not found')) {
         return new StorageResult(
           null,
           [],

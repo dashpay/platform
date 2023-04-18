@@ -1,3 +1,4 @@
+const varint = require('varint');
 const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifier');
 
 const IdentityPublicKey = require('../../../lib/identity/IdentityPublicKey');
@@ -104,11 +105,10 @@ describe('Identity', () => {
       const identityDataToEncode = identity.toObject();
       delete identityDataToEncode.protocolVersion;
 
-      const protocolVersionUInt32 = Buffer.alloc(4);
-      protocolVersionUInt32.writeUInt32LE(identity.getProtocolVersion(), 0);
+      const protocolVersionBytes = Buffer.from(varint.encode(identity.getProtocolVersion()));
 
       expect(encodeMock).to.have.been.calledOnceWith(identityDataToEncode);
-      expect(result).to.deep.equal(Buffer.concat([protocolVersionUInt32, encodeMockData]));
+      expect(result).to.deep.equal(Buffer.concat([protocolVersionBytes, encodeMockData]));
     });
   });
 
@@ -124,11 +124,10 @@ describe('Identity', () => {
       const identityDataToEncode = identity.toObject();
       delete identityDataToEncode.protocolVersion;
 
-      const protocolVersionUInt32 = Buffer.alloc(4);
-      protocolVersionUInt32.writeUInt32LE(identity.getProtocolVersion(), 0);
+      const protocolVersionBytes = Buffer.from(varint.encode(identity.getProtocolVersion()));
 
       expect(encodeMock).to.have.been.calledOnceWith(identityDataToEncode);
-      expect(hashMock).to.have.been.calledOnceWith(Buffer.concat([protocolVersionUInt32, buffer]));
+      expect(hashMock).to.have.been.calledOnceWith(Buffer.concat([protocolVersionBytes, buffer]));
       expect(result).to.equal(buffer);
     });
   });

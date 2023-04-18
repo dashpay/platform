@@ -5,9 +5,11 @@ const InvalidArgumentAbciError = require('../errors/InvalidArgumentAbciError');
 /**
  * @param {Object} queryHandlerRouter
  * @param {Function} sanitizeUrl
+ * @param {BaseLogger} logger
+ * @param {createContextLogger} createContextLogger
  * @return {queryHandler}
  */
-function queryHandlerFactory(queryHandlerRouter, sanitizeUrl) {
+function queryHandlerFactory(queryHandlerRouter, sanitizeUrl, logger, createContextLogger) {
   /**
    * Query ABCI Handler
    *
@@ -18,6 +20,10 @@ function queryHandlerFactory(queryHandlerRouter, sanitizeUrl) {
    */
   async function queryHandler(request) {
     const { path, data } = request;
+
+    createContextLogger(logger, {
+      abciMethod: 'query',
+    });
 
     const route = queryHandlerRouter.find('GET', sanitizeUrl(path));
 

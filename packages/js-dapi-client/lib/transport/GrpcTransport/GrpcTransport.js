@@ -83,7 +83,7 @@ class GrpcTransport {
         throw error;
       }
 
-      const responseError = this.createGrpcTransportError(error, address);
+      const responseError = await this.createGrpcTransportError(error, address);
 
       if (!(responseError instanceof RetriableResponseError)) {
         throw responseError;
@@ -132,18 +132,16 @@ class GrpcTransport {
    * @returns {string}
    */
   makeGrpcUrlFromAddress(address) {
-    let port = address.getHttpPort();
-
+    let protocol = address.getProtocol();
     // For NodeJS Client
     if (typeof process !== 'undefined'
       && process.versions != null
-      && process.versions.node != null) {
-      port = address.getGrpcPort();
+      && process.versions.node != null
+      && address.isSelfSignedCertificateAllowed()) {
+      protocol = 'http';
     }
 
-    const protocol = address.getHttpPort() === 443 ? 'https' : 'http';
-
-    return `${protocol}://${address.getHost()}:${port}`;
+    return `${protocol}://${address.getHost()}:${address.getPort()}`;
   }
 }
 

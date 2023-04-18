@@ -1,4 +1,4 @@
-const lodashClone = require('lodash.clonedeep');
+const lodashClone = require('lodash/cloneDeep');
 
 const convertBuffersToArrays = require('../../../../../util/convertBuffersToArrays');
 

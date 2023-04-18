@@ -1,6 +1,6 @@
 const rimraf = require('rimraf');
 
-const Drive = require('@dashevo/rs-drive/node/Drive');
+const Drive = require('@dashevo/rs-drive');
 const GroveDBStore = require('../../../lib/storage/GroveDBStore');
 const logger = require('../../../lib/util/noopLogger');
 const StorageResult = require('../../../lib/storage/StorageResult');
@@ -15,8 +15,17 @@ describe('GroveDBStore', () => {
 
   beforeEach(async () => {
     rsDrive = new Drive('./db/grovedb_test', {
-      dataContractsGlobalCacheSize: 500,
-      dataContractsTransactionalCacheSize: 500,
+      drive: {
+        dataContractsGlobalCacheSize: 500,
+        dataContractsBlockCacheSize: 500,
+      },
+      core: {
+        rpc: {
+          url: '127.0.0.1',
+          username: '',
+          password: '',
+        },
+      },
     });
 
     store = new GroveDBStore(rsDrive, logger);
@@ -65,7 +74,7 @@ describe('GroveDBStore', () => {
 
         expect.fail('Should fail with NotFoundError error');
       } catch (e) {
-        expect(e.message.startsWith('path key not found: key not found in Merk')).to.be.true();
+        expect(e.message.startsWith('grovedb: path key not found: key not found in Merk')).to.be.true();
       }
 
       // check we can't fetch data without transaction
@@ -242,7 +251,7 @@ describe('GroveDBStore', () => {
 
         expect.fail('should throw no value found for key error');
       } catch (e) {
-        expect(e.message.startsWith('path key not found: key not found in Merk')).to.be.true();
+        expect(e.message.startsWith('grovedb: path key not found: key not found in Merk')).to.be.true();
       }
     });
 
@@ -381,8 +390,17 @@ describe('GroveDBStore', () => {
       rimraf.sync('./db/grovedb_test');
 
       rsDrive = new Drive('./db/grovedb_test', {
-        dataContractsGlobalCacheSize: 500,
-        dataContractsTransactionalCacheSize: 500,
+        drive: {
+          dataContractsGlobalCacheSize: 500,
+          dataContractsBlockCacheSize: 500,
+        },
+        core: {
+          rpc: {
+            url: '127.0.0.1',
+            username: '',
+            password: '',
+          },
+        },
       });
 
       store = new GroveDBStore(rsDrive, logger);

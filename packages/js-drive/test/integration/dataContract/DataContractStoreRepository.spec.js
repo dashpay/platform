@@ -1,9 +1,10 @@
 const rimraf = require('rimraf');
 const Drive = require('@dashevo/rs-drive');
-const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+
+const { DataContract, decodeProtocolEntity } = require('@dashevo/wasm-dpp');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
+const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
+
 const GroveDBStore = require('../../../lib/storage/GroveDBStore');
 const DataContractStoreRepository = require('../../../lib/dataContract/DataContractStoreRepository');
 const noopLogger = require('../../../lib/util/noopLogger');
@@ -14,25 +15,33 @@ describe('DataContractStoreRepository', () => {
   let rsDrive;
   let store;
   let repository;
-  let decodeProtocolEntity;
   let dataContract;
   let blockInfo;
 
   beforeEach(async () => {
     rsDrive = new Drive('./db/grovedb_test', {
-      dataContractsGlobalCacheSize: 500,
-      dataContractsTransactionalCacheSize: 500,
+      drive: {
+        dataContractsGlobalCacheSize: 500,
+        dataContractsBlockCacheSize: 500,
+      },
+      core: {
+        rpc: {
+          url: '127.0.0.1',
+          username: '',
+          password: '',
+        },
+      },
     });
 
     store = new GroveDBStore(rsDrive, noopLogger);
 
     await rsDrive.createInitialStateStructure();
 
-    decodeProtocolEntity = decodeProtocolEntityFactory();
+    repository = new DataContractStoreRepository(
+      store, decodeProtocolEntity, noopLogger,
+    );
 
-    repository = new DataContractStoreRepository(store, decodeProtocolEntity, noopLogger);
-
-    dataContract = getDataContractFixture();
+    dataContract = await getDataContractFixture();
 
     blockInfo = new BlockInfo(1, 1, Date.now());
   });
@@ -109,7 +118,6 @@ describe('DataContractStoreRepository', () => {
       const committedDataResult = await store.get(
         DataContractStoreRepository.TREE_PATH.concat([dataContract.getId().toBuffer()]),
         DataContractStoreRepository.DATA_CONTRACT_KEY,
-        { useTransaction: true },
       );
 
       [protocolVersion, rawDataContract] = decodeProtocolEntity(committedDataResult.getValue());
@@ -360,7 +368,7 @@ describe('DataContractStoreRepository', () => {
 
     beforeEach(async () => {
       dataContract2 = new DataContract(dataContract.toObject());
-      dataContract2.id = generateRandomIdentifier();
+      dataContract2.id = await generateRandomIdentifier();
     });
 
     it('should should return proof if Data Contract not found', async () => {

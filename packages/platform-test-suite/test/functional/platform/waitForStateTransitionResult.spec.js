@@ -1,4 +1,3 @@
-const Dash = require('dash');
 const crypto = require('crypto');
 
 const { MerkleProof } = require('js-merkle');
@@ -10,18 +9,15 @@ const hashFunction = require('../../../lib/proofHashFunction');
 
 describe.skip('Platform', () => {
   describe('waitForStateTransitionResult', () => {
-    let dpp;
     let client;
     let blake3;
 
     before(async () => {
-      dpp = new Dash.PlatformProtocol();
-      await dpp.initialize();
-
       await hashFunction.init();
       blake3 = hashFunction.hashFunction;
 
       client = await createClientWithFundedWallet(20000);
+      await client.platform.initialize();
     });
 
     after(async () => {

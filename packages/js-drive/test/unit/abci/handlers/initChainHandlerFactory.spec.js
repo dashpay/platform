@@ -6,15 +6,19 @@ const {
       ResponseInitChain,
       ValidatorSetUpdate,
     },
+    types: {
+      CoreChainLock,
+    },
   },
 } = require('@dashevo/abci/types');
 
 const initChainHandlerFactory = require('../../../../lib/abci/handlers/initChainHandlerFactory');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 const GroveDBStoreMock = require('../../../../lib/test/mock/GroveDBStoreMock');
-const protoTimestampToMillis = require('../../../../lib/util/protoTimestampToMillis');
 const millisToProtoTimestamp = require('../../../../lib/util/millisToProtoTimestamp');
 const BlockInfo = require('../../../../lib/blockExecution/BlockInfo');
+const getSystemIdentityPublicKeysFixture = require('../../../../lib/test/fixtures/getSystemIdentityPublicKeysFixture');
+const protoTimestampToMillis = require('../../../../lib/util/protoTimestampToMillis');
 
 describe('initChainHandlerFactory', () => {
   let initChainHandler;
@@ -25,15 +29,21 @@ describe('initChainHandlerFactory', () => {
   let loggerMock;
   let validatorSetUpdate;
   let synchronizeMasternodeIdentitiesMock;
-  let registerSystemDataContractsMock;
   let groveDBStoreMock;
   let appHashFixture;
   let rsAbciMock;
+  let createCoreChainLockUpdateMock;
+  let coreChainLockUpdate;
+  let createContextLoggerMock;
+  let genesisTimeMs;
+  let systemIdentityPublicKeysFixture;
 
   beforeEach(function beforeEach() {
     initialCoreChainLockedHeight = 1;
 
     appHashFixture = Buffer.alloc(0);
+
+    genesisTimeMs = Date.now();
 
     updateSimplifiedMasternodeListMock = this.sinon.stub();
 
@@ -58,13 +68,23 @@ describe('initChainHandlerFactory', () => {
 
     loggerMock = new LoggerMock(this.sinon);
 
-    registerSystemDataContractsMock = this.sinon.stub();
     rsAbciMock = {
       initChain: this.sinon.stub(),
     };
 
     groveDBStoreMock = new GroveDBStoreMock(this.sinon);
     groveDBStoreMock.getRootHash.resolves(appHashFixture);
+
+    coreChainLockUpdate = new CoreChainLock({
+      coreBlockHeight: 42,
+      coreBlockHash: '1528e523f4c20fa84ba70dd96372d34e00ce260f357d53ad1a8bc892ebf20e2d',
+      signature: '1897ce8f54d2070f44ca5c29983b68b391e8137c25e44f67416e579f3e3bdfef7b4fd22db7818399147e52907998857b0fbc8edfdc40a64f2c7df0e88544d31d12ca8c15e73d50dda25ca23f754ed3f789ed4bcb392161995f464017c10df404',
+    });
+
+    createCoreChainLockUpdateMock = this.sinon.stub().resolves(coreChainLockUpdate);
+    createContextLoggerMock = this.sinon.stub().returns(loggerMock);
+
+    systemIdentityPublicKeysFixture = getSystemIdentityPublicKeysFixture();
 
     initChainHandler = initChainHandlerFactory(
       updateSimplifiedMasternodeListMock,
@@ -73,9 +93,11 @@ describe('initChainHandlerFactory', () => {
       createValidatorSetUpdateMock,
       synchronizeMasternodeIdentitiesMock,
       loggerMock,
-      registerSystemDataContractsMock,
       groveDBStoreMock,
       rsAbciMock,
+      createCoreChainLockUpdateMock,
+      createContextLoggerMock,
+      systemIdentityPublicKeysFixture,
     );
   });
 
@@ -83,7 +105,7 @@ describe('initChainHandlerFactory', () => {
     const request = {
       initialHeight: Long.fromInt(1),
       chainId: 'test',
-      time: millisToProtoTimestamp(Date.now()),
+      time: millisToProtoTimestamp(genesisTimeMs),
     };
 
     const blockInfo = new BlockInfo(0, 0, protoTimestampToMillis(request.time));
@@ -108,9 +130,10 @@ describe('initChainHandlerFactory', () => {
 
     expect(groveDBStoreMock.startTransaction).to.be.calledOnce();
 
-    expect(rsAbciMock.initChain).to.be.calledOnceWithExactly({}, true);
-
-    expect(registerSystemDataContractsMock).to.be.calledOnceWithExactly(loggerMock, blockInfo);
+    expect(rsAbciMock.initChain).to.be.calledOnceWithExactly({
+      genesisTimeMs: protoTimestampToMillis(request.time),
+      systemIdentityPublicKeys: systemIdentityPublicKeysFixture,
+    }, true);
 
     expect(synchronizeMasternodeIdentitiesMock).to.be.calledOnceWithExactly(
       initialCoreChainLockedHeight,
@@ -130,5 +153,12 @@ describe('initChainHandlerFactory', () => {
     expect(validatorSetMock.getQuorum).to.be.calledOnce();
 
     expect(createValidatorSetUpdateMock).to.be.calledOnceWithExactly(validatorSetMock);
+
+    expect(createCoreChainLockUpdateMock)
+      .to.be.calledOnceWithExactly(initialCoreChainLockedHeight, 0, loggerMock);
+    expect(createContextLoggerMock).to.be.calledOnceWithExactly(loggerMock, {
+      height: request.initialHeight.toString(),
+      abciMethod: 'initChain',
+    });
   });
 });

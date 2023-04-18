@@ -1,6 +1,6 @@
-import { Platform } from "../../Platform";
-import broadcastStateTransition from "../../broadcastStateTransition";
-import { signStateTransition } from "../../signStateTransition";
+import { Platform } from '../../Platform';
+import broadcastStateTransition from '../../broadcastStateTransition';
+import { signStateTransition } from '../../signStateTransition';
 
 /**
  * Publish contract onto the platform
@@ -10,24 +10,34 @@ import { signStateTransition } from "../../signStateTransition";
  * @param identity - identity
  * @return {DataContractUpdateTransition}
  */
-export default async function update(this: Platform, dataContract: any, identity: any): Promise<any> {
+export default async function update(
+  this: Platform,
+  dataContract: any,
+  identity: any,
+): Promise<any> {
+  this.logger.debug(`[DataContract#update] Update data contract ${dataContract.getId()}`);
   await this.initialize();
 
   const { dpp } = this;
 
   // Clone contract
-  const updatedDataContract = await this.dpp.dataContract.createFromObject(
+  const updatedDataContract = await dpp.dataContract.createFromObject(
     dataContract.toObject(),
   );
 
   updatedDataContract.incrementVersion();
 
-  const dataContractUpdateTransition = dpp.dataContract.createDataContractUpdateTransition(updatedDataContract);
+  const dataContractUpdateTransition = dpp.dataContract
+    .createDataContractUpdateTransition(updatedDataContract);
+
+  this.logger.silly(`[DataContract#update] Created data contract update transition ${dataContract.getId()}`);
 
   await signStateTransition(this, dataContractUpdateTransition, identity, 1);
   await broadcastStateTransition(this, dataContractUpdateTransition);
 
+  this.logger.silly(`[DataContract#update] Broadcasted data contract update transition ${dataContract.getId()}`);
   // Update app with updated data contract if available
+  // eslint-disable-next-line
   for (const appName of this.client.getApps().getNames()) {
     const appDefinition = this.client.getApps().get(appName);
     if (appDefinition.contractId.equals(updatedDataContract.getId()) && appDefinition.contract) {
@@ -35,5 +45,6 @@ export default async function update(this: Platform, dataContract: any, identity
     }
   }
 
+  this.logger.debug(`[DataContract#updated] Update data contract ${dataContract.getId()}`);
   return dataContractUpdateTransition;
 }

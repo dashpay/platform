@@ -42,12 +42,12 @@ describe('validatePublicKeySignaturesFactory', () => {
       readOnly: false,
     });
 
-    const { PrivateKey: BlsPrivateKey } = await BlsSignatures.getInstance();
+    const { BasicSchemeMPL } = await BlsSignatures.getInstance();
 
     const randomBytes = new Uint8Array(crypto.randomBytes(256));
-    const privateKey3 = BlsPrivateKey.fromBytes(randomBytes, true);
-    // blsPrivateKeyHex = Buffer.from(blsPrivateKey.serialize()).toString('hex');
-    const publicKey3 = privateKey3.getPublicKey();
+
+    const privateKey3 = BasicSchemeMPL.keyGen(randomBytes);
+    const publicKey3 = privateKey3.getG1();
 
     const identityPublicKey3 = new IdentityPublicKey({
       id: 2,
@@ -94,6 +94,9 @@ describe('validatePublicKeySignaturesFactory', () => {
     const createStateTransitionMock = this.sinonSandbox.stub().resolves(identityCreateTransition);
 
     validatePublicKeySignatures = validatePublicKeySignaturesFactory(createStateTransitionMock);
+
+    privateKey3.delete();
+    publicKey3.delete();
   });
 
   it('should return InvalidIdentityKeySignatureError if signature is not valid', async () => {

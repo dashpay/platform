@@ -1,14 +1,12 @@
+const DAPIAddress = require('@dashevo/dapi-client/lib/dapiAddressProvider/DAPIAddress');
+
 function getDAPISeeds() {
   return process.env.DAPI_SEED
     .split(',')
     .map((seed) => {
-      const [host, httpPort, grpcPort] = seed.split(':');
+      const address = new DAPIAddress(seed);
 
-      return {
-        host,
-        httpPort,
-        grpcPort,
-      };
+      return address.toJSON();
     });
 }
 

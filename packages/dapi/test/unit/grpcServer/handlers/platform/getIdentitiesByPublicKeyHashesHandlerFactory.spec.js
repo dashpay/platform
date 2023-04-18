@@ -13,7 +13,7 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 
 const getIdentitiesByPublicKeyHashesHandlerFactory = require(
   '../../../../../lib/grpcServer/handlers/platform/getIdentitiesByPublicKeyHashesHandlerFactory',
@@ -31,7 +31,7 @@ describe('getIdentitiesByPublicKeyHashesHandlerFactory', () => {
   let proofMock;
   let response;
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     publicKeyHash = Buffer.from('556c2910d46fda2b327ef9d9bda850cc84d30db0', 'hex');
 
     call = new GrpcCallMock(this.sinon, {
@@ -41,7 +41,7 @@ describe('getIdentitiesByPublicKeyHashesHandlerFactory', () => {
       getProve: this.sinon.stub().returns(false),
     });
 
-    identity = getIdentityFixture();
+    identity = await getIdentityFixture();
 
     proofFixture = {
       merkleProof: Buffer.alloc(1, 1),

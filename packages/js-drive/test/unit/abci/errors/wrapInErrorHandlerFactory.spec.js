@@ -1,4 +1,4 @@
-const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
+const { MissingStateTransitionTypeError } = require('@dashevo/wasm-dpp');
 const wrapInErrorHandlerFactory = require('../../../../lib/abci/errors/wrapInErrorHandlerFactory');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 const InternalAbciError = require('../../../../lib/abci/errors/InternalAbciError');
@@ -26,36 +26,6 @@ describe('wrapInErrorHandlerFactory', () => {
     handler = wrapInErrorHandler(
       methodMock,
     );
-  });
-
-  it('should throw an internal error if any Error is thrown in handler', async () => {
-    const error = new Error('Custom error');
-
-    methodMock.throws(error);
-
-    try {
-      await handler(request);
-
-      expect.fail('Internal error must be thrown');
-    } catch (e) {
-      expect(e).to.equal(error);
-    }
-  });
-
-  it('should throw en internal error if an InternalAbciError is thrown in handler', async () => {
-    const originError = new Error();
-    const metadata = { sample: 'data' };
-    const error = new InternalAbciError(originError, metadata);
-
-    methodMock.throws(error);
-
-    try {
-      await handler(request);
-
-      expect.fail('Internal error must be thrown');
-    } catch (e) {
-      expect(e).to.equal(originError);
-    }
   });
 
   it('should respond with internal error code if any Error is thrown in handler and respondWithInternalError enabled', async () => {
@@ -123,7 +93,7 @@ describe('wrapInErrorHandlerFactory', () => {
   it('should respond with error if method throws DPPValidationAbciError', async () => {
     const dppValidationError = new DPPValidationAbciError(
       'Some error',
-      new SomeConsensusError('Consensus error'),
+      new MissingStateTransitionTypeError(),
     );
 
     methodMock.throws(dppValidationError);

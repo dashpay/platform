@@ -8,7 +8,7 @@ const ConfigIsNotPresentError = require('../../config/errors/ConfigIsNotPresentE
 /**
  * @abstract
  */
-class GroupBaseCommand extends BaseCommand {
+class ConfigBaseCommand extends BaseCommand {
   async run() {
     const configFile = this.container.resolve('configFile');
 
@@ -23,7 +23,11 @@ class GroupBaseCommand extends BaseCommand {
       const defaultConfigName = configFile.getDefaultConfigName();
 
       if (defaultConfigName === null) {
-        throw new Error('Default config is not set. Please use \'--config\' option or set default config');
+        throw new Error(`Default config is not set.
+        
+You probably need to set up a node with the 'dashmate setup' command first.
+
+You can also use the '--config' option, or set the default config with 'dashmate config default'`);
       }
 
       if (!configFile.isConfigExists(defaultConfigName)) {
@@ -49,7 +53,7 @@ class GroupBaseCommand extends BaseCommand {
   }
 }
 
-GroupBaseCommand.flags = {
+ConfigBaseCommand.flags = {
   config: Flags.string({
     description: 'configuration name to use',
     default: null,
@@ -57,4 +61,4 @@ GroupBaseCommand.flags = {
   ...BaseCommand.flags,
 };
 
-module.exports = GroupBaseCommand;
+module.exports = ConfigBaseCommand;

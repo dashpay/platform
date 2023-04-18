@@ -31,10 +31,11 @@ describe('GetIdentitiesByPublicKeyHashesResponse', () => {
     proto.setIdentitiesList(
       [identityFixture.toBuffer()],
     );
-
     const metadata = new ResponseMetadata();
     metadata.setHeight(metadataFixture.height);
     metadata.setCoreChainLockedHeight(metadataFixture.coreChainLockedHeight);
+    metadata.setTimeMs(metadataFixture.timeMs);
+    metadata.setProtocolVersion(metadataFixture.protocolVersion);
 
     proto.setMetadata(metadata);
 
@@ -65,7 +66,7 @@ describe('GetIdentitiesByPublicKeyHashesResponse', () => {
     expect(identities).to.deep.members([]);
     expect(proof).to.be.an.instanceOf(Proof);
     expect(proof.getMerkleProof()).to.deep.equal(proofFixture.merkleProof);
-    expect(proof.getSignatureLLMQHash()).to.deep.equal(proofFixture.signatureLLMQHash);
+    expect(proof.getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
     expect(proof.getSignature()).to.deep.equal(proofFixture.signature);
   });
 
@@ -89,9 +90,10 @@ describe('GetIdentitiesByPublicKeyHashesResponse', () => {
   it('should create an instance with proof from proto', () => {
     const proofProto = new ProofResponse();
 
-    proofProto.setSignatureLlmqHash(proofFixture.signatureLLMQHash);
+    proofProto.setQuorumHash(proofFixture.quorumHash);
     proofProto.setSignature(proofFixture.signature);
     proofProto.setMerkleProof(proofFixture.merkleProof);
+    proofProto.setRound(proofFixture.round);
 
     proto.setIdentitiesList([]);
     proto.setProof(proofProto);
@@ -107,10 +109,12 @@ describe('GetIdentitiesByPublicKeyHashesResponse', () => {
       .to.be.an.instanceOf(Proof);
     expect(getIdentitiesResponse.getProof().getMerkleProof())
       .to.deep.equal(proofFixture.merkleProof);
-    expect(getIdentitiesResponse.getProof().getSignatureLLMQHash())
-      .to.deep.equal(proofFixture.signatureLLMQHash);
+    expect(getIdentitiesResponse.getProof().getQuorumHash())
+      .to.deep.equal(proofFixture.quorumHash);
     expect(getIdentitiesResponse.getProof().getSignature())
       .to.deep.equal(proofFixture.signature);
+    expect(getIdentitiesResponse.getProof().getRound())
+      .to.deep.equal(proofFixture.round);
   });
 
   it('should throw InvalidResponseError if Metadata is not defined', () => {

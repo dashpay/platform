@@ -1,0 +1,18 @@
+{
+	"protocolVersion": 0,
+	"$id": "AoDzJxWSb1gUi2dSmvFeUFpSsjZQRJaqCpn7vCLkwwJj",
+	"$schema": "https://schema.dash.org/dpp-0-4-0/meta/data-contract",
+	"version": 5,
+	"ownerId": "7NUbPf231ixt1kVBQsBvSMMBxd7AgPad8KtdtfFGhXDP",
+	"documents": {
+		"note": {
+			"properties": {
+				"message": {
+					"type": "string"
+				}
+			},
+			"additionalProperties": false
+		}
+	},
+	"$defs": {}
+}

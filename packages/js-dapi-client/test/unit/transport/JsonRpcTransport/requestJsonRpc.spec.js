@@ -3,16 +3,20 @@ const JsonRpcError = require('../../../../lib/transport/JsonRpcTransport/errors/
 const WrongHttpCodeError = require('../../../../lib/transport/JsonRpcTransport/errors/WrongHttpCodeError');
 
 describe('requestJsonRpc', () => {
+  let protocol;
   let host;
   let port;
   let timeout;
   let params;
+  let selfSigned;
 
   beforeEach(function beforeEach() {
+    protocol = 'http';
     host = 'localhost';
     port = 80;
     params = { data: 'test' };
     timeout = 1000;
+    selfSigned = false;
 
     // eslint-disable-next-line
     this.sinon.stub(globalThis, 'fetch');
@@ -33,8 +37,10 @@ describe('requestJsonRpc', () => {
     ));
 
     const result = await requestJsonRpc(
+      protocol,
       host,
       port,
+      selfSigned,
       'shouldPass',
       params,
       { timeout },
@@ -44,7 +50,7 @@ describe('requestJsonRpc', () => {
   });
 
   it('should make https rpc request and return result', async () => {
-    port = 443;
+    protocol = 'https';
 
     // eslint-disable-next-line
     fetch.resolves(new Response(
@@ -55,8 +61,35 @@ describe('requestJsonRpc', () => {
     ));
 
     const result = await requestJsonRpc(
+      protocol,
       host,
       port,
+      selfSigned,
+      'httpsRequest',
+      params,
+      { timeout },
+    );
+
+    expect(result).to.equal('passed');
+  });
+
+  it('should make https rpc request with self-signed certificate and return result', async () => {
+    protocol = 'https';
+    selfSigned = true;
+
+    // eslint-disable-next-line
+    fetch.resolves(new Response(
+      JSON.stringify({ result: 'passed', error: null }),
+      {
+        status: 200,
+      },
+    ));
+
+    const result = await requestJsonRpc(
+      protocol,
+      host,
+      port,
+      selfSigned,
       'httpsRequest',
       params,
       { timeout },
@@ -80,8 +113,10 @@ describe('requestJsonRpc', () => {
 
     try {
       await requestJsonRpc(
+        protocol,
         host,
         port,
+        selfSigned,
         method,
         params,
         options,
@@ -93,8 +128,10 @@ describe('requestJsonRpc', () => {
       expect(e.message).to.equal('DAPI JSON RPC wrong http code: Status message');
       expect(e.getCode()).to.equal(400);
       expect(e.getRequestInfo()).to.deep.equal({
+        protocol,
         host,
         port,
+        selfSigned,
         method,
         params,
         options,
@@ -114,8 +151,10 @@ describe('requestJsonRpc', () => {
       ));
 
       await requestJsonRpc(
+        protocol,
         host,
         port,
+        selfSigned,
         'invalidData',
         params,
         { timeout },
@@ -141,8 +180,10 @@ describe('requestJsonRpc', () => {
       ));
 
       await requestJsonRpc(
+        protocol,
         host,
         port,
+        selfSigned,
         method,
         params,
       );
@@ -152,8 +193,10 @@ describe('requestJsonRpc', () => {
       expect(e).to.be.an.instanceof(JsonRpcError);
       expect(e.message).to.equal('Invalid data for error.data');
       expect(e.getRequestInfo()).to.deep.equal({
+        protocol,
         host,
         port,
+        selfSigned,
         method,
         params,
         options: {},

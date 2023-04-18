@@ -6,18 +6,21 @@ const {
   },
 } = require('@dashevo/abci/types');
 
-const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
+const getIdentityCreateTransitionFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
 
 const checkTxHandlerFactory = require('../../../../lib/abci/handlers/checkTxHandlerFactory');
+const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 
 describe('checkTxHandlerFactory', () => {
   let checkTxHandler;
   let request;
   let stateTransitionFixture;
   let unserializeStateTransitionMock;
+  let loggerMock;
+  let createContextLoggerMock;
 
-  beforeEach(function beforeEach() {
-    stateTransitionFixture = getIdentityCreateTransitionFixture();
+  beforeEach(async function beforeEach() {
+    stateTransitionFixture = await getIdentityCreateTransitionFixture();
 
     request = {
       tx: stateTransitionFixture.toBuffer(),
@@ -26,8 +29,13 @@ describe('checkTxHandlerFactory', () => {
     unserializeStateTransitionMock = this.sinon.stub()
       .resolves(stateTransitionFixture);
 
+    loggerMock = new LoggerMock(this.sinon);
+    createContextLoggerMock = this.sinon.stub();
+
     checkTxHandler = checkTxHandlerFactory(
       unserializeStateTransitionMock,
+      createContextLoggerMock,
+      loggerMock,
     );
   });
 
@@ -38,5 +46,9 @@ describe('checkTxHandlerFactory', () => {
     expect(response.code).to.equal(0);
 
     expect(unserializeStateTransitionMock).to.be.calledOnceWith(request.tx);
+
+    expect(createContextLoggerMock).to.be.calledOnceWithExactly(loggerMock, {
+      abciMethod: 'checkTx',
+    });
   });
 });

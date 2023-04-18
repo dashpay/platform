@@ -36,48 +36,103 @@ class CachedStateRepositoryDecorator {
   }
 
   /**
-   * Update identity
-   *
-   * @param {Identity} identity
-   * @param {StateTransitionExecutionContext} [executionContext]
-   *
-   * @returns {Promise<void>}
-   */
-  async updateIdentity(identity, executionContext = undefined) {
-    return this.stateRepository.updateIdentity(identity, executionContext);
-  }
-
-  /**
-   * Store public key hashes for an identity id
+   * Add keys to identity
    *
    * @param {Identifier} identityId
-   * @param {Buffer[]} publicKeyHashes
+   * @param {IdentityPublicKey[]} keys
    * @param {StateTransitionExecutionContext} [executionContext]
-   *
    * @returns {Promise<void>}
    */
-  async storeIdentityPublicKeyHashes(identityId, publicKeyHashes, executionContext = undefined) {
-    return this.stateRepository.storeIdentityPublicKeyHashes(
+  async addKeysToIdentity(identityId, keys, executionContext = undefined) {
+    return this.stateRepository.addKeysToIdentity(identityId, keys, executionContext);
+  }
+
+  /**
+   * Fetch identity balance
+   *
+   * @param {Identifier} identityId
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @returns {Promise<number|null>}
+   */
+  async fetchIdentityBalance(identityId, executionContext = undefined) {
+    return this.stateRepository.fetchIdentityBalance(
       identityId,
-      publicKeyHashes,
       executionContext,
     );
   }
 
   /**
-   * Fetch identity ids mapped by related public keys
-   * using public key hashes
+   * Fetch identity balance with debt
    *
-   * @param {Buffer[]} publicKeyHashes
+   * @param {Identifier} identityId
    * @param {StateTransitionExecutionContext} [executionContext]
-   *
-   * @returns {Promise<Array<Identifier[]>>}
+   * @returns {Promise<number|null>} - Balance can be negative in case of debt
    */
-  async fetchIdentityIdsByPublicKeyHashes(publicKeyHashes, executionContext = undefined) {
-    return this.stateRepository.fetchIdentityIdsByPublicKeyHashes(
-      publicKeyHashes,
+  async fetchIdentityBalanceWithDebt(identityId, executionContext = undefined) {
+    return this.stateRepository.fetchIdentityBalanceWithDebt(
+      identityId,
       executionContext,
     );
+  }
+
+  /**
+   * Add to identity balance
+   *
+   * @param {Identifier} identityId
+   * @param {number} amount
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @returns {Promise<void>}
+   */
+  async addToIdentityBalance(identityId, amount, executionContext = undefined) {
+    return this.stateRepository.addToIdentityBalance(
+      identityId,
+      amount,
+      executionContext,
+    );
+  }
+
+  /**
+   * Add to system credits
+   *
+   * @param {number} amount
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @returns {Promise<void>}
+   */
+  async addToSystemCredits(amount, executionContext = undefined) {
+    return this.stateRepository.addToSystemCredits(
+      amount,
+      executionContext,
+    );
+  }
+
+  /**
+   * Disable identity keys
+   *
+   * @param {Identifier} identityId
+   * @param {number[]} keyIds
+   * @param {number} disableAt
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @returns {Promise<void>}
+   */
+  async disableIdentityKeys(identityId, keyIds, disableAt, executionContext = undefined) {
+    return this.stateRepository.disableIdentityKeys(
+      identityId,
+      keyIds,
+      disableAt,
+      executionContext,
+    );
+  }
+
+  /**
+   * Update identity revision
+   *
+   * @param {Identifier} identityId
+   * @param {number} revision
+   * @param {StateTransitionExecutionContext} [executionContext]
+   * @returns {Promise<void>}
+   */
+  async updateIdentityRevision(identityId, revision, executionContext = undefined) {
+    return this.stateRepository.updateIdentityRevision(identityId, revision, executionContext);
   }
 
   /**
@@ -164,6 +219,20 @@ class CachedStateRepositoryDecorator {
   }
 
   /**
+   * Fetch Extended Documents by contract ID and type
+   *
+   * @param {Identifier} contractId
+   * @param {string} type
+   * @param {{ where: Object }} [options]
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<ExtendedDocument[]>}
+   */
+  async fetchExtendedDocuments(contractId, type, options = {}, executionContext = undefined) {
+    return this.stateRepository.fetchExtendedDocuments(contractId, type, options, executionContext);
+  }
+
+  /**
    * Create document
    *
    * @param {Document} document
@@ -214,12 +283,21 @@ class CachedStateRepositoryDecorator {
   }
 
   /**
-   * Fetch the latest platform block header
+   * Fetch the latest platform block height
    *
-   * @return {Promise<IHeader>}
+   * @return {Promise<Long>}
    */
-  async fetchLatestPlatformBlockHeader() {
-    return this.stateRepository.fetchLatestPlatformBlockHeader();
+  async fetchLatestPlatformBlockHeight() {
+    return this.stateRepository.fetchLatestPlatformBlockHeight();
+  }
+
+  /**
+   * Fetch the latest platform core chainlocked height
+   *
+   * @return {Promise<number>}
+   */
+  async fetchLatestPlatformCoreChainLockedHeight() {
+    return this.stateRepository.fetchLatestPlatformCoreChainLockedHeight();
   }
 
   /**
@@ -244,12 +322,46 @@ class CachedStateRepositoryDecorator {
   }
 
   /**
+   * Fetch the latest withdrawal transaction index
+   *
+   * @returns {Promise<number>}
+   */
+  async fetchLatestWithdrawalTransactionIndex() {
+    return this.stateRepository.fetchLatestWithdrawalTransactionIndex();
+  }
+
+  /**
+   * Enqueue withdrawal transaction bytes into the queue
+   *
+   * @param {number} index
+   * @param {Buffer} transactionBytes
+   *
+   * @returns {Promise<void>}
+   */
+  async enqueueWithdrawalTransaction(index, transactionBytes) {
+    return this.stateRepository.enqueueWithdrawalTransaction(
+      index,
+      transactionBytes,
+    );
+  }
+
+  /**
    * Returns block time
    *
-   * @returns {number}
+   * @returns {Promise<number>}
    */
-  getTimeMs() {
-    return this.stateRepository.getTimeMs();
+  async fetchLatestPlatformBlockTime() {
+    return this.stateRepository.fetchLatestPlatformBlockTime();
+  }
+
+  /**
+   * Verifies that a given masternode id is in the current valid masternode list
+   *
+   * @param {Buffer} masternodeId
+   * @returns {Promise<boolean>}
+   */
+  async isInTheValidMasterNodesList(masternodeId) {
+    return this.stateRepository.isInTheValidMasterNodesList(masternodeId);
   }
 }
 

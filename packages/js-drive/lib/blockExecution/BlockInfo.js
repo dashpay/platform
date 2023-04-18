@@ -26,16 +26,25 @@ class BlockInfo {
   }
 
   /**
+   * @returns {RawBlockInfo}
+   */
+  toObject() {
+    return {
+      height: this.height,
+      epoch: this.epoch,
+      timeMs: this.timeMs,
+    };
+  }
+
+  /**
    * @param {BlockExecutionContext} blockExecutionContext
    * @returns {BlockInfo}
    */
   static createFromBlockExecutionContext(blockExecutionContext) {
-    const { height } = blockExecutionContext.getHeader();
-
     const epochInfo = blockExecutionContext.getEpochInfo();
 
     return new BlockInfo(
-      height.toNumber(),
+      blockExecutionContext.getHeight().toNumber(),
       epochInfo.currentEpochIndex,
       blockExecutionContext.getTimeMs(),
     );

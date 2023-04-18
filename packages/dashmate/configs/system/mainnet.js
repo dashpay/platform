@@ -1,4 +1,4 @@
-const lodashMerge = require('lodash.merge');
+const lodashMerge = require('lodash/merge');
 
 const {
   NETWORK_MAINNET,
@@ -15,18 +15,14 @@ const mainnetConfig = lodashMerge({}, baseConfig, {
   },
   core: {
     docker: {
-      image: 'dashpay/dashd:18.1.0-rc.1',
+      image: 'dashpay/dashd:18.2.2',
     },
-    p2p: {
-      port: 9999,
-    },
-    rpc: {
-      port: 9998,
-    },
+    indexes: false,
   },
   network: NETWORK_MAINNET,
+  platform: {
+    enable: false,
+  },
 });
-
-delete mainnetConfig.platform;
 
 module.exports = mainnetConfig;

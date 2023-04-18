@@ -52,7 +52,7 @@ describe('GetDataContractResponse', () => {
     expect(dataContract).to.deep.equal(Buffer.alloc(0));
     expect(proof).to.be.an.instanceOf(Proof);
     expect(proof.getMerkleProof()).to.deep.equal(proofFixture.merkleProof);
-    expect(proof.getSignatureLLMQHash()).to.deep.equal(proofFixture.signatureLLMQHash);
+    expect(proof.getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
     expect(proof.getSignature()).to.deep.equal(proofFixture.signature);
   });
 
@@ -83,7 +83,7 @@ describe('GetDataContractResponse', () => {
   it('should create an instance with proof from proto', () => {
     const proofProto = new ProofResponse();
 
-    proofProto.setSignatureLlmqHash(proofFixture.signatureLLMQHash);
+    proofProto.setQuorumHash(proofFixture.quorumHash);
     proofProto.setSignature(proofFixture.signature);
     proofProto.setMerkleProof(proofFixture.merkleProof);
 
@@ -113,7 +113,7 @@ describe('GetDataContractResponse', () => {
 
     expect(proof).to.be.an.instanceOf(Proof);
     expect(proof.getMerkleProof()).to.deep.equal(proofFixture.merkleProof);
-    expect(proof.getSignatureLLMQHash()).to.deep.equal(proofFixture.signatureLLMQHash);
+    expect(proof.getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
     expect(proof.getSignature()).to.deep.equal(proofFixture.signature);
   });
 

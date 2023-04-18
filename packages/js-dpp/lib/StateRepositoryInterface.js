@@ -10,7 +10,7 @@
  * @method
  * @name StateRepository#fetchDataContract
  * @param {Identifier} id
- * @param {StateTransitionExecutionContext} [StateTransitionExecutionContext]
+ * @param {StateTransitionExecutionContext} [executionContext]
  * @returns {Promise<DataContract|null>}
  */
 
@@ -21,7 +21,7 @@
  * @method
  * @name StateRepository#createDataContract
  * @param {DataContract} dataContract
- * @param {StateTransitionExecutionContext} [StateTransitionExecutionContext]
+ * @param {StateTransitionExecutionContext} [executionContext]
  * @returns {Promise<void>}
  */
 
@@ -32,7 +32,7 @@
  * @method
  * @name StateRepository#updateDataContract
  * @param {DataContract} dataContract
- * @param {StateTransitionExecutionContext} [StateTransitionExecutionContext]
+ * @param {StateTransitionExecutionContext} [executionContext]
  * @returns {Promise<void>}
  */
 
@@ -45,7 +45,7 @@
  * @param {Identifier} contractId
  * @param {string} type
  * @param {{ where: Object }} options
- * @param {StateTransitionExecutionContext} [StateTransitionExecutionContext]
+ * @param {StateTransitionExecutionContext} [executionContext]
  * @returns {Promise<Document[]>}
  */
 
@@ -56,7 +56,7 @@
  * @method
  * @name StateRepository#createDocument
  * @param {Document} document
- * @param {StateTransitionExecutionContext} [StateTransitionExecutionContext]
+ * @param {StateTransitionExecutionContext} [executionContext]
  * @returns {Promise<void>}
  */
 
@@ -67,7 +67,7 @@
  * @method
  * @name StateRepository#updateDocument
  * @param {Document} document
- * @param {StateTransitionExecutionContext} [StateTransitionExecutionContext]
+ * @param {StateTransitionExecutionContext} [executionContext]
  * @returns {Promise<void>}
  */
 
@@ -80,7 +80,7 @@
  * @param {DataContract} dataContract
  * @param {string} type
  * @param {Identifier} id
- * @param {StateTransitionExecutionContext} [StateTransitionExecutionContext]
+ * @param {StateTransitionExecutionContext} [executionContext]
  * @returns {Promise<void>}
  */
 
@@ -91,7 +91,7 @@
  * @method
  * @name StateRepository#fetchTransaction
  * @param {string} id
- * @param {StateTransitionExecutionContext} [StateTransitionExecutionContext]
+ * @param {StateTransitionExecutionContext} [executionContext]
  * @returns {Promise<Object|null>}
  */
 
@@ -102,62 +102,128 @@
  * @method
  * @name StateRepository#fetchIdentity
  * @param {Identifier} id
- * @param {StateTransitionExecutionContext} [StateTransitionExecutionContext]
+ * @param {StateTransitionExecutionContext} [executionContext]
  * @returns {Promise<Identity|null>}
  */
 
 /**
- * Store identity
+ * Create identity
  *
  * @async
  * @method
  * @name StateRepository#createIdentity
  * @param {Identity} identity
- * @param {StateTransitionExecutionContext} [StateTransitionExecutionContext]
+ * @param {StateTransitionExecutionContext} [executionContext]
  * @returns {Promise<void>}
  */
 
 /**
- * Store identity
+ * Add keys to identity
  *
  * @async
  * @method
- * @name StateRepository#updateIdentity
- * @param {Identity} identity
- * @param {StateTransitionExecutionContext} [StateTransitionExecutionContext]
- * @returns {Promise<void>}
- */
-
-/**
- * Store public keys hashes and identity id pair
- *
- * @async
- * @method
- * @name StateRepository#storeIdentityPublicKeyHashes
+ * @name StateRepository#addKeysToIdentity
  * @param {Identifier} identityId
- * @param {Buffer[]} publicKeyHashes
- * @param {StateTransitionExecutionContext} [StateTransitionExecutionContext]
+ * @param {IdentityPublicKey[]} keys
+ * @param {StateTransitionExecutionContext} [executionContext]
  * @returns {Promise<void>}
  */
 
 /**
- * Fetch identity ids by public keys hashes
+ * Disable identity keys
  *
  * @async
  * @method
- * @name StateRepository#fetchIdentityIdsByPublicKeyHashes
- * @param {Buffer[]} publicKeyHashes
- * @param {StateTransitionExecutionContext} [StateTransitionExecutionContext]
- * @returns {Promise<Array<Identifier|null>>}
+ * @name StateRepository#disableIdentityKeys
+ * @param {Identifier} identityId
+ * @param {number[]} keyIds
+ * @param {number} disableAt
+ * @param {StateTransitionExecutionContext} [executionContext]
+ * @returns {Promise<void>}
  */
 
 /**
- * Fetch latest platform block header
+ * Update identity revision
  *
  * @async
  * @method
- * @name StateRepository#fetchLatestPlatformBlockHeader
- * @returns {Promise<abci.IHeader>}
+ * @name StateRepository#updateIdentityRevision
+ * @param {Identifier} identityId
+ * @param {number} revision
+ * @param {StateTransitionExecutionContext} [executionContext]
+ * @returns {Promise<void>}
+ */
+
+/**
+ * Fetch identity balance by identity ID
+ *
+ * @async
+ * @method
+ * @name StateRepository#fetchIdentityBalance
+ * @param {Identifier} id
+ * @param {StateTransitionExecutionContext} [executionContext]
+ * @returns {Promise<number|null>}
+ */
+
+/**
+ * Fetch identity balance including debt by identity ID
+ *
+ * @async
+ * @method
+ * @name StateRepository#fetchIdentityBalanceWithDebt
+ * @param {Identifier} id
+ * @param {StateTransitionExecutionContext} [executionContext]
+ * @returns {Promise<number|null>} - Balance can be negative in case of debt present
+ */
+
+/**
+ * Add to identity balance
+ *
+ * @async
+ * @method
+ * @name StateRepository#addToIdentityBalance
+ * @param {Identifier} identityId
+ * @param {number} amount
+ * @param {StateTransitionExecutionContext} [executionContext]
+ * @returns {Promise<void>}
+ */
+
+/**
+ * Add to system credits
+ *
+ * @async
+ * @method
+ * @name StateRepository#addToSystemCredits
+ * @param {number} amount
+ * @param {StateTransitionExecutionContext} [executionContext]
+ * @returns {Promise<void>}
+ */
+
+/**
+ * Fetch the latest platform block time
+ *
+ * @async
+ * @method
+ * @name StateRepository#fetchLatestPlatformBlockTime
+ * @returns {Promise<protobuf.Timestamp>}
+ */
+
+/**
+ * Fetch the latest platform block height
+ *
+ * @async
+ * @method
+ * @name StateRepository#fetchLatestPlatformBlockHeight
+ * @returns {Promise<Long>}
+ */
+
+/**
+ * Fetch the latest platform core chainlocked height
+ *
+ * @async
+ * @method
+ * @name StateRepository#fetchLatestPlatformCoreChainLockedHeight
+ * @returns {Promise<number>}
  */
 
 /**
@@ -167,7 +233,7 @@
  * @method
  * @name StateRepository#verifyInstantLock
  * @param {InstantLock} instantLock
- * @param {StateTransitionExecutionContext} [StateTransitionExecutionContext]
+ * @param {StateTransitionExecutionContext} [executionContext]
  * @returns {Promise<boolean>}
  */
 
@@ -178,7 +244,7 @@
  * @method
  * @name StateRepository#isAssetLockTransactionOutPointAlreadyUsed
  * @param {Buffer} outPointBuffer
- * @param {StateTransitionExecutionContext} [StateTransitionExecutionContext]
+ * @param {StateTransitionExecutionContext} [executionContext]
  * @returns {Promise<boolean>}
  */
 
@@ -189,7 +255,7 @@
  * @method
  * @name StateRepository#markAssetLockTransactionOutPointAsUsed
  * @param {Buffer} outPointBuffer
- * @param {StateTransitionExecutionContext} [StateTransitionExecutionContext]
+ * @param {StateTransitionExecutionContext} [executionContext]
  * @returns {Promise<void>}
  */
 
@@ -205,7 +271,8 @@
 /**
  * Returns current block time in milliseconds
  *
+ * @async
  * @method
- * @name StateRepository#getTimeMs
- * @returns {number}
+ * @name StateRepository#fetchLatestPlatformBlockTime
+ * @returns {Promise<number>}
  */

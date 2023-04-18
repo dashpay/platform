@@ -1,6 +1,6 @@
 const path = require('path');
 const webpack = require('webpack');
-const TerserPlugin = require("terser-webpack-plugin");
+const TerserPlugin = require('terser-webpack-plugin');
 
 const baseConfig = {
   entry: './src/index.ts',
@@ -18,8 +18,8 @@ const baseConfig = {
     minimize: true,
     minimizer: [new TerserPlugin({
       terserOptions: {
-        keep_classnames: true // fixes empty string in `object.constructor.name`
-      }
+        keep_classnames: true, // fixes empty string in `object.constructor.name`
+      },
     })],
   },
   resolve: {
@@ -54,5 +54,5 @@ const baseConfig = {
   output: {
     path: path.resolve(__dirname, 'dist'),
   },
-}
+};
 module.exports = baseConfig;

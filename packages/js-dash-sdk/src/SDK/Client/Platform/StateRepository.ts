@@ -1,6 +1,4 @@
-import DataContract from "@dashevo/dpp/lib/dataContract/DataContract";
-import Identity from "@dashevo/dpp/lib/identity/Identity";
-import Identifier from "@dashevo/dpp/lib/Identifier";
+import { DataContract, Identity, Identifier } from '@dashevo/wasm-dpp';
 import Client from '../Client';
 
 class StateRepository {
@@ -10,14 +8,15 @@ class StateRepository {
     this.client = client;
   }
 
-  async fetchIdentity(id: Identifier|string): Promise<Identity|null> {
+  async fetchIdentity(id: Identifier | string): Promise<Identity | null> {
     return this.client.platform.identities.get(id);
   }
 
-  async fetchDataContract(identifier: Identifier|string): Promise<DataContract|null> {
+  async fetchDataContract(identifier: Identifier | string): Promise<DataContract | null> {
     return this.client.platform.contracts.get(identifier);
   }
 
+  // eslint-disable-next-line
   async isAssetLockTransactionOutPointAlreadyUsed(): Promise<boolean> {
     // This check still exists on the client side, however there's no need to
     // perform the check as in this client we always use a new transaction
@@ -25,6 +24,7 @@ class StateRepository {
     return false;
   }
 
+  // eslint-disable-next-line
   async verifyInstantLock(): Promise<boolean> {
     // verification will be implemented later with DAPI SPV functionality
     return true;
@@ -38,17 +38,14 @@ class StateRepository {
     return {
       // @ts-ignore
       data: transaction.toBuffer(),
-      // we don't have transaction heights atm and it will be implemented later with DAPI SPV functionality
+      // we don't have transaction heights atm
+      // and it will be implemented later with DAPI SPV functionality
       height: 1,
     };
   }
 
-  async fetchLatestPlatformBlockHeader(id: string): Promise<{ coreChainLockedHeight: number }> {
-    const coreChainLockedHeight = await this.client.wallet!.transport.getBestBlockHeight();
-
-    return {
-      coreChainLockedHeight,
-    };
+  async fetchLatestPlatformCoreChainLockedHeight(): Promise<number> {
+    return this.client.wallet!.transport.getBestBlockHeight();
   }
 }
 

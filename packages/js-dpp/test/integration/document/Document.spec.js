@@ -13,7 +13,12 @@ describe('Document', () => {
     dataContract = getDataContractFixture();
     [document] = getDocumentsFixture(dataContract).slice(8);
 
-    metadataFixture = new Metadata(42, 0);
+    metadataFixture = new Metadata({
+      blockHeight: 42,
+      coreChainLockedHeight: 0,
+      timeMs: new Date().getTime(),
+      protocolVersion: 1,
+    });
 
     document.setMetadata(metadataFixture);
   });

@@ -1,6 +1,7 @@
-const lodashGet = require('lodash.get');
-const lodashSet = require('lodash.set');
-const lodashCloneDeepWith = require('lodash.clonedeepwith');
+const varint = require('varint');
+const lodashGet = require('lodash/get');
+const lodashSet = require('lodash/set');
+const lodashCloneDeepWith = require('lodash/cloneDeepWith');
 
 const cloneDeepWithIdentifiers = require('../util/cloneDeepWithIdentifiers');
 
@@ -368,10 +369,9 @@ class Document {
     const serializedData = this.toObject();
     delete serializedData.$protocolVersion;
 
-    const protocolVersionUInt32 = Buffer.alloc(4);
-    protocolVersionUInt32.writeUInt32LE(this.getProtocolVersion(), 0);
+    const protocolVersionBytes = Buffer.from(varint.encode(this.getProtocolVersion()));
 
-    return Buffer.concat([protocolVersionUInt32, serializer.encode(serializedData)]);
+    return Buffer.concat([protocolVersionBytes, serializer.encode(serializedData)]);
   }
 
   /**

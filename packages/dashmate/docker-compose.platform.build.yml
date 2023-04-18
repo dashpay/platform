@@ -21,3 +21,17 @@ services:
       dockerfile: ${PLATFORM_SOURCE_PATH:?err}/packages/dapi/Dockerfile
     image: dapi:local
     stop_grace_period: 10s
+
+  dapi_envoy:
+    build:
+      context: ${PLATFORM_SOURCE_PATH:?err}
+      dockerfile: ${PLATFORM_SOURCE_PATH:?err}/packages/dashmate/docker/envoy/Dockerfile
+    image: dapi-envoy:local
+    stop_grace_period: 10s
+
+  dashmate_helper:
+    build:
+      context: ${PLATFORM_SOURCE_PATH:?err}
+      dockerfile: ${PLATFORM_SOURCE_PATH:?err}/packages/dashmate/Dockerfile
+    image: dashmate_helper:local
+    stop_grace_period: 10s

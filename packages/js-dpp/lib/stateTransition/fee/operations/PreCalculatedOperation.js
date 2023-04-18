@@ -1,15 +1,15 @@
 const AbstractOperation = require('./AbstractOperation');
 
+const DummyFeeResult = require('../DummyFeeResult');
+
 class PreCalculatedOperation extends AbstractOperation {
   /**
-   * @param {number} storageCost
-   * @param {number} processingCost
+   * @param {FeeResult|DummyFeeResult} feeResult
    */
-  constructor(storageCost, processingCost) {
+  constructor(feeResult) {
     super();
 
-    this.storageCost = storageCost || 0;
-    this.processingCost = processingCost || 0;
+    this.feeResult = feeResult;
   }
 
   /**
@@ -18,7 +18,7 @@ class PreCalculatedOperation extends AbstractOperation {
    * @returns {number}
    */
   getProcessingCost() {
-    return this.processingCost;
+    return this.feeResult.processingFee;
   }
 
   /**
@@ -27,26 +27,50 @@ class PreCalculatedOperation extends AbstractOperation {
    * @returns {number}
    */
   getStorageCost() {
-    return this.storageCost;
+    return this.feeResult.storageFee;
   }
 
   /**
-   * @return {{processingCost: number, type: string, storageCost: number}}
+   * @return {{identifier: Buffer, creditsPerEpoch: Object<string, number>}[]}
+   */
+  getRefunds() {
+    return this.feeResult.feeRefunds;
+  }
+
+  /**
+   * @return {{
+   *  processingCost: number,
+   *  type: string,
+   *  storageCost: number,
+   *  feeRefunds: {identifier: Buffer, creditsPerEpoch: Object<string, number>}[]
+   * }}
    */
   toJSON() {
     return {
       type: 'preCalculated',
       storageCost: this.getStorageCost(),
       processingCost: this.getProcessingCost(),
+      feeRefunds: this.getRefunds(),
     };
   }
 
   /**
-   * @param {{storageCost: number, type: string, processingCost: number}} json
+   * @param {{
+   *  storageCost: number,
+   *  type: string,
+   *  processingCost: number,
+   *  feeRefunds: {identifier: Buffer, creditsPerEpoch: Object<string, number>}[]
+   * }} json
    * @return {PreCalculatedOperation}
    */
   static fromJSON(json) {
-    return new PreCalculatedOperation(json.storageCost, json.processingCost);
+    const staticFeeResult = new DummyFeeResult(
+      json.storageCost,
+      json.processingCost,
+      json.feeRefunds,
+    );
+
+    return new PreCalculatedOperation(staticFeeResult);
   }
 }
 

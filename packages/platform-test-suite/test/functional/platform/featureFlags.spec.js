@@ -1,4 +1,5 @@
 const featureFlagsSystemIds = require('@dashevo/feature-flags-contract/lib/systemIds');
+const InvalidRequestError = require('@dashevo/dapi-client/lib/transport/errors/response/InvalidRequestError');
 
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 
@@ -18,11 +19,11 @@ describe('Platform', () => {
 
       before(async () => {
         ownerClient = await createClientWithFundedWallet(
-          150000,
+          450000,
           process.env.FEATURE_FLAGS_OWNER_PRIVATE_KEY,
         );
 
-        await ownerClient.platform.identities.topUp(featureFlagsSystemIds.ownerId, 100000);
+        await ownerClient.platform.identities.topUp(featureFlagsSystemIds.ownerId, 250000);
 
         ({ contractId, ownerId } = featureFlagsSystemIds);
 
@@ -39,7 +40,9 @@ describe('Platform', () => {
           ownerId,
         );
 
-        const { blockHeight: lastBlockHeight } = identity.getMetadata();
+        const metadata = identity.getMetadata();
+
+        const lastBlockHeight = metadata.getBlockHeight();
 
         oldConsensusParams = await ownerClient.getDAPIClient().platform.getConsensusParams();
 
@@ -105,7 +108,7 @@ describe('Platform', () => {
         }, identity);
 
         // forcing creation of additional block (enableAtHeight + 2)
-        await ownerClient.platform.identities.register(1400);
+        await ownerClient.platform.identities.register(100000);
 
         // wait for block and check consensus params were changed
         let height;
@@ -114,12 +117,25 @@ describe('Platform', () => {
             ownerId,
           );
 
-          ({ blockHeight: height } = someIdentity.getMetadata());
+          const metadata = someIdentity.getMetadata();
+          height = metadata.getBlockHeight();
         } while (height <= updateConsensusParamsFeatureFlag.enableAtHeight);
 
-        let newConsensusParams = await ownerClient.getDAPIClient().platform.getConsensusParams(
-          updateConsensusParamsFeatureFlag.enableAtHeight + 1,
-        );
+        let newConsensusParams;
+
+        for (let i = 0; i < 5; i++) {
+          try {
+            newConsensusParams = await ownerClient.getDAPIClient()
+              .platform
+              .getConsensusParams(
+                updateConsensusParamsFeatureFlag.enableAtHeight + 1,
+              );
+          } catch (e) {
+            if (!(e instanceof InvalidRequestError) || !e.message.startsWith('Invalid height') || i + 1 === 5) {
+              throw e;
+            }
+          }
+        }
 
         const { block, evidence } = updateConsensusParamsFeatureFlag;
 
@@ -142,12 +158,23 @@ describe('Platform', () => {
             ownerId,
           );
 
-          ({ blockHeight: height } = someIdentity.getMetadata());
+          const metadata = someIdentity.getMetadata();
+          height = metadata.getBlockHeight();
         } while (height <= revertConsensusParamsFeatureFlag.enableAtHeight);
 
-        newConsensusParams = await ownerClient.getDAPIClient().platform.getConsensusParams(
-          revertConsensusParamsFeatureFlag.enableAtHeight + 1,
-        );
+        for (let i = 0; i < 5; i++) {
+          try {
+            newConsensusParams = await ownerClient.getDAPIClient()
+              .platform
+              .getConsensusParams(
+                revertConsensusParamsFeatureFlag.enableAtHeight + 1,
+              );
+          } catch (e) {
+            if (!(e instanceof InvalidRequestError) || !e.message.startsWith('Invalid height') || i + 1 === 5) {
+              throw e;
+            }
+          }
+        }
 
         updatedBlock = newConsensusParams.getBlock();
         const oldBlock = oldConsensusParams.getBlock();

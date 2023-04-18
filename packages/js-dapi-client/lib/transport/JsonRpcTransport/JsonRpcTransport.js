@@ -65,8 +65,10 @@ class JsonRpcTransport {
 
     try {
       const result = await this.requestJsonRpc(
+        address.getProtocol(),
         address.getHost(),
-        address.getHttpPort(),
+        address.getPort(),
+        address.isSelfSignedCertificateAllowed(),
         method,
         params,
         requestOptions,

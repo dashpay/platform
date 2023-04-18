@@ -7,10 +7,10 @@ on:
 jobs:
   build:
     name: Deploy docs
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout main
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Prepare docs
         run: "${GITHUB_WORKSPACE}/scripts/prepare_docs.sh"

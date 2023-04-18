@@ -29,13 +29,14 @@ function validateIdentityCreateTransitionStateFactory(
     // Check if identity with such id already exists
     const executionContext = stateTransition.getExecutionContext();
     const identityId = stateTransition.getIdentityId();
-    const identity = await stateRepository.fetchIdentity(identityId, executionContext);
+
+    const balance = await stateRepository.fetchIdentityBalance(identityId, executionContext);
 
     if (executionContext.isDryRun()) {
       return result;
     }
 
-    if (identity) {
+    if (balance !== null) {
       result.addError(
         new IdentityAlreadyExistsError(identityId.toBuffer()),
       );

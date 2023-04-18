@@ -6,14 +6,24 @@ on:
     branches:
       - master
       - v[0-9]+\.[0-9]+-dev
+  push:
+    branches:
+      - master
+      - v[0-9]+\.[0-9]+-dev
+  schedule:
+    - cron: '30 4 * * *'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  workspaces:
-    name: Validate project workspaces
+  deps-versions:
+    name: JS dependency versions check
     runs-on: ubuntu-22.04
     steps:
       - name: Check out repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -26,23 +36,73 @@ jobs:
       - name: Validate workspaces
         run: yarn constraints
 
+  crates-security:
+    name: Crates security audit
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v3
+
+      - name: Audit crates
+        uses: actions-rs/audit-check@v1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  npm-security:
+    name: NPM security audit
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v3
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Audit NPM
+        run: yarn npm audit --environment production --all --recursive --ignore 1091050
+        # ignore "public ip"
+
   test-suite:
     name: Run Platform Test Suite
-    runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    runs-on: self-hosted
+    timeout-minutes: 30
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "false"
     steps:
-      - name: Cancel previous runs
-        uses: styfle/cancel-workflow-action@0.11.0
-        with:
-          access_token: ${{ github.token }}
-
       - name: Check out repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
           node-version: '16'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: Setup Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          # Don't cache ./target, as it takes tons of space, use sccache instead.
+          cache-targets: false
+          # We set a shared key, as our cache is reusable between jobs
+          shared-key: rust-cargo
+
+      - name: Setup Rust compilation cache
+        uses: mozilla-actions/sccache-action@v0.0.3
+        with:
+          version: "v0.4.1"
 
       - name: Enable corepack
         run: corepack enable
@@ -61,27 +121,23 @@ jobs:
       - name: Install dependencies
         run: yarn install
 
-      - name: Build packages
-        run: yarn build
+      - name: Build SDK
+        run: yarn build --filter "+dash"
 
       - name: Set up Docker BuildX
         id: buildx
         uses: docker/setup-buildx-action@v2
-        with:
-          version: v0.9.1
-          install: true
-          driver-opts: image=moby/buildkit:buildx-stable-1
 
-      - name: Enable buildkit cache
+      - name: Enable docker cache mount
         uses: actions/cache@v3
         with:
           path: /tmp/buildkit-cache/buildkit-state.tar
           key: ${{ runner.os }}-buildkit-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-buildkit-
+            ${{ runner.os }}-buildkit
 
-      - name: Load buildkit state from cache
-        uses: dashevo/gh-action-cache-buildkit-state@v1
+      - name: Load docker cache mount
+        uses: dashevo/gh-action-cache-buildkit-state@master
         with:
           builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
           cache-path: /tmp/buildkit-cache
@@ -102,21 +158,45 @@ jobs:
 
   test-suite-browsers:
     name: Run Platform Test Suite in Browsers
-    runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    runs-on: self-hosted
+    timeout-minutes: 30
+    env:
+      SCCACHE_GHA_ENABLED: "true"
+      RUSTC_WRAPPER: "sccache"
+      CARGO_INCREMENTAL: "false"
     steps:
-      - name: Cancel previous runs
-        uses: styfle/cancel-workflow-action@0.11.0
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
         with:
-          access_token: ${{ github.token }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Check out repo
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
           node-version: '16'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: Setup Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          # Don't cache ./target, as it takes tons of space, use sccache instead.
+          cache-targets: false
+          # We set a shared key, as our cache is reusable between jobs
+          shared-key: rust-cargo
+
+      - name: Setup Rust compilation cache
+        uses: mozilla-actions/sccache-action@v0.0.3
+        with:
+          version: "v0.4.1"
 
       - name: Enable corepack
         run: corepack enable
@@ -135,27 +215,23 @@ jobs:
       - name: Install dependencies
         run: yarn install
 
-      - name: Build packages
-        run: yarn build
+      - name: Build SDK
+        run: yarn build --filter "+dash"
 
       - name: Set up Docker BuildX
         id: buildx
         uses: docker/setup-buildx-action@v2
-        with:
-          version: v0.9.1
-          install: true
-          driver-opts: image=moby/buildkit:buildx-stable-1
 
-      - name: Enable buildkit cache
+      - name: Enable docker cache mount
         uses: actions/cache@v3
         with:
           path: /tmp/buildkit-cache/buildkit-state.tar
           key: ${{ runner.os }}-buildkit-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-buildkit-
+            ${{ runner.os }}-buildkit
 
-      - name: Load buildkit state from cache
-        uses: dashevo/gh-action-cache-buildkit-state@v1
+      - name: Load docker cache mount
+        uses: dashevo/gh-action-cache-buildkit-state@master
         with:
           builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
           cache-path: /tmp/buildkit-cache
@@ -173,3 +249,73 @@ jobs:
       - name: Show Docker logs
         if: ${{ failure() }}
         uses: jwalton/gh-docker-logs@v2
+
+  codeql:
+    name: Code security audit
+    runs-on: ubuntu-22.04
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v3
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Setup Node.JS
+        uses: actions/setup-node@v3
+        with:
+          node-version: '16'
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v2
+        with:
+          languages: javascript
+          config-file: ./.github/codeql/codeql-config.yml
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+
+      - name: Setup Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          # Don't cache ./target, as it takes tons of space, use sccache instead.
+          cache-targets: false
+          # We set a shared key, as our cache is reusable between jobs
+          shared-key: rust-cargo
+
+      - name: Setup Rust compilation cache
+        uses: mozilla-actions/sccache-action@v0.0.3
+        with:
+          version: "v0.4.1"
+
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Disable NPM audit
+        run: npm config set audit false
+
+      - name: Enable Yarn unplugged modules cache
+        uses: actions/cache@v3
+        with:
+          path: '.yarn/unplugged'
+          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-unplugged-
+
+      - name: Install dependencies
+        run: yarn install
+
+      - name: Build package and dependencies
+        run: yarn build --filter "+dash"
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v2

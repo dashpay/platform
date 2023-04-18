@@ -1,4 +1,4 @@
-const lodashCloneDeep = require('lodash.clonedeep');
+const lodashCloneDeep = require('lodash/cloneDeep');
 
 const DataContract = require('./DataContract');
 

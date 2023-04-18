@@ -1,1 +1,7 @@
-{{=JSON.stringify(it.platform.drive.tenderdash.nodeKey,null,2)}}
+{
+  "id": "{{=it.platform.drive.tenderdash.node.id}}",
+  "priv_key": {
+    "type": "tendermint/PrivKeyEd25519",
+    "value": "{{=it.platform.drive.tenderdash.node.key}}"
+  }
+}

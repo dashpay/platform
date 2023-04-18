@@ -1,6 +1,6 @@
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 
 const CachedStateRepositoryDecorator = require('../../../lib/dpp/CachedStateRepositoryDecorator');
@@ -13,11 +13,11 @@ describe('CachedStateRepositoryDecorator', () => {
   let documents;
   let dataContract;
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     id = 'id';
-    identity = getIdentityFixture();
-    documents = getDocumentsFixture();
-    dataContract = getDataContractFixture();
+    identity = await getIdentityFixture();
+    documents = await getDocumentsFixture();
+    dataContract = await getDataContractFixture();
 
     stateRepositoryMock = createStateRepositoryMock(this.sinon);
 
@@ -45,49 +45,69 @@ describe('CachedStateRepositoryDecorator', () => {
     });
   });
 
-  describe('#updateIdentity', () => {
+  describe('#addKeysToIdentity', () => {
     it('should store identity to repository', async () => {
-      await cachedStateRepository.updateIdentity(identity);
+      await cachedStateRepository.addKeysToIdentity(identity.getId(), identity.getPublicKeys());
 
-      expect(stateRepositoryMock.updateIdentity).to.be.calledOnceWith(identity);
-    });
-  });
-
-  describe('#storeIdentityPublicKeyHashes', () => {
-    it('should store identity id and public key hashes to repository', async () => {
-      const publicKeyHashes = identity.getPublicKeys().map((pk) => pk.hash());
-
-      await cachedStateRepository.storeIdentityPublicKeyHashes(
-        identity.getId(), publicKeyHashes,
-      );
-
-      expect(stateRepositoryMock.storeIdentityPublicKeyHashes).to.be.calledOnceWithExactly(
-        identity.getId(), publicKeyHashes, undefined,
-      );
-    });
-  });
-
-  describe('#fetchIdentityIdsByPublicKeyHashes', () => {
-    it('should fetch identity id and public key hash pairs map from repository', async () => {
-      const publicKeys = identity.getPublicKeys();
-
-      stateRepositoryMock.fetchIdentityIdsByPublicKeyHashes.resolves({
-        [publicKeys[0].hash()]: identity.getId(),
-        [publicKeys[1].hash()]: identity.getId(),
-      });
-
-      const result = await cachedStateRepository.fetchIdentityIdsByPublicKeyHashes(
-        publicKeys.map((pk) => pk.hash()),
-      );
-
-      expect(stateRepositoryMock.fetchIdentityIdsByPublicKeyHashes).to.be.calledOnceWithExactly(
-        publicKeys.map((pk) => pk.hash()),
+      expect(stateRepositoryMock.addKeysToIdentity).to.be.calledOnceWithExactly(
+        identity.getId(),
+        identity.getPublicKeys(),
         undefined,
       );
-      expect(result).to.deep.equal({
-        [publicKeys[0].hash()]: identity.getId(),
-        [publicKeys[1].hash()]: identity.getId(),
-      });
+    });
+  });
+
+  describe('#fetchIdentityBalance', () => {
+    it('should store identity to repository', async () => {
+      await cachedStateRepository.fetchIdentityBalance(identity.getId());
+
+      expect(stateRepositoryMock.fetchIdentityBalance).to.be.calledOnceWith(
+        identity.getId(),
+      );
+    });
+  });
+
+  describe('#fetchIdentityBalanceWithDebt', () => {
+    it('should store identity to repository', async () => {
+      await cachedStateRepository.fetchIdentityBalanceWithDebt(identity.getId());
+
+      expect(stateRepositoryMock.fetchIdentityBalanceWithDebt).to.be.calledOnceWith(
+        identity.getId(),
+      );
+    });
+  });
+
+  describe('#addToIdentityBalance', () => {
+    it('should store identity to repository', async () => {
+      await cachedStateRepository.addToIdentityBalance(identity.getId(), 100);
+
+      expect(stateRepositoryMock.addToIdentityBalance).to.be.calledOnceWith(
+        identity.getId(),
+        100,
+      );
+    });
+  });
+
+  describe('#disableIdentityKeys', () => {
+    it('should store identity to repository', async () => {
+      await cachedStateRepository.disableIdentityKeys(identity.getId(), [100], 100);
+
+      expect(stateRepositoryMock.disableIdentityKeys).to.be.calledOnceWith(
+        identity.getId(),
+        [100],
+        100,
+      );
+    });
+  });
+
+  describe('#updateIdentityRevision', () => {
+    it('should store identity to repository', async () => {
+      await cachedStateRepository.updateIdentityRevision(identity.getId(), 1);
+
+      expect(stateRepositoryMock.updateIdentityRevision).to.be.calledOnceWith(
+        identity.getId(),
+        1,
+      );
     });
   });
 
@@ -158,21 +178,71 @@ describe('CachedStateRepositoryDecorator', () => {
     });
   });
 
-  describe('#fetchLatestPlatformBlockHeader', () => {
-    it('should fetch latest platform block header from state repository', async () => {
-      const header = {
-        height: 10,
-        time: {
-          seconds: Math.ceil(new Date().getTime() / 1000),
-        },
-      };
+  describe('#fetchLatestPlatformBlockHeight', () => {
+    it('should fetch latest platform height from state repository', async () => {
+      stateRepositoryMock.fetchLatestPlatformBlockHeight.resolves(10);
 
-      stateRepositoryMock.fetchLatestPlatformBlockHeader.resolves(header);
+      const result = await cachedStateRepository.fetchLatestPlatformBlockHeight(id);
 
-      const result = await cachedStateRepository.fetchLatestPlatformBlockHeader(id);
+      expect(result).to.equal(10);
+      expect(stateRepositoryMock.fetchLatestPlatformBlockHeight).to.be.calledOnce();
+    });
+  });
 
-      expect(result).to.deep.equal(header);
-      expect(stateRepositoryMock.fetchLatestPlatformBlockHeader).to.be.calledOnce();
+  describe('#fetchLatestPlatformBlockTime', () => {
+    it('should fetch latest platform block time from state repository', async () => {
+      const timeMs = Date.now();
+
+      stateRepositoryMock.fetchLatestPlatformBlockTime.returns(timeMs);
+
+      const result = await cachedStateRepository.fetchLatestPlatformBlockTime();
+
+      expect(result).to.deep.equal(timeMs);
+      expect(stateRepositoryMock.fetchLatestPlatformBlockTime).to.be.calledOnce();
+    });
+  });
+
+  describe('#fetchLatestPlatformCoreChainLockedHeight', () => {
+    it('should fetch latest platform core chain locked height from state repository', async () => {
+      const height = 42;
+
+      stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight.resolves(height);
+
+      const result = await cachedStateRepository.fetchLatestPlatformCoreChainLockedHeight(id);
+
+      expect(result).to.deep.equal(height);
+      expect(stateRepositoryMock.fetchLatestPlatformCoreChainLockedHeight).to.be.calledOnce();
+    });
+  });
+
+  describe('#fetchLatestWithdrawalTransactionIndex', () => {
+    it('should call fetchLatestWithdrawalTransactionIndex', async () => {
+      stateRepositoryMock.fetchLatestWithdrawalTransactionIndex.resolves(42);
+
+      const result = await cachedStateRepository.fetchLatestWithdrawalTransactionIndex();
+
+      expect(result).to.equal(42);
+      expect(
+        stateRepositoryMock.fetchLatestWithdrawalTransactionIndex,
+      ).to.have.been.calledOnce();
+    });
+  });
+
+  describe('#enqueueWithdrawalTransaction', () => {
+    it('should call enqueueWithdrawalTransaction', async () => {
+      const index = 42;
+      const transactionBytes = Buffer.alloc(32, 1);
+
+      await cachedStateRepository.enqueueWithdrawalTransaction(
+        index, transactionBytes,
+      );
+
+      expect(
+        stateRepositoryMock.enqueueWithdrawalTransaction,
+      ).to.have.been.calledOnceWithExactly(
+        index,
+        transactionBytes,
+      );
     });
   });
 });

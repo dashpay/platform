@@ -13,6 +13,7 @@ const { NETWORK_LOCAL } = require('../../constants');
  * @param {startNodeTask} startNodeTask
  * @param {waitForNodeToBeReadyTask} waitForNodeToBeReadyTask
  * @param {buildServicesTask} buildServicesTask
+ * @param {getConnectionHost} getConnectionHost
  * @return {startGroupNodesTask}
  */
 function startGroupNodesTaskFactory(
@@ -24,6 +25,7 @@ function startGroupNodesTaskFactory(
   startNodeTask,
   waitForNodeToBeReadyTask,
   buildServicesTask,
+  getConnectionHost,
 ) {
   /**
    * @typedef {startGroupNodesTask}
@@ -36,7 +38,7 @@ function startGroupNodesTaskFactory(
     ));
 
     const platformBuildConfig = configGroup.find((config) => (
-      config.has('platform.sourcePath') && config.get('platform.sourcePath') !== null
+      config.get('platform.enable') && config.get('platform.sourcePath') !== null
     ));
 
     return new Listr([
@@ -68,6 +70,7 @@ function startGroupNodesTaskFactory(
                 port: config.get('core.rpc.port'),
                 user: config.get('core.rpc.user'),
                 pass: config.get('core.rpc.password'),
+                host: await getConnectionHost(config, 'core'),
               });
 
               await waitForCorePeersConnected(rpcClient);
@@ -152,7 +155,7 @@ function startGroupNodesTaskFactory(
         enabled: (ctx) => Boolean(ctx.waitForReadiness),
         task: () => {
           const tasks = configGroup
-            .filter((config) => config.has('platform'))
+            .filter((config) => config.get('platform.enable'))
             .map((config) => ({
               title: `Wait for ${config.getName()} node`,
               task: () => waitForNodeToBeReadyTask(config),

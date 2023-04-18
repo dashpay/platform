@@ -1,6 +1,6 @@
 /* eslint-disable no-param-reassign */
-const lodashSet = require('lodash.set');
-const lodashGet = require('lodash.get');
+const lodashSet = require('lodash/set');
+const lodashGet = require('lodash/get');
 
 const systemConfigs = require('./system');
 
@@ -395,6 +395,142 @@ module.exports = {
     configFile.configs.testnet.platform.featureFlags = systemConfigs.testnet.platform.featureFlags;
     configFile.configs.testnet.platform.masternodeRewardShares = systemConfigs.testnet.platform
       .masternodeRewardShares;
+
+    return configFile;
+  },
+  '0.24.0-dev.12': (configFile) => {
+    Object.entries(configFile.configs)
+      .forEach(([, config]) => {
+        config.core.logIps = 0;
+        config.core.indexes = config.name === 'mainnet' ? 0 : 1;
+        config.core.minimumDifficultyBlocks = 0;
+        config.core.powTargetSpacing = 150;
+        config.core.rpc.allowIps = [
+          '127.0.0.1',
+          '172.16.0.0/12',
+          '192.168.0.0/16',
+        ];
+
+        if (config.platform) {
+          config.platform.drive.tenderdash.log.level = 'debug';
+        }
+      });
+
+    return configFile;
+  },
+  '0.24.0-dev.13': (configFile) => {
+    Object.entries(configFile.configs)
+      .forEach(([configName, config]) => {
+        if (config.platform) {
+          delete config.platform.dapi.envoy.grpc;
+
+          if (config.group === 'local') {
+            config.platform.drive.tenderdash.moniker = configName;
+          } else {
+            config.platform.drive.tenderdash.moniker = null;
+          }
+        }
+      });
+
+    return configFile;
+  },
+  '0.24.0-dev.14': (configFile) => {
+    if (configFile.configs.base) {
+      configFile.configs.base.platform.drive.tenderdash.genesis = systemConfigs.base.platform
+        .drive.tenderdash.genesis;
+
+      configFile.configs.base.platform.drive.tenderdash.genesis = systemConfigs.base.platform
+        .drive.tenderdash.genesis;
+    }
+
+    if (configFile.configs.local) {
+      configFile.configs.local.platform.drive.abci.validatorSet.llmqType = systemConfigs.local
+        .platform.drive.abci.validatorSet.llmqType;
+    }
+
+    Object.entries(configFile.configs)
+      .forEach(([, config]) => {
+        if (config.platform) {
+          if (config.group === 'local') {
+            config.platform.drive.abci.validatorSet.llmqType = systemConfigs.local
+              .platform.drive.abci.validatorSet.llmqType;
+          }
+
+          config.platform.drive.tenderdash.node = {
+            id: config.platform.drive.tenderdash.nodeId,
+          };
+
+          if (config.platform.drive.tenderdash.nodeKey
+            && config.platform.drive.tenderdash.nodeKey.priv_key
+            && config.platform.drive.tenderdash.nodeKey.priv_key.value
+          ) {
+            config.platform.drive.tenderdash.node.key = config.platform.drive
+              .tenderdash.nodeKey.priv_key.value;
+          }
+
+          delete config.platform.drive.tenderdash.nodeId;
+          delete config.platform.drive.tenderdash.nodeKey;
+        }
+      });
+
+    return configFile;
+  },
+  '0.24.0-dev.17': (configFile) => {
+    Object.entries(configFile.configs)
+      .forEach(([name, config]) => {
+        if (config.platform) {
+          config.platform.enable = name !== 'mainnet';
+        } else {
+          config.platform = (systemConfigs[name] || systemConfigs.base).platform;
+        }
+
+        if (systemConfigs[name]) {
+          config.core.p2p.port = systemConfigs[name].core.p2p.port;
+          config.core.rpc.port = systemConfigs[name].core.rpc.port;
+
+          if (config.platform) {
+            config.platform.dapi.envoy.http.port = systemConfigs[name]
+              .platform.dapi.envoy.http.port;
+
+            config.platform.drive.tenderdash.p2p.port = systemConfigs[name]
+              .platform.drive.tenderdash.p2p.port;
+
+            config.platform.drive.tenderdash.rpc.port = systemConfigs[name]
+              .platform.drive.tenderdash.rpc.port;
+          }
+        }
+
+        config.core.devnet.name = config.core.devnetName;
+        delete config.core.devnetName;
+
+        config.core.devnet.powTargetSpacing = config.core.powTargetSpacing;
+        delete config.core.powTargetSpacing;
+
+        config.core.devnet.minimumDifficultyBlocks = config.core.minimumDifficultyBlocks;
+        delete config.core.minimumDifficultyBlocks;
+      });
+
+    return configFile;
+  },
+  '0.24.0-dev.18': (configFile) => {
+    let groupJsonApiPort = systemConfigs.local.dashmate.helper.api.port;
+
+    Object.entries(configFile.configs)
+      .forEach(([, config]) => {
+        if (config.group === 'local') {
+          config.dashmate.helper.api = {
+            enable: false,
+            port: groupJsonApiPort,
+          };
+
+          groupJsonApiPort += 100;
+        } else {
+          config.dashmate.helper.api = {
+            enable: false,
+            port: systemConfigs.base.dashmate.helper.api.port,
+          };
+        }
+      });
 
     return configFile;
   },

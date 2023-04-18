@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "protocolVersion": {
+      "type": "integer",
+      "$comment": "Maximum is the latest protocol version"
+    },
+    "type": {
+      "type": "integer",
+      "const": 2
+    },
+    "assetLockProof": {
+      "type": "object"
+    },
+    "publicKeys": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10,
+      "uniqueItems": true
+    },
+    "signature": {
+      "type": "array",
+      "byteArray": true,
+      "minItems": 65,
+      "maxItems": 65,
+      "description": "Signature made by AssetLock one time ECDSA key"
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "protocolVersion",
+    "type",
+    "assetLockProof",
+    "publicKeys",
+    "signature"
+  ]
+}

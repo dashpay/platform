@@ -19,6 +19,10 @@ const {
 } = require('@dashevo/masternode-reward-shares-contract/lib/systemIds');
 
 const {
+  contractId: withdrawalsContractId,
+} = require('@dashevo/withdrawals-contract/lib/systemIds');
+
+const {
   NETWORK_TESTNET,
   HOME_DIR_PATH,
 } = require('../../src/constants');
@@ -33,16 +37,21 @@ module.exports = {
   },
   core: {
     docker: {
-      image: 'dashpay/dashd:18.1.1',
+      image: 'dashpay/dashd:19.0.0-rc.7',
     },
     p2p: {
-      port: 20001,
+      port: 9999,
       seeds: [],
     },
     rpc: {
-      port: 20002,
+      port: 9998,
       user: 'dashrpc',
       password: 'rpcpassword',
+      allowIps: [
+        '127.0.0.1',
+        '172.16.0.0/12',
+        '192.168.0.0/16',
+      ],
     },
     spork: {
       address: null,
@@ -65,24 +74,27 @@ module.exports = {
         image: 'dashpay/sentinel:1.7.1',
       },
     },
+    devnet: {
+      name: null,
+      minimumDifficultyBlocks: 0,
+      powTargetSpacing: 150,
+    },
     debug: 0,
+    logIps: 0,
+    indexes: true,
     reindex: {
       enable: false,
       containerId: null,
     },
-    devnetName: null,
   },
   platform: {
     dapi: {
       envoy: {
         docker: {
-          image: 'envoyproxy/envoy:v1.22-latest',
+          image: 'dashpay/envoy:0.24-dev',
         },
         http: {
-          port: 3000,
-        },
-        grpc: {
-          port: 3010,
+          port: 443,
         },
         rateLimiter: {
           maxTokens: 300,
@@ -90,17 +102,27 @@ module.exports = {
           fillInterval: '60s',
           enabled: true,
         },
+        ssl: {
+          enabled: false,
+          provider: 'zerossl',
+          providerConfigs: {
+            zerossl: {
+              apiKey: null,
+              id: null,
+            },
+          },
+        },
       },
       api: {
         docker: {
-          image: 'dashpay/dapi:0.23.0',
+          image: 'dashpay/dapi:0.24.0-dev',
         },
       },
     },
     drive: {
       abci: {
         docker: {
-          image: 'dashpay/drive:0.23.0',
+          image: 'dashpay/drive:0.24.0-dev',
         },
         log: {
           stdout: {
@@ -121,7 +143,7 @@ module.exports = {
       },
       tenderdash: {
         docker: {
-          image: 'dashpay/tenderdash:0.8.0-dev.10',
+          image: 'dashpay/tenderdash:0.11.0-dev.4',
         },
         p2p: {
           port: 26656,
@@ -136,21 +158,36 @@ module.exports = {
           createEmptyBlocksInterval: '3m',
         },
         log: {
-          level: {
-            main: 'info',
-            state: 'info',
-            statesync: 'info',
-            '*': 'error',
-          },
+          level: 'debug',
           format: 'plain',
         },
-        nodeKey: {
-
+        node: {
+          id: null,
+          key: null,
         },
         genesis: {
-
+          consensus_params: {
+            block: {
+              max_bytes: '22020096',
+              max_gas: '-1',
+              time_iota_ms: '5000',
+            },
+            evidence: {
+              max_age: '100000',
+              max_age_num_blocks: '100000',
+              max_age_duration: '172800000000000',
+            },
+            validator: {
+              pub_key_types: [
+                'bls12381',
+              ],
+            },
+            version: {
+              app_version: '1',
+            },
+          },
         },
-        nodeId: null,
+        moniker: null,
       },
     },
     dpns: {
@@ -183,6 +220,25 @@ module.exports = {
       },
       masterPublicKey: null,
       secondPublicKey: null,
+    },
+    withdrawals: {
+      contract: {
+        id: withdrawalsContractId,
+      },
+      masterPublicKey: null,
+      secondPublicKey: null,
+    },
+    enable: true,
+  },
+  dashmate: {
+    helper: {
+      docker: {
+        image: 'dashpay/dashmate-helper:0.24-dev',
+      },
+      api: {
+        enable: false,
+        port: 9000,
+      },
     },
   },
   externalIp: null,

@@ -1,13 +1,12 @@
 const { Listr } = require('listr2');
+const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
 /**
- * @param {tenderdashInitTask} tenderdashInitTask
  * @param {renderServiceTemplates} renderServiceTemplates
  * @param {writeServiceConfigs} writeServiceConfigs
  * @return {configureTenderdashTask}
  */
 function configureTenderdashTaskFactory(
-  tenderdashInitTask,
   renderServiceTemplates,
   writeServiceConfigs,
 ) {
@@ -20,12 +19,9 @@ function configureTenderdashTaskFactory(
     return new Listr([
       {
         task: async (ctx) => {
-          const platformConfigs = configGroup.filter((config) => config.has('platform'));
+          const platformConfigs = configGroup.filter((config) => config.get('platform.enable'));
 
-          const subTasks = platformConfigs.map((config) => ({
-            title: `Initialize ${config.getName()} Tenderdash`,
-            task: () => tenderdashInitTask(config),
-          }));
+          const subTasks = [];
 
           // Interconnect Tenderdash nodes
           subTasks.push({
@@ -33,7 +29,7 @@ function configureTenderdashTaskFactory(
               const randomChainIdPart = Math.floor(Math.random() * 60) + 1;
               const chainId = `dash_masternode_local_${randomChainIdPart}`;
 
-              const genesisTime = platformConfigs[0].get('platform.drive.tenderdash.genesis.genesis_time');
+              const genesisTime = new Date().toISOString();
 
               platformConfigs.forEach((config, index) => {
                 config.set('platform.drive.tenderdash.genesis.genesis_time', genesisTime);
@@ -46,7 +42,7 @@ function configureTenderdashTaskFactory(
                 const p2pPeers = platformConfigs
                   .filter((_, i) => i !== index)
                   .map((innerConfig) => {
-                    const nodeId = innerConfig.get('platform.drive.tenderdash.nodeId');
+                    const nodeId = innerConfig.get('platform.drive.tenderdash.node.id');
                     const port = innerConfig.get('platform.drive.tenderdash.p2p.port');
 
                     return {
@@ -59,11 +55,14 @@ function configureTenderdashTaskFactory(
                 config.set('platform.drive.tenderdash.p2p.persistentPeers', p2pPeers);
 
                 config.set(
-                  'platform.drive.tenderdash.genesis.quorum_type',
-                  config.get('platform.drive.abci.validatorSet.llmqType').toString(),
+                  'platform.drive.tenderdash.genesis.validator_quorum_type',
+                  config.get('platform.drive.abci.validatorSet.llmqType'),
                 );
 
-                config.set('platform.drive.tenderdash.genesis.quorum_hash', Buffer.alloc(20).toString('hex'));
+                config.set(
+                  'platform.drive.tenderdash.genesis.consensus_params.version.app_version',
+                  protocolVersion.latestVersion.toString(),
+                );
 
                 const configFiles = renderServiceTemplates(config);
                 writeServiceConfigs(config.getName(), configFiles);

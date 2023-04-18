@@ -1,0 +1,17 @@
+[workspace]
+
+members = [
+    "packages/rs-dpp",
+    "packages/wasm-dpp",
+    "packages/rs-drive",
+    "packages/rs-platform-value",
+    "packages/rs-drive-abci",
+    "packages/rs-drive-nodejs",
+    "packages/dashpay-contract",
+    "packages/withdrawals-contract",
+    "packages/masternode-reward-shares-contract",
+    "packages/feature-flags-contract",
+    "packages/dpns-contract",
+    "packages/data-contracts",
+    "packages/rs-drive-verify-c-binding"
+]

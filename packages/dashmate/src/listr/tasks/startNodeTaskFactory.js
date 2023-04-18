@@ -13,6 +13,7 @@ const { NETWORK_LOCAL } = require('../../constants');
  * @param {waitForMasternodesSync} waitForMasternodesSync
  * @param {createRpcClient} createRpcClient
  * @param {buildServicesTask} buildServicesTask
+ * @param getConnectionHost {getConnectionHost}
  * @return {startNodeTask}
  */
 function startNodeTaskFactory(
@@ -21,6 +22,7 @@ function startNodeTaskFactory(
   waitForMasternodesSync,
   createRpcClient,
   buildServicesTask,
+  getConnectionHost,
 ) {
   /**
    * @typedef {startNodeTask}
@@ -34,16 +36,18 @@ function startNodeTaskFactory(
     }
 
     // Check external IP is set
-    config.get('externalIp', true);
+    if (config.get('core.masternode.enable')) {
+      config.get('externalIp', true);
+    }
 
     const isMinerEnabled = config.get('core.miner.enable');
 
     if (isMinerEnabled === true && config.get('network') !== NETWORK_LOCAL) {
-      throw new Error(`'core.miner.enabled' option only works with local network. Your network is ${config.get('network')}.`);
+      throw new Error(`'core.miner.enable' option only works with local network. Your network is ${config.get('network')}.`);
     }
 
     // Check Drive log files are created
-    if (config.has('platform')) {
+    if (config.get('platform.enable')) {
       const prettyFilePath = config.get('platform.drive.abci.log.prettyFile.path');
 
       // Remove directory that could potentially be created by Docker mount
@@ -80,7 +84,7 @@ function startNodeTaskFactory(
       },
       {
         enabled: (ctx) => !ctx.skipBuildServices
-          && config.has('platform.sourcePath')
+          && config.get('platform.enable')
           && config.get('platform.sourcePath') !== null,
         task: () => buildServicesTask(config),
       },
@@ -106,6 +110,7 @@ function startNodeTaskFactory(
             port: config.get('core.rpc.port'),
             user: config.get('core.rpc.user'),
             pass: config.get('core.rpc.password'),
+            host: await getConnectionHost(config, 'core'),
           });
 
           return new Observable(async (observer) => {

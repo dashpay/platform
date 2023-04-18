@@ -1,5 +1,5 @@
 const { hash } = require('@dashevo/dpp/lib/util/hash');
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
+const { Identifier } = require('@dashevo/wasm-dpp');
 
 const MAX_DOCUMENTS = 16;
 
