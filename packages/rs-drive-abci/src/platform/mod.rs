@@ -181,6 +181,7 @@ impl<C> Platform<C> {
             .map_err(Error::Drive)?
             .unwrap_or(PROTOCOL_VERSION);
 
+        // TODO: factor out key so we don't duplicate
         let maybe_serialized_block_info = drive
             .grove
             .get_aux(b"saved_state", None)
