@@ -14,6 +14,21 @@ mod property_names {
     pub const CORE_CHAIN_LOCKED_HEIGHT: &str = "coreChainLockedHeight";
 }
 
+/// Creates a data trigger for handling contact request documents.
+///
+/// The trigger is executed whenever a new contact request document is created on the blockchain.
+/// It sends a notification to the user specified in the document, notifying them that someone
+/// has requested to add them as a contact.
+///
+/// # Arguments
+///
+/// * `document_transition` - A reference to the document transition that triggered the data trigger.
+/// * `context` - A reference to the data trigger execution context.
+/// * `_` - An unused parameter for the owner ID (which is not needed for this trigger).
+///
+/// # Returns
+///
+/// A `DataTriggerExecutionResult` indicating the success or failure of the trigger execution.
 pub fn create_contact_request_data_trigger<'a>(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'a>,

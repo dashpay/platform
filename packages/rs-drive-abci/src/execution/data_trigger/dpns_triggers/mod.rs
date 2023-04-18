@@ -27,6 +27,21 @@ const PROPERTY_RECORDS: &str = "records";
 const PROPERTY_DASH_UNIQUE_IDENTITY_ID: &str = "dashUniqueIdentityId";
 const PROPERTY_DASH_ALIAS_IDENTITY_ID: &str = "dashAliasIdentityId";
 
+/// Creates a data trigger for handling domain documents.
+///
+/// The trigger is executed whenever a new domain document is created on the blockchain.
+/// It performs various actions depending on the state of the document and the context in which it was created.
+///
+/// # Arguments
+///
+/// * `document_transition` - A reference to the document transition that triggered the data trigger.
+/// * `context` - A reference to the data trigger execution context.
+/// * `top_level_identity` - An optional identifier for the top-level identity associated with the domain
+///   document (if one exists).
+///
+/// # Returns
+///
+/// A `DataTriggerExecutionResult` indicating the success or failure of the trigger execution.
 pub fn create_domain_data_trigger<'a>(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'a>,

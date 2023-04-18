@@ -8,6 +8,22 @@ use dpp::{
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
+/// Creates a data trigger for handling document rejections.
+///
+/// The trigger is executed whenever a document is rejected on the blockchain.
+/// It performs various actions depending on the state of the document and the context in which it was rejected.
+///
+/// # Arguments
+///
+/// * `document_transition` - A reference to the document transition that triggered the data trigger.
+/// * `context` - A reference to the data trigger execution context.
+/// * `_top_level_identity` - An unused parameter for the top-level identity associated with the rejected document
+///   (which is not needed for this trigger).
+///
+/// # Returns
+///
+/// A `SimpleValidationResult` containing either a `DataTriggerActionError` indicating the failure of the trigger
+/// or an empty result indicating the success of the trigger.
 pub fn reject_data_trigger<'a>(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'a>,

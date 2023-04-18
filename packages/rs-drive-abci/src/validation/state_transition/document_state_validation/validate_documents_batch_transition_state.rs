@@ -238,7 +238,9 @@ fn validate_document_transitions_within_document_type(
             ));
         }
     }
-    Ok(document_transition_actions_result)
+    Ok(ConsensusValidationResult::new_with_data(
+        document_transition_actions,
+    ))
 }
 
 fn validate_transition(

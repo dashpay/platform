@@ -8,7 +8,7 @@ use dpp::ProtocolError;
 use drive::drive::Drive;
 
 pub fn execute_data_triggers<'a>(
-    document_transitions: &[DocumentTransitionAction],
+    document_transitions: &'a [DocumentTransitionAction],
     context: &DataTriggerExecutionContext<'a>,
 ) -> Result<Vec<DataTriggerExecutionResult>, ProtocolError> {
     let data_triggers_list = data_triggers()?;
@@ -16,7 +16,7 @@ pub fn execute_data_triggers<'a>(
 }
 
 pub fn execute_data_triggers_with_custom_list<'a>(
-    document_transitions: &[DocumentTransitionAction],
+    document_transitions: &'a [DocumentTransitionAction],
     context: &DataTriggerExecutionContext<'a>,
     data_triggers_list: impl IntoIterator<Item = DataTrigger>,
 ) -> Result<Vec<DataTriggerExecutionResult>, ProtocolError> {
@@ -50,11 +50,11 @@ pub fn execute_data_triggers_with_custom_list<'a>(
     Ok(execution_results)
 }
 
-fn execute_data_triggers_sequentially<'a>(
+fn execute_data_triggers_sequentially<'a, 'b>(
     document_transition: &'a DocumentTransitionAction,
     data_triggers: &[&DataTrigger],
     context: &DataTriggerExecutionContext<'a>,
-    results: &'a mut Vec<DataTriggerExecutionResult>,
+    results: &'b mut Vec<DataTriggerExecutionResult>,
 ) {
     results.extend(
         data_triggers

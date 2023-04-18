@@ -14,6 +14,21 @@ use std::convert::TryInto;
 
 use crate::execution::data_trigger::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
+/// Creates a data trigger for handling deletion of withdrawal documents.
+///
+/// The trigger is executed whenever a withdrawal document is deleted from the blockchain.
+/// It performs various actions depending on the state of the document and the context in which it was deleted.
+///
+/// # Arguments
+///
+/// * `document_transition` - A reference to the document transition that triggered the data trigger.
+/// * `context` - A reference to the data trigger execution context.
+/// * `_top_level_identity` - An unused parameter for the top-level identity associated with the withdrawal document
+///   (which is not needed for this trigger).
+///
+/// # Returns
+///
+/// A `DataTriggerExecutionResult` indicating the success or failure of the trigger execution.
 pub fn delete_withdrawal_data_trigger<'a>(
     document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'a>,

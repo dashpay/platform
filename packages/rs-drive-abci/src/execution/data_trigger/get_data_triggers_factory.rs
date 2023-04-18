@@ -28,6 +28,18 @@ pub fn get_data_triggers<'a>(
         .collect())
 }
 
+/// Retrieves a list of all known data triggers.
+///
+/// This function gets all known data triggers which are then returned
+/// as a vector of `DataTrigger` structs.
+///
+/// # Returns
+///
+/// A `Vec<DataTrigger>` containing all known data triggers.
+///
+/// # Errors
+///
+/// Returns a `ProtocolError` if there was an error.
 pub fn data_triggers() -> Result<Vec<DataTrigger>, ProtocolError> {
     let dpns_data_contract_id =
         Identifier::from_string(&dpns_contract::system_ids().contract_id, Encoding::Base58)?;
