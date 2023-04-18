@@ -29,7 +29,7 @@ use dpp::{
 use drive::dpp::identity::KeyType;
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyIDVec, KeyRequestType};
 use drive::drive::Drive;
-use drive::grovedb::{Transaction, TransactionArg};
+use drive::grovedb::TransactionArg;
 use lazy_static::lazy_static;
 use std::collections::{BTreeSet, HashMap, HashSet};
 

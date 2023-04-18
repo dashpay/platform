@@ -1,11 +1,11 @@
-use crate::error::data_trigger::DataTriggerError;
 use crate::error::Error;
 pub use data_trigger_execution_context::*;
-use dpp::document::document_transition::{Action, DocumentCreateTransition};
-use dpp::get_from_transition;
+use dpp::document::document_transition::{
+    Action, DocumentCreateTransitionAction, DocumentTransitionAction,
+};
 use dpp::platform_value::Identifier;
-use dpp::prelude::DocumentTransition;
 use dpp::validation::SimpleValidationResult;
+use dpp::{get_from_transition_action, DataTriggerActionError};
 pub use reject_data_trigger::*;
 
 use self::dashpay_data_triggers::create_contact_request_data_trigger;
@@ -16,35 +16,52 @@ use self::withdrawals_data_triggers::delete_withdrawal_data_trigger;
 
 mod data_trigger_execution_context;
 
+/// The `dashpay_data_triggers` module contains data triggers specific to the DashPay data contract.
 pub mod dashpay_data_triggers;
+
+/// The `dpns_triggers` module contains data triggers specific to the DPNS data contract.
 pub mod dpns_triggers;
+
+/// The `feature_flags_data_triggers` module contains data triggers related to feature flags.
 pub mod feature_flags_data_triggers;
+
+/// The `get_data_triggers_factory` module contains a factory function for creating data triggers.
 pub mod get_data_triggers_factory;
+
+/// The `reward_share_data_triggers` module contains data triggers related to reward sharing.
 pub mod reward_share_data_triggers;
+
+/// The `withdrawals_data_triggers` module contains data triggers related to withdrawals.
 pub mod withdrawals_data_triggers;
 
 mod reject_data_trigger;
 
-macro_rules! check_data_trigger_validation_result {
-    ($expr:expr) => {
-        match $expr {
-            Ok(value) => value,
-            Err(e) => return Ok(DataTriggerExecutionResult::new_with_error(e)),
-        }
-    };
-}
+/// A type alias for a `SimpleValidationResult` with a `DataTriggerActionError` as the error type.
+///
+/// This type is used to represent the result of executing a data trigger on the blockchain. It contains either a
+/// successful result or a `DataTriggerActionError`, indicating the failure of the trigger.
+pub type DataTriggerExecutionResult = SimpleValidationResult<DataTriggerActionError>;
 
-pub type DataTriggerExecutionResult = SimpleValidationResult<DataTriggerError>;
-
+/// An enumeration representing the different kinds of data triggers that can be executed on the blockchain.
+///
+/// Each variant of the enum corresponds to a specific type of data trigger that can be executed. The enum is used
+/// throughout the data trigger system to identify the type of trigger that is being executed.
 #[derive(Debug, Clone, Copy)]
 pub enum DataTriggerKind {
+    /// A data trigger that handles the creation of data contract requests.
     CreateDataContractRequest,
+    /// A data trigger that handles the creation of domain documents.
     DataTriggerCreateDomain,
+    /// A data trigger that handles the creation of masternode reward share documents.
     DataTriggerRewardShare,
+    /// A data trigger that handles the rejection of documents.
     DataTriggerReject,
+    /// A data trigger that handles the creation of feature flag documents.
     CrateFeatureFlag,
+    /// A data trigger that handles the deletion of withdrawal documents.
     DeleteWithdrawal,
 }
+
 impl From<DataTriggerKind> for &str {
     fn from(value: DataTriggerKind) -> Self {
         match value {
@@ -64,16 +81,40 @@ impl Default for DataTriggerKind {
     }
 }
 
+/// A struct representing a data trigger on the blockchain.
+///
+/// The `DataTrigger` struct contains information about a data trigger, including the data contract ID, the document
+/// type that the trigger handles, the kind of trigger, the action that triggered the trigger, and an optional
+/// identifier for the top-level identity associated with the document.
 #[derive(Default, Clone)]
 pub struct DataTrigger {
+    /// The identifier of the data contract associated with the trigger.
     pub data_contract_id: Identifier,
+    /// The type of document that the trigger handles.
     pub document_type: String,
+    /// The kind of data trigger.
     pub data_trigger_kind: DataTriggerKind,
+    /// The action that triggered the trigger.
     pub transition_action: Action,
+    /// An optional identifier for the top-level identity associated with the document.
     pub top_level_identity: Option<Identifier>,
 }
 
 impl DataTrigger {
+    /// Checks whether the data trigger matches the specified data contract ID, document type, and action.
+    ///
+    /// This function compares the fields of the `DataTrigger` struct with the specified data contract ID, document type,
+    /// and action to determine whether the trigger matches. It returns `true` if the trigger matches and `false` otherwise.
+    ///
+    /// # Arguments
+    ///
+    /// * `data_contract_id` - A reference to the data contract ID to match.
+    /// * `document_type` - A reference to the document type to match.
+    /// * `transition_action` - The action to match.
+    ///
+    /// # Returns
+    ///
+    /// A boolean value indicating whether the trigger matches the specified data contract ID, document type, and action.
     pub fn is_matching_trigger_for_data(
         &self,
         data_contract_id: &Identifier,
@@ -85,9 +126,26 @@ impl DataTrigger {
             && self.transition_action == transition_action
     }
 
+    /// Executes the data trigger using the specified document transition and execution context.
+    ///
+    /// This function executes the data trigger using the specified `DocumentTransitionAction` and
+    /// `DataTriggerExecutionContext`. It calls the `execute_trigger` function to perform the trigger
+    /// execution, passing in the trigger kind, document transition, execution context, and top-level
+    /// identity. It then returns a `DataTriggerExecutionResult` containing either a successful result or
+    /// a `DataTriggerActionError`, indicating the failure of the trigger.
+    ///
+    /// # Arguments
+    ///
+    /// * `document_transition` - A reference to the document transition that triggered the data trigger.
+    /// * `context` - A reference to the data trigger execution context.
+    ///
+    /// # Returns
+    ///
+    /// A `DataTriggerExecutionResult` containing either a successful result or a `DataTriggerActionError`,
+    /// indicating the failure of the trigger.
     pub fn execute<'a>(
         &self,
-        document_transition: &DocumentTransition,
+        document_transition: &DocumentTransitionAction,
         context: &DataTriggerExecutionContext<'a>,
     ) -> DataTriggerExecutionResult {
         let mut result = DataTriggerExecutionResult::default();
@@ -103,15 +161,15 @@ impl DataTrigger {
 
         match maybe_execution_result {
             Err(err) => {
-                let consensus_error = DataTriggerError::DataTriggerExecutionError {
+                let consensus_error = DataTriggerActionError::DataTriggerExecutionError {
                     data_contract_id,
-                    document_transition_id: *get_from_transition!(document_transition, id),
+                    document_transition_id: *get_from_transition_action!(document_transition, id),
                     message: err.to_string(),
-                    execution_error: err,
+                    execution_error: err.to_string(),
                     document_transition: None,
                     owner_id: None,
                 };
-                result.add_error(consensus_error.into());
+                result.add_error(consensus_error);
                 result
             }
 
@@ -122,7 +180,7 @@ impl DataTrigger {
 
 fn execute_trigger<'a>(
     trigger_kind: DataTriggerKind,
-    document_transition: &DocumentTransition,
+    document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'a>,
     identifier: Option<&Identifier>,
 ) -> Result<DataTriggerExecutionResult, Error> {
@@ -150,14 +208,14 @@ fn execute_trigger<'a>(
 
 fn create_error(
     context: &DataTriggerExecutionContext,
-    dt_create: &DocumentCreateTransition,
+    dt_create: &DocumentCreateTransitionAction,
     msg: String,
-) -> DataTriggerError {
-    DataTriggerError::DataTriggerConditionError {
+) -> DataTriggerActionError {
+    DataTriggerActionError::DataTriggerConditionError {
         data_contract_id: context.data_contract.id,
         document_transition_id: dt_create.base.id,
         message: msg,
         owner_id: Some(*context.owner_id),
-        document_transition: Some(DocumentTransition::Create(dt_create.clone())),
+        document_transition: Some(DocumentTransitionAction::CreateAction(dt_create.clone())),
     }
 }

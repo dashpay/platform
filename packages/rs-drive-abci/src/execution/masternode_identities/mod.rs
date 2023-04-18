@@ -1,6 +1,5 @@
 use crate::abci::AbciError;
 use crate::error::Error;
-use crate::error::Error::Abci;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformState;
@@ -8,8 +7,8 @@ use chrono::Utc;
 use dashcore::hashes::Hash;
 use dashcore::ProTxHash;
 use dashcore_rpc::json::{
-    Masternode, MasternodeListDiffWithMasternodes, MasternodeListItem, QuorumMasternodeListItem,
-    RemovedMasternodeItem, UpdatedMasternodeItem,
+    MasternodeListDiffWithMasternodes, MasternodeListItem, RemovedMasternodeItem,
+    UpdatedMasternodeItem,
 };
 use dpp::identifier::Identifier;
 use dpp::identity::factory::IDENTITY_PROTOCOL_VERSION;
@@ -603,16 +602,13 @@ where
 #[cfg(test)]
 mod tests {
     use crate::config::PlatformConfig;
-    use crate::platform;
-    use crate::platform::Platform;
-    use crate::rpc::core::CoreRPCLike;
-    use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dashcore::ProTxHash;
     use dashcore_rpc::dashcore_rpc_json::MasternodeListDiffWithMasternodes;
     use dashcore_rpc::json::MasternodeType::Regular;
-    use dashcore_rpc::json::{DMNState, MasternodeListItem, UpdatedMasternodeItem};
+    use dashcore_rpc::json::{DMNState, MasternodeListItem};
     use std::net::SocketAddr;
     use std::str::FromStr;
-    use dashcore::ProTxHash;
 
     // thinking of creating a function that returns identity creation instructions based on the masternode list diff
     // this way I can confirm that it is doing things correctly on the test level
@@ -641,7 +637,8 @@ mod tests {
                 node_type: Regular,
                 protx_hash: ProTxHash::from_str(
                     "1628e387a7badd30fd4ee391ae0cab7e3bc84e792126c6b7cccd99257dad741d",
-                ).expect("expected pro_tx_hash"),
+                )
+                .expect("expected pro_tx_hash"),
                 collateral_hash: hex::decode(
                     "4fde102b0c14c50d58d01cc7a53f9a73ae8283dcfe3f13685682ac6dd93f6210",
                 )
@@ -656,16 +653,15 @@ mod tests {
                     pose_revived_height: 0,
                     pose_ban_height: 850091,
                     revocation_reason: 0,
-                    owner_address: [0;20],
-                    voting_address: [0;20],
-                    payout_address: [0;20],
-                    pub_key_operator: [0;48].to_vec(),
+                    owner_address: [0; 20],
+                    voting_address: [0; 20],
+                    payout_address: [0; 20],
+                    pub_key_operator: [0; 48].to_vec(),
                     operator_payout_address: None,
                     platform_node_id: None,
                 },
             }],
-            updated_mns: vec![
-            ],
+            updated_mns: vec![],
             removed_mns: vec![],
         }
     }

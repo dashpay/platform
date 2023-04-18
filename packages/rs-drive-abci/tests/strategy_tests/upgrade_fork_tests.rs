@@ -12,7 +12,7 @@ mod tests {
     #[test]
     fn run_chain_version_upgrade() {
         let strategy = Strategy {
-            contracts: vec![],
+            contracts_with_updates: vec![],
             operations: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
@@ -239,7 +239,7 @@ mod tests {
     #[test]
     fn run_chain_version_upgrade_slow_upgrade() {
         let strategy = Strategy {
-            contracts: vec![],
+            contracts_with_updates: vec![],
             operations: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
@@ -456,7 +456,7 @@ mod tests {
     #[test]
     fn run_chain_version_upgrade_slow_upgrade_quick_reversion_after_lock_in() {
         let strategy = Strategy {
-            contracts: vec![],
+            contracts_with_updates: vec![],
             operations: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
@@ -607,7 +607,7 @@ mod tests {
         // however most nodes now revert
 
         let strategy = Strategy {
-            contracts: vec![],
+            contracts_with_updates: vec![],
             operations: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
@@ -758,7 +758,7 @@ mod tests {
     #[test]
     fn run_chain_version_upgrade_multiple_versions() {
         let strategy = Strategy {
-            contracts: vec![],
+            contracts_with_updates: vec![],
             operations: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
@@ -845,7 +845,7 @@ mod tests {
         }
 
         let strategy = Strategy {
-            contracts: vec![],
+            contracts_with_updates: vec![],
             operations: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),

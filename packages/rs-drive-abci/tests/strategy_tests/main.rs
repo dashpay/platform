@@ -69,11 +69,14 @@ use drive::drive::block_info::BlockInfo;
 use drive::drive::defaults::PROTOCOL_VERSION;
 use drive::drive::flags::StorageFlags::SingleEpoch;
 
+use crate::DataContractUpdateOp::DataContractNewDocumentTypes;
 use crate::FinalizeBlockOperation::IdentityAddKeys;
 use dashcore::hashes::hex::ToHex;
 use dashcore::hashes::Hash;
 use dashcore_rpc::json::QuorumMember;
-use dpp::data_contract::generate_data_contract_id;
+use dpp::data_contract::document_type::random_document_type::RandomDocumentTypeParameters;
+use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use dpp::data_contract::{generate_data_contract_id, DataContract};
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::state_transition::identity_credit_withdrawal_transition::{
     IdentityCreditWithdrawalTransition, Pooling,
@@ -168,10 +171,13 @@ pub enum IdentityUpdateOp {
     IdentityUpdateDisableKey(u16),
 }
 
+pub type DocumentTypeNewFieldsOptionalCountRange = Range<u16>;
+pub type DocumentTypeCount = Range<u16>;
+
 #[derive(Clone, Debug)]
 pub enum DataContractUpdateOp {
-    DataContractNewDocumentTypes(Range<u16>),
-    DataContractNewFields(Range<u16>, Range<u16>), // How many new fields on how many document types
+    DataContractNewDocumentTypes(RandomDocumentTypeParameters), // How many fields should it have
+    DataContractNewOptionalFields(DocumentTypeNewFieldsOptionalCountRange, DocumentTypeCount), // How many new fields on how many document types
 }
 
 #[derive(Clone, Debug)]
@@ -180,6 +186,7 @@ pub enum OperationType {
     IdentityTopUp,
     IdentityUpdate(IdentityUpdateOp),
     IdentityWithdrawal,
+    ContractCreate(RandomDocumentTypeParameters, DocumentTypeCount),
     ContractUpdate(DataContractUpdateOp),
 }
 
@@ -251,7 +258,7 @@ pub type BlockHeight = u64;
 
 #[derive(Clone, Debug)]
 pub struct Strategy {
-    contracts: Vec<Contract>,
+    contracts_with_updates: Vec<(Contract, Option<BTreeMap<u64, Contract>>)>,
     operations: Vec<Operation>,
     identities_inserts: Frequency,
     total_hpmns: u16,
@@ -322,7 +329,7 @@ impl Strategy {
                 OperationType::Document(doc_op) => {
                     let serialize = doc_op.contract.to_cbor().expect("expected to serialize");
                     drive
-                        .apply_contract(
+                        .apply_contract_with_serialization(
                             &doc_op.contract,
                             serialize,
                             BlockInfo::default(),
@@ -357,9 +364,9 @@ impl Strategy {
         signer: &SimpleSigner,
         rng: &mut StdRng,
     ) -> Vec<StateTransition> {
-        self.contracts
+        self.contracts_with_updates
             .iter_mut()
-            .map(|contract| {
+            .map(|(contract, contract_updates)| {
                 let identity_num = rng.gen_range(0..current_identities.len());
                 let identity = current_identities
                     .get(identity_num)
@@ -374,6 +381,17 @@ impl Strategy {
                     .document_types
                     .iter_mut()
                     .for_each(|(_, document_type)| document_type.data_contract_id = contract.id);
+
+                if let Some(contract_updates) = contract_updates {
+                    for (_, updated_contract) in contract_updates.iter_mut() {
+                        updated_contract.id = contract.id;
+                        updated_contract.owner_id = contract.owner_id;
+                        updated_contract.document_types.iter_mut().for_each(
+                            |(_, document_type)| document_type.data_contract_id = contract.id,
+                        );
+                    }
+                }
+
                 // since we are changing the id, we need to update all the strategy
                 self.operations.iter_mut().for_each(|operation| {
                     if let OperationType::Document(document_op) = &mut operation.op_type {
@@ -395,6 +413,40 @@ impl Strategy {
                 )
                 .expect("expected to create a create state transition from a data contract");
                 state_transition.into()
+            })
+            .collect()
+    }
+
+    fn contract_update_state_transitions(
+        &mut self,
+        current_identities: &Vec<Identity>,
+        block_height: u64,
+        signer: &SimpleSigner,
+    ) -> Vec<StateTransition> {
+        self.contracts_with_updates
+            .iter_mut()
+            .filter_map(|(_, contract_updates)| {
+                let Some(contract_updates) = contract_updates else {
+                    return None;
+                };
+                let Some(contract_update) = contract_updates.get(&block_height) else {
+                    return None
+                };
+                let identity = current_identities
+                    .iter()
+                    .find(|identity| identity.id == contract_update.owner_id)
+                    .expect("expected to find an identity")
+                    .clone()
+                    .into_partial_identity_info();
+
+                let state_transition = DataContractUpdateTransition::new_from_data_contract(
+                    contract_update.clone(),
+                    &identity,
+                    1, //key id 1 should always be a high or critical auth key in these tests
+                    signer,
+                )
+                .expect("expected to create a create state transition from a data contract");
+                Some(state_transition.into())
             })
             .collect()
     }
@@ -673,8 +725,16 @@ impl Strategy {
                             operations.push(state_transition);
                         }
                     }
-                    OperationType::ContractUpdate(contractUpdateOp)
-                        if !current_identities.is_empty() => {}
+                    // OperationType::ContractCreate(new_fields_optional_count_range, new_fields_required_count_range, new_index_count_range, document_type_count)
+                    // if !current_identities.is_empty() => {
+                    //     DataContract::;
+                    //
+                    //     DocumentType::random_document()
+                    // }
+                    // OperationType::ContractUpdate(DataContractNewDocumentTypes(count))
+                    //     if !current_identities.is_empty() => {
+                    //
+                    // }
                     _ => {}
                 }
             }
@@ -707,6 +767,15 @@ impl Strategy {
                 .state_transitions_for_block(platform, block_info, current_identities, signer, rng);
             finalize_block_operations.append(&mut add_to_finalize_block_operations);
             state_transitions.append(&mut document_state_transitions);
+
+            // There can also be contract updates
+
+            let mut contract_update_state_transitions = self.contract_update_state_transitions(
+                current_identities,
+                block_info.height,
+                signer,
+            );
+            state_transitions.append(&mut contract_update_state_transitions);
         }
 
         (state_transitions, finalize_block_operations)
@@ -1451,7 +1520,7 @@ mod tests {
     #[test]
     fn run_chain_nothing_happening() {
         let strategy = Strategy {
-            contracts: vec![],
+            contracts_with_updates: vec![],
             operations: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
@@ -1493,7 +1562,7 @@ mod tests {
     #[test]
     fn run_chain_one_identity_in_solitude() {
         let strategy = Strategy {
-            contracts: vec![],
+            contracts_with_updates: vec![],
             operations: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
@@ -1544,7 +1613,7 @@ mod tests {
     #[test]
     fn run_chain_core_height_randomly_increasing() {
         let strategy = Strategy {
-            contracts: vec![],
+            contracts_with_updates: vec![],
             operations: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: Default::default(),
@@ -1586,7 +1655,7 @@ mod tests {
     #[test]
     fn run_chain_insert_one_new_identity_per_block() {
         let strategy = Strategy {
-            contracts: vec![],
+            contracts_with_updates: vec![],
             operations: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
@@ -1629,7 +1698,7 @@ mod tests {
     #[test]
     fn run_chain_insert_one_new_identity_per_block_with_epoch_change() {
         let strategy = Strategy {
-            contracts: vec![],
+            contracts_with_updates: vec![],
             operations: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
@@ -1687,7 +1756,7 @@ mod tests {
             .expect("contract should be deserialized");
 
         let strategy = Strategy {
-            contracts: vec![contract],
+            contracts_with_updates: vec![(contract, None)],
             operations: vec![],
             identities_inserts: Frequency {
                 times_per_block_range: 1..2,
@@ -1729,7 +1798,112 @@ mod tests {
             .platform
             .drive
             .fetch_contract(
-                outcome.strategy.contracts.first().unwrap().id.to_buffer(),
+                outcome
+                    .strategy
+                    .contracts_with_updates
+                    .first()
+                    .unwrap()
+                    .0
+                    .id
+                    .to_buffer(),
+                None,
+                None,
+            )
+            .unwrap()
+            .expect("expected to execute the fetch of a contract")
+            .expect("expected to get a contract");
+    }
+
+    #[test]
+    fn run_chain_insert_one_new_identity_and_a_contract_with_updates() {
+        let contract_cbor = json_document_to_cbor(
+            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
+            Some(PROTOCOL_VERSION),
+        )
+        .expect("expected to get cbor from a json document");
+        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
+            .expect("contract should be deserialized");
+
+        let contract_cbor_update_1 = json_document_to_cbor(
+            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable-update-1.json",
+            Some(PROTOCOL_VERSION),
+        )
+        .expect("expected to get cbor from a json document");
+        let mut contract_update_1 =
+            <Contract as DriveContractExt>::from_cbor(&contract_cbor_update_1, None)
+                .expect("contract should be deserialized");
+
+        //todo: versions should start at 0 (so this should be 1)
+        contract_update_1.version = 2;
+
+        let contract_cbor_update_2 = json_document_to_cbor(
+            "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable-update-2.json",
+            Some(PROTOCOL_VERSION),
+        )
+        .expect("expected to get cbor from a json document");
+        let mut contract_update_2 =
+            <Contract as DriveContractExt>::from_cbor(&contract_cbor_update_2, None)
+                .expect("contract should be deserialized");
+
+        contract_update_2.version = 3;
+
+        let strategy = Strategy {
+            contracts_with_updates: vec![(
+                contract,
+                Some(BTreeMap::from([
+                    (3, contract_update_1),
+                    (8, contract_update_2),
+                ])),
+            )],
+            operations: vec![],
+            identities_inserts: Frequency {
+                times_per_block_range: 1..2,
+                chance_per_block: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+        };
+        let config = PlatformConfig {
+            verify_sum_trees: true,
+            quorum_size: 100,
+            validator_set_quorum_rotation_block_count: 25,
+            block_spacing_ms: 3000,
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
+
+        outcome
+            .abci_app
+            .platform
+            .drive
+            .fetch_contract(
+                outcome
+                    .strategy
+                    .contracts_with_updates
+                    .first()
+                    .unwrap()
+                    .0
+                    .id
+                    .to_buffer(),
                 None,
                 None,
             )
@@ -1758,7 +1932,7 @@ mod tests {
         };
 
         let strategy = Strategy {
-            contracts: vec![contract],
+            contracts_with_updates: vec![(contract, None)],
             operations: vec![Operation {
                 op_type: OperationType::Document(document_op),
                 frequency: Frequency {
@@ -1822,7 +1996,7 @@ mod tests {
         };
 
         let strategy = Strategy {
-            contracts: vec![contract],
+            contracts_with_updates: vec![(contract, None)],
             operations: vec![Operation {
                 op_type: OperationType::Document(document_op),
                 frequency: Frequency {
@@ -1905,7 +2079,7 @@ mod tests {
         };
 
         let strategy = Strategy {
-            contracts: vec![contract],
+            contracts_with_updates: vec![(contract, None)],
             operations: vec![
                 Operation {
                     op_type: OperationType::Document(document_insertion_op),
@@ -1997,7 +2171,7 @@ mod tests {
         };
 
         let strategy = Strategy {
-            contracts: vec![contract],
+            contracts_with_updates: vec![(contract, None)],
             operations: vec![
                 Operation {
                     op_type: OperationType::Document(document_insertion_op),
@@ -2090,7 +2264,7 @@ mod tests {
         };
 
         let strategy = Strategy {
-            contracts: vec![contract],
+            contracts_with_updates: vec![(contract, None)],
             operations: vec![
                 Operation {
                     op_type: OperationType::Document(document_insertion_op),
@@ -2194,7 +2368,7 @@ mod tests {
         };
 
         let strategy = Strategy {
-            contracts: vec![contract],
+            contracts_with_updates: vec![(contract, None)],
             operations: vec![
                 Operation {
                     op_type: OperationType::Document(document_insertion_op),
@@ -2269,7 +2443,7 @@ mod tests {
     #[test]
     fn run_chain_top_up_identities() {
         let strategy = Strategy {
-            contracts: vec![],
+            contracts_with_updates: vec![],
             operations: vec![Operation {
                 op_type: OperationType::IdentityTopUp,
                 frequency: Frequency {
@@ -2335,7 +2509,7 @@ mod tests {
     #[test]
     fn run_chain_update_identities_add_keys() {
         let strategy = Strategy {
-            contracts: vec![],
+            contracts_with_updates: vec![],
             operations: vec![Operation {
                 op_type: OperationType::IdentityUpdate(IdentityUpdateOp::IdentityUpdateAddKeys(3)),
                 frequency: Frequency {
@@ -2400,7 +2574,7 @@ mod tests {
     #[test]
     fn run_chain_update_identities_remove_keys() {
         let strategy = Strategy {
-            contracts: vec![],
+            contracts_with_updates: vec![],
             operations: vec![Operation {
                 op_type: OperationType::IdentityUpdate(IdentityUpdateOp::IdentityUpdateDisableKey(
                     3,
@@ -2471,7 +2645,7 @@ mod tests {
     #[test]
     fn run_chain_top_up_and_withdraw_from_identities() {
         let strategy = Strategy {
-            contracts: vec![],
+            contracts_with_updates: vec![],
             operations: vec![
                 Operation {
                     op_type: OperationType::IdentityTopUp,

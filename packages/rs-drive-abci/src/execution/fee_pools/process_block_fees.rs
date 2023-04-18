@@ -254,7 +254,6 @@ mod tests {
     use super::*;
 
     use crate::execution::fee_pools::epoch::EPOCH_CHANGE_TIME_MS;
-    use crate::rpc::core::MockCoreRPCLike;
 
     use chrono::Utc;
     use rust_decimal::prelude::ToPrimitive;

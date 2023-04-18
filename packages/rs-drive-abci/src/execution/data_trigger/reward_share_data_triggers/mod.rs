@@ -1,11 +1,18 @@
-use dpp::document::document_transition::DocumentCreateTransition;
+use dpp::data_contract::DriveContractExt;
+use dpp::document::document_transition::{
+    DocumentCreateTransitionAction, DocumentTransitionAction,
+};
 use dpp::document::Document;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-use dpp::platform_value::string_encoding::Encoding;
-use dpp::platform_value::{platform_value, Identifier};
+use dpp::platform_value::{Identifier, Value};
 use dpp::prelude::DocumentTransition;
+use dpp::{get_from_transition_action, ProtocolError};
+use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
+use std::collections::BTreeMap;
 
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::data_trigger::create_error;
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
 
@@ -14,35 +21,56 @@ const PROPERTY_PAY_TO_ID: &str = "payToId";
 const PROPERTY_PERCENTAGE: &str = "percentage";
 const MAX_DOCUMENTS: usize = 16;
 
+/// Creates a data trigger for handling masternode reward share documents.
+///
+/// The trigger is executed whenever a new masternode reward share document is created on the blockchain.
+/// It performs various actions depending on the state of the document and the context in which it was created.
+///
+/// # Arguments
+///
+/// * `document_transition` - A reference to the document transition that triggered the data trigger.
+/// * `context` - A reference to the data trigger execution context.
+/// * `_top_level_identifier` - An unused parameter for the top-level identifier associated with the masternode
+///   reward share document (which is not needed for this trigger).
+///
+/// # Returns
+///
+/// A `DataTriggerExecutionResult` indicating the success or failure of the trigger execution.
 pub fn create_masternode_reward_shares_data_trigger<'a>(
-    document_create_transition: &DocumentCreateTransition,
+    document_transition: &DocumentTransitionAction,
     context: &DataTriggerExecutionContext<'a>,
     _top_level_identifier: Option<&Identifier>,
 ) -> Result<DataTriggerExecutionResult, Error> {
     let mut result = DataTriggerExecutionResult::default();
     let is_dry_run = context.state_transition_execution_context.is_dry_run();
-    let owner_id = context.owner_id.to_string(Encoding::Base58);
 
-    let properties = document_create_transition.data.as_ref().ok_or_else(|| {
-        anyhow!(
-            "data isn't defined in Data Transition '{}'",
-            document_create_transition.base.id
-        )
-    })?;
+    let document_create_transition = match document_transition {
+        DocumentTransitionAction::CreateAction(d) => d,
+        _ => {
+            return Err(Error::Execution(ExecutionError::DataTriggerExecutionError(
+                format!(
+                    "the Document Transition {} isn't 'CREATE",
+                    get_from_transition_action!(document_transition, id)
+                ),
+            )))
+        }
+    };
 
-    let pay_to_id = properties.get_hash256_bytes(PROPERTY_PAY_TO_ID)?;
-    let percentage = properties.get_integer(PROPERTY_PERCENTAGE)?;
+    let properties = &document_create_transition.data;
+
+    let pay_to_id = properties
+        .get_hash256_bytes(PROPERTY_PAY_TO_ID)
+        .map_err(ProtocolError::ValueError)?;
+    let percentage = properties
+        .get_integer(PROPERTY_PERCENTAGE)
+        .map_err(ProtocolError::ValueError)?;
 
     if !is_dry_run {
-        // Do not allow creating document if ownerId is not in SML
-        let sml_store: SMLStore = context.state_repository.fetch_sml_store().await?;
+        let valid_masternodes_list = &context.platform.state.hpmn_masternode_list;
 
-        let valid_master_nodes_list = sml_store.get_current_sml()?.get_valid_master_nodes();
-
-        let owner_id_in_sml = valid_master_nodes_list.iter().any(|entry| {
-            hex::decode(&entry.pro_reg_tx_hash).expect("invalid hex value")
-                == context.owner_id.to_buffer()
-        });
+        let owner_id_in_sml = valid_masternodes_list
+            .get(context.owner_id.as_slice())
+            .is_some();
 
         if !owner_id_in_sml {
             let err = create_error(
@@ -50,38 +78,61 @@ pub fn create_masternode_reward_shares_data_trigger<'a>(
                 document_create_transition,
                 "Only masternode identities can share rewards".to_string(),
             );
-            result.add_error(err.into());
+            result.add_error(err);
         }
     }
 
-    // payToId identity exists
-    let pay_to_identifier = Identifier::from(pay_to_id);
-    let maybe_identity = context.state_repository.fetch_identity(
-        &pay_to_identifier,
-        Some(context.state_transition_execution_context),
-    )?;
+    let maybe_identity = context
+        .platform
+        .drive
+        .fetch_identity_balance(pay_to_id, context.transaction)?;
 
     if !is_dry_run && maybe_identity.is_none() {
         let err = create_error(
             context,
             document_create_transition,
-            format!("Identity '{}' doesn't exist", pay_to_identifier),
+            format!(
+                "Identity '{}' doesn't exist",
+                bs58::encode(pay_to_id).into_string()
+            ),
         );
-        result.add_error(err.into())
+        result.add_error(err);
     }
 
-    let documents_data = context.state_repository.fetch_documents(
-        &context.data_contract.id,
-        &document_create_transition.base.document_type_name,
-        platform_value!({
-            "where" : [ [ "$owner_id", "==", owner_id ]]
-        }),
-        Some(context.state_transition_execution_context),
-    )?;
-    let documents: Vec<Document> = documents_data
-        .into_iter()
-        .map(|d| d.try_into().map_err(Into::<ProtocolError>::into))
-        .collect::<Result<Vec<Document>, ProtocolError>>()?;
+    let document_type = context
+        .data_contract
+        .document_type_for_name(&document_create_transition.base.document_type_name)?;
+
+    let drive_query = DriveQuery {
+        contract: &context.data_contract,
+        document_type,
+        internal_clauses: InternalClauses {
+            primary_key_in_clause: None,
+            primary_key_equal_clause: None,
+            in_clause: None,
+            range_clause: None,
+            equal_clauses: BTreeMap::from([(
+                "$ownerId".to_string(),
+                WhereClause {
+                    field: "$ownerId".to_string(),
+                    operator: WhereOperator::Equal,
+                    value: Value::Identifier(context.owner_id.to_buffer()),
+                },
+            )]),
+        },
+        offset: 0,
+        limit: 0,
+        order_by: Default::default(),
+        start_at: None,
+        start_at_included: false,
+        block_time: None,
+    };
+
+    let documents = context
+        .platform
+        .drive
+        .query_documents(drive_query, None, context.transaction)?
+        .documents;
 
     if is_dry_run {
         return Ok(result);
@@ -96,13 +147,16 @@ pub fn create_masternode_reward_shares_data_trigger<'a>(
                 MAX_DOCUMENTS
             ),
         );
-        result.add_error(err.into());
+        result.add_error(err);
         return Ok(result);
     }
 
     let mut total_percent: u64 = percentage;
     for d in documents.iter() {
-        total_percent += d.properties.get_integer::<u64>(PROPERTY_PERCENTAGE)?;
+        total_percent += d
+            .properties
+            .get_integer::<u64>(PROPERTY_PERCENTAGE)
+            .map_err(ProtocolError::ValueError)?;
     }
 
     if total_percent > MAX_PERCENTAGE {
@@ -111,7 +165,7 @@ pub fn create_masternode_reward_shares_data_trigger<'a>(
             document_create_transition,
             format!("Percentage can not be more than {}", MAX_PERCENTAGE),
         );
-        result.add_error(err.into());
+        result.add_error(err);
     }
 
     Ok(result)
@@ -120,8 +174,11 @@ pub fn create_masternode_reward_shares_data_trigger<'a>(
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::platform::PlatformStateRef;
+    use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::data_contract::DataContract;
-    use dpp::document::document_transition::{Action, DocumentTransitionExt};
+    use dpp::document::document_transition::Action;
     use dpp::document::ExtendedDocument;
     use dpp::identity::Identity;
     use dpp::mocks::{SMLEntry, SMLStore, SimplifiedMNList};
@@ -131,35 +188,19 @@ mod test {
         get_document_transitions_fixture, get_masternode_reward_shares_documents_fixture,
     };
     use dpp::tests::utils::generate_random_identifier_struct;
-
-    use platform_value::Value;
-
-    use crate::document::{Document, ExtendedDocument};
-    use crate::error::data_trigger::DataTriggerError;
-    use crate::identity::Identity;
-    use crate::{
-        data_contract::DataContract,
-        data_trigger::DataTriggerExecutionContext,
-        document::document_transition::{Action, DocumentTransition, DocumentTransitionExt},
-        mocks::{SMLEntry, SMLStore, SimplifiedMNList},
-        prelude::Identifier,
-        state_repository::MockStateRepositoryLike,
-        state_transition::state_transition_execution_context::StateTransitionExecutionContext,
-        tests::{
-            fixtures::{
-                get_document_transitions_fixture, get_masternode_reward_shares_documents_fixture,
-            },
-            utils::generate_random_identifier_struct,
-        },
-        DataTriggerError, StateError,
+    use dpp::DataTriggerActionError;
+    use drive::drive::block_info::BlockInfo;
+    use drive::drive::object_size_info::DocumentInfo::{
+        DocumentRefWithoutSerialization, DocumentWithoutSerialization,
     };
+    use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 
     struct TestData {
         top_level_identifier: Identifier,
         data_contract: DataContract,
         sml_store: SMLStore,
         extended_documents: Vec<ExtendedDocument>,
-        document_create_transition: DocumentCreateTransition,
+        document_create_transition: DocumentCreateTransitionAction,
         identity: Identity,
     }
 
@@ -201,37 +242,40 @@ mod test {
         let document_transitions =
             get_document_transitions_fixture([(Action::Create, vec![documents[0].clone()])]);
 
-        let DocumentTransition::Create(document_create_transition) =
-            document_transitions[0].clone();
+        let document_create_transition = document_transitions[0]
+            .as_transition_create()
+            .unwrap()
+            .clone();
         TestData {
             extended_documents: documents,
             data_contract,
             top_level_identifier,
             sml_store,
-            document_create_transition,
+            document_create_transition: document_create_transition.into(),
             identity: Identity::default(),
         }
     }
 
     fn get_data_trigger_error(
-        result: &Result<DataTriggerExecutionResult, anyhow::Error>,
+        result: &Result<DataTriggerExecutionResult, Error>,
         error_number: usize,
-    ) -> &DataTriggerError {
+    ) -> &DataTriggerActionError {
         let execution_result = result.as_ref().expect("it should return execution result");
-        let error = execution_result
-            .get_errors()
-            .get(error_number)
-            .expect("errors should exist");
-        match error {
-            StateError::DataTriggerError(error) => error,
-            _ => {
-                panic!("the returned error is not a data trigger error")
-            }
-        }
+        execution_result
+            .get_error(error_number)
+            .expect("errors should exist")
     }
 
-    #[tokio::test]
-    async fn should_return_an_error_if_percentage_greater_than_1000() {
+    fn should_return_an_error_if_percentage_greater_than_1000() {
+        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        let state_read_guard = platform.state.read().unwrap();
+
+        let platform_ref = PlatformStateRef {
+            drive: &platform.drive,
+            state: &state_read_guard,
+            config: &platform.config,
+        };
+
         let TestData {
             mut document_create_transition,
             extended_documents,
@@ -241,41 +285,59 @@ mod test {
             ..
         } = setup_test();
 
+        for document in extended_documents.iter() {
+            platform_ref
+                .drive
+                .apply_contract(
+                    &document.data_contract,
+                    BlockInfo::default(),
+                    true,
+                    None,
+                    None,
+                )
+                .expect("expected to apply contract");
+            platform_ref
+                .drive
+                .add_document(
+                    OwnedDocumentInfo {
+                        document_info: DocumentRefWithoutSerialization((&document.document, None)),
+                        owner_id: None,
+                    },
+                    document.data_contract_id,
+                    document.document_type_name.as_str(),
+                    false,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                )
+                .expect("expected to add document");
+        }
+
         let documents: Vec<Document> = extended_documents
             .clone()
             .into_iter()
             .map(|dt| dt.document)
             .collect();
 
-        let mut state_repository_mock = MockStateRepositoryLike::new();
-        state_repository_mock
-            .expect_fetch_sml_store()
-            .returning(move || Ok(sml_store.clone()));
-        state_repository_mock
-            .expect_fetch_identity()
-            .returning(|_, _| Ok(None));
-        state_repository_mock
-            .expect_fetch_documents()
-            .returning(move |_, _, _, _| Ok(documents.clone()));
-
         // documentsFixture contains percentage = 500
         document_create_transition
-            .insert_dynamic_property(String::from("percentage"), Value::U64(9501));
+            .data
+            .insert("percentage".to_string(), Value::U64(9501));
 
         let execution_context = StateTransitionExecutionContext::default();
         let context = DataTriggerExecutionContext {
+            platform: &platform_ref,
             data_contract: &data_contract,
             owner_id: &top_level_identifier,
-            drive: &state_repository_mock,
             state_transition_execution_context: &execution_context,
+            transaction: None,
         };
 
         let result = create_masternode_reward_shares_data_trigger(
-            &document_create_transition,
+            &document_create_transition.into(),
             &context,
             None,
-        )
-        .await;
+        );
 
         let percentage_error = get_data_trigger_error(&result, 1);
         assert_eq!(
@@ -285,6 +347,15 @@ mod test {
     }
 
     fn should_return_an_error_if_pay_to_id_does_not_exists() {
+        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        let state_read_guard = platform.state.read().unwrap();
+
+        let platform_ref = PlatformStateRef {
+            drive: &platform.drive,
+            state: &state_read_guard,
+            config: &platform.config,
+        };
+
         let TestData {
             document_create_transition,
             sml_store,
@@ -293,36 +364,26 @@ mod test {
             ..
         } = setup_test();
 
-        let mut state_repository_mock = MockStateRepositoryLike::new();
-        state_repository_mock
-            .expect_fetch_sml_store()
-            .returning(move || Ok(sml_store.clone()));
-        state_repository_mock
-            .expect_fetch_identity()
-            .returning(move |_, _| Ok(None));
-        state_repository_mock
-            .expect_fetch_documents()
-            .returning(move |_, _, _, _| Ok(vec![]));
-
         let execution_context = StateTransitionExecutionContext::default();
         let context = DataTriggerExecutionContext {
+            platform: &platform_ref,
             data_contract: &data_contract,
             owner_id: &top_level_identifier,
-            drive: &state_repository_mock,
             state_transition_execution_context: &execution_context,
+            transaction: None,
         };
+        let pay_to_id_bytes = document_create_transition
+            .data
+            .get_hash256_bytes(PROPERTY_PAY_TO_ID)
+            .expect("expected to be able to get a hash");
         let result = create_masternode_reward_shares_data_trigger(
-            &document_create_transition,
+            &document_create_transition.into(),
             &context,
             None,
         );
 
         let error = get_data_trigger_error(&result, 0);
-        let pay_to_id_bytes = document_transition
-            .get_dynamic_property(PROPERTY_PAY_TO_ID)
-            .expect("payToId should exist")
-            .to_hash256()
-            .expect("expected to be able to get a hash");
+
         let pay_to_id = Identifier::from(pay_to_id_bytes);
 
         assert_eq!(
@@ -332,6 +393,15 @@ mod test {
     }
 
     fn should_return_an_error_if_owner_id_is_not_a_masternode_identity() {
+        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        let state_read_guard = platform.state.read().unwrap();
+
+        let platform_ref = PlatformStateRef {
+            drive: &platform.drive,
+            state: &state_read_guard,
+            config: &platform.config,
+        };
+
         let TestData {
             document_create_transition,
             sml_store,
@@ -339,26 +409,16 @@ mod test {
             ..
         } = setup_test();
 
-        let mut state_repository_mock = MockStateRepositoryLike::new();
-        state_repository_mock
-            .expect_fetch_sml_store()
-            .returning(move || Ok(sml_store.clone()));
-        state_repository_mock
-            .expect_fetch_identity()
-            .returning(move |_, _| Ok(None));
-        state_repository_mock
-            .expect_fetch_documents()
-            .returning(move |_, _, _, _| Ok(vec![]));
-
         let execution_context = StateTransitionExecutionContext::default();
         let context = DataTriggerExecutionContext {
+            platform: &platform_ref,
             data_contract: &data_contract,
             owner_id: &generate_random_identifier_struct(),
-            drive: &state_repository_mock,
             state_transition_execution_context: &execution_context,
+            transaction: None,
         };
         let result = create_masternode_reward_shares_data_trigger(
-            &document_create_transition,
+            &document_create_transition.into(),
             &context,
             None,
         );
@@ -371,6 +431,14 @@ mod test {
     }
 
     fn should_pass() {
+        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        let state_read_guard = platform.state.read().unwrap();
+        let platform_ref = PlatformStateRef {
+            drive: &platform.drive,
+            state: &state_read_guard,
+            config: &platform.config,
+        };
+
         let TestData {
             document_create_transition,
             sml_store,
@@ -380,35 +448,38 @@ mod test {
             ..
         } = setup_test();
 
-        let mut state_repository_mock = MockStateRepositoryLike::new();
-        state_repository_mock
-            .expect_fetch_sml_store()
-            .returning(move || Ok(sml_store.clone()));
-        state_repository_mock
-            .expect_fetch_identity()
-            .returning(move |_, _| Ok(Some(identity.clone())));
-        state_repository_mock
-            .expect_fetch_documents()
-            .returning(move |_, _, _, _| Ok(vec![]));
+        platform_ref
+            .drive
+            .add_new_identity(identity, &BlockInfo::default(), true, None)
+            .expect("should insert identity");
 
         let execution_context = StateTransitionExecutionContext::default();
         let context = DataTriggerExecutionContext {
+            platform: &platform_ref,
             data_contract: &data_contract,
             owner_id: &top_level_identifier,
-            drive: &state_repository_mock,
             state_transition_execution_context: &execution_context,
+            transaction: None,
         };
         let result = create_masternode_reward_shares_data_trigger(
-            &document_create_transition,
+            &document_create_transition.into(),
             &context,
             None,
         )
         .expect("the execution result should be returned");
-        assert!(result.is_ok())
+        assert!(result.is_valid())
     }
 
-    #[tokio::test]
-    async fn should_return_error_if_there_are_16_stored_shares() {
+    fn should_return_error_if_there_are_16_stored_shares() {
+        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        let state_read_guard = platform.state.read().unwrap();
+
+        let platform_ref = PlatformStateRef {
+            drive: &platform.drive,
+            state: &state_read_guard,
+            config: &platform.config,
+        };
+
         let TestData {
             document_create_transition,
             sml_store,
@@ -418,32 +489,51 @@ mod test {
             ..
         } = setup_test();
 
-        let mut state_repository_mock = MockStateRepositoryLike::new();
-        state_repository_mock
-            .expect_fetch_sml_store()
-            .returning(move || Ok(sml_store.clone()));
-        state_repository_mock
-            .expect_fetch_identity()
-            .returning(move |_, _| Ok(Some(identity.clone())));
-        let documents_to_return: Vec<Document> = (0..16).map(|_| Document::default()).collect();
-        state_repository_mock
-            .expect_fetch_documents()
-            .return_once(move |_, _, _, _| Ok(documents_to_return));
+        let owner_id = identity.id;
+        platform_ref
+            .drive
+            .add_new_identity(identity, &BlockInfo::default(), true, None)
+            .expect("should insert identity");
+
+        let document_type = data_contract
+            .document_type_for_name(&document_create_transition.base.document_type_name)
+            .expect("expected to get document type");
+
+        for i in 0..16 {
+            let document = document_type.random_document(Some(i));
+            platform
+                .drive
+                .add_document_for_contract(
+                    DocumentAndContractInfo {
+                        owned_document_info: OwnedDocumentInfo {
+                            document_info: DocumentWithoutSerialization((document, None)),
+                            owner_id: Some(owner_id.to_buffer()),
+                        },
+                        contract: &data_contract,
+                        document_type,
+                    },
+                    false,
+                    BlockInfo::genesis(),
+                    true,
+                    None,
+                )
+                .expect("expected to insert a document successfully");
+        }
 
         let execution_context = StateTransitionExecutionContext::default();
         let context = DataTriggerExecutionContext {
+            platform: &platform_ref,
             data_contract: &data_contract,
             owner_id: &top_level_identifier,
-            drive: &state_repository_mock,
             state_transition_execution_context: &execution_context,
+            transaction: None,
         };
 
         let result = create_masternode_reward_shares_data_trigger(
-            &document_create_transition,
+            &document_create_transition.into(),
             &context,
             None,
-        )
-        .await;
+        );
         let error = get_data_trigger_error(&result, 0);
 
         assert_eq!(
@@ -453,6 +543,15 @@ mod test {
     }
 
     fn should_pass_on_dry_run() {
+        let mut platform = TestPlatformBuilder::new().build_with_mock_rpc();
+        let state_read_guard = platform.state.read().unwrap();
+
+        let platform_ref = PlatformStateRef {
+            drive: &platform.drive,
+            state: &state_read_guard,
+            config: &platform.config,
+        };
+
         let TestData {
             document_create_transition,
             data_contract,
@@ -460,29 +559,22 @@ mod test {
             ..
         } = setup_test();
 
-        let mut state_repository_mock = MockStateRepositoryLike::new();
-        state_repository_mock
-            .expect_fetch_identity()
-            .returning(move |_, _| Ok(None));
-        state_repository_mock
-            .expect_fetch_documents()
-            .returning(move |_, _, _, _| Ok(vec![]));
-
         let execution_context = StateTransitionExecutionContext::default();
         execution_context.enable_dry_run();
 
         let context = DataTriggerExecutionContext {
+            platform: &platform_ref,
             data_contract: &data_contract,
             owner_id: &top_level_identifier,
-            drive: &state_repository_mock,
             state_transition_execution_context: &execution_context,
+            transaction: None,
         };
         let result = create_masternode_reward_shares_data_trigger(
-            &document_create_transition,
+            &document_create_transition.into(),
             &context,
             None,
         )
         .expect("the execution result should be returned");
-        assert!(result.is_ok());
+        assert!(result.is_valid());
     }
 }

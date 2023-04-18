@@ -1,7 +1,7 @@
 /// The block proposal
 pub mod block_proposal;
-// /// Data triggers
-// pub mod data_trigger;
+/// Data triggers
+pub mod data_trigger;
 /// Engine module
 pub mod engine;
 /// An execution event

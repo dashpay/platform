@@ -102,7 +102,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         self.drive
-            .apply_contract(
+            .apply_contract_with_serialization(
                 &contract,
                 contract_cbor,
                 BlockInfo::genesis(),

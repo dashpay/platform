@@ -1,5 +1,4 @@
-use crate::error::data_trigger::DataTriggerError;
-use dpp::dashcore::consensus::encode::Error as DashCoreConsensusEncodeError;
+use dashcore::consensus::encode::Error as DashCoreConsensusEncodeError;
 use drive::error::Error as DriveError;
 
 /// Execution errors
@@ -70,6 +69,6 @@ pub enum ExecutionError {
     DashCoreBadResponseError(String),
 
     /// An error received for a data trigger.
-    #[error("data trigger error: {0}")]
-    DataTrigger(#[from] DataTriggerError),
+    #[error("data trigger execution error: {0}")]
+    DataTriggerExecutionError(String),
 }

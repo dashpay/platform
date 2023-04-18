@@ -715,7 +715,7 @@ impl Drive {
         // first we need to deserialize the contract
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, contract_id)?;
 
-        self.apply_contract(
+        self.apply_contract_with_serialization(
             &contract,
             contract_cbor,
             block_info,
@@ -958,6 +958,20 @@ impl Drive {
     pub fn apply_contract(
         &self,
         contract: &Contract,
+        block_info: BlockInfo,
+        apply: bool,
+        storage_flags: Option<Cow<StorageFlags>>,
+        transaction: TransactionArg,
+    ) -> Result<FeeResult, Error> {
+
+        self.apply_contract_with_serialization(contract, contract.serialize()?, block_info, apply, storage_flags, transaction)
+    }
+
+    /// Applies a contract and returns the fee for applying.
+    /// If the contract already exists, an update is applied, otherwise an insert.
+    pub fn apply_contract_with_serialization(
+        &self,
+        contract: &Contract,
         contract_serialization: Vec<u8>,
         block_info: BlockInfo,
         apply: bool,
@@ -1139,7 +1153,7 @@ mod tests {
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
         drive
-            .apply_contract(
+            .apply_contract_with_serialization(
                 &contract,
                 contract_cbor.clone(),
                 BlockInfo::default(),
@@ -1168,7 +1182,7 @@ mod tests {
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
         drive
-            .apply_contract(
+            .apply_contract_with_serialization(
                 &contract,
                 contract_cbor.clone(),
                 BlockInfo::default(),
@@ -1197,7 +1211,7 @@ mod tests {
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
         drive
-            .apply_contract(
+            .apply_contract_with_serialization(
                 &contract,
                 contract_cbor.clone(),
                 BlockInfo::default(),
@@ -1347,7 +1361,7 @@ mod tests {
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
         drive
-            .apply_contract(
+            .apply_contract_with_serialization(
                 &contract,
                 contract_cbor,
                 BlockInfo::default(),
@@ -1376,7 +1390,7 @@ mod tests {
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
         drive
-            .apply_contract(
+            .apply_contract_with_serialization(
                 &contract,
                 contract_cbor,
                 BlockInfo::default(),
@@ -1406,7 +1420,7 @@ mod tests {
 
         // Create a contract first
         drive
-            .apply_contract(
+            .apply_contract_with_serialization(
                 &contract,
                 contract_cbor.clone(),
                 BlockInfo::default(),
@@ -1528,7 +1542,7 @@ mod tests {
                 let ref_contract_cbor = ref_contract.to_cbor().expect("should serialize contract");
 
                 drive
-                    .apply_contract(
+                    .apply_contract_with_serialization(
                         &ref_contract,
                         ref_contract_cbor,
                         BlockInfo::default(),
@@ -1546,7 +1560,7 @@ mod tests {
             let deep_contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
                 .expect("expected to deserialize the contract");
             drive
-                .apply_contract(
+                .apply_contract_with_serialization(
                     &deep_contract,
                     contract_cbor,
                     BlockInfo::default(),
@@ -1678,7 +1692,7 @@ mod tests {
                 let ref_contract_cbor = ref_contract.to_cbor().expect("should serialize contract");
 
                 drive
-                    .apply_contract(
+                    .apply_contract_with_serialization(
                         &ref_contract,
                         ref_contract_cbor,
                         BlockInfo::default(),

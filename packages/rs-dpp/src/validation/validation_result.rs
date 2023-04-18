@@ -187,6 +187,10 @@ impl<TData: Clone, E: Debug> ValidationResult<TData, E> {
         self.errors.first()
     }
 
+    pub fn get_error(&self, pos: usize) -> Option<&E> {
+        self.errors.get(pos)
+    }
+
     pub fn into_result_without_data(self) -> ValidationResult<(), E> {
         ValidationResult {
             errors: self.errors,
