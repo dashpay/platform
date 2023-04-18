@@ -18,8 +18,8 @@ use crate::consensus::basic::identity::{
     MissingMasterPublicKeyError,
 };
 use crate::consensus::state::identity::IdentityAlreadyExistsError;
+use crate::errors::consensus::basic;
 #[cfg(test)]
-use crate::errors::consensus::basic::TestConsensusError;
 use crate::errors::consensus::basic::{
     BasicError, IncompatibleProtocolVersionError, JsonSchemaError, UnsupportedProtocolVersionError,
 };
@@ -40,11 +40,11 @@ pub enum ConsensusError {
     #[error("default error")]
     DefaultError,
     #[error(transparent)]
-    JsonSchemaError(JsonSchemaError),
+    JsonSchemaError(basic::JsonSchemaError),
     #[error(transparent)]
-    UnsupportedProtocolVersionError(UnsupportedProtocolVersionError),
+    UnsupportedProtocolVersionError(basic::UnsupportedProtocolVersionError),
     #[error(transparent)]
-    IncompatibleProtocolVersionError(IncompatibleProtocolVersionError),
+    IncompatibleProtocolVersionError(basic::IncompatibleProtocolVersionError),
     #[error(transparent)]
     DuplicatedIdentityPublicKeyBasicIdError(DuplicatedIdentityPublicKeyIdError),
     #[error(transparent)]
@@ -107,7 +107,7 @@ pub enum ConsensusError {
     StateError(Box<StateError>),
 
     #[error(transparent)]
-    BasicError(Box<BasicError>),
+    BasicError(Box<basic::BasicError>),
 
     #[error("Parsing of serialized object failed due to: {parsing_error}")]
     SerializedObjectParsingError { parsing_error: anyhow::Error },
@@ -135,11 +135,11 @@ pub enum ConsensusError {
 
     #[cfg(test)]
     #[cfg_attr(test, error(transparent))]
-    TestConsensusError(TestConsensusError),
+    TestConsensusError(basic::TestConsensusError),
 }
 
 impl ConsensusError {
-    pub fn json_schema_error(&self) -> Option<&JsonSchemaError> {
+    pub fn json_schema_error(&self) -> Option<&basic::JsonSchemaError> {
         match self {
             ConsensusError::JsonSchemaError(err) => Some(err),
             _ => None,
@@ -212,24 +212,24 @@ impl Default for ConsensusError {
 
 impl<'a> From<ValidationError<'a>> for ConsensusError {
     fn from(validation_error: ValidationError<'a>) -> Self {
-        Self::JsonSchemaError(JsonSchemaError::from(validation_error))
+        Self::JsonSchemaError(basic::JsonSchemaError::from(validation_error))
     }
 }
 
-impl From<JsonSchemaError> for ConsensusError {
-    fn from(json_schema_error: JsonSchemaError) -> Self {
+impl From<crate::errors::consensus::basic::JsonSchemaError> for ConsensusError {
+    fn from(json_schema_error: basic::JsonSchemaError) -> Self {
         Self::JsonSchemaError(json_schema_error)
     }
 }
 
-impl From<UnsupportedProtocolVersionError> for ConsensusError {
-    fn from(error: UnsupportedProtocolVersionError) -> Self {
+impl From<crate::errors::consensus::basic::UnsupportedProtocolVersionError> for ConsensusError {
+    fn from(error: crate::errors::consensus::basic::UnsupportedProtocolVersionError) -> Self {
         Self::UnsupportedProtocolVersionError(error)
     }
 }
 
-impl From<IncompatibleProtocolVersionError> for ConsensusError {
-    fn from(error: IncompatibleProtocolVersionError) -> Self {
+impl From<basic::IncompatibleProtocolVersionError> for ConsensusError {
+    fn from(error: basic::IncompatibleProtocolVersionError) -> Self {
         Self::IncompatibleProtocolVersionError(error)
     }
 }
@@ -277,8 +277,8 @@ impl From<StateError> for ConsensusError {
     }
 }
 
-impl From<BasicError> for ConsensusError {
-    fn from(se: BasicError) -> Self {
+impl From<basic::BasicError> for ConsensusError {
+    fn from(se: basic::BasicError) -> Self {
         ConsensusError::BasicError(Box::new(se))
     }
 }

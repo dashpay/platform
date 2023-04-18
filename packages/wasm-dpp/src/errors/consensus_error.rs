@@ -194,6 +194,9 @@ pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
         DPPConsensusError::ValueError(value_error) => {
             PlatformValueErrorWasm::new(value_error.clone()).into()
         }
+        DPPConsensusError::InvalidIdentityAssetLockProofChainLockValidationError(_) => todo!(),
+        #[cfg(test)]
+        DPPConsensusError::TestConsensusError(_) => todo!(),
         DPPConsensusError::DefaultError => panic!(), //not possible
     }
 }
@@ -332,6 +335,8 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
             )
             .into(),
         },
+        StateError::DataTriggerActionError(_) => todo!(),
+        StateError::MissingIdentityPublicKeyIdsError { ids } => todo!(),
     }
 }
 
@@ -542,12 +547,13 @@ fn from_signature_error(signature_error: &SignatureError) -> JsValue {
             IdentityNotFoundErrorWasm::new(err.identity_id(), code).into()
         }
         SignatureError::InvalidSignaturePublicKeySecurityLevelError(err) => {
-            InvalidSignaturePublicKeySecurityLevelErrorWasm::new(
-                err.public_key_security_level(),
-                err.required_key_security_level(),
-                code,
-            )
-            .into()
+            // InvalidSignaturePublicKeySecurityLevelErrorWasm::new(
+            //     err.public_key_security_level(),
+            //     err.required_key_security_level(),
+            //     code,
+            // )
+            // .into()
+            todo!()
         }
         SignatureError::PublicKeyIsDisabledError(err) => {
             PublicKeyIsDisabledErrorWasm::new(err.public_key_id(), code).into()
@@ -566,6 +572,9 @@ fn from_signature_error(signature_error: &SignatureError) -> JsValue {
             code,
         )
         .into(),
+        SignatureError::SignatureShouldNotBePresent(_) => todo!(),
+        SignatureError::BasicECDSAError(_) => todo!(),
+        SignatureError::BasicBLSError(_) => todo!(),
     }
 }
 

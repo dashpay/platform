@@ -1,5 +1,4 @@
 use dpp::identity::KeyID;
-use dpp::state_transition::fee::calculate_state_transition_fee_factory::calculate_state_transition_fee;
 use dpp::{
     document::{
         document_transition::document_base_transition,
@@ -16,7 +15,6 @@ use dpp::{
 use js_sys::{Array, Reflect};
 use serde::{Deserialize, Serialize};
 
-use dpp::platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use dpp::platform_value::{BinaryData, ReplacementType};
 use wasm_bindgen::prelude::*;
 
@@ -313,7 +311,8 @@ impl DocumentsBatchTransitionWasm {
 
     #[wasm_bindgen(js_name=getKeySecurityLevelRequirement)]
     pub fn get_security_level_requirement(&self) -> u8 {
-        self.0.get_security_level_requirement() as u8
+        todo!();
+        // self.0.get_security_level_requirement() as u8
     }
 
     // AbstractStateTransition methods
