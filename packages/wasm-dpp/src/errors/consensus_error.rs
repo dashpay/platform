@@ -383,6 +383,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
                     code,
                 )
                 .into(),
+                DataTriggerActionError::ValueError(value_error) => {
+                    PlatformValueErrorWasm::new(value_error.clone()).into()
+                }
             }
         }
         StateError::MissingIdentityPublicKeyIdsError { ids } => {
@@ -622,6 +625,15 @@ fn from_signature_error(signature_error: &SignatureError) -> JsValue {
             code,
         )
         .into(),
+        SignatureError::SignatureShouldNotBePresent(_) => {
+            todo!()
+        }
+        SignatureError::BasicECDSAError(_) => {
+            todo!()
+        }
+        SignatureError::BasicBLSError(_) => {
+            todo!()
+        }
     }
 }
 
