@@ -90,7 +90,7 @@ describe('Masternode Reward Shares', () => {
       // Masternode identity should exist
       expect(masternodeOwnerIdentity).to.exist();
 
-      await client.platform.identities.topUp(masternodeOwnerIdentity.getId(), 2000000);
+      await client.platform.identities.topUp(masternodeOwnerIdentity.getId(), 2500000);
 
       // Since we cannot create "High" level key for masternode Identities automatically,
       // (this key is used to sign state transitions, other than "update")
