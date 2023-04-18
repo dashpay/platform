@@ -91,6 +91,9 @@ describe('Masternode Reward Shares', () => {
 
       await client.platform.identities.topUp(masternodeOwnerIdentity.getId(), 2000000);
 
+      // Additional wait time to mitigate testnet latency
+      await waitForSTPropagated();
+
       // Since we cannot create "High" level key for masternode Identities automatically,
       // (this key is used to sign state transitions, other than "update")
       // we add this key here
@@ -154,6 +157,9 @@ describe('Masternode Reward Shares', () => {
       await client.platform.broadcastStateTransition(
         stateTransition,
       );
+
+      // Additional wait time to mitigate testnet latency
+      await waitForSTPropagated();
     });
 
     it('should be able to create reward shares with existing identity', async () => {
