@@ -33,12 +33,12 @@
 extern crate core;
 
 use anyhow::anyhow;
-use bls_signatures::PrivateKey as BlsPrivateKey;
 use dashcore::{signer, Network, PrivateKey, ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{
     DMNState, ExtendedQuorumDetails, MasternodeListDiffWithMasternodes, MasternodeListItem,
     MasternodeType, QuorumInfoResult, QuorumType,
 };
+use dpp::bls_signatures::PrivateKey as BlsPrivateKey;
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::document::document_transition::document_base_transition::DocumentBaseTransition;
 use dpp::document::document_transition::{
@@ -59,7 +59,7 @@ use dpp::state_transition::errors::{
 use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionType};
 use dpp::tests::fixtures::instant_asset_lock_proof_fixture;
 use dpp::version::LATEST_VERSION;
-use dpp::{ed25519_dalek, NativeBlsModule, ProtocolError};
+use dpp::{bls_signatures, ed25519_dalek, NativeBlsModule, ProtocolError};
 
 use drive::contract::{Contract, CreateRandomDocument, DocumentType};
 use drive::dpp::document::Document;

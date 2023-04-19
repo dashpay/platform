@@ -1,5 +1,5 @@
 use crate::validator_set::ValidatorSetError;
-use bls_signatures::BlsError;
+use dpp::bls_signatures::BlsError;
 
 /// Error returned within ABCI server
 #[derive(Debug, thiserror::Error)]

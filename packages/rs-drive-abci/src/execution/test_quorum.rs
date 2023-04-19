@@ -1,9 +1,9 @@
 use crate::execution::quorum::{Quorum, ValidatorWithPublicKeyShare};
-use bls_signatures;
-use bls_signatures::{PrivateKey as BlsPrivateKey, PublicKey as BlsPublicKey};
 use dashcore::hashes::Hash;
 use dashcore::{ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{QuorumInfoResult, QuorumMember, QuorumType};
+use dpp::bls_signatures;
+use dpp::bls_signatures::{PrivateKey as BlsPrivateKey, PublicKey as BlsPublicKey};
 use rand::rngs::StdRng;
 use std::collections::BTreeMap;
 

@@ -1,8 +1,8 @@
 //! Withdrawal transactions definitions and processing
 
-use bls_signatures;
 use dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::block::block_info::BlockInfo;
+use dpp::bls_signatures;
 use dpp::validation::SimpleValidationResult;
 use drive::{
     drive::{batch::DriveOperation, Drive},

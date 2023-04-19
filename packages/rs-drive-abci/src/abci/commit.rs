@@ -2,6 +2,7 @@
 use crate::execution::finalize_block_cleaned_request::{CleanedBlockId, CleanedCommitInfo};
 
 use dashcore_rpc::dashcore_rpc_json::QuorumType;
+use dpp::bls_signatures;
 use dpp::validation::{SimpleValidationResult, ValidationResult};
 use tenderdash_abci::proto::abci::CommitInfo;
 use tenderdash_abci::proto::types::BlockId;
@@ -123,10 +124,10 @@ mod test {
     use crate::execution::finalize_block_cleaned_request::CleanedCommitInfo;
 
     use super::Commit;
-    use bls_signatures::PublicKey;
     use dashcore_rpc::{
         dashcore::hashes::sha256, dashcore::hashes::Hash, dashcore_rpc_json::QuorumType,
     };
+    use dpp::bls_signatures::PublicKey;
     use tenderdash_abci::proto::{
         signatures::{SignBytes, SignDigest},
         types::{BlockId, PartSetHeader, StateId},

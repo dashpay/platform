@@ -1027,9 +1027,9 @@ dependencies = [
 
 [[package]]
 name = "der"
-version = "0.7.3"
+version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82b10af9f9f9f2134a42d3f8aa74658660f2e0234b0eb81bd171df8aa32779ed"
+checksum = "86b14af2045fa69ed2b7a48934bebb842d0f33e73e96e78766ecb14bb5347a11"
 dependencies = [
  "const-oid",
  "zeroize",
@@ -1176,7 +1176,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "atty",
- "bls-signatures",
  "bs58",
  "bytes",
  "chrono",
@@ -2001,9 +2000,9 @@ dependencies = [
 
 [[package]]
 name = "linux-raw-sys"
-version = "0.3.2"
+version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f508063cc7bb32987c71511216bd5a32be15bccb6a80b52df8b9d7f01fc3aa2"
+checksum = "9b085a4f2cde5781fc4b1717f2e86c62f5cda49de7ba99a7c2eae02b61c9064c"
 
 [[package]]
 name = "lock_api"
