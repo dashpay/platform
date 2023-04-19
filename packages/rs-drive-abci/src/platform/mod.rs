@@ -215,7 +215,7 @@ impl Platform<MockCoreRPCLike> {
         self.update_state_masternode_list(&mut state_cache, core_height, true)?;
         drop(state_cache);
 
-        return Ok(true);
+        Ok(true)
     }
 }
 
@@ -318,7 +318,7 @@ impl<C> Platform<C> {
         platform.update_state_masternode_list(&mut state_cache, core_height, true)?;
         drop(state_cache);
 
-        return Ok(platform);
+        Ok(platform)
     }
 
     /// Open Platform with Drive and block execution context without saved state.

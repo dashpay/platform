@@ -76,10 +76,10 @@ pub(super) fn fetch_documents_for_transitions_knowing_contract_id_and_document_t
     )?;
 
     let Some(contract_fetch_info) = contract_fetch_info else {
-        return Ok(ConsensusValidationResult::new_with_error(BasicError::DataContractNotPresent { data_contract_id: contract_id.clone()}.into()));
+        return Ok(ConsensusValidationResult::new_with_error(BasicError::DataContractNotPresent { data_contract_id: *contract_id}.into()));
     };
 
-    let contract_fetch_info = contract_fetch_info.clone();
+    let contract_fetch_info = contract_fetch_info;
 
     let Some(document_type) = contract_fetch_info.contract.optional_document_type_for_name(document_type_name) else {
         return Ok(ConsensusValidationResult::new_with_error(BasicError::InvalidDocumentTypeError(InvalidDocumentTypeError::new(document_type_name.to_string(), *contract_id)).into()));
@@ -106,7 +106,7 @@ pub(super) fn fetch_documents_for_transitions_knowing_contract_and_document_type
         .collect();
 
     let drive_query = DriveQuery {
-        contract: &contract,
+        contract,
         document_type,
         internal_clauses: InternalClauses {
             primary_key_in_clause: Some(WhereClause {

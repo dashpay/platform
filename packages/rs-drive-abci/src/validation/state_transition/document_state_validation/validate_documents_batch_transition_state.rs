@@ -219,7 +219,7 @@ fn validate_document_transitions_within_document_type(
         platform,
         transaction,
         owner_id: &owner_id,
-        data_contract: &data_contract,
+        data_contract,
         state_transition_execution_context: execution_context,
     };
     let data_trigger_execution_results = execute_data_triggers(

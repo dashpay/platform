@@ -29,7 +29,7 @@ pub fn start<C: CoreRPCLike>(config: &PlatformConfig, core_rpc: C) -> Result<(),
     let abci = AbciApplication::new(&platform)?;
 
     let server = tenderdash_abci::start_server(&bind_address, abci)
-        .map_err(|e| super::AbciError::from(e))?;
+        .map_err(super::AbciError::from)?;
 
     loop {
         tracing::info!("waiting for new connection");

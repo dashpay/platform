@@ -114,7 +114,7 @@ where
         // Running the proposal executes all the state transitions for the block
         let run_result = self
             .platform
-            .run_block_proposal((&request).try_into()?, &transaction)?;
+            .run_block_proposal((&request).try_into()?, transaction)?;
 
         if !run_result.is_valid() {
             // This is a system error, because we are proposing
@@ -209,7 +209,7 @@ where
         // Running the proposal executes all the state transitions for the block
         let run_result = self
             .platform
-            .run_block_proposal((&request).try_into()?, &transaction)?;
+            .run_block_proposal((&request).try_into()?, transaction)?;
 
         if !run_result.is_valid() {
             // This was an error running this proposal, tell tenderdash that the block isn't valid

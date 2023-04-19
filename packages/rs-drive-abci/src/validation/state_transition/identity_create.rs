@@ -105,6 +105,6 @@ impl StateTransitionValidation for IdentityCreateTransition {
         validation_result.set_data(
             IdentityCreateTransitionAction::from_borrowed(self, tx_out.value * 1000).into(),
         );
-        return Ok(validation_result);
+        Ok(validation_result)
     }
 }

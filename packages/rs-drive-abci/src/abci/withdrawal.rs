@@ -217,8 +217,8 @@ impl<'a> PartialEq for WithdrawalTxs<'a> {
         std::iter::zip(&self.inner, &other.inner).all(|(left, right)| {
             left.r#type == right.r#type
                 && left.extension == right.extension
-                && (left.signature.len() == 0
-                    || right.signature.len() == 0
+                && (left.signature.is_empty()
+                    || right.signature.is_empty()
                     || left.signature == right.signature)
         })
     }

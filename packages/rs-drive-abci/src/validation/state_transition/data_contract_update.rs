@@ -73,7 +73,7 @@ impl StateTransitionValidation for DataContractUpdateTransition {
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         Ok(
             validate_state_transition_identity_signature(drive, self, false, transaction)?
-                .map(|partial_identity| Some(partial_identity)),
+                .map(Some),
         )
     }
 

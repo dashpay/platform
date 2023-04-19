@@ -167,7 +167,7 @@ mod test {
                 hash: sha256::Hash::hash("blockID_part_set_header_hash".as_bytes()).to_vec(),
             }),
             state_id: state_id
-                .sha256(CHAIN_ID, HEIGHT as i64, ROUND as i32)
+                .sha256(CHAIN_ID, HEIGHT, ROUND as i32)
                 .unwrap(),
         };
         let pubkey = hex::decode(

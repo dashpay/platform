@@ -29,7 +29,7 @@ impl From<&ValidatorInQuorum> for ValidatorWithPublicKeyShare {
             ..
         } = value;
         ValidatorWithPublicKeyShare {
-            pro_tx_hash: pro_tx_hash.clone(),
+            pro_tx_hash: *pro_tx_hash,
             public_key: public_key.clone(),
         }
     }
@@ -125,7 +125,7 @@ impl From<&TestQuorumInfo> for Quorum {
         } = value;
 
         Quorum {
-            quorum_hash: quorum_hash.clone(),
+            quorum_hash: *quorum_hash,
             validator_set: validator_set
                 .iter()
                 .map(|v| (v.pro_tx_hash, v.into()))
@@ -166,7 +166,7 @@ impl From<&TestQuorumInfo> for QuorumInfoResult {
             ..
         } = value;
         let members = validator_set
-            .into_iter()
+            .iter()
             .map(|validator_in_quorum| {
                 let ValidatorInQuorum {
                     pro_tx_hash,
@@ -174,7 +174,7 @@ impl From<&TestQuorumInfo> for QuorumInfoResult {
                     ..
                 } = validator_in_quorum;
                 QuorumMember {
-                    pro_tx_hash: pro_tx_hash.clone(),
+                    pro_tx_hash: *pro_tx_hash,
                     pub_key_operator: vec![], //doesn't matter
                     valid: true,
                     pub_key_share: Some(public_key.to_bytes().to_vec()),
@@ -184,7 +184,7 @@ impl From<&TestQuorumInfo> for QuorumInfoResult {
         QuorumInfoResult {
             height: 0,
             quorum_type: QuorumType::LlmqDevnetPlatform,
-            quorum_hash: quorum_hash.clone(),
+            quorum_hash: *quorum_hash,
             quorum_index: 0,
             mined_block: vec![],
             members,

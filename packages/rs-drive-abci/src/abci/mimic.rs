@@ -92,7 +92,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             validator_set_update: _,
         } = response_prepare_proposal;
 
-        if expect_validation_errors == false {
+        if !expect_validation_errors {
             if tx_results.len() != tx_records.len() {
                 return Err(Error::Abci(AbciError::GenericWithCode(0)));
             }
@@ -140,10 +140,8 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                         block_info.height, block_info.time_ms, e
                     )
                 });
-            if expect_validation_errors == false {
-                if response_validate_vote_extension.status != VerifyStatus::Accept as i32 {
-                    return Err(Error::Abci(AbciError::GenericWithCode(1)));
-                }
+            if !expect_validation_errors && response_validate_vote_extension.status != VerifyStatus::Accept as i32 {
+                return Err(Error::Abci(AbciError::GenericWithCode(1)));
             }
         }
 
@@ -172,9 +170,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
 
         //todo: tidy up and fix
         let withdrawals = block_execution_context
-            .withdrawal_transactions
-            .iter()
-            .map(|(_tx_id, transaction)| {
+            .withdrawal_transactions.values().map(|transaction| {
                 let AssetUnlockBaseTransactionInfo {
                     version,
                     lock_time,

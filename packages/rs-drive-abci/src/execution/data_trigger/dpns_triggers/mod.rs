@@ -168,7 +168,7 @@ pub fn create_domain_data_trigger<'a>(
             .data_contract
             .document_type_for_name(document_create_transition.base.document_type_name.as_str())?;
         let drive_query = DriveQuery {
-            contract: &context.data_contract,
+            contract: context.data_contract,
             document_type,
             internal_clauses: InternalClauses {
                 primary_key_in_clause: None,
@@ -255,7 +255,7 @@ pub fn create_domain_data_trigger<'a>(
     let document_type = context.data_contract.document_type_for_name("preorder")?;
 
     let drive_query = DriveQuery {
-        contract: &context.data_contract,
+        contract: context.data_contract,
         document_type,
         internal_clauses: InternalClauses {
             primary_key_in_clause: None,

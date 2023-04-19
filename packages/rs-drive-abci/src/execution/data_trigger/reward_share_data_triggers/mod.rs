@@ -104,7 +104,7 @@ pub fn create_masternode_reward_shares_data_trigger<'a>(
         .document_type_for_name(&document_create_transition.base.document_type_name)?;
 
     let drive_query = DriveQuery {
-        contract: &context.data_contract,
+        contract: context.data_contract,
         document_type,
         internal_clauses: InternalClauses {
             primary_key_in_clause: None,
@@ -354,7 +354,7 @@ mod test {
                             owner_id: None,
                         },
                         contract: &document.data_contract,
-                        document_type: &document_type,
+                        document_type,
                     },
                     false,
                     BlockInfo::default(),
@@ -365,7 +365,7 @@ mod test {
         }
 
         let _documents: Vec<Document> = extended_documents
-            .clone()
+            
             .into_iter()
             .map(|dt| dt.document)
             .collect();
@@ -559,7 +559,7 @@ mod test {
             .document_type_for_name(&document_create_transition.base.document_type_name)
             .expect("expected to get document type");
 
-        let mut main_identity = Identity::random_identity(2, Some(1000 as u64));
+        let mut main_identity = Identity::random_identity(2, Some(1000_u64));
         main_identity.id = document_create_transition
             .data
             .get_identifier("payToId")
@@ -575,7 +575,7 @@ mod test {
 
             document.owner_id = top_level_identifier;
 
-            let mut identity = Identity::random_identity(2, Some(100 - i as u64));
+            let mut identity = Identity::random_identity(2, Some(100 - i));
             identity.id = document
                 .properties
                 .get_identifier("payToId")

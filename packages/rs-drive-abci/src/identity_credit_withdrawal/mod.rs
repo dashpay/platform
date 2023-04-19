@@ -323,7 +323,7 @@ where
             data_contract_id.to_buffer(),
             None,
             true,
-            Some(&transaction),
+            Some(transaction),
         )? else {
             return Err(Error::Execution(
                 ExecutionError::CorruptedCodeExecution("can't fetch withdrawal data contract"),
@@ -332,7 +332,7 @@ where
 
         let mut documents = self.drive.fetch_withdrawal_documents_by_status(
             withdrawals_contract::WithdrawalStatus::QUEUED.into(),
-            Some(&transaction),
+            Some(transaction),
         )?;
 
         if documents.is_empty() {
@@ -344,7 +344,7 @@ where
         let withdrawal_transactions = self.build_withdrawal_transactions_from_documents(
             &documents,
             &mut drive_operations,
-            Some(&transaction),
+            Some(transaction),
         )?;
 
         for document in documents.iter_mut() {
@@ -888,7 +888,7 @@ mod tests {
             let guarded_block_execution_context = platform.block_execution_context.write().unwrap();
             let block_execution_context = guarded_block_execution_context.as_ref().unwrap();
             platform
-                .pool_withdrawals_into_transactions_queue(&block_execution_context, &transaction)
+                .pool_withdrawals_into_transactions_queue(block_execution_context, &transaction)
                 .expect("to pool withdrawal documents into transactions");
 
             let updated_documents = platform

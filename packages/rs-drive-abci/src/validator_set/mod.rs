@@ -40,7 +40,7 @@ impl From<ValidatorSet> for tenderdash_abci::proto::abci::ValidatorSetUpdate {
                 continue;
             }
 
-            let pubkey = validator.pub_key_share.map(|k| u8_to_bls12381_pubkey(k));
+            let pubkey = validator.pub_key_share.map(u8_to_bls12381_pubkey);
             let vu = abci::ValidatorUpdate {
                 node_address: Default::default(),
                 power: 100,      // FIXME: double-check
@@ -94,10 +94,10 @@ impl ValidatorSet {
         };
 
         let quorum =
-            Self::choose_random_quorum(config, core_height, &quorum_type, &quorums, &entropy)?;
+            Self::choose_random_quorum(config, core_height, quorum_type, quorums, &entropy)?;
         let quorum_info = client
-            .get_quorum_info(quorum_type.clone().into(), &quorum.quorum_hash, Some(false))
-            .map_err(|e| ValidatorSetError::RpcError(e))?;
+            .get_quorum_info(*quorum_type, &quorum.quorum_hash, Some(false))
+            .map_err(ValidatorSetError::RpcError)?;
 
         Ok(Self { quorum_info })
     }
@@ -127,7 +127,7 @@ impl ValidatorSet {
 
         // First, convert dashcore rpc quorum info into our Quorum struct
         let quorums = quorums_extended_info
-            .into_iter()
+            .iter()
             .map(|(hash, details)| Quorum::new(hash, details, entropy))
             .collect::<Vec<Quorum>>();
 
@@ -136,13 +136,13 @@ impl ValidatorSet {
             .iter()
             .filter(|item| {
                 item.num_valid_members >= min_valid_members
-                    && item.quorum_ttl(core_height, dkg_interval as u32, number_of_quorums)
+                    && item.quorum_ttl(core_height, dkg_interval, number_of_quorums)
                         > min_ttl
             })
             .collect::<Vec<&Quorum>>();
 
         // if there is no "vital" quorums, we choose among others with default min quorum size
-        if filtered_quorums.len() == 0 {
+        if filtered_quorums.is_empty() {
             filtered_quorums = quorums.iter().collect::<Vec<&Quorum>>();
         }
 
@@ -185,7 +185,7 @@ impl Quorum {
         Quorum {
             weight: Self::calculate_weight(quorum_hash, entropy),
 
-            quorum_hash: quorum_hash.clone(),
+            quorum_hash: *quorum_hash,
             creation_height: quorum_details.creation_height,
             // To avoid playing with floats, which don't implement Ord, we just multiply health ratio by 10^6
             health_ratio: (quorum_details.health_ratio * 1000000.0).round() as i32,
@@ -250,9 +250,8 @@ mod tests {
                 quorum_index: Some(i),
             };
 
-            quorums
-                .insert(hash.clone(), details)
-                .map(|v| panic!("duplicate record {:?}={:?}", hash, v));
+            if let Some(v) = quorums
+                .insert(hash, details) { panic!("duplicate record {:?}={:?}", hash, v) }
         }
         quorums
     }
@@ -283,7 +282,7 @@ mod tests {
                     height: CORE_HEIGHT as u64,
                     quorum_type,
                     mined_block: vec![],
-                    quorum_hash: quorum_hash.clone(),
+                    quorum_hash: *quorum_hash,
                     quorum_index: 1,
                     quorum_public_key: vec![],
                     members: vec![],

@@ -59,7 +59,7 @@ pub struct CoreRpcConfig {
 impl CoreRpcConfig {
     /// Return core address in the `host:port` format.
     pub fn url(&self) -> String {
-        return format!("{}:{}", self.host, self.port);
+        format!("{}:{}", self.host, self.port)
     }
 }
 
@@ -91,17 +91,17 @@ pub struct CoreConfig {
 impl CoreConfig {
     /// return dkg_interval
     pub fn dkg_interval(&self) -> u32 {
-        return self
+        self
             .dkg_interval
             .parse::<u32>()
-            .expect("DKG_INTERVAL is not an int");
+            .expect("DKG_INTERVAL is not an int")
     }
     /// Returns minimal number of quorum members
     pub fn min_quorum_valid_members(&self) -> u32 {
-        return self
+        self
             .min_quorum_valid_members
             .parse::<u32>()
-            .expect("MIN_QUORUM_VALID_MEMBERS is not an int");
+            .expect("MIN_QUORUM_VALID_MEMBERS is not an int")
     }
 }
 impl Default for CoreConfig {
@@ -199,7 +199,7 @@ pub trait FromEnv {
     where
         Self: Sized + DeserializeOwned,
     {
-        envy::from_env::<Self>().map_err(|e| Error::from(e))
+        envy::from_env::<Self>().map_err(Error::from)
     }
 }
 

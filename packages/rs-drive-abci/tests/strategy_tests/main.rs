@@ -1131,11 +1131,9 @@ pub(crate) fn run_chain_for_strategy(
         &mut rng,
     );
 
-    let quorums_clone: HashMap<QuorumHash, ExtendedQuorumDetails> = quorums
-        .iter()
-        .map(|(quorum_hash, _)| {
+    let quorums_clone: HashMap<QuorumHash, ExtendedQuorumDetails> = quorums.keys().map(|quorum_hash| {
             (
-                quorum_hash.clone(),
+                *quorum_hash,
                 ExtendedQuorumDetails {
                     creation_height: 0,
                     quorum_index: None,
@@ -1158,7 +1156,7 @@ pub(crate) fn run_chain_for_strategy(
 
     let quorums_info: HashMap<QuorumHash, QuorumInfoResult> = quorums
         .iter()
-        .map(|(quorum_hash, test_quorum_info)| (quorum_hash.clone(), test_quorum_info.into()))
+        .map(|(quorum_hash, test_quorum_info)| (*quorum_hash, test_quorum_info.into()))
         .collect();
 
     platform
@@ -1267,7 +1265,7 @@ pub(crate) fn start_chain_for_strategy(
         .init_chain(init_chain_request, transaction)
         .expect("should init chain");
 
-    platform.create_mn_shares_contract(Some(&transaction));
+    platform.create_mn_shares_contract(Some(transaction));
 
     drop(binding);
 
@@ -1327,7 +1325,7 @@ pub(crate) fn continue_chain_for_strategy(
             upgrading_info.apply_to_proposers(
                 proposers
                     .iter()
-                    .map(|masternode_list_item| masternode_list_item.protx_hash.clone())
+                    .map(|masternode_list_item| masternode_list_item.protx_hash)
                     .collect(),
                 blocks_per_epoch,
                 &mut rng,
@@ -1415,8 +1413,8 @@ pub(crate) fn continue_chain_for_strategy(
         let mut withdrawals_this_block = abci_app
             .mimic_execute_block(
                 proposer.pro_tx_hash.into_inner(),
-                &current_quorum_with_test_info,
-                &next_quorum_with_test_info,
+                current_quorum_with_test_info,
+                next_quorum_with_test_info,
                 proposed_version,
                 proposer_count,
                 block_info,
@@ -1515,7 +1513,7 @@ mod tests {
                 quorum_index: Some(i),
             };
 
-            if let Some(v) = quorums.insert(hash.clone(), details) {
+            if let Some(v) = quorums.insert(hash, details) {
                 panic!("duplicate record {:?}={:?}", hash, v)
             }
         }
@@ -1687,11 +1685,11 @@ mod tests {
                 proposers,
                 quorums,
                 current_quorum_hash,
-                current_proposer_versions: Some(current_proposer_versions.clone()),
+                current_proposer_versions: Some(current_proposer_versions),
                 current_time_ms: end_time_ms,
             },
-            strategy.clone(),
-            config.clone(),
+            strategy,
+            config,
             StrategyRandomness::SeedEntropy(7),
         );
     }

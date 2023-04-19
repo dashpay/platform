@@ -55,12 +55,12 @@ impl StateTransitionValidation for DocumentsBatchTransition {
             .for_each(|document_transition| {
                 let contract_identifier = document_transition.get_data_contract_id();
 
-                match document_transitions_by_contracts.entry(contract_identifier.clone()) {
+                match document_transitions_by_contracts.entry(*contract_identifier) {
                     Entry::Vacant(vacant) => {
-                        vacant.insert(vec![&document_transition]);
+                        vacant.insert(vec![document_transition]);
                     }
                     Entry::Occupied(mut identifiers) => {
-                        identifiers.get_mut().push(&document_transition);
+                        identifiers.get_mut().push(document_transition);
                     }
                 };
             });
@@ -88,7 +88,7 @@ impl StateTransitionValidation for DocumentsBatchTransition {
                 .map(|t| t.to_object().unwrap())
                 .collect();
             let validation_result = validate_document_transitions_basic(
-                &existing_data_contract,
+                existing_data_contract,
                 self.owner_id,
                 transitions_as_objects
                     .iter()
@@ -107,7 +107,7 @@ impl StateTransitionValidation for DocumentsBatchTransition {
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         Ok(
             validate_state_transition_identity_signature(drive, self, false, transaction)?
-                .map(|partial_identity| Some(partial_identity)),
+                .map(Some),
         )
     }
 

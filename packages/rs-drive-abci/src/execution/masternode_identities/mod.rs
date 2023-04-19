@@ -67,13 +67,13 @@ where
 
         //todo: batch updates as well
         for masternode in updated_mns {
-            self.update_owner_identity(&masternode, &block_info, Some(&transaction))?;
-            self.update_voter_identity(&masternode, &block_info, state, Some(&transaction))?;
-            self.update_operator_identity(&masternode, &block_info, state, Some(&transaction))?;
+            self.update_owner_identity(&masternode, block_info, Some(transaction))?;
+            self.update_voter_identity(&masternode, block_info, state, Some(transaction))?;
+            self.update_operator_identity(&masternode, block_info, state, Some(transaction))?;
         }
 
         for masternode in removed_mns {
-            self.disable_identity_keys(&masternode, &block_info, state, Some(&transaction))?;
+            self.disable_identity_keys(&masternode, block_info, state, Some(transaction))?;
         }
 
         Ok(())
@@ -89,7 +89,7 @@ where
             return Ok(());
         }
 
-        let owner_identifier: [u8; 32] = masternode.protx_hash.clone().into_inner();
+        let owner_identifier: [u8; 32] = masternode.protx_hash.into_inner();
         let owner_identity = self
             .drive
             .fetch_full_identity(owner_identifier, transaction)?
@@ -110,7 +110,7 @@ where
             .public_keys
             .iter()
             .filter(|(_, pk)| pk.disabled_at.is_none())
-            .map(|(id, _)| id.clone())
+            .map(|(id, _)| *id)
             .collect::<Vec<KeyID>>();
 
         let new_owner_key = Self::get_owner_identity_key(
@@ -159,7 +159,7 @@ where
             ))
         })?;
 
-        let voter_identifier = Self::get_voter_identifier(&old_masternode)?;
+        let voter_identifier = Self::get_voter_identifier(old_masternode)?;
 
         let voter_identity = self
             .drive
@@ -181,7 +181,7 @@ where
             .public_keys
             .iter()
             .filter(|(_, pk)| pk.disabled_at.is_none())
-            .map(|(id, _)| id.clone())
+            .map(|(id, _)| *id)
             .collect::<Vec<KeyID>>();
 
         // we need to build the new key
@@ -238,7 +238,7 @@ where
                 "expected masternode to be in state".to_string(),
             ))
         })?;
-        let operator_identifier = Self::get_operator_identifier(&old_masternode)?;
+        let operator_identifier = Self::get_operator_identifier(old_masternode)?;
 
         let operator_identity = self
             .drive
@@ -265,7 +265,7 @@ where
                 .public_keys
                 .iter()
                 .filter(|(_, pk)| pk.disabled_at.is_none() && pk.key_type == KeyType::BLS12_381)
-                .map(|(id, _)| id.clone())
+                .map(|(id, _)| *id)
                 .collect::<Vec<KeyID>>();
             keys_to_disable.extend(to_disable);
 
@@ -285,7 +285,7 @@ where
                 disabled_at: None,
             };
             keys_to_create.push(new_key);
-            new_key_id = new_key_id + 1;
+            new_key_id += 1;
         }
 
         if masternode.state_diff.operator_payout_address.is_some() {
@@ -293,7 +293,7 @@ where
                 .public_keys
                 .iter()
                 .filter(|(_, pk)| pk.disabled_at.is_none() && pk.key_type == KeyType::ECDSA_HASH160)
-                .map(|(id, _)| id.clone())
+                .map(|(id, _)| *id)
                 .collect::<Vec<KeyID>>();
             keys_to_disable.extend(to_disable);
 
@@ -317,7 +317,7 @@ where
                 disabled_at: None,
             };
             keys_to_create.push(new_key);
-            new_key_id = new_key_id + 1;
+            new_key_id += 1;
         }
 
         if masternode.state_diff.platform_node_id.is_some() {
@@ -327,7 +327,7 @@ where
                 .filter(|(_, pk)| {
                     pk.disabled_at.is_none() && pk.key_type == KeyType::ECDSA_SECP256K1
                 })
-                .map(|(id, _)| id.clone())
+                .map(|(id, _)| *id)
                 .collect::<Vec<KeyID>>();
             keys_to_disable.extend(to_disable);
 
@@ -352,7 +352,7 @@ where
                 disabled_at: None,
             };
             keys_to_create.push(new_key);
-            new_key_id = new_key_id + 1;
+            new_key_id += 1;
         }
 
         let current_time = Utc::now().timestamp_millis() as TimestampMillis;
@@ -391,9 +391,9 @@ where
             ))
         })?;
 
-        let owner_identifier = Self::get_owner_identifier(&old_masternode)?;
-        let operator_identifier = Self::get_operator_identifier(&old_masternode)?;
-        let voter_identifer = Self::get_voter_identifier(&old_masternode)?;
+        let owner_identifier = Self::get_owner_identifier(old_masternode)?;
+        let operator_identifier = Self::get_operator_identifier(old_masternode)?;
+        let voter_identifer = Self::get_voter_identifier(old_masternode)?;
 
         let owner_identity = self
             .drive
@@ -414,21 +414,21 @@ where
                 .public_keys
                 .iter()
                 .filter(|(_, pk)| pk.disabled_at.is_none())
-                .map(|(id, _)| id.clone()),
+                .map(|(id, _)| *id),
         );
         keys_to_disable.extend(
             operator_identity
                 .public_keys
                 .iter()
                 .filter(|(_, pk)| pk.disabled_at.is_none())
-                .map(|(id, _)| id.clone()),
+                .map(|(id, _)| *id),
         );
         keys_to_disable.extend(
             voter_identity
                 .public_keys
                 .iter()
                 .filter(|(_, pk)| pk.disabled_at.is_none())
-                .map(|(id, _)| id.clone()),
+                .map(|(id, _)| *id),
         );
 
         let current_time = Utc::now().timestamp_millis() as TimestampMillis;
@@ -446,32 +446,32 @@ where
     }
 
     fn create_owner_identity(&self, masternode: &MasternodeListItem) -> Result<Identity, Error> {
-        let owner_identifier = Self::get_owner_identifier(&masternode)?;
+        let owner_identifier = Self::get_owner_identifier(masternode)?;
         let mut identity = Self::create_basic_identity(owner_identifier);
         identity.add_public_keys([Self::get_owner_identity_key(
-            masternode.state.payout_address.clone(),
+            masternode.state.payout_address,
             0,
         )?]);
         Ok(identity)
     }
 
     fn create_voter_identity(&self, masternode: &MasternodeListItem) -> Result<Identity, Error> {
-        let voting_identifier = Self::get_voter_identifier(&masternode)?;
+        let voting_identifier = Self::get_voter_identifier(masternode)?;
         let mut identity = Self::create_basic_identity(voting_identifier);
         identity.add_public_keys([Self::get_voter_identity_key(
-            masternode.state.voting_address.clone(),
+            masternode.state.voting_address,
             0,
         )?]);
         Ok(identity)
     }
 
     fn create_operator_identity(&self, masternode: &MasternodeListItem) -> Result<Identity, Error> {
-        let operator_identifier = Self::get_operator_identifier(&masternode)?;
+        let operator_identifier = Self::get_operator_identifier(masternode)?;
         let mut identity = Self::create_basic_identity(operator_identifier);
         identity.add_public_keys(self.get_operator_identity_keys(
             masternode.state.pub_key_operator.clone(),
-            masternode.state.operator_payout_address.clone(),
-            masternode.state.platform_node_id.clone(),
+            masternode.state.operator_payout_address,
+            masternode.state.platform_node_id,
         )?);
 
         Ok(identity)
@@ -552,7 +552,7 @@ where
     }
 
     fn get_owner_identifier(masternode: &MasternodeListItem) -> Result<[u8; 32], Error> {
-        let masternode_identifier: [u8; 32] = masternode.protx_hash.clone().into_inner();
+        let masternode_identifier: [u8; 32] = masternode.protx_hash.into_inner();
         Ok(masternode_identifier)
     }
 

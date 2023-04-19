@@ -45,7 +45,7 @@ pub fn delete_withdrawal_data_trigger<'a>(
         .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)?;
 
     let drive_query = DriveQuery {
-        contract: &context.data_contract,
+        contract: context.data_contract,
         document_type,
         internal_clauses: InternalClauses {
             primary_key_in_clause: None,
@@ -224,7 +224,7 @@ mod tests {
         let document_transition =
             DocumentTransitionAction::DeleteAction(DocumentDeleteTransitionAction {
                 base: DocumentBaseTransitionAction {
-                    id: document.id.clone(),
+                    id: document.id,
                     ..Default::default()
                 },
             });
@@ -237,7 +237,7 @@ mod tests {
             transaction: None,
         };
         let result = delete_withdrawal_data_trigger(
-            &document_transition.into(),
+            &document_transition,
             &data_trigger_context,
             None,
         )

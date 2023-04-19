@@ -121,7 +121,7 @@ where
         //todo: we need to split out errors
         //  between failed execution and internal errors
         let validation_result =
-            self.validate_fees_of_event(&event, block_info, Some(&transaction))?;
+            self.validate_fees_of_event(&event, block_info, Some(transaction))?;
         match event {
             ExecutionEvent::PaidFromAssetLockDriveEvent {
                 identity,
@@ -142,7 +142,7 @@ where
                         individual_fee_result.into_balance_change(identity.id.to_buffer());
 
                     let outcome = self.drive.apply_balance_change_from_fee_to_identity(
-                        balance_change.clone(),
+                        balance_change,
                         Some(transaction),
                     )?;
 
@@ -240,7 +240,7 @@ where
 
         let last_block_time_ms = state.last_block_time_ms();
         let last_block_height =
-            state.known_height_or((self.config.abci.genesis_height as u64).saturating_sub(1));
+            state.known_height_or(self.config.abci.genesis_height.saturating_sub(1));
         let last_block_core_height =
             state.known_core_height_or(self.config.abci.genesis_core_height);
         let hpmn_list_len = state.hpmn_list_len();
@@ -277,7 +277,7 @@ where
         } = block_proposal;
         // todo: verify that we support the consensus versions
         // We start by getting the epoch we are in
-        let genesis_time_ms = self.get_genesis_time(height, block_time_ms, &transaction)?;
+        let genesis_time_ms = self.get_genesis_time(height, block_time_ms, transaction)?;
 
         let epoch_info =
             EpochInfo::from_genesis_time_and_block_info(genesis_time_ms, &block_state_info)?;
@@ -337,7 +337,7 @@ where
         self.update_broadcasted_withdrawal_transaction_statuses(
             last_synced_core_height,
             &block_execution_context,
-            &transaction,
+            transaction,
         )?;
 
         // This takes withdrawals from the transaction queue
@@ -345,7 +345,7 @@ where
             .fetch_and_prepare_unsigned_withdrawal_transactions(
                 validator_set_quorum_hash,
                 &block_execution_context,
-                &transaction,
+                transaction,
             )?;
 
         // Set the withdrawal transactions
@@ -360,7 +360,7 @@ where
             .collect();
 
         let (block_fees, tx_results) =
-            self.process_raw_state_transitions(&raw_state_transitions, &block_info, transaction)?;
+            self.process_raw_state_transitions(raw_state_transitions, &block_info, transaction)?;
 
         self.pool_withdrawals_into_transactions_queue(&block_execution_context, transaction)?;
 
@@ -422,7 +422,7 @@ where
                 b"saved_quorum_hash",
                 &quorum_hash.into_inner(),
                 None,
-                Some(&transaction),
+                Some(transaction),
             )
             .unwrap()
             .map_err(|e| Error::Drive(GroveDB(e)))?;
@@ -490,7 +490,7 @@ where
         verify_with_validator_public_key: Option<&bls_signatures::PublicKey>,
         quorum_hash: Option<&[u8]>,
     ) -> SimpleValidationResult<AbciError> {
-        if received_withdrawals.ne(&our_withdrawals) {
+        if received_withdrawals.ne(our_withdrawals) {
             return SimpleValidationResult::new_with_error(
                 AbciError::VoteExtensionMismatchReceived {
                     got: received_withdrawals.to_string(),
@@ -519,8 +519,7 @@ where
                         .errors
                         .into_iter()
                         .next()
-                        .expect("expected an error")
-                        .into(),
+                        .expect("expected an error"),
                 )
             }
         } else {
@@ -631,7 +630,7 @@ where
             let quorum_type = self.config.quorum_type();
             let commit = Commit::new_from_cleaned(
                 commit_info.clone(),
-                block_id.clone(),
+                block_id,
                 height,
                 quorum_type,
                 &block_header.chain_id,
@@ -671,7 +670,7 @@ where
         );
 
         // we need to add the block time
-        to_commit_block_info.time_ms = block_header.time.to_milis() as u64;
+        to_commit_block_info.time_ms = block_header.time.to_milis();
 
         to_commit_block_info.core_height = block_header.core_chain_locked_height;
 
@@ -720,11 +719,11 @@ where
         if let Some(block_info) = state_read_guard.last_committed_block_info.as_ref() {
             // We do not put the transaction, because this event happens outside of a block
             execution_event.and_then_borrowed_validation(|execution_event| {
-                self.validate_fees_of_event(&execution_event, block_info, None)
+                self.validate_fees_of_event(execution_event, block_info, None)
             })
         } else {
             execution_event.and_then_borrowed_validation(|execution_event| {
-                self.validate_fees_of_event(&execution_event, &BlockInfo::default(), None)
+                self.validate_fees_of_event(execution_event, &BlockInfo::default(), None)
             })
         }
     }

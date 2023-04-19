@@ -57,7 +57,7 @@ where
         block_time_ms: u64,
         transaction: &Transaction,
     ) -> Result<u64, Error> {
-        if block_height == self.config.abci.genesis_height as u64 {
+        if block_height == self.config.abci.genesis_height {
             // we do not set the genesis time to the cache here,
             // instead that must be done after finalizing the block
             Ok(block_time_ms)
@@ -118,7 +118,7 @@ where
                     self.core_rpc
                         .get_quorum_info(self.config.quorum_type(), key, None)?;
                 let quorum: Quorum = quorum_info_result.try_into()?;
-                Ok((key.clone(), quorum))
+                Ok((*key, quorum))
             })
             .collect::<Result<Vec<_>, Error>>()?;
 
@@ -126,7 +126,7 @@ where
         state.validator_sets.extend(new_quorums.into_iter());
 
         state.quorums_extended_info = quorum_list.quorums_by_type;
-        return Ok(());
+        Ok(())
     }
 
     pub(crate) fn update_state_masternode_list(
@@ -158,7 +158,7 @@ where
         //todo: clean up
         let added_hpmns = added_mns.iter().filter_map(|masternode| {
             if masternode.node_type == MasternodeType::HighPerformance {
-                Some((masternode.protx_hash.clone(), masternode.clone()))
+                Some((masternode.protx_hash, masternode.clone()))
             } else {
                 None
             }
@@ -173,13 +173,13 @@ where
 
         let added_masternodes = added_mns
             .iter()
-            .map(|masternode| (masternode.protx_hash.clone(), masternode.clone()));
+            .map(|masternode| (masternode.protx_hash, masternode.clone()));
 
         state.full_masternode_list.extend(added_masternodes);
 
         let updated_masternodes = updated_mns
             .iter()
-            .map(|masternode| (masternode.protx_hash.clone(), masternode.state_diff.clone()));
+            .map(|masternode| (masternode.protx_hash, masternode.state_diff.clone()));
 
         updated_masternodes.for_each(|(pro_tx_hash, state_diff)| {
             if let Some(masternode_list_item) = state.full_masternode_list.get_mut(&pro_tx_hash) {
@@ -194,8 +194,8 @@ where
         let deleted_masternodes = removed_mns
             .iter()
             .map(|masternode| {
-                let pro_tx_hash = masternode.protx_hash;
-                pro_tx_hash
+                
+                masternode.protx_hash
             })
             .collect::<BTreeSet<ProTxHash>>();
 
@@ -250,9 +250,9 @@ where
 
             self.update_masternode_identities(
                 masternode_list_diff,
-                &block_info,
+                block_info,
                 state,
-                &transaction,
+                transaction,
             )?;
 
             if !deleted_masternodes.is_empty() {
