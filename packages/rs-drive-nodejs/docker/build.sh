@@ -19,8 +19,8 @@ then
     apt install -y gcc-aarch64-linux-gnu libstdc++-11-dev-arm64-cross
 fi
 
-# Required by sccache
-apt install libssl-dev pkg-config
+# sccache requirements
+#apt install libssl-dev pkg-config
 
 ## Update toolchain
 rustup update stable
@@ -36,15 +36,15 @@ chmod 777 -R /github/workspace/target
 curl -fsSL https://deb.nodesource.com/setup_16.x | sudo -E bash -
 apt install -y nodejs
 
-cargo install sccache@0.4.1
+#cargo install sccache@0.4.1
 
 corepack enable
 
 yarn install
 
-SCCACHE_GHA_ENABLED=true \
-RUSTC_WRAPPER=sccache \
-CARGO_INCREMENTAL=false \
+#SCCACHE_GHA_ENABLED=true \
+#RUSTC_WRAPPER=sccache \
+#CARGO_INCREMENTAL=false \
 CARGO_BUILD_TARGET=$target \
 CARGO_BUILD_PROFILE=release \
 ARCH=$arch \
