@@ -119,7 +119,7 @@ class SetupCommand extends BaseCommand {
     });
 
     if (!isVerbose) { // TODO: We need to print it only with default renderer
-      const { begoo } = await import('begoo/index'); // don't remove index!
+      const { begoo } = await import('begoo/index.js'); // don't remove index!
 
       const welcomeText = begoo(
         chalk`Hello! I'm your {bold.cyanBright Dash} mate!
