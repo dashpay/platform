@@ -167,6 +167,7 @@ pub struct PlatformConfig {
 
     // todo: put this in tests like #[cfg(test)]
     /// This should be None, except in the case of Testing platform
+    #[serde(skip)]
     pub testing_configs: PlatformTestConfig,
 }
 

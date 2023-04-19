@@ -129,7 +129,7 @@ where
             block_info,
             true,
             transaction,
-        );
+        )?;
         // add the new key
         self.drive.add_new_non_unique_keys_to_identity(
             owner_identifier,
@@ -137,7 +137,7 @@ where
             block_info,
             true,
             transaction,
-        );
+        )?;
         Ok(())
     }
 
@@ -202,7 +202,7 @@ where
             block_info,
             true,
             transaction,
-        );
+        )?;
         // add the new key
         self.drive.add_new_non_unique_keys_to_identity(
             voter_identifier,
@@ -210,7 +210,7 @@ where
             block_info,
             true,
             transaction,
-        );
+        )?;
         Ok(())
     }
 
