@@ -8,12 +8,7 @@
 
 ### Bug Fixes
 
-* **dashamte:** Can't find begoo/index with `yarn dashmate setup` ([#933](https://github.com/dashpay/platform/issues/933))
-
-
-### Documentation
-
-* update changelog
+* **dashamte:** сan't find begoo/index with `yarn dashmate setup` ([#933](https://github.com/dashpay/platform/issues/933))
 
 
 ### Miscellaneous Chores
@@ -23,19 +18,14 @@
 
 ### Continuous Integration
 
-* disable sccache
-* disable sccache
-* even more fixes to release workflow
 * fix release workflow
-* fix release workflow once again
-* fix the release jobs flow
-* more fixes to release workflow
 
 
 ### Build System
 
 * **dashamte:** remove deb release docker dependencies ([#934](https://github.com/dashpay/platform/issues/934))
 * **dashmate:** build only linux tarballs ([#936](https://github.com/dashpay/platform/issues/936))
+
 
 ## [0.24.0-dev.20](https://github.com/dashpay/platform/compare/v0.24.0-dev.19...v0.24.0-dev.20) (2023-04-18)
 
