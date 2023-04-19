@@ -91,15 +91,13 @@ pub struct CoreConfig {
 impl CoreConfig {
     /// return dkg_interval
     pub fn dkg_interval(&self) -> u32 {
-        self
-            .dkg_interval
+        self.dkg_interval
             .parse::<u32>()
             .expect("DKG_INTERVAL is not an int")
     }
     /// Returns minimal number of quorum members
     pub fn min_quorum_valid_members(&self) -> u32 {
-        self
-            .min_quorum_valid_members
+        self.min_quorum_valid_members
             .parse::<u32>()
             .expect("MIN_QUORUM_VALID_MEMBERS is not an int")
     }
@@ -270,7 +268,7 @@ mod tests {
         assert_eq!("5", env::var("QUORUM_SIZE").unwrap());
 
         let config = super::PlatformConfig::from_env().unwrap();
-        assert_eq!(config.verify_sum_trees, true);
+        assert!(config.verify_sum_trees);
         assert_ne!(config.quorum_type(), QuorumType::UNKNOWN);
     }
 }

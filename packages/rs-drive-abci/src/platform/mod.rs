@@ -42,8 +42,6 @@ use drive::drive::defaults::PROTOCOL_VERSION;
 use std::path::Path;
 use std::sync::RwLock;
 
-
-
 use crate::rpc::core::MockCoreRPCLike;
 use dashcore::hashes::hex::FromHex;
 use dashcore::hashes::Hash;

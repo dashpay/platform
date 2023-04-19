@@ -52,7 +52,9 @@ pub fn validate_state_transition_identity_signature(
     let mut validation_result = ConsensusValidationResult::<PartialIdentity>::default();
 
     let key_id = state_transition.get_signature_public_key_id().ok_or(
-        ProtocolError::CorruptedCodeExecution("state_transition does not have a public key Id to verify".to_string()),
+        ProtocolError::CorruptedCodeExecution(
+            "state_transition does not have a public key Id to verify".to_string(),
+        ),
     )?;
 
     let key_request = IdentityKeysRequest::new_specific_key_query(

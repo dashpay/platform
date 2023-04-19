@@ -68,7 +68,6 @@ use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::drive::defaults::PROTOCOL_VERSION;
 use drive::drive::flags::StorageFlags::SingleEpoch;
 
-
 use crate::FinalizeBlockOperation::IdentityAddKeys;
 use dashcore::hashes::hex::ToHex;
 use dashcore::hashes::Hash;
@@ -76,8 +75,8 @@ use dashcore::secp256k1::SecretKey;
 
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::document_type::random_document_type::RandomDocumentTypeParameters;
+use dpp::data_contract::generate_data_contract_id;
 use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::data_contract::{generate_data_contract_id};
 use dpp::ed25519_dalek::Signer as EddsaSigner;
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::state_transition::identity_credit_withdrawal_transition::{
@@ -106,7 +105,7 @@ use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::net::{SocketAddr};
+use std::net::SocketAddr;
 use std::ops::Range;
 use std::str::FromStr;
 use tenderdash_abci::proto::abci::ValidatorSetUpdate;
@@ -1131,7 +1130,9 @@ pub(crate) fn run_chain_for_strategy(
         &mut rng,
     );
 
-    let quorums_clone: HashMap<QuorumHash, ExtendedQuorumDetails> = quorums.keys().map(|quorum_hash| {
+    let quorums_clone: HashMap<QuorumHash, ExtendedQuorumDetails> = quorums
+        .keys()
+        .map(|quorum_hash| {
             (
                 *quorum_hash,
                 ExtendedQuorumDetails {

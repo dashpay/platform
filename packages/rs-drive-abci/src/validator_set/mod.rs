@@ -136,8 +136,7 @@ impl ValidatorSet {
             .iter()
             .filter(|item| {
                 item.num_valid_members >= min_valid_members
-                    && item.quorum_ttl(core_height, dkg_interval, number_of_quorums)
-                        > min_ttl
+                    && item.quorum_ttl(core_height, dkg_interval, number_of_quorums) > min_ttl
             })
             .collect::<Vec<&Quorum>>();
 
@@ -250,8 +249,9 @@ mod tests {
                 quorum_index: Some(i),
             };
 
-            if let Some(v) = quorums
-                .insert(hash, details) { panic!("duplicate record {:?}={:?}", hash, v) }
+            if let Some(v) = quorums.insert(hash, details) {
+                panic!("duplicate record {:?}={:?}", hash, v)
+            }
         }
         quorums
     }

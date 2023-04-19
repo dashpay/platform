@@ -1,7 +1,5 @@
 use dpp::data_contract::DriveContractExt;
-use dpp::document::document_transition::{
-    DocumentTransitionAction,
-};
+use dpp::document::document_transition::DocumentTransitionAction;
 
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::{Identifier, Value};
@@ -174,7 +172,7 @@ pub fn create_masternode_reward_shares_data_trigger<'a>(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::platform::{PlatformStateRef};
+    use crate::platform::PlatformStateRef;
     use crate::state::PlatformState;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dashcore::hashes::Hash;
@@ -186,14 +184,14 @@ mod test {
     use dpp::document::document_transition::{Action, DocumentCreateTransitionAction};
     use dpp::document::{Document, ExtendedDocument};
     use dpp::identity::Identity;
-    
+
     use dpp::platform_value::Value;
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use dpp::tests::fixtures::{
         get_document_transitions_fixture, get_masternode_reward_shares_documents_fixture,
     };
     use dpp::tests::utils::generate_random_identifier_struct;
-    
+
     use dpp::DataTriggerActionError;
     use drive::drive::object_size_info::DocumentInfo::{
         DocumentRefWithoutSerialization, DocumentWithoutSerialization,
@@ -230,7 +228,7 @@ mod test {
                 owner_address: [1;20],
                 voting_address: [2;20],
                 payout_address: [3;20],
-                pub_key_operator: hex::decode("987a4873caba62cd45a2f7d4aa6d94519ee6753e9bef777c927cb94ade768a542b0ff34a93231d3a92b4e75ffdaa366e").expect("expected to decode collateral hash").try_into().expect("expected 48 bytes"),
+                pub_key_operator: hex::decode("987a4873caba62cd45a2f7d4aa6d94519ee6753e9bef777c927cb94ade768a542b0ff34a93231d3a92b4e75ffdaa366e").expect("expected to decode collateral hash"),
                 operator_payout_address: None,
                 platform_node_id: None,
             },
@@ -258,7 +256,7 @@ mod test {
                 owner_address: [1;20],
                 voting_address: [2;20],
                 payout_address: [3;20],
-                pub_key_operator: hex::decode("a87a4873caba62cd45a2f7d4aa6d94519ee6753e9bef777c927cb94ade768a542b0ff34a93231d3a92b4e75ffdaa366e").expect("expected to decode collateral hash").try_into().expect("expected 48 bytes"),
+                pub_key_operator: hex::decode("a87a4873caba62cd45a2f7d4aa6d94519ee6753e9bef777c927cb94ade768a542b0ff34a93231d3a92b4e75ffdaa366e").expect("expected to decode collateral hash"),
                 operator_payout_address: None,
                 platform_node_id: None,
             },
@@ -365,7 +363,6 @@ mod test {
         }
 
         let _documents: Vec<Document> = extended_documents
-            
             .into_iter()
             .map(|dt| dt.document)
             .collect();
@@ -452,7 +449,7 @@ mod test {
         let mut state_write_guard = platform.state.write().unwrap();
         let TestData {
             document_create_transition,
-            
+
             data_contract,
             ..
         } = setup_test(&mut state_write_guard);

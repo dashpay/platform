@@ -18,7 +18,7 @@ use dpp::identity::{
 };
 use dpp::platform_value::BinaryData;
 use drive::drive::batch::DriveOperation::IdentityOperation;
-use drive::drive::batch::IdentityOperationType::{AddNewIdentity};
+use drive::drive::batch::IdentityOperationType::AddNewIdentity;
 use drive::grovedb::Transaction;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet};

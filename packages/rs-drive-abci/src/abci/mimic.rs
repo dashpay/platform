@@ -1,4 +1,3 @@
-
 use crate::abci::server::AbciApplication;
 use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
@@ -140,7 +139,9 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                         block_info.height, block_info.time_ms, e
                     )
                 });
-            if !expect_validation_errors && response_validate_vote_extension.status != VerifyStatus::Accept as i32 {
+            if !expect_validation_errors
+                && response_validate_vote_extension.status != VerifyStatus::Accept as i32
+            {
                 return Err(Error::Abci(AbciError::GenericWithCode(1)));
             }
         }
@@ -170,7 +171,9 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
 
         //todo: tidy up and fix
         let withdrawals = block_execution_context
-            .withdrawal_transactions.values().map(|transaction| {
+            .withdrawal_transactions
+            .values()
+            .map(|transaction| {
                 let AssetUnlockBaseTransactionInfo {
                     version,
                     lock_time,

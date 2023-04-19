@@ -258,9 +258,8 @@ mod test {
             r#type: VoteExtensionType::ThresholdRecover.into(),
         });
 
-        assert_eq!(
-            true,
-            wt.verify_signatures(
+        assert!(wt
+            .verify_signatures(
                 CHAIN_ID,
                 QuorumType::LlmqTest,
                 &quorum_hash,
@@ -268,14 +267,12 @@ mod test {
                 ROUND,
                 &pubkey
             )
-            .is_valid()
-        );
+            .is_valid());
 
         // Now break the data
         wt.inner[0].extension[3] = 0;
-        assert_eq!(
-            false,
-            wt.verify_signatures(
+        assert!(!wt
+            .verify_signatures(
                 CHAIN_ID,
                 QuorumType::LlmqTest,
                 &quorum_hash,
@@ -283,7 +280,6 @@ mod test {
                 ROUND,
                 &pubkey
             )
-            .is_valid()
-        );
+            .is_valid());
     }
 }

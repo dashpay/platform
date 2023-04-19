@@ -4,7 +4,7 @@ mod tests {
         continue_chain_for_strategy, run_chain_for_strategy, ChainExecutionOutcome,
         ChainExecutionParameters, Frequency, Strategy, StrategyRandomness, UpgradingInfo,
     };
-    
+
     use tenderdash_abci::proto::types::CoreChainLock;
 
     use drive_abci::config::{PlatformConfig, PlatformTestConfig};

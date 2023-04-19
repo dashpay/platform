@@ -236,12 +236,9 @@ mod tests {
             state_transition_execution_context: &transition_execution_context,
             transaction: None,
         };
-        let result = delete_withdrawal_data_trigger(
-            &document_transition,
-            &data_trigger_context,
-            None,
-        )
-        .expect("the execution result should be returned");
+        let result =
+            delete_withdrawal_data_trigger(&document_transition, &data_trigger_context, None)
+                .expect("the execution result should be returned");
 
         assert!(!result.is_valid());
 

@@ -193,10 +193,7 @@ where
 
         let deleted_masternodes = removed_mns
             .iter()
-            .map(|masternode| {
-                
-                masternode.protx_hash
-            })
+            .map(|masternode| masternode.protx_hash)
             .collect::<BTreeSet<ProTxHash>>();
 
         state
