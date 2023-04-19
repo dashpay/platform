@@ -19,6 +19,9 @@ then
     apt install -y gcc-aarch64-linux-gnu libstdc++-11-dev-arm64-cross
 fi
 
+# Required by sccache
+apt install libssl-dev
+
 ## Update toolchain
 rustup update stable
 
