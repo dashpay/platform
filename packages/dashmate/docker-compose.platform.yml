@@ -7,11 +7,10 @@ services:
     depends_on:
       - core
     volumes:
-      - drive_abci_data:/var/lib/platform/rs-drive-abci/db
-      - ${PLATFORM_DRIVE_ABCI_LOG_PRETTY_DIRECTORY_PATH:?err}:/var/log/pretty
-      - ${PLATFORM_DRIVE_ABCI_LOG_JSON_DIRECTORY_PATH:?err}:/var/log/json
+      - drive_abci_data:/var/lib/platform/rs-drive-abci
     environment:
-      - DB_PATH=/var/lib/platform/rs-drive-abci/db
+      - BLOCK_SPACING_MS=3000 # TODO: sync with tenderdash
+      - CHAIN_ID=devnet # TODO: sync with tenderdash chain id
       - CORE_JSON_RPC_USERNAME=${CORE_RPC_USER:?err}
       - CORE_JSON_RPC_PASSWORD=${CORE_RPC_PASSWORD:?err}
       - CORE_JSON_RPC_HOST=core
@@ -28,17 +27,10 @@ services:
       - MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY=${PLATFORM_MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY}
       - WITHDRAWALS_MASTER_PUBLIC_KEY=${PLATFORM_WITHDRAWALS_MASTER_PUBLIC_KEY}
       - WITHDRAWALS_SECOND_PUBLIC_KEY=${PLATFORM_WITHDRAWALS_SECOND_PUBLIC_KEY}
-      - NODE_ENV=${ENVIRONMENT:?err}
-      - LOG_STDOUT_LEVEL=${PLATFORM_DRIVE_ABCI_LOG_STDOUT_LEVEL:?err}
-      - LOG_PRETTY_FILE_LEVEL=${PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_LEVEL:?err}
-      - LOG_PRETTY_FILE_PATH=/var/log/pretty/${PLATFORM_DRIVE_ABCI_LOG_PRETTY_FILE_NAME:?err}
-      - LOG_JSON_FILE_LEVEL=${PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_LEVEL:?err}
-      - LOG_JSON_FILE_PATH=/var/log/json/${PLATFORM_DRIVE_ABCI_LOG_JSON_FILE_NAME:?err}
-      - INITIAL_CORE_CHAINLOCKED_HEIGHT=${PLATFORM_DRIVE_TENDERDASH_GENESIS_INITIAL_CORE_CHAIN_LOCKED_HEIGHT:-1}
-      - VALIDATOR_SET_LLMQ_TYPE=${PLATFORM_DRIVE_ABCI_VALIDATOR_SET_LLMQ_TYPE:?err}
+      - QUORUM_SIZE=5 # TODO: sync with Tenderdash
+      - QUORUM_TYPE=${PLATFORM_DRIVE_ABCI_VALIDATOR_SET_LLMQ_TYPE:?err}
       - NETWORK=${NETWORK}
       - TENDERDASH_P2P_PORT=${PLATFORM_DRIVE_TENDERDASH_P2P_PORT}
-    command: yarn workspace @dashevo/drive abci
     stop_grace_period: 30s
 
   drive_tenderdash:
