@@ -59,7 +59,7 @@ pub fn delete_withdrawal_data_trigger<'a>(
             equal_clauses: BTreeMap::default(),
         },
         offset: 0,
-        limit: 0,
+        limit: 100,
         order_by: Default::default(),
         start_at: None,
         start_at_included: false,
@@ -116,6 +116,9 @@ mod tests {
     use super::*;
     use crate::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::document::document_transition::{
+        DocumentBaseTransitionAction, DocumentDeleteTransitionAction,
+    };
     use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
     use dpp::platform_value::{platform_value, Bytes20};
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
@@ -218,7 +221,14 @@ mod tests {
             )
             .expect("expected to insert a document successfully");
 
-        let document_transition = DocumentTransitionAction::DeleteAction(Default::default());
+        let document_transition =
+            DocumentTransitionAction::DeleteAction(DocumentDeleteTransitionAction {
+                base: DocumentBaseTransitionAction {
+                    id: document.id.clone(),
+                    ..Default::default()
+                },
+            });
+
         let data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
             data_contract: &data_contract,
