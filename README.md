@@ -52,6 +52,14 @@ this repository may be used on the following networks:
 - Install prerequisites:
   - [node.js](https://nodejs.org/) v16
   - [docker](https://docs.docker.com/get-docker/) v20.10+
+  - [rust](https://www.rust-lang.org/tools/install) v1.67+
+  - WASM toolchain:
+    - `clang`
+    - `llvm` (Usually pre-installed with clang)
+      - IMPORTANT: built-in llvm on OSX does not work, needs to be installed from brew `brew install llvm` 
+    - `cargo install wasm-bindgen-cli` 
+      - _Depending on system, additional packages may need to be installed as a prerequisite for wasm-bindgen-cli. If anything is missing, installation will error and prompt what packages are missing (i.e. clang, libssl-dev)_
+    - `rustup target add wasm32-unknown-unknown`
 - Run `corepack enable` to enable [corepack](https://nodejs.org/dist/latest/docs/api/corepack.html) and install yarn
 - Run `yarn setup` to install dependencies and configure and build all packages
 - Run `yarn start` to start the local dev environment built from the sources
