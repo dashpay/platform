@@ -25,6 +25,7 @@ class SetupCommand extends BaseCommand {
    * @param {ConfigFile} configFile
    * @param {setupLocalPresetTask} setupLocalPresetTask
    * @param {setupRegularPresetTask} setupRegularPresetTask
+   * @param {DockerCompose} dockerCompose
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -40,12 +41,17 @@ class SetupCommand extends BaseCommand {
     configFile,
     setupLocalPresetTask,
     setupRegularPresetTask,
+    dockerCompose,
   ) {
     if (nodeCount !== null && (nodeCount < 3)) {
       throw new Error('node-count flag should be not less than 3');
     }
 
     const tasks = new Listr([
+      {
+        title: 'Check system requirements',
+        task: async () => dockerCompose.throwErrorIfNotInstalled(),
+      },
       {
         title: 'Configuration preset',
         task: async (ctx, task) => {

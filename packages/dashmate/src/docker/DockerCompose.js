@@ -351,7 +351,6 @@ class DockerCompose {
   }
 
   /**
-   * @private
    * @return {Promise<void>}
    */
   async throwErrorIfNotInstalled() {
