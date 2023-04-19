@@ -1682,7 +1682,7 @@ mod tests {
             abci_app,
             ChainExecutionParameters {
                 block_start,
-                core_height_start: 0,
+                core_height_start: 1,
                 block_count: 30,
                 proposers,
                 quorums,

@@ -447,6 +447,29 @@ where
 
         *state_cache = block_execution_context.block_platform_state;
 
+        // Determine a new protocol version if enough proposers voted
+        if block_execution_context
+            .epoch_info
+            .is_epoch_change_but_not_genesis()
+        {
+            // Set current protocol version to the version from upcoming epoch
+            state_cache.current_protocol_version_in_consensus =
+                state_cache.next_epoch_protocol_version;
+
+            // Determine new protocol version based on votes for the next epoch
+            let maybe_new_protocol_version = self.check_for_desired_protocol_upgrade(
+                block_execution_context.hpmn_count,
+                &state_cache,
+                transaction,
+            )?;
+            if let Some(new_protocol_version) = maybe_new_protocol_version {
+                state_cache.next_epoch_protocol_version = new_protocol_version;
+            } else {
+                state_cache.next_epoch_protocol_version =
+                    state_cache.current_protocol_version_in_consensus;
+            }
+        }
+
         state_cache.current_validator_set_quorum_hash = updated_validator_hash;
 
         state_cache.last_committed_block_info = Some(block_info.clone());
@@ -541,9 +564,8 @@ where
         let BlockExecutionContext {
             block_state_info,
             epoch_info,
-            hpmn_count,
-            withdrawal_transactions,
             block_platform_state,
+            ..
         } = &block_execution_context;
 
         // Let's decompose the request
@@ -584,11 +606,14 @@ where
             return Ok(validation_result.into());
         }
 
-        let mut state = self.state.write().unwrap();
-        if state.current_validator_set_quorum_hash.as_inner() != &commit_info.quorum_hash {
+        if block_platform_state
+            .current_validator_set_quorum_hash
+            .as_inner()
+            != &commit_info.quorum_hash
+        {
             validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
                 "received a block for h: {} r: {} with validator set quorum hash {} expected current validator set quorum hash is {}",
-                height, round, hex::encode(commit_info.quorum_hash), hex::encode(state.current_validator_set_quorum_hash)
+                height, round, hex::encode(commit_info.quorum_hash), hex::encode(block_platform_state.current_validator_set_quorum_hash)
             )));
             return Ok(validation_result.into());
         }
@@ -639,28 +664,6 @@ where
         if height == self.config.abci.genesis_height {
             self.drive.set_genesis_time(block_state_info.block_time_ms);
         }
-
-        // Determine a new protocol version if enough proposers voted
-        let changed_protocol_version = if epoch_info.is_epoch_change_but_not_genesis() {
-            // Set current protocol version to the version from upcoming epoch
-            state.current_protocol_version_in_consensus = state.next_epoch_protocol_version;
-
-            // Determine new protocol version based on votes for the next epoch
-            let maybe_new_protocol_version =
-                self.check_for_desired_protocol_upgrade(*hpmn_count, &state, transaction)?;
-            if let Some(new_protocol_version) = maybe_new_protocol_version {
-                state.next_epoch_protocol_version = new_protocol_version;
-            } else {
-                state.next_epoch_protocol_version = state.current_protocol_version_in_consensus;
-            }
-
-            let current_protocol_version_in_consensus = state.current_protocol_version_in_consensus;
-
-            Some(current_protocol_version_in_consensus)
-        } else {
-            None
-        };
-        drop(state);
 
         let mut to_commit_block_info: BlockInfo = block_state_info.to_block_info(
             Epoch::new(epoch_info.current_epoch_index)
