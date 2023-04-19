@@ -39,6 +39,9 @@ corepack enable
 
 yarn install
 
+SCCACHE_GHA_ENABLED=true \
+RUSTC_WRAPPER=sccache \
+CARGO_INCREMENTAL=false \
 CARGO_BUILD_TARGET=$target \
 CARGO_BUILD_PROFILE=release \
 ARCH=$arch \

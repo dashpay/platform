@@ -789,10 +789,6 @@ jobs:
             platform: apple-darwin
 
     runs-on: ${{ matrix.os }}
-    env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
-      CARGO_INCREMENTAL: "false"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -843,6 +839,7 @@ jobs:
           target: ${{ steps.set-target.outputs.result }}
 
       - name: Setup Cargo cache
+        if: ${{ runner.os == 'macOS' }}
         uses: Swatinem/rust-cache@v2
         with:
           # Don't cache ./target, as it takes tons of space, use sccache instead.
@@ -894,6 +891,9 @@ jobs:
           ARCH: ${{ matrix.node_arch }} # Overwrite current arch with target one
           CARGO_BUILD_TARGET: ${{ steps.set-target.outputs.result }}
           CARGO_BUILD_PROFILE: release
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
+          CARGO_INCREMENTAL: "false"
 
       - name: Upload prebuild artifacts
         uses: actions/upload-artifact@v3
