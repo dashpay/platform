@@ -77,7 +77,7 @@ RUN curl -Ls \
 #
 FROM deps as build
 
-WORKDIR /usr/src/platform
+WORKDIR /usr/src/dash-platform
 
 COPY . .
 
@@ -123,7 +123,7 @@ RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
     cargo build \
         --package drive-abci \
         --config net.git-fetch-with-cli=true && \
-    cp /usr/src/platform/target/*/drive-abci /usr/src/platform/drive-abci && \
+    cp /usr/src/dash-platform/target/*/drive-abci /usr/src/dash-platform/drive-abci && \
     cargo clean && \
     sccache --show-stats
 
@@ -135,19 +135,16 @@ FROM alpine:${ALPINE_VERSION} AS release
 LABEL maintainer="Dash Developers <dev@dash.org>"
 LABEL description="Drive ABCI Rust"
 
-VOLUME /var/lib/platform
-
-ENV DB_PATH=/var/lib/platform/rs-drive-abci/db
 
 #
 # Install binaries and data
 #
-WORKDIR /var/lib/platform
+WORKDIR /var/lib/dash
 
 RUN apk add --no-cache libgcc libstdc++
 
-COPY --from=build /usr/src/platform/drive-abci /usr/bin/drive-abci
-COPY --from=build /usr/src/platform/packages/rs-drive-abci/.env.example /var/lib/platform/rs-drive-abci/.env
+COPY --from=build /usr/src/dash-platform/drive-abci /usr/bin/drive-abci
+COPY --from=build /usr/src/dash-platform/packages/rs-drive-abci/.env.example /var/lib/dash/rs-drive-abci/.env
 
 # Double-check that we don't have missing deps
 RUN ldd /usr/bin/drive-abci
@@ -231,19 +228,24 @@ ENV BLOCK_SPACING_MS=3000
 # END OF CONFIGURATION
 #
 
+# Create a volume
+VOLUME /var/lib/dash
+
+ENV DB_PATH=/var/lib/dash/rs-drive-abci/db
+
 #
 # Create new non-root user
 #
-ARG USERNAME=platform
+ARG USERNAME=dash
 ARG USER_UID=1000
 ARG USER_GID=$USER_UID
 RUN addgroup -g $USER_GID $USERNAME && \
-    adduser -D -u $USER_UID -G $USERNAME -h /var/lib/platform/rs-drive-abci $USERNAME && \
-    chown -R $USER_UID:$USER_GID /var/lib/platform/rs-drive-abci 
+    adduser -D -u $USER_UID -G $USERNAME -h /var/lib/dash/rs-drive-abci $USERNAME && \
+    chown -R $USER_UID:$USER_GID /var/lib/dash/rs-drive-abci 
 
 USER $USERNAME
 
-WORKDIR /var/lib/platform/rs-drive-abci
+WORKDIR /var/lib/dash/rs-drive-abci
 ENTRYPOINT ["/usr/bin/drive-abci"]
 CMD ["-vv", "start"]
 
