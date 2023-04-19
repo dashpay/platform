@@ -11,6 +11,7 @@ on:
     paths:
       - .github/workflows/rs-drive-abci.yml
       - .github/workflows/rs-checks.yml
+      - .github/actions/**
       - packages/feature-flags-contract/**
       - packages/dpns-contract/**
       - packages/dashpay-contract/**

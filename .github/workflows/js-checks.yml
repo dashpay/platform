@@ -121,7 +121,6 @@ jobs:
       - name: Create necessary dotenv files
         run: |
           cp packages/dapi/.env.example packages/dapi/.env
-          cp packages/js-drive/.env.example packages/js-drive/.env
         if: ${{ !inputs.start-local-network }}
 
       - name: Set up Docker BuildX
