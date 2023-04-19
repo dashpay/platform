@@ -1,3 +1,42 @@
+## [0.24.0-dev.21](https://github.com/dashpay/platform/compare/v0.24.0-dev.20...v0.24.0-dev.21) (2023-04-19)
+
+
+### Features
+
+* **dashmate:** check system requirements before setup ([#935](https://github.com/dashpay/platform/issues/935))
+
+
+### Bug Fixes
+
+* **dashamte:** Can't find begoo/index with `yarn dashmate setup` ([#933](https://github.com/dashpay/platform/issues/933))
+
+
+### Documentation
+
+* update changelog
+
+
+### Miscellaneous Chores
+
+* **dashamte:** remove deprecation warning on start ([#925](https://github.com/dashpay/platform/issues/925))
+
+
+### Continuous Integration
+
+* disable sccache
+* disable sccache
+* even more fixes to release workflow
+* fix release workflow
+* fix release workflow once again
+* fix the release jobs flow
+* more fixes to release workflow
+
+
+### Build System
+
+* **dashamte:** remove deb release docker dependencies ([#934](https://github.com/dashpay/platform/issues/934))
+* **dashmate:** build only linux tarballs ([#936](https://github.com/dashpay/platform/issues/936))
+
 ## [0.24.0-dev.20](https://github.com/dashpay/platform/compare/v0.24.0-dev.19...v0.24.0-dev.20) (2023-04-18)
 
 
