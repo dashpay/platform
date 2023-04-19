@@ -20,7 +20,7 @@ then
 fi
 
 # Required by sccache
-apt install libssl-dev
+apt install libssl-dev pkg-config
 
 ## Update toolchain
 rustup update stable
