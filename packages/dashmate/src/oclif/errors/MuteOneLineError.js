@@ -9,7 +9,7 @@ class MuteOneLineError extends AbstractError {
   constructor(error) {
     super('SIGINT');
 
-    if (settings.debug || (error.message && error.message.trimEnd().includes('\n'))) {
+    if (settings.debug) {
       this.name = error.name;
       this.message = error.message;
       this.stack = error.stack;
