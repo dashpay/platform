@@ -53,10 +53,11 @@ this repository may be used on the following networks:
   - [node.js](https://nodejs.org/) v16
   - [docker](https://docs.docker.com/get-docker/) v20.10+
   - [rust](https://www.rust-lang.org/tools/install) v1.67+
-  - WASM toolchain:
+  - [wasm-bingen toolchain](https://rustwasm.github.io/wasm-bindgen/):
     - `clang`
+      - _IMPORTANT: built-in `clang` on OSX does not work, needs to be installed from brew `brew install clang`_ 
     - `llvm` (Usually pre-installed with clang)
-      - IMPORTANT: built-in llvm on OSX does not work, needs to be installed from brew `brew install llvm` 
+      - _IMPORTANT: built-in `llvm` on OSX does not work, needs to be installed from brew `brew install llvm`_
     - `cargo install wasm-bindgen-cli` 
       - _Depending on system, additional packages may need to be installed as a prerequisite for wasm-bindgen-cli. If anything is missing, installation will error and prompt what packages are missing (i.e. clang, libssl-dev)_
     - `rustup target add wasm32-unknown-unknown`
