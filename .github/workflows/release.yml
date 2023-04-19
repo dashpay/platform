@@ -19,8 +19,7 @@ jobs:
     name: Release NPM packages
     runs-on: self-hosted
     if: github.event_name != 'workflow_dispatch'
-    needs:
-      - build-rs-drive-nodejs
+    needs: build-rs-drive-nodejs
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
