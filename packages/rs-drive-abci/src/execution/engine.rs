@@ -297,6 +297,7 @@ where
         self.update_masternode_list(
             &mut block_platform_state,
             block_proposal.core_chain_locked_height,
+            false,
             &block_info,
             transaction,
         )?;
@@ -661,13 +662,15 @@ where
         };
         drop(state);
 
-        let mut to_commit_block_info = block_state_info.to_block_info(
+        let mut to_commit_block_info: BlockInfo = block_state_info.to_block_info(
             Epoch::new(epoch_info.current_epoch_index)
                 .expect("current epoch info should be in range"),
         );
 
         // we need to add the block time
         to_commit_block_info.time_ms = block_header.time.to_milis() as u64;
+
+        to_commit_block_info.core_height = block_header.core_chain_locked_height;
 
         // // Finalize withdrawal processing
         // our_withdrawals.finalize(Some(transaction), &self.drive, &to_commit_block_info)?;

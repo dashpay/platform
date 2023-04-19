@@ -129,8 +129,6 @@ where
         return Ok(());
     }
 
-    // TODO: re-enable
-
     pub(crate) fn update_state_masternode_list(
         &self,
         state: &mut PlatformState,
@@ -235,34 +233,34 @@ where
         &self,
         state: &mut PlatformState,
         core_block_height: u32,
+        is_init_chain: bool,
         block_info: &BlockInfo,
         transaction: &Transaction,
     ) -> Result<(), Error> {
-        let previous_core_height = state.core_height();
-        if core_block_height == previous_core_height {
-            return Ok(()); // no need to do anything
+        if let Some(last_commited_block_info) = state.last_committed_block_info.as_ref() {
+            if core_block_height == last_commited_block_info.core_height {
+                return Ok(()); // no need to do anything
+            }
         }
+        if state.last_committed_block_info.is_some() || is_init_chain {
+            let UpdateStateMasternodeListOutcome {
+                masternode_list_diff,
+                deleted_masternodes,
+            } = self.update_state_masternode_list(state, core_block_height, false)?;
 
-        let UpdateStateMasternodeListOutcome {
-            masternode_list_diff,
-            deleted_masternodes,
-        } = self.update_state_masternode_list(state, core_block_height, false)?;
-
-        //Todo: masternode identities
-        self.update_masternode_identities(
-            previous_core_height,
-            core_block_height,
-            masternode_list_diff,
-            &block_info,
-            state,
-            &transaction,
-        )?;
-
-        if !deleted_masternodes.is_empty() {
-            self.drive.remove_validators_proposed_app_versions(
-                deleted_masternodes.into_iter().map(|a| a.into_inner()),
-                Some(transaction),
+            self.update_masternode_identities(
+                masternode_list_diff,
+                &block_info,
+                state,
+                &transaction,
             )?;
+
+            if !deleted_masternodes.is_empty() {
+                self.drive.remove_validators_proposed_app_versions(
+                    deleted_masternodes.into_iter().map(|a| a.into_inner()),
+                    Some(transaction),
+                )?;
+            }
         }
 
         Ok(())

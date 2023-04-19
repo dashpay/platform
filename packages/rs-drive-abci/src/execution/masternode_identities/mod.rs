@@ -30,58 +30,50 @@ where
     /// Update of the masternode identities
     pub fn update_masternode_identities(
         &self,
-        previous_core_height: u32,
-        current_core_height: u32,
         masternode_diff: MasternodeListDiffWithMasternodes,
         block_info: &BlockInfo,
         state: &PlatformState,
         transaction: &Transaction,
     ) -> Result<(), Error> {
-        if previous_core_height != current_core_height {
-            let MasternodeListDiffWithMasternodes {
-                added_mns,
-                updated_mns,
-                removed_mns,
-                ..
-            } = masternode_diff;
+        let MasternodeListDiffWithMasternodes {
+            added_mns,
+            updated_mns,
+            removed_mns,
+            ..
+        } = masternode_diff;
 
-            let mut drive_operations = vec![];
+        let mut drive_operations = vec![];
 
-            for masternode in added_mns {
-                let owner_identity = self.create_owner_identity(&masternode)?;
-                let voter_identity = self.create_voter_identity(&masternode)?;
-                let operator_identity = self.create_operator_identity(&masternode)?;
+        for masternode in added_mns {
+            let owner_identity = self.create_owner_identity(&masternode)?;
+            let voter_identity = self.create_voter_identity(&masternode)?;
+            let operator_identity = self.create_operator_identity(&masternode)?;
 
-                drive_operations.push(IdentityOperation(AddNewIdentity {
-                    identity: owner_identity,
-                }));
+            drive_operations.push(IdentityOperation(AddNewIdentity {
+                identity: owner_identity,
+            }));
 
-                drive_operations.push(IdentityOperation(AddNewIdentity {
-                    identity: voter_identity,
-                }));
+            drive_operations.push(IdentityOperation(AddNewIdentity {
+                identity: voter_identity,
+            }));
 
-                drive_operations.push(IdentityOperation(AddNewIdentity {
-                    identity: operator_identity,
-                }));
-            }
+            drive_operations.push(IdentityOperation(AddNewIdentity {
+                identity: operator_identity,
+            }));
+        }
 
-            self.drive.apply_drive_operations(
-                drive_operations,
-                true,
-                block_info,
-                Some(transaction),
-            )?;
+        self.drive
+            .apply_drive_operations(drive_operations, true, block_info, Some(transaction))?;
 
-            //todo: batch updates as well
-            for masternode in updated_mns {
-                self.update_owner_identity(&masternode, &block_info, Some(&transaction))?;
-                self.update_voter_identity(&masternode, &block_info, state, Some(&transaction))?;
-                self.update_operator_identity(&masternode, &block_info, state, Some(&transaction))?;
-            }
+        //todo: batch updates as well
+        for masternode in updated_mns {
+            self.update_owner_identity(&masternode, &block_info, Some(&transaction))?;
+            self.update_voter_identity(&masternode, &block_info, state, Some(&transaction))?;
+            self.update_operator_identity(&masternode, &block_info, state, Some(&transaction))?;
+        }
 
-            for masternode in removed_mns {
-                self.disable_identity_keys(&masternode, &block_info, state, Some(&transaction))?;
-            }
+        for masternode in removed_mns {
+            self.disable_identity_keys(&masternode, &block_info, state, Some(&transaction))?;
         }
 
         Ok(())

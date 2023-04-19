@@ -216,8 +216,8 @@ impl Default for PlatformConfig {
             abci: AbciConfig {
                 bind_address: "tcp://127.0.0.1:1234".to_string(),
                 keys: Keys::new_random_keys_with_seed(18012014), //Dash genesis day
-                genesis_height: 1,
-                genesis_core_height: 0,
+                genesis_height: AbciConfig::default_genesis_height(),
+                genesis_core_height: AbciConfig::default_genesis_core_height(),
                 chain_id: "chain_id".to_string(),
             },
             core: Default::default(),

@@ -36,6 +36,7 @@ where
         self.update_masternode_list(
             &mut state_cache,
             request.initial_core_height,
+            true,
             &BlockInfo::genesis(),
             &transaction,
         )?;
