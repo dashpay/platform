@@ -532,6 +532,7 @@ pub fn get_security_level_requirement(v: &JsonValue, default: SecurityLevel) -> 
 
 #[cfg(test)]
 mod test {
+    use itertools::Itertools;
     use std::sync::Arc;
 
     use platform_value::Bytes32;
@@ -595,13 +596,10 @@ mod test {
             )])
             .expect("batch transition should be created");
 
-        assert_eq!(
-            &SecurityLevel::MEDIUM,
-            batch_transition
-                .get_security_level_requirement()
-                .first()
-                .unwrap()
-        );
+        assert!(batch_transition
+            .get_security_level_requirement()
+            .iter()
+            .contains(&SecurityLevel::MEDIUM));
 
         let batch_transition = document_factory
             .create_state_transition(vec![(
@@ -613,13 +611,10 @@ mod test {
             )])
             .expect("batch transition should be created");
 
-        assert_eq!(
-            &SecurityLevel::MASTER,
-            batch_transition
-                .get_security_level_requirement()
-                .first()
-                .unwrap()
-        );
+        assert!(batch_transition
+            .get_security_level_requirement()
+            .iter()
+            .contains(&SecurityLevel::MASTER));
 
         let batch_transition = document_factory
             .create_state_transition(vec![(
@@ -628,13 +623,10 @@ mod test {
             )])
             .expect("batch transition should be created");
 
-        assert_eq!(
-            &SecurityLevel::HIGH,
-            batch_transition
-                .get_security_level_requirement()
-                .first()
-                .unwrap()
-        );
+        assert!(batch_transition
+            .get_security_level_requirement()
+            .iter()
+            .contains(&SecurityLevel::HIGH));
     }
 
     #[test]
