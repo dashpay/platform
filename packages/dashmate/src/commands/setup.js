@@ -49,7 +49,7 @@ class SetupCommand extends BaseCommand {
 
     const tasks = new Listr([
       {
-        title: 'Check System requirements',
+        title: 'System requirements',
         task: async () => dockerCompose.throwErrorIfNotInstalled(),
       },
       {
