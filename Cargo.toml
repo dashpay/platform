@@ -6,7 +6,6 @@ members = [
     "packages/rs-drive",
     "packages/rs-platform-value",
     "packages/rs-drive-abci",
-    "packages/rs-drive-nodejs",
     "packages/dashpay-contract",
     "packages/withdrawals-contract",
     "packages/masternode-reward-shares-contract",
