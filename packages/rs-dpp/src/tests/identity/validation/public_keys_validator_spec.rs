@@ -541,6 +541,6 @@ pub fn should_return_invalid_result_if_bls12_381_public_key_is_invalid() {
     //assert_eq!(error.validation_error(), TypeError);
     assert_eq!(
         error.validation_error().as_ref().unwrap().message(),
-        "Group decode error"
+        "Given G1 non-infinity element must start with 0b10"
     );
 }

@@ -43,6 +43,7 @@ mod tests {
     use crate::document::document_transition::Action;
     use crate::document::DocumentsBatchTransition;
     use crate::identity::core_script::CoreScript;
+    use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
     use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;
     use crate::identity::state_transition::identity_credit_withdrawal_transition::{
         IdentityCreditWithdrawalTransition, Pooling,
@@ -56,7 +57,7 @@ mod tests {
     };
     use crate::tests::fixtures::{
         get_data_contract_fixture, get_document_transitions_fixture,
-        get_documents_fixture_with_owner_id_from_contract,
+        get_documents_fixture_with_owner_id_from_contract, raw_instant_asset_lock_proof_fixture,
     };
     use crate::version::LATEST_VERSION;
     use crate::{NativeBlsModule, ProtocolError};
@@ -67,7 +68,10 @@ mod tests {
 
     #[test]
     fn identity_create_transition_ser_de() {
-        let identity = Identity::random_identity(5, Some(5));
+        let mut identity = Identity::random_identity(5, Some(5));
+        let asset_lock_proof = raw_instant_asset_lock_proof_fixture(None);
+        identity.set_asset_lock_proof(AssetLockProof::Instant(asset_lock_proof));
+
         let identity_create_transition: IdentityCreateTransition = identity
             .try_into()
             .expect("expected to make an identity create transition");
@@ -80,7 +84,10 @@ mod tests {
 
     #[test]
     fn identity_topup_transition_ser_de() {
-        let identity = Identity::random_identity(5, Some(5));
+        let mut identity = Identity::random_identity(5, Some(5));
+        let asset_lock_proof = raw_instant_asset_lock_proof_fixture(None);
+        identity.set_asset_lock_proof(AssetLockProof::Instant(asset_lock_proof));
+
         let identity_topup_transition = IdentityTopUpTransition {
             asset_lock_proof: identity
                 .asset_lock_proof

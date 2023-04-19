@@ -265,8 +265,8 @@ impl From<MissingMasterPublicKeyError> for ConsensusError {
 }
 
 #[cfg(test)]
-impl From<TestConsensusError> for ConsensusError {
-    fn from(error: TestConsensusError) -> Self {
+impl From<basic::TestConsensusError> for ConsensusError {
+    fn from(error: basic::TestConsensusError) -> Self {
         Self::TestConsensusError(error)
     }
 }

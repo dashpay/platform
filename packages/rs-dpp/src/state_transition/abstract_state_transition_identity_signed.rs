@@ -193,6 +193,8 @@ pub fn get_compressed_public_ec_key(private_key: &[u8]) -> Result<[u8; 33], Prot
 mod test {
     use chrono::Utc;
     use platform_value::{BinaryData, Value};
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
     use serde::{Deserialize, Serialize};
     use serde_json::json;
     use std::convert::TryInto;
@@ -200,6 +202,7 @@ mod test {
 
     use crate::document::DocumentsBatchTransition;
     use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
+    use crate::ProtocolError::InvalidSignaturePublicKeySecurityLevelError;
     use crate::{
         assert_error_contains,
         identity::{KeyID, SecurityLevel},
@@ -318,6 +321,7 @@ mod test {
     fn get_test_keys() -> Keys {
         let secp = dashcore::secp256k1::Secp256k1::new();
         let mut rng = dashcore::secp256k1::rand::thread_rng();
+        let mut std_rng = StdRng::seed_from_u64(99999);
         let (private_key, public_key) = secp.generate_keypair(&mut rng);
 
         let public_key_id = 1;
@@ -325,10 +329,8 @@ mod test {
         let ec_public_compressed_bytes = public_key.serialize();
         let ec_public_uncompressed_bytes = public_key.serialize_uncompressed();
 
-        let mut buffer = [0u8; 32];
-        let _ = getrandom::getrandom(&mut buffer);
-        let bls_private = bls_signatures::PrivateKey::from_bytes(buffer.as_slice(), false)
-            .expect("expected private key");
+        let bls_private =
+            bls_signatures::PrivateKey::generate_dash(&mut std_rng).expect("expected private key");
         let bls_public = bls_private
             .g1_element()
             .expect("expected to make public key");
@@ -488,9 +490,9 @@ mod test {
             .sign(&keys.identity_public_key, &keys.ec_private, &bls)
             .unwrap_err();
         match sign_error {
-            ProtocolError::PublicKeySecurityLevelNotMetError(err) => {
+            InvalidSignaturePublicKeySecurityLevelError(err) => {
                 assert_eq!(SecurityLevel::MEDIUM, err.public_key_security_level());
-                assert_eq!(SecurityLevel::HIGH, err.required_security_level());
+                assert_eq!(vec![SecurityLevel::HIGH], err.allowed_key_security_levels());
             }
             error => {
                 panic!("invalid error type: {}", error)
