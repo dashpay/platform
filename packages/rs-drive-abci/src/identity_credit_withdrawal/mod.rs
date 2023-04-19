@@ -785,7 +785,7 @@ mod tests {
 
         #[test]
         fn test_pooling() {
-            let mut platform = TestPlatformBuilder::new()
+            let platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
 

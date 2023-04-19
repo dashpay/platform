@@ -318,7 +318,7 @@ mod test {
 
     #[test]
     fn should_return_execution_result_on_dry_run() {
-        let mut platform = TestPlatformBuilder::new()
+        let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
         let state_read_guard = platform.state.read().unwrap();

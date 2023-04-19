@@ -4,7 +4,7 @@ mod tests {
         continue_chain_for_strategy, run_chain_for_strategy, ChainExecutionOutcome,
         ChainExecutionParameters, Frequency, Strategy, StrategyRandomness, UpgradingInfo,
     };
-    use drive::drive::config::DriveConfig;
+    
     use tenderdash_abci::proto::types::CoreChainLock;
 
     use drive_abci::config::{PlatformConfig, PlatformTestConfig};
@@ -430,7 +430,7 @@ mod tests {
             StrategyRandomness::SeedEntropy(8),
         );
         {
-            let drive_cache = platform.drive.cache.read().unwrap();
+            let _drive_cache = platform.drive.cache.read().unwrap();
             assert_eq!(
                 platform
                     .state

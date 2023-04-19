@@ -60,7 +60,7 @@ use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, Stat
 use dpp::tests::fixtures::instant_asset_lock_proof_fixture;
 use dpp::version::LATEST_VERSION;
 use dpp::{ed25519_dalek, NativeBlsModule, ProtocolError};
-use drive::common::helpers::identities::{create_test_identities_with_rng, generate_pro_tx_hashes};
+
 use drive::contract::{Contract, CreateRandomDocument, DocumentType};
 use drive::dpp::document::Document;
 use drive::dpp::identity::{Identity, KeyID};
@@ -68,16 +68,16 @@ use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::drive::defaults::PROTOCOL_VERSION;
 use drive::drive::flags::StorageFlags::SingleEpoch;
 
-use crate::DataContractUpdateOp::DataContractNewDocumentTypes;
+
 use crate::FinalizeBlockOperation::IdentityAddKeys;
 use dashcore::hashes::hex::ToHex;
 use dashcore::hashes::Hash;
 use dashcore::secp256k1::SecretKey;
-use dashcore_rpc::json::QuorumMember;
+
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::document_type::random_document_type::RandomDocumentTypeParameters;
 use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::data_contract::{generate_data_contract_id, DataContract};
+use dpp::data_contract::{generate_data_contract_id};
 use dpp::ed25519_dalek::Signer as EddsaSigner;
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::state_transition::identity_credit_withdrawal_transition::{
@@ -93,7 +93,7 @@ use drive::fee::credits::Credits;
 use drive::query::DriveQuery;
 use drive_abci::abci::AbciApplication;
 use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
-use drive_abci::execution::quorum::{Quorum, ValidatorWithPublicKeyShare};
+
 use drive_abci::execution::test_quorum::TestQuorumInfo;
 use drive_abci::platform::Platform;
 use drive_abci::rpc::core::MockCoreRPCLike;
@@ -106,7 +106,7 @@ use rand::seq::SliceRandom;
 use rand::{Rng, SeedableRng};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::net::{IpAddr, SocketAddr};
+use std::net::{SocketAddr};
 use std::ops::Range;
 use std::str::FromStr;
 use tenderdash_abci::proto::abci::ValidatorSetUpdate;
@@ -246,7 +246,7 @@ impl Signer for SimpleSigner {
             }
             KeyType::EDDSA_25519_HASH160 => {
                 let key: [u8; 32] = private_key.clone().try_into().expect("expected 32 bytes");
-                let mut pk = ed25519_dalek::SigningKey::try_from(&key).map_err(|_e| {
+                let pk = ed25519_dalek::SigningKey::try_from(&key).map_err(|_e| {
                     ProtocolError::Error(anyhow!(
                         "eddsa 25519 private key from bytes isn't correct"
                     ))
@@ -1429,7 +1429,7 @@ pub(crate) fn continue_chain_for_strategy(
 
         for finalize_block_operation in finalize_block_operations {
             match finalize_block_operation {
-                IdentityAddKeys(identifier, mut keys) => {
+                IdentityAddKeys(identifier, keys) => {
                     let identity = current_identities
                         .iter_mut()
                         .find(|identity| identity.id == identifier)
@@ -1636,7 +1636,7 @@ mod tests {
         };
         let TempPlatform {
             mut platform,
-            tempdir,
+            tempdir: _,
         } = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
@@ -1653,7 +1653,7 @@ mod tests {
             });
 
         let ChainExecutionOutcome {
-            mut abci_app,
+            abci_app,
             proposers,
             quorums,
             current_quorum_hash,

@@ -142,7 +142,7 @@ mod test {
 
     #[test]
     fn should_successfully_execute_on_dry_run() {
-        let mut platform = TestPlatformBuilder::new()
+        let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
         let state_read_guard = platform.state.read().unwrap();
@@ -197,7 +197,7 @@ mod test {
 
     #[test]
     fn should_fail_if_owner_id_equals_to_user_id() {
-        let mut platform = TestPlatformBuilder::new()
+        let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
         let mut state_write_guard = platform.state.write().unwrap();
@@ -270,7 +270,7 @@ mod test {
 
     #[test]
     fn should_fail_if_id_not_exists() {
-        let mut platform = TestPlatformBuilder::new()
+        let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
         let mut state_write_guard = platform.state.write().unwrap();

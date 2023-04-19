@@ -174,7 +174,7 @@ pub fn create_masternode_reward_shares_data_trigger<'a>(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::platform::{PlatformRef, PlatformStateRef};
+    use crate::platform::{PlatformStateRef};
     use crate::state::PlatformState;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dashcore::hashes::Hash;
@@ -186,14 +186,14 @@ mod test {
     use dpp::document::document_transition::{Action, DocumentCreateTransitionAction};
     use dpp::document::{Document, ExtendedDocument};
     use dpp::identity::Identity;
-    use dpp::mocks::{SMLEntry, SMLStore, SimplifiedMNList};
+    
     use dpp::platform_value::Value;
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use dpp::tests::fixtures::{
         get_document_transitions_fixture, get_masternode_reward_shares_documents_fixture,
     };
     use dpp::tests::utils::generate_random_identifier_struct;
-    use dpp::version::LATEST_VERSION;
+    
     use dpp::DataTriggerActionError;
     use drive::drive::object_size_info::DocumentInfo::{
         DocumentRefWithoutSerialization, DocumentWithoutSerialization,
@@ -292,7 +292,7 @@ mod test {
 
     #[test]
     fn should_return_an_error_if_percentage_greater_than_10000() {
-        let mut platform = TestPlatformBuilder::new()
+        let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
         let mut state_write_guard = platform.state.write().unwrap();
@@ -364,7 +364,7 @@ mod test {
                 .expect("expected to add document");
         }
 
-        let documents: Vec<Document> = extended_documents
+        let _documents: Vec<Document> = extended_documents
             .clone()
             .into_iter()
             .map(|dt| dt.document)
@@ -399,7 +399,7 @@ mod test {
 
     #[test]
     fn should_return_an_error_if_pay_to_id_does_not_exists() {
-        let mut platform = TestPlatformBuilder::new()
+        let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
         let mut state_write_guard = platform.state.write().unwrap();
@@ -446,13 +446,13 @@ mod test {
 
     #[test]
     fn should_return_an_error_if_owner_id_is_not_a_masternode_identity() {
-        let mut platform = TestPlatformBuilder::new()
+        let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
         let mut state_write_guard = platform.state.write().unwrap();
         let TestData {
             document_create_transition,
-            top_level_identifier,
+            
             data_contract,
             ..
         } = setup_test(&mut state_write_guard);
@@ -486,7 +486,7 @@ mod test {
 
     #[test]
     fn should_pass() {
-        let mut platform = TestPlatformBuilder::new()
+        let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
         let mut state_write_guard = platform.state.write().unwrap();
@@ -533,7 +533,7 @@ mod test {
 
     #[test]
     fn should_return_error_if_there_are_16_stored_shares() {
-        let mut platform = TestPlatformBuilder::new()
+        let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
         let mut state_write_guard = platform.state.write().unwrap();
@@ -629,7 +629,7 @@ mod test {
 
     #[test]
     fn should_pass_on_dry_run() {
-        let mut platform = TestPlatformBuilder::new()
+        let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
         let mut state_write_guard = platform.state.write().unwrap();

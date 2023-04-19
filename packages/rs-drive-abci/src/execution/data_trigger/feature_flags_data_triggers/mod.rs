@@ -97,7 +97,7 @@ mod test {
 
     #[test]
     fn should_successfully_execute_on_dry_run() {
-        let mut platform = TestPlatformBuilder::new()
+        let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
         let state_read_guard = platform.state.read().unwrap();

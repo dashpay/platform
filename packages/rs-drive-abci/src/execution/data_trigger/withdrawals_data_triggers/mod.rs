@@ -130,7 +130,7 @@ mod tests {
 
     #[test]
     fn should_throw_error_if_withdrawal_not_found() {
-        let mut platform = TestPlatformBuilder::new()
+        let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
         let state_read_guard = platform.state.read().unwrap();
@@ -165,7 +165,7 @@ mod tests {
 
     #[test]
     fn should_throw_error_if_withdrawal_has_wrong_status() {
-        let mut platform = TestPlatformBuilder::new()
+        let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_genesis_state();
         let state_read_guard = platform.state.read().unwrap();
