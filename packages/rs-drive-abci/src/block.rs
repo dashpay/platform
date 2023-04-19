@@ -35,7 +35,7 @@ use crate::state::PlatformState;
 use dashcore::Txid;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
-use drive::fee::epoch::EpochIndex;
+
 use std::collections::BTreeMap;
 
 /// Block info

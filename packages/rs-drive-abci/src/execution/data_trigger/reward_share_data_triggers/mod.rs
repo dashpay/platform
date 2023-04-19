@@ -1,11 +1,11 @@
 use dpp::data_contract::DriveContractExt;
 use dpp::document::document_transition::{
-    DocumentCreateTransitionAction, DocumentTransitionAction,
+    DocumentTransitionAction,
 };
-use dpp::document::Document;
+
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::{Identifier, Value};
-use dpp::prelude::DocumentTransition;
+
 use dpp::{get_from_transition_action, ProtocolError};
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 use std::collections::BTreeMap;
@@ -183,8 +183,8 @@ mod test {
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::data_contract::DataContract;
-    use dpp::document::document_transition::Action;
-    use dpp::document::ExtendedDocument;
+    use dpp::document::document_transition::{Action, DocumentCreateTransitionAction};
+    use dpp::document::{Document, ExtendedDocument};
     use dpp::identity::Identity;
     use dpp::mocks::{SMLEntry, SMLStore, SimplifiedMNList};
     use dpp::platform_value::Value;

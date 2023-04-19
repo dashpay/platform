@@ -18,7 +18,7 @@ use dpp::identity::{
 };
 use dpp::platform_value::BinaryData;
 use drive::drive::batch::DriveOperation::IdentityOperation;
-use drive::drive::batch::IdentityOperationType::{AddNewIdentity, UpdateIdentityRevision};
+use drive::drive::batch::IdentityOperationType::{AddNewIdentity};
 use drive::grovedb::Transaction;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet};
@@ -101,7 +101,7 @@ where
 
         // TODO: extract the diff function
         // now we need to figure out which of the keys to disable
-        let new_key_id: KeyID = owner_identity
+        let _new_key_id: KeyID = owner_identity
             .public_keys
             .last_key_value()
             .map(|(last_key_id, _)| last_key_id + 1)

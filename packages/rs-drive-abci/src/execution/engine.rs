@@ -1,7 +1,7 @@
 use bls_signatures;
 use dashcore::hashes::Hash;
 use dashcore::{QuorumHash, Txid};
-use dpp::bincode;
+
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::consensus::basic::identity::IdentityInsufficientBalanceError;
@@ -15,7 +15,7 @@ use drive::error::Error::GroveDB;
 use drive::fee::result::FeeResult;
 use drive::grovedb::{Transaction, TransactionArg};
 use std::collections::BTreeMap;
-use tenderdash_abci::proto;
+
 use tenderdash_abci::proto::abci::ExecTxResult;
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 
@@ -24,7 +24,7 @@ use crate::abci::withdrawal::WithdrawalTxs;
 use crate::abci::AbciError;
 use crate::block::{BlockExecutionContext, BlockStateInfo};
 use crate::error::execution::ExecutionError;
-use crate::error::serialization::SerializationError;
+
 use crate::error::Error;
 use crate::execution::block_proposal::BlockProposal;
 use crate::execution::execution_event::ExecutionResult::{
@@ -35,7 +35,7 @@ use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::execution::finalize_block_cleaned_request::{CleanedBlock, FinalizeBlockCleanedRequest};
 use crate::platform::{Platform, PlatformRef};
 use crate::rpc::core::CoreRPCLike;
-use crate::state::PlatformState;
+
 use crate::validation::state_transition::process_state_transition;
 
 /// The outcome of the block execution, either by prepare proposal, or process proposal
@@ -236,7 +236,7 @@ where
         transaction: &Transaction,
     ) -> Result<ValidationResult<BlockExecutionOutcome, Error>, Error> {
         // Start by getting information from the state
-        let mut state = self.state.read().unwrap();
+        let state = self.state.read().unwrap();
 
         let last_block_time_ms = state.last_block_time_ms();
         let last_block_height =
@@ -244,7 +244,7 @@ where
         let last_block_core_height =
             state.known_core_height_or(self.config.abci.genesis_core_height);
         let hpmn_list_len = state.hpmn_list_len();
-        let quorum_hash = state.current_validator_set_quorum_hash;
+        let _quorum_hash = state.current_validator_set_quorum_hash;
 
         let mut block_platform_state = state.clone();
         drop(state);
@@ -264,11 +264,11 @@ where
 
         // destructure the block proposal
         let BlockProposal {
-            consensus_versions,
-            block_hash,
+            consensus_versions: _,
+            block_hash: _,
             height,
-            round,
-            core_chain_locked_height,
+            round: _,
+            core_chain_locked_height: _,
             proposed_app_version,
             proposer_pro_tx_hash,
             validator_set_quorum_hash,
@@ -367,7 +367,7 @@ where
         // while we have the state transitions executed, we now need to process the block fees
 
         // Process fees
-        let process_block_fees_outcome = self.process_block_fees(
+        let _process_block_fees_outcome = self.process_block_fees(
             &block_execution_context.block_state_info,
             &epoch_info,
             block_fees.into(),
@@ -402,7 +402,7 @@ where
         transaction: &Transaction,
     ) -> Result<(), Error> {
         // we need to serialize the block info
-        let mut serialized_block_info = block_info.serialize()?;
+        let serialized_block_info = block_info.serialize()?;
 
         // next we need to store this data in groveb
         self.drive
@@ -571,7 +571,7 @@ where
         // Let's decompose the request
         let FinalizeBlockCleanedRequest {
             commit: commit_info,
-            misbehavior,
+            misbehavior: _,
             hash,
             height,
             round,
@@ -581,10 +581,10 @@ where
 
         let CleanedBlock {
             header: block_header,
-            data,
-            evidence,
-            last_commit,
-            core_chain_lock,
+            data: _,
+            evidence: _,
+            last_commit: _,
+            core_chain_lock: _,
         } = block;
 
         //// Verification that commit is for our current executed block

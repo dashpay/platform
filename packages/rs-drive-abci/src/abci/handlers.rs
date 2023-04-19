@@ -202,7 +202,7 @@ where
         let transaction = transaction_guard.as_ref().unwrap();
 
         // We can take the core chain lock update here because it won't be used anywhere else
-        if let Some(c) = request.core_chain_lock_update.take() {
+        if let Some(_c) = request.core_chain_lock_update.take() {
             //todo: if there is a core chain lock update we need to validate it
         }
 
@@ -283,7 +283,7 @@ where
     ) -> Result<proto::ResponseVerifyVoteExtension, proto::ResponseException> {
         let proto::RequestVerifyVoteExtension {
             hash: block_hash,
-            validator_pro_tx_hash,
+            validator_pro_tx_hash: _,
             height,
             round,
             vote_extensions,

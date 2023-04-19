@@ -46,7 +46,7 @@ impl StateTransitionValidation for DataContractUpdateTransition {
         _drive: &Drive,
         _tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let mut result = validate_schema(&DATA_CONTRACT_UPDATE_SCHEMA_VALIDATOR, self);
+        let result = validate_schema(&DATA_CONTRACT_UPDATE_SCHEMA_VALIDATOR, self);
         if !result.is_valid() {
             return Ok(result);
         }
@@ -111,7 +111,7 @@ impl StateTransitionValidation for DataContractUpdateTransition {
         }
 
         let mut existing_data_contract_object = existing_data_contract.to_object()?;
-        let mut new_data_contract_object = self.data_contract.to_object()?;
+        let new_data_contract_object = self.data_contract.to_object()?;
 
         existing_data_contract_object
             .remove_many(&vec![

@@ -1,9 +1,9 @@
-use crate::abci::commit::Commit;
+
 use crate::abci::server::AbciApplication;
 use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::quorum::Quorum;
+
 use crate::execution::test_quorum::TestQuorumInfo;
 use crate::rpc::core::CoreRPCLike;
 use dashcore::blockdata::transaction::special_transaction::asset_unlock::qualified_asset_unlock::AssetUnlockPayload;
@@ -174,7 +174,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         let withdrawals = block_execution_context
             .withdrawal_transactions
             .iter()
-            .map(|(tx_id, transaction)| {
+            .map(|(_tx_id, transaction)| {
                 let AssetUnlockBaseTransactionInfo {
                     version,
                     lock_time,

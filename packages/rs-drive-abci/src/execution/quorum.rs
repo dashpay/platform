@@ -1,4 +1,4 @@
-use crate::abci::AbciError;
+
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use bls_signatures::PublicKey as BlsPublicKey;

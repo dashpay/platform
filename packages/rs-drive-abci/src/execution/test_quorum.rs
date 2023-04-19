@@ -4,7 +4,7 @@ use bls_signatures::{PrivateKey as BlsPrivateKey, PublicKey as BlsPublicKey};
 use dashcore::hashes::Hash;
 use dashcore::{ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{
-    MasternodeListItem, QuorumInfoResult, QuorumMember, QuorumType,
+    QuorumInfoResult, QuorumMember, QuorumType,
 };
 use rand::rngs::StdRng;
 use std::collections::BTreeMap;
