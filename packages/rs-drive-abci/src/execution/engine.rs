@@ -35,6 +35,7 @@ use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::execution::finalize_block_cleaned_request::{CleanedBlock, FinalizeBlockCleanedRequest};
 use crate::platform::{Platform, PlatformRef};
 use crate::rpc::core::CoreRPCLike;
+use crate::state::PlatformState;
 use crate::validation::state_transition::process_state_transition;
 
 /// The outcome of the block execution, either by prepare proposal, or process proposal
@@ -235,7 +236,8 @@ where
         transaction: &Transaction,
     ) -> Result<ValidationResult<BlockExecutionOutcome, Error>, Error> {
         // Start by getting information from the state
-        let state = self.state.read().unwrap();
+        let mut state = self.state.read().unwrap();
+
         let last_block_time_ms = state.last_block_time_ms();
         let last_block_height =
             state.known_height_or((self.config.abci.genesis_height as u64).saturating_sub(1));
@@ -243,6 +245,8 @@ where
             state.known_core_height_or(self.config.abci.genesis_core_height);
         let hpmn_list_len = state.hpmn_list_len();
         let quorum_hash = state.current_validator_set_quorum_hash;
+
+        let mut block_platform_state = state.clone();
         drop(state);
 
         // Init block execution context
@@ -278,7 +282,26 @@ where
         let epoch_info =
             EpochInfo::from_genesis_time_and_block_info(genesis_time_ms, &block_state_info)?;
 
-        //
+        let block_info = block_state_info.to_block_info(
+            Epoch::new(epoch_info.current_epoch_index)
+                .expect("current epoch index should be in range"),
+        );
+
+        // Update the active quorums
+        self.update_quorum_info(
+            &mut block_platform_state,
+            block_proposal.core_chain_locked_height,
+        )?;
+
+        // Update the masternode list and create masternode identities
+        self.update_masternode_list(
+            &mut block_platform_state,
+            block_proposal.core_chain_locked_height,
+            &block_info,
+            transaction,
+        )?;
+
+        // Update the validator proposed app version
         self.drive
             .update_validator_proposed_app_version(
                 proposer_pro_tx_hash,
@@ -289,15 +312,12 @@ where
                 Error::Execution(ExecutionError::UpdateValidatorProposedAppVersionError(e))
             })?; // This is a system error
 
-        let block_info = block_state_info.to_block_info(
-            Epoch::new(epoch_info.current_epoch_index)
-                .expect("current epoch index should be in range"),
-        );
         let mut block_execution_context = BlockExecutionContext {
             block_state_info,
             epoch_info: epoch_info.clone(),
             hpmn_count: hpmn_list_len as u32,
             withdrawal_transactions: BTreeMap::new(),
+            block_platform_state,
         };
 
         // If last synced Core block height is not set instead of scanning
@@ -416,18 +436,17 @@ where
         updated_validator_hash: QuorumHash,
         transaction: &Transaction,
     ) -> Result<(), Error> {
+        let mut block_execution_context = self.block_execution_context.write().unwrap();
+
+        let block_execution_context = block_execution_context.take().ok_or(Error::Execution(
+            ExecutionError::CorruptedCodeExecution("there should be a block execution context"),
+        ))?;
+
         let mut state_cache = self.state.write().unwrap();
 
+        *state_cache = block_execution_context.block_platform_state;
+
         state_cache.current_validator_set_quorum_hash = updated_validator_hash;
-
-        self.update_quorum_info(&mut state_cache, block_info.core_height)?;
-
-        self.update_masternode_list(
-            &mut state_cache,
-            block_info.core_height,
-            &block_info,
-            transaction,
-        )?;
 
         state_cache.last_committed_block_info = Some(block_info.clone());
 
@@ -510,7 +529,7 @@ where
         let mut validation_result = SimpleValidationResult::<AbciError>::new_with_errors(vec![]);
 
         // Retrieve block execution context before we do anything at all
-        let mut guarded_block_execution_context = self.block_execution_context.write().unwrap();
+        let guarded_block_execution_context = self.block_execution_context.read().unwrap();
         let block_execution_context =
             guarded_block_execution_context
                 .as_ref()
@@ -523,6 +542,7 @@ where
             epoch_info,
             hpmn_count,
             withdrawal_transactions,
+            block_platform_state,
         } = &block_execution_context;
 
         // Let's decompose the request
@@ -572,23 +592,30 @@ where
             return Ok(validation_result.into());
         }
 
-        let quorum_public_key = self.get_quorum_key(commit_info.quorum_hash)?;
+        // In production this will always be true
+        if self
+            .config
+            .testing_configs
+            .block_commit_signature_verification
+        {
+            let quorum_public_key = self.get_quorum_key(commit_info.quorum_hash)?;
 
-        // Verify commit
+            // Verify commit
 
-        let quorum_type = self.config.quorum_type();
-        let commit = Commit::new_from_cleaned(
-            commit_info.clone(),
-            block_id.clone(),
-            height,
-            quorum_type,
-            &block_header.chain_id,
-        );
-        let validation_result =
-            commit.verify_signature(&commit_info.block_signature, &quorum_public_key);
+            let quorum_type = self.config.quorum_type();
+            let commit = Commit::new_from_cleaned(
+                commit_info.clone(),
+                block_id.clone(),
+                height,
+                quorum_type,
+                &block_header.chain_id,
+            );
+            let validation_result =
+                commit.verify_signature(&commit_info.block_signature, &quorum_public_key);
 
-        if !validation_result.is_valid() {
-            return Ok(validation_result.into());
+            if !validation_result.is_valid() {
+                return Ok(validation_result.into());
+            }
         }
 
         // Verify vote extensions
@@ -647,6 +674,7 @@ where
 
         // At the end we update the state cache
 
+        drop(guarded_block_execution_context);
         self.update_state_cache_and_quorums(
             to_commit_block_info,
             QuorumHash::from_inner(block_header.next_validators_hash),
@@ -683,8 +711,7 @@ where
         // We should run the execution event in dry run to see if we would have enough fees for the transaction
 
         // We need the approximate block info
-        let block_info_guard = self.state.read().unwrap();
-        if let Some(block_info) = block_info_guard.last_committed_block_info.as_ref() {
+        if let Some(block_info) = state_read_guard.last_committed_block_info.as_ref() {
             // We do not put the transaction, because this event happens outside of a block
             execution_event.and_then_borrowed_validation(|execution_event| {
                 self.validate_fees_of_event(&execution_event, block_info, None)

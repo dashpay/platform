@@ -164,6 +164,10 @@ pub struct PlatformConfig {
 
     /// Path to data storage
     pub db_path: PathBuf,
+
+    // todo: put this in tests like #[cfg(test)]
+    /// This should be None, except in the case of Testing platform
+    pub testing_configs: PlatformTestConfig,
 }
 
 impl PlatformConfig {
@@ -218,6 +222,35 @@ impl Default for PlatformConfig {
             },
             core: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
+            testing_configs: PlatformTestConfig::default(),
+        }
+    }
+}
+
+/// Configs that should only happen during testing
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PlatformTestConfig {
+    /// Block signing
+    pub block_signing: bool,
+    /// Block signature verification
+    pub block_commit_signature_verification: bool,
+}
+
+impl PlatformTestConfig {
+    /// Much faster config for tests
+    pub fn default_with_no_block_signing() -> Self {
+        Self {
+            block_signing: false,
+            block_commit_signature_verification: false,
+        }
+    }
+}
+
+impl Default for PlatformTestConfig {
+    fn default() -> Self {
+        Self {
+            block_signing: true,
+            block_commit_signature_verification: true,
         }
     }
 }

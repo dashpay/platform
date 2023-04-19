@@ -35,7 +35,7 @@ use serde::{Deserialize, Serialize};
 use crate::drive::config::DriveEncoding::DriveCbor;
 
 /// Boolean if GroveDB batching consistency verification is enabled by default
-pub const DEFAULT_GROVE_BATCHING_CONSISTENCY_VERIFICATION_ENABLED: bool = true;
+pub const DEFAULT_GROVE_BATCHING_CONSISTENCY_VERIFICATION_ENABLED: bool = false;
 /// Boolean if GroveDB has_raw in enabled by default
 pub const DEFAULT_GROVE_HAS_RAW_ENABLED: bool = true;
 /// Default maximum number of contracts in cache

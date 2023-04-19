@@ -560,6 +560,7 @@ mod tests {
     };
 
     mod update_withdrawal_statuses {
+        use crate::state::PlatformState;
         use crate::{block::BlockStateInfo, test::helpers::setup::TestPlatformBuilder};
         use dpp::identity::core_script::CoreScript;
         use dpp::platform_value::platform_value;
@@ -649,6 +650,16 @@ mod tests {
                 },
                 hpmn_count: 100,
                 withdrawal_transactions: Default::default(),
+                block_platform_state: PlatformState {
+                    last_committed_block_info: None,
+                    current_protocol_version_in_consensus: 0,
+                    next_epoch_protocol_version: 0,
+                    quorums_extended_info: Default::default(),
+                    current_validator_set_quorum_hash: Default::default(),
+                    validator_sets: Default::default(),
+                    full_masternode_list: Default::default(),
+                    hpmn_masternode_list: Default::default(),
+                },
             };
 
             let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
@@ -767,6 +778,7 @@ mod tests {
         use drive::dpp::contracts::withdrawals_contract;
         use drive::tests::helpers::setup::setup_system_data_contract;
 
+        use crate::state::PlatformState;
         use crate::{block::BlockStateInfo, test::helpers::setup::TestPlatformBuilder};
 
         use super::*;
@@ -804,6 +816,16 @@ mod tests {
                     },
                     hpmn_count: 100,
                     withdrawal_transactions: Default::default(),
+                    block_platform_state: PlatformState {
+                        last_committed_block_info: None,
+                        current_protocol_version_in_consensus: 0,
+                        next_epoch_protocol_version: 0,
+                        quorums_extended_info: Default::default(),
+                        current_validator_set_quorum_hash: Default::default(),
+                        validator_sets: Default::default(),
+                        full_masternode_list: Default::default(),
+                        hpmn_masternode_list: Default::default(),
+                    },
                 });
 
             let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)

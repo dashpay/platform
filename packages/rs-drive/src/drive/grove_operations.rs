@@ -1743,7 +1743,7 @@ impl Drive {
                 validate_insertion_does_not_override_tree: validate,
                 allow_deleting_non_empty_trees: false,
                 deleting_non_empty_trees_returns_error: true,
-                disable_operation_consistency_check: false,
+                disable_operation_consistency_check: !self.config.batching_consistency_verification,
                 base_root_storage_is_free: true,
                 batch_pause_height: None,
             }),

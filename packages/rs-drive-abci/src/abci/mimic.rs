@@ -229,19 +229,24 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             threshold_vote_extensions: Default::default(),
         };
 
-        let digest = commit
-            .sign_digest(
-                &chain_id,
-                quorum_type as u8,
-                &current_quorum.quorum_hash,
-                height as i64,
-                0,
-            )
-            .expect("expected to sign digest");
+        //if not in testing this will default to true
+        if self.platform.config.testing_configs.block_signing {
+            let digest = commit
+                .sign_digest(
+                    &chain_id,
+                    quorum_type as u8,
+                    &current_quorum.quorum_hash,
+                    height as i64,
+                    0,
+                )
+                .expect("expected to sign digest");
 
-        let block_signature = current_quorum.private_key.sign(digest.as_slice());
+            let block_signature = current_quorum.private_key.sign(digest.as_slice());
 
-        commit_info.block_signature = block_signature.to_bytes().to_vec();
+            commit_info.block_signature = block_signature.to_bytes().to_vec();
+        } else {
+            commit_info.block_signature = [0u8; 96].to_vec();
+        }
 
         let request_finalize_block = RequestFinalizeBlock {
             commit: Some(commit_info),

@@ -248,16 +248,15 @@ where
             deleted_masternodes,
         } = self.update_state_masternode_list(state, core_block_height, false)?;
 
-        // //Todo: masternode identities
-        // self.update_masternode_identities(
-        //     previous_core_height,
-        //     core_block_height,
-        //     &block_info,
-        //     state,
-        //     &transaction,
-        // )?;
-
-        //For all deleted masternodes we need to remove them from the state of the app version votes
+        //Todo: masternode identities
+        self.update_masternode_identities(
+            previous_core_height,
+            core_block_height,
+            masternode_list_diff,
+            &block_info,
+            state,
+            &transaction,
+        )?;
 
         if !deleted_masternodes.is_empty() {
             self.drive.remove_validators_proposed_app_versions(

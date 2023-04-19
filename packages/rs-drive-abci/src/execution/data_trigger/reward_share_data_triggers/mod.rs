@@ -121,7 +121,7 @@ pub fn create_masternode_reward_shares_data_trigger<'a>(
             )]),
         },
         offset: 0,
-        limit: 0,
+        limit: (MAX_DOCUMENTS + 1) as u16,
         order_by: Default::default(),
         start_at: None,
         start_at_included: false,
@@ -559,18 +559,21 @@ mod test {
             .document_type_for_name(&document_create_transition.base.document_type_name)
             .expect("expected to get document type");
 
+        let mut main_identity = Identity::random_identity(2, Some(1000 as u64));
+        main_identity.id = document_create_transition
+            .data
+            .get_identifier("payToId")
+            .expect("expected pay to id");
+
+        platform_ref
+            .drive
+            .add_new_identity(main_identity, &BlockInfo::default(), true, None)
+            .expect("expected to add an identity");
+
         for i in 0..16 {
-            let document = document_type.random_document(Some(i));
+            let mut document = document_type.random_document(Some(i));
 
-            let owner_id = document.owner_id;
-
-            let mut identity = Identity::random_identity(2, Some(i as u64));
-            identity.id = owner_id;
-
-            platform_ref
-                .drive
-                .add_new_identity(identity, &BlockInfo::default(), true, None)
-                .expect("expected to add an identity");
+            document.owner_id = top_level_identifier;
 
             let mut identity = Identity::random_identity(2, Some(100 - i as u64));
             identity.id = document
@@ -589,7 +592,7 @@ mod test {
                     DocumentAndContractInfo {
                         owned_document_info: OwnedDocumentInfo {
                             document_info: DocumentWithoutSerialization((document, None)),
-                            owner_id: Some(owner_id.to_buffer()),
+                            owner_id: Some(top_level_identifier.to_buffer()),
                         },
                         contract: &data_contract,
                         document_type,

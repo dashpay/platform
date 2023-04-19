@@ -104,6 +104,8 @@ impl<T: BlsModule> TPublicKeysValidator for PublicKeysValidator<T> {
                 KeyType::ECDSA_HASH160 => None,
                 // Do nothing
                 KeyType::BIP13_SCRIPT_HASH => None,
+                // Do nothing
+                KeyType::EDDSA_25519_HASH160 => None,
             };
 
             if let Some(error) = validation_error {

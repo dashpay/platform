@@ -151,7 +151,9 @@ impl IdentityPublicKey {
                     Ok(ripemd160_sha256(self.data.as_slice()))
                 }
             }
-            KeyType::ECDSA_HASH160 | KeyType::BIP13_SCRIPT_HASH => Ok(self.data.to_vec()),
+            KeyType::ECDSA_HASH160 | KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
+                Ok(self.data.to_vec())
+            }
         }
     }
 

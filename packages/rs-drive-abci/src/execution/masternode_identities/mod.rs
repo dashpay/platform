@@ -17,6 +17,8 @@ use dpp::identity::{
     Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel, TimestampMillis,
 };
 use dpp::platform_value::BinaryData;
+use drive::drive::batch::DriveOperation::IdentityOperation;
+use drive::drive::batch::IdentityOperationType::{AddNewIdentity, UpdateIdentityRevision};
 use drive::grovedb::Transaction;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet};
@@ -43,32 +45,34 @@ where
                 ..
             } = masternode_diff;
 
+            let mut drive_operations = vec![];
+
             for masternode in added_mns {
                 let owner_identity = self.create_owner_identity(&masternode)?;
                 let voter_identity = self.create_voter_identity(&masternode)?;
                 let operator_identity = self.create_operator_identity(&masternode)?;
 
-                // TODO: can this be batched?
-                self.drive.add_new_identity(
-                    owner_identity,
-                    &block_info,
-                    true,
-                    Some(&transaction),
-                )?;
-                self.drive.add_new_identity(
-                    voter_identity,
-                    &block_info,
-                    true,
-                    Some(&transaction),
-                )?;
-                self.drive.add_new_identity(
-                    operator_identity,
-                    &block_info,
-                    true,
-                    Some(&transaction),
-                )?;
+                drive_operations.push(IdentityOperation(AddNewIdentity {
+                    identity: owner_identity,
+                }));
+
+                drive_operations.push(IdentityOperation(AddNewIdentity {
+                    identity: voter_identity,
+                }));
+
+                drive_operations.push(IdentityOperation(AddNewIdentity {
+                    identity: operator_identity,
+                }));
             }
 
+            self.drive.apply_drive_operations(
+                drive_operations,
+                true,
+                block_info,
+                Some(transaction),
+            )?;
+
+            //todo: batch updates as well
             for masternode in updated_mns {
                 self.update_owner_identity(&masternode, &block_info, Some(&transaction))?;
                 self.update_voter_identity(&masternode, &block_info, state, Some(&transaction))?;
@@ -368,7 +372,7 @@ where
             block_info,
             true,
             transaction,
-        );
+        )?;
         // add the new keys
         self.drive.add_new_non_unique_keys_to_identity(
             operator_identifier,
@@ -376,7 +380,7 @@ where
             block_info,
             true,
             transaction,
-        );
+        )?;
 
         Ok(())
     }
@@ -444,7 +448,7 @@ where
             block_info,
             true,
             transaction,
-        );
+        )?;
 
         Ok(())
     }
@@ -543,12 +547,8 @@ where
         if let Some(node_id) = platform_node_id {
             identity_public_keys.push(IdentityPublicKey {
                 id: 2,
-                // key_type: KeyType::EDDSA_25519_HASH160,
-                // TODO: commented version is the correct one, disable to get it building
-                key_type: KeyType::ECDSA_SECP256K1,
-                // purpose: Purpose::SYSTEM,
-                // TODO: commented version is the correct one, disable to get it building
-                purpose: Purpose::DECRYPTION,
+                key_type: KeyType::EDDSA_25519_HASH160,
+                purpose: Purpose::SYSTEM,
                 security_level: SecurityLevel::CRITICAL,
                 read_only: true,
                 data: BinaryData::new(node_id.to_vec()),

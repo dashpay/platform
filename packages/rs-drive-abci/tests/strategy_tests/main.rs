@@ -34,7 +34,6 @@ extern crate core;
 
 use anyhow::anyhow;
 use bls_signatures::PrivateKey as BlsPrivateKey;
-use dashcore::secp256k1::SecretKey;
 use dashcore::{signer, Network, PrivateKey, ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{
     DMNState, ExtendedQuorumDetails, MasternodeListDiffWithMasternodes, MasternodeListItem,
@@ -60,7 +59,7 @@ use dpp::state_transition::errors::{
 use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionType};
 use dpp::tests::fixtures::instant_asset_lock_proof_fixture;
 use dpp::version::LATEST_VERSION;
-use dpp::{NativeBlsModule, ProtocolError};
+use dpp::{ed25519_dalek, NativeBlsModule, ProtocolError};
 use drive::common::helpers::identities::{create_test_identities_with_rng, generate_pro_tx_hashes};
 use drive::contract::{Contract, CreateRandomDocument, DocumentType};
 use drive::dpp::document::Document;
@@ -73,11 +72,13 @@ use crate::DataContractUpdateOp::DataContractNewDocumentTypes;
 use crate::FinalizeBlockOperation::IdentityAddKeys;
 use dashcore::hashes::hex::ToHex;
 use dashcore::hashes::Hash;
+use dashcore::secp256k1::SecretKey;
 use dashcore_rpc::json::QuorumMember;
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::document_type::random_document_type::RandomDocumentTypeParameters;
 use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::data_contract::{generate_data_contract_id, DataContract};
+use dpp::ed25519_dalek::Signer as EddsaSigner;
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::state_transition::identity_credit_withdrawal_transition::{
     IdentityCreditWithdrawalTransition, Pooling,
@@ -242,6 +243,15 @@ impl Signer for SimpleSigner {
                         ProtocolError::Error(anyhow!("bls private key from bytes isn't correct"))
                     })?;
                 Ok(pk.sign(data).to_bytes().to_vec().into())
+            }
+            KeyType::EDDSA_25519_HASH160 => {
+                let key: [u8; 32] = private_key.clone().try_into().expect("expected 32 bytes");
+                let mut pk = ed25519_dalek::SigningKey::try_from(&key).map_err(|_e| {
+                    ProtocolError::Error(anyhow!(
+                        "eddsa 25519 private key from bytes isn't correct"
+                    ))
+                })?;
+                Ok(pk.sign(data).to_vec().into())
             }
             // the default behavior from
             // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L187
@@ -1252,15 +1262,6 @@ pub(crate) fn start_chain_for_strategy(
 
     platform.create_mn_shares_contract(None);
 
-    create_test_identities_with_rng(
-        &platform.drive,
-        proposers
-            .iter()
-            .map(|masternode_list_item| masternode_list_item.protx_hash.into_inner()),
-        &mut rng,
-        None,
-    );
-
     continue_chain_for_strategy(
         abci_application,
         ChainExecutionParameters {
@@ -1452,13 +1453,14 @@ pub(crate) fn continue_chain_for_strategy(
         .expect("expected to get balances");
 
     let end_epoch_index = platform
-        .block_execution_context
+        .state
         .read()
         .expect("lock is poisoned")
+        .last_committed_block_info
         .as_ref()
         .unwrap()
-        .epoch_info
-        .current_epoch_index;
+        .epoch
+        .index;
 
     ChainExecutionOutcome {
         abci_app,
@@ -1484,6 +1486,7 @@ mod tests {
     use dashcore_rpc::dashcore_rpc_json::ExtendedQuorumDetails;
     use drive::dpp::data_contract::extra::common::json_document_to_cbor;
     use drive::dpp::data_contract::DriveContractExt;
+    use drive_abci::config::PlatformTestConfig;
     use drive_abci::rpc::core::QuorumListExtendedInfo;
     use tenderdash_abci::proto::types::CoreChainLock;
 
@@ -1533,6 +1536,7 @@ mod tests {
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 25,
             block_spacing_ms: 3000,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -1549,7 +1553,7 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
-        run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
+        run_chain_for_strategy(&mut platform, 50, strategy, config, 15);
     }
 
     #[test]
@@ -1575,6 +1579,7 @@ mod tests {
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 25,
             block_spacing_ms: 3000,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
         let TempPlatform {
@@ -1662,6 +1667,7 @@ mod tests {
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 25,
             block_spacing_ms: 3000,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -1687,7 +1693,7 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99876372860)
+        assert_eq!(balance, 99874449360)
     }
 
     #[test]
@@ -1713,6 +1719,7 @@ mod tests {
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 25,
             block_spacing_ms: 3000,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -1755,6 +1762,7 @@ mod tests {
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 25,
             block_spacing_ms: 3000,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -1799,6 +1807,7 @@ mod tests {
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 100,
             block_spacing_ms: day_in_ms,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
 
@@ -1856,6 +1865,7 @@ mod tests {
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 25,
             block_spacing_ms: 3000,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -1954,6 +1964,7 @@ mod tests {
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 25,
             block_spacing_ms: 3000,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -2038,6 +2049,7 @@ mod tests {
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 25,
             block_spacing_ms: 3000,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -2103,6 +2115,7 @@ mod tests {
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 100,
             block_spacing_ms: day_in_ms,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
         let block_count = 120;
@@ -2195,6 +2208,7 @@ mod tests {
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 100,
             block_spacing_ms: day_in_ms,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
         let block_count = 120;
@@ -2287,6 +2301,7 @@ mod tests {
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 100,
             block_spacing_ms: day_in_ms,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
 
@@ -2382,6 +2397,7 @@ mod tests {
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 100,
             block_spacing_ms: day_in_ms,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
         let block_count = 30;
@@ -2399,7 +2415,7 @@ mod tests {
                 })
             });
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
-        assert_eq!(outcome.identities.len() as u64, 466);
+        assert_eq!(outcome.identities.len() as u64, 371);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
@@ -2493,6 +2509,7 @@ mod tests {
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 100,
             block_spacing_ms: day_in_ms,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
         let block_count = 30;
@@ -2510,7 +2527,7 @@ mod tests {
                 })
             });
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
-        assert_eq!(outcome.identities.len() as u64, 93);
+        assert_eq!(outcome.identities.len() as u64, 87);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
@@ -2549,6 +2566,7 @@ mod tests {
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 25,
             block_spacing_ms: 3000,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -2615,6 +2633,7 @@ mod tests {
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 25,
             block_spacing_ms: 3000,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -2682,6 +2701,7 @@ mod tests {
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 25,
             block_spacing_ms: 3000,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -2760,6 +2780,7 @@ mod tests {
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 25,
             block_spacing_ms: 3000,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()

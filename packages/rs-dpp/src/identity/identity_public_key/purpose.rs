@@ -1,4 +1,4 @@
-use crate::identity::Purpose::{AUTHENTICATION, DECRYPTION, ENCRYPTION, WITHDRAW};
+use crate::identity::Purpose::{AUTHENTICATION, DECRYPTION, ENCRYPTION, SYSTEM, WITHDRAW};
 use anyhow::bail;
 use bincode::{Decode, Encode};
 use ciborium::value::Value as CborValue;
@@ -29,9 +29,8 @@ pub enum Purpose {
     DECRYPTION = 2,
     /// this key cannot be used for signing documents
     WITHDRAW = 3,
-    // TODO: re-enable this
-    // /// this key cannot be used for signing documents
-    // SYSTEM = 4
+    /// this key cannot be used for signing documents
+    SYSTEM = 4,
 }
 
 impl TryFrom<u8> for Purpose {
@@ -42,6 +41,7 @@ impl TryFrom<u8> for Purpose {
             1 => Ok(ENCRYPTION),
             2 => Ok(DECRYPTION),
             3 => Ok(WITHDRAW),
+            4 => Ok(SYSTEM),
             value => bail!("unrecognized purpose: {}", value),
         }
     }

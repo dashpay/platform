@@ -8,7 +8,7 @@ authors = ["Anton Suprunchuk <anton.suprunchuk@gmail.com>"]
 anyhow = { version = "1.0.70" }
 async-trait = { version = "0.1" }
 base64 = "0.20.0"
-bls-signatures = { git = "https://github.com/dashpay/bls-signatures", branch = "feat/threshold_bindings" }
+bls-signatures = { git = "https://github.com/dashpay/bls-signatures", branch = "feat/threshold_bindings_working" }
 bs58 = "0.4.0"
 byteorder = { version = "1.4" }
 chrono = { version = "0.4.20", default-features = false, features = [
@@ -51,6 +51,7 @@ mockall = { version = "0.11.3", optional = true }
 data-contracts = { path = "../data-contracts" }
 platform-value = { path = "../rs-platform-value" }
 derive_more = "0.99.17"
+ed25519-dalek = {version = "2.0.0-rc.2", features = ["rand_core"] }
 
 [dev-dependencies]
 test-case = { version = "2.0" }

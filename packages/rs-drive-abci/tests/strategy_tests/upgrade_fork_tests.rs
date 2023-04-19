@@ -4,9 +4,10 @@ mod tests {
         continue_chain_for_strategy, run_chain_for_strategy, ChainExecutionOutcome,
         ChainExecutionParameters, Frequency, Strategy, StrategyRandomness, UpgradingInfo,
     };
+    use drive::drive::config::DriveConfig;
     use tenderdash_abci::proto::types::CoreChainLock;
 
-    use drive_abci::config::PlatformConfig;
+    use drive_abci::config::{PlatformConfig, PlatformTestConfig};
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
 
     #[test]
@@ -37,6 +38,8 @@ mod tests {
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 125,
             block_spacing_ms: twenty_minutes_in_ms,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -264,6 +267,8 @@ mod tests {
             quorum_size: 40,
             validator_set_quorum_rotation_block_count: 15,
             block_spacing_ms: hour_in_ms,
+
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -481,6 +486,8 @@ mod tests {
             quorum_size: 50,
             validator_set_quorum_rotation_block_count: 30,
             block_spacing_ms: hour_in_ms,
+
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -783,6 +790,8 @@ mod tests {
             quorum_size: 50,
             validator_set_quorum_rotation_block_count: 30,
             block_spacing_ms: hour_in_ms,
+
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
