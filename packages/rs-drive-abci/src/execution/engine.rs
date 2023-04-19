@@ -14,6 +14,7 @@ use drive::error::Error::GroveDB;
 use drive::fee::result::FeeResult;
 use drive::grovedb::{Transaction, TransactionArg};
 use std::collections::BTreeMap;
+use tenderdash_abci::proto;
 use tenderdash_abci::proto::abci::ExecTxResult;
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 
@@ -348,9 +349,6 @@ where
             transaction,
         )?;
 
-        // Store ephemeral data
-        self.store_ephemeral_data(&block_info, &quorum_hash, transaction)?;
-
         let root_hash = self
             .drive
             .grove
@@ -430,7 +428,6 @@ where
 
         self.update_quorum_info(&mut state_cache, block_info.core_height)?;
 
-        // TODO: re-enable
         self.update_masternode_list(
             &mut state_cache,
             block_info.core_height,
@@ -439,6 +436,9 @@ where
         )?;
 
         state_cache.last_committed_block_info = Some(block_info.clone());
+
+        // Persist ephemeral data
+        self.store_ephemeral_data(&block_info, &updated_validator_hash, transaction)?;
 
         Ok(())
     }
@@ -503,7 +503,7 @@ where
             .quorum_public_key;
 
         bls_signatures::PublicKey::from_bytes(public_key.as_slice())
-            .map_err(|e| AbciError::from(e).into())
+            .map_err(|e| Error::Execution(ExecutionError::BlsErrorFromDashCoreResponse(e)))
     }
 
     /// Finalize the block, this first involves validating it, then if valid
@@ -575,6 +575,7 @@ where
                 "received a block for h: {} r: {} with validator set quorum hash {} expected current validator set quorum hash is {}",
                 height, round, hex::encode(commit_info.quorum_hash), hex::encode(state.current_validator_set_quorum_hash)
             )));
+            return Ok(validation_result.into());
         }
 
         let quorum_public_key = self.get_quorum_key(commit_info.quorum_hash)?;
@@ -582,16 +583,19 @@ where
         // Verify commit
 
         let quorum_type = self.config.quorum_type();
-        let commit = Commit::new(
+        let commit = Commit::new_from_cleaned(
             commit_info.clone(),
             block_id.clone(),
             height,
             quorum_type,
             &block_header.chain_id,
         );
-        commit
-            .verify_signature(&commit_info.block_signature.to_vec(), &quorum_public_key)
-            .map_err(AbciError::from)?;
+        let validation_result =
+            commit.verify_signature(&commit_info.block_signature, &quorum_public_key);
+
+        if !validation_result.is_valid() {
+            return Ok(validation_result.into());
+        }
 
         // Verify vote extensions
         // let received_withdrawals = WithdrawalTxs::from(&commit.threshold_vote_extensions);

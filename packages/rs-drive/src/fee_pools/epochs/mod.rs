@@ -36,8 +36,8 @@ pub mod operations_factory;
 pub mod paths;
 
 use crate::fee::epoch::EpochIndex;
+use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
-use bincode::{Encode, Decode};
 
 // TODO: I would call it EpochTree because it represent pool,
 //  not just Epoch which is more abstract thing that we will probably need in future too

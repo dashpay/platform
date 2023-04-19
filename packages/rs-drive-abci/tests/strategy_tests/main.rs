@@ -93,12 +93,12 @@ use drive::query::DriveQuery;
 use drive_abci::abci::AbciApplication;
 use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
 use drive_abci::execution::quorum::{Quorum, ValidatorWithPublicKeyShare};
+use drive_abci::execution::test_quorum::TestQuorumInfo;
 use drive_abci::platform::Platform;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use drive_abci::test::fixture::abci::static_init_chain_request;
 use drive_abci::test::helpers::setup::TestPlatformBuilder;
 use drive_abci::{config::PlatformConfig, test::helpers::setup::TempPlatform};
-use quorum::{TestQuorumInfo, ValidatorInQuorum};
 use rand::prelude::IteratorRandom;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
@@ -111,7 +111,6 @@ use std::str::FromStr;
 use tenderdash_abci::proto::abci::ValidatorSetUpdate;
 use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
 
-mod quorum;
 mod upgrade_fork_tests;
 
 #[derive(Clone, Debug)]
@@ -1332,13 +1331,9 @@ pub(crate) fn continue_chain_for_strategy(
 
     let mut current_quorum_with_test_info = quorums.get(&current_quorum_hash).unwrap();
 
-    let mut current_quorum = current_quorum_with_test_info.into();
-
     let mut next_quorum_hash = current_quorum_hash;
 
     let mut next_quorum_with_test_info = quorums.get(&next_quorum_hash).unwrap();
-
-    let mut next_quorum = next_quorum_with_test_info.into();
 
     for block_height in block_start..(block_start + block_count) {
         let needs_rotation_on_next_block = block_height % quorum_rotation_block_count == 0;
@@ -1370,12 +1365,10 @@ pub(crate) fn continue_chain_for_strategy(
         };
         if current_quorum_with_test_info.quorum_hash != current_quorum_hash {
             current_quorum_with_test_info = quorums.get(&current_quorum_hash).unwrap();
-            current_quorum = current_quorum_with_test_info.into();
         }
 
         if next_quorum_with_test_info.quorum_hash != next_quorum_hash {
             next_quorum_with_test_info = quorums.get(&next_quorum_hash).unwrap();
-            next_quorum = next_quorum_with_test_info.into();
         }
 
         let proposer = current_quorum_with_test_info
@@ -1412,8 +1405,8 @@ pub(crate) fn continue_chain_for_strategy(
         let mut withdrawals_this_block = abci_app
             .mimic_execute_block(
                 proposer.pro_tx_hash.into_inner(),
-                &current_quorum,
-                &next_quorum,
+                &current_quorum_with_test_info,
+                &next_quorum_with_test_info,
                 proposed_version,
                 proposer_count,
                 block_info,

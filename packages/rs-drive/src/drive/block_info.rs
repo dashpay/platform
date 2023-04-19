@@ -1,6 +1,6 @@
-use dpp::dashcore::QuorumHash;
 use crate::fee_pools::epochs::Epoch;
-use dpp::bincode::{Encode, Decode};
+use dpp::bincode::{Decode, Encode};
+use dpp::dashcore::QuorumHash;
 
 /// Block information
 #[derive(Clone, Default, Encode, Decode)]
@@ -16,7 +16,6 @@ pub struct BlockInfo {
 
     /// Current fee epoch
     pub epoch: Epoch,
-
     // /// current quorum
     // pub current_validator_set_quorum_hash: QuorumHash,
 }

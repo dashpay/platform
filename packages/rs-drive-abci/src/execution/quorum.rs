@@ -34,7 +34,7 @@ impl TryFrom<QuorumInfoResult> for Quorum {
                 return Err(Error::Execution(ExecutionError::DashCoreBadResponseError("quorum member did not have a public key share".to_string())));
             };
 
-            let public_key = BlsPublicKey::from_bytes(pub_key_share.as_slice()).map_err(AbciError::BlsError)?;
+            let public_key = BlsPublicKey::from_bytes(pub_key_share.as_slice()).map_err(ExecutionError::BlsErrorFromDashCoreResponse)?;
             let validator = ValidatorWithPublicKeyShare {
                 pro_tx_hash: quorum_member.pro_tx_hash,
                 public_key,
@@ -47,7 +47,7 @@ impl TryFrom<QuorumInfoResult> for Quorum {
             quorum_hash,
             validator_set,
             threshold_public_key: BlsPublicKey::from_bytes(quorum_public_key.as_slice())
-                .map_err(AbciError::BlsError)?,
+                .map_err(ExecutionError::BlsErrorFromDashCoreResponse)?,
         })
     }
 }

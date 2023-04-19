@@ -1,3 +1,4 @@
+use bls_signatures::BlsError;
 use dashcore::consensus::encode::Error as DashCoreConsensusEncodeError;
 use drive::error::Error as DriveError;
 
@@ -71,4 +72,12 @@ pub enum ExecutionError {
     /// An error received for a data trigger.
     #[error("data trigger execution error: {0}")]
     DataTriggerExecutionError(String),
+
+    /// Error occurred during deserializing a BLS primitive received from core
+    #[error("dash core response bls error: {0}")]
+    BlsErrorFromDashCoreResponse(BlsError),
+
+    /// General Bls Error
+    #[error("bls error: {0}")]
+    BlsErrorGeneral(#[from] BlsError),
 }

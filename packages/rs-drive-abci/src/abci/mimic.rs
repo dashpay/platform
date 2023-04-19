@@ -1,8 +1,10 @@
+use crate::abci::commit::Commit;
 use crate::abci::server::AbciApplication;
 use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::quorum::Quorum;
+use crate::execution::test_quorum::TestQuorumInfo;
 use crate::rpc::core::CoreRPCLike;
 use dashcore::blockdata::transaction::special_transaction::asset_unlock::qualified_asset_unlock::AssetUnlockPayload;
 use dashcore::blockdata::transaction::special_transaction::asset_unlock::request_info::AssetUnlockRequestInfo;
@@ -23,7 +25,10 @@ use tenderdash_abci::proto::types::{
     Block, BlockId, Data, EvidenceList, Header, PartSetHeader, VoteExtension, VoteExtensionType,
 };
 use tenderdash_abci::proto::version::Consensus;
-use tenderdash_abci::Application;
+use tenderdash_abci::{
+    proto::{self, signatures::SignDigest},
+    Application,
+};
 
 impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
     /// Execute a block with various state transitions
@@ -31,8 +36,8 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
     pub fn mimic_execute_block(
         &self,
         proposer_pro_tx_hash: [u8; 32],
-        current_quorum: &Quorum,
-        next_quorum: &Quorum,
+        current_quorum: &TestQuorumInfo,
+        next_quorum: &TestQuorumInfo,
         proposed_version: ProtocolVersion,
         _total_hpmns: u32,
         block_info: BlockInfo,
@@ -119,7 +124,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
 
         // for all proposers in the quorum we much verify each vote extension
 
-        for validator in current_quorum.validator_set.values() {
+        for validator in current_quorum.validator_set.iter() {
             let request_verify_vote_extension = RequestVerifyVoteExtension {
                 hash: [0; 32].to_vec(), //todo
                 validator_pro_tx_hash: validator.pro_tx_hash.to_vec(),
@@ -196,13 +201,50 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
 
         drop(guarded_block_execution_context);
 
+        // We need to sign the block hash
+
+        let block_hash = [0; 32]; //todo
+        let chain_id = "strategy_tests".to_string();
+        let quorum_type = self.platform.config.quorum_type();
+
+        let block_id = BlockId {
+            hash: block_hash.to_vec(),                       //todo
+            part_set_header: Some(PartSetHeader::default()), // todo
+            state_id: [0; 32].to_vec(),                      //todo
+        };
+
+        let mut commit_info = CommitInfo {
+            round: 0,
+            quorum_hash: current_quorum.quorum_hash.to_vec(),
+            block_signature: Default::default(),
+            threshold_vote_extensions: extensions,
+        };
+
+        let commit = proto::types::Commit {
+            block_id: Some(block_id.clone()),
+            height: height as i64,
+            round: 0,
+            quorum_hash: current_quorum.quorum_hash.to_vec(),
+            threshold_block_signature: Default::default(),
+            threshold_vote_extensions: Default::default(),
+        };
+
+        let digest = commit
+            .sign_digest(
+                &chain_id,
+                quorum_type as u8,
+                &current_quorum.quorum_hash,
+                height as i64,
+                0,
+            )
+            .expect("expected to sign digest");
+
+        let block_signature = current_quorum.private_key.sign(digest.as_slice());
+
+        commit_info.block_signature = block_signature.to_bytes().to_vec();
+
         let request_finalize_block = RequestFinalizeBlock {
-            commit: Some(CommitInfo {
-                round: 0,
-                quorum_hash: current_quorum.quorum_hash.to_vec(),
-                block_signature: [0; 96].to_vec(),
-                threshold_vote_extensions: extensions,
-            }),
+            commit: Some(commit_info),
             misbehavior: vec![],
             hash: app_hash.clone(), //todo: change this to block hash
             height: height as i64,
@@ -213,7 +255,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                         block: 0, //todo
                         app: 0,   //todo
                     }),
-                    chain_id: "strategy_tests".to_string(),
+                    chain_id,
                     height: height as i64,
                     time: Some(Timestamp {
                         seconds: (time_ms / 1000) as i64,
@@ -240,11 +282,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                 last_commit: None,
                 core_chain_lock: None,
             }),
-            block_id: Some(BlockId {
-                hash: [0; 32].to_vec(),                          //todo
-                part_set_header: Some(PartSetHeader::default()), // todo
-                state_id: [0; 32].to_vec(),                      //todo
-            }),
+            block_id: Some(block_id),
         };
 
         self.finalize_block(request_finalize_block)

@@ -20,3 +20,5 @@ mod masternode_identities;
 pub mod protocol_upgrade;
 /// Quorum methods
 pub mod quorum;
+/// Test quorum for mimic block execution
+pub mod test_quorum;

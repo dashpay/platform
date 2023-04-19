@@ -34,6 +34,10 @@ pub enum AbciError {
     #[error("bad request received from Tenderdash: {0}")]
     BadRequest(String),
 
+    /// Bad commit signature from Tenderdash
+    #[error("bad commit signature: {0}")]
+    BadCommitSignature(String),
+
     /// Error returned by Tenderdash-abci library
     #[cfg(feature = "server")]
     #[error("tenderdash: {0}")]
@@ -44,8 +48,12 @@ pub enum AbciError {
     TenderdashProto(tenderdash_abci::proto::Error),
 
     /// Error occurred during signature verification or deserializing a BLS primitive
-    #[error("bls error: {0}")]
-    BlsError(#[from] BlsError),
+    #[error("bls error from user message: {0}")]
+    BlsErrorFromUserMessage(BlsError),
+
+    /// Error occurred related to threshold signing, either of commit
+    #[error("bls error from Tenderdash for threshold mechanisms: {1}: {0}")]
+    BlsErrorOfTenderdashThresholdMechanism(BlsError, String),
 
     /// Error occurred during validator set creation
     #[error("validator set: {0}")]

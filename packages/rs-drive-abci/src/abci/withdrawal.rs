@@ -111,7 +111,7 @@ impl<'a> WithdrawalTxs<'a> {
     ///
     /// 1. The signature was invalid, most likely due to change in the data; in this case,
     /// [AbciError::VoteExtensionsSignatureInvalid] is returned.
-    /// 2. Signature or public key is malformed - in this case, [AbciError::BlsError] is returned
+    /// 2. Signature or public key is malformed - in this case, [AbciError::BlsErrorOfTenderdashThresholdMechanism] is returned
     /// 3. Provided data is invalid - [AbciError::TenderdashProto] is returned
     ///
     /// As all these conditions, in normal circumstances, should cause processing to be terminated, they are all
@@ -141,7 +141,14 @@ impl<'a> WithdrawalTxs<'a> {
 
             let signature = match bls_signatures::Signature::from_bytes(&s.signature) {
                 Ok(s) => s,
-                Err(e) => return SimpleValidationResult::new_with_error(AbciError::BlsError(e)),
+                Err(e) => {
+                    return SimpleValidationResult::new_with_error(
+                        AbciError::BlsErrorOfTenderdashThresholdMechanism(
+                            e,
+                            "signature withdrawal verification".to_string(),
+                        ),
+                    )
+                }
             };
 
             if !public_key.verify(&signature, &hash) {
