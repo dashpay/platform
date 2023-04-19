@@ -158,6 +158,65 @@ impl Platform<MockCoreRPCLike> {
         });
         Self::open_with_client(path, config, core_rpc_mock)
     }
+
+    /// Recreate the state from the backing store
+    pub fn recreate_state(&self) -> Result<bool, Error> {
+        let Some(serialized_block_info) = self.drive
+            .grove
+            .get_aux(b"saved_state", None)
+            .unwrap()
+            .map_err(|e| Error::Drive(GroveDB(e)))? else {
+            return Ok(false);
+        };
+
+        let block_info: BlockInfo = BlockInfo::deserialize(serialized_block_info.as_slice())?;
+
+        let maybe_quorum_hash = self
+            .drive
+            .grove
+            .get_aux(b"saved_quorum_hash", None)
+            .unwrap()
+            .map_err(|e| Error::Drive(GroveDB(e)))?;
+
+        let current_protocol_version_in_consensus = self
+            .drive
+            .fetch_current_protocol_version(None)
+            .map_err(Error::Drive)?
+            .unwrap_or(PROTOCOL_VERSION);
+        let next_epoch_protocol_version = self
+            .drive
+            .fetch_next_protocol_version(None)
+            .map_err(Error::Drive)?
+            .unwrap_or(PROTOCOL_VERSION);
+
+        let current_validator_set_quorum_hash = QuorumHash::from_slice(&maybe_quorum_hash.unwrap())
+            .map_err(|_| {
+                Error::Drive(drive::error::Error::Drive(DriveError::CorruptedDriveState(
+                    "quorum hash should be 32 bytes".to_string(),
+                )))
+            })?;
+
+        let new_state = PlatformState {
+            last_committed_block_info: Some(block_info),
+            current_protocol_version_in_consensus,
+            next_epoch_protocol_version,
+            quorums_extended_info: Default::default(),
+            current_validator_set_quorum_hash,
+            validator_sets: Default::default(),
+            full_masternode_list: Default::default(),
+            hpmn_masternode_list: Default::default(),
+        };
+
+        let core_height = new_state.core_height();
+
+        let mut state_cache = self.state.write().unwrap();
+        *state_cache = new_state;
+        self.update_quorum_info(&mut state_cache, core_height)?;
+        self.update_state_masternode_list(&mut state_cache, core_height, true)?;
+        drop(state_cache);
+
+        return Ok(true);
+    }
 }
 
 impl<C> Platform<C> {
@@ -221,14 +280,7 @@ impl<C> Platform<C> {
     where
         C: CoreRPCLike,
     {
-        let block_info: BlockInfo =
-            bincode::decode_from_slice(&serialized_block_info, bincode::config::standard())
-                .map_err(|e| {
-                    Serialization(SerializationError::CorruptedDeserialization(
-                        "failed to deserialize saved state".to_string(),
-                    ))
-                })?
-                .0;
+        let block_info = BlockInfo::deserialize(serialized_block_info.as_slice())?;
 
         let maybe_quorum_hash = drive
             .grove
@@ -252,10 +304,6 @@ impl<C> Platform<C> {
         };
 
         let core_height = state.core_height();
-        let block_info = state
-            .last_committed_block_info
-            .clone()
-            .unwrap_or(BlockInfo::genesis());
 
         let platform: Platform<C> = Platform {
             drive,
@@ -265,23 +313,10 @@ impl<C> Platform<C> {
             core_rpc,
         };
 
-        let transaction = platform.drive.grove.start_transaction();
         let mut state_cache = platform.state.write().unwrap();
         platform.update_quorum_info(&mut state_cache, core_height)?;
-        platform.update_masternode_list(
-            &mut state_cache,
-            core_height,
-            &block_info,
-            &transaction,
-        )?;
+        platform.update_state_masternode_list(&mut state_cache, core_height, true)?;
         drop(state_cache);
-
-        platform
-            .drive
-            .grove
-            .commit_transaction(transaction)
-            .unwrap()
-            .map_err(|e| Error::Drive(GroveDB(e)))?;
 
         return Ok(platform);
     }

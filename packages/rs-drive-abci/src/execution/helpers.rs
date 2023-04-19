@@ -13,6 +13,29 @@ use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformState;
 
+/// Represents the outcome of an attempt to update the state of a masternode list.
+pub struct UpdateStateMasternodeListOutcome {
+    /// The diff between two masternode lists.
+    masternode_list_diff: MasternodeListDiffWithMasternodes,
+    /// The set of ProTxHashes that correspond to masternodes that were deleted from the list.
+    deleted_masternodes: BTreeSet<ProTxHash>,
+}
+
+impl Default for UpdateStateMasternodeListOutcome {
+    fn default() -> Self {
+        UpdateStateMasternodeListOutcome {
+            masternode_list_diff: MasternodeListDiffWithMasternodes {
+                base_height: 0,
+                block_height: 0,
+                added_mns: vec![],
+                removed_mns: vec![],
+                updated_mns: vec![],
+            },
+            deleted_masternodes: Default::default(),
+        }
+    }
+}
+
 impl<C> Platform<C>
 where
     C: CoreRPCLike,
@@ -108,33 +131,19 @@ where
 
     // TODO: re-enable
 
-    /// Updates the masternode list in the platform state based on changes in the masternode list
-    /// from Dash Core between two block heights.
-    ///
-    /// This function fetches the masternode list difference between the current core block height
-    /// and the previous core block height, then updates the full masternode list and the
-    /// HPMN (high performance masternode) list in the platform state accordingly.
-    ///
-    /// # Arguments
-    ///
-    /// * `state` - A mutable reference to the platform state to be updated.
-    /// * `core_block_height` - The current block height in the Dash Core.
-    /// * `transaction` - The current groveDB transaction.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<(), Error>` - Returns `Ok(())` if the update is successful. Returns an error if
-    ///   there is a problem fetching the masternode list difference or updating the state.
-    pub(crate) fn update_masternode_list(
+    pub(crate) fn update_state_masternode_list(
         &self,
         state: &mut PlatformState,
         core_block_height: u32,
-        block_info: &BlockInfo,
-        transaction: &Transaction,
-    ) -> Result<(), Error> {
-        let previous_core_height = state.core_height();
+        start_from_scratch: bool,
+    ) -> Result<UpdateStateMasternodeListOutcome, Error> {
+        let previous_core_height = if start_from_scratch {
+            0
+        } else {
+            state.core_height()
+        };
         if core_block_height == previous_core_height {
-            return Ok(()); // no need to do anything
+            return Ok(UpdateStateMasternodeListOutcome::default()); // no need to do anything
         }
 
         let masternode_diff = self
@@ -156,6 +165,11 @@ where
                 None
             }
         });
+
+        if start_from_scratch {
+            state.hpmn_masternode_list.clear();
+            state.full_masternode_list.clear();
+        }
 
         state.hpmn_masternode_list.extend(added_hpmns.clone());
 
@@ -193,6 +207,46 @@ where
         state
             .full_masternode_list
             .retain(|key, _| !deleted_masternodes.contains(key));
+
+        Ok(UpdateStateMasternodeListOutcome {
+            masternode_list_diff: masternode_diff,
+            deleted_masternodes,
+        })
+    }
+
+    /// Updates the masternode list in the platform state based on changes in the masternode list
+    /// from Dash Core between two block heights.
+    ///
+    /// This function fetches the masternode list difference between the current core block height
+    /// and the previous core block height, then updates the full masternode list and the
+    /// HPMN (high performance masternode) list in the platform state accordingly.
+    ///
+    /// # Arguments
+    ///
+    /// * `state` - A mutable reference to the platform state to be updated.
+    /// * `core_block_height` - The current block height in the Dash Core.
+    /// * `transaction` - The current groveDB transaction.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<(), Error>` - Returns `Ok(())` if the update is successful. Returns an error if
+    ///   there is a problem fetching the masternode list difference or updating the state.
+    pub(crate) fn update_masternode_list(
+        &self,
+        state: &mut PlatformState,
+        core_block_height: u32,
+        block_info: &BlockInfo,
+        transaction: &Transaction,
+    ) -> Result<(), Error> {
+        let previous_core_height = state.core_height();
+        if core_block_height == previous_core_height {
+            return Ok(()); // no need to do anything
+        }
+
+        let UpdateStateMasternodeListOutcome {
+            masternode_list_diff,
+            deleted_masternodes,
+        } = self.update_state_masternode_list(state, core_block_height, false)?;
 
         // //Todo: masternode identities
         // self.update_masternode_identities(

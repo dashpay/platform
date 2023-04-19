@@ -1100,7 +1100,7 @@ pub fn generate_test_quorums(
 }
 
 pub(crate) fn run_chain_for_strategy(
-    platform: &mut TempPlatform<MockCoreRPCLike>,
+    platform: &mut Platform<MockCoreRPCLike>,
     block_count: u64,
     strategy: Strategy,
     config: PlatformConfig,
@@ -1200,7 +1200,7 @@ pub(crate) fn run_chain_for_strategy(
 }
 
 pub(crate) fn start_chain_for_strategy(
-    platform: &TempPlatform<MockCoreRPCLike>,
+    platform: &Platform<MockCoreRPCLike>,
     block_count: u64,
     proposers: Vec<MasternodeListItem>,
     quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
@@ -1550,6 +1550,93 @@ mod tests {
                 })
             });
         run_chain_for_strategy(&mut platform, 1000, strategy, config, 15);
+    }
+
+    #[test]
+    fn run_chain_stop_and_restart() {
+        let strategy = Strategy {
+            contracts_with_updates: vec![],
+            operations: vec![],
+            identities_inserts: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+        };
+        let config = PlatformConfig {
+            verify_sum_trees: true,
+            quorum_size: 100,
+            validator_set_quorum_rotation_block_count: 25,
+            block_spacing_ms: 3000,
+            ..Default::default()
+        };
+        let TempPlatform {
+            mut platform,
+            tempdir,
+        } = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+
+        let ChainExecutionOutcome {
+            mut abci_app,
+            proposers,
+            quorums,
+            current_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            ..
+        } = run_chain_for_strategy(&mut platform, 15, strategy.clone(), config.clone(), 40);
+
+        abci_app
+            .platform
+            .recreate_state()
+            .expect("expected to recreate state");
+
+        let block_start = abci_app
+            .platform
+            .state
+            .read()
+            .unwrap()
+            .last_committed_block_info
+            .as_ref()
+            .unwrap()
+            .height
+            + 1;
+
+        continue_chain_for_strategy(
+            abci_app,
+            ChainExecutionParameters {
+                block_start,
+                core_height_start: 0,
+                block_count: 30,
+                proposers,
+                quorums,
+                current_quorum_hash,
+                current_proposer_versions: Some(current_proposer_versions.clone()),
+                current_time_ms: end_time_ms,
+            },
+            strategy.clone(),
+            config.clone(),
+            StrategyRandomness::SeedEntropy(7),
+        );
     }
 
     #[test]

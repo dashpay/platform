@@ -33,7 +33,9 @@
 //!
 
 use std::ops::{Deref, DerefMut};
+use std::path::Path;
 
+use crate::error::Error;
 use crate::platform::Platform;
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::fixture::abci::static_system_identity_public_keys;
@@ -48,8 +50,10 @@ pub struct TestPlatformBuilder {
 
 /// Platform wrapper that takes care of temporary directory.
 pub struct TempPlatform<C> {
-    platform: Platform<C>,
-    _tempdir: TempDir,
+    /// Platform
+    pub platform: Platform<C>,
+    /// A temp dir
+    pub tempdir: TempDir,
 }
 
 impl TestPlatformBuilder {
@@ -75,7 +79,7 @@ impl TestPlatformBuilder {
 
         TempPlatform {
             platform,
-            _tempdir: self.tempdir,
+            tempdir: self.tempdir,
         }
     }
 
@@ -86,12 +90,12 @@ impl TestPlatformBuilder {
 
         TempPlatform {
             platform,
-            _tempdir: self.tempdir,
+            tempdir: self.tempdir,
         }
     }
 }
 
-impl<C> TempPlatform<C> {
+impl TempPlatform<MockCoreRPCLike> {
     /// A function which sets initial state structure for Platform.
     pub fn set_initial_state_structure(self) -> Self {
         self.platform
@@ -113,6 +117,14 @@ impl<C> TempPlatform<C> {
             .expect("should create root tree successfully");
 
         self
+    }
+
+    /// Rebuilds Platform from the tempdir as if it was destroyed and restarted
+    pub fn open_with_tempdir(tempdir: TempDir, config: PlatformConfig) -> Self {
+        let platform = Platform::<MockCoreRPCLike>::open(tempdir.path(), Some(config))
+            .expect("should open Platform successfully");
+
+        Self { platform, tempdir }
     }
 }
 
