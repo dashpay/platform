@@ -361,20 +361,7 @@ class DockerCompose {
     this.isDockerSetupVerified = true;
 
     const dockerComposeInstallLink = 'https://docs.docker.com/compose/install/';
-    let dockerInstallLink;
-
-    switch (process.platform) {
-      case 'darwin':
-        dockerInstallLink = 'https://docs.docker.com/desktop/install/mac-install/';
-        break;
-      case 'win32':
-        dockerInstallLink = 'https://docs.docker.com/desktop/install/windows-install/';
-        break;
-      case 'linux':
-      default:
-        dockerInstallLink = 'https://docs.docker.com/engine/install/';
-        break;
-    }
+    const dockerInstallLink = 'https://docs.docker.com/engine/install/';
 
     // Check docker
     if (!hasbin.sync('docker')) {
