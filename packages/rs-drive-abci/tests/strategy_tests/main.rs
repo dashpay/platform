@@ -1257,11 +1257,19 @@ pub(crate) fn start_chain_for_strategy(
         quorum_hash: current_quorum_hash.to_vec(),
     });
 
+    abci_application.start_transaction();
+
+    let binding = abci_application.transaction.read().unwrap();
+
+    let transaction = binding.as_ref().expect("expected a transaction");
+
     platform
-        .init_chain(init_chain_request)
+        .init_chain(init_chain_request, transaction)
         .expect("should init chain");
 
-    platform.create_mn_shares_contract(None);
+    platform.create_mn_shares_contract(Some(&transaction));
+
+    drop(binding);
 
     continue_chain_for_strategy(
         abci_application,

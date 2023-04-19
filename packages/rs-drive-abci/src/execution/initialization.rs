@@ -6,6 +6,7 @@ use dashcore::hashes::Hash;
 use dashcore::QuorumHash;
 use dpp::block::block_info::BlockInfo;
 use dpp::identity::TimestampMillis;
+use drive::grovedb::Transaction;
 use tenderdash_abci::proto::abci::RequestInitChain;
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 
@@ -14,8 +15,11 @@ where
     C: CoreRPCLike,
 {
     /// Initialize the chain
-    pub fn init_chain(&self, request: RequestInitChain) -> Result<(), Error> {
-        let transaction = self.drive.grove.start_transaction();
+    pub fn init_chain(
+        &self,
+        request: RequestInitChain,
+        transaction: &Transaction,
+    ) -> Result<(), Error> {
         let genesis_time = request
             .time
             .ok_or(Error::Execution(ExecutionError::InitializationError(
@@ -26,7 +30,7 @@ where
         self.create_genesis_state(
             genesis_time,
             self.config.abci.keys.clone().into(),
-            Some(&transaction),
+            Some(transaction),
         )?;
 
         let mut state_cache = self.state.write().unwrap();
@@ -38,7 +42,7 @@ where
             request.initial_core_height,
             true,
             &BlockInfo::genesis(),
-            &transaction,
+            transaction,
         )?;
 
         state_cache.current_validator_set_quorum_hash = QuorumHash::from_slice(
@@ -49,9 +53,6 @@ where
                 .as_slice(),
         )
         .expect("expected initial valid quorum hash");
-
-        self.drive
-            .commit_transaction(transaction)
-            .map_err(Error::Drive)
+        Ok(())
     }
 }

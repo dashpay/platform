@@ -79,7 +79,11 @@ where
         &self,
         request: RequestInitChain,
     ) -> Result<ResponseInitChain, ResponseException> {
-        self.platform.init_chain(request)?;
+        //todo: check to see if the chain is already initialized
+        self.start_transaction();
+        let transaction_guard = self.transaction.read().unwrap();
+        let transaction = transaction_guard.as_ref().unwrap();
+        self.platform.init_chain(request, transaction)?;
 
         let response = ResponseInitChain {
             ..Default::default()
@@ -93,8 +97,19 @@ where
         &self,
         request: RequestPrepareProposal,
     ) -> Result<ResponsePrepareProposal, ResponseException> {
-        self.start_transaction();
-        let transaction_guard = self.transaction.read().unwrap();
+        let transaction_guard = if request.height == self.platform.config.abci.genesis_height as i64
+        {
+            // special logic on init chain
+            let transaction = self.transaction.read().unwrap();
+            if transaction.is_none() {
+                return Err(Error::Abci(AbciError::BadRequest("received a prepare proposal request for the genesis height before an init chain request".to_string())))?;
+            }
+            transaction
+        } else {
+            self.start_transaction();
+            self.transaction.read().unwrap()
+        };
+
         let transaction = transaction_guard.as_ref().unwrap();
         // Running the proposal executes all the state transitions for the block
         let run_result = self
@@ -172,8 +187,18 @@ where
         &self,
         mut request: RequestProcessProposal,
     ) -> Result<ResponseProcessProposal, ResponseException> {
-        self.start_transaction();
-        let transaction_guard = self.transaction.read().unwrap();
+        let transaction_guard = if request.height == self.platform.config.abci.genesis_height as i64
+        {
+            // special logic on init chain
+            let transaction = self.transaction.read().unwrap();
+            if transaction.is_none() {
+                return Err(Error::Abci(AbciError::BadRequest("received a process proposal request for the genesis height before an init chain request".to_string())))?;
+            }
+            transaction
+        } else {
+            self.start_transaction();
+            self.transaction.read().unwrap()
+        };
         let transaction = transaction_guard.as_ref().unwrap();
 
         // We can take the core chain lock update here because it won't be used anywhere else
