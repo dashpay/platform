@@ -73,10 +73,10 @@ class GroupResetCommand extends GroupBaseCommand {
 
               return new Listr([
                 {
-                  task: () => generateSystemDataContractKeysTask(config, config.get('network')),
+                  task: () => resetNodeTask(config),
                 },
                 {
-                  task: () => resetNodeTask(config),
+                  task: () => generateSystemDataContractKeysTask(config, config.get('network')),
                 },
               ]);
             },

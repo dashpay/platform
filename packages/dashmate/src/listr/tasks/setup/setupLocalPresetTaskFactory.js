@@ -106,7 +106,6 @@ function setupLocalPresetTaskFactory(
           const subTasks = ctx.configGroup.map((config, i) => (
             {
               title: `Create ${config.getName()} config`,
-              // eslint-disable-next-line consistent-return
               task: () => {
                 const nodeIndex = i + 1;
 
@@ -171,8 +170,12 @@ function setupLocalPresetTaskFactory(
 
                   config.set('dashmate.helper.api.port', config.get('dashmate.helper.api.port') + (i * 100));
 
-                  return generateSystemDataContractKeysTask(config, network);
+                  return new Listr([{
+                    task: () => generateSystemDataContractKeysTask(config, network),
+                  }]);
                 }
+
+                return null;
               },
               options: {
                 persistentOutput: true,

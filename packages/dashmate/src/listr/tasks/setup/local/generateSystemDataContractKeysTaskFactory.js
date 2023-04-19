@@ -14,9 +14,8 @@ function generateSystemDataContractKeysTaskFactory(generateHDPrivateKeys) {
   function generateSystemDataContractKeysTask(config, network) {
     return new Listr([
       {
-        task: async (ctx, task) => {
+        task: async () => {
           const {
-            hdPrivateKey: dpnsPrivateKey,
             derivedPrivateKeys: [
               dpnsDerivedMasterPrivateKey,
               dpnsDerivedSecondPrivateKey,
@@ -24,7 +23,6 @@ function generateSystemDataContractKeysTaskFactory(generateHDPrivateKeys) {
           } = await generateHDPrivateKeys(network, [0, 1]);
 
           const {
-            hdPrivateKey: featureFlagsPrivateKey,
             derivedPrivateKeys: [
               featureFlagsDerivedMasterPrivateKey,
               featureFlagsDerivedSecondPrivateKey,
@@ -32,7 +30,6 @@ function generateSystemDataContractKeysTaskFactory(generateHDPrivateKeys) {
           } = await generateHDPrivateKeys(network, [0, 1]);
 
           const {
-            hdPrivateKey: dashpayPrivateKey,
             derivedPrivateKeys: [
               dashpayDerivedMasterPrivateKey,
               dashpayDerivedSecondPrivateKey,
@@ -40,7 +37,6 @@ function generateSystemDataContractKeysTaskFactory(generateHDPrivateKeys) {
           } = await generateHDPrivateKeys(network, [0, 1]);
 
           const {
-            hdPrivateKey: masternodeRewardSharesPrivateKey,
             derivedPrivateKeys: [
               masternodeRewardSharesDerivedMasterPrivateKey,
               masternodeRewardSharesDerivedSecondPrivateKey,
@@ -62,18 +58,6 @@ function generateSystemDataContractKeysTaskFactory(generateHDPrivateKeys) {
           config.set('platform.masternodeRewardShares.secondPublicKey',
             masternodeRewardSharesDerivedSecondPrivateKey.privateKey
               .toPublicKey().toString());
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `DPNS Private Key: ${dpnsPrivateKey.toString()}`;
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `Feature Flags Private Key: ${featureFlagsPrivateKey.toString()}`;
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `Dashpay Private Key: ${dashpayPrivateKey.toString()}`;
-
-          // eslint-disable-next-line no-param-reassign
-          task.output = `Masternode Reward Shares Private Key: ${masternodeRewardSharesPrivateKey.toString()}`;
         },
       },
     ]);
