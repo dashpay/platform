@@ -39,9 +39,10 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::credits::{Creditable, Credits};
 use crate::fee::get_overflow_error;
-use crate::fee_pools::epochs::Epoch;
+use dpp::block::epoch::Epoch;
 
 use crate::fee_pools::epochs::epoch_key_constants;
+use crate::fee_pools::epochs::paths::EpochProposers;
 
 impl Drive {
     /// Gets the amount of storage credits to be distributed for the Epoch.
@@ -149,6 +150,7 @@ mod tests {
     use super::*;
 
     use crate::drive::batch::GroveDbOpBatch;
+    use crate::fee_pools::epochs::operations_factory::EpochOperations;
     use crate::fee_pools::epochs_root_tree_key_constants::KEY_STORAGE_FEE_POOL;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
 
@@ -160,7 +162,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = Epoch::new(7000);
+            let epoch = Epoch::new(7000).unwrap();
 
             let result =
                 drive.get_epoch_storage_credits_for_distribution(&epoch, Some(&transaction));
@@ -176,7 +178,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = Epoch::new(0);
+            let epoch = Epoch::new(0).unwrap();
 
             drive
                 .grove
@@ -208,7 +210,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = Epoch::new(0);
+            let epoch = Epoch::new(0).unwrap();
 
             drive
                 .grove
@@ -240,7 +242,7 @@ mod tests {
         let processing_fee: Credits = 42;
         let storage_fee: Credits = 1000;
 
-        let epoch = Epoch::new(0);
+        let epoch = Epoch::new(0).unwrap();
 
         let mut batch = GroveDbOpBatch::new();
 
@@ -275,7 +277,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = Epoch::new(7000);
+            let epoch = Epoch::new(7000).unwrap();
 
             let result = drive.get_epoch_fee_multiplier(&epoch, Some(&transaction));
 
@@ -290,7 +292,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = Epoch::new(0);
+            let epoch = Epoch::new(0).unwrap();
 
             drive
                 .grove
@@ -317,7 +319,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = Epoch::new(0);
+            let epoch = Epoch::new(0).unwrap();
 
             let multiplier = 42.0;
 

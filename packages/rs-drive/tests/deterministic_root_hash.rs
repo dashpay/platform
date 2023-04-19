@@ -70,7 +70,7 @@ use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo}
 use drive::drive::{Drive, RootTree};
 
 #[cfg(feature = "full")]
-use drive::drive::block_info::BlockInfo;
+use dpp::block::block_info::BlockInfo;
 
 #[cfg(feature = "full")]
 /// Contains the unique ID for a Dash identity.

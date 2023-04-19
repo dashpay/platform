@@ -42,7 +42,9 @@ mod bls;
 #[cfg(feature = "fixtures-and-mocks")]
 pub mod tests;
 
+pub mod block;
 pub mod system_data_contracts;
+
 pub use async_trait;
 pub use bls::*;
 

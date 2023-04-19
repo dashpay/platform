@@ -57,13 +57,13 @@ use sqlparser::dialect::GenericDialect;
 #[cfg(any(feature = "full", feature = "verify"))]
 use sqlparser::parser::Parser;
 
-#[cfg(feature = "full")]
-use crate::drive::block_info::BlockInfo;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub use conditions::WhereClause;
 /// Import conditions
 #[cfg(any(feature = "full", feature = "verify"))]
 pub use conditions::WhereOperator;
+#[cfg(feature = "full")]
+use dpp::block::block_info::BlockInfo;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::data_contract::document_type::DocumentType;
@@ -1525,7 +1525,7 @@ mod tests {
     use dpp::util::serializer;
     use serde_json::Value::Null;
 
-    use crate::drive::block_info::BlockInfo;
+    use dpp::block::block_info::BlockInfo;
 
     fn setup_family_contract() -> (Drive, Contract) {
         let tmp_dir = TempDir::new().unwrap();

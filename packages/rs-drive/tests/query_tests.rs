@@ -94,6 +94,8 @@ use dpp::platform_value::platform_value;
 use dpp::platform_value::Value;
 
 #[cfg(feature = "full")]
+use dpp::block::block_info::BlockInfo;
+#[cfg(feature = "full")]
 use dpp::prelude::DataContract;
 use dpp::prelude::Revision;
 #[cfg(feature = "full")]
@@ -102,8 +104,6 @@ use dpp::util::serializer;
 use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
 #[cfg(feature = "full")]
 use drive::contract::Contract;
-#[cfg(feature = "full")]
-use drive::drive::block_info::BlockInfo;
 use drive::drive::defaults;
 #[cfg(feature = "full")]
 use drive::drive::query::QuerySerializedDocumentsOutcome;

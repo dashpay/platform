@@ -1,6 +1,6 @@
 use crate::drive::batch::DriveOperation;
 use crate::error::Error;
-use crate::fee_pools::epochs::Epoch;
+use dpp::block::epoch::Epoch;
 use dpp::platform_value::Identifier;
 
 mod document_create_transition;

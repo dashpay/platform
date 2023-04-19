@@ -40,11 +40,11 @@ use drive::dpp::identity::{
     Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel, TimestampMillis,
 };
 
+use dpp::block::block_info::BlockInfo;
 use drive::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use drive::drive::batch::{
     ContractOperationType, DocumentOperationType, DriveOperation, IdentityOperationType,
 };
-use drive::drive::block_info::BlockInfo;
 use drive::drive::defaults::PROTOCOL_VERSION;
 use drive::drive::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
 use drive::query::TransactionArg;

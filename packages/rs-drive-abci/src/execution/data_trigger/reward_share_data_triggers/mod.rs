@@ -180,6 +180,7 @@ mod test {
     use dashcore::hashes::Hash;
     use dashcore::ProTxHash;
     use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem, MasternodeType};
+    use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::data_contract::DataContract;
     use dpp::document::document_transition::Action;
@@ -194,7 +195,6 @@ mod test {
     use dpp::tests::utils::generate_random_identifier_struct;
     use dpp::version::LATEST_VERSION;
     use dpp::DataTriggerActionError;
-    use drive::drive::block_info::BlockInfo;
     use drive::drive::object_size_info::DocumentInfo::{
         DocumentRefWithoutSerialization, DocumentWithoutSerialization,
     };

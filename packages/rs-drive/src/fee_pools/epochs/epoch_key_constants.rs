@@ -10,5 +10,3 @@ pub const KEY_START_BLOCK_HEIGHT: &[u8; 1] = b"c";
 pub const KEY_PROPOSERS: &[u8; 1] = b"m";
 /// Fee multiplier key
 pub const KEY_FEE_MULTIPLIER: &[u8; 1] = b"x";
-/// Epoch storage offset
-pub(crate) const EPOCH_STORAGE_OFFSET: u16 = 256;

@@ -41,13 +41,74 @@ use crate::fee_pools::epochs::epoch_key_constants::{
     KEY_FEE_MULTIPLIER, KEY_POOL_PROCESSING_FEES, KEY_POOL_STORAGE_FEES, KEY_PROPOSERS,
     KEY_START_BLOCK_HEIGHT, KEY_START_TIME,
 };
-use crate::fee_pools::epochs::Epoch;
+use crate::fee_pools::epochs::paths::EpochProposers;
+use dpp::block::epoch::Epoch;
 use grovedb::batch::GroveDbOp;
 use grovedb::{Element, TransactionArg};
 
-impl Epoch {
+/// Operations on Epochs
+pub trait EpochOperations {
     /// Updates the given proposer's block count to the current + 1
-    pub fn increment_proposer_block_count_operation(
+    fn increment_proposer_block_count_operation(
+        &self,
+        drive: &Drive,
+        proposer_pro_tx_hash: &[u8; 32],
+        cached_previous_block_count: Option<u64>,
+        transaction: TransactionArg,
+    ) -> Result<GroveDbOp, Error>;
+    /// Adds to the groveDB op batch operations to insert an empty tree into the epoch
+    fn add_init_empty_without_storage_operations(&self, batch: &mut GroveDbOpBatch);
+    /// Adds to the groveDB op batch operations to insert an empty tree into the epoch
+    /// and sets the storage distribution pool to 0.
+    fn add_init_empty_operations(&self, batch: &mut GroveDbOpBatch) -> Result<(), Error>;
+    /// Adds to the groveDB op batch initialization operations for the epoch.
+    fn add_init_current_operations(
+        &self,
+        multiplier: f64,
+        start_block_height: u64, // TODO Many method in drive needs block time and height. Maybe we need DTO for drive as well which will contain block information
+        start_time_ms: u64,
+        batch: &mut GroveDbOpBatch,
+    );
+    /// Adds to the groveDB op batch operations signifying that the epoch distribution fees were paid out.
+    fn add_mark_as_paid_operations(&self, batch: &mut GroveDbOpBatch);
+    /// Returns a groveDB op which updates the epoch start time.
+    fn update_start_time_operation(&self, time_ms: u64) -> GroveDbOp;
+    /// Returns a groveDB op which updates the epoch start block height.
+    fn update_start_block_height_operation(&self, start_block_height: u64) -> GroveDbOp;
+    /// Returns a groveDB op which updates the epoch fee multiplier.
+    fn update_fee_multiplier_operation(&self, multiplier: f64) -> GroveDbOp;
+    /// Returns a groveDB op which updates the epoch processing credits for distribution.
+    fn update_processing_fee_pool_operation(
+        &self,
+        processing_fee: Credits,
+    ) -> Result<GroveDbOp, Error>;
+    /// Returns a groveDB op which deletes the epoch processing credits for distribution tree.
+    fn delete_processing_credits_for_distribution_operation(&self) -> GroveDbOp;
+    /// Returns a groveDB op which updates the epoch storage credits for distribution.
+    fn update_storage_fee_pool_operation(&self, storage_fee: Credits) -> Result<GroveDbOp, Error>;
+    /// Returns a groveDB op which deletes the epoch storage credits for distribution tree.
+    fn delete_storage_credits_for_distribution_operation(&self) -> GroveDbOp;
+    /// Returns a groveDB op which updates the given epoch proposer's block count.
+    fn update_proposer_block_count_operation(
+        &self,
+        proposer_pro_tx_hash: &[u8; 32],
+        block_count: u64,
+    ) -> GroveDbOp;
+    /// Returns a groveDB op which inserts an empty tree into the epoch proposers path.
+    fn init_proposers_tree_operation(&self) -> GroveDbOp;
+    /// Returns a groveDB op which deletes the epoch proposers tree.
+    fn delete_proposers_tree_operation(&self) -> GroveDbOp;
+    /// Adds a groveDB op to the batch which deletes the given epoch proposers from the proposers tree.
+    fn add_delete_proposers_operations(
+        &self,
+        pro_tx_hashes: Vec<Vec<u8>>,
+        batch: &mut GroveDbOpBatch,
+    );
+}
+
+impl EpochOperations for Epoch {
+    /// Updates the given proposer's block count to the current + 1
+    fn increment_proposer_block_count_operation(
         &self,
         drive: &Drive,
         proposer_pro_tx_hash: &[u8; 32],
@@ -73,13 +134,13 @@ impl Epoch {
     }
 
     /// Adds to the groveDB op batch operations to insert an empty tree into the epoch
-    pub fn add_init_empty_without_storage_operations(&self, batch: &mut GroveDbOpBatch) {
+    fn add_init_empty_without_storage_operations(&self, batch: &mut GroveDbOpBatch) {
         batch.add_insert_empty_sum_tree(pools_vec_path(), self.key.to_vec());
     }
 
     /// Adds to the groveDB op batch operations to insert an empty tree into the epoch
     /// and sets the storage distribution pool to 0.
-    pub fn add_init_empty_operations(&self, batch: &mut GroveDbOpBatch) -> Result<(), Error> {
+    fn add_init_empty_operations(&self, batch: &mut GroveDbOpBatch) -> Result<(), Error> {
         self.add_init_empty_without_storage_operations(batch);
 
         // init storage fee item to 0
@@ -89,7 +150,7 @@ impl Epoch {
     }
 
     /// Adds to the groveDB op batch initialization operations for the epoch.
-    pub fn add_init_current_operations(
+    fn add_init_current_operations(
         &self,
         multiplier: f64,
         start_block_height: u64, // TODO Many method in drive needs block time and height. Maybe we need DTO for drive as well which will contain block information
@@ -106,7 +167,7 @@ impl Epoch {
     }
 
     /// Adds to the groveDB op batch operations signifying that the epoch distribution fees were paid out.
-    pub fn add_mark_as_paid_operations(&self, batch: &mut GroveDbOpBatch) {
+    fn add_mark_as_paid_operations(&self, batch: &mut GroveDbOpBatch) {
         batch.push(self.delete_proposers_tree_operation());
 
         batch.push(self.delete_storage_credits_for_distribution_operation());
@@ -115,7 +176,7 @@ impl Epoch {
     }
 
     /// Returns a groveDB op which updates the epoch start time.
-    pub(crate) fn update_start_time_operation(&self, time_ms: u64) -> GroveDbOp {
+    fn update_start_time_operation(&self, time_ms: u64) -> GroveDbOp {
         GroveDbOp::insert_op(
             self.get_path_vec(),
             KEY_START_TIME.to_vec(),
@@ -124,7 +185,7 @@ impl Epoch {
     }
 
     /// Returns a groveDB op which updates the epoch start block height.
-    pub fn update_start_block_height_operation(&self, start_block_height: u64) -> GroveDbOp {
+    fn update_start_block_height_operation(&self, start_block_height: u64) -> GroveDbOp {
         GroveDbOp::insert_op(
             self.get_path_vec(),
             KEY_START_BLOCK_HEIGHT.to_vec(),
@@ -133,7 +194,7 @@ impl Epoch {
     }
 
     /// Returns a groveDB op which updates the epoch fee multiplier.
-    pub(crate) fn update_fee_multiplier_operation(&self, multiplier: f64) -> GroveDbOp {
+    fn update_fee_multiplier_operation(&self, multiplier: f64) -> GroveDbOp {
         GroveDbOp::insert_op(
             self.get_path_vec(),
             KEY_FEE_MULTIPLIER.to_vec(),
@@ -142,7 +203,7 @@ impl Epoch {
     }
 
     /// Returns a groveDB op which updates the epoch processing credits for distribution.
-    pub fn update_processing_fee_pool_operation(
+    fn update_processing_fee_pool_operation(
         &self,
         processing_fee: Credits,
     ) -> Result<GroveDbOp, Error> {
@@ -154,15 +215,12 @@ impl Epoch {
     }
 
     /// Returns a groveDB op which deletes the epoch processing credits for distribution tree.
-    pub fn delete_processing_credits_for_distribution_operation(&self) -> GroveDbOp {
+    fn delete_processing_credits_for_distribution_operation(&self) -> GroveDbOp {
         GroveDbOp::delete_op(self.get_path_vec(), KEY_POOL_PROCESSING_FEES.to_vec())
     }
 
     /// Returns a groveDB op which updates the epoch storage credits for distribution.
-    pub fn update_storage_fee_pool_operation(
-        &self,
-        storage_fee: Credits,
-    ) -> Result<GroveDbOp, Error> {
+    fn update_storage_fee_pool_operation(&self, storage_fee: Credits) -> Result<GroveDbOp, Error> {
         Ok(GroveDbOp::insert_op(
             self.get_path_vec(),
             KEY_POOL_STORAGE_FEES.to_vec(),
@@ -171,12 +229,12 @@ impl Epoch {
     }
 
     /// Returns a groveDB op which deletes the epoch storage credits for distribution tree.
-    pub fn delete_storage_credits_for_distribution_operation(&self) -> GroveDbOp {
+    fn delete_storage_credits_for_distribution_operation(&self) -> GroveDbOp {
         GroveDbOp::delete_op(self.get_path_vec(), KEY_POOL_STORAGE_FEES.to_vec())
     }
 
     /// Returns a groveDB op which updates the given epoch proposer's block count.
-    pub(crate) fn update_proposer_block_count_operation(
+    fn update_proposer_block_count_operation(
         &self,
         proposer_pro_tx_hash: &[u8; 32],
         block_count: u64,
@@ -189,7 +247,7 @@ impl Epoch {
     }
 
     /// Returns a groveDB op which inserts an empty tree into the epoch proposers path.
-    pub(crate) fn init_proposers_tree_operation(&self) -> GroveDbOp {
+    fn init_proposers_tree_operation(&self) -> GroveDbOp {
         GroveDbOp::insert_op(
             self.get_path_vec(),
             KEY_PROPOSERS.to_vec(),
@@ -198,12 +256,12 @@ impl Epoch {
     }
 
     /// Returns a groveDB op which deletes the epoch proposers tree.
-    pub(crate) fn delete_proposers_tree_operation(&self) -> GroveDbOp {
+    fn delete_proposers_tree_operation(&self) -> GroveDbOp {
         GroveDbOp::delete_tree_op(self.get_path_vec(), KEY_PROPOSERS.to_vec(), false)
     }
 
     /// Adds a groveDB op to the batch which deletes the given epoch proposers from the proposers tree.
-    pub fn add_delete_proposers_operations(
+    fn add_delete_proposers_operations(
         &self,
         pro_tx_hashes: Vec<Vec<u8>>,
         batch: &mut GroveDbOpBatch,
@@ -230,7 +288,7 @@ mod tests {
 
             let pro_tx_hash: [u8; 32] = rand::random();
 
-            let epoch = Epoch::new(0);
+            let epoch = Epoch::new(0).unwrap();
 
             let mut batch = GroveDbOpBatch::new();
 
@@ -265,7 +323,7 @@ mod tests {
 
             let pro_tx_hash: [u8; 32] = rand::random();
 
-            let epoch = Epoch::new(1);
+            let epoch = Epoch::new(1).unwrap();
 
             let mut batch = GroveDbOpBatch::new();
 
@@ -318,7 +376,7 @@ mod tests {
             let drive = setup_drive(None);
             let transaction = drive.grove.start_transaction();
 
-            let epoch = Epoch::new(1042);
+            let epoch = Epoch::new(1042).unwrap();
 
             let mut batch = GroveDbOpBatch::new();
 
@@ -339,7 +397,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = Epoch::new(1042);
+            let epoch = Epoch::new(1042).unwrap();
 
             let mut batch = GroveDbOpBatch::new();
 
@@ -367,7 +425,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = Epoch::new(1042);
+            let epoch = Epoch::new(1042).unwrap();
 
             let multiplier = 42.0;
             let start_time = 1;
@@ -428,7 +486,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = Epoch::new(0);
+            let epoch = Epoch::new(0).unwrap();
 
             let mut batch = GroveDbOpBatch::new();
 
@@ -487,7 +545,7 @@ mod tests {
             let pro_tx_hash: [u8; 32] = rand::random();
             let block_count = 42;
 
-            let epoch = Epoch::new(0);
+            let epoch = Epoch::new(0).unwrap();
 
             let mut batch = GroveDbOpBatch::new();
 
@@ -512,7 +570,7 @@ mod tests {
         let drive = setup_drive_with_initial_state_structure();
         let transaction = drive.grove.start_transaction();
 
-        let epoch_tree = Epoch::new(0);
+        let epoch_tree = Epoch::new(0).unwrap();
 
         let start_time_ms: u64 = Utc::now().timestamp_millis() as u64;
 
@@ -536,7 +594,7 @@ mod tests {
         let drive = setup_drive_with_initial_state_structure();
         let transaction = drive.grove.start_transaction();
 
-        let epoch = Epoch::new(0);
+        let epoch = Epoch::new(0).unwrap();
 
         let start_block_height = 1;
 
@@ -561,7 +619,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = Epoch::new(7000);
+            let epoch = Epoch::new(7000).unwrap();
 
             let op = epoch
                 .update_processing_fee_pool_operation(42)
@@ -580,7 +638,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = Epoch::new(0);
+            let epoch = Epoch::new(0).unwrap();
 
             let processing_fee: u64 = 42;
 
@@ -608,7 +666,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = Epoch::new(7000);
+            let epoch = Epoch::new(7000).unwrap();
 
             let op = epoch
                 .update_storage_fee_pool_operation(42)
@@ -627,7 +685,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = Epoch::new(0);
+            let epoch = Epoch::new(0).unwrap();
 
             let storage_fee = 42;
 
@@ -655,7 +713,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = Epoch::new(0);
+            let epoch = Epoch::new(0).unwrap();
 
             let mut batch = GroveDbOpBatch::new();
 
@@ -699,7 +757,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = Epoch::new(0);
+            let epoch = Epoch::new(0).unwrap();
 
             let mut batch = GroveDbOpBatch::new();
 

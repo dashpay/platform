@@ -3,7 +3,7 @@ use crate::drive::batch::DriveOperation::{IdentityOperation, SystemOperation};
 use crate::drive::batch::{DriveOperation, IdentityOperationType, SystemOperationType};
 
 use crate::error::Error;
-use crate::fee_pools::epochs::Epoch;
+use dpp::block::epoch::Epoch;
 use dpp::identity::state_transition::identity_topup_transition::IdentityTopUpTransitionAction;
 
 impl DriveHighLevelOperationConverter for IdentityTopUpTransitionAction {

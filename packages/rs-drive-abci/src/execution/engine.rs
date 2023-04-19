@@ -2,6 +2,8 @@ use bls_signatures;
 use dashcore::hashes::Hash;
 use dashcore::{QuorumHash, Txid};
 use dpp::bincode;
+use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
 use dpp::consensus::basic::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::ConsensusError;
 use dpp::state_transition::StateTransition;
@@ -9,7 +11,6 @@ use dpp::validation::{
     ConsensusValidationResult, SimpleConsensusValidationResult, SimpleValidationResult,
     ValidationResult,
 };
-use drive::drive::block_info::BlockInfo;
 use drive::error::Error::GroveDB;
 use drive::fee::result::FeeResult;
 use drive::grovedb::{Transaction, TransactionArg};
@@ -288,7 +289,10 @@ where
                 Error::Execution(ExecutionError::UpdateValidatorProposedAppVersionError(e))
             })?; // This is a system error
 
-        let block_info = block_state_info.to_block_info(epoch_info.current_epoch_index);
+        let block_info = block_state_info.to_block_info(
+            Epoch::new(epoch_info.current_epoch_index)
+                .expect("current epoch index should be in range"),
+        );
         let mut block_execution_context = BlockExecutionContext {
             block_state_info,
             epoch_info: epoch_info.clone(),
@@ -630,8 +634,10 @@ where
         };
         drop(state);
 
-        let mut to_commit_block_info =
-            block_state_info.to_block_info(epoch_info.current_epoch_index);
+        let mut to_commit_block_info = block_state_info.to_block_info(
+            Epoch::new(epoch_info.current_epoch_index)
+                .expect("current epoch info should be in range"),
+        );
 
         // we need to add the block time
         to_commit_block_info.time_ms = block_header.time.to_milis() as u64;

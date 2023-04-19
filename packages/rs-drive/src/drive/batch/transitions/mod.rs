@@ -38,7 +38,7 @@ mod identity;
 
 use crate::drive::batch::DriveOperation;
 use crate::error::Error;
-use crate::fee_pools::epochs::Epoch;
+use dpp::block::epoch::Epoch;
 use dpp::state_transition::StateTransitionAction;
 
 /// A converter that will get High Level Drive Operations from State transitions

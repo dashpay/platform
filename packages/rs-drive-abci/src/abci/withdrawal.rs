@@ -2,9 +2,10 @@
 
 use bls_signatures;
 use dashcore_rpc::dashcore_rpc_json::QuorumType;
+use dpp::block::block_info::BlockInfo;
 use dpp::validation::SimpleValidationResult;
 use drive::{
-    drive::{batch::DriveOperation, block_info::BlockInfo, Drive},
+    drive::{batch::DriveOperation, Drive},
     fee::result::FeeResult,
     query::TransactionArg,
 };

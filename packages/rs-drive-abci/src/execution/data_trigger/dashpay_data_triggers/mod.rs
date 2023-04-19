@@ -129,6 +129,7 @@ mod test {
     use crate::execution::data_trigger::DataTriggerExecutionContext;
     use crate::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::block::block_info::BlockInfo;
     use dpp::document::document_transition::{Action, DocumentCreateTransitionAction};
     use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
     use dpp::platform_value::platform_value;
@@ -138,7 +139,6 @@ mod test {
         get_document_transitions_fixture, identity_fixture,
     };
     use dpp::{platform_value, DataTriggerActionError};
-    use drive::drive::block_info::BlockInfo;
 
     #[test]
     fn should_successfully_execute_on_dry_run() {

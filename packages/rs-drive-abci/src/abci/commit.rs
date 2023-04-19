@@ -215,11 +215,18 @@ mod test {
                 )
                 .unwrap()
         );
-        assert!(commit.verify_signature(&signature, &pubkey).unwrap());
+        assert!(commit
+            .verify_signature(
+                &signature.clone().try_into().expect("expected 96 bytes"),
+                &pubkey
+            )
+            .is_valid());
 
         // mutate data and ensure it is invalid
         let mut commit = commit;
         commit.chain_id = "invalid".to_string();
-        assert!(!commit.verify_signature(&signature, &pubkey).unwrap());
+        assert!(!commit
+            .verify_signature(&signature.try_into().expect("expected 96 bytes"), &pubkey)
+            .is_valid());
     }
 }

@@ -45,6 +45,7 @@ use grovedb::{batch::GroveDbOp, Element};
 use crate::drive::flags::StorageFlags;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use crate::fee::default_costs::EpochCosts;
 use crate::fee::default_costs::KnownCostItem::{
     StorageDiskUsageCreditPerByte, StorageLoadCreditPerByte, StorageProcessingCreditPerByte,
     StorageSeekCost,
@@ -54,7 +55,7 @@ use crate::fee::op::LowLevelDriveOperation::{
 };
 use crate::fee::result::refunds::FeeRefunds;
 use crate::fee::{get_overflow_error, FeeResult};
-use crate::fee_pools::epochs::Epoch;
+use dpp::block::epoch::Epoch;
 
 /// Base ops
 #[derive(Debug, Enum)]

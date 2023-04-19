@@ -3,6 +3,7 @@ use crate::error::Error;
 use crate::execution::execution_event::ExecutionEvent::{
     PaidDriveEvent, PaidFromAssetLockDriveEvent,
 };
+use dpp::block::epoch::Epoch;
 use dpp::identity::PartialIdentity;
 use dpp::state_transition::StateTransitionAction;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -10,7 +11,6 @@ use drive::drive::batch::transitions::DriveHighLevelOperationConverter;
 use drive::drive::batch::DriveOperation;
 use drive::fee::credits::SignedCredits;
 use drive::fee::result::FeeResult;
-use drive::fee_pools::epochs::Epoch;
 use tenderdash_abci::proto::abci::ExecTxResult;
 
 /// The Fee Result for a Dry Run (without state)

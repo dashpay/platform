@@ -35,9 +35,9 @@
 
 use std::option::Option::None;
 
+use dpp::block::epoch::Epoch;
 use drive::drive::batch::GroveDbOpBatch;
 use drive::drive::fee_pools::pending_epoch_refunds::add_update_pending_epoch_refunds_operations;
-use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::Transaction;
 
 use crate::abci::messages::BlockFees;
@@ -50,6 +50,7 @@ use crate::execution::fee_pools::fee_distribution::{FeesInPools, ProposersPayout
 use crate::platform::Platform;
 use drive::fee::epoch::{GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
 use drive::fee::DEFAULT_ORIGINAL_FEE_MULTIPLIER;
+use drive::fee_pools::epochs::operations_factory::EpochOperations;
 
 /// From the Dash Improvement Proposal:
 
@@ -94,12 +95,12 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             .map_or(GENESIS_EPOCH_INDEX, |i| i + 1);
 
         for epoch_index in last_initiated_epoch_index..=epoch_info.current_epoch_index {
-            let next_thousandth_epoch = Epoch::new(epoch_index + PERPETUAL_STORAGE_EPOCHS);
+            let next_thousandth_epoch = Epoch::new(epoch_index + PERPETUAL_STORAGE_EPOCHS)?;
             next_thousandth_epoch.add_init_empty_without_storage_operations(batch);
         }
 
         // init current epoch pool for processing
-        let current_epoch = Epoch::new(epoch_info.current_epoch_index);
+        let current_epoch = Epoch::new(epoch_info.current_epoch_index)?;
 
         current_epoch.add_init_current_operations(
             DEFAULT_ORIGINAL_FEE_MULTIPLIER, // TODO use a data contract to choose the fee multiplier
@@ -142,7 +143,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         block_fees: BlockFees,
         transaction: &Transaction,
     ) -> Result<ProcessedBlockFeesOutcome, Error> {
-        let current_epoch = Epoch::new(epoch_info.current_epoch_index);
+        let current_epoch = Epoch::new(epoch_info.current_epoch_index)?;
 
         let mut batch = GroveDbOpBatch::new();
 
@@ -278,7 +279,7 @@ mod tests {
                 should_distribute: bool,
                 transaction: &Transaction,
             ) -> BlockStateInfo {
-                let current_epoch = Epoch::new(epoch_index);
+                let current_epoch = Epoch::new(epoch_index).expect("expected valid epoch index");
 
                 // Add some storage fees to distribute next time
                 if should_distribute {
@@ -348,7 +349,8 @@ mod tests {
                     .expect("should apply batch");
 
                 // Next thousandth epoch should be created
-                let next_thousandth_epoch = Epoch::new(epoch_index + PERPETUAL_STORAGE_EPOCHS);
+                let next_thousandth_epoch =
+                    Epoch::new(epoch_index + PERPETUAL_STORAGE_EPOCHS).unwrap();
 
                 let is_epoch_tree_exists = platform
                     .drive
@@ -371,7 +373,7 @@ mod tests {
                     should_distribute
                 );
 
-                let thousandth_epoch = Epoch::new(next_thousandth_epoch.index - 1);
+                let thousandth_epoch = Epoch::new(next_thousandth_epoch.index - 1).unwrap();
 
                 let aggregate_storage_fees = platform
                     .drive
@@ -485,7 +487,7 @@ mod tests {
                 proposer_pro_tx_hash: [u8; 32],
                 transaction: &Transaction,
             ) -> BlockStateInfo {
-                let current_epoch = Epoch::new(epoch_index);
+                let current_epoch = Epoch::new(epoch_index).unwrap();
 
                 let block_time_ms =
                     genesis_time_ms + epoch_index as u64 * EPOCH_CHANGE_TIME_MS + block_height;

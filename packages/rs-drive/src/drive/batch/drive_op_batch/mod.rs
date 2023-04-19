@@ -34,12 +34,12 @@ mod system;
 mod withdrawals;
 
 use crate::drive::batch::GroveDbOpBatch;
-use crate::drive::block_info::BlockInfo;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::result::FeeResult;
+use dpp::block::block_info::BlockInfo;
 
 pub use contract::ContractOperationType;
 pub use document::DocumentOperation;

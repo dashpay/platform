@@ -75,9 +75,9 @@ use crate::contract::Contract;
 #[cfg(feature = "full")]
 use crate::drive::batch::GroveDbOpBatch;
 #[cfg(feature = "full")]
-use crate::drive::block_info::BlockInfo;
-#[cfg(feature = "full")]
 use crate::drive::defaults::CONTRACT_MAX_SERIALIZED_SIZE;
+#[cfg(feature = "full")]
+use dpp::block::block_info::BlockInfo;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::flags::StorageFlags;
@@ -110,9 +110,9 @@ use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::op::LowLevelDriveOperation::{CalculatedCostOperation, PreCalculatedFeeResult};
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::fee::result::FeeResult;
-#[cfg(feature = "full")]
-use crate::fee_pools::epochs::Epoch;
 use crate::query::QueryResultEncoding;
+#[cfg(feature = "full")]
+use dpp::block::epoch::Epoch;
 
 #[cfg(feature = "full")]
 /// Adds operations to the op batch relevant to initializing the contract's structure.
@@ -1512,7 +1512,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
 
             let result = drive
-                .get_contract_with_fetch_info([0; 32], Some(&Epoch::new(0)), true, None)
+                .get_contract_with_fetch_info([0; 32], Some(&Epoch::new(0).unwrap()), true, None)
                 .expect("should get contract");
 
             assert_eq!(
@@ -1579,7 +1579,7 @@ mod tests {
             let mut ref_contract_fetch_info_transactional = drive
                 .get_contract_with_fetch_info(
                     ref_contract_id_buffer,
-                    Some(&Epoch::new(0)),
+                    Some(&Epoch::new(0).unwrap()),
                     true,
                     Some(&transaction),
                 )
@@ -1590,7 +1590,7 @@ mod tests {
             let mut deep_contract_fetch_info_transactional = drive
                 .get_contract_with_fetch_info(
                     deep_contract.id.to_buffer(),
-                    Some(&Epoch::new(0)),
+                    Some(&Epoch::new(0).unwrap()),
                     true,
                     Some(&transaction),
                 )
@@ -1717,7 +1717,7 @@ mod tests {
             let mut deep_contract_fetch_info_transactional2 = drive
                 .get_contract_with_fetch_info(
                     deep_contract.id.to_buffer(),
-                    Some(&Epoch::new(0)),
+                    Some(&Epoch::new(0).unwrap()),
                     true,
                     Some(&transaction),
                 )
@@ -1728,7 +1728,7 @@ mod tests {
             let mut ref_contract_fetch_info_transactional2 = drive
                 .get_contract_with_fetch_info(
                     ref_contract_id_buffer,
-                    Some(&Epoch::new(0)),
+                    Some(&Epoch::new(0).unwrap()),
                     true,
                     Some(&transaction),
                 )

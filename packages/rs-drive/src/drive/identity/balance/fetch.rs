@@ -3,8 +3,6 @@ use crate::drive::balances::balance_path;
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::balances::balance_path_vec;
 #[cfg(feature = "full")]
-use crate::drive::block_info::BlockInfo;
-#[cfg(feature = "full")]
 use crate::drive::grove_operations::DirectQueryType;
 #[cfg(feature = "full")]
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
@@ -25,6 +23,8 @@ use crate::fee::op::LowLevelDriveOperation;
 #[cfg(feature = "full")]
 use crate::fee::result::FeeResult;
 use crate::query::QueryResultEncoding;
+#[cfg(feature = "full")]
+use dpp::block::block_info::BlockInfo;
 use dpp::platform_value::platform_value;
 #[cfg(feature = "full")]
 use grovedb::Element::{Item, SumItem};

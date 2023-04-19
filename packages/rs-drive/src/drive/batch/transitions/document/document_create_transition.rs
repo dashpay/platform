@@ -5,7 +5,7 @@ use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::DocumentWithoutSerialization;
 use crate::drive::object_size_info::OwnedDocumentInfo;
 use crate::error::Error;
-use crate::fee_pools::epochs::Epoch;
+use dpp::block::epoch::Epoch;
 use dpp::data_contract::DriveContractExt;
 use dpp::document::document_transition::{
     DocumentBaseTransitionAction, DocumentCreateTransitionAction,

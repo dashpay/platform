@@ -49,7 +49,7 @@ use dashcore::hashes::hex::FromHex;
 use dashcore::hashes::Hash;
 use dashcore::{BlockHash, QuorumHash};
 use dpp::bincode;
-use drive::drive::block_info::BlockInfo;
+use dpp::block::block_info::BlockInfo;
 use drive::error::drive::DriveError;
 use drive::error::Error::GroveDB;
 use serde_json::json;

@@ -12,9 +12,9 @@ use dashcore::blockdata::transaction::special_transaction::asset_unlock::unquali
 use dashcore::blockdata::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
 use dashcore::bls_sig_utils::BLSSignature;
 use dashcore::consensus::Decodable;
+use dpp::block::block_info::BlockInfo;
 use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;
-use drive::drive::block_info::BlockInfo;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::{
     CommitInfo, RequestExtendVote, RequestFinalizeBlock, RequestPrepareProposal,

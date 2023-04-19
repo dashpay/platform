@@ -10,6 +10,7 @@ use std::{option::Option::None, path::Path, sync::mpsc, thread};
 use crate::converter::js_object_to_fee_refunds;
 use crate::fee::result::FeeResultWrapper;
 
+use drive::dpp::block::epoch::Epoch;
 use drive::dpp::identity::{KeyID, TimestampMillis};
 use drive::dpp::prelude::Revision;
 use drive::dpp::Convertible;
@@ -17,7 +18,6 @@ use drive::drive::flags::StorageFlags;
 use drive::drive::query::QuerySerializedDocumentsOutcome;
 use drive::error::Error;
 use drive::fee::credits::Credits;
-use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::{PathQuery, Transaction};
 use drive::query::TransactionArg;
 use drive_abci::abci::messages::{
@@ -426,7 +426,7 @@ impl PlatformWrapper {
             let epoch_index = u16::try_from(js_epoch_index.value(&mut cx) as i64)
                 .or_else(|_| cx.throw_range_error("`epochs` must fit in u16"))?;
 
-            let epoch = Epoch::new(epoch_index);
+            let epoch = Epoch::new(epoch_index).unwrap();
 
             Some(epoch)
         } else {
@@ -1580,7 +1580,7 @@ impl PlatformWrapper {
         let epoch_index = u16::try_from(js_epoch_index.value(&mut cx) as i64)
             .or_else(|_| cx.throw_range_error("`epochs` must fit in u16"))?;
 
-        let epoch = Epoch::new(epoch_index);
+        let epoch = Epoch::new(epoch_index).unwrap();
 
         let using_transaction = js_using_transaction.value(&mut cx);
 
@@ -2180,7 +2180,7 @@ impl PlatformWrapper {
             let epoch_index = u16::try_from(js_epoch_index.value(&mut cx) as i64)
                 .or_else(|_| cx.throw_range_error("`epochs` must fit in u16"))?;
 
-            let epoch = Epoch::new(epoch_index);
+            let epoch = Epoch::new(epoch_index).unwrap();
 
             Some(epoch)
         } else {

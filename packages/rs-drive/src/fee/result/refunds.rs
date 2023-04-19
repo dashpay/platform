@@ -44,6 +44,7 @@ use crate::error::fee::FeeError;
 use crate::error::Error;
 #[cfg(feature = "full")]
 use crate::fee::credits::Credits;
+use crate::fee::default_costs::EpochCosts;
 #[cfg(feature = "full")]
 use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
 #[cfg(feature = "full")]
@@ -54,12 +55,12 @@ use crate::fee::epoch::CreditsPerEpoch;
 use crate::fee::epoch::EpochIndex;
 #[cfg(feature = "full")]
 use crate::fee::get_overflow_error;
-#[cfg(feature = "full")]
-use crate::fee_pools::epochs::Epoch;
 #[cfg(any(feature = "full", feature = "verify"))]
 use costs::storage_cost::removal::Identifier;
 #[cfg(feature = "full")]
 use costs::storage_cost::removal::StorageRemovalPerEpochByIdentifier;
+#[cfg(feature = "full")]
+use dpp::block::epoch::Epoch;
 #[cfg(feature = "full")]
 use dpp::{bincode, bincode::config};
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -97,7 +98,7 @@ impl FeeRefunds {
                         // TODO We should use multipliers
 
                         let credits: Credits = (bytes as Credits)
-                            .checked_mul(Epoch::new(current_epoch_index).cost_for_known_cost_item(StorageDiskUsageCreditPerByte))
+                            .checked_mul(Epoch::new(current_epoch_index)?.cost_for_known_cost_item(StorageDiskUsageCreditPerByte))
                             .ok_or_else(|| {
                                 get_overflow_error("storage written bytes cost overflow")
                             })?;

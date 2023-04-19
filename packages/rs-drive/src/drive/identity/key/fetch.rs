@@ -19,14 +19,15 @@ use crate::error::identity::IdentityError;
 use crate::error::Error;
 #[cfg(feature = "full")]
 use crate::fee::credits::Credits;
+use crate::fee::default_costs::EpochCosts;
 #[cfg(feature = "full")]
 use crate::fee::default_costs::KnownCostItem::FetchSingleIdentityKeyProcessingCost;
 #[cfg(feature = "full")]
 use crate::fee::op::LowLevelDriveOperation;
-#[cfg(feature = "full")]
-use crate::fee_pools::epochs::Epoch;
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::query::{Query, QueryItem};
+#[cfg(feature = "full")]
+use dpp::block::epoch::Epoch;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::identity::KeyID;
 use dpp::identity::IDENTITY_MAX_KEYS;
@@ -798,8 +799,8 @@ impl Drive {
 #[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
-    use crate::drive::block_info::BlockInfo;
     use crate::tests::helpers::setup::setup_drive;
+    use dpp::block::block_info::BlockInfo;
     use dpp::identity::Identity;
 
     use super::*;

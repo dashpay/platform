@@ -33,7 +33,7 @@
 //!
 
 use crate::fee::epoch::EpochIndex;
-use crate::fee_pools::epochs::Epoch;
+use dpp::block::epoch::Epoch;
 use lazy_static::lazy_static;
 use std::collections::HashMap;
 
@@ -78,7 +78,17 @@ lazy_static! {
     .collect();
 }
 
-impl Epoch {
+/// Costs for Epochs
+pub trait EpochCosts {
+    //todo: should just have a static lookup table
+    /// Get the closest epoch in the past that has a cost table
+    /// This is where the base costs last changed
+    fn get_closest_epoch_index_cost_update_version(&self) -> EpochIndex;
+    /// Get the cost for the known cost item
+    fn cost_for_known_cost_item(&self, cost_item: KnownCostItem) -> u64;
+}
+
+impl EpochCosts for Epoch {
     //todo: should just have a static lookup table
     /// Get the closest epoch in the past that has a cost table
     /// This is where the base costs last changed
@@ -90,7 +100,7 @@ impl Epoch {
     }
 
     /// Get the cost for the known cost item
-    pub fn cost_for_known_cost_item(&self, cost_item: KnownCostItem) -> u64 {
+    fn cost_for_known_cost_item(&self, cost_item: KnownCostItem) -> u64 {
         let epoch = self.get_closest_epoch_index_cost_update_version();
         let specific_epoch_costs = EPOCH_COSTS.get(&epoch).unwrap();
         *specific_epoch_costs.get(&cost_item).unwrap()

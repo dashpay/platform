@@ -35,10 +35,11 @@
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee_pools::epochs::Epoch;
+use dpp::block::epoch::Epoch;
 use grovedb::{Element, TransactionArg};
 
 use crate::fee_pools::epochs::epoch_key_constants::KEY_START_TIME;
+use crate::fee_pools::epochs::paths::EpochProposers;
 
 impl Drive {
     /// Returns the start time of the given Epoch.
@@ -85,7 +86,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let non_initiated_epoch_tree = Epoch::new(7000);
+            let non_initiated_epoch_tree = Epoch::new(7000).unwrap();
 
             let result = drive.get_epoch_start_time(&non_initiated_epoch_tree, Some(&transaction));
 
@@ -100,7 +101,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch_tree = Epoch::new(0);
+            let epoch_tree = Epoch::new(0).unwrap();
 
             let result = drive.get_epoch_start_time(&epoch_tree, Some(&transaction));
 
@@ -112,7 +113,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = Epoch::new(0);
+            let epoch = Epoch::new(0).unwrap();
 
             drive
                 .grove
@@ -139,7 +140,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch_tree = Epoch::new(0);
+            let epoch_tree = Epoch::new(0).unwrap();
 
             drive
                 .grove

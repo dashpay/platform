@@ -35,8 +35,10 @@ use crate::fee::credits::SignedCredits;
 use crate::fee::epoch::{EpochIndex, SignedCreditsPerEpoch};
 use crate::fee::get_overflow_error;
 use crate::fee_pools::epochs::epoch_key_constants::KEY_POOL_STORAGE_FEES;
-use crate::fee_pools::epochs::{paths, Epoch};
+use crate::fee_pools::epochs::paths;
+use crate::fee_pools::epochs::paths::EpochProposers;
 use crate::fee_pools::epochs_root_tree_key_constants::KEY_STORAGE_FEE_POOL;
+use dpp::block::epoch::Epoch;
 use grovedb::query_result_type::QueryResultType;
 use grovedb::{Element, PathQuery, Query, TransactionArg};
 use itertools::Itertools;
@@ -167,7 +169,9 @@ impl Drive {
             }
 
             batch.add_insert(
-                Epoch::new(epoch_index).get_path_vec(),
+                Epoch::new(epoch_index)
+                    .expect("epoch index should not overflow")
+                    .get_path_vec(),
                 KEY_POOL_STORAGE_FEES.to_vec(),
                 Element::new_sum_item(credits_to_update),
             );
@@ -188,6 +192,7 @@ mod tests {
         use super::*;
         use crate::fee::credits::Credits;
         use crate::fee::epoch::{EpochIndex, GENESIS_EPOCH_INDEX};
+        use crate::fee_pools::epochs::operations_factory::EpochOperations;
         use grovedb::batch::Op;
 
         #[test]
@@ -224,7 +229,7 @@ mod tests {
                 .map(|(i, epoch_index)| {
                     let credits = 10 - i as Credits;
 
-                    let epoch = Epoch::new(epoch_index);
+                    let epoch = Epoch::new(epoch_index).unwrap();
 
                     epoch.update_storage_fee_pool_operation(credits)
                 })
@@ -259,7 +264,7 @@ mod tests {
 
                 assert_eq!(
                     operation.path.to_path(),
-                    Epoch::new(i as EpochIndex).get_path_vec()
+                    Epoch::new(i as EpochIndex).unwrap().get_path_vec()
                 );
 
                 let Op::Insert{ element: Element::SumItem (credits, _)} = operation.op else {
@@ -284,7 +289,7 @@ mod tests {
                 .map(|(i, epoch_index)| {
                     let credits = 10 - i as Credits;
 
-                    let epoch = Epoch::new(epoch_index);
+                    let epoch = Epoch::new(epoch_index).unwrap();
 
                     epoch.update_storage_fee_pool_operation(credits)
                 })

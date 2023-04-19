@@ -32,9 +32,9 @@ use crate::error::Error;
 use crate::execution::block_proposal::BlockProposal;
 use crate::execution::fee_pools::epoch::EpochInfo;
 use dashcore::Txid;
-use drive::drive::block_info::BlockInfo;
+use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
 use drive::fee::epoch::EpochIndex;
-use drive::fee_pools::epochs::Epoch;
 use std::collections::BTreeMap;
 
 /// Block info
@@ -59,12 +59,12 @@ pub struct BlockStateInfo {
 
 impl BlockStateInfo {
     /// Gets a block info from the block state info
-    pub fn to_block_info(&self, epoch_index: EpochIndex) -> BlockInfo {
+    pub fn to_block_info(&self, epoch: Epoch) -> BlockInfo {
         BlockInfo {
             time_ms: self.block_time_ms,
             height: self.height,
             core_height: self.core_chain_locked_height,
-            epoch: Epoch::new(epoch_index),
+            epoch,
         }
     }
     /// Generate block state info based on Prepare Proposal request

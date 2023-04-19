@@ -451,7 +451,7 @@ where
 //         use dpp::tests::fixtures::get_withdrawal_document_fixture;
 //         use dpp::util::hash;
 //         use drive::common::helpers::identities::create_test_masternode_identities;
-//         use drive::drive::block_info::BlockInfo;
+//         use dpp::block::block_info::BlockInfo;
 //         use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
 //         use drive::fee::epoch::CreditsPerEpoch;
 //         use drive::fee_pools::epochs::Epoch;
@@ -522,7 +522,7 @@ where
 //             let block_info = BlockInfo {
 //                 time_ms: 1,
 //                 height: 1,
-//                 epoch: Epoch::new(1),
+//                 epoch: Epoch::new(1).unwrap(),
 //             };
 //
 //             let mut drive_operations = vec![];

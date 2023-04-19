@@ -50,9 +50,9 @@ use dpp::platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use dpp::platform_value::Value;
 use dpp::ProtocolError;
 
-use crate::drive::block_info::BlockInfo;
-use crate::fee_pools::epochs::Epoch;
 use crate::query::QueryResultEncoding::CborEncodedQueryResult;
+use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
 
 #[derive(Debug, Default)]
 /// The outcome of a query

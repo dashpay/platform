@@ -207,9 +207,9 @@ pub(crate) mod tests {
 
     use tempfile::TempDir;
 
-    use crate::drive::block_info::BlockInfo;
     use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
+    use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::extra::common::json_document_to_cbor;
 
     /// Setup Dashpay

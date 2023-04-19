@@ -2,7 +2,7 @@ use crate::drive::batch::transitions::DriveHighLevelOperationConverter;
 use crate::drive::batch::DriveOperation::ContractOperation;
 use crate::drive::batch::{ContractOperationType, DriveOperation};
 use crate::error::Error;
-use crate::fee_pools::epochs::Epoch;
+use dpp::block::epoch::Epoch;
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransitionAction;
 use std::borrow::Cow;
 

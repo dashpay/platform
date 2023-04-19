@@ -4,7 +4,7 @@ use crate::drive::batch::{DriveOperation, IdentityOperationType, SystemOperation
 use crate::drive::defaults::PROTOCOL_VERSION;
 
 use crate::error::Error;
-use crate::fee_pools::epochs::Epoch;
+use dpp::block::epoch::Epoch;
 use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransitionAction;
 use dpp::prelude::Identity;
 

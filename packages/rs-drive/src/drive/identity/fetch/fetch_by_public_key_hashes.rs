@@ -352,8 +352,8 @@ impl Drive {
 #[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
-    use crate::drive::block_info::BlockInfo;
     use crate::tests::helpers::setup::setup_drive;
+    use dpp::block::block_info::BlockInfo;
 
     use super::*;
 

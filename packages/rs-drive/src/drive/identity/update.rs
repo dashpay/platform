@@ -1,4 +1,4 @@
-use crate::drive::block_info::BlockInfo;
+use dpp::block::block_info::BlockInfo;
 
 use crate::drive::identity::{identity_path_vec, IdentityRootStructure};
 use crate::drive::Drive;
@@ -306,7 +306,7 @@ mod tests {
 
     mod add_new_keys_to_identity {
         use super::*;
-        use crate::fee_pools::epochs::Epoch;
+        use dpp::block::epoch::Epoch;
 
         #[test]
         fn should_add_one_new_key_to_identity() {
@@ -314,7 +314,7 @@ mod tests {
 
             let identity = Identity::random_identity(5, Some(12345));
 
-            let block = BlockInfo::default_with_epoch(Epoch::new(0));
+            let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             drive
                 .add_new_identity(identity.clone(), &block, true, None)
@@ -362,7 +362,7 @@ mod tests {
 
             let identity = Identity::random_identity(5, Some(12345));
 
-            let block = BlockInfo::default_with_epoch(Epoch::new(0));
+            let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             drive
                 .add_new_identity(identity.clone(), &block, true, None)
@@ -410,7 +410,7 @@ mod tests {
 
             let identity = Identity::random_identity(5, Some(12345));
 
-            let block = BlockInfo::default_with_epoch(Epoch::new(0));
+            let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             let new_keys_to_add = IdentityPublicKey::random_authentication_keys(5, 1, Some(15));
 
@@ -451,8 +451,8 @@ mod tests {
 
     mod disable_identity_keys {
         use super::*;
-        use crate::fee_pools::epochs::Epoch;
         use chrono::Utc;
+        use dpp::block::epoch::Epoch;
 
         #[test]
         fn should_disable_a_few_keys() {
@@ -460,7 +460,7 @@ mod tests {
 
             let identity = Identity::random_identity(5, Some(12345));
 
-            let block_info = BlockInfo::default_with_epoch(Epoch::new(0));
+            let block_info = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             drive
                 .add_new_identity(identity.clone(), &block_info, true, None)
@@ -527,7 +527,7 @@ mod tests {
 
             let identity = Identity::random_identity(5, Some(12345));
 
-            let block_info = BlockInfo::default_with_epoch(Epoch::new(0));
+            let block_info = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             let disable_at = Utc::now().timestamp_millis() as TimestampMillis;
 
@@ -576,7 +576,7 @@ mod tests {
                 .add_new_identity(identity.clone(), &BlockInfo::default(), true, None)
                 .expect("expected to add an identity");
 
-            let block_info = BlockInfo::default_with_epoch(Epoch::new(0));
+            let block_info = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             let disable_at = Utc::now().timestamp_millis() as TimestampMillis;
 
@@ -608,7 +608,7 @@ mod tests {
 
     mod update_identity_revision {
         use super::*;
-        use crate::fee_pools::epochs::Epoch;
+        use dpp::block::epoch::Epoch;
 
         #[test]
         fn should_update_revision() {
@@ -616,7 +616,7 @@ mod tests {
 
             let identity = Identity::random_identity(5, Some(12345));
 
-            let block_info = BlockInfo::default_with_epoch(Epoch::new(0));
+            let block_info = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             drive
                 .add_new_identity(identity.clone(), &block_info, true, None)
@@ -665,7 +665,7 @@ mod tests {
 
             let identity = Identity::random_identity(5, Some(12345));
 
-            let block_info = BlockInfo::default_with_epoch(Epoch::new(0));
+            let block_info = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             let revision = 2;
 

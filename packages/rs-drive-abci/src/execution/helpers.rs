@@ -3,7 +3,7 @@ use dashcore::ProTxHash;
 use std::collections::BTreeSet;
 
 use dashcore_rpc::json::{MasternodeListDiffWithMasternodes, MasternodeType};
-use drive::drive::block_info::BlockInfo;
+use dpp::block::block_info::BlockInfo;
 use drive::grovedb::Transaction;
 
 use crate::error::execution::ExecutionError;

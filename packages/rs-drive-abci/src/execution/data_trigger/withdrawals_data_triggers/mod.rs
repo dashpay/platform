@@ -116,6 +116,7 @@ mod tests {
     use super::*;
     use crate::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;
+    use dpp::block::block_info::BlockInfo;
     use dpp::document::document_transition::{
         DocumentBaseTransitionAction, DocumentDeleteTransitionAction,
     };
@@ -124,7 +125,6 @@ mod tests {
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dpp::tests::fixtures::{get_data_contract_fixture, get_withdrawal_document_fixture};
-    use drive::drive::block_info::BlockInfo;
     use drive::drive::object_size_info::DocumentInfo::DocumentRefWithoutSerialization;
     use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 

@@ -4,8 +4,8 @@ use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use dashcore::hashes::Hash;
 use dashcore::QuorumHash;
+use dpp::block::block_info::BlockInfo;
 use dpp::identity::TimestampMillis;
-use drive::drive::block_info::BlockInfo;
 use tenderdash_abci::proto::abci::RequestInitChain;
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 

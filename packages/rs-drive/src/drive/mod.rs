@@ -70,9 +70,6 @@ pub mod balances;
 /// Batch module
 #[cfg(feature = "full")]
 pub mod batch;
-/// Block info module
-#[cfg(feature = "full")]
-pub mod block_info;
 /// Drive Cache
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod cache;
@@ -121,8 +118,6 @@ mod system_contracts_cache;
 pub mod verify;
 
 #[cfg(feature = "full")]
-use crate::drive::block_info::BlockInfo;
-#[cfg(feature = "full")]
 use crate::drive::cache::DataContractCache;
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::cache::DriveCache;
@@ -132,9 +127,11 @@ use crate::drive::object_size_info::OwnedDocumentInfo;
 use crate::drive::system_contracts_cache::SystemContracts;
 #[cfg(feature = "full")]
 use crate::fee::result::FeeResult;
-#[cfg(feature = "full")]
-use crate::fee_pools::epochs::Epoch;
 use crate::query::GroveError;
+#[cfg(feature = "full")]
+use dpp::block::block_info::BlockInfo;
+#[cfg(feature = "full")]
+use dpp::block::epoch::Epoch;
 
 /// Drive struct
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -526,7 +523,7 @@ impl Drive {
                 document_type,
             },
             false,
-            BlockInfo::default_with_epoch(Epoch::new(epoch_index)),
+            BlockInfo::default_with_epoch(Epoch::new(epoch_index)?),
             false,
             None,
         )

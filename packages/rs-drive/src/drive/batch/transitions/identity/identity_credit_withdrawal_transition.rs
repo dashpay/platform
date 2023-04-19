@@ -3,7 +3,7 @@ use crate::drive::batch::DriveOperation::{DocumentOperation, IdentityOperation};
 use crate::drive::batch::{DocumentOperationType, DriveOperation, IdentityOperationType};
 use crate::drive::object_size_info::{DocumentInfo, OwnedDocumentInfo};
 use crate::error::Error;
-use crate::fee_pools::epochs::Epoch;
+use dpp::block::epoch::Epoch;
 
 use dpp::identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransitionAction;
 

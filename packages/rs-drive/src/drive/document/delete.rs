@@ -45,7 +45,6 @@ use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
 use crate::contract::Contract;
-use crate::drive::block_info::BlockInfo;
 use crate::drive::defaults::{
     AVERAGE_NUMBER_OF_UPDATES, AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE,
     CONTRACT_DOCUMENTS_PATH_HEIGHT, DEFAULT_HASH_SIZE_U8,
@@ -59,6 +58,7 @@ use crate::drive::object_size_info::DocumentInfo::{
     DocumentEstimatedAverageSize, DocumentWithoutSerialization,
 };
 use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
+use dpp::block::block_info::BlockInfo;
 use dpp::document::Document;
 
 use crate::drive::grove_operations::BatchDeleteApplyType::{
@@ -76,7 +76,7 @@ use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
 
 use crate::fee::result::FeeResult;
-use crate::fee_pools::epochs::Epoch;
+use dpp::block::epoch::Epoch;
 
 impl Drive {
     /// Deletes a document and returns the associated fee.
@@ -819,9 +819,10 @@ mod tests {
     use crate::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
     use crate::drive::Drive;
     use crate::fee::credits::Creditable;
+    use crate::fee::default_costs::EpochCosts;
     use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
-    use crate::fee_pools::epochs::Epoch;
     use crate::query::DriveQuery;
+    use dpp::block::epoch::Epoch;
     use dpp::document::Document;
     use dpp::util::serializer;
 
@@ -1539,7 +1540,9 @@ mod tests {
             .expect("expected to insert a document successfully");
 
         let added_bytes = fee_result.storage_fee
-            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+            / Epoch::new(0)
+                .unwrap()
+                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         // We added 1679 bytes
         assert_eq!(added_bytes, 1679);
 
@@ -1557,7 +1560,7 @@ mod tests {
                 &contract,
                 "profile",
                 Some(random_owner_id),
-                BlockInfo::default_with_epoch(Epoch::new(3)),
+                BlockInfo::default_with_epoch(Epoch::new(3).unwrap()),
                 true,
                 Some(&db_transaction),
             )
@@ -1572,7 +1575,9 @@ mod tests {
 
         assert_eq!(*removed_credits, 44879092);
         let refund_equivalent_bytes = removed_credits.to_unsigned()
-            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+            / Epoch::new(0)
+                .unwrap()
+                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
         assert!(added_bytes > refund_equivalent_bytes);
         assert_eq!(refund_equivalent_bytes, 1662); // we refunded 1662 instead of 1679
@@ -1622,7 +1627,9 @@ mod tests {
             .expect("expected to insert a document successfully");
 
         let added_bytes = fee_result.storage_fee
-            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+            / Epoch::new(0)
+                .unwrap()
+                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         // We added 1682 bytes
         assert_eq!(added_bytes, 1679);
 
@@ -1640,7 +1647,7 @@ mod tests {
                 &contract,
                 "profile",
                 Some(random_owner_id),
-                BlockInfo::default_with_epoch(Epoch::new(3)),
+                BlockInfo::default_with_epoch(Epoch::new(3).unwrap()),
                 false,
                 Some(&db_transaction),
             )

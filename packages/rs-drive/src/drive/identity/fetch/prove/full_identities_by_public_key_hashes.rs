@@ -56,8 +56,8 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::drive::block_info::BlockInfo;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
     use dpp::identity::Identity;
     use std::collections::BTreeMap;
 

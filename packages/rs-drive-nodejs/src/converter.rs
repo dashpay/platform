@@ -1,10 +1,10 @@
+use drive::dpp::block::block_info::BlockInfo;
+use drive::dpp::block::epoch::Epoch;
 use drive::dpp::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use drive::dpp::platform_value::BinaryData;
-use drive::drive::block_info::BlockInfo;
 use drive::drive::flags::StorageFlags;
 use drive::fee::credits::Credits;
 use drive::fee::epoch::CreditsPerEpoch;
-use drive::fee_pools::epochs::Epoch;
 use drive::grovedb::reference_path::ReferencePathType;
 use drive::grovedb::{Element, PathQuery, Query, SizedQuery};
 use neon::prelude::*;
@@ -435,7 +435,7 @@ pub fn js_object_to_block_info<'a, C: Context<'a>>(
     let js_epoch: Handle<JsNumber> = js_object.get(cx, "epoch")?;
     let js_time: Handle<JsNumber> = js_object.get(cx, "timeMs")?;
 
-    let epoch = Epoch::new(js_epoch.value(cx) as u16);
+    let epoch = Epoch::new(js_epoch.value(cx) as u16).unwrap();
 
     let block_info = BlockInfo {
         height: js_height.value(cx) as u64,

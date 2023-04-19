@@ -48,6 +48,7 @@ use dpp::document::document_transition::{
 use dpp::document::DocumentsBatchTransition;
 use dpp::identity::signer::Signer;
 
+use dpp::block::block_info::BlockInfo;
 use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::identity::KeyType::ECDSA_SECP256K1;
@@ -65,7 +66,6 @@ use drive::contract::{Contract, CreateRandomDocument, DocumentType};
 use drive::dpp::document::Document;
 use drive::dpp::identity::{Identity, KeyID};
 use drive::dpp::util::deserializer::ProtocolVersion;
-use drive::drive::block_info::BlockInfo;
 use drive::drive::defaults::PROTOCOL_VERSION;
 use drive::drive::flags::StorageFlags::SingleEpoch;
 
@@ -74,6 +74,7 @@ use crate::FinalizeBlockOperation::IdentityAddKeys;
 use dashcore::hashes::hex::ToHex;
 use dashcore::hashes::Hash;
 use dashcore_rpc::json::QuorumMember;
+use dpp::block::epoch::Epoch;
 use dpp::data_contract::document_type::random_document_type::RandomDocumentTypeParameters;
 use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::data_contract::{generate_data_contract_id, DataContract};
@@ -88,7 +89,6 @@ use dpp::prelude::Identifier;
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
 use drive::drive::Drive;
 use drive::fee::credits::Credits;
-use drive::fee_pools::epochs::Epoch;
 use drive::query::DriveQuery;
 use drive_abci::abci::AbciApplication;
 use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
@@ -1361,7 +1361,7 @@ pub(crate) fn continue_chain_for_strategy(
             time_ms: current_time_ms,
             height: block_height,
             core_height: current_core_height,
-            epoch: Epoch::new(epoch_info.current_epoch_index),
+            epoch: Epoch::new(epoch_info.current_epoch_index).unwrap(),
         };
         if current_quorum_with_test_info.quorum_hash != current_quorum_hash {
             current_quorum_with_test_info = quorums.get(&current_quorum_hash).unwrap();

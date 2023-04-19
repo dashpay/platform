@@ -39,11 +39,11 @@
 
 use crate::error::Error;
 use crate::platform::Platform;
+use dpp::block::block_info::BlockInfo;
 use drive::contract::Contract;
 use drive::dpp::data_contract::DriveContractExt;
 use drive::dpp::document::Document;
 use drive::dpp::util::serializer;
-use drive::drive::block_info::BlockInfo;
 use drive::drive::flags::StorageFlags;
 use drive::drive::query::QuerySerializedDocumentsOutcome;
 use drive::grovedb::TransactionArg;

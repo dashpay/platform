@@ -1,7 +1,7 @@
-use dpp::{bincode, ProtocolError};
-use crate::fee_pools::epochs::Epoch;
-use dpp::bincode::{config, Decode, Encode};
-use dpp::dashcore::QuorumHash;
+use crate::block::epoch::Epoch;
+use crate::ProtocolError;
+use bincode::config;
+use bincode::{Decode, Encode};
 
 /// Block information
 #[derive(Clone, Default, Encode, Decode)]
@@ -60,7 +60,9 @@ impl BlockInfo {
     pub fn deserialize(bytes: &[u8]) -> Result<Self, ProtocolError> {
         let config = config::standard().with_big_endian().with_limit::<15000>();
         bincode::decode_from_slice(bytes, config)
-            .map_err(|e| ProtocolError::EncodingError(format!("unable to deserialize block info {}", e)))
+            .map_err(|e| {
+                ProtocolError::EncodingError(format!("unable to deserialize block info {}", e))
+            })
             .map(|(a, _)| a)
     }
 }

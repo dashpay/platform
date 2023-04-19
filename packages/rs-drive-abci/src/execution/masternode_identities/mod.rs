@@ -10,13 +10,13 @@ use dashcore_rpc::json::{
     MasternodeListDiffWithMasternodes, MasternodeListItem, RemovedMasternodeItem,
     UpdatedMasternodeItem,
 };
+use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 use dpp::identity::factory::IDENTITY_PROTOCOL_VERSION;
 use dpp::identity::{
     Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel, TimestampMillis,
 };
 use dpp::platform_value::BinaryData;
-use drive::drive::block_info::BlockInfo;
 use drive::grovedb::Transaction;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet};

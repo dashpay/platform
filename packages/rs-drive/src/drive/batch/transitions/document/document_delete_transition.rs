@@ -4,7 +4,7 @@ use crate::drive::batch::DriveOperation::DocumentOperation;
 use crate::drive::batch::{DocumentOperationType, DriveOperation};
 
 use crate::error::Error;
-use crate::fee_pools::epochs::Epoch;
+use dpp::block::epoch::Epoch;
 
 use dpp::document::document_transition::{
     DocumentBaseTransitionAction, DocumentDeleteTransitionAction,

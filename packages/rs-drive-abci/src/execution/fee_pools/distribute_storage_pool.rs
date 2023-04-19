@@ -111,10 +111,11 @@ mod tests {
     use drive::common::helpers::epoch::get_storage_credits_for_distribution_for_epochs_in_range;
 
     mod add_distribute_storage_fee_to_epochs_operations {
+        use dpp::block::epoch::Epoch;
         use drive::drive::fee_pools::pending_epoch_refunds::add_update_pending_epoch_refunds_operations;
         use drive::fee::credits::Creditable;
         use drive::fee::epoch::{CreditsPerEpoch, GENESIS_EPOCH_INDEX, PERPETUAL_STORAGE_EPOCHS};
-        use drive::fee_pools::epochs::Epoch;
+        use drive::fee_pools::epochs::operations_factory::EpochOperations;
         use drive::fee_pools::update_storage_fee_distribution_pool_operation;
 
         use crate::test::helpers::setup::TestPlatformBuilder;
@@ -173,7 +174,7 @@ mod tests {
 
             // init additional epochs pools as it will be done in epoch_change
             for i in PERPETUAL_STORAGE_EPOCHS..=PERPETUAL_STORAGE_EPOCHS + current_epoch_index {
-                let epoch = Epoch::new(i);
+                let epoch = Epoch::new(i).unwrap();
                 epoch
                     .add_init_empty_operations(&mut batch)
                     .expect("should add init operations");

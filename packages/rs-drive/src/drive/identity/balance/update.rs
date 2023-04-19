@@ -1,5 +1,4 @@
 use crate::drive::balances::balance_path_vec;
-use crate::drive::block_info::BlockInfo;
 use crate::drive::identity::{identity_path_vec, IdentityRootStructure};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
@@ -9,6 +8,7 @@ use crate::fee::calculate_fee;
 use crate::fee::credits::{Credits, MAX_CREDITS};
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::result::{BalanceChange, BalanceChangeForIdentity, FeeResult};
+use dpp::block::block_info::BlockInfo;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use std::collections::HashMap;
@@ -477,7 +477,7 @@ mod tests {
     use super::*;
     use dpp::prelude::*;
 
-    use crate::fee_pools::epochs::Epoch;
+    use dpp::block::epoch::Epoch;
 
     use crate::{
         common::helpers::identities::create_test_identity,
@@ -495,7 +495,7 @@ mod tests {
 
             let old_balance = identity.balance;
 
-            let block_info = BlockInfo::default_with_epoch(Epoch::new(0));
+            let block_info = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             drive
                 .add_new_identity(identity.clone(), &block_info, true, None)
@@ -541,7 +541,7 @@ mod tests {
         fn should_fail_if_balance_is_not_persisted() {
             let drive = setup_drive_with_initial_state_structure();
 
-            let block_info = BlockInfo::default_with_epoch(Epoch::new(0));
+            let block_info = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             let result = drive.add_to_identity_balance([0; 32], 300, &block_info, true, None);
 
@@ -679,7 +679,7 @@ mod tests {
 
             let identity = Identity::random_identity(5, Some(12345));
 
-            let block = BlockInfo::default_with_epoch(Epoch::new(0));
+            let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             let app_hash_before = drive
                 .grove
@@ -726,7 +726,7 @@ mod tests {
 
             let old_balance = identity.balance;
 
-            let block = BlockInfo::default_with_epoch(Epoch::new(0));
+            let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             drive
                 .add_new_identity(identity.clone(), &block, true, None)
@@ -774,7 +774,7 @@ mod tests {
 
             let identity = Identity::random_identity(5, Some(12345));
 
-            let block = BlockInfo::default_with_epoch(Epoch::new(0));
+            let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             let app_hash_before = drive
                 .grove

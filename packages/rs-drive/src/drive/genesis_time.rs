@@ -35,7 +35,7 @@
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::epoch::GENESIS_EPOCH_INDEX;
-use crate::fee_pools::epochs::Epoch;
+use dpp::block::epoch::Epoch;
 use grovedb::TransactionArg;
 
 impl Drive {
@@ -50,7 +50,7 @@ impl Drive {
 
         drop(cache);
 
-        let epoch = Epoch::new(GENESIS_EPOCH_INDEX);
+        let epoch = Epoch::new(GENESIS_EPOCH_INDEX).unwrap();
 
         match self.get_epoch_start_time(&epoch, transaction) {
             Ok(genesis_time_ms) => {
@@ -85,6 +85,7 @@ mod tests {
         use super::*;
 
         use crate::drive::batch::GroveDbOpBatch;
+        use crate::fee_pools::epochs::operations_factory::EpochOperations;
 
         #[test]
         fn should_return_none_if_cache_is_empty_and_start_time_is_not_persisted() {
@@ -122,7 +123,7 @@ mod tests {
 
             let genesis_time_ms = 100;
 
-            let epoch = Epoch::new(GENESIS_EPOCH_INDEX);
+            let epoch = Epoch::new(GENESIS_EPOCH_INDEX).unwrap();
 
             let mut batch = GroveDbOpBatch::new();
             let mut drive_operations = Vec::new();

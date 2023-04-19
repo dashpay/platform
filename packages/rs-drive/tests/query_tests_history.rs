@@ -82,7 +82,7 @@ use drive::error::{query::QueryError, Error};
 use drive::query::DriveQuery;
 
 #[cfg(feature = "full")]
-use drive::drive::block_info::BlockInfo;
+use dpp::block::block_info::BlockInfo;
 
 #[cfg(feature = "full")]
 #[derive(Serialize, Deserialize)]

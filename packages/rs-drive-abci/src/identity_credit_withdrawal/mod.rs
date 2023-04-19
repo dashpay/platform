@@ -9,6 +9,8 @@ use dashcore_rpc::dashcore::{
     hashes::Hash,
     QuorumHash, Script, TxOut,
 };
+use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
 use dpp::document::Document;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use drive::dpp::contracts::withdrawals_contract;
@@ -18,11 +20,7 @@ use drive::dpp::identity::convert_credits_to_satoshi;
 use drive::dpp::util::hash;
 use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
 use drive::grovedb::Transaction;
-use drive::{
-    drive::{batch::DriveOperation, block_info::BlockInfo},
-    fee_pools::epochs::Epoch,
-    query::TransactionArg,
-};
+use drive::{drive::batch::DriveOperation, query::TransactionArg};
 use serde_json::Value as JsonValue;
 
 use crate::block::BlockExecutionContext;
@@ -52,7 +50,7 @@ where
             core_height: block_execution_context
                 .block_state_info
                 .core_chain_locked_height,
-            epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
+            epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index)?,
         };
 
         let data_contract_id = &withdrawals_contract::CONTRACT_ID;
@@ -190,7 +188,7 @@ where
             core_height: block_execution_context
                 .block_state_info
                 .core_chain_locked_height,
-            epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
+            epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index)?,
         };
 
         let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
@@ -316,7 +314,7 @@ where
             core_height: block_execution_context
                 .block_state_info
                 .core_chain_locked_height,
-            epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index),
+            epoch: Epoch::new(block_execution_context.epoch_info.current_epoch_index)?,
         };
 
         let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
@@ -968,6 +966,7 @@ mod tests {
     }
 
     mod build_withdrawal_transactions_from_documents {
+        use dpp::block::block_info::BlockInfo;
         use dpp::data_contract::DriveContractExt;
         use dpp::document::Document;
         use dpp::identity::core_script::CoreScript;
@@ -975,7 +974,6 @@ mod tests {
         use dpp::platform_value::platform_value;
         use dpp::prelude::Identifier;
         use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
-        use drive::drive::block_info::BlockInfo;
         use drive::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
         use drive::tests::helpers::setup::setup_system_data_contract;
         use itertools::Itertools;
