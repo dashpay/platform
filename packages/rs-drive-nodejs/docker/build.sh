@@ -33,6 +33,8 @@ chmod 777 -R /github/workspace/target
 curl -fsSL https://deb.nodesource.com/setup_16.x | sudo -E bash -
 apt install -y nodejs
 
+cargo install sccache@0.4.1
+
 corepack enable
 
 yarn install
