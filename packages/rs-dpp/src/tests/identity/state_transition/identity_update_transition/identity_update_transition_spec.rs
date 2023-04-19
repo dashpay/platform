@@ -145,11 +145,11 @@ fn to_object() {
             {
 
                 "id" : 3u32,
+                "type": 0u8,
                 "purpose" : 0u8,
                 "securityLevel" : 0u8,
-                "type": 0u8,
-                "data" :BinaryData::new(base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap()),
                 "readOnly" : false,
+                "data" :BinaryData::new(base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap()),
                 "signature" : BinaryData::new(vec![0u8;65])
             }
         ],
@@ -176,11 +176,11 @@ fn to_object_with_signature_skipped() {
             {
 
                 "id" : 3u32,
+                "type": 0u8,
                 "purpose" : 0u8,
                 "securityLevel" : 0u8,
-                "type": 0u8,
-                "data" :BinaryData::new(base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap()),
                 "readOnly" : false,
+                "data" :BinaryData::new(base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap()),
             }
         ],
         "disablePublicKeys" : [0u32],
@@ -208,11 +208,11 @@ fn to_json() {
             {
 
                 "id" : 3u32,
+                "type": 0u8,
                 "purpose" : 0u8,
                 "securityLevel" : 0u8,
-                "type": 0u8,
-                "data" : BinaryData::new(base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap()),
                 "readOnly" : false,
+                "data" : BinaryData::new(base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap()),
                 "signature" : BinaryData::new(vec![0;65]),
             }
         ],

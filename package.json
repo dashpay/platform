@@ -59,14 +59,12 @@
     "packages/wallet-lib",
     "packages/js-dash-sdk",
     "packages/dapi",
-    "packages/js-drive",
     "packages/dashmate",
     "packages/platform-test-suite",
     "packages/masternode-reward-shares-contract",
     "packages/dash-spv",
     "packages/wasm-dpp",
-    "packages/withdrawals-contract",
-    "packages/rs-drive-nodejs"
+    "packages/withdrawals-contract"
   ],
   "resolutions": {
     "elliptic": "^6.5.4",

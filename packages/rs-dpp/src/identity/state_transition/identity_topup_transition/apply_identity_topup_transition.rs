@@ -113,7 +113,7 @@ mod test {
         state_repository_for_apply
             .expect_add_to_identity_balance()
             .times(1)
-            .with(eq(identity_id), eq(90000000), always())
+            .with(eq(identity_id), eq(100000000000), always())
             .returning(|_, _, _| Ok(()));
 
         state_repository_for_apply
@@ -125,7 +125,7 @@ mod test {
         state_repository_for_apply
             .expect_add_to_system_credits()
             .times(1)
-            .with(eq(90000000), always())
+            .with(eq(100000000000), always())
             .returning(|_, _| Ok(()));
 
         state_repository_for_apply
@@ -164,7 +164,7 @@ mod test {
         state_repository_for_apply
             .expect_add_to_identity_balance()
             .times(1)
-            .with(eq(identity_id), eq(90000000), always())
+            .with(eq(identity_id), eq(100000000000), always())
             .returning(|_, _, _| Ok(()));
 
         state_repository_for_apply
@@ -176,7 +176,7 @@ mod test {
         state_repository_for_apply
             .expect_add_to_system_credits()
             .times(1)
-            .with(eq(90000000 - 5), always())
+            .with(eq(100000000000 - 5), always())
             .returning(|_, _| Ok(()));
 
         state_repository_for_apply
@@ -215,7 +215,7 @@ mod test {
         state_repository_for_apply
             .expect_add_to_identity_balance()
             .times(1)
-            .with(eq(identity_id), eq(90000000), always())
+            .with(eq(identity_id), eq(100000000000), always())
             .returning(|_, _, _| Ok(()));
 
         state_repository_for_apply
@@ -227,7 +227,7 @@ mod test {
         state_repository_for_apply
             .expect_add_to_system_credits()
             .times(1)
-            .with(eq(90000000), always())
+            .with(eq(100000000000), always())
             .returning(|_, _| Ok(()));
 
         state_repository_for_apply
