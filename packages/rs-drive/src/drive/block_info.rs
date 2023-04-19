@@ -1,5 +1,6 @@
+use dpp::{bincode, ProtocolError};
 use crate::fee_pools::epochs::Epoch;
-use dpp::bincode::{Decode, Encode};
+use dpp::bincode::{config, Decode, Encode};
 use dpp::dashcore::QuorumHash;
 
 /// Block information
@@ -40,5 +41,26 @@ impl BlockInfo {
             epoch,
             ..Default::default()
         }
+    }
+
+    /// Serialize block info
+    pub fn serialize(&self) -> Result<Vec<u8>, ProtocolError> {
+        let config = config::standard().with_big_endian().with_no_limit();
+        bincode::encode_to_vec(self, config).map_err(|e| {
+            ProtocolError::EncodingError(format!("unable to serialize data contract {e}"))
+        })
+    }
+
+    /// The size of serialized block info
+    pub fn serialized_size(&self) -> Result<usize, ProtocolError> {
+        self.serialize().map(|a| a.len())
+    }
+
+    /// Deserialization of block info
+    pub fn deserialize(bytes: &[u8]) -> Result<Self, ProtocolError> {
+        let config = config::standard().with_big_endian().with_limit::<15000>();
+        bincode::decode_from_slice(bytes, config)
+            .map_err(|e| ProtocolError::EncodingError(format!("unable to deserialize block info {}", e)))
+            .map(|(a, _)| a)
     }
 }

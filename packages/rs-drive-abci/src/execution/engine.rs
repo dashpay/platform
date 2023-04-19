@@ -377,17 +377,7 @@ where
         transaction: &Transaction,
     ) -> Result<(), Error> {
         // we need to serialize the block info
-        let mut serialized_block_info = vec![];
-        bincode::encode_into_slice(
-            block_info,
-            serialized_block_info.as_mut_slice(),
-            bincode::config::standard(),
-        )
-        .map_err(|_| {
-            Error::Serialization(SerializationError::CorruptedSerialization(
-                "failed to serialize block info".to_string(),
-            ))
-        })?;
+        let mut serialized_block_info = block_info.serialize()?;
 
         // next we need to store this data in groveb
         self.drive
