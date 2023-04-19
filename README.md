@@ -56,7 +56,7 @@ this repository may be used on the following networks:
   - [wasm-bingen toolchain](https://rustwasm.github.io/wasm-bindgen/): 
     - **IMPORTANT (OSX only)**: built-in `llvm` on OSX does not work, needs to be installed from brew:
       - `brew install llvm`
-      - LLVM from brew keg only, and path to it must be provided in the profile file, e.g.`echo 'export PATH="/opt/homebrew/opt/llvm/bin:$PATH"' >> ~/.zshrc`
+      - LLVM installed from brew is keg only, and path to it must be provided in the profile file, e.g.`echo 'export PATH="/opt/homebrew/opt/llvm/bin:$PATH"' >> ~/.zshrc`
     - `cargo install wasm-bindgen-cli` 
       - _Depending on system, additional packages may need to be installed as a prerequisite for wasm-bindgen-cli. If anything is missing, installation will error and prompt what packages are missing (i.e. clang, llvm, libssl-dev)_
     - `rustup target add wasm32-unknown-unknown`
