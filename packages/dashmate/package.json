@@ -123,9 +123,6 @@
       "identifier": "org.dash.dashmate",
       "sign": "'Developer ID Installer: The Dash Foundation, Inc.'"
     },
-    "deb": {
-      "dependencies": "docker-ce (>= 20.10.0) | docker.io (>= 20.10.0)"
-    },
     "plugins": [
       "@oclif/plugin-help"
     ],
