@@ -1,5 +1,5 @@
-use dashcore::hashes::Hash;
-use dashcore::{QuorumHash, Txid};
+use dashcore_rpc::dashcore::hashes::Hash;
+use dashcore_rpc::dashcore::{QuorumHash, Txid};
 use dpp::bls_signatures;
 
 use dpp::block::block_info::BlockInfo;

@@ -4,8 +4,8 @@ use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformState;
 use chrono::Utc;
-use dashcore::hashes::Hash;
-use dashcore::ProTxHash;
+use dashcore_rpc::dashcore::hashes::Hash;
+use dashcore_rpc::dashcore::ProTxHash;
 use dashcore_rpc::json::{
     MasternodeListDiffWithMasternodes, MasternodeListItem, RemovedMasternodeItem,
     UpdatedMasternodeItem,
@@ -596,7 +596,7 @@ where
 mod tests {
     use crate::config::PlatformConfig;
     use crate::test::helpers::setup::TestPlatformBuilder;
-    use dashcore::ProTxHash;
+    use dashcore_rpc::dashcore::ProTxHash;
     use dashcore_rpc::dashcore_rpc_json::MasternodeListDiffWithMasternodes;
     use dashcore_rpc::json::MasternodeType::Regular;
     use dashcore_rpc::json::{DMNState, MasternodeListItem};

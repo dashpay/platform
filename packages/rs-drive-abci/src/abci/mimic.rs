@@ -5,12 +5,12 @@ use crate::error::Error;
 
 use crate::execution::test_quorum::TestQuorumInfo;
 use crate::rpc::core::CoreRPCLike;
-use dashcore::blockdata::transaction::special_transaction::asset_unlock::qualified_asset_unlock::AssetUnlockPayload;
-use dashcore::blockdata::transaction::special_transaction::asset_unlock::request_info::AssetUnlockRequestInfo;
-use dashcore::blockdata::transaction::special_transaction::asset_unlock::unqualified_asset_unlock::AssetUnlockBaseTransactionInfo;
-use dashcore::blockdata::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
-use dashcore::bls_sig_utils::BLSSignature;
-use dashcore::consensus::Decodable;
+use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::asset_unlock::qualified_asset_unlock::AssetUnlockPayload;
+use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::asset_unlock::request_info::AssetUnlockRequestInfo;
+use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::asset_unlock::unqualified_asset_unlock::AssetUnlockBaseTransactionInfo;
+use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
+use dashcore_rpc::dashcore::bls_sig_utils::BLSSignature;
+use dashcore_rpc::dashcore::consensus::Decodable;
 use dpp::block::block_info::BlockInfo;
 use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;

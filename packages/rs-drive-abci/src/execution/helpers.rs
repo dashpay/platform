@@ -1,5 +1,5 @@
-use dashcore::hashes::Hash;
-use dashcore::ProTxHash;
+use dashcore_rpc::dashcore::hashes::Hash;
+use dashcore_rpc::dashcore::ProTxHash;
 use std::collections::BTreeSet;
 
 use dashcore_rpc::json::{MasternodeListDiffWithMasternodes, MasternodeType};

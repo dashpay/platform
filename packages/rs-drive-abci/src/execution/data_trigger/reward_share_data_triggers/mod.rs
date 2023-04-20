@@ -175,8 +175,8 @@ mod test {
     use crate::platform::PlatformStateRef;
     use crate::state::PlatformState;
     use crate::test::helpers::setup::TestPlatformBuilder;
-    use dashcore::hashes::Hash;
-    use dashcore::ProTxHash;
+    use dashcore_rpc::dashcore::hashes::Hash;
+    use dashcore_rpc::dashcore::ProTxHash;
     use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem, MasternodeType};
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
@@ -219,7 +219,7 @@ mod test {
             collateral_hash: hex::decode("4eb56228c535db3b234907113fd41d57bcc7cdcb8e0e00e57590af27ee88c119").expect("expected to decode collateral hash").try_into().expect("expected 32 bytes"),
             collateral_index: 0,
             operator_reward: 0,
-            state: DMNState {
+            state: DMNState {  
                 service: SocketAddr::from_str("1.2.3.4:1234").unwrap(),
                 registered_height: 0,
                 pose_revived_height: 0,

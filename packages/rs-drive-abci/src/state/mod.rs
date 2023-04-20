@@ -2,7 +2,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::quorum::Quorum;
 use crate::rpc::core::QuorumListExtendedInfo;
-use dashcore::{ProTxHash, QuorumHash};
+use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
 use dashcore_rpc::json::QuorumType;
 use dpp::block::block_info::BlockInfo;

@@ -1,5 +1,5 @@
 use crate::rpc::core::CoreHeight;
-use dashcore::QuorumHash;
+use dashcore_rpc::dashcore::QuorumHash;
 use dashcore_rpc::dashcore_rpc_json::QuorumType;
 
 /// Error returned by Core RPC endpoint

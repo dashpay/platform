@@ -1,7 +1,7 @@
 // use crate::platform::Platform;
 // use anyhow::{bail, Result as AnyResult};
-// use dashcore::anyhow::Result;
-// use dashcore::InstantLock;
+// use dashcore_rpc::dashcore::anyhow::Result;
+// use dashcore_rpc::dashcore::InstantLock;
 // use dpp::async_trait::async_trait;
 // use dpp::data_contract::{DataContract, DriveContractExt};
 // use dpp::document::{Document, ExtendedDocument};

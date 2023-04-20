@@ -1,4 +1,4 @@
-use dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
+use dashcore_rpc::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
     ExtendedQuorumDetails, GetBestChainLockResult, QuorumInfoResult, QuorumListResult, QuorumType,
 };

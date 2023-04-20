@@ -32,7 +32,7 @@ use crate::error::Error;
 use crate::execution::block_proposal::BlockProposal;
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::state::PlatformState;
-use dashcore::Txid;
+use dashcore_rpc::dashcore::Txid;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 

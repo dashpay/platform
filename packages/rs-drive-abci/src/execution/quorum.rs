@@ -1,6 +1,6 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use dashcore::{ProTxHash, QuorumHash};
+use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dashcore_rpc::json::QuorumInfoResult;
 use dpp::bls_signatures::PublicKey as BlsPublicKey;
 use std::collections::BTreeMap;
