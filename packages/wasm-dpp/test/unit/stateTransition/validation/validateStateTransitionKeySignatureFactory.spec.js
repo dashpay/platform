@@ -11,6 +11,7 @@ describe('validateStateTransitionKeySignatureFactory', () => {
   let stateTransition;
   let stateRepositoryMock;
   let validateStateTransitionKeySignature;
+  let executionContext;
 
   let InvalidStateTransitionSignatureError;
   let StateTransitionKeySignatureValidator;
@@ -33,6 +34,7 @@ describe('validateStateTransitionKeySignatureFactory', () => {
   });
 
   beforeEach(function beforeEach() {
+    executionContext = new StateTransitionExecutionContext();
     const stateTransitionJS = getIdentityCreateTransitionFixture();
     const rawStateTransition = stateTransitionJS.toObject();
 
@@ -42,7 +44,7 @@ describe('validateStateTransitionKeySignatureFactory', () => {
 
     const validator = new StateTransitionKeySignatureValidator(stateRepositoryMock);
 
-    validateStateTransitionKeySignature = (st) => validator.validate(st);
+    validateStateTransitionKeySignature = (st) => validator.validate(st, executionContext);
   });
 
   it('should return invalid result if signature is not valid', async () => {
