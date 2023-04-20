@@ -170,9 +170,7 @@ function setupLocalPresetTaskFactory(
 
                   config.set('dashmate.helper.api.port', config.get('dashmate.helper.api.port') + (i * 100));
 
-                  return new Listr([{
-                    task: () => generateSystemDataContractKeysTask(config, network),
-                  }]);
+                  return generateSystemDataContractKeysTask(config, network);
                 }
 
                 return null;

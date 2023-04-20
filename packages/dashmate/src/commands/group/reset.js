@@ -15,7 +15,6 @@ class GroupResetCommand extends GroupBaseCommand {
    * @param {configureCoreTask} configureCoreTask
    * @param {configureTenderdashTask} configureTenderdashTask
    * @param {generateToAddressTask} generateToAddressTask
-   * @param {generateSystemDataContractKeysTask} generateSystemDataContractKeysTask
    * @param {ConfigFile} configFile
    * @param {Object[]} systemConfigs
    * @return {Promise<void>}
@@ -34,7 +33,6 @@ class GroupResetCommand extends GroupBaseCommand {
     configureCoreTask,
     configureTenderdashTask,
     generateToAddressTask,
-    generateSystemDataContractKeysTask,
     configFile,
     systemConfigs,
   ) {
@@ -57,28 +55,11 @@ class GroupResetCommand extends GroupBaseCommand {
             task: (ctx) => {
               ctx.skipPlatformInitialization = true;
 
-              config.set('platform.dpns', baseConfig.platform.dpns);
-              config.set('platform.dashpay', baseConfig.platform.dashpay);
-              config.set('platform.featureFlags', baseConfig.platform.featureFlags);
-              config.set('platform.masternodeRewardShares', baseConfig.platform.masternodeRewardShares);
-
-              // TODO: Should stay the same
-              config.set('platform.drive.tenderdash.node.id', baseConfig.platform.drive.tenderdash.node.id);
-              config.set('platform.drive.tenderdash.node.key', baseConfig.platform.drive.tenderdash.node.key);
-              config.set('platform.drive.tenderdash.genesis', baseConfig.platform.drive.tenderdash.genesis);
-
               if (!ctx.isPlatformOnlyReset) {
                 config.set('core.masternode.operator.privateKey', baseConfig.core.masternode.operator.privateKey);
               }
 
-              return new Listr([
-                {
-                  task: () => resetNodeTask(config),
-                },
-                {
-                  task: () => generateSystemDataContractKeysTask(config, config.get('network')),
-                },
-              ]);
+              return resetNodeTask(config);
             },
           }))),
         },
@@ -90,14 +71,14 @@ class GroupResetCommand extends GroupBaseCommand {
           ),
         },
         {
-          enabled: (ctx) => !ctx.isHardReset,
-          title: 'Configure Tenderdash nodes',
-          task: () => configureTenderdashTask(configGroup),
-        },
-        {
           enabled: (ctx) => !ctx.isHardReset && !ctx.isPlatformOnlyReset,
           title: 'Configure Core nodes',
           task: () => configureCoreTask(configGroup),
+        },
+        {
+          enabled: (ctx) => !ctx.isHardReset,
+          title: 'Configure Tenderdash nodes',
+          task: () => configureTenderdashTask(configGroup),
         },
         {
           // in case we don't need to register masternodes
