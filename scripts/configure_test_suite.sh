@@ -14,12 +14,12 @@ CONFIG="local"
 
 SETUP_FILE_PATH=${PATH_TO_PROJECT_ROOT}/logs/setup.log
 
-DPNS_OWNER_PRIVATE_KEY=$(grep -m 1 "DPNS Private Key:" ${SETUP_FILE_PATH} | awk '{$1="";printf $5}')
-FEATURE_FLAGS_OWNER_PRIVATE_KEY=$(grep -m 1 "Feature Flags Private Key:" ${SETUP_FILE_PATH} | awk '{$1="";printf $6}')
-DASHPAY_OWNER_PRIVATE_KEY=$(grep -m 1 "Dashpay Private Key:" ${SETUP_FILE_PATH} | awk '{$1="";printf $5}')
-MASTERNODE_REWARD_SHARES_OWNER_PRIVATE_KEY=$(grep -m 1 "Masternode Reward Shares Private Key:" "${SETUP_FILE_PATH}" | awk '{$1="";printf $7}')
-MASTERNODE_OWNER_PRO_REG_TX_HASH=$(grep -m 1 "ProRegTx transaction ID:" "${SETUP_FILE_PATH}" | awk '{printf $5}')
-MASTERNODE_OWNER_MASTER_PRIVATE_KEY=$(grep -m 1 "Owner Private Key:" "${SETUP_FILE_PATH}" | awk '{printf $5}')
+DPNS_OWNER_PRIVATE_KEY=$(grep -m 1 "DPNS Private Key:" ${SETUP_FILE_PATH} | awk '{$1="";printf $4}')
+FEATURE_FLAGS_OWNER_PRIVATE_KEY=$(grep -m 1 "Feature Flags Private Key:" ${SETUP_FILE_PATH} | awk '{$1="";printf $5}')
+DASHPAY_OWNER_PRIVATE_KEY=$(grep -m 1 "Dashpay Private Key:" ${SETUP_FILE_PATH} | awk '{$1="";printf $4}')
+MASTERNODE_REWARD_SHARES_OWNER_PRIVATE_KEY=$(grep -m 1 "Masternode Reward Shares Private Key:" "${SETUP_FILE_PATH}" | awk '{$1="";printf $6}')
+MASTERNODE_OWNER_PRO_REG_TX_HASH=$(grep -m 1 "ProRegTx transaction ID:" "${SETUP_FILE_PATH}" | awk '{printf $4}')
+MASTERNODE_OWNER_MASTER_PRIVATE_KEY=$(grep -m 1 "Owner Private Key:" "${SETUP_FILE_PATH}" | awk '{printf $4}')
 
 echo "Mint 100 Dash to faucet address"
 
