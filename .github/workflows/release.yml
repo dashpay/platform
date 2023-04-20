@@ -19,7 +19,6 @@ jobs:
     name: Release NPM packages
     runs-on: self-hosted
     if: github.event_name != 'workflow_dispatch'
-    needs: build-rs-drive-nodejs
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
@@ -78,12 +77,6 @@ jobs:
         run: yarn build
         env:
           CARGO_BUILD_PROFILE: release
-
-      - name: Download prebuild artifacts
-        uses: actions/download-artifact@v3
-        with:
-          name: prebuilds
-          path: packages/rs-drive-nodejs/prebuilds
 
       - name: Set suffix
         uses: actions/github-script@v6
@@ -751,137 +744,6 @@ jobs:
             ACTIONS_CACHE_URL=${{ env.ACTIONS_CACHE_URL }}
             ACTIONS_RUNTIME_TOKEN=${{ env.ACTIONS_RUNTIME_TOKEN }}
             CARGO_BUILD_PROFILE=release
-
-  # TODO: Implement yarn and rust cache
-  build-rs-drive-nodejs:
-    name: Build Drive Node.JS binding
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-22.04
-            arch: x86_64
-            node_arch: x64
-            compiler: gnu
-            platform: unknown-linux
-          - os: ubuntu-22.04
-            arch: x86_64
-            node_arch: x64
-            compiler: musl
-            platform: unknown-linux
-          - os: ubuntu-22.04
-            arch: aarch64
-            node_arch: arm64
-            compiler: gnu
-            platform: unknown-linux
-          - os: ubuntu-22.04
-            arch: aarch64
-            node_arch: arm64
-            compiler: musl
-            platform: unknown-linux
-          - os: macos-11
-            arch: x86_64
-            platform: apple-darwin
-          - os: macos-11
-            arch: aarch64
-            node_arch: arm64
-            platform: apple-darwin
-
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Check out repo
-        uses: actions/checkout@v3
-
-      - name: Setup Node.JS
-        uses: actions/setup-node@v3
-        with:
-          node-version: "16"
-
-      - name: Enable corepack
-        run: corepack enable
-
-      - name: Disable NPM audit
-        run: npm config set audit false
-
-      - name: Enable Yarn unplugged modules cache
-        uses: actions/cache@v3
-        with:
-          path: ".yarn/unplugged"
-          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-yarn-unplugged-
-
-      - name: Install dependencies
-        run: yarn install
-
-      - name: Set target name
-        uses: actions/github-script@v6
-        id: set-target
-        with:
-          script: |
-            let target = '${{ matrix.arch }}-${{ matrix.platform }}';
-
-            if ('${{ matrix.compiler }}') {
-              target += '-${{ matrix.compiler }}';
-            }
-
-            core.info(`Set target ${target}`);
-
-            return target;
-          result-encoding: string
-
-      - name: Setup Rust
-        if: ${{ runner.os == 'macOS' }}
-        uses: ./.github/actions/rust
-        with:
-          toolchain: stable
-          target: ${{ steps.set-target.outputs.result }}
-
-      - name: Set LIBC argument
-        uses: actions/github-script@v6
-        id: set-libc-arg
-        with:
-          script: |
-            let env = '';
-
-            if (${{ matrix.compiler == 'musl' }}) {
-              env = '-l musl'
-            }
-
-            core.info(`Set LIBC env to "${env}"`);
-
-            return env;
-          result-encoding: string
-
-      - name: Build for Linux (x86)
-        if: ${{ runner.os == 'Linux' && matrix.arch == 'x86_64' }}
-        uses: docker://messense/rust-musl-cross:x86_64-musl
-        with:
-          workdir: /github/workspace/
-          entrypoint: packages/rs-drive-nodejs/docker/build.sh
-          args: -a ${{ matrix.node_arch }} -t ${{ steps.set-target.outputs.result }} ${{ steps.set-libc-arg.outputs.result }}
-
-      - name: Build for Linux (aarch64)
-        if: ${{ runner.os == 'Linux' && matrix.arch == 'aarch64' }}
-        uses: docker://messense/rust-musl-cross:aarch64-musl
-        with:
-          workdir: /github/workspace/
-          entrypoint: packages/rs-drive-nodejs/docker/build.sh
-          args: -a ${{ matrix.node_arch }} -t ${{ steps.set-target.outputs.result }} ${{ steps.set-libc-arg.outputs.result }}
-
-      - name: Build for Mac OS
-        if: ${{ runner.os == 'macOS' }}
-        run: yarn workspace @dashevo/rs-drive run build
-        env:
-          ARCH: ${{ matrix.node_arch }} # Overwrite current arch with target one
-          CARGO_BUILD_TARGET: ${{ steps.set-target.outputs.result }}
-          CARGO_BUILD_PROFILE: release
-
-      - name: Upload prebuild artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: prebuilds
-          path: packages/rs-drive-nodejs/prebuilds/
 
   release-dashmate:
     name: Release Dashmate packages
