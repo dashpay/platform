@@ -6,6 +6,7 @@ use dashcore::signer::verify_hash_signature;
 
 use crate::consensus::signature::IdentityNotFoundError;
 use crate::consensus::ConsensusError;
+use crate::prelude::ConsensusValidationResult;
 use crate::validation::AsyncDataValidator;
 use crate::{
     consensus::signature::SignatureError,
@@ -19,7 +20,7 @@ use crate::{
         state_transition_execution_context::StateTransitionExecutionContext,
         StateTransition, StateTransitionConvert, StateTransitionLike,
     },
-    validation::SimpleValidationResult,
+    validation::SimpleConsensusValidationResult,
     ProtocolError,
 };
 
@@ -36,11 +37,16 @@ where
     type Item = StateTransition;
     type ResultItem = ();
 
-    async fn validate(&self, data: &Self::Item) -> Result<SimpleValidationResult, ProtocolError> {
+    async fn validate(
+        &self,
+        data: &Self::Item,
+        execution_context: &StateTransitionExecutionContext,
+    ) -> Result<ConsensusValidationResult<Self::ResultItem>, ProtocolError> {
         validate_state_transition_key_signature(
             self.state_repository.as_ref(),
             &self.asset_lock_public_key_hash_fetcher,
             data,
+            execution_context,
         )
         .await
     }
@@ -65,10 +71,10 @@ pub async fn validate_state_transition_key_signature<SR: StateRepositoryLike>(
     state_repository: &impl StateRepositoryLike,
     asset_lock_public_key_hash_fetcher: &AssetLockPublicKeyHashFetcher<SR>,
     state_transition: &StateTransition,
-) -> Result<SimpleValidationResult, ProtocolError> {
-    let mut result = SimpleValidationResult::default();
+    execution_context: &StateTransitionExecutionContext,
+) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+    let mut result = SimpleConsensusValidationResult::default();
 
-    let execution_context = state_transition.get_execution_context();
     // Validate target identity existence for top up
     if let StateTransition::IdentityTopUp(ref transition) = state_transition {
         let target_identity_id = transition.get_identity_id();
@@ -103,9 +109,7 @@ pub async fn validate_state_transition_key_signature<SR: StateRepositoryLike>(
         .await
         .with_context(|| format!("public key hash fetching failed for {:?}", asset_lock_proof))?;
     let operation = SignatureVerificationOperation::new(KeyType::ECDSA_SECP256K1);
-    state_transition
-        .get_execution_context()
-        .add_operation(Operation::SignatureVerification(operation));
+    execution_context.add_operation(Operation::SignatureVerification(operation));
 
     let verification_result = verify_hash_signature(
         &state_transition_hash,
@@ -140,6 +144,7 @@ mod test {
     use platform_value::BinaryData;
     use std::sync::Arc;
 
+    use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use crate::{
         consensus::signature::SignatureError,
         document::DocumentsBatchTransition,
@@ -195,11 +200,13 @@ mod test {
             ..
         } = setup_test();
         let state_transition: StateTransition = DocumentsBatchTransition::default().into();
+        let execution_context = StateTransitionExecutionContext::default();
 
         let result = validate_state_transition_key_signature(
             &state_repository,
             &asset_lock_public_key_hash_fetcher,
             &state_transition,
+            &execution_context,
         )
         .await
         .expect_err("error is expected");
@@ -219,10 +226,11 @@ mod test {
             .expect("secret key should be created");
 
         let private_key = PrivateKey::new(secret_key, Network::Testnet);
-        let mut state_transition: StateTransition =
-            IdentityCreateTransition::new(identity_create_transition_fixture(Some(private_key)))
-                .unwrap()
-                .into();
+        let mut state_transition: StateTransition = IdentityCreateTransition::from_raw_object(
+            identity_create_transition_fixture(Some(private_key)),
+        )
+        .unwrap()
+        .into();
 
         state_transition
             .sign_by_private_key(
@@ -231,11 +239,13 @@ mod test {
                 &bls,
             )
             .expect("state transition should be signed");
+        let execution_context = StateTransitionExecutionContext::default();
 
         let result = validate_state_transition_key_signature(
             &state_repository,
             &asset_lock_public_key_hash_fetcher,
             &state_transition,
+            &execution_context,
         )
         .await
         .expect("the validation result should be returned");
@@ -255,10 +265,11 @@ mod test {
             .expect("secret key should be created");
 
         let private_key = PrivateKey::new(secret_key, Network::Testnet);
-        let mut state_transition: StateTransition =
-            IdentityCreateTransition::new(identity_create_transition_fixture(Some(private_key)))
-                .unwrap()
-                .into();
+        let mut state_transition: StateTransition = IdentityCreateTransition::from_raw_object(
+            identity_create_transition_fixture(Some(private_key)),
+        )
+        .unwrap()
+        .into();
 
         state_transition
             .sign_by_private_key(
@@ -271,10 +282,13 @@ mod test {
         // setting an invalid signature
         state_transition.set_signature(BinaryData::new(vec![0u8; 65]));
 
+        let execution_context = StateTransitionExecutionContext::default();
+
         let result = validate_state_transition_key_signature(
             &state_repository,
             &asset_lock_public_key_hash_fetcher,
             &state_transition,
+            &execution_context,
         )
         .await
         .expect("the validation result should be returned");
@@ -307,10 +321,13 @@ mod test {
             .expect_fetch_identity_balance()
             .return_once(|_, _| Ok(None));
 
+        let execution_context = StateTransitionExecutionContext::default();
+
         let result = validate_state_transition_key_signature(
             &state_repository,
             &asset_lock_public_key_hash_fetcher,
             &state_transition,
+            &execution_context,
         )
         .await
         .expect("the validation result should be returned");

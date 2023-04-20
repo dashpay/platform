@@ -25,6 +25,9 @@ pub enum Error {
     #[error("key must be a string")]
     KeyMustBeAString,
 
+    #[error("byte length not 20 bytes error: {0}")]
+    ByteLengthNot20BytesError(String),
+
     #[error("byte length not 32 bytes error: {0}")]
     ByteLengthNot32BytesError(String),
 

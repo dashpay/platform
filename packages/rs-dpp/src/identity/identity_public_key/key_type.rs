@@ -1,5 +1,6 @@
+use crate::util::hash::ripemd160_sha256;
 use anyhow::bail;
-use bls_signatures::Serialize;
+use bincode::{Decode, Encode};
 use ciborium::value::Value as CborValue;
 use dashcore::secp256k1::rand::rngs::StdRng as EcdsaRng;
 use dashcore::secp256k1::rand::SeedableRng;
@@ -7,6 +8,7 @@ use dashcore::secp256k1::Secp256k1;
 use dashcore::Network;
 use itertools::Itertools;
 use lazy_static::lazy_static;
+
 use rand::rngs::StdRng;
 use rand::Rng;
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -16,13 +18,25 @@ use std::convert::TryFrom;
 #[allow(non_camel_case_types)]
 #[repr(u8)]
 #[derive(
-    Debug, PartialEq, Eq, Clone, Copy, Serialize_repr, Deserialize_repr, Hash, Ord, PartialOrd,
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    Copy,
+    Serialize_repr,
+    Deserialize_repr,
+    Hash,
+    Ord,
+    PartialOrd,
+    Encode,
+    Decode,
 )]
 pub enum KeyType {
     ECDSA_SECP256K1 = 0,
     BLS12_381 = 1,
     ECDSA_HASH160 = 2,
     BIP13_SCRIPT_HASH = 3,
+    EDDSA_25519_HASH160 = 4,
 }
 
 lazy_static! {
@@ -61,11 +75,71 @@ impl KeyType {
                 private_key.public_key(&secp).to_bytes()
             }
             KeyType::BLS12_381 => {
-                let private_key = bls_signatures::PrivateKey::generate(rng);
-                private_key.public_key().as_bytes()
+                let private_key = bls_signatures::PrivateKey::generate_dash(rng)
+                    .expect("expected to generate a bls private key"); // we assume this will never error
+                private_key
+                    .g1_element()
+                    .expect("expected to get a public key from a bls private key")
+                    .to_bytes()
+                    .to_vec()
             }
-            KeyType::ECDSA_HASH160 | KeyType::BIP13_SCRIPT_HASH => {
+            KeyType::ECDSA_HASH160 | KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
                 (0..self.default_size()).map(|_| rng.gen::<u8>()).collect()
+            }
+        }
+    }
+
+    //todo: put this in a specific feature
+    /// Gets the default size of the public key
+    pub fn random_public_and_private_key_data(&self, rng: &mut StdRng) -> (Vec<u8>, Vec<u8>) {
+        match self {
+            KeyType::ECDSA_SECP256K1 => {
+                let secp = Secp256k1::new();
+                let mut rng = EcdsaRng::from_rng(rng).unwrap();
+                let secret_key = dashcore::secp256k1::SecretKey::new(&mut rng);
+                let private_key = dashcore::PrivateKey::new(secret_key, Network::Dash);
+                (
+                    private_key.public_key(&secp).to_bytes(),
+                    private_key.to_bytes(),
+                )
+            }
+            KeyType::BLS12_381 => {
+                let private_key = bls_signatures::PrivateKey::generate_dash(rng)
+                    .expect("expected to generate a bls private key"); // we assume this will never error
+                let public_key_bytes = private_key
+                    .g1_element()
+                    .expect("expected to get a public key from a bls private key")
+                    .to_bytes()
+                    .to_vec();
+                (public_key_bytes, private_key.to_bytes().to_vec())
+            }
+            KeyType::ECDSA_HASH160 => {
+                let secp = Secp256k1::new();
+                let mut rng = EcdsaRng::from_rng(rng).unwrap();
+                let secret_key = dashcore::secp256k1::SecretKey::new(&mut rng);
+                let private_key = dashcore::PrivateKey::new(secret_key, Network::Dash);
+                (
+                    ripemd160_sha256(private_key.public_key(&secp).to_bytes().as_slice()),
+                    private_key.to_bytes(),
+                )
+            }
+            KeyType::EDDSA_25519_HASH160 => {
+                let key_pair = ed25519_dalek::SigningKey::generate(rng);
+                (
+                    key_pair.verifying_key().to_bytes().to_vec(),
+                    key_pair.to_bytes().to_vec(),
+                )
+            }
+            KeyType::BIP13_SCRIPT_HASH => {
+                //todo (using ECDSA_HASH160 for now)
+                let secp = Secp256k1::new();
+                let mut rng = EcdsaRng::from_rng(rng).unwrap();
+                let secret_key = dashcore::secp256k1::SecretKey::new(&mut rng);
+                let private_key = dashcore::PrivateKey::new(secret_key, Network::Dash);
+                (
+                    ripemd160_sha256(private_key.public_key(&secp).to_bytes().as_slice()),
+                    private_key.to_bytes(),
+                )
             }
         }
     }

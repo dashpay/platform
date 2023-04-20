@@ -38,7 +38,8 @@ use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::fee_pools::epochs::Epoch;
+use crate::fee_pools::epochs::paths::EpochProposers;
+use dpp::block::epoch::Epoch;
 
 impl Drive {
     /// Returns the given proposer's block count
@@ -154,6 +155,7 @@ mod tests {
 
     mod get_epochs_proposer_block_count {
         use super::*;
+        use crate::fee_pools::epochs::operations_factory::EpochOperations;
 
         #[test]
         fn test_error_if_value_has_invalid_length() {
@@ -162,7 +164,7 @@ mod tests {
 
             let pro_tx_hash: [u8; 32] = rand::random();
 
-            let epoch = Epoch::new(0);
+            let epoch = Epoch::new(0).unwrap();
 
             let mut batch = GroveDbOpBatch::new();
 
@@ -194,7 +196,7 @@ mod tests {
 
             let pro_tx_hash: [u8; 32] = rand::random();
 
-            let epoch = Epoch::new(7000);
+            let epoch = Epoch::new(7000).unwrap();
 
             let result =
                 drive.get_epochs_proposer_block_count(&epoch, &pro_tx_hash, Some(&transaction));
@@ -214,7 +216,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = Epoch::new(0);
+            let epoch = Epoch::new(0).unwrap();
 
             let result = drive
                 .is_epochs_proposers_tree_empty(&epoch, Some(&transaction))
@@ -226,6 +228,7 @@ mod tests {
 
     mod get_epoch_proposers {
         use super::*;
+        use crate::fee_pools::epochs::operations_factory::EpochOperations;
 
         #[test]
         fn test_value() {
@@ -235,7 +238,7 @@ mod tests {
             let pro_tx_hash: [u8; 32] = rand::random();
             let block_count = 42;
 
-            let epoch = Epoch::new(0);
+            let epoch = Epoch::new(0).unwrap();
 
             let mut batch = GroveDbOpBatch::new();
 

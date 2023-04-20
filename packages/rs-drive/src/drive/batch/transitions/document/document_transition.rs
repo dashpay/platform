@@ -1,16 +1,16 @@
 use crate::drive::batch::transitions::document::DriveHighLevelDocumentOperationConverter;
 use crate::drive::batch::DriveOperation;
 use crate::error::Error;
-use crate::fee_pools::epochs::Epoch;
+use dpp::block::epoch::Epoch;
 use dpp::document::document_transition::DocumentTransitionAction;
 use dpp::prelude::Identifier;
 
 impl DriveHighLevelDocumentOperationConverter for DocumentTransitionAction {
-    fn into_high_level_document_drive_operations(
+    fn into_high_level_document_drive_operations<'a>(
         self,
         epoch: &Epoch,
         owner_id: Identifier,
-    ) -> Result<Vec<DriveOperation>, Error> {
+    ) -> Result<Vec<DriveOperation<'a>>, Error> {
         match self {
             DocumentTransitionAction::CreateAction(document_create_transition) => {
                 document_create_transition

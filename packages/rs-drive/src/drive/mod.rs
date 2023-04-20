@@ -27,18 +27,21 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
-#[cfg(any(feature = "full", feature = "verify"))]
-use std::cell::RefCell;
+use costs::storage_cost::StorageCost;
+use costs::OperationCost;
 #[cfg(feature = "full")]
 use std::collections::HashMap;
 #[cfg(feature = "full")]
 use std::path::Path;
+#[cfg(any(feature = "full", feature = "verify"))]
+use std::sync::RwLock;
 
 #[cfg(feature = "full")]
 use dpp::data_contract::DriveContractExt;
 
 #[cfg(feature = "full")]
 use grovedb::batch::KeyInfoPath;
+use grovedb::batch::{GroveDbOp, OpsByLevelPath};
 #[cfg(any(feature = "full", feature = "verify"))]
 use grovedb::GroveDb;
 #[cfg(feature = "full")]
@@ -67,9 +70,6 @@ pub mod balances;
 /// Batch module
 #[cfg(feature = "full")]
 pub mod batch;
-/// Block info module
-#[cfg(feature = "full")]
-pub mod block_info;
 /// Drive Cache
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod cache;
@@ -118,8 +118,6 @@ mod system_contracts_cache;
 pub mod verify;
 
 #[cfg(feature = "full")]
-use crate::drive::block_info::BlockInfo;
-#[cfg(feature = "full")]
 use crate::drive::cache::DataContractCache;
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::cache::DriveCache;
@@ -129,8 +127,11 @@ use crate::drive::object_size_info::OwnedDocumentInfo;
 use crate::drive::system_contracts_cache::SystemContracts;
 #[cfg(feature = "full")]
 use crate::fee::result::FeeResult;
+use crate::query::GroveError;
 #[cfg(feature = "full")]
-use crate::fee_pools::epochs::Epoch;
+use dpp::block::block_info::BlockInfo;
+#[cfg(feature = "full")]
+use dpp::block::epoch::Epoch;
 
 /// Drive struct
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -143,7 +144,7 @@ pub struct Drive {
     #[cfg(feature = "full")]
     pub system_contracts: SystemContracts,
     /// Drive Cache
-    pub cache: RefCell<DriveCache>,
+    pub cache: RwLock<DriveCache>,
 }
 
 // The root tree structure is very important!
@@ -304,7 +305,7 @@ impl Drive {
                     grove,
                     config,
                     system_contracts: SystemContracts::load_system_contracts()?,
-                    cache: RefCell::new(DriveCache {
+                    cache: RwLock::new(DriveCache {
                         cached_contracts: DataContractCache::new(
                             data_contracts_global_cache_size,
                             data_contracts_block_cache_size,
@@ -323,14 +324,13 @@ impl Drive {
         let genesis_time_ms = self.config.default_genesis_time;
         let data_contracts_global_cache_size = self.config.data_contracts_global_cache_size;
         let data_contracts_block_cache_size = self.config.data_contracts_block_cache_size;
-        self.cache.replace(DriveCache {
-            cached_contracts: DataContractCache::new(
-                data_contracts_global_cache_size,
-                data_contracts_block_cache_size,
-            ),
-            genesis_time_ms,
-            protocol_versions_counter: None,
-        });
+        let mut cache = self.cache.write().unwrap();
+        cache.cached_contracts = DataContractCache::new(
+            data_contracts_global_cache_size,
+            data_contracts_block_cache_size,
+        );
+        cache.genesis_time_ms = genesis_time_ms;
+        cache.protocol_versions_counter = None;
     }
 
     /// Commits a transaction.
@@ -365,6 +365,43 @@ impl Drive {
             estimated_costs_only_with_layer_info,
             transaction,
             grove_db_operations,
+            drive_operations,
+        )?;
+        batch_operations.into_iter().for_each(|op| match op {
+            GroveOperation(_) => (),
+            _ => drive_operations.push(op),
+        });
+        Ok(())
+    }
+
+    /// Applies a batch of Drive operations to groveDB.
+    fn apply_partial_batch_low_level_drive_operations(
+        &self,
+        estimated_costs_only_with_layer_info: Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+        batch_operations: Vec<LowLevelDriveOperation>,
+        mut add_on_operations: impl FnMut(
+            &OperationCost,
+            &Option<OpsByLevelPath>,
+        ) -> Result<Vec<LowLevelDriveOperation>, GroveError>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+    ) -> Result<(), Error> {
+        let grove_db_operations =
+            LowLevelDriveOperation::grovedb_operations_batch(&batch_operations);
+        self.apply_partial_batch_grovedb_operations(
+            estimated_costs_only_with_layer_info,
+            transaction,
+            grove_db_operations,
+            |cost, left_over_ops| {
+                let additional_low_level_drive_operations = add_on_operations(cost, left_over_ops)?;
+                let new_grove_db_operations = LowLevelDriveOperation::grovedb_operations_batch(
+                    &additional_low_level_drive_operations,
+                )
+                .operations;
+                Ok(new_grove_db_operations)
+            },
             drive_operations,
         )?;
         batch_operations.into_iter().for_each(|op| match op {
@@ -411,6 +448,63 @@ impl Drive {
         Ok(())
     }
 
+    /// Applies a partial batch of groveDB operations if apply is True, otherwise gets the cost of the operations.
+    fn apply_partial_batch_grovedb_operations(
+        &self,
+        estimated_costs_only_with_layer_info: Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+        mut batch_operations: GroveDbOpBatch,
+        mut add_on_operations: impl FnMut(
+            &OperationCost,
+            &Option<OpsByLevelPath>,
+        ) -> Result<Vec<GroveDbOp>, GroveError>,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+    ) -> Result<(), Error> {
+        if let Some(estimated_layer_info) = estimated_costs_only_with_layer_info {
+            // Leave this for future debugging
+            // for (k, v) in estimated_layer_info.iter() {
+            //     let path = k
+            //         .to_path()
+            //         .iter()
+            //         .map(|k| hex::encode(k.as_slice()))
+            //         .join("/");
+            //     dbg!(path, v);
+            // }
+            // the estimated fees are the same for partial batches
+            let additional_operations = add_on_operations(
+                &OperationCost {
+                    seek_count: 1,
+                    storage_cost: StorageCost {
+                        added_bytes: 1,
+                        replaced_bytes: 1,
+                        removed_bytes: Default::default(),
+                    },
+                    storage_loaded_bytes: 1,
+                    hash_node_calls: 1,
+                },
+                &None,
+            )?;
+            batch_operations.extend(additional_operations);
+            self.grove_batch_operations_costs(
+                batch_operations,
+                estimated_layer_info,
+                false,
+                drive_operations,
+            )?;
+        } else {
+            self.grove_apply_partial_batch_with_add_costs(
+                batch_operations,
+                false,
+                transaction,
+                add_on_operations,
+                drive_operations,
+            )?;
+        }
+        Ok(())
+    }
+
     /// Returns the worst case fee for a contract document type.
     pub fn worst_case_fee_for_document_type_with_name(
         &self,
@@ -429,7 +523,7 @@ impl Drive {
                 document_type,
             },
             false,
-            BlockInfo::default_with_epoch(Epoch::new(epoch_index)),
+            BlockInfo::default_with_epoch(Epoch::new(epoch_index)?),
             false,
             None,
         )

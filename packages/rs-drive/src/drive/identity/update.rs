@@ -1,4 +1,4 @@
-use crate::drive::block_info::BlockInfo;
+use dpp::block::block_info::BlockInfo;
 
 use crate::drive::identity::{identity_path_vec, IdentityRootStructure};
 use crate::drive::Drive;
@@ -200,6 +200,38 @@ impl Drive {
         Ok(drive_operations)
     }
 
+    /// Add new non unique keys to an identity
+    pub fn add_new_non_unique_keys_to_identity(
+        &self,
+        identity_id: [u8; 32],
+        keys_to_add: Vec<IdentityPublicKey>,
+        block_info: &BlockInfo,
+        apply: bool,
+        transaction: TransactionArg,
+    ) -> Result<FeeResult, Error> {
+        let mut estimated_costs_only_with_layer_info = if apply {
+            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+        } else {
+            Some(HashMap::new())
+        };
+        let batch_operations = self.add_new_keys_to_identity_operations(
+            identity_id,
+            keys_to_add,
+            true,
+            &mut estimated_costs_only_with_layer_info,
+            transaction,
+        )?;
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+        self.apply_batch_low_level_drive_operations(
+            estimated_costs_only_with_layer_info,
+            transaction,
+            batch_operations,
+            &mut drive_operations,
+        )?;
+        let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+        Ok(fees)
+    }
+
     /// Add new keys to an identity
     pub fn add_new_keys_to_identity(
         &self,
@@ -274,7 +306,7 @@ mod tests {
 
     mod add_new_keys_to_identity {
         use super::*;
-        use crate::fee_pools::epochs::Epoch;
+        use dpp::block::epoch::Epoch;
 
         #[test]
         fn should_add_one_new_key_to_identity() {
@@ -282,7 +314,7 @@ mod tests {
 
             let identity = Identity::random_identity(5, Some(12345));
 
-            let block = BlockInfo::default_with_epoch(Epoch::new(0));
+            let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             drive
                 .add_new_identity(identity.clone(), &block, true, None)
@@ -330,7 +362,7 @@ mod tests {
 
             let identity = Identity::random_identity(5, Some(12345));
 
-            let block = BlockInfo::default_with_epoch(Epoch::new(0));
+            let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             drive
                 .add_new_identity(identity.clone(), &block, true, None)
@@ -378,7 +410,7 @@ mod tests {
 
             let identity = Identity::random_identity(5, Some(12345));
 
-            let block = BlockInfo::default_with_epoch(Epoch::new(0));
+            let block = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             let new_keys_to_add = IdentityPublicKey::random_authentication_keys(5, 1, Some(15));
 
@@ -419,8 +451,8 @@ mod tests {
 
     mod disable_identity_keys {
         use super::*;
-        use crate::fee_pools::epochs::Epoch;
         use chrono::Utc;
+        use dpp::block::epoch::Epoch;
 
         #[test]
         fn should_disable_a_few_keys() {
@@ -428,7 +460,7 @@ mod tests {
 
             let identity = Identity::random_identity(5, Some(12345));
 
-            let block_info = BlockInfo::default_with_epoch(Epoch::new(0));
+            let block_info = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             drive
                 .add_new_identity(identity.clone(), &block_info, true, None)
@@ -495,7 +527,7 @@ mod tests {
 
             let identity = Identity::random_identity(5, Some(12345));
 
-            let block_info = BlockInfo::default_with_epoch(Epoch::new(0));
+            let block_info = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             let disable_at = Utc::now().timestamp_millis() as TimestampMillis;
 
@@ -544,7 +576,7 @@ mod tests {
                 .add_new_identity(identity.clone(), &BlockInfo::default(), true, None)
                 .expect("expected to add an identity");
 
-            let block_info = BlockInfo::default_with_epoch(Epoch::new(0));
+            let block_info = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             let disable_at = Utc::now().timestamp_millis() as TimestampMillis;
 
@@ -576,7 +608,7 @@ mod tests {
 
     mod update_identity_revision {
         use super::*;
-        use crate::fee_pools::epochs::Epoch;
+        use dpp::block::epoch::Epoch;
 
         #[test]
         fn should_update_revision() {
@@ -584,7 +616,7 @@ mod tests {
 
             let identity = Identity::random_identity(5, Some(12345));
 
-            let block_info = BlockInfo::default_with_epoch(Epoch::new(0));
+            let block_info = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             drive
                 .add_new_identity(identity.clone(), &block_info, true, None)
@@ -633,7 +665,7 @@ mod tests {
 
             let identity = Identity::random_identity(5, Some(12345));
 
-            let block_info = BlockInfo::default_with_epoch(Epoch::new(0));
+            let block_info = BlockInfo::default_with_epoch(Epoch::new(0).unwrap());
 
             let revision = 2;
 

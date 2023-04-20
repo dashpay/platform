@@ -5,12 +5,12 @@ use std::sync::Arc;
 
 use crate::consensus::signature::{IdentityNotFoundError, SignatureError};
 use crate::identity::state_transition::identity_update_transition::IdentityUpdateTransitionAction;
+use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
     identity::validation::{RequiredPurposeAndSecurityLevelValidator, TPublicKeysValidator},
     state_repository::StateRepositoryLike,
-    state_transition::StateTransitionLike,
-    validation::ValidationResult,
+    validation::ConsensusValidationResult,
     NonConsensusError, StateError,
 };
 
@@ -36,15 +36,13 @@ where
     pub async fn validate(
         &self,
         state_transition: &IdentityUpdateTransition,
-    ) -> Result<ValidationResult<IdentityUpdateTransitionAction>, NonConsensusError> {
-        let mut validation_result = ValidationResult::default();
+        execution_context: &StateTransitionExecutionContext,
+    ) -> Result<ConsensusValidationResult<IdentityUpdateTransitionAction>, NonConsensusError> {
+        let mut validation_result = ConsensusValidationResult::default();
 
         let maybe_stored_identity = self
             .state_repository
-            .fetch_identity(
-                state_transition.get_identity_id(),
-                Some(state_transition.get_execution_context()),
-            )
+            .fetch_identity(state_transition.get_identity_id(), Some(execution_context))
             .await?
             .map(TryInto::try_into)
             .transpose()
@@ -56,7 +54,7 @@ where
                 ))
             })?;
 
-        if state_transition.get_execution_context().is_dry_run() {
+        if execution_context.is_dry_run() {
             let action: IdentityUpdateTransitionAction = state_transition.into();
             return Ok(action.into());
         }
@@ -124,8 +122,9 @@ where
                     property_name: property_names::PUBLIC_KEYS_DISABLED_AT.to_owned(),
                 },
             )?;
+            //todo: add block spacing ms
             let window_validation_result =
-                validate_time_in_block_time_window(last_block_header_time, disabled_at_ms);
+                validate_time_in_block_time_window(last_block_header_time, disabled_at_ms, 0);
 
             if !window_validation_result.is_valid() {
                 validation_result.add_error(

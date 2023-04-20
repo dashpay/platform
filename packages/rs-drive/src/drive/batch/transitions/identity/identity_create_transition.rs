@@ -4,15 +4,15 @@ use crate::drive::batch::{DriveOperation, IdentityOperationType, SystemOperation
 use crate::drive::defaults::PROTOCOL_VERSION;
 
 use crate::error::Error;
-use crate::fee_pools::epochs::Epoch;
+use dpp::block::epoch::Epoch;
 use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransitionAction;
 use dpp::prelude::Identity;
 
 impl DriveHighLevelOperationConverter for IdentityCreateTransitionAction {
-    fn into_high_level_drive_operations(
+    fn into_high_level_drive_operations<'a>(
         self,
         _epoch: &Epoch,
-    ) -> Result<Vec<DriveOperation>, Error> {
+    ) -> Result<Vec<DriveOperation<'a>>, Error> {
         let IdentityCreateTransitionAction {
             public_keys,
             initial_balance_amount,

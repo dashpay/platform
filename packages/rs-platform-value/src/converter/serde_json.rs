@@ -72,6 +72,12 @@ impl Value {
                     .map(|byte| JsonValue::Number(byte.into()))
                     .collect(),
             ),
+            Value::Bytes20(bytes) => JsonValue::Array(
+                bytes
+                    .into_iter()
+                    .map(|byte| JsonValue::Number(byte.into()))
+                    .collect(),
+            ),
             Value::Bytes32(bytes) => JsonValue::Array(
                 bytes
                     .into_iter()
@@ -149,6 +155,12 @@ impl Value {
                 )
             }
             Value::Bytes(bytes) => JsonValue::Array(
+                bytes
+                    .iter()
+                    .map(|byte| JsonValue::Number((*byte).into()))
+                    .collect(),
+            ),
+            Value::Bytes20(bytes) => JsonValue::Array(
                 bytes
                     .iter()
                     .map(|byte| JsonValue::Number((*byte).into()))
@@ -283,6 +295,7 @@ impl TryInto<JsonValue> for Value {
             Value::U8(i) => JsonValue::Number(i.into()),
             Value::I8(i) => JsonValue::Number(i.into()),
             Value::Bytes(bytes) => JsonValue::String(base64::encode(bytes.as_slice())),
+            Value::Bytes20(bytes) => JsonValue::String(base64::encode(bytes.as_slice())),
             Value::Bytes32(bytes) => JsonValue::String(base64::encode(bytes.as_slice())),
             Value::Bytes36(bytes) => JsonValue::String(base64::encode(bytes.as_slice())),
             Value::Float(float) => JsonValue::Number(Number::from_f64(float).unwrap_or(0.into())),

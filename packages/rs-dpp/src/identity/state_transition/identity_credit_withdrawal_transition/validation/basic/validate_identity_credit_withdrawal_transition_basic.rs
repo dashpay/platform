@@ -4,7 +4,7 @@ use lazy_static::lazy_static;
 use platform_value::Value;
 use serde_json::Value as JsonValue;
 
-use crate::validation::SimpleValidationResult;
+use crate::validation::SimpleConsensusValidationResult;
 use crate::{
     consensus::basic::identity::{
         InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
@@ -20,11 +20,14 @@ use crate::{
 };
 
 lazy_static! {
-    static ref INDENTITY_CREDIT_WITHDRAWAL_TRANSITION_SCHEMA: JsonValue =
+    pub static ref IDENTITY_CREDIT_WITHDRAWAL_TRANSITION_SCHEMA: JsonValue =
         serde_json::from_str(include_str!(
             "../../../../../schema/identity/stateTransition/identityCreditWithdrawal.json"
         ))
         .unwrap();
+    pub static ref IDENTITY_CREDIT_WITHDRAWAL_TRANSITION_SCHEMA_VALIDATOR: JsonSchemaValidator =
+        JsonSchemaValidator::new(IDENTITY_CREDIT_WITHDRAWAL_TRANSITION_SCHEMA.clone())
+            .expect("unable to compile jsonschema");
 }
 
 pub struct IdentityCreditWithdrawalTransitionBasicValidator {
@@ -37,7 +40,7 @@ impl IdentityCreditWithdrawalTransitionBasicValidator {
         protocol_version_validator: Arc<ProtocolVersionValidator>,
     ) -> Result<Self, DashPlatformProtocolInitError> {
         let json_schema_validator =
-            JsonSchemaValidator::new(INDENTITY_CREDIT_WITHDRAWAL_TRANSITION_SCHEMA.clone())?;
+            JsonSchemaValidator::new(IDENTITY_CREDIT_WITHDRAWAL_TRANSITION_SCHEMA.clone())?;
 
         let identity_validator = Self {
             protocol_version_validator,
@@ -50,7 +53,7 @@ impl IdentityCreditWithdrawalTransitionBasicValidator {
     pub async fn validate(
         &self,
         transition_object: &Value,
-    ) -> Result<SimpleValidationResult, NonConsensusError> {
+    ) -> Result<SimpleConsensusValidationResult, NonConsensusError> {
         let mut result = self.json_schema_validator.validate(
             &transition_object
                 .try_to_validating_json()

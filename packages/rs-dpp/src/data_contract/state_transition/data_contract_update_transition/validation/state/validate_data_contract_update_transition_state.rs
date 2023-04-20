@@ -5,7 +5,8 @@ use async_trait::async_trait;
 
 use crate::consensus::basic::invalid_data_contract_version_error::InvalidDataContractVersionError;
 use crate::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransitionAction;
-use crate::validation::{AsyncDataValidator, ValidationResult};
+use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::validation::{AsyncDataValidator, ConsensusValidationResult};
 use crate::{
     data_contract::{
         state_transition::data_contract_update_transition::DataContractUpdateTransition,
@@ -13,7 +14,6 @@ use crate::{
     },
     errors::consensus::basic::BasicError,
     state_repository::StateRepositoryLike,
-    state_transition::StateTransitionLike,
     ProtocolError,
 };
 
@@ -33,10 +33,15 @@ where
     type ResultItem = DataContractUpdateTransitionAction;
     async fn validate(
         &self,
-        state_transition: &DataContractUpdateTransition,
-    ) -> Result<ValidationResult<Self::ResultItem>, ProtocolError> {
-        validate_data_contract_update_transition_state(&self.state_repository, state_transition)
-            .await
+        data: &Self::Item,
+        execution_context: &StateTransitionExecutionContext,
+    ) -> Result<ConsensusValidationResult<Self::ResultItem>, ProtocolError> {
+        validate_data_contract_update_transition_state(
+            &self.state_repository,
+            data,
+            execution_context,
+        )
+        .await
     }
 }
 
@@ -52,21 +57,19 @@ where
 pub async fn validate_data_contract_update_transition_state(
     state_repository: &impl StateRepositoryLike,
     state_transition: &DataContractUpdateTransition,
-) -> Result<ValidationResult<DataContractUpdateTransitionAction>, ProtocolError> {
-    let mut result = ValidationResult::<DataContractUpdateTransitionAction>::default();
+    execution_context: &StateTransitionExecutionContext,
+) -> Result<ConsensusValidationResult<DataContractUpdateTransitionAction>, ProtocolError> {
+    let mut result = ConsensusValidationResult::<DataContractUpdateTransitionAction>::default();
 
     // Data contract should exist
     let maybe_existing_data_contract: Option<DataContract> = state_repository
-        .fetch_data_contract(
-            &state_transition.data_contract.id,
-            Some(state_transition.get_execution_context()),
-        )
+        .fetch_data_contract(&state_transition.data_contract.id, Some(execution_context))
         .await?
         .map(TryInto::try_into)
         .transpose()
         .map_err(Into::into)?;
 
-    if state_transition.execution_context.is_dry_run() {
+    if execution_context.is_dry_run() {
         let action: DataContractUpdateTransitionAction = state_transition.into();
         return Ok(action.into());
     }
@@ -103,7 +106,7 @@ mod test {
     use super::*;
     use crate::{
         data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition,
-        state_repository::MockStateRepositoryLike, state_transition::StateTransitionLike,
+        state_repository::MockStateRepositoryLike,
         tests::fixtures::get_data_contract_fixture,
     };
 
@@ -119,11 +122,14 @@ mod test {
         mock_state_repository
             .expect_fetch_data_contract()
             .return_once(|_, _| Ok(None));
-        state_transition.get_execution_context().enable_dry_run();
+
+        let execution_context = StateTransitionExecutionContext::default();
+        execution_context.enable_dry_run();
 
         let result = validate_data_contract_update_transition_state(
             &mock_state_repository,
             &state_transition,
+            &execution_context,
         )
         .await
         .expect("the validation result should be returned");

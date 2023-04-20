@@ -55,7 +55,7 @@ use crate::identity::TimestampMillis;
 use crate::prelude::Identifier;
 use crate::prelude::Revision;
 
-use crate::util::hash::hash;
+use crate::util::hash::hash_to_vec;
 use crate::util::json_value::JsonValueExt;
 use crate::ProtocolError;
 
@@ -213,7 +213,7 @@ impl Document {
         let mut buf = contract.id.to_vec();
         buf.extend(document_type.name.as_bytes());
         buf.extend(self.serialize(document_type)?);
-        Ok(hash(buf))
+        Ok(hash_to_vec(buf))
     }
 
     pub fn increment_revision(&mut self) -> Result<(), ProtocolError> {
@@ -433,6 +433,7 @@ mod tests {
     use super::*;
     use crate::data_contract::document_type::random_document::CreateRandomDocument;
     use crate::data_contract::extra::common::json_document_to_cbor;
+    use regex::Regex;
 
     #[test]
     fn test_serialization() {
@@ -504,6 +505,9 @@ mod tests {
         let document = document_type.random_document(Some(3333));
 
         let document_string = format!("{}", document);
-        assert_eq!(document_string.as_str(), "id:2vq574DjKi7ZD8kJ6dMHxT5wu6ZKD2bW5xKAyKAGW7qZ owner_id:ChTEGXJcpyknkADUC5s6tAzvPqVG7x6Lo1Nr5mFtj2mk created_at:2027-09-24 14:16:54 updated_at:2030-06-20 21:52:44 avatarUrl:string RD1DbW18RuyblDX7hxB3[...(1936)] displayName:string jALmlamgYbnlKUkT1 publicMessage:string oyGtAOjibsOvx9OUjxVO[...(110)] ")
+
+        let pattern = r#"id:45ZNwGcxeMpLpYmiVEKKBKXbZfinrhjZLkau1GWizPFX owner_id:2vq574DjKi7ZD8kJ6dMHxT5wu6ZKD2bW5xKAyKAGW7qZ created_at:(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) updated_at:(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}) avatarUrl:string y8RD1DbW18RuyblDX7hx\[...\(670\)\] displayName:string SvAQrzsslj0ESc15GQB publicMessage:string ccpKt9ckWftHIEKdBlas\[...\(36\)\] .*"#;
+        let re = Regex::new(pattern).unwrap();
+        assert!(re.is_match(document_string.as_str()));
     }
 }

@@ -1,4 +1,5 @@
 use crate::consensus::{basic::IndexError, fee::FeeError, signature::SignatureError};
+use crate::DataTriggerActionError;
 
 use super::{
     abstract_state_error::StateError, consensus::basic::BasicError, consensus::ConsensusError,
@@ -39,6 +40,7 @@ impl ErrorWithCode for ConsensusError {
             Self::InvalidIdentityPublicKeyDataError(_) => 1040,
             Self::InvalidInstantAssetLockProofError(_) => 1041,
             Self::InvalidInstantAssetLockProofSignatureError(_) => 1042,
+            Self::InvalidIdentityAssetLockProofChainLockValidationError(_) => 1043,
             Self::MissingMasterPublicKeyError(_) => 1046,
             Self::InvalidIdentityPublicKeySecurityLevelError(_) => 1047,
             Self::IdentityInsufficientBalanceError(_) => 4024,
@@ -56,6 +58,7 @@ impl ErrorWithCode for ConsensusError {
             #[cfg(test)]
             ConsensusError::TestConsensusError(_) => 1000,
             ConsensusError::ValueError(_) => 5000,
+            ConsensusError::DefaultError => 1, // this should never happen
         }
     }
 }
@@ -74,6 +77,7 @@ impl ErrorWithCode for StateError {
             // Data contract
             Self::DataContractAlreadyPresentError { .. } => 4000,
             Self::DataTriggerError(ref e) => e.get_code(),
+            Self::DataTriggerActionError(ref e) => e.get_code(),
 
             // Identity
             Self::IdentityPublicKeyDisabledAtWindowViolationError { .. } => 4012,
@@ -84,6 +88,7 @@ impl ErrorWithCode for StateError {
             Self::DuplicatedIdentityPublicKeyError { .. } => 4021,
             Self::DuplicatedIdentityPublicKeyIdError { .. } => 4022,
             Self::IdentityPublicKeyIsDisabledError { .. } => 4023,
+            Self::MissingIdentityPublicKeyIdsError { .. } => 4024,
         }
     }
 }
@@ -95,6 +100,18 @@ impl ErrorWithCode for DataTriggerError {
             Self::DataTriggerConditionError { .. } => 4001,
             Self::DataTriggerExecutionError { .. } => 4002,
             Self::DataTriggerInvalidResultError { .. } => 4003,
+        }
+    }
+}
+
+impl ErrorWithCode for DataTriggerActionError {
+    fn get_code(&self) -> u32 {
+        match *self {
+            // Data Contract - Data Trigger
+            Self::DataTriggerConditionError { .. } => 4001,
+            Self::DataTriggerExecutionError { .. } => 4002,
+            Self::DataTriggerInvalidResultError { .. } => 4003,
+            Self::ValueError(_) => 4004,
         }
     }
 }
@@ -169,6 +186,9 @@ impl ErrorWithCode for SignatureError {
             Self::WrongPublicKeyPurposeError { .. } => 2005,
             Self::PublicKeyIsDisabledError { .. } => 2006,
             Self::PublicKeySecurityLevelNotMetError { .. } => 2007,
+            Self::SignatureShouldNotBePresent(_) => 2008,
+            Self::BasicECDSAError(_) => 2009,
+            Self::BasicBLSError(_) => 2010,
         }
     }
 }

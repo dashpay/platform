@@ -32,50 +32,110 @@
 //! This module defines helper functions related to setting up Platform.
 //!
 
-use crate::config::PlatformConfig;
+use std::ops::{Deref, DerefMut};
+
 use crate::platform::Platform;
+use crate::rpc::core::MockCoreRPCLike;
 use crate::test::fixture::abci::static_system_identity_public_keys;
+use crate::{config::PlatformConfig, rpc::core::DefaultCoreRPC};
 use tempfile::TempDir;
 
-/// A function which sets up Platform.
-pub fn setup_platform_raw(config: Option<PlatformConfig>) -> Platform {
-    let tmp_dir = TempDir::new().unwrap();
-
-    let mut platform: Platform =
-        Platform::open(tmp_dir, config).expect("should open Platform successfully");
-
-    #[cfg(feature = "fixtures-and-mocks")]
-    platform.mock_core_rpc_client();
-
-    platform
+/// A test platform builder.
+pub struct TestPlatformBuilder {
+    config: Option<PlatformConfig>,
+    tempdir: TempDir,
 }
 
-/// A function which sets up Platform with its initial state structure.
-pub fn setup_platform_with_initial_state_structure(config: Option<PlatformConfig>) -> Platform {
-    let mut platform = setup_platform_raw(config);
-
-    platform
-        .drive
-        .create_initial_state_structure(None)
-        .expect("should create root tree successfully");
-
-    #[cfg(feature = "fixtures-and-mocks")]
-    platform.mock_core_rpc_client();
-
-    platform
+/// Platform wrapper that takes care of temporary directory.
+pub struct TempPlatform<C> {
+    /// Platform
+    pub platform: Platform<C>,
+    /// A temp dir
+    pub tempdir: TempDir,
 }
 
-/// A function which sets up Platform with its genesis state
-pub fn setup_platform_with_genesis_state(config: Option<PlatformConfig>) -> Platform {
-    let platform = setup_platform_raw(config);
+impl TestPlatformBuilder {
+    /// Create a new test platform builder
+    pub fn new() -> Self {
+        let tempdir = TempDir::new().unwrap();
+        TestPlatformBuilder {
+            tempdir,
+            config: None,
+        }
+    }
 
-    platform
-        .create_genesis_state(
-            Default::default(),
-            static_system_identity_public_keys(),
-            None,
-        )
-        .expect("should create root tree successfully");
+    /// Add platform config
+    pub fn with_config(mut self, config: PlatformConfig) -> Self {
+        self.config = Some(config);
+        self
+    }
 
-    platform
+    /// Create a new temp platform with a mock core rpc
+    pub fn build_with_mock_rpc(self) -> TempPlatform<MockCoreRPCLike> {
+        let platform = Platform::<MockCoreRPCLike>::open(self.tempdir.path(), self.config)
+            .expect("should open Platform successfully");
+
+        TempPlatform {
+            platform,
+            tempdir: self.tempdir,
+        }
+    }
+
+    /// Create a new temp platform with a default core rpc
+    pub fn build_with_default_rpc(self) -> TempPlatform<DefaultCoreRPC> {
+        let platform = Platform::<DefaultCoreRPC>::open(self.tempdir.path(), self.config)
+            .expect("should open Platform successfully");
+
+        TempPlatform {
+            platform,
+            tempdir: self.tempdir,
+        }
+    }
+}
+
+impl TempPlatform<MockCoreRPCLike> {
+    /// A function which sets initial state structure for Platform.
+    pub fn set_initial_state_structure(self) -> Self {
+        self.platform
+            .drive
+            .create_initial_state_structure(None)
+            .expect("should create root tree successfully");
+
+        self
+    }
+
+    /// Sets Platform to genesis state.
+    pub fn set_genesis_state(self) -> Self {
+        self.platform
+            .create_genesis_state(
+                Default::default(),
+                static_system_identity_public_keys(),
+                None,
+            )
+            .expect("should create root tree successfully");
+
+        self
+    }
+
+    /// Rebuilds Platform from the tempdir as if it was destroyed and restarted
+    pub fn open_with_tempdir(tempdir: TempDir, config: PlatformConfig) -> Self {
+        let platform = Platform::<MockCoreRPCLike>::open(tempdir.path(), Some(config))
+            .expect("should open Platform successfully");
+
+        Self { platform, tempdir }
+    }
+}
+
+impl<C> Deref for TempPlatform<C> {
+    type Target = Platform<C>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.platform
+    }
+}
+
+impl<C> DerefMut for TempPlatform<C> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.platform
+    }
 }

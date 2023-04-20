@@ -12,7 +12,6 @@ use crate::{
     identity::KeyID,
     prelude::Identifier,
     state_transition::{
-        state_transition_execution_context::StateTransitionExecutionContext,
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionType,
     },
@@ -21,9 +20,13 @@ use crate::{
 
 use super::property_names::*;
 
+use bincode::{Decode, Encode};
+
 mod action;
 pub mod apply_data_contract_create_transition_factory;
+pub mod builder;
 pub mod validation;
+
 pub use action::{
     DataContractCreateTransitionAction, DATA_CONTRACT_CREATE_TRANSITION_ACTION_VERSION,
 };
@@ -54,7 +57,7 @@ pub const U32_FIELDS: [&str; 2] = [
     property_names::DATA_CONTRACT_PROTOCOL_VERSION,
 ];
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DataContractCreateTransition {
     pub protocol_version: u32,
@@ -64,8 +67,6 @@ pub struct DataContractCreateTransition {
     pub entropy: Bytes32,
     pub signature_public_key_id: KeyID,
     pub signature: BinaryData,
-    #[serde(skip)]
-    pub execution_context: StateTransitionExecutionContext,
 }
 
 impl std::default::Default for DataContractCreateTransition {
@@ -77,37 +78,34 @@ impl std::default::Default for DataContractCreateTransition {
             signature_public_key_id: 0,
             signature: BinaryData::default(),
             data_contract: Default::default(),
-            execution_context: Default::default(),
         }
     }
 }
 
 impl DataContractCreateTransition {
     pub fn from_raw_object(
-        mut raw_data_contract_update_transition: Value,
+        mut raw_object: Value,
     ) -> Result<DataContractCreateTransition, ProtocolError> {
         Ok(DataContractCreateTransition {
-            protocol_version: raw_data_contract_update_transition.get_integer(PROTOCOL_VERSION)?,
-            signature: raw_data_contract_update_transition
+            protocol_version: raw_object.get_integer(PROTOCOL_VERSION)?,
+            signature: raw_object
                 .remove_optional_binary_data(SIGNATURE)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
-            signature_public_key_id: raw_data_contract_update_transition
+            signature_public_key_id: raw_object
                 .get_optional_integer(SIGNATURE_PUBLIC_KEY_ID)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
-            entropy: raw_data_contract_update_transition
+            entropy: raw_object
                 .remove_optional_bytes_32(ENTROPY)
                 .map_err(ProtocolError::ValueError)?
                 .unwrap_or_default(),
             data_contract: DataContract::from_raw_object(
-                raw_data_contract_update_transition
-                    .remove(DATA_CONTRACT)
-                    .map_err(|_| {
-                        ProtocolError::DecodingError(
-                            "data contract missing on state transition".to_string(),
-                        )
-                    })?,
+                raw_object.remove(DATA_CONTRACT).map_err(|_| {
+                    ProtocolError::DecodingError(
+                        "data contract missing on state transition".to_string(),
+                    )
+                })?,
             )?,
             ..Default::default()
         })
@@ -207,18 +205,6 @@ impl StateTransitionLike for DataContractCreateTransition {
 
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
         self.signature = BinaryData::new(signature)
-    }
-
-    fn get_execution_context(&self) -> &StateTransitionExecutionContext {
-        &self.execution_context
-    }
-
-    fn get_execution_context_mut(&mut self) -> &mut StateTransitionExecutionContext {
-        &mut self.execution_context
-    }
-
-    fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
-        self.execution_context = execution_context
     }
 }
 
@@ -387,7 +373,7 @@ mod test {
         let data = get_test_data();
         let state_transition_bytes = data
             .state_transition
-            .to_buffer(false)
+            .to_cbor_buffer(false)
             .expect("state transition should be converted to buffer");
         let (protocol_version, _) =
             u32::decode_var(state_transition_bytes.as_ref()).expect("expected to decode");

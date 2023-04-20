@@ -108,7 +108,7 @@ impl DataContractCreateTransitionWasm {
     pub fn to_buffer(&self, skip_signature: Option<bool>) -> Result<Buffer, JsValue> {
         let bytes = self
             .0
-            .to_buffer(skip_signature.unwrap_or(false))
+            .to_cbor_buffer(skip_signature.unwrap_or(false))
             .with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
@@ -135,11 +135,6 @@ impl DataContractCreateTransitionWasm {
     #[wasm_bindgen(js_name=isIdentityStateTransition)]
     pub fn is_identity_state_transition(&self) -> bool {
         self.0.is_identity_state_transition()
-    }
-
-    #[wasm_bindgen(js_name=setExecutionContext)]
-    pub fn set_execution_context(&mut self, context: &StateTransitionExecutionContextWasm) {
-        self.0.set_execution_context(context.into())
     }
 
     #[wasm_bindgen(js_name=toObject)]

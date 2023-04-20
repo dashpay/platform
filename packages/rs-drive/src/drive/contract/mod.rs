@@ -37,6 +37,10 @@ mod estimation_costs;
 /// Various paths for contract operations
 #[cfg(feature = "full")]
 pub(crate) mod paths;
+#[cfg(feature = "full")]
+pub(crate) mod prove;
+#[cfg(feature = "full")]
+pub(crate) mod queries;
 
 #[cfg(feature = "full")]
 use std::borrow::Cow;
@@ -61,6 +65,8 @@ use grovedb::reference_path::ReferencePathType::SiblingReference;
 
 #[cfg(feature = "full")]
 use dpp::data_contract::DriveContractExt;
+use dpp::platform_value::{platform_value, Value};
+use dpp::Convertible;
 #[cfg(feature = "full")]
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
@@ -69,9 +75,9 @@ use crate::contract::Contract;
 #[cfg(feature = "full")]
 use crate::drive::batch::GroveDbOpBatch;
 #[cfg(feature = "full")]
-use crate::drive::block_info::BlockInfo;
-#[cfg(feature = "full")]
 use crate::drive::defaults::CONTRACT_MAX_SERIALIZED_SIZE;
+#[cfg(feature = "full")]
+use dpp::block::block_info::BlockInfo;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::flags::StorageFlags;
@@ -104,8 +110,9 @@ use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::op::LowLevelDriveOperation::{CalculatedCostOperation, PreCalculatedFeeResult};
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::fee::result::FeeResult;
+use crate::query::QueryResultEncoding;
 #[cfg(feature = "full")]
-use crate::fee_pools::epochs::Epoch;
+use dpp::block::epoch::Epoch;
 
 #[cfg(feature = "full")]
 /// Adds operations to the op batch relevant to initializing the contract's structure.
@@ -436,6 +443,7 @@ impl Drive {
             .get_contract_with_fetch_info_and_add_to_operations(
                 contract_id,
                 Some(&block_info.epoch),
+                true,
                 transaction,
                 &mut drive_operations,
             )?
@@ -470,7 +478,7 @@ impl Drive {
                 "contract should exist",
             )))?;
 
-        let mut drive_cache = self.cache.borrow_mut();
+        let mut drive_cache = self.cache.write().unwrap();
 
         drive_cache
             .cached_contracts
@@ -707,7 +715,7 @@ impl Drive {
         // first we need to deserialize the contract
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, contract_id)?;
 
-        self.apply_contract(
+        self.apply_contract_with_serialization(
             &contract,
             contract_cbor,
             block_info,
@@ -718,10 +726,41 @@ impl Drive {
     }
 
     /// Returns the contract with fetch info and operations with the given ID.
+    pub fn query_contract_as_serialized(
+        &self,
+        contract_id: [u8; 32],
+        encoding: QueryResultEncoding,
+        transaction: TransactionArg,
+    ) -> Result<Vec<u8>, Error> {
+        let mut drive_operations: Vec<LowLevelDriveOperation> = Vec::new();
+
+        let contract_fetch_info = self.get_contract_with_fetch_info_and_add_to_operations(
+            contract_id,
+            None,
+            false, //querying the contract should not lead to it being added to the cache
+            transaction,
+            &mut drive_operations,
+        )?;
+
+        let contract_value = match contract_fetch_info {
+            None => Value::Null,
+            Some(contract_fetch_info) => {
+                let contract = &contract_fetch_info.contract;
+                contract.to_object()?
+            }
+        };
+
+        let value = platform_value!({ "contract": contract_value });
+
+        encoding.encode_value(&value)
+    }
+
+    /// Returns the contract with fetch info and operations with the given ID.
     pub fn get_contract_with_fetch_info(
         &self,
         contract_id: [u8; 32],
         epoch: Option<&Epoch>,
+        add_to_cache_if_pulled: bool,
         transaction: TransactionArg,
     ) -> Result<(Option<FeeResult>, Option<Arc<ContractFetchInfo>>), Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = Vec::new();
@@ -729,6 +768,7 @@ impl Drive {
         let contract_fetch_info = self.get_contract_with_fetch_info_and_add_to_operations(
             contract_id,
             epoch,
+            add_to_cache_if_pulled,
             transaction,
             &mut drive_operations,
         )?;
@@ -743,10 +783,11 @@ impl Drive {
         &self,
         contract_id: [u8; 32],
         epoch: Option<&Epoch>,
+        add_to_cache_if_pulled: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<Option<Arc<ContractFetchInfo>>, Error> {
-        let mut cache = self.cache.borrow_mut();
+        let cache = self.cache.read().unwrap();
 
         match cache
             .cached_contracts
@@ -760,13 +801,16 @@ impl Drive {
                     drive_operations,
                 )?;
 
-                // Store a contract in cache if present
-                if let Some(contract_fetch_info) = &maybe_contract_fetch_info {
-                    cache
-                        .cached_contracts
-                        .insert(Arc::clone(contract_fetch_info), transaction.is_some());
-                };
-
+                if add_to_cache_if_pulled {
+                    // Store a contract in cache if present
+                    if let Some(contract_fetch_info) = &maybe_contract_fetch_info {
+                        drop(cache);
+                        let mut cache = self.cache.write().unwrap();
+                        cache
+                            .cached_contracts
+                            .insert(Arc::clone(contract_fetch_info), transaction.is_some());
+                    };
+                }
                 Ok(maybe_contract_fetch_info)
             }
             Some(contract_fetch_info) => {
@@ -785,7 +829,8 @@ impl Drive {
                             cost: contract_fetch_info.cost.clone(),
                             fee: Some(fee.clone()),
                         });
-
+                        drop(cache);
+                        let mut cache = self.cache.write().unwrap();
                         // we override the cache for the contract as the fee is now calculated
                         cache
                             .cached_contracts
@@ -841,7 +886,8 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Option<Arc<ContractFetchInfo>> {
         self.cache
-            .borrow()
+            .read()
+            .unwrap()
             .cached_contracts
             .get(contract_id, transaction.is_some())
             .map(|fetch_info| Arc::clone(&fetch_info))
@@ -910,6 +956,26 @@ impl Drive {
     /// Applies a contract and returns the fee for applying.
     /// If the contract already exists, an update is applied, otherwise an insert.
     pub fn apply_contract(
+        &self,
+        contract: &Contract,
+        block_info: BlockInfo,
+        apply: bool,
+        storage_flags: Option<Cow<StorageFlags>>,
+        transaction: TransactionArg,
+    ) -> Result<FeeResult, Error> {
+        self.apply_contract_with_serialization(
+            contract,
+            contract.serialize()?,
+            block_info,
+            apply,
+            storage_flags,
+            transaction,
+        )
+    }
+
+    /// Applies a contract and returns the fee for applying.
+    /// If the contract already exists, an update is applied, otherwise an insert.
+    pub fn apply_contract_with_serialization(
         &self,
         contract: &Contract,
         contract_serialization: Vec<u8>,
@@ -1093,7 +1159,7 @@ mod tests {
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
         drive
-            .apply_contract(
+            .apply_contract_with_serialization(
                 &contract,
                 contract_cbor.clone(),
                 BlockInfo::default(),
@@ -1122,7 +1188,7 @@ mod tests {
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
         drive
-            .apply_contract(
+            .apply_contract_with_serialization(
                 &contract,
                 contract_cbor.clone(),
                 BlockInfo::default(),
@@ -1151,7 +1217,7 @@ mod tests {
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
         drive
-            .apply_contract(
+            .apply_contract_with_serialization(
                 &contract,
                 contract_cbor.clone(),
                 BlockInfo::default(),
@@ -1301,7 +1367,7 @@ mod tests {
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
         drive
-            .apply_contract(
+            .apply_contract_with_serialization(
                 &contract,
                 contract_cbor,
                 BlockInfo::default(),
@@ -1330,7 +1396,7 @@ mod tests {
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
             .expect("expected to deserialize the contract");
         drive
-            .apply_contract(
+            .apply_contract_with_serialization(
                 &contract,
                 contract_cbor,
                 BlockInfo::default(),
@@ -1360,7 +1426,7 @@ mod tests {
 
         // Create a contract first
         drive
-            .apply_contract(
+            .apply_contract_with_serialization(
                 &contract,
                 contract_cbor.clone(),
                 BlockInfo::default(),
@@ -1408,7 +1474,7 @@ mod tests {
                 .expect("should update contract");
 
             let fetch_info_from_database = drive
-                .get_contract_with_fetch_info(contract.id.to_buffer(), None, None)
+                .get_contract_with_fetch_info(contract.id.to_buffer(), None, true, None)
                 .expect("should get contract")
                 .1
                 .expect("should be present");
@@ -1416,7 +1482,12 @@ mod tests {
             assert_eq!(fetch_info_from_database.contract.version, 1);
 
             let fetch_info_from_cache = drive
-                .get_contract_with_fetch_info(contract.id.to_buffer(), None, Some(&transaction))
+                .get_contract_with_fetch_info(
+                    contract.id.to_buffer(),
+                    None,
+                    true,
+                    Some(&transaction),
+                )
                 .expect("should get contract")
                 .1
                 .expect("should be present");
@@ -1429,7 +1500,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
 
             let result = drive
-                .get_contract_with_fetch_info([0; 32], None, None)
+                .get_contract_with_fetch_info([0; 32], None, true, None)
                 .expect("should get contract");
 
             assert!(result.0.is_none());
@@ -1441,7 +1512,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
 
             let result = drive
-                .get_contract_with_fetch_info([0; 32], Some(&Epoch::new(0)), None)
+                .get_contract_with_fetch_info([0; 32], Some(&Epoch::new(0).unwrap()), true, None)
                 .expect("should get contract");
 
             assert_eq!(
@@ -1477,7 +1548,7 @@ mod tests {
                 let ref_contract_cbor = ref_contract.to_cbor().expect("should serialize contract");
 
                 drive
-                    .apply_contract(
+                    .apply_contract_with_serialization(
                         &ref_contract,
                         ref_contract_cbor,
                         BlockInfo::default(),
@@ -1495,7 +1566,7 @@ mod tests {
             let deep_contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
                 .expect("expected to deserialize the contract");
             drive
-                .apply_contract(
+                .apply_contract_with_serialization(
                     &deep_contract,
                     contract_cbor,
                     BlockInfo::default(),
@@ -1508,7 +1579,8 @@ mod tests {
             let mut ref_contract_fetch_info_transactional = drive
                 .get_contract_with_fetch_info(
                     ref_contract_id_buffer,
-                    Some(&Epoch::new(0)),
+                    Some(&Epoch::new(0).unwrap()),
+                    true,
                     Some(&transaction),
                 )
                 .expect("got contract")
@@ -1518,7 +1590,8 @@ mod tests {
             let mut deep_contract_fetch_info_transactional = drive
                 .get_contract_with_fetch_info(
                     deep_contract.id.to_buffer(),
-                    Some(&Epoch::new(0)),
+                    Some(&Epoch::new(0).unwrap()),
+                    true,
                     Some(&transaction),
                 )
                 .expect("got contract")
@@ -1532,7 +1605,7 @@ mod tests {
             // Commit transaction and merge block (transactional) cache to global cache
             transaction.commit().expect("expected to commit");
 
-            let mut drive_cache = drive.cache.borrow_mut();
+            let mut drive_cache = drive.cache.write().unwrap();
             drive_cache.cached_contracts.merge_block_cache();
             drop(drive_cache);
 
@@ -1541,13 +1614,13 @@ mod tests {
              */
 
             let deep_contract_fetch_info = drive
-                .get_contract_with_fetch_info(deep_contract.id.to_buffer(), None, None)
+                .get_contract_with_fetch_info(deep_contract.id.to_buffer(), None, true, None)
                 .expect("got contract")
                 .1
                 .expect("got contract fetch info");
 
             let ref_contract_fetch_info = drive
-                .get_contract_with_fetch_info(ref_contract_id_buffer, None, None)
+                .get_contract_with_fetch_info(ref_contract_id_buffer, None, true, None)
                 .expect("got contract")
                 .1
                 .expect("got contract fetch info");
@@ -1576,13 +1649,13 @@ mod tests {
              */
 
             let deep_contract_fetch_info_without_cache = drive
-                .get_contract_with_fetch_info(deep_contract.id.to_buffer(), None, None)
+                .get_contract_with_fetch_info(deep_contract.id.to_buffer(), None, true, None)
                 .expect("got contract")
                 .1
                 .expect("got contract fetch info");
 
             let ref_contract_fetch_info_without_cache = drive
-                .get_contract_with_fetch_info(ref_contract_id_buffer, None, None)
+                .get_contract_with_fetch_info(ref_contract_id_buffer, None, true, None)
                 .expect("got contract")
                 .1
                 .expect("got contract fetch info");
@@ -1625,7 +1698,7 @@ mod tests {
                 let ref_contract_cbor = ref_contract.to_cbor().expect("should serialize contract");
 
                 drive
-                    .apply_contract(
+                    .apply_contract_with_serialization(
                         &ref_contract,
                         ref_contract_cbor,
                         BlockInfo::default(),
@@ -1644,7 +1717,8 @@ mod tests {
             let mut deep_contract_fetch_info_transactional2 = drive
                 .get_contract_with_fetch_info(
                     deep_contract.id.to_buffer(),
-                    Some(&Epoch::new(0)),
+                    Some(&Epoch::new(0).unwrap()),
+                    true,
                     Some(&transaction),
                 )
                 .expect("got contract")
@@ -1654,7 +1728,8 @@ mod tests {
             let mut ref_contract_fetch_info_transactional2 = drive
                 .get_contract_with_fetch_info(
                     ref_contract_id_buffer,
-                    Some(&Epoch::new(0)),
+                    Some(&Epoch::new(0).unwrap()),
+                    true,
                     Some(&transaction),
                 )
                 .expect("got contract")

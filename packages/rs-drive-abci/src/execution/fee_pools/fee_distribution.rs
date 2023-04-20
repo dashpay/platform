@@ -38,18 +38,19 @@ use serde::{Deserialize, Serialize};
 use crate::abci::messages::BlockFees;
 use crate::error::Error;
 use crate::platform::Platform;
+use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
 use drive::drive::batch::drive_op_batch::IdentityOperationType::AddToIdentityBalance;
 use drive::drive::batch::DriveOperation::IdentityOperation;
 use drive::drive::batch::GroveDbOpBatch;
-use drive::drive::block_info::BlockInfo;
 use drive::error::fee::FeeError;
 use drive::fee::credits::Credits;
 use drive::fee::epoch::GENESIS_EPOCH_INDEX;
-use drive::fee_pools::epochs::Epoch;
+use drive::fee_pools::epochs::operations_factory::EpochOperations;
 use drive::fee_pools::{
     update_storage_fee_distribution_pool_operation, update_unpaid_epoch_index_operation,
 };
-use drive::grovedb::TransactionArg;
+use drive::grovedb::{Transaction, TransactionArg};
 use drive::{error, grovedb};
 
 /// Struct containing the number of proposers to be paid and the index of the epoch
@@ -95,7 +96,7 @@ impl UnpaidEpoch {
     }
 }
 
-impl Platform {
+impl<CoreRPCLike> Platform<CoreRPCLike> {
     /// Adds operations to the op batch which distribute fees
     /// from the oldest unpaid epoch pool to proposers.
     ///
@@ -104,13 +105,13 @@ impl Platform {
         &self,
         current_epoch_index: u16,
         cached_current_epoch_start_block_height: Option<u64>,
-        transaction: TransactionArg,
+        transaction: &Transaction,
         batch: &mut GroveDbOpBatch,
     ) -> Result<Option<ProposersPayouts>, Error> {
         let unpaid_epoch = self.find_oldest_epoch_needing_payment(
             current_epoch_index,
             cached_current_epoch_start_block_height,
-            transaction,
+            Some(transaction),
         )?;
 
         if unpaid_epoch.is_none() {
@@ -131,7 +132,7 @@ impl Platform {
 
         // if less then a limit paid then mark the epoch pool as paid
         if proposers_paid_count < proposers_limit {
-            let unpaid_epoch_tree = Epoch::new(unpaid_epoch.epoch_index);
+            let unpaid_epoch_tree = Epoch::new(unpaid_epoch.epoch_index)?;
 
             unpaid_epoch_tree.add_mark_as_paid_operations(batch);
 
@@ -171,7 +172,7 @@ impl Platform {
             return Ok(None);
         }
 
-        let unpaid_epoch = Epoch::new(unpaid_epoch_index);
+        let unpaid_epoch = Epoch::new(unpaid_epoch_index)?;
 
         let start_block_height = self
             .drive
@@ -184,7 +185,7 @@ impl Platform {
             let start_block_height = match cached_current_epoch_start_block_height {
                 Some(start_block_height) => start_block_height,
                 None => {
-                    let current_epoch = Epoch::new(current_epoch_index);
+                    let current_epoch = Epoch::new(current_epoch_index)?;
                     self.drive
                         .get_epoch_start_block_height(&current_epoch, transaction)?
                 }
@@ -233,15 +234,15 @@ impl Platform {
         &self,
         unpaid_epoch: &UnpaidEpoch,
         proposers_limit: u16,
-        transaction: TransactionArg,
+        transaction: &Transaction,
         batch: &mut GroveDbOpBatch,
     ) -> Result<u16, Error> {
         let mut drive_operations = vec![];
-        let unpaid_epoch_tree = Epoch::new(unpaid_epoch.epoch_index);
+        let unpaid_epoch_tree = Epoch::new(unpaid_epoch.epoch_index)?;
 
         let total_fees = self
             .drive
-            .get_epoch_total_credits_for_distribution(&unpaid_epoch_tree, transaction)
+            .get_epoch_total_credits_for_distribution(&unpaid_epoch_tree, Some(transaction))
             .map_err(Error::Drive)?;
 
         let mut remaining_fees = total_fees;
@@ -251,7 +252,7 @@ impl Platform {
 
         let proposers = self
             .drive
-            .get_epoch_proposers(&unpaid_epoch_tree, proposers_limit, transaction)
+            .get_epoch_proposers(&unpaid_epoch_tree, proposers_limit, Some(transaction))
             .map_err(Error::Drive)?;
 
         let proposers_len = proposers.len() as u16;
@@ -271,7 +272,7 @@ impl Platform {
             let mut masternode_reward_leftover = total_masternode_reward;
 
             let documents =
-                self.get_reward_shares_list_for_masternode(&proposer_tx_hash, transaction)?;
+                self.get_reward_shares_list_for_masternode(&proposer_tx_hash, Some(transaction))?;
 
             for document in documents {
                 let pay_to_id: [u8; 32] = document
@@ -356,7 +357,7 @@ impl Platform {
         let mut operations = self.drive.convert_drive_operations_to_grove_operations(
             drive_operations,
             &BlockInfo::default(),
-            transaction,
+            Some(transaction),
         )?;
 
         batch.append(&mut operations);
@@ -417,17 +418,20 @@ impl Platform {
 mod tests {
     use super::*;
 
-    use crate::test::helpers::setup::setup_platform_with_initial_state_structure;
     use drive::common::helpers::identities::create_test_masternode_identities_and_add_them_as_epoch_block_proposers;
 
     mod add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations {
+        use crate::test::helpers::setup::TestPlatformBuilder;
+
         use super::*;
 
         use drive::error::Error as DriveError;
 
         #[test]
         fn test_nothing_to_distribute_if_there_is_no_epochs_needing_payment() {
-            let platform = setup_platform_with_initial_state_structure(None);
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
             let current_epoch_index = 0;
@@ -438,7 +442,7 @@ mod tests {
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                     current_epoch_index,
                     None,
-                    Some(&transaction),
+                    &transaction,
                     &mut batch,
                 )
                 .expect("should distribute fees");
@@ -448,7 +452,10 @@ mod tests {
 
         #[test]
         fn test_set_proposers_limit_50_for_one_unpaid_epoch() {
-            let platform = setup_platform_with_initial_state_structure(None);
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+
             let transaction = platform.drive.grove.start_transaction();
 
             // Create masternode reward shares contract
@@ -456,11 +463,11 @@ mod tests {
 
             // Create epochs
 
-            let unpaid_epoch_tree_0 = Epoch::new(GENESIS_EPOCH_INDEX);
+            let unpaid_epoch_tree_0 = Epoch::new(GENESIS_EPOCH_INDEX).unwrap();
 
             let current_epoch_index = GENESIS_EPOCH_INDEX + 1;
 
-            let epoch_tree_1 = Epoch::new(current_epoch_index);
+            let epoch_tree_1 = Epoch::new(current_epoch_index).unwrap();
 
             let mut batch = GroveDbOpBatch::new();
 
@@ -500,7 +507,7 @@ mod tests {
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                     current_epoch_index,
                     None,
-                    Some(&transaction),
+                    &transaction,
                     &mut batch,
                 )
                 .expect("should distribute fees");
@@ -521,7 +528,9 @@ mod tests {
 
         #[test]
         fn test_increased_proposers_limit_to_100_for_two_unpaid_epochs() {
-            let platform = setup_platform_with_initial_state_structure(None);
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
             // Create masternode reward shares contract
@@ -529,12 +538,12 @@ mod tests {
 
             // Create epochs
 
-            let unpaid_epoch_tree_0 = Epoch::new(GENESIS_EPOCH_INDEX);
-            let unpaid_epoch_tree_1 = Epoch::new(GENESIS_EPOCH_INDEX + 1);
+            let unpaid_epoch_tree_0 = Epoch::new(GENESIS_EPOCH_INDEX).unwrap();
+            let unpaid_epoch_tree_1 = Epoch::new(GENESIS_EPOCH_INDEX + 1).unwrap();
 
             let current_epoch_index = GENESIS_EPOCH_INDEX + 2;
 
-            let epoch_tree_2 = Epoch::new(current_epoch_index);
+            let epoch_tree_2 = Epoch::new(current_epoch_index).unwrap();
 
             let mut batch = GroveDbOpBatch::new();
 
@@ -589,7 +598,7 @@ mod tests {
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                     current_epoch_index,
                     None,
-                    Some(&transaction),
+                    &transaction,
                     &mut batch,
                 )
                 .expect("should distribute fees");
@@ -610,7 +619,9 @@ mod tests {
 
         #[test]
         fn test_increased_proposers_limit_to_150_for_three_unpaid_epochs() {
-            let platform = setup_platform_with_initial_state_structure(None);
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
             // Create masternode reward shares contract
@@ -618,13 +629,13 @@ mod tests {
 
             // Create epochs
 
-            let unpaid_epoch_tree_0 = Epoch::new(GENESIS_EPOCH_INDEX);
-            let unpaid_epoch_tree_1 = Epoch::new(GENESIS_EPOCH_INDEX + 1);
-            let unpaid_epoch_tree_2 = Epoch::new(GENESIS_EPOCH_INDEX + 2);
+            let unpaid_epoch_tree_0 = Epoch::new(GENESIS_EPOCH_INDEX).unwrap();
+            let unpaid_epoch_tree_1 = Epoch::new(GENESIS_EPOCH_INDEX + 1).unwrap();
+            let unpaid_epoch_tree_2 = Epoch::new(GENESIS_EPOCH_INDEX + 2).unwrap();
 
             let current_epoch_index = GENESIS_EPOCH_INDEX + 3;
 
-            let epoch_tree_3 = Epoch::new(current_epoch_index);
+            let epoch_tree_3 = Epoch::new(current_epoch_index).unwrap();
 
             let mut batch = GroveDbOpBatch::new();
 
@@ -694,7 +705,7 @@ mod tests {
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                     current_epoch_index,
                     None,
-                    Some(&transaction),
+                    &transaction,
                     &mut batch,
                 )
                 .expect("should distribute fees");
@@ -715,7 +726,9 @@ mod tests {
 
         #[test]
         fn test_mark_epoch_as_paid_and_update_next_update_epoch_index_if_all_proposers_paid() {
-            let platform = setup_platform_with_initial_state_structure(None);
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
             // Create masternode reward shares contract
@@ -725,8 +738,8 @@ mod tests {
             let processing_fees = 10000;
             let storage_fees = 10000;
 
-            let unpaid_epoch = Epoch::new(0);
-            let current_epoch = Epoch::new(1);
+            let unpaid_epoch = Epoch::new(0).unwrap();
+            let current_epoch = Epoch::new(1).unwrap();
 
             let mut batch = GroveDbOpBatch::new();
 
@@ -765,7 +778,7 @@ mod tests {
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                     current_epoch.index,
                     None,
-                    Some(&transaction),
+                    &transaction,
                     &mut batch,
                 )
                 .expect("should distribute fees");
@@ -808,7 +821,9 @@ mod tests {
         #[test]
         fn test_mark_epoch_as_paid_and_update_next_update_epoch_index_if_all_50_proposers_were_paid_last_block(
         ) {
-            let platform = setup_platform_with_initial_state_structure(None);
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
             // Create masternode reward shares contract
@@ -818,8 +833,8 @@ mod tests {
             let processing_fees = 10000;
             let storage_fees = 10000;
 
-            let unpaid_epoch = Epoch::new(0);
-            let current_epoch = Epoch::new(1);
+            let unpaid_epoch = Epoch::new(0).unwrap();
+            let current_epoch = Epoch::new(1).unwrap();
 
             let mut batch = GroveDbOpBatch::new();
 
@@ -863,7 +878,7 @@ mod tests {
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                     current_epoch.index,
                     None,
-                    Some(&transaction),
+                    &transaction,
                     &mut batch,
                 )
                 .expect("should distribute fees");
@@ -897,7 +912,7 @@ mod tests {
                 .add_distribute_fees_from_oldest_unpaid_epoch_pool_to_proposers_operations(
                     current_epoch.index,
                     None,
-                    Some(&transaction),
+                    &transaction,
                     &mut batch,
                 )
                 .expect("should distribute fees");
@@ -931,11 +946,15 @@ mod tests {
     }
 
     mod find_oldest_epoch_needing_payment {
+        use crate::test::helpers::setup::TestPlatformBuilder;
+
         use super::*;
 
         #[test]
         fn test_no_epoch_to_pay_on_genesis_epoch() {
-            let platform = setup_platform_with_initial_state_structure(None);
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
             let unpaid_epoch = platform
@@ -947,14 +966,16 @@ mod tests {
 
         #[test]
         fn test_no_epoch_to_pay_if_oldest_unpaid_epoch_is_current_epoch() {
-            let platform = setup_platform_with_initial_state_structure(None);
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
-            let epoch_0_tree = Epoch::new(GENESIS_EPOCH_INDEX);
+            let epoch_0_tree = Epoch::new(GENESIS_EPOCH_INDEX).unwrap();
 
             let current_epoch_index = GENESIS_EPOCH_INDEX + 1;
 
-            let epoch_1_tree = Epoch::new(current_epoch_index);
+            let epoch_1_tree = Epoch::new(current_epoch_index).unwrap();
 
             let mut batch = GroveDbOpBatch::new();
 
@@ -977,10 +998,12 @@ mod tests {
 
         #[test]
         fn test_use_cached_current_start_block_height_as_end_block_if_unpaid_epoch_is_previous() {
-            let platform = setup_platform_with_initial_state_structure(None);
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
-            let epoch_0_tree = Epoch::new(GENESIS_EPOCH_INDEX);
+            let epoch_0_tree = Epoch::new(GENESIS_EPOCH_INDEX).unwrap();
 
             let current_epoch_index = GENESIS_EPOCH_INDEX + 1;
 
@@ -1023,14 +1046,16 @@ mod tests {
         #[test]
         fn test_use_stored_start_block_height_from_current_epoch_as_end_block_if_unpaid_epoch_is_previous(
         ) {
-            let platform = setup_platform_with_initial_state_structure(None);
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
-            let epoch_0_tree = Epoch::new(GENESIS_EPOCH_INDEX);
+            let epoch_0_tree = Epoch::new(GENESIS_EPOCH_INDEX).unwrap();
 
             let current_epoch_index = GENESIS_EPOCH_INDEX + 1;
 
-            let epoch_1_tree = Epoch::new(current_epoch_index);
+            let epoch_1_tree = Epoch::new(current_epoch_index).unwrap();
 
             let mut batch = GroveDbOpBatch::new();
 
@@ -1065,15 +1090,17 @@ mod tests {
 
         #[test]
         fn test_find_stored_next_start_block_as_end_block_if_unpaid_epoch_more_than_one_ago() {
-            let platform = setup_platform_with_initial_state_structure(None);
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
-            let epoch_0_tree = Epoch::new(GENESIS_EPOCH_INDEX);
-            let epoch_1_tree = Epoch::new(GENESIS_EPOCH_INDEX + 1);
+            let epoch_0_tree = Epoch::new(GENESIS_EPOCH_INDEX).unwrap();
+            let epoch_1_tree = Epoch::new(GENESIS_EPOCH_INDEX + 1).unwrap();
 
             let current_epoch_index = GENESIS_EPOCH_INDEX + 2;
 
-            let epoch_2_tree = Epoch::new(current_epoch_index);
+            let epoch_2_tree = Epoch::new(current_epoch_index).unwrap();
 
             let mut batch = GroveDbOpBatch::new();
 
@@ -1109,10 +1136,12 @@ mod tests {
 
         #[test]
         fn test_use_cached_start_block_height_if_not_found_in_case_of_epoch_change() {
-            let platform = setup_platform_with_initial_state_structure(None);
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
-            let epoch_0_tree = Epoch::new(GENESIS_EPOCH_INDEX);
+            let epoch_0_tree = Epoch::new(GENESIS_EPOCH_INDEX).unwrap();
 
             let current_epoch_index = GENESIS_EPOCH_INDEX + 2;
 
@@ -1155,10 +1184,12 @@ mod tests {
         #[test]
         fn test_error_if_cached_start_block_height_is_not_present_and_not_found_in_case_of_epoch_change(
         ) {
-            let platform = setup_platform_with_initial_state_structure(None);
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
-            let epoch_0_tree = Epoch::new(GENESIS_EPOCH_INDEX);
+            let epoch_0_tree = Epoch::new(GENESIS_EPOCH_INDEX).unwrap();
 
             let current_epoch_index = GENESIS_EPOCH_INDEX + 2;
 
@@ -1186,14 +1217,19 @@ mod tests {
 
     mod add_epoch_pool_to_proposers_payout_operations {
         use super::*;
-        use crate::test::helpers::fee_pools::create_test_masternode_share_identities_and_documents;
+        use crate::test::helpers::{
+            fee_pools::create_test_masternode_share_identities_and_documents,
+            setup::TestPlatformBuilder,
+        };
         use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
         use rust_decimal::Decimal;
         use rust_decimal_macros::dec;
 
         #[test]
         fn test_payout_to_proposers() {
-            let platform = setup_platform_with_initial_state_structure(None);
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
             // Create masternode reward shares contract
@@ -1203,8 +1239,8 @@ mod tests {
             let processing_fees = 10000;
             let storage_fees = 10000;
 
-            let unpaid_epoch_tree = Epoch::new(0);
-            let next_epoch_tree = Epoch::new(1);
+            let unpaid_epoch_tree = Epoch::new(0).unwrap();
+            let next_epoch_tree = Epoch::new(1).unwrap();
 
             let mut batch = GroveDbOpBatch::new();
 
@@ -1265,7 +1301,7 @@ mod tests {
                 .add_epoch_pool_to_proposers_payout_operations(
                     &unpaid_epoch,
                     proposers_count,
-                    Some(&transaction),
+                    &transaction,
                     &mut batch,
                 )
                 .expect("should distribute fees");
@@ -1320,14 +1356,18 @@ mod tests {
     }
 
     mod add_distribute_block_fees_into_pools_operations {
+        use crate::test::helpers::setup::TestPlatformBuilder;
+
         use super::*;
 
         #[test]
         fn test_distribute_block_fees_into_uncommitted_epoch_on_epoch_change() {
-            let platform = setup_platform_with_initial_state_structure(None);
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
-            let current_epoch_tree = Epoch::new(1);
+            let current_epoch_tree = Epoch::new(1).unwrap();
 
             let mut batch = GroveDbOpBatch::new();
 
@@ -1370,10 +1410,12 @@ mod tests {
 
         #[test]
         fn test_distribute_block_fees_into_pools() {
-            let platform = setup_platform_with_initial_state_structure(None);
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
             let transaction = platform.drive.grove.start_transaction();
 
-            let current_epoch_tree = Epoch::new(1);
+            let current_epoch_tree = Epoch::new(1).unwrap();
 
             let mut batch = GroveDbOpBatch::new();
 

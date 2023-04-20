@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 use crate::prelude::Revision;
-use crate::{identity::KeyID, prelude::Identifier};
+use crate::{identity::KeyID, prelude::Identifier, DataTriggerActionError};
 
 use super::DataTriggerError;
 
@@ -53,6 +53,9 @@ pub enum StateError {
     #[error(transparent)]
     DataTriggerError(Box<DataTriggerError>),
 
+    #[error(transparent)]
+    DataTriggerActionError(Box<DataTriggerActionError>),
+
     #[error(
         "Identity {identity_id} has invalid revision. The current revision is {current_revision}"
     )]
@@ -82,6 +85,9 @@ pub enum StateError {
     #[error("Identity Public Key with Id {id} does not exist")]
     InvalidIdentityPublicKeyIdError { id: KeyID },
 
+    #[error("Identity Public Key with Ids {} do not exist", ids.iter().map(|id| id.to_string()).collect::<Vec<_>>().join(", "))]
+    MissingIdentityPublicKeyIdsError { ids: Vec<KeyID> },
+
     #[error("Identity cannot contain more than {max_items} public keys")]
     MaxIdentityPublicKeyLimitReachedError { max_items: usize },
 
@@ -92,5 +98,11 @@ pub enum StateError {
 impl From<DataTriggerError> for StateError {
     fn from(v: DataTriggerError) -> Self {
         StateError::DataTriggerError(Box::new(v))
+    }
+}
+
+impl From<DataTriggerActionError> for StateError {
+    fn from(v: DataTriggerActionError) -> Self {
+        StateError::DataTriggerActionError(Box::new(v))
     }
 }

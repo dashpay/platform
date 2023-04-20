@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use dashcore::InstantLock;
 #[cfg(feature = "fixtures-and-mocks")]
 use mockall::{automock, predicate::*};
-use serde_json::Value as JsonValue;
+use platform_value::Value;
 
 use crate::document::Document;
 use crate::identity::KeyID;
@@ -67,7 +67,7 @@ pub trait StateRepositoryLike: Sync {
         &self,
         contract_id: &Identifier,
         data_contract_type: &str,
-        where_query: JsonValue,
+        where_query: Value,
         execution_context: Option<&'a StateTransitionExecutionContext>,
     ) -> AnyResult<Vec<Self::FetchDocument>>;
 
@@ -77,7 +77,7 @@ pub trait StateRepositoryLike: Sync {
         &self,
         contract_id: &Identifier,
         data_contract_type: &str,
-        where_query: JsonValue,
+        where_query: Value,
         execution_context: Option<&'a StateTransitionExecutionContext>,
     ) -> AnyResult<Vec<Self::FetchExtendedDocument>>;
 

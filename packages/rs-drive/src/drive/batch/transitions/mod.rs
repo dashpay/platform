@@ -38,17 +38,23 @@ mod identity;
 
 use crate::drive::batch::DriveOperation;
 use crate::error::Error;
-use crate::fee_pools::epochs::Epoch;
+use dpp::block::epoch::Epoch;
 use dpp::state_transition::StateTransitionAction;
 
 /// A converter that will get High Level Drive Operations from State transitions
 pub trait DriveHighLevelOperationConverter {
     /// This will get a list of atomic drive operations from a high level operations
-    fn into_high_level_drive_operations(self, epoch: &Epoch) -> Result<Vec<DriveOperation>, Error>;
+    fn into_high_level_drive_operations<'a>(
+        self,
+        epoch: &Epoch,
+    ) -> Result<Vec<DriveOperation<'a>>, Error>;
 }
 
 impl DriveHighLevelOperationConverter for StateTransitionAction {
-    fn into_high_level_drive_operations(self, epoch: &Epoch) -> Result<Vec<DriveOperation>, Error> {
+    fn into_high_level_drive_operations<'a>(
+        self,
+        epoch: &Epoch,
+    ) -> Result<Vec<DriveOperation<'a>>, Error> {
         match self {
             StateTransitionAction::DataContractCreateAction(data_contract_create_transition) => {
                 data_contract_create_transition.into_high_level_drive_operations(epoch)

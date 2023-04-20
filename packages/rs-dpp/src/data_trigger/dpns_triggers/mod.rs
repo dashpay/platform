@@ -4,10 +4,10 @@ use anyhow::Context;
 use anyhow::{anyhow, bail};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
-use serde_json::json;
+use platform_value::platform_value;
 
 use crate::document::Document;
-use crate::util::hash::hash;
+use crate::util::hash::hash_to_vec;
 
 use crate::ProtocolError;
 use crate::{
@@ -157,7 +157,7 @@ where
             .fetch_documents(
                 &context.data_contract.id,
                 &dt_create.base.document_type_name,
-                json!({
+                platform_value!({
                     "where" : [
                         ["normalizedParentDomainName", "==", grand_parent_domain_name],
                         ["normalizedLabel", "==", parent_domain_label]
@@ -212,14 +212,14 @@ where
     salted_domain_buffer.extend(preorder_salt);
     salted_domain_buffer.extend(full_domain_name.to_owned().as_bytes());
 
-    let salted_domain_hash = hash(salted_domain_buffer);
+    let salted_domain_hash = hash_to_vec(salted_domain_buffer);
 
     let preorder_documents_data = context
         .state_repository
         .fetch_documents(
             &context.data_contract.id,
             "preorder",
-            json!({
+            platform_value!({
                 //? should this be a base64 encoded
                 "where" : [["saltedDomainHash", "==", salted_domain_hash]]
             }),

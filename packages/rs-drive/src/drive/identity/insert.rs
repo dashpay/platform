@@ -1,4 +1,3 @@
-use crate::drive::block_info::BlockInfo;
 use crate::drive::flags::StorageFlags;
 use crate::drive::grove_operations::BatchInsertTreeApplyType;
 use crate::drive::object_size_info::PathKeyInfo::PathFixedSizeKey;
@@ -8,6 +7,7 @@ use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::result::FeeResult;
+use dpp::block::block_info::BlockInfo;
 use dpp::identity::Identity;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
@@ -161,9 +161,10 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
-    use crate::{drive::block_info::BlockInfo, tests::helpers::setup::setup_drive};
+    use crate::tests::helpers::setup::setup_drive;
     use dpp::identity::Identity;
 
+    use dpp::block::block_info::BlockInfo;
     use tempfile::TempDir;
 
     use crate::drive::Drive;

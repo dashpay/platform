@@ -3,7 +3,7 @@ use dpp::{
     document::{self, fetch_and_validate_data_contract::fetch_and_validate_data_contract},
     prelude::DataContract,
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
-    validation::ValidationResult,
+    validation::ConsensusValidationResult,
     ProtocolError,
 };
 use wasm_bindgen::prelude::*;
@@ -72,7 +72,7 @@ async fn fetch_and_validate_data_contract_inner(
         fetch_and_validate_data_contract(state_repository, &document_value, &ctx)
             .await
             .with_js_error()?;
-    let result_with_js_value: ValidationResult<JsValue> = validation_result
+    let result_with_js_value: ConsensusValidationResult<JsValue> = validation_result
         .map(|dc| <DataContractWasm as std::convert::From<DataContract>>::from(dc).into());
 
     Ok(result_with_js_value.into())

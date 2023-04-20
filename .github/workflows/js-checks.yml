@@ -35,16 +35,13 @@ jobs:
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
-          node-version: '16'
+          node-version: "16"
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@master
+        uses: ./.github/actions/rust
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
-
-      - name: Enable Rust cache
-        uses: Swatinem/rust-cache@v2
 
       - name: Enable corepack
         run: corepack enable
@@ -55,7 +52,7 @@ jobs:
       - name: Enable Yarn unplugged modules cache
         uses: actions/cache@v3
         with:
-          path: '.yarn/unplugged'
+          path: ".yarn/unplugged"
           key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
           restore-keys: |
             ${{ runner.os }}-yarn-unplugged-
@@ -79,7 +76,7 @@ jobs:
         uses: browser-actions/setup-firefox@latest
         if: ${{ inputs.install-browsers }}
         with:
-          firefox-version: 'latest'
+          firefox-version: "latest"
 
       - name: Check out repo
         uses: actions/checkout@v3
@@ -87,16 +84,13 @@ jobs:
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
-          node-version: '16'
+          node-version: "16"
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@master
+        uses: ./.github/actions/rust
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
-
-      - name: Enable Rust cache
-        uses: Swatinem/rust-cache@v2
 
       - name: Enable corepack
         run: corepack enable
@@ -107,7 +101,7 @@ jobs:
       - name: Enable Yarn unplugged modules cache
         uses: actions/cache@v3
         with:
-          path: '.yarn/unplugged'
+          path: ".yarn/unplugged"
           key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
           restore-keys: |
             ${{ runner.os }}-yarn-unplugged-

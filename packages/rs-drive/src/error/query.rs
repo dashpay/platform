@@ -6,7 +6,7 @@ pub enum QueryError {
     DeserializationError(&'static str),
     /// Unsupported error
     #[error("unsupported error: {0}")]
-    Unsupported(&'static str),
+    Unsupported(String),
     /// Invalid SQL error
     #[error("invalid sql error: {0}")]
     InvalidSQL(&'static str),

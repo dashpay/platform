@@ -4,7 +4,7 @@ use crate::state_repository::{ExternalStateRepositoryLike, ExternalStateReposito
 use crate::state_transition_factory::StateTransitionFactoryWasm;
 use crate::utils::{ToSerdeJSONExt, WithJsError};
 use crate::validation::ValidationResultWasm;
-use crate::with_js_error;
+use crate::{with_js_error, StateTransitionExecutionContextWasm};
 use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use dpp::state_transition::{
     StateTransitionConvert, StateTransitionFacade, StateTransitionLike, ValidateOptions,
@@ -95,6 +95,7 @@ impl StateTransitionFacadeWasm {
     pub async fn validate(
         &self,
         raw_state_transition: JsValue,
+        execution_context: StateTransitionExecutionContextWasm,
         options: JsValue,
     ) -> Result<ValidationResultWasm, JsValue> {
         let options: ValidateOptionsWasm = if options.is_object() {
@@ -107,7 +108,7 @@ impl StateTransitionFacadeWasm {
             super::super::conversion::create_state_transition_from_wasm_instance(
                 &raw_state_transition,
             ) {
-            let execution_context = state_transition.get_execution_context().to_owned();
+            let execution_context: StateTransitionExecutionContext = execution_context.into();
             (state_transition, execution_context)
         } else {
             let state_transition_json = raw_state_transition.with_serde_to_platform_value()?;
@@ -133,25 +134,23 @@ impl StateTransitionFacadeWasm {
     pub async fn validate_basic(
         &self,
         raw_state_transition: JsValue,
+        execution_context: StateTransitionExecutionContextWasm,
     ) -> Result<ValidationResultWasm, JsValue> {
         let state_transition_json;
-        let execution_context;
 
         if let Ok(state_transition) =
             super::super::conversion::create_state_transition_from_wasm_instance(
                 &raw_state_transition,
             )
         {
-            execution_context = state_transition.get_execution_context().to_owned();
             state_transition_json = state_transition.to_cleaned_object(false).with_js_error()?;
         } else {
             state_transition_json = raw_state_transition.with_serde_to_platform_value()?;
-            execution_context = StateTransitionExecutionContext::default();
         }
 
         let validation_result = self
             .0
-            .validate_basic(&state_transition_json, &execution_context)
+            .validate_basic(&state_transition_json, &execution_context.into())
             .await
             .with_js_error()?;
 
@@ -162,6 +161,7 @@ impl StateTransitionFacadeWasm {
     pub async fn validate_signature(
         &self,
         raw_state_transition: JsValue,
+        execution_context: StateTransitionExecutionContextWasm,
     ) -> Result<ValidationResultWasm, JsValue> {
         let state_transition =
             super::super::conversion::create_state_transition_from_wasm_instance(
@@ -170,7 +170,7 @@ impl StateTransitionFacadeWasm {
 
         let validation_result = self
             .0
-            .validate_signature(state_transition)
+            .validate_signature(state_transition, &execution_context.into())
             .await
             .with_js_error()?;
 
@@ -181,6 +181,7 @@ impl StateTransitionFacadeWasm {
     pub async fn validate_fee(
         &self,
         raw_state_transition: JsValue,
+        execution_context: StateTransitionExecutionContextWasm,
     ) -> Result<ValidationResultWasm, JsValue> {
         let state_transition =
             super::super::conversion::create_state_transition_from_wasm_instance(
@@ -189,7 +190,7 @@ impl StateTransitionFacadeWasm {
 
         let validation_result = self
             .0
-            .validate_fee(&state_transition)
+            .validate_fee(&state_transition, &execution_context.into())
             .await
             .with_js_error()?;
 
@@ -200,6 +201,7 @@ impl StateTransitionFacadeWasm {
     pub async fn validate_state(
         &self,
         raw_state_transition: JsValue,
+        execution_context: StateTransitionExecutionContextWasm,
     ) -> Result<ValidationResultWasm, JsValue> {
         let state_transition =
             super::super::conversion::create_state_transition_from_wasm_instance(
@@ -208,7 +210,7 @@ impl StateTransitionFacadeWasm {
 
         let validation_result = self
             .0
-            .validate_state(&state_transition)
+            .validate_state(&state_transition, &execution_context.into())
             .await
             .with_js_error()?;
 

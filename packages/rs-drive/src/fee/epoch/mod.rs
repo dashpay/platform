@@ -44,7 +44,7 @@ pub mod distribution;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 /// Epoch index type
-pub type EpochIndex = u16;
+pub use dpp::block::epoch::EpochIndex;
 
 #[cfg(feature = "full")]
 /// Genesis epoch index

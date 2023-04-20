@@ -9,7 +9,7 @@ use crate::{
         state_transition::validate_public_key_signatures::TPublicKeysSignaturesValidator,
         validation::TPublicKeysValidator,
     },
-    validation::{JsonSchemaValidator, SimpleValidationResult},
+    validation::{JsonSchemaValidator, SimpleConsensusValidationResult},
     version::ProtocolVersionValidator,
     NonConsensusError, ProtocolError,
 };
@@ -17,10 +17,13 @@ use crate::{
 use super::identity_update_transition::property_names;
 
 lazy_static! {
-    static ref IDENTITY_UPDATE_SCHEMA: JsonValue = serde_json::from_str(include_str!(
+    pub static ref IDENTITY_UPDATE_SCHEMA: JsonValue = serde_json::from_str(include_str!(
         "./../../../schema/identity/stateTransition/identityUpdate.json"
     ))
     .expect("Identity Update Schema file should exist");
+    pub static ref IDENTITY_UPDATE_JSON_SCHEMA_VALIDATOR: JsonSchemaValidator =
+        JsonSchemaValidator::new(IDENTITY_UPDATE_SCHEMA.clone())
+            .expect("unable to compile jsonschema");
 }
 
 pub struct ValidateIdentityUpdateTransitionBasic<KV, SV> {
@@ -58,7 +61,7 @@ where
     pub fn validate(
         &self,
         raw_state_transition: &Value,
-    ) -> Result<SimpleValidationResult, NonConsensusError> {
+    ) -> Result<SimpleConsensusValidationResult, NonConsensusError> {
         let result = self.json_schema_validator.validate(
             &raw_state_transition
                 .try_to_validating_json()

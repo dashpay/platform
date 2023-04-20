@@ -1,5 +1,4 @@
 use anyhow::bail;
-use serde_json::json;
 use std::convert::TryInto;
 
 use crate::contracts::withdrawals_contract;
@@ -13,6 +12,7 @@ use crate::prelude::Identifier;
 use crate::state_repository::StateRepositoryLike;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
+use platform_value::platform_value;
 
 pub async fn delete_withdrawal_data_trigger<'a, SR>(
     document_transition: &DocumentTransition,
@@ -36,7 +36,7 @@ where
         .fetch_documents(
             &context.data_contract.id,
             withdrawals_contract::document_types::WITHDRAWAL,
-            json!({
+            platform_value!({
                 "where" : [
                     ["$id", "==", dt_delete.base.id],
                 ]

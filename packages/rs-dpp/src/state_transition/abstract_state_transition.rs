@@ -8,6 +8,8 @@ use serde_json::Value as JsonValue;
 
 use crate::consensus::ConsensusError;
 use crate::errors::consensus::signature::SignatureError;
+use crate::identity::signer::Signer;
+
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, StateTransitionIsNotSignedError,
 };
@@ -18,10 +20,7 @@ use crate::{
     BlsModule,
 };
 
-use super::{
-    state_transition_execution_context::StateTransitionExecutionContext, StateTransition,
-    StateTransitionType,
-};
+use super::{StateTransition, StateTransitionType};
 
 const PROPERTY_SIGNATURE: &str = "signature";
 const PROPERTY_PROTOCOL_VERSION: &str = "protocolVersion";
@@ -63,7 +62,7 @@ pub trait StateTransitionLike:
         key_type: KeyType,
         bls: &impl BlsModule,
     ) -> Result<(), ProtocolError> {
-        let data = self.to_buffer(true)?;
+        let data = self.to_cbor_buffer(true)?;
         match key_type {
             KeyType::BLS12_381 => self.set_signature(bls.sign(&data, private_key)?.into()),
 
@@ -76,7 +75,7 @@ pub trait StateTransitionLike:
             // the default behavior from
             // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L187
             // is to return the error for the BIP13_SCRIPT_HASH
-            KeyType::BIP13_SCRIPT_HASH => {
+            KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
                 return Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
                     InvalidIdentityPublicKeyTypeError::new(key_type),
                 ))
@@ -97,9 +96,11 @@ pub trait StateTransitionLike:
                 self.verify_ecdsa_hash_160_signature_by_public_key_hash(public_key)
             }
             KeyType::BLS12_381 => self.verify_bls_signature_by_public_key(public_key, bls),
-            KeyType::BIP13_SCRIPT_HASH => Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
-                InvalidIdentityPublicKeyTypeError::new(public_key_type),
-            )),
+            KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
+                Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
+                    InvalidIdentityPublicKeyTypeError::new(public_key_type),
+                ))
+            }
         }
     }
 
@@ -128,8 +129,7 @@ pub trait StateTransitionLike:
                 StateTransitionIsNotSignedError::new(self.clone().into()),
             ));
         }
-        let data = self.to_buffer(true)?;
-
+        let data = self.to_cbor_buffer(true)?;
         signer::verify_data_signature(&data, self.get_signature().as_slice(), public_key).map_err(
             |_| {
                 ProtocolError::from(ConsensusError::SignatureError(
@@ -151,7 +151,7 @@ pub trait StateTransitionLike:
             ));
         }
 
-        let data = self.to_buffer(true)?;
+        let data = self.to_cbor_buffer(true)?;
 
         bls.verify_signature(self.get_signature().as_slice(), &data, public_key)
             .map(|_| ())
@@ -175,9 +175,6 @@ pub trait StateTransitionLike:
         IDENTITY_TRANSITION_TYPE.contains(&self.get_type())
     }
 
-    fn get_execution_context(&self) -> &StateTransitionExecutionContext;
-    fn get_execution_context_mut(&mut self) -> &mut StateTransitionExecutionContext;
-    fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext);
     fn set_signature_bytes(&mut self, signature: Vec<u8>);
 }
 
@@ -240,7 +237,7 @@ pub trait StateTransitionConvert: Serialize {
     }
 
     // Returns the cbor-encoded bytes representation of the object. The data is  prefixed by 4 bytes containing the Protocol Version
-    fn to_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
+    fn to_cbor_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
         let mut value = self.to_canonical_cleaned_object(skip_signature)?;
         let protocol_version = value.remove_integer(PROPERTY_PROTOCOL_VERSION)?;
 
@@ -249,7 +246,7 @@ pub trait StateTransitionConvert: Serialize {
 
     // Returns the hash of cibor-encoded bytes representation of the object
     fn hash(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash::hash(self.to_buffer(skip_signature)?))
+        Ok(hash::hash_to_vec(self.to_cbor_buffer(skip_signature)?))
     }
 
     fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {

@@ -1,5 +1,6 @@
+use bincode::{Decode, Encode};
 use std::collections::{BTreeMap, HashMap};
-use std::convert::TryInto;
+use std::convert::{TryFrom, TryInto};
 
 use anyhow::{anyhow, Context};
 use ciborium::value::Value as CborValue;
@@ -14,7 +15,7 @@ use serde_json::Value as JsonValue;
 use crate::data_contract::DataContract;
 use crate::document::document_transition::DocumentTransitionObjectLike;
 use crate::prelude::{DocumentTransition, Identifier};
-use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
+
 use crate::util::cbor_value::{CborCanonicalMap, FieldType, ReplacePaths, ValuesCollection};
 use crate::util::json_value::JsonValueExt;
 use crate::version::LATEST_VERSION;
@@ -63,7 +64,7 @@ pub const U32_FIELDS: [&str; 1] = [property_names::PROTOCOL_VERSION];
 const DEFAULT_SECURITY_LEVEL: SecurityLevel = SecurityLevel::HIGH;
 const EMPTY_VEC: Vec<u8> = vec![];
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Encode, Decode, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentsBatchTransition {
     pub protocol_version: u32,
@@ -79,9 +80,6 @@ pub struct DocumentsBatchTransition {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signature: Option<BinaryData>,
-
-    #[serde(skip)]
-    pub execution_context: StateTransitionExecutionContext,
 }
 
 impl std::default::Default for DocumentsBatchTransition {
@@ -93,7 +91,6 @@ impl std::default::Default for DocumentsBatchTransition {
             transitions: vec![],
             signature_public_key_id: None,
             signature: None,
-            execution_context: Default::default(),
         }
     }
 }
@@ -164,7 +161,7 @@ impl DocumentsBatchTransition {
     }
 
     /// creates the instance of [`DocumentsBatchTransition`] from raw object
-    pub fn from_raw_object(
+    pub fn from_raw_object_with_contracts(
         raw_object: Value,
         data_contracts: Vec<DataContract>,
     ) -> Result<Self, ProtocolError> {
@@ -276,7 +273,7 @@ impl StateTransitionIdentitySigned for DocumentsBatchTransition {
         &self.owner_id
     }
 
-    fn get_security_level_requirement(&self) -> crate::identity::SecurityLevel {
+    fn get_security_level_requirement(&self) -> Vec<crate::identity::SecurityLevel> {
         // Step 1: Get all document types for the ST
         // Step 2: Get document schema for every type
         // If schema has security level, use that, if not, use the default security level
@@ -299,7 +296,13 @@ impl StateTransitionIdentitySigned for DocumentsBatchTransition {
                 }
             }
         }
-        highest_security_level
+        if highest_security_level == SecurityLevel::MASTER {
+            vec![SecurityLevel::MASTER]
+        } else {
+            (SecurityLevel::CRITICAL as u8..=highest_security_level as u8)
+                .map(|security_level| SecurityLevel::try_from(security_level).unwrap())
+                .collect()
+        }
     }
 
     fn get_signature_public_key_id(&self) -> Option<KeyID> {
@@ -398,7 +401,7 @@ impl StateTransitionConvert for DocumentsBatchTransition {
         Ok(object)
     }
 
-    fn to_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
+    fn to_cbor_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
         let mut result_buf = self.protocol_version.encode_var_vec();
         let value: CborValue = self.to_object(skip_signature)?.try_into()?;
 
@@ -517,17 +520,6 @@ impl StateTransitionLike for DocumentsBatchTransition {
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
         self.signature = Some(BinaryData::new(signature));
     }
-    fn get_execution_context(&self) -> &StateTransitionExecutionContext {
-        &self.execution_context
-    }
-
-    fn get_execution_context_mut(&mut self) -> &mut StateTransitionExecutionContext {
-        &mut self.execution_context
-    }
-
-    fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
-        self.execution_context = execution_context
-    }
 }
 
 pub fn get_security_level_requirement(v: &JsonValue, default: SecurityLevel) -> SecurityLevel {
@@ -540,6 +532,7 @@ pub fn get_security_level_requirement(v: &JsonValue, default: SecurityLevel) -> 
 
 #[cfg(test)]
 mod test {
+    use itertools::Itertools;
     use std::sync::Arc;
 
     use platform_value::Bytes32;
@@ -603,10 +596,10 @@ mod test {
             )])
             .expect("batch transition should be created");
 
-        assert_eq!(
-            SecurityLevel::MEDIUM,
-            batch_transition.get_security_level_requirement()
-        );
+        assert!(batch_transition
+            .get_security_level_requirement()
+            .iter()
+            .contains(&SecurityLevel::MEDIUM));
 
         let batch_transition = document_factory
             .create_state_transition(vec![(
@@ -618,10 +611,10 @@ mod test {
             )])
             .expect("batch transition should be created");
 
-        assert_eq!(
-            SecurityLevel::MASTER,
-            batch_transition.get_security_level_requirement()
-        );
+        assert!(batch_transition
+            .get_security_level_requirement()
+            .iter()
+            .contains(&SecurityLevel::MASTER));
 
         let batch_transition = document_factory
             .create_state_transition(vec![(
@@ -630,10 +623,10 @@ mod test {
             )])
             .expect("batch transition should be created");
 
-        assert_eq!(
-            SecurityLevel::HIGH,
-            batch_transition.get_security_level_requirement()
-        );
+        assert!(batch_transition
+            .get_security_level_requirement()
+            .iter()
+            .contains(&SecurityLevel::HIGH));
     }
 
     #[test]
@@ -679,7 +672,7 @@ mod test {
         let state_transition = DocumentsBatchTransition::from_value_map(map, vec![data_contract])
             .expect("transition should be created");
 
-        let bytes = state_transition.to_buffer(false).unwrap();
+        let bytes = state_transition.to_cbor_buffer(false).unwrap();
 
         assert_eq!(hex::encode(expected_bytes), hex::encode(bytes));
     }

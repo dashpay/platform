@@ -41,4 +41,13 @@ pub enum SignatureError {
 
     #[error(transparent)]
     WrongPublicKeyPurposeError(WrongPublicKeyPurposeError),
+
+    #[error("signature should be empty {0}")]
+    SignatureShouldNotBePresent(String),
+
+    #[error("ecdsa signing error {0}")]
+    BasicECDSAError(String),
+
+    #[error("bls signing error {0}")]
+    BasicBLSError(String),
 }

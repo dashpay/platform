@@ -2,14 +2,14 @@ use platform_value::Value;
 
 use crate::consensus::basic::identity::InvalidIdentityKeySignatureError;
 use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     object_names,
     state_transition::{
         try_get_transition_type, StateTransition, StateTransitionLike, StateTransitionType,
     },
-    validation::SimpleValidationResult,
+    validation::SimpleConsensusValidationResult,
     BlsModule, NonConsensusError, ProtocolError,
 };
 
@@ -23,7 +23,7 @@ pub trait TPublicKeysSignaturesValidator {
         &self,
         raw_state_transition: &Value,
         raw_public_keys: impl IntoIterator<Item = &'a Value>,
-    ) -> Result<SimpleValidationResult, NonConsensusError>;
+    ) -> Result<SimpleConsensusValidationResult, NonConsensusError>;
 }
 
 pub struct PublicKeysSignaturesValidator<T: BlsModule> {
@@ -41,7 +41,7 @@ impl<T: BlsModule> TPublicKeysSignaturesValidator for PublicKeysSignaturesValida
         &self,
         raw_state_transition: &Value,
         raw_public_keys: impl IntoIterator<Item = &'a Value>,
-    ) -> Result<SimpleValidationResult, NonConsensusError> {
+    ) -> Result<SimpleConsensusValidationResult, NonConsensusError> {
         validate_public_key_signatures(raw_state_transition, raw_public_keys, &self.bls)
     }
 }
@@ -50,8 +50,8 @@ pub fn validate_public_key_signatures<'a, T: BlsModule>(
     raw_state_transition: &Value,
     raw_public_keys: impl IntoIterator<Item = &'a Value>,
     bls: &T,
-) -> Result<SimpleValidationResult, NonConsensusError> {
-    let mut validation_result = SimpleValidationResult::default();
+) -> Result<SimpleConsensusValidationResult, NonConsensusError> {
+    let mut validation_result = SimpleConsensusValidationResult::default();
 
     let transition_type = try_get_transition_type(raw_state_transition)
         .map_err(|e| NonConsensusError::InvalidDataProcessedError(format!("{e:#}")))?;
@@ -61,11 +61,12 @@ pub fn validate_public_key_signatures<'a, T: BlsModule>(
     let mut state_transition =
         match transition_type {
             StateTransitionType::IdentityCreate => {
-                let transition = IdentityCreateTransition::new(raw_state_transition.clone())
-                    .map_err(|e| NonConsensusError::ObjectCreationError {
-                        object_name: object_names::STATE_TRANSITION,
-                        details: format!("{e:#}"),
-                    })?;
+                let transition =
+                    IdentityCreateTransition::from_raw_object(raw_state_transition.clone())
+                        .map_err(|e| NonConsensusError::ObjectCreationError {
+                            object_name: object_names::STATE_TRANSITION,
+                            details: format!("{e:#}"),
+                        })?;
                 StateTransition::IdentityCreate(transition)
             }
             StateTransitionType::IdentityUpdate => {
@@ -85,10 +86,10 @@ pub fn validate_public_key_signatures<'a, T: BlsModule>(
             }
         };
 
-    let add_public_key_transitions: Vec<IdentityPublicKeyWithWitness> = raw_public_keys
+    let add_public_key_transitions: Vec<IdentityPublicKeyInCreationWithWitness> = raw_public_keys
         .into_iter()
         .map(|k| {
-            IdentityPublicKeyWithWitness::from_raw_object(k.to_owned())
+            IdentityPublicKeyInCreationWithWitness::from_raw_object(k.to_owned())
                 .map_err(|e| NonConsensusError::IdentityPublicKeyCreateError(format!("{:#}", e)))
         })
         .collect::<Result<_, _>>()?;
@@ -114,9 +115,9 @@ fn invalid_state_transition_type_error(transition_type: u8) -> ProtocolError {
 
 fn find_invalid_public_key<T: BlsModule>(
     state_transition: &mut impl StateTransitionLike,
-    public_keys: impl IntoIterator<Item = IdentityPublicKeyWithWitness>,
+    public_keys: impl IntoIterator<Item = IdentityPublicKeyInCreationWithWitness>,
     bls: &T,
-) -> Option<IdentityPublicKeyWithWitness> {
+) -> Option<IdentityPublicKeyInCreationWithWitness> {
     for public_key in public_keys {
         state_transition.set_signature(public_key.signature.clone());
         if state_transition

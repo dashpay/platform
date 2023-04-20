@@ -189,6 +189,9 @@ impl StorageFlags {
         rhs: Self,
         removed_bytes: &StorageRemovedBytes,
     ) -> Result<Self, Error> {
+        if matches!(&self, &SingleEpoch(_) | &SingleEpochOwned(..)) {
+            return Ok(self);
+        }
         let base_epoch = *self.base_epoch();
         let owner_id = self.combine_owner_id(&rhs)?;
         let mut other_epoch_bytes = self.combine_non_base_epoch_bytes(&rhs).unwrap_or_default();
@@ -355,6 +358,9 @@ impl StorageFlags {
     fn maybe_append_to_vec_epoch_map(&self, buffer: &mut Vec<u8>) {
         match self {
             MultiEpoch(_, epoch_map) | MultiEpochOwned(_, epoch_map, _) => {
+                if epoch_map.is_empty() {
+                    panic!("this should not be empty");
+                }
                 epoch_map.iter().for_each(|(epoch_index, bytes_added)| {
                     buffer.extend(epoch_index.to_be_bytes());
                     buffer.extend(bytes_added.encode_var_vec());

@@ -24,7 +24,7 @@ impl Drive {
         let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
 
         let contract_fetch_info = self
-            .get_contract_with_fetch_info(data_contract_id.to_buffer(), None, transaction)?
+            .get_contract_with_fetch_info(data_contract_id.to_buffer(), None, true, transaction)?
             .1
             .ok_or_else(|| {
                 Error::Drive(DriveError::CorruptedCodeExecution(
@@ -107,7 +107,7 @@ impl Drive {
         let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
 
         let contract_fetch_info = self
-            .get_contract_with_fetch_info(data_contract_id.to_buffer(), None, transaction)?
+            .get_contract_with_fetch_info(data_contract_id.to_buffer(), None, true, transaction)?
             .1
             .ok_or_else(|| {
                 Error::Drive(DriveError::CorruptedCodeExecution(

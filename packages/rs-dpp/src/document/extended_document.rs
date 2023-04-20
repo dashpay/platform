@@ -4,8 +4,8 @@ use crate::prelude::Identifier;
 use crate::prelude::{Revision, TimestampMillis};
 use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::deserializer;
-use crate::util::deserializer::SplitProtocolVersionOutcome;
-use crate::util::hash::hash;
+use crate::util::deserializer::{ProtocolVersion, SplitProtocolVersionOutcome};
+use crate::util::hash::hash_to_vec;
 use crate::ProtocolError;
 use ciborium::Value as CborValue;
 use integer_encoding::VarInt;
@@ -115,6 +115,23 @@ impl ExtendedDocument {
 
     pub fn updated_at(&self) -> Option<&TimestampMillis> {
         self.document.updated_at.as_ref()
+    }
+
+    pub fn from_document_with_additional_info(
+        document: Document,
+        data_contract: DataContract,
+        document_type_name: String,
+        protocol_version: ProtocolVersion,
+    ) -> Self {
+        Self {
+            protocol_version,
+            document_type_name,
+            data_contract_id: data_contract.id,
+            document,
+            data_contract,
+            metadata: None,
+            entropy: Default::default(),
+        }
     }
 
     pub fn from_json_string(string: &str, contract: DataContract) -> Result<Self, ProtocolError> {
@@ -360,7 +377,7 @@ impl ExtendedDocument {
     }
 
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash(self.to_buffer()?))
+        Ok(hash_to_vec(self.to_buffer()?))
     }
 
     /// Set the value under given path.

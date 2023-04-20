@@ -2,9 +2,8 @@ use anyhow::anyhow;
 use std::sync::Arc;
 
 use crate::identity::IdentityPublicKey;
-use crate::{
-    state_repository::StateRepositoryLike, state_transition::StateTransitionLike, ProtocolError,
-};
+use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::{state_repository::StateRepositoryLike, ProtocolError};
 
 use super::identity_update_transition::IdentityUpdateTransition;
 
@@ -20,8 +19,17 @@ where
         Self { state_repository }
     }
 
-    async fn apply(&self, state_transition: IdentityUpdateTransition) -> Result<(), ProtocolError> {
-        apply_identity_update_transition(self.state_repository.as_ref(), state_transition).await
+    async fn apply(
+        &self,
+        state_transition: IdentityUpdateTransition,
+        execution_context: &StateTransitionExecutionContext,
+    ) -> Result<(), ProtocolError> {
+        apply_identity_update_transition(
+            self.state_repository.as_ref(),
+            state_transition,
+            execution_context,
+        )
+        .await
     }
 }
 
@@ -29,12 +37,13 @@ where
 pub async fn apply_identity_update_transition(
     state_repository: &impl StateRepositoryLike,
     state_transition: IdentityUpdateTransition,
+    execution_context: &StateTransitionExecutionContext,
 ) -> Result<(), ProtocolError> {
     state_repository
         .update_identity_revision(
             &state_transition.identity_id,
             state_transition.revision,
-            Some(state_transition.get_execution_context()),
+            Some(execution_context),
         )
         .await?;
 
@@ -48,7 +57,7 @@ pub async fn apply_identity_update_transition(
                 &state_transition.identity_id,
                 state_transition.get_public_key_ids_to_disable(),
                 disabled_at,
-                Some(state_transition.get_execution_context()),
+                Some(execution_context),
             )
             .await?;
     }
@@ -65,7 +74,7 @@ pub async fn apply_identity_update_transition(
             .add_keys_to_identity(
                 &state_transition.identity_id,
                 &keys_to_add,
-                Some(state_transition.get_execution_context()),
+                Some(execution_context),
             )
             .await?;
     }

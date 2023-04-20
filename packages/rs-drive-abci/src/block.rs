@@ -27,13 +27,23 @@
 // DEALINGS IN THE SOFTWARE.
 //
 
-use crate::abci::messages::BlockBeginRequest;
+use crate::abci::AbciError;
+use crate::error::Error;
+use crate::execution::block_proposal::BlockProposal;
 use crate::execution::fee_pools::epoch::EpochInfo;
+use crate::state::PlatformState;
+use dashcore::Txid;
+use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
+
+use std::collections::BTreeMap;
 
 /// Block info
 pub struct BlockStateInfo {
     /// Block height
-    pub block_height: u64,
+    pub height: u64,
+    /// Block round
+    pub round: u32,
     /// Block time in ms
     pub block_time_ms: u64,
     /// Previous block time in ms
@@ -42,27 +52,93 @@ pub struct BlockStateInfo {
     pub proposer_pro_tx_hash: [u8; 32],
     /// Core chain locked height
     pub core_chain_locked_height: u32,
+    /// Block hash
+    pub block_hash: [u8; 32],
+    /// Block commit hash after processing
+    pub commit_hash: Option<[u8; 32]>,
 }
 
 impl BlockStateInfo {
-    /// Given a `BlockBeginRequest` return `BlockInfo`
-    pub fn from_block_begin_request(block_begin_request: &BlockBeginRequest) -> BlockStateInfo {
-        BlockStateInfo {
-            block_height: block_begin_request.block_height,
-            block_time_ms: block_begin_request.block_time_ms,
-            previous_block_time_ms: block_begin_request.previous_block_time_ms,
-            proposer_pro_tx_hash: block_begin_request.proposer_pro_tx_hash,
-            core_chain_locked_height: block_begin_request.core_chain_locked_height,
+    /// Gets a block info from the block state info
+    pub fn to_block_info(&self, epoch: Epoch) -> BlockInfo {
+        BlockInfo {
+            time_ms: self.block_time_ms,
+            height: self.height,
+            core_height: self.core_chain_locked_height,
+            epoch,
         }
     }
-}
+    /// Generate block state info based on Prepare Proposal request
+    pub fn from_block_proposal(
+        proposal: &BlockProposal,
+        previous_block_time_ms: Option<u64>,
+    ) -> BlockStateInfo {
+        BlockStateInfo {
+            height: proposal.height,
+            round: proposal.round,
+            block_time_ms: proposal.block_time_ms,
+            previous_block_time_ms,
+            proposer_pro_tx_hash: proposal.proposer_pro_tx_hash,
+            core_chain_locked_height: proposal.core_chain_locked_height,
+            block_hash: proposal.block_hash.unwrap_or_default(), // we will set it later
+            commit_hash: None,
+        }
+    }
 
+    /// Does this match a height and round?
+    pub fn next_block_to(
+        &self,
+        previous_height: u64,
+        previous_core_block_height: u32,
+    ) -> Result<bool, Error> {
+        Ok(self.height == previous_height + 1
+            && self.core_chain_locked_height >= previous_core_block_height)
+    }
+
+    /// Does this match a height and round?
+    pub fn matches_current_block<I: TryInto<[u8; 32]>>(
+        &self,
+        height: u64,
+        round: u32,
+        block_hash: I,
+    ) -> Result<bool, Error> {
+        let received_hash = block_hash.try_into().map_err(|_| {
+            Error::Abci(AbciError::BadRequestDataSize(
+                "can't convert hash as vec to [u8;32]".to_string(),
+            ))
+        })?;
+        // the order is important here, don't verify commit hash before height and round
+        Ok(self.height == height && self.round == round && self.block_hash == received_hash)
+    }
+
+    /// Does this match a height and round?
+    pub fn matches_expected_block_info<I: TryInto<[u8; 32]>>(
+        &self,
+        height: u64,
+        round: u32,
+        core_block_height: u32,
+        proposer_pro_tx_hash: [u8; 32],
+        commit_hash: I,
+    ) -> Result<bool, Error> {
+        let received_hash = commit_hash.try_into().map_err(|_| {
+            Error::Abci(AbciError::BadRequestDataSize(
+                "can't convert hash as vec to [u8;32]".to_string(),
+            ))
+        })?;
+        // the order is important here, don't verify commit hash before height and round
+        Ok(self.height == height && self.round == round && self.core_chain_locked_height == core_block_height && self.proposer_pro_tx_hash == proposer_pro_tx_hash && self.commit_hash.ok_or(Error::Abci(AbciError::FinalizeBlockReceivedBeforeProcessing(format!("we received a block with hash {}, but don't have a current block being processed", hex::encode(received_hash)))))? == received_hash)
+    }
+}
 /// Block execution context
 pub struct BlockExecutionContext {
     /// Block info
-    pub block_info: BlockStateInfo,
+    pub block_state_info: BlockStateInfo,
     /// Epoch info
     pub epoch_info: EpochInfo,
     /// Total hpmn count
     pub hpmn_count: u32,
+    /// Current withdrawal transactions hash -> Transaction
+    pub withdrawal_transactions: BTreeMap<Txid, Vec<u8>>,
+    /// Block state
+    pub block_platform_state: PlatformState,
 }

@@ -8,13 +8,10 @@ use serde_json::Value as JsonValue;
 use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::data_contract::document_type::DocumentType;
 use crate::data_contract::DriveContractExt;
-use crate::validation::SimpleValidationResult;
+use crate::validation::SimpleConsensusValidationResult;
 use crate::{
     consensus::basic::BasicError,
-    data_contract::{
-        enrich_data_contract_with_base_schema::enrich_data_contract_with_base_schema,
-        enrich_data_contract_with_base_schema::PREFIX_BYTE_0, DataContract,
-    },
+    data_contract::{enrich_with_base_schema::PREFIX_BYTE_0, DataContract},
     validation::JsonSchemaValidator,
     version::ProtocolVersionValidator,
     ProtocolError,
@@ -24,12 +21,12 @@ const PROPERTY_PROTOCOL_VERSION: &str = "$protocolVersion";
 const PROPERTY_DOCUMENT_TYPE: &str = "$type";
 
 lazy_static! {
-    static ref BASE_DOCUMENT_SCHEMA: JsonValue =
+    pub static ref BASE_DOCUMENT_SCHEMA: JsonValue =
         serde_json::from_str(include_str!("../../schema/document/documentBase.json")).unwrap();
 }
 
 lazy_static! {
-    static ref EXTENDED_DOCUMENT_SCHEMA: JsonValue =
+    pub static ref EXTENDED_DOCUMENT_SCHEMA: JsonValue =
         serde_json::from_str(include_str!("../../schema/document/documentExtended.json")).unwrap();
 }
 
@@ -50,14 +47,10 @@ impl DocumentValidator {
         raw_document: &JsonValue,
         data_contract: &DataContract,
         document_type: &DocumentType,
-    ) -> Result<SimpleValidationResult, ProtocolError> {
-        let mut result = SimpleValidationResult::default();
-        let enriched_data_contract = enrich_data_contract_with_base_schema(
-            data_contract,
-            &BASE_DOCUMENT_SCHEMA,
-            PREFIX_BYTE_0,
-            &[],
-        )?;
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        let mut result = SimpleConsensusValidationResult::default();
+        let enriched_data_contract =
+            data_contract.enrich_with_base_schema(&BASE_DOCUMENT_SCHEMA, PREFIX_BYTE_0, &[])?;
 
         //todo: maybe we should validate on the document type instead as it already has all the
         //information needed
@@ -87,8 +80,8 @@ impl DocumentValidator {
         &self,
         raw_document: &Value,
         data_contract: &DataContract,
-    ) -> Result<SimpleValidationResult, ProtocolError> {
-        let mut result = SimpleValidationResult::default();
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        let mut result = SimpleConsensusValidationResult::default();
 
         let Some(document_type_name) = raw_document.get_optional_str(PROPERTY_DOCUMENT_TYPE).map_err(ProtocolError::ValueError)? else {
             result.add_error(BasicError::MissingDocumentTypeError);
@@ -106,12 +99,8 @@ impl DocumentValidator {
             return Ok(result);
         }
 
-        let enriched_data_contract = enrich_data_contract_with_base_schema(
-            data_contract,
-            &EXTENDED_DOCUMENT_SCHEMA,
-            PREFIX_BYTE_0,
-            &[],
-        )?;
+        let enriched_data_contract =
+            data_contract.enrich_with_base_schema(&EXTENDED_DOCUMENT_SCHEMA, PREFIX_BYTE_0, &[])?;
         let document_schema = enriched_data_contract
             .get_document_schema(document_type_name)?
             .to_owned();
@@ -155,7 +144,7 @@ mod test {
     use test_case::test_case;
 
     use crate::tests::fixtures::get_extended_documents_fixture;
-    use crate::validation::SimpleValidationResult;
+    use crate::validation::SimpleConsensusValidationResult;
     use crate::{
         codes::ErrorWithCode,
         consensus::{basic::JsonSchemaError, ConsensusError},
@@ -574,7 +563,7 @@ mod test {
         assert!(result.is_valid())
     }
 
-    fn get_first_schema_error(result: &SimpleValidationResult) -> &JsonSchemaError {
+    fn get_first_schema_error(result: &SimpleConsensusValidationResult) -> &JsonSchemaError {
         result
             .errors
             .get(0)

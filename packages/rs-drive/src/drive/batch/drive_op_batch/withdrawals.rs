@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use dpp::block::block_info::BlockInfo;
 use grovedb::Element;
 use grovedb::{batch::KeyInfoPath, EstimatedLayerInformation, TransactionArg};
 
@@ -11,11 +12,7 @@ use crate::drive::identity::withdrawals::paths::{
 };
 use crate::drive::identity::withdrawals::WithdrawalTransactionIdAndBytes;
 use crate::drive::object_size_info::PathKeyElementInfo;
-use crate::{
-    drive::{block_info::BlockInfo, Drive},
-    error::Error,
-    fee::op::LowLevelDriveOperation,
-};
+use crate::{drive::Drive, error::Error, fee::op::LowLevelDriveOperation};
 
 use super::DriveLowLevelOperationConverter;
 

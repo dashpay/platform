@@ -178,7 +178,7 @@ impl IdentityTopUpTransitionWasm {
 
         let buffer = self
             .0
-            .to_buffer(opts.skip_signature.unwrap_or(false))
+            .to_cbor_buffer(opts.skip_signature.unwrap_or(false))
             .map_err(from_dpp_err)?;
 
         Ok(Buffer::from_bytes(&buffer).into())
@@ -259,16 +259,6 @@ impl IdentityTopUpTransitionWasm {
     #[wasm_bindgen(js_name=isIdentityStateTransition)]
     pub fn is_identity_state_transition(&self) -> bool {
         self.0.is_identity_state_transition()
-    }
-
-    #[wasm_bindgen(js_name=setExecutionContext)]
-    pub fn set_execution_context(&mut self, context: &StateTransitionExecutionContextWasm) {
-        self.0.set_execution_context(context.into())
-    }
-
-    #[wasm_bindgen(js_name=getExecutionContext)]
-    pub fn get_execution_context(&mut self) -> StateTransitionExecutionContextWasm {
-        self.0.get_execution_context().into()
     }
 
     #[wasm_bindgen(js_name=signByPrivateKey)]

@@ -1,20 +1,67 @@
-use dashcore::{Block, BlockHash};
+use dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
+use dashcore_rpc::dashcore_rpc_json::{
+    ExtendedQuorumDetails, GetBestChainLockResult, QuorumInfoResult, QuorumListResult, QuorumType,
+};
+use dashcore_rpc::json::{GetTransactionResult, MasternodeListDiffWithMasternodes};
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
-#[cfg(feature = "fixtures-and-mocks")]
 use mockall::{automock, predicate::*};
 use serde_json::Value;
+use std::collections::HashMap;
+use tenderdash_abci::proto::types::CoreChainLock;
 
+/// Information returned by QuorumListExtended
+pub type QuorumListExtendedInfo = HashMap<QuorumHash, ExtendedQuorumDetails>;
+
+/// Core height must be of type u32 (Platform heights are u64)
+pub type CoreHeight = u32;
 /// Core RPC interface
-#[cfg_attr(feature = "fixtures-and-mocks", automock)]
+#[automock]
 pub trait CoreRPCLike {
     /// Get block hash by height
-    fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error>;
+    fn get_block_hash(&self, height: CoreHeight) -> Result<BlockHash, Error>;
+
+    /// Get block hash by height
+    fn get_best_chain_lock(&self) -> Result<CoreChainLock, Error>;
+
+    /// Get transaction
+    fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, Error>;
+
+    /// Get transaction
+    fn get_transaction_extended_info(&self, tx_id: &Txid) -> Result<GetTransactionResult, Error>;
 
     /// Get block by hash
     fn get_block(&self, block_hash: &BlockHash) -> Result<Block, Error>;
 
     /// Get block by hash in JSON format
     fn get_block_json(&self, block_hash: &BlockHash) -> Result<Value, Error>;
+
+    /// Get list of quorums at a given height.
+    ///
+    /// See https://dashcore.readme.io/v19.0.0/docs/core-api-ref-remote-procedure-calls-evo#quorum-listextended
+    fn get_quorum_listextended(
+        &self,
+        height: Option<CoreHeight>,
+    ) -> Result<QuorumListResult<QuorumListExtendedInfo>, Error>;
+
+    /// Get quorum information.
+    ///
+    /// See https://dashcore.readme.io/v19.0.0/docs/core-api-ref-remote-procedure-calls-evo#quorum-info
+    fn get_quorum_info(
+        &self,
+        quorum_type: QuorumType,
+        hash: &QuorumHash,
+        include_secret_key_share: Option<bool>,
+    ) -> Result<QuorumInfoResult, Error>;
+
+    /// Get the difference in masternode list, return masternodes as diff elements
+    fn get_protx_diff_with_masternodes(
+        &self,
+        base_block: u32,
+        block: u32,
+    ) -> Result<MasternodeListDiffWithMasternodes, Error>;
+
+    // /// Get the detailed information about a deterministic masternode
+    // fn get_protx_info(&self, protx_hash: &ProTxHash) -> Result<ProTxInfo, Error>;
 }
 
 /// Default implementation of Dash Core RPC using DashCoreRPC client
@@ -33,7 +80,29 @@ impl DefaultCoreRPC {
 
 impl CoreRPCLike for DefaultCoreRPC {
     fn get_block_hash(&self, height: u32) -> Result<BlockHash, Error> {
-        self.inner.get_block_hash(height as u64)
+        self.inner.get_block_hash(height)
+    }
+
+    fn get_best_chain_lock(&self) -> Result<CoreChainLock, Error> {
+        let GetBestChainLockResult {
+            blockhash,
+            height,
+            signature,
+            known_block: _,
+        } = self.inner.get_best_chain_lock()?;
+        Ok(CoreChainLock {
+            core_block_height: height,
+            core_block_hash: blockhash.to_vec(),
+            signature,
+        })
+    }
+
+    fn get_transaction(&self, tx_id: &Txid) -> Result<Transaction, Error> {
+        self.inner.get_raw_transaction(tx_id, None)
+    }
+
+    fn get_transaction_extended_info(&self, tx_id: &Txid) -> Result<GetTransactionResult, Error> {
+        self.inner.get_transaction(tx_id, None)
     }
 
     fn get_block(&self, block_hash: &BlockHash) -> Result<Block, Error> {
@@ -43,4 +112,34 @@ impl CoreRPCLike for DefaultCoreRPC {
     fn get_block_json(&self, block_hash: &BlockHash) -> Result<Value, Error> {
         self.inner.get_block_json(block_hash)
     }
+
+    fn get_quorum_listextended(
+        &self,
+        height: Option<CoreHeight>,
+    ) -> Result<QuorumListResult<QuorumListExtendedInfo>, Error> {
+        self.inner.get_quorum_listextended(height.map(|i| i as i64))
+    }
+
+    fn get_quorum_info(
+        &self,
+        quorum_type: QuorumType,
+        hash: &QuorumHash,
+        include_secret_key_share: Option<bool>,
+    ) -> Result<QuorumInfoResult, Error> {
+        self.inner
+            .get_quorum_info(quorum_type, hash, include_secret_key_share)
+    }
+
+    fn get_protx_diff_with_masternodes(
+        &self,
+        _base_block: u32,
+        _block: u32,
+    ) -> Result<MasternodeListDiffWithMasternodes, Error> {
+        // method does not yet exist in core
+        todo!()
+    }
+
+    // fn get_protx_info(&self, protx_hash: &ProTxHash) -> Result<ProTxInfo, Error> {
+    //     self.inner.get_protx_info(protx_hash)
+    // }
 }

@@ -11,17 +11,15 @@ use crate::consensus::basic::identity::{
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
     IdentityAssetLockTransactionOutputNotFoundError, InvalidAssetLockProofCoreChainHeightError,
     InvalidAssetLockProofTransactionHeightError, InvalidAssetLockTransactionOutputReturnSizeError,
+    InvalidIdentityAssetLockProofChainLockValidationError,
     InvalidIdentityAssetLockTransactionError, InvalidIdentityAssetLockTransactionOutputError,
     InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError,
     InvalidInstantAssetLockProofError, InvalidInstantAssetLockProofSignatureError,
     MissingMasterPublicKeyError,
 };
 use crate::consensus::state::identity::IdentityAlreadyExistsError;
-#[cfg(test)]
-use crate::errors::consensus::basic::TestConsensusError;
-use crate::errors::consensus::basic::{
-    BasicError, IncompatibleProtocolVersionError, JsonSchemaError, UnsupportedProtocolVersionError,
-};
+use crate::errors::consensus::basic;
+
 use crate::errors::StateError;
 use platform_value::Error as ValueError;
 
@@ -36,12 +34,14 @@ use super::signature::SignatureError;
 #[derive(Error, Debug)]
 //#[cfg_attr(test, derive(Clone))]
 pub enum ConsensusError {
+    #[error("default error")]
+    DefaultError,
     #[error(transparent)]
-    JsonSchemaError(JsonSchemaError),
+    JsonSchemaError(basic::JsonSchemaError),
     #[error(transparent)]
-    UnsupportedProtocolVersionError(UnsupportedProtocolVersionError),
+    UnsupportedProtocolVersionError(basic::UnsupportedProtocolVersionError),
     #[error(transparent)]
-    IncompatibleProtocolVersionError(IncompatibleProtocolVersionError),
+    IncompatibleProtocolVersionError(basic::IncompatibleProtocolVersionError),
     #[error(transparent)]
     DuplicatedIdentityPublicKeyBasicIdError(DuplicatedIdentityPublicKeyIdError),
     #[error(transparent)]
@@ -79,6 +79,10 @@ pub enum ConsensusError {
     #[error(transparent)]
     InvalidAssetLockProofCoreChainHeightError(InvalidAssetLockProofCoreChainHeightError),
     #[error(transparent)]
+    InvalidIdentityAssetLockProofChainLockValidationError(
+        InvalidIdentityAssetLockProofChainLockValidationError,
+    ),
+    #[error(transparent)]
     InvalidAssetLockProofTransactionHeightError(InvalidAssetLockProofTransactionHeightError),
 
     #[error(transparent)]
@@ -100,7 +104,7 @@ pub enum ConsensusError {
     StateError(Box<StateError>),
 
     #[error(transparent)]
-    BasicError(Box<BasicError>),
+    BasicError(Box<basic::BasicError>),
 
     #[error("Parsing of serialized object failed due to: {parsing_error}")]
     SerializedObjectParsingError { parsing_error: anyhow::Error },
@@ -128,11 +132,11 @@ pub enum ConsensusError {
 
     #[cfg(test)]
     #[cfg_attr(test, error(transparent))]
-    TestConsensusError(TestConsensusError),
+    TestConsensusError(basic::TestConsensusError),
 }
 
 impl ConsensusError {
-    pub fn json_schema_error(&self) -> Option<&JsonSchemaError> {
+    pub fn json_schema_error(&self) -> Option<&basic::JsonSchemaError> {
         match self {
             ConsensusError::JsonSchemaError(err) => Some(err),
             _ => None,
@@ -173,6 +177,7 @@ impl ConsensusError {
             ConsensusError::InvalidIdentityPublicKeyDataError(_) => 1040,
             ConsensusError::InvalidInstantAssetLockProofError(_) => 1041,
             ConsensusError::InvalidInstantAssetLockProofSignatureError(_) => 1042,
+            ConsensusError::InvalidIdentityAssetLockProofChainLockValidationError(_) => 1043,
             ConsensusError::MissingMasterPublicKeyError(_) => 1046,
             ConsensusError::InvalidIdentityPublicKeySecurityLevelError(_) => 1047,
             ConsensusError::IdentityInsufficientBalanceError(_) => 4024,
@@ -191,30 +196,37 @@ impl ConsensusError {
             #[cfg(test)]
             ConsensusError::TestConsensusError(_) => 1000,
             ConsensusError::ValueError(_) => 5000,
+            ConsensusError::DefaultError => 1, // we should never get the default error anyways
         }
+    }
+}
+
+impl Default for ConsensusError {
+    fn default() -> Self {
+        ConsensusError::DefaultError
     }
 }
 
 impl<'a> From<ValidationError<'a>> for ConsensusError {
     fn from(validation_error: ValidationError<'a>) -> Self {
-        Self::JsonSchemaError(JsonSchemaError::from(validation_error))
+        Self::JsonSchemaError(basic::JsonSchemaError::from(validation_error))
     }
 }
 
-impl From<JsonSchemaError> for ConsensusError {
-    fn from(json_schema_error: JsonSchemaError) -> Self {
+impl From<crate::errors::consensus::basic::JsonSchemaError> for ConsensusError {
+    fn from(json_schema_error: basic::JsonSchemaError) -> Self {
         Self::JsonSchemaError(json_schema_error)
     }
 }
 
-impl From<UnsupportedProtocolVersionError> for ConsensusError {
-    fn from(error: UnsupportedProtocolVersionError) -> Self {
+impl From<crate::errors::consensus::basic::UnsupportedProtocolVersionError> for ConsensusError {
+    fn from(error: crate::errors::consensus::basic::UnsupportedProtocolVersionError) -> Self {
         Self::UnsupportedProtocolVersionError(error)
     }
 }
 
-impl From<IncompatibleProtocolVersionError> for ConsensusError {
-    fn from(error: IncompatibleProtocolVersionError) -> Self {
+impl From<basic::IncompatibleProtocolVersionError> for ConsensusError {
+    fn from(error: basic::IncompatibleProtocolVersionError) -> Self {
         Self::IncompatibleProtocolVersionError(error)
     }
 }
@@ -250,8 +262,8 @@ impl From<MissingMasterPublicKeyError> for ConsensusError {
 }
 
 #[cfg(test)]
-impl From<TestConsensusError> for ConsensusError {
-    fn from(error: TestConsensusError) -> Self {
+impl From<basic::TestConsensusError> for ConsensusError {
+    fn from(error: basic::TestConsensusError) -> Self {
         Self::TestConsensusError(error)
     }
 }
@@ -262,8 +274,8 @@ impl From<StateError> for ConsensusError {
     }
 }
 
-impl From<BasicError> for ConsensusError {
-    fn from(se: BasicError) -> Self {
+impl From<basic::BasicError> for ConsensusError {
+    fn from(se: basic::BasicError) -> Self {
         ConsensusError::BasicError(Box::new(se))
     }
 }

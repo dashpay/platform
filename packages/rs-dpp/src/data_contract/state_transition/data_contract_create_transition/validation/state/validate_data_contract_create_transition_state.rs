@@ -4,7 +4,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransitionAction;
-use crate::validation::ValidationResult;
+use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::validation::ConsensusValidationResult;
 use crate::{
     data_contract::{
         state_transition::data_contract_create_transition::DataContractCreateTransition,
@@ -12,7 +13,6 @@ use crate::{
     },
     errors::StateError,
     state_repository::StateRepositoryLike,
-    state_transition::StateTransitionLike,
     validation::AsyncDataValidator,
     ProtocolError,
 };
@@ -34,9 +34,15 @@ where
 
     async fn validate(
         &self,
-        data: &DataContractCreateTransition,
-    ) -> Result<ValidationResult<Self::ResultItem>, ProtocolError> {
-        validate_data_contract_create_transition_state(&self.state_repository, data).await
+        data: &Self::Item,
+        execution_context: &StateTransitionExecutionContext,
+    ) -> Result<ConsensusValidationResult<Self::ResultItem>, ProtocolError> {
+        validate_data_contract_create_transition_state(
+            &self.state_repository,
+            data,
+            execution_context,
+        )
+        .await
     }
 }
 
@@ -55,25 +61,21 @@ where
 pub async fn validate_data_contract_create_transition_state(
     state_repository: &impl StateRepositoryLike,
     state_transition: &DataContractCreateTransition,
-) -> Result<ValidationResult<DataContractCreateTransitionAction>, ProtocolError> {
+    execution_context: &StateTransitionExecutionContext,
+) -> Result<ConsensusValidationResult<DataContractCreateTransitionAction>, ProtocolError> {
     // Data contract shouldn't exist
     let maybe_existing_data_contract: Option<DataContract> = state_repository
-        .fetch_data_contract(
-            &state_transition.data_contract.id,
-            Some(state_transition.get_execution_context()),
-        )
+        .fetch_data_contract(&state_transition.data_contract.id, Some(execution_context))
         .await?
         .map(TryInto::try_into)
         .transpose()
         .map_err(Into::into)?;
 
-    if maybe_existing_data_contract.is_none()
-        || state_transition.get_execution_context().is_dry_run()
-    {
+    if maybe_existing_data_contract.is_none() || execution_context.is_dry_run() {
         let action: DataContractCreateTransitionAction = state_transition.into();
         Ok(action.into())
     } else {
-        Ok(ValidationResult::new_with_errors(vec![
+        Ok(ConsensusValidationResult::new_with_errors(vec![
             StateError::DataContractAlreadyPresentError {
                 data_contract_id: state_transition.data_contract.id.to_owned(),
             }
@@ -103,11 +105,12 @@ mod test {
         state_repository_mock
             .expect_fetch_data_contract()
             .return_once(|_, _| Ok(None));
-        state_transition.execution_context.enable_dry_run();
+        let execution_context = StateTransitionExecutionContext::default().with_dry_run();
 
         let result = validate_data_contract_create_transition_state(
             &state_repository_mock,
             state_transition,
+            &execution_context,
         )
         .await
         .expect("should return validation result");

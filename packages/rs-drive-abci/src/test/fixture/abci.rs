@@ -30,18 +30,26 @@
 //! Execution Tests
 //!
 
-use crate::abci::messages::{
-    InitChainRequest, RequiredIdentityPublicKeysSet, SystemIdentityPublicKeys,
-};
+use crate::abci::messages::{RequiredIdentityPublicKeysSet, SystemIdentityPublicKeys};
 use drive::dpp::identity::KeyType::ECDSA_SECP256K1;
 use rand::rngs::StdRng;
 use rand::SeedableRng;
+use tenderdash_abci::proto::abci::RequestInitChain;
+use tenderdash_abci::proto::google::protobuf::Timestamp;
 
 /// Creates static init chain request fixture
-pub fn static_init_chain_request() -> InitChainRequest {
-    InitChainRequest {
-        genesis_time_ms: 0,
-        system_identity_public_keys: static_system_identity_public_keys(),
+pub fn static_init_chain_request() -> RequestInitChain {
+    RequestInitChain {
+        time: Some(Timestamp {
+            seconds: 0,
+            nanos: 0,
+        }),
+        chain_id: "strategy_tests".to_string(),
+        consensus_params: None,
+        validator_set: None,
+        app_state_bytes: [0u8; 32].to_vec(),
+        initial_height: 0,
+        initial_core_height: 1,
     }
 }
 

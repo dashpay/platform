@@ -12,6 +12,7 @@ use dpp::prelude::{Revision, TimestampMillis};
 use dpp::{
     dashcore::InstantLock,
     data_contract::DataContract,
+    platform_value,
     prelude::{Identifier, Identity},
     state_repository::{
         FetchTransactionResponse as FetchTransactionResponseDPP, StateRepositoryLike,
@@ -327,7 +328,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         &self,
         contract_id: &Identifier,
         data_contract_type: &str,
-        where_query: serde_json::Value,
+        where_query: platform_value::Value,
         execution_context: Option<&'a StateTransitionExecutionContext>,
     ) -> anyhow::Result<Vec<Self::FetchDocument>> {
         let js_documents = self
@@ -358,7 +359,7 @@ impl StateRepositoryLike for ExternalStateRepositoryLikeWrapper {
         &self,
         contract_id: &Identifier,
         data_contract_type: &str,
-        where_query: serde_json::Value,
+        where_query: platform_value::Value,
         execution_context: Option<&'a StateTransitionExecutionContext>,
     ) -> anyhow::Result<Vec<Self::FetchExtendedDocument>> {
         let js_documents = self

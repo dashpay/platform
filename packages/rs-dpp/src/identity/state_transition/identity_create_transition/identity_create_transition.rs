@@ -5,14 +5,15 @@ use platform_value::{BinaryData, IntegerReplacementType, ReplacementType, Value}
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
+use crate::identity::signer::Signer;
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
+use crate::identity::Identity;
+use crate::identity::KeyType::ECDSA_HASH160;
 use crate::prelude::Identifier;
-use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::state_transition::{
-    StateTransition, StateTransitionConvert, StateTransitionLike, StateTransitionType,
-};
-use crate::{NonConsensusError, ProtocolError};
+
+use crate::state_transition::{StateTransitionConvert, StateTransitionLike, StateTransitionType};
+use crate::{BlsModule, NonConsensusError, ProtocolError};
 use platform_value::btreemap_extensions::BTreeValueRemoveInnerValueFromMapHelper;
 
 pub const IDENTIFIER_FIELDS: [&str; 1] = [property_names::IDENTITY_ID];
@@ -40,21 +41,56 @@ pub struct SerializationOptions {
     pub into_validating_json: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[serde(try_from = "IdentityCreateTransitionInner")]
 pub struct IdentityCreateTransition {
-    // Own ST fields
-    pub public_keys: Vec<IdentityPublicKeyWithWitness>,
-    pub asset_lock_proof: AssetLockProof,
-    #[serde(skip)]
-    pub identity_id: Identifier,
-    // Generic identity ST fields
-    pub protocol_version: u32,
     #[serde(rename = "type")]
     pub transition_type: StateTransitionType,
+    // Own ST fields
+    pub public_keys: Vec<IdentityPublicKeyInCreationWithWitness>,
+    pub asset_lock_proof: AssetLockProof,
+    // Generic identity ST fields
+    pub protocol_version: u32,
     pub signature: BinaryData,
     #[serde(skip)]
-    pub execution_context: StateTransitionExecutionContext,
+    pub identity_id: Identifier,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IdentityCreateTransitionInner {
+    #[serde(rename = "type")]
+    transition_type: StateTransitionType,
+    // Own ST fields
+    public_keys: Vec<IdentityPublicKeyInCreationWithWitness>,
+    asset_lock_proof: AssetLockProof,
+    // Generic identity ST fields
+    protocol_version: u32,
+    signature: BinaryData,
+}
+
+impl TryFrom<IdentityCreateTransitionInner> for IdentityCreateTransition {
+    type Error = ProtocolError;
+
+    fn try_from(value: IdentityCreateTransitionInner) -> Result<Self, Self::Error> {
+        let IdentityCreateTransitionInner {
+            transition_type,
+            public_keys,
+            asset_lock_proof,
+            protocol_version,
+            signature,
+        } = value;
+        let identity_id = asset_lock_proof.create_identifier()?;
+        Ok(Self {
+            transition_type,
+            public_keys,
+            asset_lock_proof,
+            protocol_version,
+            signature,
+            identity_id,
+        })
+    }
 }
 
 //todo: there shouldn't be a default
@@ -67,47 +103,77 @@ impl Default for IdentityCreateTransition {
             identity_id: Default::default(),
             protocol_version: Default::default(),
             signature: Default::default(),
-            execution_context: Default::default(),
         }
     }
 }
 
-impl From<IdentityCreateTransition> for StateTransition {
-    fn from(d: IdentityCreateTransition) -> Self {
-        Self::IdentityCreate(d)
+impl TryFrom<Identity> for IdentityCreateTransition {
+    type Error = ProtocolError;
+
+    fn try_from(identity: Identity) -> Result<Self, Self::Error> {
+        let mut identity_create_transition = IdentityCreateTransition::default();
+        identity_create_transition.set_protocol_version(identity.protocol_version);
+
+        let public_keys = identity
+            .get_public_keys()
+            .iter()
+            .map(|(_, public_key)| public_key.into())
+            .collect::<Vec<IdentityPublicKeyInCreationWithWitness>>();
+        identity_create_transition.set_public_keys(public_keys);
+
+        let asset_lock_proof = identity.get_asset_lock_proof().ok_or_else(|| {
+            ProtocolError::Generic(String::from("Asset lock proof is not present"))
+        })?;
+
+        identity_create_transition
+            .set_asset_lock_proof(asset_lock_proof.to_owned())
+            .map_err(ProtocolError::from)?;
+
+        Ok(identity_create_transition)
     }
 }
 
-// impl Serialize for IdentityCreateTransition {
-//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-//     where
-//         S: Serializer,
-//     {
-//         let raw = self
-//             .to_json_object(Default::default())
-//             .map_err(|e| S::Error::custom(e.to_string()))?;
-//
-//         raw.serialize(serializer)
-//     }
-// }
-//
-// impl<'de> Deserialize<'de> for IdentityCreateTransition {
-//     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-//     where
-//         D: Deserializer<'de>,
-//     {
-//         let value = platform_value::Value::deserialize(deserializer)?;
-//
-//         Self::new(value).map_err(|e| D::Error::custom(e.to_string()))
-//     }
-// }
-
 /// Main state transition functionality implementation
 impl IdentityCreateTransition {
-    pub fn new(raw_state_transition: Value) -> Result<Self, ProtocolError> {
+    pub fn try_from_identity_with_signer<S: Signer>(
+        identity: Identity,
+        asset_lock_proof: AssetLockProof,
+        asset_lock_proof_private_key: &[u8],
+        signer: &S,
+        bls: &impl BlsModule,
+    ) -> Result<Self, ProtocolError> {
+        let mut identity_create_transition = IdentityCreateTransition::default();
+        identity_create_transition.set_protocol_version(identity.protocol_version);
+
+        let public_keys = identity
+            .get_public_keys()
+            .iter()
+            .map(|(_, public_key)| {
+                IdentityPublicKeyInCreationWithWitness::from_public_key_signed_external(
+                    public_key.clone(),
+                    signer,
+                )
+            })
+            .collect::<Result<Vec<IdentityPublicKeyInCreationWithWitness>, ProtocolError>>()?;
+        identity_create_transition.set_public_keys(public_keys);
+
+        identity_create_transition
+            .set_asset_lock_proof(asset_lock_proof)
+            .map_err(ProtocolError::from)?;
+
+        identity_create_transition.sign_by_private_key(
+            asset_lock_proof_private_key,
+            ECDSA_HASH160,
+            bls,
+        )?;
+
+        Ok(identity_create_transition)
+    }
+
+    pub fn from_raw_object(raw_object: Value) -> Result<Self, ProtocolError> {
         let mut state_transition = Self::default();
 
-        let mut transition_map = raw_state_transition
+        let mut transition_map = raw_object
             .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
         if let Some(keys_value_array) = transition_map
@@ -117,7 +183,7 @@ impl IdentityCreateTransition {
             let keys = keys_value_array
                 .into_iter()
                 .map(|val| val.try_into().map_err(ProtocolError::ValueError))
-                .collect::<Result<Vec<IdentityPublicKeyWithWitness>, ProtocolError>>()?;
+                .collect::<Result<Vec<IdentityPublicKeyInCreationWithWitness>, ProtocolError>>()?;
             state_transition.set_public_keys(keys);
         }
 
@@ -154,12 +220,15 @@ impl IdentityCreateTransition {
     }
 
     /// Get identity public keys
-    pub fn get_public_keys(&self) -> &[IdentityPublicKeyWithWitness] {
+    pub fn get_public_keys(&self) -> &[IdentityPublicKeyInCreationWithWitness] {
         &self.public_keys
     }
 
     /// Replaces existing set of public keys with a new one
-    pub fn set_public_keys(&mut self, public_keys: Vec<IdentityPublicKeyWithWitness>) -> &mut Self {
+    pub fn set_public_keys(
+        &mut self,
+        public_keys: Vec<IdentityPublicKeyInCreationWithWitness>,
+    ) -> &mut Self {
         self.public_keys = public_keys;
 
         self
@@ -168,7 +237,7 @@ impl IdentityCreateTransition {
     /// Adds public keys to the existing public keys array
     pub fn add_public_keys(
         &mut self,
-        public_keys: &mut Vec<IdentityPublicKeyWithWitness>,
+        public_keys: &mut Vec<IdentityPublicKeyInCreationWithWitness>,
     ) -> &mut Self {
         self.public_keys.append(public_keys);
 
@@ -301,16 +370,5 @@ impl StateTransitionLike for IdentityCreateTransition {
 
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
         self.signature = BinaryData::new(signature)
-    }
-    fn get_execution_context(&self) -> &StateTransitionExecutionContext {
-        &self.execution_context
-    }
-
-    fn get_execution_context_mut(&mut self) -> &mut StateTransitionExecutionContext {
-        &mut self.execution_context
-    }
-
-    fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
-        self.execution_context = execution_context
     }
 }

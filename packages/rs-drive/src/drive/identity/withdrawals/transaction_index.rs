@@ -121,14 +121,12 @@ impl Drive {
 
 #[cfg(test)]
 mod tests {
+    use dpp::block::block_info::BlockInfo;
+    use dpp::block::epoch::Epoch;
     use grovedb::Element;
 
     use crate::{
-        drive::{
-            block_info::BlockInfo,
-            identity::withdrawals::paths::get_withdrawal_transactions_expired_ids_path,
-        },
-        fee_pools::epochs::Epoch,
+        drive::identity::withdrawals::paths::get_withdrawal_transactions_expired_ids_path,
         tests::helpers::setup::setup_drive_with_initial_state_structure,
     };
 
@@ -141,7 +139,8 @@ mod tests {
         let block_info = BlockInfo {
             time_ms: 1,
             height: 1,
-            epoch: Epoch::new(1),
+            core_height: 1,
+            epoch: Epoch::new(1).unwrap(),
         };
 
         let mut batch = vec![];

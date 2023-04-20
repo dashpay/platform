@@ -3,10 +3,12 @@ use dashcore::secp256k1::{PublicKey as RawPublicKey, SecretKey as RawSecretKey};
 
 use crate::consensus::signature::InvalidSignaturePublicKeySecurityLevelError;
 use crate::data_contract::state_transition::errors::PublicKeyIsDisabledError;
+use crate::identity::signer::Signer;
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError, PublicKeyMismatchError,
-    PublicKeySecurityLevelNotMetError, StateTransitionIsNotSignedError, WrongPublicKeyPurposeError,
+    StateTransitionIsNotSignedError, WrongPublicKeyPurposeError,
 };
+
 use crate::{
     identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel},
     prelude::*,
@@ -23,6 +25,19 @@ where
     fn get_owner_id(&self) -> &Identifier;
     fn get_signature_public_key_id(&self) -> Option<KeyID>;
     fn set_signature_public_key_id(&mut self, key_id: KeyID);
+
+    fn sign_external<S: Signer>(
+        &mut self,
+        identity_public_key: &IdentityPublicKey,
+        signer: &S,
+    ) -> Result<(), ProtocolError> {
+        self.verify_public_key_level_and_purpose(identity_public_key)?;
+        self.verify_public_key_is_enabled(identity_public_key)?;
+        let data = self.to_cbor_buffer(true)?;
+        self.set_signature(signer.sign(identity_public_key, data.as_slice())?);
+        self.set_signature_public_key_id(identity_public_key.id);
+        Ok(())
+    }
 
     fn sign(
         &mut self,
@@ -74,9 +89,11 @@ where
             // the default behavior from
             // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransitionIdentitySigned.js#L108
             // is to return the error for the BIP13_SCRIPT_HASH
-            KeyType::BIP13_SCRIPT_HASH => Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
-                InvalidIdentityPublicKeyTypeError::new(identity_public_key.key_type),
-            )),
+            KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
+                Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
+                    InvalidIdentityPublicKeyTypeError::new(identity_public_key.key_type),
+                ))
+            }
         }?;
 
         self.set_signature_public_key_id(identity_public_key.id);
@@ -115,7 +132,7 @@ where
             KeyType::BLS12_381 => self.verify_bls_signature_by_public_key(public_key_bytes, bls),
 
             // per https://github.com/dashevo/platform/pull/353, signing and verification is not supported
-            KeyType::BIP13_SCRIPT_HASH => Ok(()),
+            KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => Ok(()),
         }
     }
 
@@ -125,22 +142,13 @@ where
         &self,
         public_key: &IdentityPublicKey,
     ) -> Result<(), ProtocolError> {
-        // If state transition requires MASTER security level it must be signed only with
-        // a MASTER key
-        if public_key.is_master() && self.get_security_level_requirement() != SecurityLevel::MASTER
+        // Otherwise, key security level should be less than MASTER but more or equal than required
+        if !self
+            .get_security_level_requirement()
+            .contains(&public_key.security_level)
         {
             return Err(ProtocolError::InvalidSignaturePublicKeySecurityLevelError(
                 InvalidSignaturePublicKeySecurityLevelError::new(
-                    public_key.security_level,
-                    self.get_security_level_requirement(),
-                ),
-            ));
-        }
-
-        // Otherwise, key security level should be less than MASTER but more or equal than required
-        if self.get_security_level_requirement() < public_key.security_level {
-            return Err(ProtocolError::PublicKeySecurityLevelNotMetError(
-                PublicKeySecurityLevelNotMetError::new(
                     public_key.security_level,
                     self.get_security_level_requirement(),
                 ),
@@ -169,8 +177,8 @@ where
 
     /// Returns minimal key security level that can be used to sign this ST.
     /// Override this method if the ST requires a different security level.
-    fn get_security_level_requirement(&self) -> SecurityLevel {
-        SecurityLevel::HIGH
+    fn get_security_level_requirement(&self) -> Vec<SecurityLevel> {
+        vec![SecurityLevel::HIGH]
     }
 }
 
@@ -185,15 +193,18 @@ pub fn get_compressed_public_ec_key(private_key: &[u8]) -> Result<[u8; 33], Prot
 
 #[cfg(test)]
 mod test {
-    use bls_signatures::Serialize as BlsSerialize;
     use chrono::Utc;
     use platform_value::{BinaryData, Value};
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
     use serde::{Deserialize, Serialize};
     use serde_json::json;
     use std::convert::TryInto;
+    use std::vec;
 
     use crate::document::DocumentsBatchTransition;
     use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
+    use crate::ProtocolError::InvalidSignaturePublicKeySecurityLevelError;
     use crate::{
         assert_error_contains,
         identity::{KeyID, SecurityLevel},
@@ -256,17 +267,6 @@ mod test {
         fn set_signature(&mut self, signature: BinaryData) {
             self.signature = signature
         }
-        fn get_execution_context(&self) -> &StateTransitionExecutionContext {
-            &self.execution_context
-        }
-
-        fn get_execution_context_mut(&mut self) -> &mut StateTransitionExecutionContext {
-            &mut self.execution_context
-        }
-
-        fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
-            self.execution_context = execution_context
-        }
 
         fn set_signature_bytes(&mut self, signature: Vec<u8>) {
             self.signature = BinaryData::new(signature)
@@ -281,8 +281,8 @@ mod test {
         fn get_owner_id(&self) -> &Identifier {
             &self.owner_id
         }
-        fn get_security_level_requirement(&self) -> SecurityLevel {
-            SecurityLevel::HIGH
+        fn get_security_level_requirement(&self) -> Vec<SecurityLevel> {
+            vec![SecurityLevel::HIGH]
         }
 
         fn get_signature_public_key_id(&self) -> Option<KeyID> {
@@ -323,6 +323,7 @@ mod test {
     fn get_test_keys() -> Keys {
         let secp = dashcore::secp256k1::Secp256k1::new();
         let mut rng = dashcore::secp256k1::rand::thread_rng();
+        let mut std_rng = StdRng::seed_from_u64(99999);
         let (private_key, public_key) = secp.generate_keypair(&mut rng);
 
         let public_key_id = 1;
@@ -330,12 +331,13 @@ mod test {
         let ec_public_compressed_bytes = public_key.serialize();
         let ec_public_uncompressed_bytes = public_key.serialize_uncompressed();
 
-        let mut buffer = [0u8; 32];
-        let _ = getrandom::getrandom(&mut buffer);
-        let bls_private = bls_signatures::PrivateKey::new(buffer);
-        let bls_public = bls_private.public_key();
-        let bls_private_bytes = bls_private.as_bytes();
-        let bls_public_bytes = bls_public.as_bytes();
+        let bls_private =
+            bls_signatures::PrivateKey::generate_dash(&mut std_rng).expect("expected private key");
+        let bls_public = bls_private
+            .g1_element()
+            .expect("expected to make public key");
+        let bls_private_bytes = bls_private.to_bytes().to_vec();
+        let bls_public_bytes = bls_public.to_bytes().to_vec();
 
         let identity_public_key = IdentityPublicKey {
             id: public_key_id,
@@ -414,7 +416,7 @@ mod test {
     #[test]
     fn to_buffer() {
         let st = get_mock_state_transition();
-        let hash = st.to_buffer(false).unwrap();
+        let hash = st.to_cbor_buffer(false).unwrap();
         let result = hex::encode(hash);
 
         assert_eq!("01a4676f776e6572496458208d6e06cac6cd2c4b9020806a3f1a4ec48fc90defd314330a5ce7d8548dfc2524697369676e617475726540747369676e61747572655075626c69634b65794964016e7472616e736974696f6e5479706501", result.as_str());
@@ -423,7 +425,7 @@ mod test {
     #[test]
     fn to_buffer_no_signature() {
         let st = get_mock_state_transition();
-        let hash = st.to_buffer(true).unwrap();
+        let hash = st.to_cbor_buffer(true).unwrap();
         let result = hex::encode(hash);
 
         assert_eq!("01a2676f776e6572496458208d6e06cac6cd2c4b9020806a3f1a4ec48fc90defd314330a5ce7d8548dfc25246e7472616e736974696f6e5479706501", result);
@@ -490,9 +492,9 @@ mod test {
             .sign(&keys.identity_public_key, &keys.ec_private, &bls)
             .unwrap_err();
         match sign_error {
-            ProtocolError::PublicKeySecurityLevelNotMetError(err) => {
+            InvalidSignaturePublicKeySecurityLevelError(err) => {
                 assert_eq!(SecurityLevel::MEDIUM, err.public_key_security_level());
-                assert_eq!(SecurityLevel::HIGH, err.required_security_level());
+                assert_eq!(vec![SecurityLevel::HIGH], err.allowed_key_security_levels());
             }
             error => {
                 panic!("invalid error type: {}", error)
@@ -620,7 +622,7 @@ mod test {
         match result {
             ProtocolError::InvalidSignaturePublicKeySecurityLevelError(err) => {
                 assert_eq!(err.public_key_security_level(), SecurityLevel::MASTER);
-                assert_eq!(err.required_key_security_level(), SecurityLevel::HIGH);
+                assert_eq!(err.allowed_key_security_levels(), vec![SecurityLevel::HIGH]);
             }
             error => panic!(
                 "expected InvalidSignaturePublicKeySecurityLevelError, got {}",

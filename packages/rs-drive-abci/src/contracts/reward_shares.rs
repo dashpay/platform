@@ -39,11 +39,11 @@
 
 use crate::error::Error;
 use crate::platform::Platform;
+use dpp::block::block_info::BlockInfo;
 use drive::contract::Contract;
 use drive::dpp::data_contract::DriveContractExt;
 use drive::dpp::document::Document;
 use drive::dpp::util::serializer;
-use drive::drive::block_info::BlockInfo;
 use drive::drive::flags::StorageFlags;
 use drive::drive::query::QuerySerializedDocumentsOutcome;
 use drive::grovedb::TransactionArg;
@@ -59,7 +59,7 @@ pub const MN_REWARD_SHARES_CONTRACT_ID: [u8; 32] = [
 /// Masternode reward shares document type
 pub const MN_REWARD_SHARES_DOCUMENT_TYPE: &str = "rewardShare";
 
-impl Platform {
+impl<CoreRPCLike> Platform<CoreRPCLike> {
     /// A function to retrieve a list of the masternode reward shares documents for a list of masternode IDs.
     pub(crate) fn get_reward_shares_list_for_masternode(
         &self,
@@ -102,7 +102,7 @@ impl Platform {
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         self.drive
-            .apply_contract(
+            .apply_contract_with_serialization(
                 &contract,
                 contract_cbor,
                 BlockInfo::genesis(),

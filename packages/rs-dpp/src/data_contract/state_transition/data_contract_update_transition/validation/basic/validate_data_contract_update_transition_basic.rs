@@ -16,7 +16,7 @@ use crate::{
     },
     state_repository::StateRepositoryLike,
     util::json_value::JsonValueExt,
-    validation::{JsonSchemaValidator, SimpleValidationResult},
+    validation::{JsonSchemaValidator, SimpleConsensusValidationResult},
     version::ProtocolVersionValidator,
     Convertible, DashPlatformProtocolInitError, ProtocolError,
 };
@@ -34,11 +34,14 @@ use super::schema_compatibility_validator::DiffVAlidatorError;
 use super::validate_indices_are_backward_compatible;
 
 lazy_static! {
-    static ref DATA_CONTRACT_UPDATE_SCHEMA: JsonValue = serde_json::from_str(include_str!(
+    pub static ref DATA_CONTRACT_UPDATE_SCHEMA: JsonValue = serde_json::from_str(include_str!(
         "./../../../../../schema/data_contract/stateTransition/dataContractUpdate.json"
     ))
     .expect("schema for Data Contract Update should be a valid json");
-    static ref EMPTY_JSON: JsonValue = json!({});
+    pub static ref EMPTY_JSON: JsonValue = json!({});
+    pub static ref DATA_CONTRACT_UPDATE_SCHEMA_VALIDATOR: JsonSchemaValidator =
+        JsonSchemaValidator::new(DATA_CONTRACT_UPDATE_SCHEMA.clone())
+            .expect("unable to compile jsonschema");
 }
 
 pub struct DataContractUpdateTransitionBasicValidator<SR> {
@@ -80,8 +83,8 @@ where
         &self,
         raw_state_transition: &Value,
         execution_context: &StateTransitionExecutionContext,
-    ) -> Result<SimpleValidationResult, ProtocolError> {
-        let mut validation_result = SimpleValidationResult::default();
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        let mut validation_result = SimpleConsensusValidationResult::default();
 
         let result = self.json_schema_validator.validate(
             &raw_state_transition
@@ -96,7 +99,7 @@ where
             match raw_state_transition.get_integer(property_names::PROTOCOL_VERSION) {
                 Ok(v) => v,
                 Err(parsing_error) => {
-                    return Ok(SimpleValidationResult::new_with_errors(vec![
+                    return Ok(SimpleConsensusValidationResult::new_with_errors(vec![
                         ConsensusError::ProtocolVersionParsingError(
                             ProtocolVersionParsingError::new(parsing_error.into()),
                         ),
@@ -146,7 +149,7 @@ where
 
         let new_version = new_data_contract_object.get_integer(contract_property_names::VERSION)?;
         let old_version = existing_data_contract.version;
-        if (new_version - old_version) != 1 {
+        if new_version < old_version || new_version - old_version != 1 {
             validation_result.add_error(BasicError::InvalidDataContractVersionError(
                 InvalidDataContractVersionError::new(old_version + 1, new_version),
             ))
@@ -262,7 +265,7 @@ fn replace_bytes_with_hex_string(
     Ok(())
 }
 
-fn get_operation_and_property_name(p: &PatchOperation) -> (&'static str, &str) {
+pub fn get_operation_and_property_name(p: &PatchOperation) -> (&'static str, &str) {
     match &p {
         PatchOperation::Add(ref o) => ("add", o.path.as_str()),
         PatchOperation::Copy(ref o) => ("copy", o.path.as_str()),
@@ -273,7 +276,9 @@ fn get_operation_and_property_name(p: &PatchOperation) -> (&'static str, &str) {
     }
 }
 
-fn get_operation_and_property_name_json(p: &json_patch::PatchOperation) -> (&'static str, &str) {
+pub fn get_operation_and_property_name_json(
+    p: &json_patch::PatchOperation,
+) -> (&'static str, &str) {
     match &p {
         json_patch::PatchOperation::Add(ref o) => ("add json", o.path.as_str()),
         json_patch::PatchOperation::Copy(ref o) => ("copy json", o.path.as_str()),

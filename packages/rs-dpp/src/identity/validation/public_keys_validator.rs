@@ -8,12 +8,13 @@ use crate::errors::consensus::basic::identity::{
     InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError,
 };
 use crate::identity::{IdentityPublicKey, KeyID, KeyType};
-use crate::validation::{JsonSchemaValidator, SimpleValidationResult};
+use crate::validation::{JsonSchemaValidator, SimpleConsensusValidationResult};
 use crate::{
     BlsModule, DashPlatformProtocolInitError, NonConsensusError, PublicKeyValidationError,
 };
 
 use crate::identity::security_level::ALLOWED_SECURITY_LEVELS;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
 #[cfg(test)]
 use mockall::{automock, predicate::*};
 use platform_value::Value;
@@ -33,7 +34,7 @@ pub trait TPublicKeysValidator {
     fn validate_keys(
         &self,
         raw_public_keys: &[Value],
-    ) -> Result<SimpleValidationResult, NonConsensusError>;
+    ) -> Result<SimpleConsensusValidationResult, NonConsensusError>;
 }
 
 pub struct PublicKeysValidator<T: BlsModule> {
@@ -45,8 +46,8 @@ impl<T: BlsModule> TPublicKeysValidator for PublicKeysValidator<T> {
     fn validate_keys(
         &self,
         raw_public_keys: &[Value],
-    ) -> Result<SimpleValidationResult, NonConsensusError> {
-        let mut result = SimpleValidationResult::default();
+    ) -> Result<SimpleConsensusValidationResult, NonConsensusError> {
+        let mut result = SimpleConsensusValidationResult::default();
 
         // TODO: convert buffers to arrays?
         // Validate public key structure
@@ -103,6 +104,8 @@ impl<T: BlsModule> TPublicKeysValidator for PublicKeysValidator<T> {
                 KeyType::ECDSA_HASH160 => None,
                 // Do nothing
                 KeyType::BIP13_SCRIPT_HASH => None,
+                // Do nothing
+                KeyType::EDDSA_25519_HASH160 => None,
             };
 
             if let Some(error) = validation_error {
@@ -175,7 +178,7 @@ impl<T: BlsModule> PublicKeysValidator<T> {
     pub fn validate_public_key_structure(
         &self,
         public_key: &Value,
-    ) -> Result<SimpleValidationResult, NonConsensusError> {
+    ) -> Result<SimpleConsensusValidationResult, NonConsensusError> {
         self.public_key_schema_validator.validate(
             &public_key
                 .try_to_validating_json()
@@ -202,7 +205,47 @@ pub(crate) fn duplicated_keys(public_keys: &[IdentityPublicKey]) -> Vec<KeyID> {
     duplicated_key_ids
 }
 
+pub fn duplicated_keys_witness(
+    public_keys: &[IdentityPublicKeyInCreationWithWitness],
+) -> Vec<KeyID> {
+    let mut keys_count = HashMap::<Vec<u8>, usize>::new();
+    let mut duplicated_key_ids = vec![];
+
+    for public_key in public_keys.iter() {
+        let data = public_key.data.as_slice();
+        let count = *keys_count.get(data).unwrap_or(&0_usize);
+        let count = count + 1;
+        keys_count.insert(data.to_vec(), count);
+
+        if count > 1 {
+            duplicated_key_ids.push(public_key.id);
+        }
+    }
+
+    duplicated_key_ids
+}
+
 pub(crate) fn duplicated_key_ids(public_keys: &[IdentityPublicKey]) -> Vec<KeyID> {
+    let mut duplicated_ids = Vec::<KeyID>::new();
+    let mut ids_count = HashMap::<KeyID, usize>::new();
+
+    for public_key in public_keys.iter() {
+        let id = public_key.id;
+        let count = *ids_count.get(&id).unwrap_or(&0_usize);
+        let count = count + 1;
+        ids_count.insert(id, count);
+
+        if count > 1 {
+            duplicated_ids.push(id);
+        }
+    }
+
+    duplicated_ids
+}
+
+pub fn duplicated_key_ids_witness(
+    public_keys: &[IdentityPublicKeyInCreationWithWitness],
+) -> Vec<KeyID> {
     let mut duplicated_ids = Vec::<KeyID>::new();
     let mut ids_count = HashMap::<KeyID, usize>::new();
 

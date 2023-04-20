@@ -43,6 +43,8 @@ use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::fee::epoch::CreditsPerEpoch;
 use drive::fee::result::FeeResult;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use tenderdash_abci::proto::abci::RequestInitChain;
+use tenderdash_abci::proto::google::protobuf::Timestamp;
 
 /// A struct for handling chain initialization requests
 #[derive(Serialize, Deserialize)]
@@ -54,8 +56,29 @@ pub struct InitChainRequest {
     pub system_identity_public_keys: SystemIdentityPublicKeys,
 }
 
+impl From<InitChainRequest> for RequestInitChain {
+    fn from(value: InitChainRequest) -> Self {
+        let InitChainRequest {
+            genesis_time_ms,
+            system_identity_public_keys: _,
+        } = value;
+        RequestInitChain {
+            time: Some(Timestamp {
+                seconds: (genesis_time_ms / 1000) as i64,
+                nanos: ((genesis_time_ms % 1000) * 1000) as i32,
+            }),
+            chain_id: "".to_string(),
+            consensus_params: None,
+            validator_set: None,
+            app_state_bytes: vec![],
+            initial_height: 0,
+            initial_core_height: 0,
+        }
+    }
+}
+
 /// System identity public keys
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemIdentityPublicKeys {
     /// Required public key set for masternode reward shares contract owner identity
@@ -70,8 +93,10 @@ pub struct SystemIdentityPublicKeys {
     pub dashpay_contract_owner: RequiredIdentityPublicKeysSet,
 }
 
+// impl Default for SystemIdentityPublicKeys {}
+
 /// Required public key set for an identity
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct RequiredIdentityPublicKeysSet {
     /// Authentication key with master security level
@@ -149,12 +174,14 @@ impl BlockFees {
             ..Default::default()
         }
     }
-    /// Get block fees from fee results
-    pub fn from_fee_result(fee_result: FeeResult) -> Self {
+}
+
+impl From<FeeResult> for BlockFees {
+    fn from(value: FeeResult) -> Self {
         Self {
-            storage_fee: fee_result.storage_fee,
-            processing_fee: fee_result.processing_fee,
-            refunds_per_epoch: fee_result.fee_refunds.sum_per_epoch(),
+            storage_fee: value.storage_fee,
+            processing_fee: value.processing_fee,
+            refunds_per_epoch: value.fee_refunds.sum_per_epoch(),
         }
     }
 }

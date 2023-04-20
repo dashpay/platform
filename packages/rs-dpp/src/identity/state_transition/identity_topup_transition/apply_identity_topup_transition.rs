@@ -6,7 +6,7 @@ use crate::identity::convert_satoshi_to_credits;
 use crate::identity::state_transition::asset_lock_proof::AssetLockTransactionOutputFetcher;
 use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::state_repository::StateRepositoryLike;
-use crate::state_transition::StateTransitionLike;
+use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 
 pub struct ApplyIdentityTopUpTransition<SR>
 where
@@ -30,13 +30,14 @@ where
         }
     }
 
-    pub async fn apply(&self, state_transition: &IdentityTopUpTransition) -> Result<()> {
+    pub async fn apply(
+        &self,
+        state_transition: &IdentityTopUpTransition,
+        execution_context: &StateTransitionExecutionContext,
+    ) -> Result<()> {
         let output = self
             .asset_lock_transaction_output_fetcher
-            .fetch(
-                state_transition.get_asset_lock_proof(),
-                state_transition.get_execution_context(),
-            )
+            .fetch(state_transition.get_asset_lock_proof(), execution_context)
             .await?;
 
         let mut credits_amount = convert_satoshi_to_credits(output.value);
@@ -49,19 +50,12 @@ where
         let identity_id = state_transition.get_identity_id();
 
         self.state_repository
-            .add_to_identity_balance(
-                identity_id,
-                credits_amount,
-                Some(state_transition.get_execution_context()),
-            )
+            .add_to_identity_balance(identity_id, credits_amount, Some(execution_context))
             .await?;
 
         let balance = self
             .state_repository
-            .fetch_identity_balance_with_debt(
-                identity_id,
-                Some(state_transition.get_execution_context()),
-            )
+            .fetch_identity_balance_with_debt(identity_id, Some(execution_context))
             .await?
             .ok_or_else(|| anyhow!("balance must be persisted"))?;
 
@@ -72,17 +66,11 @@ where
         }
 
         self.state_repository
-            .add_to_system_credits(
-                credits_amount,
-                Some(state_transition.get_execution_context()),
-            )
+            .add_to_system_credits(credits_amount, Some(execution_context))
             .await?;
 
         self.state_repository
-            .mark_asset_lock_transaction_out_point_as_used(
-                &out_point,
-                Some(state_transition.get_execution_context()),
-            )
+            .mark_asset_lock_transaction_out_point_as_used(&out_point, Some(execution_context))
             .await?;
 
         Ok(())
@@ -94,13 +82,13 @@ mod test {
     use mockall::predicate::{always, eq};
     use std::sync::Arc;
 
+    use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use crate::{
         identity::state_transition::{
             asset_lock_proof::AssetLockTransactionOutputFetcher,
             identity_topup_transition::IdentityTopUpTransition,
         },
         state_repository::MockStateRepositoryLike,
-        state_transition::StateTransitionLike,
         tests::fixtures::identity_topup_transition_fixture,
     };
 
@@ -124,7 +112,7 @@ mod test {
         state_repository_for_apply
             .expect_add_to_identity_balance()
             .times(1)
-            .with(eq(identity_id), eq(90000000), always())
+            .with(eq(identity_id), eq(100000000000), always())
             .returning(|_, _, _| Ok(()));
 
         state_repository_for_apply
@@ -136,7 +124,7 @@ mod test {
         state_repository_for_apply
             .expect_add_to_system_credits()
             .times(1)
-            .with(eq(90000000), always())
+            .with(eq(100000000000), always())
             .returning(|_, _| Ok(()));
 
         state_repository_for_apply
@@ -148,8 +136,10 @@ mod test {
             Arc::new(asset_lock_transaction_fetcher),
         );
 
+        let execution_context = StateTransitionExecutionContext::default();
+
         let result = apply_identity_topup_transition
-            .apply(&state_transition)
+            .apply(&state_transition, &execution_context)
             .await;
 
         assert!(result.is_ok())
@@ -173,7 +163,7 @@ mod test {
         state_repository_for_apply
             .expect_add_to_identity_balance()
             .times(1)
-            .with(eq(identity_id), eq(90000000), always())
+            .with(eq(identity_id), eq(100000000000), always())
             .returning(|_, _, _| Ok(()));
 
         state_repository_for_apply
@@ -185,7 +175,7 @@ mod test {
         state_repository_for_apply
             .expect_add_to_system_credits()
             .times(1)
-            .with(eq(90000000 - 5), always())
+            .with(eq(100000000000 - 5), always())
             .returning(|_, _| Ok(()));
 
         state_repository_for_apply
@@ -197,8 +187,10 @@ mod test {
             Arc::new(asset_lock_transaction_fetcher),
         );
 
+        let execution_context = StateTransitionExecutionContext::default();
+
         let result = apply_identity_topup_transition
-            .apply(&state_transition)
+            .apply(&state_transition, &execution_context)
             .await;
 
         assert!(result.is_ok())
@@ -222,7 +214,7 @@ mod test {
         state_repository_for_apply
             .expect_add_to_identity_balance()
             .times(1)
-            .with(eq(identity_id), eq(90000000), always())
+            .with(eq(identity_id), eq(100000000000), always())
             .returning(|_, _, _| Ok(()));
 
         state_repository_for_apply
@@ -234,14 +226,14 @@ mod test {
         state_repository_for_apply
             .expect_add_to_system_credits()
             .times(1)
-            .with(eq(90000000), always())
+            .with(eq(100000000000), always())
             .returning(|_, _| Ok(()));
 
         state_repository_for_apply
             .expect_mark_asset_lock_transaction_out_point_as_used()
             .returning(|_, _| Ok(()));
 
-        state_transition.get_execution_context().enable_dry_run();
+        let execution_context = StateTransitionExecutionContext::default().with_dry_run();
 
         let apply_identity_topup_transition = ApplyIdentityTopUpTransition::new(
             Arc::new(state_repository_for_apply),
@@ -249,7 +241,7 @@ mod test {
         );
 
         let result = apply_identity_topup_transition
-            .apply(&state_transition)
+            .apply(&state_transition, &execution_context)
             .await;
 
         assert!(result.is_ok())

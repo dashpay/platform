@@ -37,6 +37,7 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
     use crate::consensus::signature::SignatureError;
     use crate::consensus::ConsensusError;
     use crate::prelude::{Identifier, Identity};
+    use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 
     use super::*;
 
@@ -52,8 +53,12 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
 
         let (state_transition, validator) = setup_test(state_repository, None);
 
+        let execution_context = StateTransitionExecutionContext::default();
         let result = validator
-            .validate_identity_credit_withdrawal_transition_state(&state_transition)
+            .validate_identity_credit_withdrawal_transition_state(
+                &state_transition,
+                &execution_context,
+            )
             .await
             .unwrap();
 
@@ -92,8 +97,12 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
 
         let (state_transition, validator) = setup_test(state_repository, Some(42));
 
+        let execution_context = StateTransitionExecutionContext::default();
         let result = validator
-            .validate_identity_credit_withdrawal_transition_state(&state_transition)
+            .validate_identity_credit_withdrawal_transition_state(
+                &state_transition,
+                &execution_context,
+            )
             .await
             .unwrap();
 
@@ -116,8 +125,12 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
 
         let (state_transition, validator) = setup_test(state_repository, Some(5));
 
+        let execution_context = StateTransitionExecutionContext::default();
         let result = validator
-            .validate_identity_credit_withdrawal_transition_state(&state_transition)
+            .validate_identity_credit_withdrawal_transition_state(
+                &state_transition,
+                &execution_context,
+            )
             .await;
 
         match result {
@@ -161,11 +174,14 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
             });
 
         let (mut state_transition, validator) = setup_test(state_repository, Some(5));
-
+        let execution_context = StateTransitionExecutionContext::default();
         state_transition.revision = 1;
 
         let result = validator
-            .validate_identity_credit_withdrawal_transition_state(&state_transition)
+            .validate_identity_credit_withdrawal_transition_state(
+                &state_transition,
+                &execution_context,
+            )
             .await
             .unwrap();
 

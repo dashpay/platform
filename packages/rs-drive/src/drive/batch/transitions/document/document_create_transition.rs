@@ -5,7 +5,7 @@ use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::DocumentWithoutSerialization;
 use crate::drive::object_size_info::OwnedDocumentInfo;
 use crate::error::Error;
-use crate::fee_pools::epochs::Epoch;
+use dpp::block::epoch::Epoch;
 use dpp::data_contract::DriveContractExt;
 use dpp::document::document_transition::{
     DocumentBaseTransitionAction, DocumentCreateTransitionAction,
@@ -15,11 +15,11 @@ use dpp::prelude::Identifier;
 use std::borrow::Cow;
 
 impl DriveHighLevelDocumentOperationConverter for DocumentCreateTransitionAction {
-    fn into_high_level_document_drive_operations(
+    fn into_high_level_document_drive_operations<'a>(
         self,
         epoch: &Epoch,
         owner_id: Identifier,
-    ) -> Result<Vec<DriveOperation>, Error> {
+    ) -> Result<Vec<DriveOperation<'a>>, Error> {
         let DocumentCreateTransitionAction {
             base,
             created_at,

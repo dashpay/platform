@@ -10,11 +10,16 @@
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 
+extern crate core;
+
 /// ABCI module
 pub mod abci;
 
 /// Block module
 mod block;
+
+/// Validation module
+pub mod validation;
 
 /// Contracts module
 pub mod contracts;
@@ -44,5 +49,9 @@ pub mod constants;
 pub mod rpc;
 
 // TODO We should compile it only for tests
+/// Asset Lock
+pub mod asset_lock;
 /// Test helpers and fixtures
 pub mod test;
+/// Validator Set
+pub mod validator_set;

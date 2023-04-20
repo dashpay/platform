@@ -25,6 +25,7 @@ impl<'a> From<&'a Value> for de::Unexpected<'a> {
             Value::I16(x) => Self::Signed(*x as i64),
             Value::U8(x) => Self::Unsigned(*x as u64),
             Value::I8(x) => Self::Signed(*x as i64),
+            Value::Bytes20(x) => Self::Bytes(x),
             Value::Bytes32(x) => Self::Bytes(x),
             Value::Bytes36(x) => Self::Bytes(x),
             Value::EnumU8(_x) => todo!(),
@@ -159,9 +160,9 @@ impl<'de> de::Deserialize<'de> for Value {
     }
 }
 
-pub(crate) struct Deserializer(pub(crate) Value);
+pub(crate) struct Deserializer<T>(pub(crate) T);
 
-impl<'de> de::Deserializer<'de> for Deserializer {
+impl<'de> de::Deserializer<'de> for Deserializer<Value> {
     type Error = Error;
 
     fn deserialize_any<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value, Self::Error> {
@@ -190,6 +191,13 @@ impl<'de> de::Deserializer<'de> for Deserializer {
             Value::I16(x) => visitor.visit_i16(x),
             Value::U8(x) => visitor.visit_u8(x),
             Value::I8(x) => visitor.visit_i8(x),
+            Value::Bytes20(x) => {
+                if human_readable {
+                    visitor.visit_str(base64::encode(x).as_str())
+                } else {
+                    visitor.visit_bytes(&x)
+                }
+            }
             Value::Bytes32(x) => {
                 if human_readable {
                     visitor.visit_str(base64::encode(x).as_str())
@@ -319,6 +327,7 @@ impl<'de> de::Deserializer<'de> for Deserializer {
 
         match value {
             Value::Bytes(x) => visitor.visit_bytes(&x),
+            Value::Bytes20(x) => visitor.visit_bytes(x.as_slice()),
             Value::Bytes32(x) => visitor.visit_bytes(x.as_slice()),
             Value::Bytes36(x) => visitor.visit_bytes(x.as_slice()),
             Value::Identifier(x) => visitor.visit_bytes(x.as_slice()),
@@ -487,7 +496,7 @@ impl<'a, 'de> de::MapAccess<'de> for ValueMapDeserializer<'a> {
     }
 }
 
-impl<'a, 'de> de::VariantAccess<'de> for Deserializer {
+impl<'a, 'de> de::VariantAccess<'de> for Deserializer<Value> {
     type Error = Error;
 
     fn unit_variant(self) -> Result<(), Self::Error> {

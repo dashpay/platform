@@ -33,7 +33,8 @@
 //!
 
 use crate::drive::flags::StorageFlags;
-use grovedb::batch::{GroveDbOp, GroveDbOpConsistencyResults};
+use grovedb::batch::key_info::KeyInfo;
+use grovedb::batch::{GroveDbOp, GroveDbOpConsistencyResults, KeyInfoPath, Op};
 use grovedb::Element;
 use std::borrow::Cow;
 
@@ -147,6 +148,111 @@ impl GroveDbOpBatch {
     /// Verify consistency of operations
     pub fn verify_consistency_of_operations(&self) -> GroveDbOpConsistencyResults {
         GroveDbOp::verify_consistency_of_operations(&self.operations)
+    }
+
+    /// Check if the batch contains a specific path and key.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path to search for.
+    /// * `key` - The key to search for.
+    ///
+    /// # Returns
+    ///
+    /// * `Option<&Op>` - Returns a reference to the `Op` if found, or `None` otherwise.
+    pub fn contains<'c, P>(&self, path: P, key: &[u8]) -> Option<&Op>
+    where
+        P: IntoIterator<Item = &'c [u8]>,
+        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
+    {
+        let path = KeyInfoPath(
+            path.into_iter()
+                .map(|item| KeyInfo::KnownKey(item.to_vec()))
+                .collect(),
+        );
+
+        self.operations.iter().find_map(|op| {
+            if &op.path == &path && op.key == KeyInfo::KnownKey(key.to_vec()) {
+                Some(&op.op)
+            } else {
+                None
+            }
+        })
+    }
+
+    /// Remove a specific path and key from the batch and return the removed `Op`.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path to search for.
+    /// * `key` - The key to search for.
+    ///
+    /// # Returns
+    ///
+    /// * `Option<Op>` - Returns the removed `Op` if found, or `None` otherwise.
+    pub fn remove<'c, P>(&mut self, path: P, key: &[u8]) -> Option<Op>
+    where
+        P: IntoIterator<Item = &'c [u8]>,
+        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
+    {
+        let path = KeyInfoPath(
+            path.into_iter()
+                .map(|item| KeyInfo::KnownKey(item.to_vec()))
+                .collect(),
+        );
+
+        if let Some(index) = self
+            .operations
+            .iter()
+            .position(|op| &op.path == &path && op.key == KeyInfo::KnownKey(key.to_vec()))
+        {
+            Some(self.operations.remove(index).op)
+        } else {
+            None
+        }
+    }
+
+    /// Find and remove a specific path and key from the batch if it is an
+    /// `Op::Insert`, `Op::Replace`, or `Op::Patch`. Return the found `Op` regardless of whether it was removed.
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - The path to search for.
+    /// * `key` - The key to search for.
+    ///
+    /// # Returns
+    ///
+    /// * `Option<Op>` - Returns the found `Op` if it exists. If the `Op` is an `Op::Insert`, `Op::Replace`,
+    ///                  or `Op::Patch`, it will be removed from the batch.
+    pub fn remove_if_insert<'c, P>(&mut self, path: P, key: &[u8]) -> Option<Op>
+    where
+        P: IntoIterator<Item = &'c [u8]>,
+        <P as IntoIterator>::IntoIter: ExactSizeIterator + DoubleEndedIterator + Clone,
+    {
+        let path = KeyInfoPath(
+            path.into_iter()
+                .map(|item| KeyInfo::KnownKey(item.to_vec()))
+                .collect(),
+        );
+
+        if let Some(index) = self
+            .operations
+            .iter()
+            .position(|op| &op.path == &path && op.key == KeyInfo::KnownKey(key.to_vec()))
+        {
+            let op = &self.operations[index].op;
+            let op = if matches!(
+                op,
+                &Op::Insert { .. } | &Op::Replace { .. } | &Op::Patch { .. }
+            ) {
+                self.operations.remove(index).op
+            } else {
+                op.clone()
+            };
+            Some(op)
+        } else {
+            None
+        }
     }
 }
 

@@ -1,7 +1,7 @@
 use chrono::Utc;
 use platform_value::{platform_value, BinaryData, Value};
 
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
 use crate::prelude::Revision;
 use crate::{
     identity::{
@@ -76,7 +76,7 @@ fn get_public_keys_to_add() {
 fn set_public_keys_to_add() {
     let TestData { mut transition, .. } = setup_test();
 
-    let id_public_key = IdentityPublicKeyWithWitness {
+    let id_public_key = IdentityPublicKeyInCreationWithWitness {
         id: 0,
         key_type: KeyType::BLS12_381,
         purpose: Purpose::AUTHENTICATION,
@@ -145,11 +145,11 @@ fn to_object() {
             {
 
                 "id" : 3u32,
+                "type": 0u8,
                 "purpose" : 0u8,
                 "securityLevel" : 0u8,
-                "type": 0u8,
-                "data" :BinaryData::new(base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap()),
                 "readOnly" : false,
+                "data" :BinaryData::new(base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap()),
                 "signature" : BinaryData::new(vec![0u8;65])
             }
         ],
@@ -176,11 +176,11 @@ fn to_object_with_signature_skipped() {
             {
 
                 "id" : 3u32,
+                "type": 0u8,
                 "purpose" : 0u8,
                 "securityLevel" : 0u8,
-                "type": 0u8,
-                "data" :BinaryData::new(base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap()),
                 "readOnly" : false,
+                "data" :BinaryData::new(base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap()),
             }
         ],
         "disablePublicKeys" : [0u32],
@@ -208,11 +208,11 @@ fn to_json() {
             {
 
                 "id" : 3u32,
+                "type": 0u8,
                 "purpose" : 0u8,
                 "securityLevel" : 0u8,
-                "type": 0u8,
-                "data" : BinaryData::new(base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap()),
                 "readOnly" : false,
+                "data" : BinaryData::new(base64::decode("AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH").unwrap()),
                 "signature" : BinaryData::new(vec![0;65]),
             }
         ],

@@ -41,7 +41,7 @@ use crate::fee::op::{BaseOp, LowLevelDriveOperation};
 #[cfg(feature = "full")]
 use crate::fee::result::FeeResult;
 #[cfg(feature = "full")]
-use crate::fee_pools::epochs::Epoch;
+use dpp::block::epoch::Epoch;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod credits;

@@ -2,11 +2,12 @@ use std::convert::TryInto;
 
 use futures::future::join_all;
 use itertools::Itertools;
+use platform_value::platform_value;
 use platform_value::string_encoding::Encoding;
 use serde_json::{json, Value as JsonValue};
 
 use crate::document::Document;
-use crate::validation::SimpleValidationResult;
+use crate::validation::SimpleConsensusValidationResult;
 use crate::{
     document::document_transition::{Action, DocumentTransition, DocumentTransitionExt},
     prelude::{DataContract, Identifier},
@@ -29,11 +30,11 @@ pub async fn validate_documents_uniqueness_by_indices<SR>(
     document_transitions: impl Iterator<Item = &DocumentTransition>,
     data_contract: &DataContract,
     execution_context: &StateTransitionExecutionContext,
-) -> Result<SimpleValidationResult, ProtocolError>
+) -> Result<SimpleConsensusValidationResult, ProtocolError>
 where
     SR: StateRepositoryLike,
 {
-    let mut validation_result = SimpleValidationResult::default();
+    let mut validation_result = SimpleConsensusValidationResult::default();
 
     if execution_context.is_dry_run() {
         return Ok(validation_result);
@@ -52,21 +53,20 @@ where
         // 2. Fetch Document by indexed properties
         let document_index_queries =
             generate_document_index_queries(&document_indices, transition, owner_id);
-        let queries = document_index_queries
+        let (futures, futures_meta): (Vec<_>, Vec<_>) = document_index_queries
             .filter(|query| !query.where_query.is_empty())
             .map(|query| {
                 (
                     state_repository.fetch_documents(
                         &data_contract.id,
                         query.document_type,
-                        json!( { "where": query.where_query}),
+                        platform_value!( { "where": query.where_query}),
                         Some(execution_context),
                     ),
                     (query.index_definition, query.document_transition),
                 )
-            });
-
-        let (futures, futures_meta) = unzip_iter_and_collect(queries);
+            })
+            .unzip();
         let results = join_all(futures).await;
 
         // 3. Create errors if duplicates found
@@ -142,8 +142,8 @@ fn validate_uniqueness<'a>(
     results: Vec<
         Result<Vec<impl TryInto<Document, Error = impl Into<ProtocolError>>>, anyhow::Error>,
     >,
-) -> Result<SimpleValidationResult, ProtocolError> {
-    let mut validation_result = SimpleValidationResult::default();
+) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+    let mut validation_result = SimpleConsensusValidationResult::default();
     for (i, result) in results.into_iter().enumerate() {
         let documents: Vec<Document> = result?
             .into_iter()
@@ -167,15 +167,4 @@ fn validate_uniqueness<'a>(
         })
     }
     Ok(validation_result)
-}
-
-fn unzip_iter_and_collect<A, B>(iter: impl Iterator<Item = (A, B)>) -> (Vec<A>, Vec<B>) {
-    let mut list_a = vec![];
-    let mut list_b = vec![];
-
-    for item in iter {
-        list_a.push(item.0);
-        list_b.push(item.1);
-    }
-    (list_a, list_b)
 }

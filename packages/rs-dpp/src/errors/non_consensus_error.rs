@@ -24,6 +24,8 @@ pub enum NonConsensusError {
     WithdrawalError(String),
     #[error("IdentifierCreateError: {0}")]
     IdentifierCreateError(String),
+    #[error("StateTransitionCreationError: {0}")]
+    StateTransitionCreationError(String),
     #[error("IdentityPublicKeyCreateError: {0}")]
     IdentityPublicKeyCreateError(String),
 

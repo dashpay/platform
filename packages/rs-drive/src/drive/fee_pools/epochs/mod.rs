@@ -33,7 +33,7 @@
 use crate::drive::fee_pools::pools_path;
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::fee_pools::epochs::Epoch;
+use dpp::block::epoch::Epoch;
 use grovedb::TransactionArg;
 
 pub mod credit_distribution_pools;
@@ -72,7 +72,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch_tree = Epoch::new(GENESIS_EPOCH_INDEX);
+            let epoch_tree = Epoch::new(GENESIS_EPOCH_INDEX).unwrap();
 
             let is_exist = drive
                 .is_epoch_tree_exists(&epoch_tree, Some(&transaction))
@@ -86,7 +86,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch_tree = Epoch::new(PERPETUAL_STORAGE_EPOCHS + 1);
+            let epoch_tree = Epoch::new(PERPETUAL_STORAGE_EPOCHS + 1).unwrap();
 
             let is_exist = drive
                 .is_epoch_tree_exists(&epoch_tree, Some(&transaction))

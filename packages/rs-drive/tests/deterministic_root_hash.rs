@@ -43,8 +43,7 @@ use dpp::document::Document;
 use dpp::util::serializer;
 #[cfg(feature = "full")]
 use drive::common;
-#[cfg(feature = "full")]
-use drive::common::setup_contract;
+
 #[cfg(feature = "full")]
 use drive::contract::Contract;
 #[cfg(feature = "full")]
@@ -70,7 +69,7 @@ use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo}
 use drive::drive::{Drive, RootTree};
 
 #[cfg(feature = "full")]
-use drive::drive::block_info::BlockInfo;
+use dpp::block::block_info::BlockInfo;
 
 #[cfg(feature = "full")]
 /// Contains the unique ID for a Dash identity.
@@ -459,7 +458,7 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
 #[test]
 fn test_deterministic_root_hash_with_batches() {
     let tmp_dir = TempDir::new().unwrap();
-    let drive: Drive = Drive::open(tmp_dir, Some(DriveConfig::default_with_batches()))
+    let drive: Drive = Drive::open(tmp_dir, Some(DriveConfig::default()))
         .expect("expected to open Drive successfully");
 
     let db_transaction = drive.grove.start_transaction();
@@ -472,131 +471,4 @@ fn test_deterministic_root_hash_with_batches() {
             .rollback_transaction(&db_transaction)
             .expect("transaction should be rolled back");
     }
-}
-
-#[cfg(feature = "full")]
-/// Tests that the root hashes are the same between a Drive with and without batches.
-/// Employs the empty root tree with the DPNS contract.
-#[ignore]
-#[test]
-fn test_root_hash_matches_with_batching_just_contract() {
-    let tmp_dir_1 = TempDir::new().unwrap();
-    let tmp_dir_2 = TempDir::new().unwrap();
-    let drive_with_batches: Drive =
-        Drive::open(&tmp_dir_1, Some(DriveConfig::default_with_batches()))
-            .expect("expected to open Drive successfully");
-    let drive_without_batches: Drive =
-        Drive::open(&tmp_dir_2, Some(DriveConfig::default_without_batches()))
-            .expect("expected to open Drive successfully");
-
-    let db_transaction_with_batches = drive_with_batches.grove.start_transaction();
-    let db_transaction_without_batches = drive_without_batches.grove.start_transaction();
-
-    drive_with_batches
-        .create_initial_state_structure(Some(&db_transaction_with_batches))
-        .expect("expected to create root tree successfully");
-
-    drive_without_batches
-        .create_initial_state_structure(Some(&db_transaction_without_batches))
-        .expect("expected to create root tree successfully");
-
-    // setup code
-    setup_contract(
-        &drive_with_batches,
-        "tests/supporting_files/contract/dpns/dpns-contract.json",
-        None,
-        Some(&db_transaction_with_batches),
-    );
-
-    setup_contract(
-        &drive_without_batches,
-        "tests/supporting_files/contract/dpns/dpns-contract.json",
-        None,
-        Some(&db_transaction_without_batches),
-    );
-
-    let root_hash_with_batches = drive_with_batches
-        .grove
-        .root_hash(Some(&db_transaction_with_batches))
-        .unwrap()
-        .expect("there is always a root hash");
-
-    let root_hash_without_batches = drive_without_batches
-        .grove
-        .root_hash(Some(&db_transaction_without_batches))
-        .unwrap()
-        .expect("there is always a root hash");
-
-    assert_eq!(root_hash_with_batches, root_hash_without_batches);
-}
-
-#[cfg(feature = "full")]
-/// Tests that the root hashes are the same between a Drive with and without batches.
-/// Employs the empty root tree with the DPNS contract and one document.
-#[ignore]
-#[test]
-fn test_root_hash_matches_with_batching_contract_and_one_document() {
-    let tmp_dir_1 = TempDir::new().unwrap();
-    let tmp_dir_2 = TempDir::new().unwrap();
-    let drive_with_batches: Drive =
-        Drive::open(&tmp_dir_1, Some(DriveConfig::default_with_batches()))
-            .expect("expected to open Drive successfully");
-    let drive_without_batches: Drive =
-        Drive::open(&tmp_dir_2, Some(DriveConfig::default_without_batches()))
-            .expect("expected to open Drive successfully");
-
-    let db_transaction_with_batches = drive_with_batches.grove.start_transaction();
-    let db_transaction_without_batches = drive_without_batches.grove.start_transaction();
-
-    drive_with_batches
-        .create_initial_state_structure(Some(&db_transaction_with_batches))
-        .expect("expected to create root tree successfully");
-
-    drive_without_batches
-        .create_initial_state_structure(Some(&db_transaction_without_batches))
-        .expect("expected to create root tree successfully");
-
-    // setup code
-    let contract_with_batches = setup_contract(
-        &drive_with_batches,
-        "tests/supporting_files/contract/dpns/dpns-contract.json",
-        None,
-        Some(&db_transaction_with_batches),
-    );
-
-    let contract_without_batches = setup_contract(
-        &drive_without_batches,
-        "tests/supporting_files/contract/dpns/dpns-contract.json",
-        None,
-        Some(&db_transaction_without_batches),
-    );
-
-    add_domains_to_contract(
-        &drive_with_batches,
-        &contract_with_batches,
-        Some(&db_transaction_with_batches),
-        1,
-        5,
-    );
-    add_domains_to_contract(
-        &drive_without_batches,
-        &contract_without_batches,
-        Some(&db_transaction_without_batches),
-        1,
-        5,
-    );
-
-    let root_hash_with_batches = drive_with_batches
-        .grove
-        .root_hash(Some(&db_transaction_with_batches))
-        .unwrap()
-        .expect("there is always a root hash");
-
-    let root_hash_without_batches = drive_without_batches
-        .grove
-        .root_hash(Some(&db_transaction_without_batches))
-        .unwrap()
-        .expect("there is always a root hash");
-
-    assert_eq!(root_hash_with_batches, root_hash_without_batches);
 }

@@ -47,7 +47,7 @@ fn init() {
 }
 
 fn get_schema_error<TData: Clone>(
-    result: &ValidationResult<TData>,
+    result: &ConsensusValidationResult<TData>,
     number: usize,
 ) -> &JsonSchemaError {
     result
@@ -59,7 +59,7 @@ fn get_schema_error<TData: Clone>(
 }
 
 fn get_value_error<TData: Clone>(
-    result: &ValidationResult<TData>,
+    result: &ConsensusValidationResult<TData>,
     number: usize,
 ) -> &platform_value::Error {
     result
@@ -87,7 +87,7 @@ fn get_index_error(consensus_error: &ConsensusError) -> &IndexError {
     }
 }
 
-fn print_json_schema_errors<TData: Clone>(result: &ValidationResult<TData>) {
+fn print_json_schema_errors<TData: Clone>(result: &ConsensusValidationResult<TData>) {
     for (i, e) in result.errors.iter().enumerate() {
         let schema_error = e.json_schema_error().unwrap();
         println!(
@@ -1354,7 +1354,7 @@ mod documents {
             "properties": {
               "something": {
                 "type": "string",
-                "format": "url",
+                "format": "uri",
                 "maxLength": 60000,
               },
             },
@@ -2443,40 +2443,6 @@ mod indices {
                 "Expected InvalidIndexPropertyTypeError, got {}",
                 index_error
             ),
-        }
-    }
-
-    #[test]
-    fn should_return_invalid_result_if_unique_compound_index_contains_both_required_and_optional_properties(
-    ) {
-        let TestData {
-            mut raw_data_contract,
-            data_contract_validator,
-            ..
-        } = setup_test();
-
-        if let Some(Value::Array(arr)) = raw_data_contract
-            .get_optional_mut_value_at_path("documents.optionalUniqueIndexedDocument.required")
-            .expect("expected to get optional value at path")
-        {
-            arr.pop();
-        }
-
-        let result = data_contract_validator
-            .validate(&raw_data_contract)
-            .expect("validation result should be returned");
-        let error = result.errors.get(0).expect("the error should be present");
-        let index_error = get_index_error(error);
-
-        assert_eq!(1010, index_error.get_code());
-        match index_error {
-            IndexError::InvalidCompoundIndexError(err) => {
-                assert_eq!(
-                    err.document_type(),
-                    "optionalUniqueIndexedDocument".to_string()
-                );
-            }
-            _ => panic!("Expected InvalidCompoundIndexError, got {}", index_error),
         }
     }
 

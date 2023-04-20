@@ -9,15 +9,15 @@ use crate::{
     consensus::basic::BasicError,
     data_contract::DataContract,
     util::json_schema::{Index, JsonSchemaExt},
-    validation::SimpleValidationResult,
+    validation::SimpleConsensusValidationResult,
     ProtocolError,
 };
 
 pub fn validate_partial_compound_indices<'a>(
     raw_document_transitions: impl IntoIterator<Item = &'a Value>,
     data_contract: &DataContract,
-) -> Result<SimpleValidationResult, ProtocolError> {
-    let mut result = SimpleValidationResult::default();
+) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+    let mut result = SimpleConsensusValidationResult::default();
 
     for transition in raw_document_transitions {
         let document_type = transition.get_str("$type")?;
@@ -41,11 +41,11 @@ pub fn validate_indices<V>(
     indices: &[Index],
     document_type: &str,
     raw_transition_map: &BTreeMap<String, V>,
-) -> SimpleValidationResult
+) -> SimpleConsensusValidationResult
 where
     V: Borrow<Value>,
 {
-    let mut validation_result = SimpleValidationResult::default();
+    let mut validation_result = SimpleConsensusValidationResult::default();
 
     for index in indices
         .iter()

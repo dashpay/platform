@@ -1,3 +1,4 @@
+use derive_more::From;
 use serde::{Deserialize, Serialize};
 
 pub use abstract_state_transition::{
@@ -16,6 +17,7 @@ use crate::identity::state_transition::identity_credit_withdrawal_transition::Id
 use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use crate::prelude::Identifier;
+use bincode::{Decode, Encode};
 
 mod abstract_state_transition;
 mod abstract_state_transition_identity_signed;
@@ -25,8 +27,6 @@ use crate::ProtocolError;
 pub use state_transition_facade::*;
 pub use state_transition_factory::*;
 
-use self::state_transition_execution_context::StateTransitionExecutionContext;
-
 mod state_transition_types;
 pub mod validation;
 
@@ -35,7 +35,9 @@ pub mod fee;
 pub mod state_transition_execution_context;
 
 mod example;
+mod serialization;
 mod state_transition_action;
+
 pub use state_transition_action::StateTransitionAction;
 macro_rules! call_method {
     ($state_transition:expr, $method:ident, $args:tt ) => {
@@ -78,18 +80,44 @@ macro_rules! call_static_method {
     };
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, From, PartialEq)]
 pub enum StateTransition {
     DataContractCreate(DataContractCreateTransition),
     DataContractUpdate(DataContractUpdateTransition),
     DocumentsBatch(DocumentsBatchTransition),
-    IdentityCreate(IdentityCreateTransition),
+    IdentityCreate(#[bincode(with_serde)] IdentityCreateTransition),
     IdentityTopUp(IdentityTopUpTransition),
     IdentityCreditWithdrawal(IdentityCreditWithdrawalTransition),
     IdentityUpdate(IdentityUpdateTransition),
 }
 
 impl StateTransition {
+    // pub fn from_value(value: Value) -> Result<Self, ProtocolError> {
+    //     let state_transition_type = value.get_integer("type")? as StateTransitionType;
+    //     Ok(match state_transition_type {
+    //         StateTransitionType::DataContractCreate => {
+    //             DataContractCreateTransition::from_raw_object(value)?.into()
+    //         }
+    //         StateTransitionType::DocumentsBatch => {
+    //             DocumentsBatchTransition::from_raw_object_with_contracts(value)?.into()
+    //         }
+    //         StateTransitionType::IdentityCreate => {
+    //             IdentityCreateTransition::from_raw_object(value)?.into()
+    //         }
+    //         StateTransitionType::IdentityTopUp => {
+    //             IdentityTopUpTransition::from_raw_object(value)?.into()
+    //         }
+    //         StateTransitionType::DataContractUpdate => {
+    //             DataContractUpdateTransition::from_raw_object(value)?.into()
+    //         }
+    //         StateTransitionType::IdentityUpdate => {
+    //             IdentityUpdateTransition::from_raw_object(value)?.into()
+    //         }
+    //         StateTransitionType::IdentityCreditWithdrawal => {
+    //             IdentityCreditWithdrawalTransition::from_raw_object(value)?.into()
+    //         }
+    //     })
+    // }
     fn signature_property_paths(&self) -> Vec<&'static str> {
         call_static_method!(self, signature_property_paths)
     }
@@ -102,7 +130,7 @@ impl StateTransition {
         call_static_method!(self, binary_property_paths)
     }
 
-    fn get_owner_id(&self) -> &Identifier {
+    pub fn get_owner_id(&self) -> &Identifier {
         call_method!(self, get_owner_id)
     }
 }
@@ -112,8 +140,8 @@ impl StateTransitionConvert for StateTransition {
         call_method!(self, hash, skip_signature)
     }
 
-    fn to_buffer(&self, _skip_signature: bool) -> Result<Vec<u8>, crate::ProtocolError> {
-        call_method!(self, to_buffer, true)
+    fn to_cbor_buffer(&self, _skip_signature: bool) -> Result<Vec<u8>, crate::ProtocolError> {
+        call_method!(self, to_cbor_buffer, true)
     }
 
     fn to_json(&self, skip_signature: bool) -> Result<serde_json::Value, crate::ProtocolError> {
@@ -162,53 +190,11 @@ impl StateTransitionLike for StateTransition {
         call_method!(self, set_signature, signature)
     }
 
-    fn get_execution_context(&self) -> &StateTransitionExecutionContext {
-        call_method!(self, get_execution_context)
-    }
-
-    fn get_execution_context_mut(&mut self) -> &mut StateTransitionExecutionContext {
-        call_method!(self, get_execution_context_mut)
-    }
-
-    fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
-        call_method!(self, set_execution_context, execution_context)
-    }
-
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
         call_method!(self, set_signature_bytes, signature)
     }
 
     fn get_modified_data_ids(&self) -> Vec<crate::prelude::Identifier> {
         call_method!(self, get_modified_data_ids)
-    }
-}
-
-impl From<DataContractCreateTransition> for StateTransition {
-    fn from(d: DataContractCreateTransition) -> Self {
-        Self::DataContractCreate(d)
-    }
-}
-
-impl From<DataContractUpdateTransition> for StateTransition {
-    fn from(d: DataContractUpdateTransition) -> Self {
-        Self::DataContractUpdate(d)
-    }
-}
-
-impl From<DocumentsBatchTransition> for StateTransition {
-    fn from(d: DocumentsBatchTransition) -> Self {
-        Self::DocumentsBatch(d)
-    }
-}
-
-impl From<IdentityCreditWithdrawalTransition> for StateTransition {
-    fn from(d: IdentityCreditWithdrawalTransition) -> Self {
-        Self::IdentityCreditWithdrawal(d)
-    }
-}
-
-impl From<IdentityUpdateTransition> for StateTransition {
-    fn from(d: IdentityUpdateTransition) -> Self {
-        Self::IdentityUpdate(d)
     }
 }

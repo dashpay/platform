@@ -1,7 +1,7 @@
 use crate::{ProtocolError, PublicKeyValidationError};
 #[cfg(not(target_arch = "wasm32"))]
 use anyhow::anyhow;
-use bls_signatures::{verify_messages, PrivateKey, PublicKey, Serialize};
+use bls_signatures::{PrivateKey, PublicKey};
 use std::convert::TryInto;
 
 pub trait BlsModule {
@@ -37,10 +37,10 @@ impl BlsModule for NativeBlsModule {
         data: &[u8],
         public_key: &[u8],
     ) -> Result<bool, ProtocolError> {
-        let pk = PublicKey::from_bytes(public_key).map_err(anyhow::Error::msg)?;
+        let public_key = PublicKey::from_bytes(public_key).map_err(anyhow::Error::msg)?;
         let signature =
             bls_signatures::Signature::from_bytes(signature).map_err(anyhow::Error::msg)?;
-        match verify_messages(&signature, &[data], &[pk]) {
+        match public_key.verify(&signature, data) {
             true => Ok(true),
             // TODO change to specific error type
             false => Err(anyhow!("Verification failed").into()),
@@ -51,16 +51,17 @@ impl BlsModule for NativeBlsModule {
         let fixed_len_key: [u8; 32] = private_key
             .try_into()
             .map_err(|_| anyhow!("the BLS private key must be 32 bytes long"))?;
-        let pk = PrivateKey::from_bytes(&fixed_len_key).map_err(anyhow::Error::msg)?;
-        let public_key = pk.public_key().as_bytes();
-        Ok(public_key)
+        let pk = PrivateKey::from_bytes(&fixed_len_key, false).map_err(anyhow::Error::msg)?;
+        let public_key = pk.g1_element().map_err(anyhow::Error::msg)?;
+        let public_key_bytes = public_key.to_bytes().to_vec();
+        Ok(public_key_bytes)
     }
 
     fn sign(&self, data: &[u8], private_key: &[u8]) -> Result<Vec<u8>, ProtocolError> {
         let fixed_len_key: [u8; 32] = private_key
             .try_into()
             .map_err(|_| anyhow!("the BLS private key must be 32 bytes long"))?;
-        let pk = PrivateKey::from_bytes(&fixed_len_key).map_err(anyhow::Error::msg)?;
-        Ok(pk.sign(data).as_bytes())
+        let pk = PrivateKey::from_bytes(&fixed_len_key, false).map_err(anyhow::Error::msg)?;
+        Ok(pk.sign(data).to_bytes().to_vec())
     }
 }

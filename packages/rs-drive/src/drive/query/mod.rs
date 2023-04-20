@@ -34,6 +34,7 @@
 
 use grovedb::query_result_type::{Key, QueryResultType};
 use grovedb::TransactionArg;
+use std::collections::BTreeMap;
 
 use crate::contract::Contract;
 use crate::drive::Drive;
@@ -45,12 +46,15 @@ use crate::query::DriveQuery;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::DriveContractExt;
 use dpp::document::Document;
+use dpp::platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
+use dpp::platform_value::Value;
 use dpp::ProtocolError;
 
-use crate::drive::block_info::BlockInfo;
-use crate::fee_pools::epochs::Epoch;
+use crate::query::QueryResultEncoding::CborEncodedQueryResult;
+use dpp::block::block_info::BlockInfo;
+use dpp::block::epoch::Epoch;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 /// The outcome of a query
 pub struct QueryDocumentsOutcome {
     /// returned items
@@ -84,18 +88,132 @@ pub struct QueryDocumentIdsOutcome {
 impl Drive {
     /// Performs and returns the result of the specified query along with skipped items
     /// and the cost.
+    pub fn query_serialized(
+        &self,
+        serialized_query: Vec<u8>,
+        path: String,
+        prove: bool,
+    ) -> Result<Vec<u8>, Error> {
+        let mut query: BTreeMap<String, Value> =
+            ciborium::de::from_reader(serialized_query.as_slice()).map_err(|e| {
+                ProtocolError::DecodingError(format!("Unable to decode identity CBOR: {}", e))
+            })?;
+        match path.as_str() {
+            "/identity/balance" => {
+                let identity_id = query.remove_identifier("identityId")?;
+                if prove {
+                    self.prove_identity_balance(identity_id.into_buffer(), None)
+                } else {
+                    self.fetch_serialized_identity_balance(
+                        identity_id.into_buffer(),
+                        CborEncodedQueryResult,
+                        None,
+                    )
+                }
+            }
+            "/identity/balanceAndRevision" => {
+                let identity_id = query.remove_identifier("identityId")?;
+                if prove {
+                    self.prove_identity_balance_and_revision(identity_id.into_buffer(), None)
+                } else {
+                    self.fetch_serialized_identity_balance_and_revision(
+                        identity_id.into_buffer(),
+                        CborEncodedQueryResult,
+                        None,
+                    )
+                }
+            }
+            "/identities/keys" => {
+                // let identity_id = query.remove_identifier("identityIds")?;
+                // let request = query.str_val("keyRequest")?;
+                todo!()
+            }
+            "/dataContract" => {
+                let contract_id = query.remove_identifier("contractId")?;
+                if prove {
+                    self.prove_contract(contract_id.into_buffer(), None)
+                } else {
+                    self.query_contract_as_serialized(
+                        contract_id.into_buffer(),
+                        CborEncodedQueryResult,
+                        None,
+                    )
+                }
+            }
+            "/documents" | "/dataContract/documents" => {
+                let contract_id = query.remove_identifier("contractId")?;
+                let (_, contract) =
+                    self.get_contract_with_fetch_info(contract_id.to_buffer(), None, true, None)?;
+                let contract = contract.ok_or(Error::Query(QueryError::ContractNotFound(
+                    "contract not found when querying from value with contract info",
+                )))?;
+                let contract_ref = &contract.contract;
+                let document_type_name = query.remove_string("type")?;
+                let document_type =
+                    contract_ref.document_type_for_name(document_type_name.as_str())?;
+                let drive_query =
+                    DriveQuery::from_btree_map_value(query, &contract_ref, document_type)?;
+                if prove {
+                    drive_query.execute_with_proof_internal(self, None, &mut vec![])
+                } else {
+                    drive_query.execute_serialized_as_result_no_proof(
+                        self,
+                        None,
+                        CborEncodedQueryResult,
+                        None,
+                    )
+                }
+            }
+            "/proofs" => {
+                if prove {
+                    todo!()
+                } else {
+                    todo!()
+                }
+            }
+            "/identities/by-public-key-hash" => {
+                let public_key_hash = query.remove_bytes_20("publicKeyHash")?;
+                if prove {
+                    self.prove_full_identity_by_unique_public_key_hash(
+                        public_key_hash.into_buffer(),
+                        None,
+                    )
+                } else {
+                    self.fetch_serialized_full_identity_by_unique_public_key_hash(
+                        public_key_hash.into_buffer(),
+                        CborEncodedQueryResult,
+                        None,
+                    )
+                }
+            }
+            other => Err(Error::Query(QueryError::Unsupported(format!(
+                "query path '{}' is not supported",
+                other
+            )))),
+        }
+    }
+
+    /// Performs and returns the result of the specified query along with skipped items
+    /// and the cost.
     pub fn query_documents(
         &self,
         query: DriveQuery,
         epoch: Option<&Epoch>,
+        dry_run: bool,
         transaction: TransactionArg,
     ) -> Result<QueryDocumentsOutcome, Error> {
+        if dry_run {
+            return Ok(QueryDocumentsOutcome::default());
+        }
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        let (items, skipped) =
-            query.execute_serialized_no_proof_internal(self, transaction, &mut drive_operations)?;
+        let (items, skipped) = query.execute_raw_results_no_proof_internal(
+            self,
+            transaction,
+            &mut drive_operations,
+        )?;
         let documents = items
             .into_iter()
-            .map(|serialized| Document::from_cbor(serialized.as_slice(), None, None))
+            .map(|serialized| Document::from_bytes(serialized.as_slice(), query.document_type))
             .collect::<Result<Vec<Document>, ProtocolError>>()?;
         let cost = if let Some(epoch) = epoch {
             let fee_result = calculate_fee(None, Some(drive_operations), epoch)?;
@@ -120,8 +238,11 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<QuerySerializedDocumentsOutcome, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-        let (items, skipped) =
-            query.execute_serialized_no_proof_internal(self, transaction, &mut drive_operations)?;
+        let (items, skipped) = query.execute_raw_results_no_proof_internal(
+            self,
+            transaction,
+            &mut drive_operations,
+        )?;
         let cost = if let Some(epoch) = epoch {
             let fee_result = calculate_fee(None, Some(drive_operations), epoch)?;
             fee_result.processing_fee
@@ -184,6 +305,7 @@ impl Drive {
             .get_contract_with_fetch_info_and_add_to_operations(
                 contract_id,
                 epoch,
+                true,
                 transaction,
                 &mut drive_operations,
             )?
@@ -292,7 +414,7 @@ impl Drive {
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
         let query = DriveQuery::from_cbor(query_cbor, contract, document_type)?;
 
-        query.execute_serialized_no_proof_internal(self, transaction, drive_operations)
+        query.execute_raw_results_no_proof_internal(self, transaction, drive_operations)
     }
 
     /// Performs and returns the result of the specified query along with the fee.
@@ -311,6 +433,7 @@ impl Drive {
             .get_contract_with_fetch_info_and_add_to_operations(
                 contract_id,
                 epoch,
+                true,
                 transaction,
                 &mut drive_operations,
             )?

@@ -1,12 +1,24 @@
-use crate::identity::Purpose::{AUTHENTICATION, DECRYPTION, ENCRYPTION, WITHDRAW};
+use crate::identity::Purpose::{AUTHENTICATION, DECRYPTION, ENCRYPTION, SYSTEM, WITHDRAW};
 use anyhow::bail;
+use bincode::{Decode, Encode};
 use ciborium::value::Value as CborValue;
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::convert::TryFrom;
 
 #[repr(u8)]
 #[derive(
-    Debug, PartialEq, Eq, Clone, Copy, Hash, Serialize_repr, Deserialize_repr, Ord, PartialOrd,
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    Copy,
+    Hash,
+    Serialize_repr,
+    Deserialize_repr,
+    Ord,
+    PartialOrd,
+    Encode,
+    Decode,
 )]
 pub enum Purpose {
     /// at least one authentication key must be registered for all security levels
@@ -17,6 +29,8 @@ pub enum Purpose {
     DECRYPTION = 2,
     /// this key cannot be used for signing documents
     WITHDRAW = 3,
+    /// this key cannot be used for signing documents
+    SYSTEM = 4,
 }
 
 impl TryFrom<u8> for Purpose {
@@ -27,6 +41,7 @@ impl TryFrom<u8> for Purpose {
             1 => Ok(ENCRYPTION),
             2 => Ok(DECRYPTION),
             3 => Ok(WITHDRAW),
+            4 => Ok(SYSTEM),
             value => bail!("unrecognized purpose: {}", value),
         }
     }

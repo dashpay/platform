@@ -14,13 +14,11 @@ use crate::consensus::ConsensusError;
 use crate::data_contract::state_transition::errors::MissingDataContractIdError;
 use crate::document::state_transition::documents_batch_transition::property_names;
 use crate::document::validation::basic::find_duplicates_by_id::find_duplicates_by_id;
-use crate::validation::SimpleValidationResult;
+use crate::validation::SimpleConsensusValidationResult;
 use crate::{
     consensus::basic::BasicError,
     data_contract::{
-        enrich_data_contract_with_base_schema::{
-            enrich_data_contract_with_base_schema, PREFIX_BYTE_1, PREFIX_BYTE_2, PREFIX_BYTE_3,
-        },
+        enrich_with_base_schema::{PREFIX_BYTE_1, PREFIX_BYTE_2, PREFIX_BYTE_3},
         DataContract,
     },
     document::{document_transition::Action, generate_document_id::generate_document_id},
@@ -44,26 +42,29 @@ use super::{
 };
 
 lazy_static! {
-    static ref BASE_TRANSITION_SCHEMA: JsonValue = serde_json::from_str(include_str!(
+    pub static ref BASE_TRANSITION_SCHEMA: JsonValue = serde_json::from_str(include_str!(
         "../../../../../schema/document/stateTransition/documentTransition/base.json"
     ))
     .unwrap();
-    static ref CREATE_TRANSITION_SCHEMA: JsonValue = serde_json::from_str(include_str!(
+    pub static ref CREATE_TRANSITION_SCHEMA: JsonValue = serde_json::from_str(include_str!(
         "../../../../../schema/document/stateTransition/documentTransition/create.json"
     ))
     .unwrap();
-    static ref REPLACE_TRANSITION_SCHEMA: JsonValue = serde_json::from_str(include_str!(
+    pub static ref REPLACE_TRANSITION_SCHEMA: JsonValue = serde_json::from_str(include_str!(
         "../../../../../schema/document/stateTransition/documentTransition/replace.json"
     ))
     .unwrap();
-    static ref DOCUMENTS_BATCH_TRANSITIONS_SCHEMA: JsonValue = serde_json::from_str(include_str!(
-        "../../../../../schema/document/stateTransition/documentsBatch.json"
-    ))
+    pub static ref DOCUMENTS_BATCH_TRANSITIONS_SCHEMA: JsonValue = serde_json::from_str(
+        include_str!("../../../../../schema/document/stateTransition/documentsBatch.json")
+    )
     .unwrap();
+    pub static ref DOCUMENTS_BATCH_TRANSITIONS_SCHEMA_VALIDATOR: JsonSchemaValidator =
+        JsonSchemaValidator::new(DOCUMENTS_BATCH_TRANSITIONS_SCHEMA.clone())
+            .expect("unable to compile jsonschema");
 }
 
 pub trait Validator {
-    fn validate(&self, data: JsonValue) -> Result<SimpleValidationResult, ProtocolError>;
+    fn validate(&self, data: JsonValue) -> Result<SimpleConsensusValidationResult, ProtocolError>;
 }
 
 pub struct DocumentBatchTransitionBasicValidator<SR> {
@@ -89,7 +90,7 @@ where
         &self,
         raw_state_transition: &Value,
         execution_context: &StateTransitionExecutionContext,
-    ) -> Result<SimpleValidationResult, ProtocolError> {
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         // TODO: move validation code into function body to avoid cloning of state_repository
         validate_documents_batch_transition_basic(
             &self.protocol_version_validator,
@@ -106,8 +107,8 @@ pub async fn validate_documents_batch_transition_basic(
     raw_state_transition: &Value,
     state_repository: Arc<impl StateRepositoryLike>,
     execution_context: &StateTransitionExecutionContext,
-) -> Result<SimpleValidationResult, ProtocolError> {
-    let mut result = SimpleValidationResult::default();
+) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+    let mut result = SimpleConsensusValidationResult::default();
     let validator =
         JsonSchemaValidator::new(DOCUMENTS_BATCH_TRANSITIONS_SCHEMA.clone()).map_err(|e| {
             anyhow!(
@@ -202,12 +203,12 @@ pub async fn validate_documents_batch_transition_basic(
     Ok(result)
 }
 
-fn validate_document_transitions<'a>(
+pub fn validate_document_transitions<'a>(
     data_contract: &DataContract,
     owner_id: Identifier,
     raw_document_transitions: impl IntoIterator<Item = BTreeMap<String, &'a Value>>,
-) -> Result<SimpleValidationResult, ProtocolError> {
-    let mut result = SimpleValidationResult::default();
+) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+    let mut result = SimpleConsensusValidationResult::default();
     let enriched_contracts_by_action = get_enriched_contracts_by_action(data_contract)?;
 
     let validation_result = validate_raw_transitions(
@@ -224,20 +225,14 @@ fn validate_document_transitions<'a>(
 fn get_enriched_contracts_by_action(
     data_contract: &DataContract,
 ) -> Result<HashMap<Action, DataContract>, ProtocolError> {
-    let enriched_base_contract = enrich_data_contract_with_base_schema(
-        data_contract,
-        &BASE_TRANSITION_SCHEMA,
-        PREFIX_BYTE_1,
-        &[],
-    )?;
-    let enriched_create_contract = enrich_data_contract_with_base_schema(
-        &enriched_base_contract,
+    let enriched_base_contract =
+        data_contract.enrich_with_base_schema(&BASE_TRANSITION_SCHEMA, PREFIX_BYTE_1, &[])?;
+    let enriched_create_contract = enriched_base_contract.enrich_with_base_schema(
         &CREATE_TRANSITION_SCHEMA,
         PREFIX_BYTE_2,
         &[],
     )?;
-    let enriched_replace_contract = enrich_data_contract_with_base_schema(
-        &enriched_base_contract,
+    let enriched_replace_contract = enriched_base_contract.enrich_with_base_schema(
         &REPLACE_TRANSITION_SCHEMA,
         PREFIX_BYTE_3,
         &["$createdAt"],
@@ -254,8 +249,8 @@ fn validate_raw_transitions<'a>(
     raw_document_transitions: impl IntoIterator<Item = BTreeMap<String, &'a Value>>,
     enriched_contracts_by_action: &HashMap<Action, DataContract>,
     owner_id: Identifier,
-) -> Result<SimpleValidationResult, ProtocolError> {
-    let mut result = SimpleValidationResult::default();
+) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+    let mut result = SimpleConsensusValidationResult::default();
     let mut raw_document_transitions_as_value: Vec<Value> = vec![];
     let owner_id_value: Value = owner_id.into();
     for mut raw_document_transition in raw_document_transitions {
@@ -316,6 +311,15 @@ fn validate_raw_transitions<'a>(
                         generate_document_id(&data_contract.id, &owner_id, document_type, &entropy);
 
                     if generated_document_id != document_id {
+                        dbg!(
+                            "g {} d {} c id {} owner {} dt {} e {}",
+                            hex::encode(generated_document_id),
+                            hex::encode(document_id),
+                            hex::encode(&data_contract.id),
+                            hex::encode(owner_id),
+                            document_type,
+                            hex::encode(entropy)
+                        );
                         result.add_error(BasicError::InvalidDocumentTransitionIdError(
                             InvalidDocumentTransitionIdError::new(
                                 generated_document_id,

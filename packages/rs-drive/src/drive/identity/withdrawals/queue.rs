@@ -90,10 +90,11 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use crate::{
-        drive::{batch::DriveOperation, block_info::BlockInfo},
-        fee_pools::epochs::Epoch,
+        drive::batch::DriveOperation,
         tests::helpers::setup::setup_drive_with_initial_state_structure,
     };
+    use dpp::block::block_info::BlockInfo;
+    use dpp::block::epoch::Epoch;
 
     #[test]
     fn test_enqueue_and_dequeue() {
@@ -108,7 +109,8 @@ mod tests {
         let block_info = BlockInfo {
             time_ms: 1,
             height: 1,
-            epoch: Epoch::new(1),
+            core_height: 1,
+            epoch: Epoch::new(1).unwrap(),
         };
 
         let mut drive_operations: Vec<DriveOperation> = vec![];

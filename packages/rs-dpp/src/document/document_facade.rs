@@ -2,7 +2,7 @@ use platform_value::Value;
 use std::sync::Arc;
 
 use crate::document::ExtendedDocument;
-use crate::validation::ValidationResult;
+use crate::validation::ConsensusValidationResult;
 use crate::{
     data_contract::DataContract, prelude::Identifier, state_repository::StateRepositoryLike,
     version::ProtocolVersionValidator, ProtocolError,
@@ -93,7 +93,7 @@ where
     pub async fn validate_extended_document(
         &self,
         extended_document: &ExtendedDocument,
-    ) -> Result<ValidationResult<DataContract>, ProtocolError> {
+    ) -> Result<ConsensusValidationResult<DataContract>, ProtocolError> {
         let raw_extended_document = extended_document.to_value()?;
         self.validate_raw_extended_document(&raw_extended_document)
             .await
@@ -103,7 +103,7 @@ where
     pub async fn validate_raw_extended_document(
         &self,
         raw_extended_document: &Value,
-    ) -> Result<ValidationResult<DataContract>, ProtocolError> {
+    ) -> Result<ConsensusValidationResult<DataContract>, ProtocolError> {
         let mut result = self
             .data_contract_fetcher_and_validator
             .validate_extended(raw_extended_document)
@@ -113,7 +113,7 @@ where
             return Ok(result);
         }
 
-        let data_contract = result.data()?;
+        let data_contract = result.data_as_borrowed()?;
         let validation_result = self
             .validator
             .validate_extended(raw_extended_document, data_contract)?;

@@ -1,11 +1,12 @@
 use crate::string_encoding::Encoding;
 use crate::types::encoding_string_to_encoding;
 use crate::{string_encoding, Error, Value};
+use bincode::{Decode, Encode};
 use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[derive(Default, Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash)]
+#[derive(Default, Debug, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Encode, Decode)]
 pub struct BinaryData(pub Vec<u8>);
 
 impl Serialize for BinaryData {

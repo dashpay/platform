@@ -4,7 +4,7 @@ services:
   drive_abci:
     build:
       context: ${PLATFORM_SOURCE_PATH:?err}
-      dockerfile: ${PLATFORM_SOURCE_PATH:?err}/packages/js-drive/Dockerfile
+      dockerfile: ${PLATFORM_SOURCE_PATH:?err}/packages/rs-drive-abci/Dockerfile
     image: drive:local
     stop_grace_period: 30s
 

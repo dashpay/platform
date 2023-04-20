@@ -21,6 +21,18 @@ macro_rules! get_from_transition {
     };
 }
 
+#[macro_export]
+/// Getter of Document Transition Base properties
+macro_rules! get_from_transition_action {
+    ($document_transition_action:expr, $property:ident) => {
+        match $document_transition_action {
+            DocumentTransitionAction::CreateAction(d) => &d.base.$property,
+            DocumentTransitionAction::DeleteAction(d) => &d.base.$property,
+            DocumentTransitionAction::ReplaceAction(d) => &d.base.$property,
+        }
+    };
+}
+
 /// Finds duplicates of indices in Document Transitions.
 pub fn find_duplicates_by_indices<'a>(
     raw_extended_documents: impl IntoIterator<Item = &'a Value>,
@@ -178,6 +190,7 @@ mod test {
         let document_def_value: Value = document_def.clone().into();
 
         let document_type = DocumentType::from_platform_value(
+            Default::default(),
             "indexedDocument",
             document_def_value.to_map().expect("expected a map"),
             &BTreeMap::new(),
@@ -303,6 +316,7 @@ mod test {
         let document_def_value: Value = document_def.clone().into();
 
         let document_type = DocumentType::from_platform_value(
+            Default::default(),
             "indexedDocument",
             document_def_value.to_map().expect("expected a map"),
             &BTreeMap::new(),
@@ -429,6 +443,7 @@ mod test {
         let document_def_value: Value = document_def.clone().into();
 
         let document_type = DocumentType::from_platform_value(
+            Default::default(),
             "indexedDocument",
             document_def_value.to_map().expect("expected a map"),
             &BTreeMap::new(),

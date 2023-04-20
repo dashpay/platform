@@ -16,17 +16,21 @@ use crate::{
     },
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
     validation::{
-        DataValidator, DataValidatorWithContext, JsonSchemaValidator, SimpleValidationResult,
+        DataValidator, DataValidatorWithContext, JsonSchemaValidator,
+        SimpleConsensusValidationResult,
     },
     version::ProtocolVersionValidator,
     ProtocolError,
 };
 
 lazy_static! {
-    static ref DATA_CONTRACT_CREATE_SCHEMA: JsonValue = serde_json::from_str(include_str!(
+    pub static ref DATA_CONTRACT_CREATE_SCHEMA: JsonValue = serde_json::from_str(include_str!(
         "../../../../../schema/data_contract/stateTransition/dataContractCreate.json"
     ))
     .unwrap();
+    pub static ref DATA_CONTRACT_CREATE_SCHEMA_VALIDATOR: JsonSchemaValidator =
+        JsonSchemaValidator::new(DATA_CONTRACT_CREATE_SCHEMA.clone())
+            .expect("unable to compile jsonschema");
 }
 
 pub struct DataContractCreateTransitionBasicValidator {
@@ -57,7 +61,7 @@ impl DataValidatorWithContext for DataContractCreateTransitionBasicValidator {
         &self,
         data: &Self::Item,
         execution_context: &StateTransitionExecutionContext,
-    ) -> Result<SimpleValidationResult, ProtocolError> {
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         validate_data_contract_create_transition_basic(
             &self.json_schema_validator,
             self.protocol_validator.as_ref(),
@@ -74,7 +78,7 @@ fn validate_data_contract_create_transition_basic(
     data_contract_validator: &impl DataValidator<Item = Value>,
     raw_state_transition: &Value,
     _execution_context: &StateTransitionExecutionContext,
-) -> Result<SimpleValidationResult, ProtocolError> {
+) -> Result<SimpleConsensusValidationResult, ProtocolError> {
     let result = json_schema_validator.validate(
         &raw_state_transition
             .try_to_validating_json()
@@ -90,7 +94,7 @@ fn validate_data_contract_create_transition_basic(
     {
         Ok(v) => v,
         Err(parsing_error) => {
-            return Ok(SimpleValidationResult::new_with_errors(vec![
+            return Ok(SimpleConsensusValidationResult::new_with_errors(vec![
                 ConsensusError::ProtocolVersionParsingError(ProtocolVersionParsingError::new(
                     parsing_error,
                 )),
@@ -117,10 +121,10 @@ fn validate_data_contract_create_transition_basic(
     // Validate Data Contract ID
     let generated_id = generate_data_contract_id(owner_id, entropy);
 
-    let mut validation_result = SimpleValidationResult::default();
-    if generated_id != raw_data_contract_id {
+    let mut validation_result = SimpleConsensusValidationResult::default();
+    if generated_id.as_slice() != raw_data_contract_id {
         validation_result.add_error(BasicError::InvalidDataContractIdError(
-            InvalidDataContractIdError::new(generated_id, raw_data_contract_id),
+            InvalidDataContractIdError::new(generated_id.to_vec(), raw_data_contract_id),
         ))
     }
 

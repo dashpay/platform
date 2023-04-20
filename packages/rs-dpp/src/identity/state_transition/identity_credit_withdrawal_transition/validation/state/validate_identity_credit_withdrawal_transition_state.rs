@@ -12,12 +12,12 @@ use crate::document::{generate_document_id, Document};
 use crate::identity::state_transition::identity_credit_withdrawal_transition::{
     IdentityCreditWithdrawalTransitionAction, Pooling,
 };
-use crate::validation::ValidationResult;
+use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::validation::ConsensusValidationResult;
 use crate::{
     consensus::basic::identity::IdentityInsufficientBalanceError,
     identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
-    state_repository::StateRepositoryLike, state_transition::StateTransitionLike,
-    NonConsensusError, ProtocolError, StateError,
+    state_repository::StateRepositoryLike, NonConsensusError, ProtocolError, StateError,
 };
 
 pub struct IdentityCreditWithdrawalTransitionValidator<SR>
@@ -38,16 +38,15 @@ where
     pub async fn validate_identity_credit_withdrawal_transition_state(
         &self,
         state_transition: &IdentityCreditWithdrawalTransition,
-    ) -> Result<ValidationResult<IdentityCreditWithdrawalTransitionAction>, ProtocolError> {
-        let mut result = ValidationResult::default();
+        execution_context: &StateTransitionExecutionContext,
+    ) -> Result<ConsensusValidationResult<IdentityCreditWithdrawalTransitionAction>, ProtocolError>
+    {
+        let mut result = ConsensusValidationResult::default();
 
         // TODO: Use fetchIdentityBalance
         let maybe_existing_identity = self
             .state_repository
-            .fetch_identity(
-                &state_transition.identity_id,
-                Some(state_transition.get_execution_context()),
-            )
+            .fetch_identity(&state_transition.identity_id, Some(execution_context))
             .await?
             .map(TryInto::try_into)
             .transpose()
@@ -128,6 +127,7 @@ where
         Ok(IdentityCreditWithdrawalTransitionAction {
             version: IdentityCreditWithdrawalTransitionAction::current_version(),
             identity_id: state_transition.identity_id,
+            revision: state_transition.revision,
             prepared_withdrawal_document: withdrawal_document,
         }
         .into())

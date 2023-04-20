@@ -44,6 +44,7 @@ use crate::error::fee::FeeError;
 use crate::error::Error;
 #[cfg(feature = "full")]
 use crate::fee::credits::Credits;
+use crate::fee::default_costs::EpochCosts;
 #[cfg(feature = "full")]
 use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
 #[cfg(feature = "full")]
@@ -54,14 +55,14 @@ use crate::fee::epoch::CreditsPerEpoch;
 use crate::fee::epoch::EpochIndex;
 #[cfg(feature = "full")]
 use crate::fee::get_overflow_error;
-#[cfg(feature = "full")]
-use crate::fee_pools::epochs::Epoch;
-#[cfg(feature = "full")]
-use bincode::Options;
 #[cfg(any(feature = "full", feature = "verify"))]
 use costs::storage_cost::removal::Identifier;
 #[cfg(feature = "full")]
 use costs::storage_cost::removal::StorageRemovalPerEpochByIdentifier;
+#[cfg(feature = "full")]
+use dpp::block::epoch::Epoch;
+#[cfg(feature = "full")]
+use dpp::{bincode, bincode::config};
 #[cfg(any(feature = "full", feature = "verify"))]
 use serde::{Deserialize, Serialize};
 #[cfg(feature = "full")]
@@ -97,7 +98,7 @@ impl FeeRefunds {
                         // TODO We should use multipliers
 
                         let credits: Credits = (bytes as Credits)
-                            .checked_mul(Epoch::new(current_epoch_index).cost_for_known_cost_item(StorageDiskUsageCreditPerByte))
+                            .checked_mul(Epoch::new(current_epoch_index)?.cost_for_known_cost_item(StorageDiskUsageCreditPerByte))
                             .ok_or_else(|| {
                                 get_overflow_error("storage written bytes cost overflow")
                             })?;
@@ -211,43 +212,30 @@ impl FeeRefunds {
 
     /// Serialize the structure
     pub fn serialize(&self) -> Result<Vec<u8>, Error> {
-        bincode::DefaultOptions::default()
-            .with_varint_encoding()
-            .reject_trailing_bytes()
-            .serialize(&self.0)
-            .map_err(|_| {
-                Error::Fee(FeeError::CorruptedRemovedBytesFromIdentitiesSerialization(
-                    "unable to serialize",
-                ))
-            })
+        let config = config::standard().with_big_endian().with_no_limit();
+        bincode::encode_to_vec(&self.0, config).map_err(|_| {
+            Error::Fee(FeeError::CorruptedRemovedBytesFromIdentitiesSerialization(
+                "unable to serialize",
+            ))
+        })
     }
 
     /// Returns serialized size
     pub fn serialized_size(&self) -> Result<u64, Error> {
-        bincode::DefaultOptions::default()
-            .with_varint_encoding()
-            .reject_trailing_bytes()
-            .serialized_size(&self.0)
-            .map_err(|_| {
-                Error::Fee(FeeError::CorruptedRemovedBytesFromIdentitiesSerialization(
-                    "unable to serialize and get size",
-                ))
-            })
+        self.serialize().map(|a| a.len() as u64)
     }
 
     /// Deserialized struct from bytes
     pub fn deserialize(bytes: &[u8]) -> Result<Self, Error> {
-        Ok(FeeRefunds(
-            bincode::DefaultOptions::default()
-                .with_varint_encoding()
-                .reject_trailing_bytes()
-                .deserialize(bytes)
-                .map_err(|_| {
-                    Error::Fee(FeeError::CorruptedRemovedBytesFromIdentitiesSerialization(
-                        "unable to deserialize",
-                    ))
-                })?,
-        ))
+        let config = config::standard().with_big_endian().with_limit::<15000>();
+        let refund = bincode::decode_from_slice(bytes, config)
+            .map_err(|_e| {
+                Error::Fee(FeeError::CorruptedRemovedBytesFromIdentitiesSerialization(
+                    "unable to deserialize",
+                ))
+            })
+            .map(|(a, _)| a)?;
+        Ok(FeeRefunds(refund))
     }
 }
 

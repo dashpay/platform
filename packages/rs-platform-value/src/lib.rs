@@ -36,17 +36,19 @@ pub use btreemap_extensions::btreemap_field_replacement::{
     IntegerReplacementType, ReplacementType,
 };
 pub use types::binary_data::BinaryData;
+pub use types::bytes_20::Bytes20;
 pub use types::bytes_32::Bytes32;
 pub use types::bytes_36::Bytes36;
 pub use types::identifier::{Identifier, IDENTIFIER_MEDIA_TYPE};
 
 pub use value_serialization::{from_value, to_value};
 
+use bincode::{Decode, Encode};
 pub use patch::{patch, Patch};
 
 /// A representation of a dynamic value that can handled dynamically
 #[non_exhaustive]
-#[derive(Clone, Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, PartialEq, PartialOrd, Encode, Decode)]
 pub enum Value {
     /// A u128 integer
     U128(u128),
@@ -80,6 +82,9 @@ pub enum Value {
 
     /// Bytes
     Bytes(Vec<u8>),
+
+    /// Bytes 20
+    Bytes20([u8; 20]),
 
     /// Bytes 32
     Bytes32([u8; 32]),
@@ -370,6 +375,10 @@ impl Value {
     ///
     /// assert!(value.is_any_bytes_type());
     ///
+    /// let value = Value::Bytes20([1u8;20]);
+    ///
+    /// assert!(value.is_any_bytes_type());
+    ///
     /// let value = Value::Bytes32([1u8;32]);
     ///
     /// assert!(value.is_any_bytes_type());
@@ -380,7 +389,11 @@ impl Value {
     /// ```
     pub fn is_any_bytes_type(&self) -> bool {
         match self {
-            Value::Bytes(_) | Value::Bytes32(_) | Value::Bytes36(_) | Value::Identifier(_) => true,
+            Value::Bytes(_)
+            | Value::Bytes20(_)
+            | Value::Bytes32(_)
+            | Value::Bytes36(_)
+            | Value::Identifier(_) => true,
             _ => false,
         }
     }
@@ -435,6 +448,7 @@ impl Value {
     pub fn into_bytes(self) -> Result<Vec<u8>, Error> {
         match self {
             Value::Bytes(vec) => Ok(vec),
+            Value::Bytes20(vec) => Ok(vec.to_vec()),
             Value::Bytes32(vec) => Ok(vec.to_vec()),
             Value::Bytes36(vec) => Ok(vec.to_vec()),
             Value::Identifier(vec) => Ok(vec.to_vec()),
@@ -461,6 +475,7 @@ impl Value {
     pub fn to_bytes(&self) -> Result<Vec<u8>, Error> {
         match self {
             Value::Bytes(vec) => Ok(vec.clone()),
+            Value::Bytes20(vec) => Ok(vec.to_vec()),
             Value::Bytes32(vec) => Ok(vec.to_vec()),
             Value::Bytes36(vec) => Ok(vec.to_vec()),
             Value::Identifier(vec) => Ok(vec.to_vec()),
@@ -491,6 +506,7 @@ impl Value {
     pub fn to_binary_data(&self) -> Result<BinaryData, Error> {
         match self {
             Value::Bytes(vec) => Ok(BinaryData::new(vec.clone())),
+            Value::Bytes20(vec) => Ok(BinaryData::new(vec.to_vec())),
             Value::Bytes32(vec) => Ok(BinaryData::new(vec.to_vec())),
             Value::Bytes36(vec) => Ok(BinaryData::new(vec.to_vec())),
             Value::Identifier(vec) => Ok(BinaryData::new(vec.to_vec())),
@@ -522,6 +538,7 @@ impl Value {
     pub fn as_bytes_slice(&self) -> Result<&[u8], Error> {
         match self {
             Value::Bytes(vec) => Ok(vec),
+            Value::Bytes20(vec) => Ok(vec.as_slice()),
             Value::Bytes32(vec) => Ok(vec.as_slice()),
             Value::Bytes36(vec) => Ok(vec.as_slice()),
             Value::Identifier(vec) => Ok(vec.as_slice()),

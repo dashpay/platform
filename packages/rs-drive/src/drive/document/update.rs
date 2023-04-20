@@ -69,14 +69,15 @@ use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
 
-use crate::drive::block_info::BlockInfo;
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef, KeySize};
 use crate::error::document::DocumentError;
+use dpp::block::block_info::BlockInfo;
 
 use crate::drive::grove_operations::{
     BatchDeleteUpTreeApplyType, BatchInsertApplyType, BatchInsertTreeApplyType, DirectQueryType,
     QueryType,
 };
+
 use crate::fee::result::FeeResult;
 use dpp::prelude::DataContract;
 
@@ -133,6 +134,7 @@ impl Drive {
             .get_contract_with_fetch_info_and_add_to_operations(
                 contract_id,
                 Some(&block_info.epoch),
+                true,
                 transaction,
                 &mut drive_operations,
             )?
@@ -363,14 +365,8 @@ impl Drive {
 
         let old_document_info = if let Some(old_document_element) = old_document_element {
             if let Element::Item(old_serialized_document, element_flags) = old_document_element {
-                let document_result =
-                    Document::from_cbor(old_serialized_document.as_slice(), None, owner_id);
-                let document = match document_result {
-                    Ok(document_result) => Ok(document_result),
-                    Err(_) => {
-                        Document::from_bytes(old_serialized_document.as_slice(), document_type)
-                    }
-                }?;
+                let document =
+                    Document::from_bytes(old_serialized_document.as_slice(), document_type)?;
                 let storage_flags = StorageFlags::map_some_element_flags_ref(&element_flags)?;
                 Ok(DocumentWithoutSerialization((
                     document,
@@ -701,9 +697,10 @@ mod tests {
     use crate::drive::{defaults, Drive};
     use crate::fee::credits::Creditable;
     use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
-    use crate::fee_pools::epochs::Epoch;
     use crate::query::DriveQuery;
     use crate::{common::setup_contract, drive::test_utils::TestEntropyGenerator};
+    use dpp::block::epoch::Epoch;
+    use crate::fee::default_costs::EpochCosts;
 
     #[test]
     fn test_create_and_update_document_same_transaction() {
@@ -827,7 +824,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_serialized_no_proof(&drive, None, None)
+            .execute_raw_results_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
@@ -850,7 +847,7 @@ mod tests {
             .expect("should update alice profile");
 
         let (results_no_transaction, _, _) = query
-            .execute_serialized_no_proof(&drive, None, None)
+            .execute_raw_results_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
@@ -926,7 +923,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_serialized_no_proof(&drive, None, None)
+            .execute_raw_results_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
@@ -934,7 +931,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         let (results_on_transaction, _, _) = query
-            .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
+            .execute_raw_results_no_proof(&drive, None, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 1);
@@ -957,7 +954,7 @@ mod tests {
             .expect("should update alice profile");
 
         let (results_on_transaction, _, _) = query
-            .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
+            .execute_raw_results_no_proof(&drive, None, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 1);
@@ -1039,7 +1036,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_serialized_no_proof(&drive, None, None)
+            .execute_raw_results_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
@@ -1047,7 +1044,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         let (results_on_transaction, _, _) = query
-            .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
+            .execute_raw_results_no_proof(&drive, None, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 1);
@@ -1065,7 +1062,7 @@ mod tests {
             .expect("expected to delete document");
 
         let (results_on_transaction, _, _) = query
-            .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
+            .execute_raw_results_no_proof(&drive, None, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 0);
@@ -1076,7 +1073,7 @@ mod tests {
             .expect("expected to rollback transaction");
 
         let (results_on_transaction, _, _) = query
-            .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
+            .execute_raw_results_no_proof(&drive, None, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 1);
@@ -1371,7 +1368,6 @@ mod tests {
 
     fn test_fees_for_update_document(using_history: bool, using_transaction: bool) {
         let config = DriveConfig {
-            batching_enabled: true,
             batching_consistency_verification: true,
             has_raw_enabled: true,
             default_genesis_time: Some(0),
@@ -1433,7 +1429,9 @@ mod tests {
             transaction.as_ref(),
         );
         let original_bytes = original_fees.storage_fee
-            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+            / Epoch::new(0)
+                .unwrap()
+                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         let expected_added_bytes = if using_history {
             //Explanation for 1290
 
@@ -1595,7 +1593,9 @@ mod tests {
 
             assert_eq!(*removed_credits, 27228298);
             let refund_equivalent_bytes = removed_credits.to_unsigned()
-                / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+                / Epoch::new(0)
+                    .unwrap()
+                    .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
             assert!(expected_added_bytes > refund_equivalent_bytes);
             assert_eq!(refund_equivalent_bytes, 1008); // we refunded 1008 instead of 1011
@@ -1611,7 +1611,9 @@ mod tests {
             );
 
             let original_bytes = original_fees.storage_fee
-                / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+                / Epoch::new(0)
+                    .unwrap()
+                    .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
             assert_eq!(original_bytes, expected_added_bytes);
         }
@@ -1628,7 +1630,9 @@ mod tests {
         // we both add and remove bytes
         // this is because trees are added because of indexes, and also removed
         let added_bytes = update_fees.storage_fee
-            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+            / Epoch::new(0)
+                .unwrap()
+                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
         let expected_added_bytes = if using_history { 362 } else { 1 };
         assert_eq!(added_bytes, expected_added_bytes);
@@ -1636,7 +1640,6 @@ mod tests {
 
     fn test_fees_for_update_document_on_index(using_history: bool, using_transaction: bool) {
         let config = DriveConfig {
-            batching_enabled: true,
             batching_consistency_verification: true,
             has_raw_enabled: true,
             default_genesis_time: Some(0),
@@ -1698,7 +1701,9 @@ mod tests {
             transaction.as_ref(),
         );
         let original_bytes = original_fees.storage_fee
-            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+            / Epoch::new(0)
+                .unwrap()
+                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         let expected_added_bytes = if using_history { 1287 } else { 1011 };
         assert_eq!(original_bytes, expected_added_bytes);
         if !using_history {
@@ -1720,7 +1725,9 @@ mod tests {
 
             assert_eq!(*removed_credits, 27228298);
             let refund_equivalent_bytes = removed_credits.to_unsigned()
-                / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+                / Epoch::new(0)
+                    .unwrap()
+                    .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
             assert!(expected_added_bytes > refund_equivalent_bytes);
             assert_eq!(refund_equivalent_bytes, 1008); // we refunded 1008 instead of 1011
@@ -1736,7 +1743,9 @@ mod tests {
             );
 
             let original_bytes = original_fees.storage_fee
-                / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+                / Epoch::new(0)
+                    .unwrap()
+                    .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
             assert_eq!(original_bytes, expected_added_bytes);
         }
@@ -1753,7 +1762,9 @@ mod tests {
         // we both add and remove bytes
         // this is because trees are added because of indexes, and also removed
         let added_bytes = update_fees.storage_fee
-            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+            / Epoch::new(0)
+                .unwrap()
+                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
         let removed_credits = update_fees
             .fee_refunds
@@ -1769,7 +1780,9 @@ mod tests {
         let expected_removed_credits = if using_history { 16266750 } else { 16212825 };
         assert_eq!(*removed_credits, expected_removed_credits);
         let refund_equivalent_bytes = removed_credits.to_unsigned()
-            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+            / Epoch::new(0)
+                .unwrap()
+                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
         assert!(expected_added_bytes > refund_equivalent_bytes);
         let expected_remove_bytes = if using_history { 602 } else { 600 };
@@ -1818,7 +1831,6 @@ mod tests {
 
     fn test_estimated_fees_for_update_document(using_history: bool, using_transaction: bool) {
         let config = DriveConfig {
-            batching_enabled: true,
             batching_consistency_verification: true,
             has_raw_enabled: true,
             default_genesis_time: Some(0),
@@ -1880,7 +1892,9 @@ mod tests {
             transaction.as_ref(),
         );
         let original_bytes = original_fees.storage_fee
-            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+            / Epoch::new(0)
+                .unwrap()
+                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         let expected_added_bytes = if using_history {
             //Explanation for 1290
 
@@ -2036,7 +2050,9 @@ mod tests {
         // we both add and remove bytes
         // this is because trees are added because of indexes, and also removed
         let added_bytes = update_fees.storage_fee
-            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+            / Epoch::new(0)
+                .unwrap()
+                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
         let expected_added_bytes = if using_history { 1288 } else { 1012 };
         assert_eq!(added_bytes, expected_added_bytes);
@@ -2146,11 +2162,9 @@ mod tests {
     fn test_update_complex_person(
         using_history: bool,
         using_transaction: bool,
-        using_batches: bool,
         using_has_raw: bool,
     ) {
         let config = DriveConfig {
-            batching_enabled: using_batches,
             batching_consistency_verification: true,
             has_raw_enabled: using_has_raw,
             default_genesis_time: Some(0),
@@ -2256,83 +2270,43 @@ mod tests {
     }
 
     #[test]
-    fn test_update_complex_person_with_history_no_transaction_using_batches_and_has_raw() {
-        test_update_complex_person(true, false, true, true)
+    fn test_update_complex_person_with_history_no_transaction_and_has_raw() {
+        test_update_complex_person(true, false, true)
     }
 
     #[test]
-    fn test_update_complex_person_with_history_no_transaction_using_batches_and_get_raw() {
-        test_update_complex_person(true, false, true, false)
+    fn test_update_complex_person_with_history_no_transaction_and_get_raw() {
+        test_update_complex_person(true, false, false)
     }
 
     #[test]
-    fn test_update_complex_person_with_history_with_transaction_using_batches_and_has_raw() {
-        test_update_complex_person(true, true, true, true)
+    fn test_update_complex_person_with_history_with_transaction_and_has_raw() {
+        test_update_complex_person(true, true, true)
     }
 
     #[test]
-    fn test_update_complex_person_with_history_with_transaction_using_batches_and_get_raw() {
-        test_update_complex_person(true, true, true, false)
+    fn test_update_complex_person_with_history_with_transaction_and_get_raw() {
+        test_update_complex_person(true, true, false)
     }
 
     #[test]
-    fn test_update_complex_person_with_history_no_transaction_no_batches_and_has_raw() {
-        test_update_complex_person(true, false, false, true)
+    fn test_update_complex_person_no_history_no_transaction_and_has_raw() {
+        test_update_complex_person(false, false, true)
     }
 
     #[test]
-    fn test_update_complex_person_with_history_no_transaction_no_batches_and_get_raw() {
-        test_update_complex_person(true, false, false, false)
+    fn test_update_complex_person_no_history_no_transaction_and_get_raw() {
+        test_update_complex_person(false, false, false)
     }
 
     #[test]
-    fn test_update_complex_person_with_history_with_transaction_no_batches_and_has_raw() {
-        test_update_complex_person(true, true, false, true)
+    fn test_update_complex_person_no_history_with_transaction_and_has_raw() {
+        test_update_complex_person(false, true, true)
     }
 
     #[test]
-    fn test_update_complex_person_with_history_with_transaction_no_batches_and_get_raw() {
-        test_update_complex_person(true, true, false, false)
-    }
-
-    #[test]
-    fn test_update_complex_person_no_history_no_transaction_using_batches_and_has_raw() {
-        test_update_complex_person(false, false, true, true)
-    }
-
-    #[test]
-    fn test_update_complex_person_no_history_no_transaction_using_batches_and_get_raw() {
-        test_update_complex_person(false, false, true, false)
-    }
-
-    #[test]
-    fn test_update_complex_person_no_history_with_transaction_using_batches_and_has_raw() {
-        test_update_complex_person(false, true, true, true)
-    }
-
-    #[test]
-    fn test_update_complex_person_no_history_with_transaction_using_batches_and_get_raw() {
-        test_update_complex_person(false, true, true, false)
-    }
-
-    #[test]
-    fn test_update_complex_person_no_history_no_transaction_no_batches_and_has_raw() {
-        test_update_complex_person(false, false, false, true)
-    }
-
-    #[test]
-    fn test_update_complex_person_no_history_no_transaction_no_batches_and_get_raw() {
-        test_update_complex_person(false, false, false, false)
-    }
-
-    #[test]
-    fn test_update_complex_person_no_history_with_transaction_no_batches_and_has_raw() {
-        test_update_complex_person(false, true, false, true)
-    }
-
-    #[test]
-    fn test_update_complex_person_no_history_with_transaction_no_batches_and_get_raw() {
-        test_update_complex_person(false, true, false, false)
+    fn test_update_complex_person_no_history_with_transaction_and_get_raw() {
+        test_update_complex_person(false, true, false)
     }
 
     #[test]
@@ -2392,7 +2366,7 @@ mod tests {
             .expect("should create decode contract from cbor");
 
         drive
-            .apply_contract(
+            .apply_contract_with_serialization(
                 &contract,
                 contract_cbor.clone(),
                 block_info.clone(),

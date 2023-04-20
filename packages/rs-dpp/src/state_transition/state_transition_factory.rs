@@ -143,7 +143,7 @@ pub async fn create_state_transition(
             Ok(StateTransition::DataContractUpdate(transition))
         }
         StateTransitionType::IdentityCreate => {
-            let transition = IdentityCreateTransition::new(raw_state_transition)?;
+            let transition = IdentityCreateTransition::from_raw_object(raw_state_transition)?;
             Ok(StateTransition::IdentityCreate(transition))
         }
         StateTransitionType::IdentityTopUp => {
@@ -166,7 +166,10 @@ pub async fn create_state_transition(
             )
             .await?;
             let documents_batch_transition =
-                DocumentsBatchTransition::from_raw_object(raw_state_transition, data_contracts)?;
+                DocumentsBatchTransition::from_raw_object_with_contracts(
+                    raw_state_transition,
+                    data_contracts,
+                )?;
             Ok(StateTransition::DocumentsBatch(documents_batch_transition))
         }
         StateTransitionType::IdentityUpdate => {

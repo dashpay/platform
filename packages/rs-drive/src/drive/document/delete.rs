@@ -45,7 +45,6 @@ use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
 use crate::contract::Contract;
-use crate::drive::block_info::BlockInfo;
 use crate::drive::defaults::{
     AVERAGE_NUMBER_OF_UPDATES, AVERAGE_UPDATE_BYTE_COUNT_REQUIRED_SIZE,
     CONTRACT_DOCUMENTS_PATH_HEIGHT, DEFAULT_HASH_SIZE_U8,
@@ -59,6 +58,7 @@ use crate::drive::object_size_info::DocumentInfo::{
     DocumentEstimatedAverageSize, DocumentWithoutSerialization,
 };
 use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
+use dpp::block::block_info::BlockInfo;
 use dpp::document::Document;
 
 use crate::drive::grove_operations::BatchDeleteApplyType::{
@@ -76,7 +76,7 @@ use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
 
 use crate::fee::result::FeeResult;
-use crate::fee_pools::epochs::Epoch;
+use dpp::block::epoch::Epoch;
 
 impl Drive {
     /// Deletes a document and returns the associated fee.
@@ -156,6 +156,7 @@ impl Drive {
             .get_contract_with_fetch_info_and_add_to_operations(
                 contract_id,
                 Some(&block_info.epoch),
+                true,
                 transaction,
                 &mut drive_operations,
             )?
@@ -644,7 +645,7 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut operations = vec![];
-        let Some(contract_fetch_info) = self.get_contract_with_fetch_info_and_add_to_operations(contract_id, Some(epoch), transaction, &mut operations)? else {
+        let Some(contract_fetch_info) = self.get_contract_with_fetch_info_and_add_to_operations(contract_id, Some(epoch), true, transaction, &mut operations)? else {
             return Err(Error::Document(DocumentError::ContractNotFound))
         };
 
@@ -693,7 +694,7 @@ impl Drive {
         document_id: [u8; 32],
         contract: &Contract,
         document_type: &DocumentType,
-        owner_id: Option<[u8; 32]>,
+        _owner_id: Option<[u8; 32]>,
         previous_batch_operations: Option<&mut Vec<LowLevelDriveOperation>>,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -756,11 +757,7 @@ impl Drive {
             DocumentEstimatedAverageSize(query_target.len())
         } else if let Some(document_element) = &document_element {
             if let Element::Item(data, element_flags) = document_element {
-                //todo: remove this hack
-                let document = match Document::from_cbor(data.as_slice(), None, owner_id) {
-                    Ok(document) => Ok(document),
-                    Err(_) => Document::from_bytes(data.as_slice(), document_type),
-                }?;
+                let document = Document::from_bytes(data.as_slice(), document_type)?;
                 let storage_flags = StorageFlags::map_cow_some_element_flags_ref(element_flags)?;
                 DocumentWithoutSerialization((document, storage_flags))
             } else {
@@ -822,9 +819,10 @@ mod tests {
     use crate::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
     use crate::drive::Drive;
     use crate::fee::credits::Creditable;
+    use crate::fee::default_costs::EpochCosts;
     use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
-    use crate::fee_pools::epochs::Epoch;
     use crate::query::DriveQuery;
+    use dpp::block::epoch::Epoch;
     use dpp::document::Document;
     use dpp::util::serializer;
 
@@ -888,13 +886,13 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_serialized_no_proof(&drive, None, None)
+            .execute_raw_results_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
 
         let (results_on_transaction, _, _) = query
-            .execute_serialized_no_proof(&drive, None, None)
+            .execute_raw_results_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 1);
@@ -918,7 +916,7 @@ mod tests {
             .expect("expected to be able to delete the document");
 
         let (results_on_transaction, _, _) = query
-            .execute_serialized_no_proof(&drive, None, None)
+            .execute_raw_results_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 0);
@@ -992,7 +990,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_serialized_no_proof(&drive, None, None)
+            .execute_raw_results_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
@@ -1000,7 +998,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         let (results_on_transaction, _, _) = query
-            .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
+            .execute_raw_results_no_proof(&drive, None, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 1);
@@ -1032,7 +1030,7 @@ mod tests {
         let db_transaction = drive.grove.start_transaction();
 
         let (results_on_transaction, _, _) = query
-            .execute_serialized_no_proof(&drive, None, Some(&db_transaction))
+            .execute_raw_results_no_proof(&drive, None, Some(&db_transaction))
             .expect("expected to execute query");
 
         assert_eq!(results_on_transaction.len(), 0);
@@ -1145,7 +1143,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_serialized_no_proof(&drive, None, None)
+            .execute_raw_results_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 2);
@@ -1182,7 +1180,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_serialized_no_proof(&drive, None, None)
+            .execute_raw_results_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 1);
@@ -1219,7 +1217,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_serialized_no_proof(&drive, None, None)
+            .execute_raw_results_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 0);
@@ -1332,7 +1330,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_serialized_no_proof(&drive, None, None)
+            .execute_raw_results_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 2);
@@ -1447,7 +1445,7 @@ mod tests {
         let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
 
         let (results_no_transaction, _, _) = query
-            .execute_serialized_no_proof(&drive, None, None)
+            .execute_raw_results_no_proof(&drive, None, None)
             .expect("expected to execute query");
 
         assert_eq!(results_no_transaction.len(), 0);
@@ -1542,7 +1540,9 @@ mod tests {
             .expect("expected to insert a document successfully");
 
         let added_bytes = fee_result.storage_fee
-            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+            / Epoch::new(0)
+                .unwrap()
+                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         // We added 1679 bytes
         assert_eq!(added_bytes, 1679);
 
@@ -1560,7 +1560,7 @@ mod tests {
                 &contract,
                 "profile",
                 Some(random_owner_id),
-                BlockInfo::default_with_epoch(Epoch::new(3)),
+                BlockInfo::default_with_epoch(Epoch::new(3).unwrap()),
                 true,
                 Some(&db_transaction),
             )
@@ -1575,7 +1575,9 @@ mod tests {
 
         assert_eq!(*removed_credits, 44879092);
         let refund_equivalent_bytes = removed_credits.to_unsigned()
-            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+            / Epoch::new(0)
+                .unwrap()
+                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
         assert!(added_bytes > refund_equivalent_bytes);
         assert_eq!(refund_equivalent_bytes, 1662); // we refunded 1662 instead of 1679
@@ -1625,7 +1627,9 @@ mod tests {
             .expect("expected to insert a document successfully");
 
         let added_bytes = fee_result.storage_fee
-            / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+            / Epoch::new(0)
+                .unwrap()
+                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         // We added 1682 bytes
         assert_eq!(added_bytes, 1679);
 
@@ -1643,7 +1647,7 @@ mod tests {
                 &contract,
                 "profile",
                 Some(random_owner_id),
-                BlockInfo::default_with_epoch(Epoch::new(3)),
+                BlockInfo::default_with_epoch(Epoch::new(3).unwrap()),
                 false,
                 Some(&db_transaction),
             )

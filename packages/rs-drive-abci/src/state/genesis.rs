@@ -31,27 +31,23 @@ use crate::abci::messages::SystemIdentityPublicKeys;
 use crate::error::Error;
 use crate::platform::Platform;
 
-use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
-use dpp::platform_value::{platform_value, BinaryData, Bytes32};
+use dpp::platform_value::{platform_value, BinaryData};
 use dpp::ProtocolError;
 use drive::contract::DataContract;
 use drive::dpp::data_contract::DriveContractExt;
 use drive::dpp::document::Document;
-use drive::dpp::document::ExtendedDocument;
 use drive::dpp::identity::{
     Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel, TimestampMillis,
 };
 
-use dpp::platform_value::string_encoding::{encode, Encoding};
+use dpp::block::block_info::BlockInfo;
 use drive::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use drive::drive::batch::{
     ContractOperationType, DocumentOperationType, DriveOperation, IdentityOperationType,
 };
-use drive::drive::block_info::BlockInfo;
 use drive::drive::defaults::PROTOCOL_VERSION;
 use drive::drive::object_size_info::{DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo};
 use drive::query::TransactionArg;
-use serde_json::json;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -64,7 +60,7 @@ const DPNS_DASH_TLD_PREORDER_SALT: [u8; 32] = [
     227, 199, 153, 234, 158, 115, 123, 79, 154, 162, 38,
 ];
 
-impl Platform {
+impl<C> Platform<C> {
     /// Creates trees and populates them with necessary identities, contracts and documents
     pub fn create_genesis_state(
         &self,
@@ -196,47 +192,11 @@ impl Platform {
     }
 
     fn register_dpns_top_level_domain_operations<'a>(
-        &self,
+        &'a self,
         contract: &'a DataContract,
         operations: &mut Vec<DriveOperation<'a>>,
     ) -> Result<(), Error> {
         let domain = "dash";
-
-        let preorder_salt_string = encode(&DPNS_DASH_TLD_PREORDER_SALT, Encoding::Base64);
-        let alias_identity_id = encode(&contract.owner_id.to_buffer(), Encoding::Base58);
-
-        // TODO: Add created and updated at to DPNS contract
-
-        let properties_json = json!({
-                "label": domain,
-                "normalizedLabel": domain,
-                "normalizedParentDomainName": "",
-                "preorderSalt": preorder_salt_string,
-                "records": {
-                    "dashAliasIdentityId": alias_identity_id,
-                },
-                "subdomainRules": {
-                    "allowSubdomains": true,
-                }
-        });
-
-        let document = ExtendedDocument {
-            protocol_version: PROTOCOL_VERSION,
-            document_type_name: "domain".to_string(),
-            data_contract_id: contract.id,
-            data_contract: contract.clone(),
-            metadata: None,
-            entropy: Bytes32::new([0; 32]),
-            document: Document {
-                id: DPNS_DASH_TLD_DOCUMENT_ID.into(),
-                revision: None,
-                owner_id: contract.owner_id,
-                created_at: None,
-                updated_at: None,
-                properties: BTreeMap::from_json_value(properties_json)
-                    .map_err(ProtocolError::ValueError)?,
-            },
-        };
 
         let document_stub_properties_value = platform_value!({
             "label" : domain,
@@ -246,13 +206,14 @@ impl Platform {
             "records" : {
                 "dashAliasIdentityId" : contract.owner_id,
             },
+            "subdomainRules": {
+                "allowSubdomains": true,
+            }
         });
 
         let document_stub_properties = document_stub_properties_value
             .into_btree_string_map()
             .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
-
-        let document_cbor = document.to_buffer()?;
 
         let document = Document {
             id: DPNS_DASH_TLD_DOCUMENT_ID.into(),
@@ -269,12 +230,7 @@ impl Platform {
             DriveOperation::DocumentOperation(DocumentOperationType::AddDocumentForContract {
                 document_and_contract_info: DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        //todo: remove cbor and use DocumentInfo::DocumentWithoutSerialization((document, None))
-                        document_info: DocumentInfo::DocumentAndSerialization((
-                            document,
-                            document_cbor,
-                            None,
-                        )),
+                        document_info: DocumentInfo::DocumentWithoutSerialization((document, None)),
                         owner_id: None,
                     },
                     contract,
@@ -292,11 +248,13 @@ impl Platform {
 #[cfg(test)]
 mod tests {
     mod create_genesis_state {
-        use crate::test::helpers::setup::setup_platform_with_genesis_state;
+        use crate::test::helpers::setup::TestPlatformBuilder;
 
         #[test]
         pub fn should_create_genesis_state_deterministically() {
-            let platform = setup_platform_with_genesis_state(None);
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
 
             let root_hash = platform
                 .drive
@@ -308,8 +266,8 @@ mod tests {
             assert_eq!(
                 root_hash,
                 [
-                    111, 88, 10, 143, 94, 71, 51, 8, 40, 196, 201, 45, 155, 81, 130, 150, 9, 253,
-                    0, 184, 61, 2, 173, 157, 131, 24, 71, 199, 114, 11, 16, 44
+                    223, 137, 33, 5, 253, 177, 248, 37, 0, 40, 198, 213, 196, 196, 66, 200, 71, 85,
+                    103, 138, 52, 63, 102, 105, 27, 86, 102, 242, 79, 247, 217, 108
                 ]
             )
         }

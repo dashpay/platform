@@ -65,7 +65,7 @@ use crate::drive::Drive;
 use dpp::data_contract::extra::common::json_document_to_cbor;
 
 #[cfg(feature = "full")]
-use crate::drive::block_info::BlockInfo;
+use dpp::block::block_info::BlockInfo;
 
 #[cfg(feature = "full")]
 /// Serializes to CBOR and applies to Drive a JSON contract from the file system.

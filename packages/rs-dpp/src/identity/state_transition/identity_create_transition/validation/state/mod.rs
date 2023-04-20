@@ -3,8 +3,9 @@ use crate::identity::state_transition::identity_create_transition::{
     IdentityCreateTransition, IdentityCreateTransitionAction,
 };
 use crate::state_repository::StateRepositoryLike;
-use crate::state_transition::StateTransitionLike;
-use crate::validation::{AsyncDataValidator, ValidationResult};
+use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
+
+use crate::validation::{AsyncDataValidator, ConsensusValidationResult};
 use crate::{NonConsensusError, ProtocolError};
 use async_trait::async_trait;
 
@@ -25,9 +26,10 @@ where
 
     async fn validate(
         &self,
-        data: &IdentityCreateTransition,
-    ) -> Result<ValidationResult<Self::ResultItem>, ProtocolError> {
-        validate_identity_create_transition_state(&self.state_repository, data)
+        data: &Self::Item,
+        execution_context: &StateTransitionExecutionContext,
+    ) -> Result<ConsensusValidationResult<Self::ResultItem>, ProtocolError> {
+        validate_identity_create_transition_state(&self.state_repository, data, execution_context)
             .await
             .map_err(|err| err.into())
     }
@@ -55,12 +57,13 @@ where
 pub async fn validate_identity_create_transition_state(
     state_repository: &impl StateRepositoryLike,
     state_transition: &IdentityCreateTransition,
-) -> Result<ValidationResult<IdentityCreateTransitionAction>, ProtocolError> {
-    let mut result = ValidationResult::default();
+    execution_context: &StateTransitionExecutionContext,
+) -> Result<ConsensusValidationResult<IdentityCreateTransitionAction>, ProtocolError> {
+    let mut result = ConsensusValidationResult::default();
 
     let identity_id = state_transition.get_identity_id();
     let balance = state_repository
-        .fetch_identity_balance(identity_id, Some(state_transition.get_execution_context()))
+        .fetch_identity_balance(identity_id, Some(execution_context))
         .await
         .map_err(|e| {
             NonConsensusError::StateRepositoryFetchError(format!(
@@ -69,7 +72,7 @@ pub async fn validate_identity_create_transition_state(
             ))
         })?;
 
-    if state_transition.get_execution_context().is_dry_run() {
+    if execution_context.is_dry_run() {
         return Ok(IdentityCreateTransitionAction::from_borrowed(state_transition, 0).into());
     }
 
@@ -80,10 +83,7 @@ pub async fn validate_identity_create_transition_state(
     } else {
         let tx_out = state_transition
             .asset_lock_proof
-            .fetch_asset_lock_transaction_output(
-                state_repository,
-                &state_transition.execution_context,
-            )
+            .fetch_asset_lock_transaction_output(state_repository, execution_context)
             .await
             .map_err(Into::<NonConsensusError>::into)?;
         return Ok(
@@ -94,9 +94,10 @@ pub async fn validate_identity_create_transition_state(
 
 #[cfg(test)]
 mod test {
+    use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use crate::{
         identity::state_transition::identity_create_transition::IdentityCreateTransition,
-        state_repository::MockStateRepositoryLike, state_transition::StateTransitionLike,
+        state_repository::MockStateRepositoryLike,
         tests::fixtures::identity_create_transition_fixture,
     };
 
@@ -106,15 +107,19 @@ mod test {
     async fn should_not_verify_signature_on_dry_run() {
         let mut state_repository = MockStateRepositoryLike::new();
         let raw_transition = identity_create_transition_fixture(None);
-        let transition = IdentityCreateTransition::new(raw_transition).unwrap();
+        let transition = IdentityCreateTransition::from_raw_object(raw_transition).unwrap();
 
-        transition.get_execution_context().enable_dry_run();
+        let execution_context = StateTransitionExecutionContext::default().with_dry_run();
         state_repository
             .expect_fetch_identity_balance()
             .return_once(|_, _| Ok(Some(1)));
 
-        let result =
-            validate_identity_create_transition_state(&state_repository, &transition).await;
+        let result = validate_identity_create_transition_state(
+            &state_repository,
+            &transition,
+            &execution_context,
+        )
+        .await;
         assert!(result.is_ok());
     }
 }

@@ -37,11 +37,13 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::epoch::EpochIndex;
-use crate::fee_pools::epochs::{paths, Epoch};
+use crate::fee_pools::epochs::paths;
+use dpp::block::epoch::Epoch;
 use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
 use grovedb::{Element, PathQuery, Query, SizedQuery, TransactionArg};
 
 use crate::fee_pools::epochs::epoch_key_constants::KEY_START_BLOCK_HEIGHT;
+use crate::fee_pools::epochs::paths::EpochProposers;
 
 impl Drive {
     /// Returns the block height of the Epoch's start block
@@ -155,7 +157,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let non_initiated_epoch = Epoch::new(7000);
+            let non_initiated_epoch = Epoch::new(7000).unwrap();
 
             let result =
                 drive.get_epoch_start_block_height(&non_initiated_epoch, Some(&transaction));
@@ -171,7 +173,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = Epoch::new(0);
+            let epoch = Epoch::new(0).unwrap();
 
             let result = drive.get_epoch_start_block_height(&epoch, Some(&transaction));
 
@@ -183,7 +185,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = Epoch::new(0);
+            let epoch = Epoch::new(0).unwrap();
 
             drive
                 .grove
@@ -210,7 +212,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch = Epoch::new(0);
+            let epoch = Epoch::new(0).unwrap();
 
             drive
                 .grove
@@ -236,14 +238,15 @@ mod tests {
     mod get_first_epoch_start_block_height_between_epochs {
         use super::*;
         use crate::drive::batch::GroveDbOpBatch;
+        use crate::fee_pools::epochs::operations_factory::EpochOperations;
 
         #[test]
         fn test_next_block_height() {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch_tree_0 = Epoch::new(0);
-            let epoch_tree_1 = Epoch::new(1);
+            let epoch_tree_0 = Epoch::new(0).unwrap();
+            let epoch_tree_1 = Epoch::new(1).unwrap();
 
             let mut batch = GroveDbOpBatch::new();
 
@@ -278,8 +281,8 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch_tree_0 = Epoch::new(0);
-            let epoch_tree_3 = Epoch::new(3);
+            let epoch_tree_0 = Epoch::new(0).unwrap();
+            let epoch_tree_3 = Epoch::new(3).unwrap();
 
             let mut batch = GroveDbOpBatch::new();
 
@@ -302,8 +305,8 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
             let transaction = drive.grove.start_transaction();
 
-            let epoch_tree_0 = Epoch::new(0);
-            let epoch_tree_3 = Epoch::new(3);
+            let epoch_tree_0 = Epoch::new(0).unwrap();
+            let epoch_tree_3 = Epoch::new(3).unwrap();
 
             let mut batch = GroveDbOpBatch::new();
 

@@ -1,5 +1,4 @@
 use crate::drive::batch::drive_op_batch::DriveLowLevelOperationConverter;
-use crate::drive::block_info::BlockInfo;
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
     DocumentRefAndSerialization, DocumentRefWithoutSerialization,
@@ -9,6 +8,7 @@ use crate::drive::Drive;
 use crate::error::document::DocumentError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::{DataContract as Contract, DriveContractExt};
 use dpp::document::Document;
@@ -290,6 +290,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     .get_contract_with_fetch_info_and_add_to_operations(
                         contract_id.into_buffer(),
                         Some(&block_info.epoch),
+                        true,
                         transaction,
                         &mut drive_operations,
                     )?
@@ -580,6 +581,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                     .get_contract_with_fetch_info_and_add_to_operations(
                         contract_id.into_buffer(),
                         Some(&block_info.epoch),
+                        true,
                         transaction,
                         &mut drive_operations,
                     )?

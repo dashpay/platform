@@ -3,11 +3,12 @@ use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 
 use crate::{
-    errors::NonConsensusError, identifier::Identifier, util::hash::hash, util::vec::vec_to_array,
-    ProtocolError,
+    errors::NonConsensusError, identifier::Identifier, util::hash::hash_to_vec,
+    util::vec::vec_to_array, ProtocolError,
 };
+pub use bincode::{Decode, Encode};
 
-#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize, Encode, Decode)]
 #[serde(rename_all = "camelCase")]
 pub struct ChainAssetLockProof {
     #[serde(rename = "type")]
@@ -47,7 +48,7 @@ impl ChainAssetLockProof {
 
     /// Create identifier
     pub fn create_identifier(&self) -> Result<Identifier, NonConsensusError> {
-        let array = vec_to_array(hash(self.out_point.as_slice()).as_ref())?;
+        let array = vec_to_array(hash_to_vec(self.out_point.as_slice()).as_ref())?;
         Ok(Identifier::new(array))
     }
 }

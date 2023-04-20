@@ -11,7 +11,7 @@ on:
       - master
       - v[0-9]+\.[0-9]+-dev
   schedule:
-    - cron: '30 4 * * *'
+    - cron: "30 4 * * *"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -28,7 +28,7 @@ jobs:
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
-          node-version: '16'
+          node-version: "16"
 
       - name: Enable corepack
         run: corepack enable
@@ -73,16 +73,13 @@ jobs:
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
-          node-version: '16'
+          node-version: "16"
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@master
+        uses: ./.github/actions/rust
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
-
-      - name: Enable Rust cache
-        uses: Swatinem/rust-cache@v2
 
       - name: Enable corepack
         run: corepack enable
@@ -93,7 +90,7 @@ jobs:
       - name: Enable Yarn unplugged modules cache
         uses: actions/cache@v3
         with:
-          path: '.yarn/unplugged'
+          path: ".yarn/unplugged"
           key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
           restore-keys: |
             ${{ runner.os }}-yarn-unplugged-
@@ -151,16 +148,13 @@ jobs:
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
-          node-version: '16'
+          node-version: "16"
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@master
+        uses: ./.github/actions/rust
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
-
-      - name: Enable Rust cache
-        uses: Swatinem/rust-cache@v2
 
       - name: Enable corepack
         run: corepack enable
@@ -171,7 +165,7 @@ jobs:
       - name: Enable Yarn unplugged modules cache
         uses: actions/cache@v3
         with:
-          path: '.yarn/unplugged'
+          path: ".yarn/unplugged"
           key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
           restore-keys: |
             ${{ runner.os }}-yarn-unplugged-
@@ -232,7 +226,7 @@ jobs:
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
-          node-version: '16'
+          node-version: "16"
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v2
@@ -241,7 +235,7 @@ jobs:
           config-file: ./.github/codeql/codeql-config.yml
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@master
+        uses: ./.github/actions/rust
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
@@ -259,7 +253,7 @@ jobs:
       - name: Enable Yarn unplugged modules cache
         uses: actions/cache@v3
         with:
-          path: '.yarn/unplugged'
+          path: ".yarn/unplugged"
           key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
           restore-keys: |
             ${{ runner.os }}-yarn-unplugged-

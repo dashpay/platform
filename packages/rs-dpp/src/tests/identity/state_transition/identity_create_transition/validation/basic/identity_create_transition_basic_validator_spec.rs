@@ -10,7 +10,7 @@ use crate::identity::state_transition::identity_create_transition::validation::b
 use crate::identity::state_transition::validate_public_key_signatures::TPublicKeysSignaturesValidator;
 use crate::identity::validation::TPublicKeysValidator;
 use crate::state_repository::MockStateRepositoryLike;
-use crate::validation::SimpleValidationResult;
+use crate::validation::SimpleConsensusValidationResult;
 use crate::version::ProtocolVersionValidator;
 
 #[derive(Default)]
@@ -21,8 +21,8 @@ impl TPublicKeysSignaturesValidator for SignaturesValidatorMock {
         &self,
         _raw_state_transition: &Value,
         _raw_public_keys: impl IntoIterator<Item = &'a Value>,
-    ) -> Result<crate::validation::SimpleValidationResult, crate::NonConsensusError> {
-        Ok(SimpleValidationResult::default())
+    ) -> Result<crate::validation::SimpleConsensusValidationResult, crate::NonConsensusError> {
+        Ok(SimpleConsensusValidationResult::default())
     }
 }
 
@@ -82,7 +82,7 @@ mod validate_identity_create_transition_basic_factory {
     use crate::identity::validation::RequiredPurposeAndSecurityLevelValidator;
     use crate::state_repository::MockStateRepositoryLike;
     use crate::tests::fixtures::PublicKeysValidatorMock;
-    use crate::validation::ValidationResult;
+    use crate::validation::ConsensusValidationResult;
 
     pub use super::setup_test;
 
@@ -361,7 +361,7 @@ mod validate_identity_create_transition_basic_factory {
         use crate::tests::fixtures::{
             get_public_keys_validator_for_transition, PublicKeysValidatorMock,
         };
-        use crate::validation::ValidationResult;
+        use crate::validation::ConsensusValidationResult;
 
         use super::super::setup_test;
 
@@ -480,7 +480,7 @@ mod validate_identity_create_transition_basic_factory {
             let pk_validator_mock = Arc::new(PublicKeysValidatorMock::new());
             let pk_error = TestConsensusError::new("test");
             pk_validator_mock.returns_fun(move || {
-                Ok(ValidationResult::new_with_errors(vec![
+                Ok(ConsensusValidationResult::new_with_errors(vec![
                     ConsensusError::from(TestConsensusError::new("test")),
                 ]))
             });
@@ -513,7 +513,7 @@ mod validate_identity_create_transition_basic_factory {
             let pk_validator_mock = Arc::new(PublicKeysValidatorMock::new());
             let pk_error = TestConsensusError::new("test");
             pk_validator_mock.returns_fun(move || {
-                Ok(ValidationResult::new_with_errors(vec![
+                Ok(ConsensusValidationResult::new_with_errors(vec![
                     ConsensusError::from(TestConsensusError::new("test")),
                 ]))
             });
@@ -659,7 +659,7 @@ mod validate_identity_create_transition_basic_factory {
     #[tokio::test]
     pub async fn should_return_valid_result() {
         let pk_validator_mock = Arc::new(PublicKeysValidatorMock::new());
-        pk_validator_mock.returns_fun(move || Ok(ValidationResult::default()));
+        pk_validator_mock.returns_fun(move || Ok(ConsensusValidationResult::default()));
 
         let mut state_repository = MockStateRepositoryLike::new();
         state_repository

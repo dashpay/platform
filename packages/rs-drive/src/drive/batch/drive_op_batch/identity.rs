@@ -1,8 +1,8 @@
 use crate::drive::batch::drive_op_batch::DriveLowLevelOperationConverter;
-use crate::drive::block_info::BlockInfo;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
+use dpp::block::block_info::BlockInfo;
 use dpp::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
 use dpp::prelude::Revision;
 use grovedb::batch::KeyInfoPath;

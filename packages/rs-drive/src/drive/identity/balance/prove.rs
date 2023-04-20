@@ -14,6 +14,16 @@ impl Drive {
         self.grove_get_proved_path_query(&balance_query, false, transaction, &mut vec![])
     }
 
+    /// Proves an Identity's balance and revision from the backing store
+    pub fn prove_identity_balance_and_revision(
+        &self,
+        identity_id: [u8; 32],
+        transaction: TransactionArg,
+    ) -> Result<Vec<u8>, Error> {
+        let balance_query = Self::balance_and_revision_for_identity_id_query(identity_id);
+        self.grove_get_proved_path_query(&balance_query, false, transaction, &mut vec![])
+    }
+
     /// Proves multiple Identity balances from the backing store
     pub fn prove_many_identity_balances(
         &self,
@@ -28,8 +38,8 @@ impl Drive {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::drive::block_info::BlockInfo;
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
+    use dpp::block::block_info::BlockInfo;
     use dpp::identity::Identity;
 
     mod prove_identity_balance {

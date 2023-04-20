@@ -13,7 +13,7 @@ use crate::{
 };
 
 use crate::document::extended_document::property_names;
-use crate::validation::ValidationResult;
+use crate::validation::ConsensusValidationResult;
 
 pub struct DataContractFetcherAndValidator<ST> {
     state_repository: Arc<ST>,
@@ -38,7 +38,7 @@ where
     pub async fn validate_extended(
         &self,
         raw_extended_document: &Value,
-    ) -> Result<ValidationResult<DataContract>, ProtocolError> {
+    ) -> Result<ConsensusValidationResult<DataContract>, ProtocolError> {
         // TODO - stateTransitionExecutionContext shouldn't be created because it should be optional for
         // TODO all StateRepository queries
         let ctx = StateTransitionExecutionContext::default();
@@ -55,8 +55,8 @@ pub async fn fetch_and_validate_data_contract(
     state_repository: &impl StateRepositoryLike,
     raw_extended_document: &Value,
     execution_context: &StateTransitionExecutionContext,
-) -> Result<ValidationResult<DataContract>, ProtocolError> {
-    let mut validation_result = ValidationResult::<DataContract>::default();
+) -> Result<ConsensusValidationResult<DataContract>, ProtocolError> {
+    let mut validation_result = ConsensusValidationResult::<DataContract>::default();
 
     let id_bytes = if let Some(id_bytes) = raw_extended_document
         .get_optional_hash256(property_names::DATA_CONTRACT_ID)

@@ -76,13 +76,13 @@ use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
 
-use crate::drive::block_info::BlockInfo;
 use crate::drive::grove_operations::DirectQueryType::{StatefulDirectQuery, StatelessDirectQuery};
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::grove_operations::{BatchInsertApplyType, BatchInsertTreeApplyType};
 use crate::error::document::DocumentError;
 use crate::error::fee::FeeError;
 use crate::fee::result::FeeResult;
+use dpp::block::block_info::BlockInfo;
 use dpp::document::Document;
 use dpp::prelude::Identifier;
 
@@ -446,6 +446,7 @@ impl Drive {
             .get_contract_with_fetch_info_and_add_to_operations(
                 data_contract_id.into_buffer(),
                 Some(&block_info.epoch),
+                true,
                 transaction,
                 &mut drive_operations,
             )?
@@ -567,6 +568,7 @@ impl Drive {
             .get_contract_with_fetch_info_and_add_to_operations(
                 contract_id,
                 Some(&block_info.epoch),
+                true,
                 transaction,
                 &mut drive_operations,
             )?
@@ -633,11 +635,11 @@ impl Drive {
         override_document: bool,
         block_info: &BlockInfo,
         document_is_unique_for_document_type_in_batch: bool,
-        apply: bool,
+        stateful: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
-        let mut estimated_costs_only_with_layer_info = if apply {
+        let mut estimated_costs_only_with_layer_info = if stateful {
             None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
         } else {
             Some(HashMap::new())
@@ -1268,9 +1270,10 @@ mod tests {
     use crate::drive::object_size_info::DocumentAndContractInfo;
     use crate::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
     use crate::drive::Drive;
+    use crate::fee::default_costs::EpochCosts;
     use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use crate::fee::op::LowLevelDriveOperation;
-    use crate::fee_pools::epochs::Epoch;
+    use dpp::block::epoch::Epoch;
     use dpp::document::Document;
 
     #[test]
@@ -1439,7 +1442,9 @@ mod tests {
             fee_result,
             FeeResult {
                 storage_fee: 3244
-                    * Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte),
+                    * Epoch::new(0)
+                        .unwrap()
+                        .cost_for_known_cost_item(StorageDiskUsageCreditPerByte),
                 processing_fee: 2392120,
                 ..Default::default()
             }
@@ -1490,7 +1495,9 @@ mod tests {
             fee_result,
             FeeResult {
                 storage_fee: 1425
-                    * Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte),
+                    * Epoch::new(0)
+                        .unwrap()
+                        .cost_for_known_cost_item(StorageDiskUsageCreditPerByte),
                 processing_fee: 1546190,
                 ..Default::default()
             }
@@ -1542,8 +1549,10 @@ mod tests {
             )
             .expect("expected to insert a document successfully");
 
-        let added_bytes =
-            storage_fee / Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
+        let added_bytes = storage_fee
+            / Epoch::new(0)
+                .unwrap()
+                .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         assert_eq!(1425, added_bytes);
         assert_eq!(145173660, processing_fee);
     }
@@ -1763,7 +1772,9 @@ mod tests {
             fee_result,
             FeeResult {
                 storage_fee: 1983
-                    * Epoch::new(0).cost_for_known_cost_item(StorageDiskUsageCreditPerByte),
+                    * Epoch::new(0)
+                        .unwrap()
+                        .cost_for_known_cost_item(StorageDiskUsageCreditPerByte),
                 processing_fee: 2177870,
                 ..Default::default()
             }

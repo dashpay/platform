@@ -13,7 +13,7 @@ use crate::document::state_transition::documents_batch_transition::{
     DocumentsBatchTransitionAction, DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION,
 };
 use crate::document::Document;
-use crate::validation::{AsyncDataValidator, SimpleValidationResult};
+use crate::validation::{AsyncDataValidator, SimpleConsensusValidationResult};
 use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
     consensus::ConsensusError,
@@ -26,9 +26,9 @@ use crate::{
     state_repository::StateRepositoryLike,
     state_transition::{
         state_transition_execution_context::StateTransitionExecutionContext,
-        StateTransitionIdentitySigned, StateTransitionLike,
+        StateTransitionIdentitySigned,
     },
-    validation::ValidationResult,
+    validation::ConsensusValidationResult,
     ProtocolError, StateError,
 };
 
@@ -54,9 +54,11 @@ where
 
     async fn validate(
         &self,
-        data: &DocumentsBatchTransition,
-    ) -> Result<ValidationResult<Self::ResultItem>, ProtocolError> {
-        validate_document_batch_transition_state(&self.state_repository, data).await
+        data: &Self::Item,
+        execution_context: &StateTransitionExecutionContext,
+    ) -> Result<ConsensusValidationResult<Self::ResultItem>, ProtocolError> {
+        validate_document_batch_transition_state(&self.state_repository, data, execution_context)
+            .await
     }
 }
 
@@ -75,8 +77,9 @@ where
 pub async fn validate_document_batch_transition_state(
     state_repository: &impl StateRepositoryLike,
     state_transition: &DocumentsBatchTransition,
-) -> Result<ValidationResult<DocumentsBatchTransitionAction>, ProtocolError> {
-    let mut result = ValidationResult::<DocumentsBatchTransitionAction>::default();
+    execution_context: &StateTransitionExecutionContext,
+) -> Result<ConsensusValidationResult<DocumentsBatchTransitionAction>, ProtocolError> {
+    let mut result = ConsensusValidationResult::<DocumentsBatchTransitionAction>::default();
     let owner_id = *state_transition.get_owner_id();
 
     let transitions_by_data_contract_id = state_transition
@@ -91,14 +94,14 @@ pub async fn validate_document_batch_transition_state(
             data_contract_id,
             owner_id,
             transitions,
-            state_transition.get_execution_context(),
+            execution_context,
         ))
     }
 
     let state_transition_actions = join_all(futures)
         .await
         .into_iter()
-        .collect::<Result<Vec<ValidationResult<Vec<DocumentTransitionAction>>>, ProtocolError>>()?
+        .collect::<Result<Vec<ConsensusValidationResult<Vec<DocumentTransitionAction>>>, ProtocolError>>()?
         .into_iter()
         .filter_map(|validation_result| {
             if validation_result.has_data() {
@@ -117,7 +120,9 @@ pub async fn validate_document_batch_transition_state(
             owner_id,
             transitions: state_transition_actions,
         };
-        Ok(ValidationResult::new_with_data(batch_transition_action))
+        Ok(ConsensusValidationResult::new_with_data(
+            batch_transition_action,
+        ))
     } else {
         Ok(result)
     }
@@ -129,8 +134,8 @@ pub async fn validate_document_transitions(
     owner_id: Identifier,
     document_transitions: &[&DocumentTransition],
     execution_context: &StateTransitionExecutionContext,
-) -> Result<ValidationResult<Vec<DocumentTransitionAction>>, ProtocolError> {
-    let mut result = ValidationResult::<Vec<DocumentTransitionAction>>::default();
+) -> Result<ConsensusValidationResult<Vec<DocumentTransitionAction>>, ProtocolError> {
+    let mut result = ConsensusValidationResult::<Vec<DocumentTransitionAction>>::default();
 
     // We use temporary execution context without dry run,
     // because despite the dryRun, we need to get the
@@ -238,10 +243,10 @@ fn validate_transition(
     fetched_documents: &[Document],
     last_header_block_time_millis: u64,
     owner_id: &Identifier,
-) -> Result<ValidationResult<DocumentTransitionAction>, ProtocolError> {
+) -> Result<ConsensusValidationResult<DocumentTransitionAction>, ProtocolError> {
     match transition {
         DocumentTransition::Create(document_create_transition) => {
-            let mut result = ValidationResult::<DocumentTransitionAction>::new_with_data(
+            let mut result = ConsensusValidationResult::<DocumentTransitionAction>::new_with_data(
                 DocumentTransitionAction::CreateAction(DocumentCreateTransitionAction::default()),
             );
             let validation_result = check_if_timestamps_are_equal(transition);
@@ -269,7 +274,7 @@ fn validate_transition(
             }
         }
         DocumentTransition::Replace(document_replace_transition) => {
-            let mut result = ValidationResult::<DocumentTransitionAction>::new_with_data(
+            let mut result = ConsensusValidationResult::<DocumentTransitionAction>::new_with_data(
                 DocumentTransitionAction::ReplaceAction(DocumentReplaceTransitionAction::default()),
             );
             let validation_result =
@@ -303,7 +308,7 @@ fn validate_transition(
             }
         }
         DocumentTransition::Delete(document_delete_transition) => {
-            let mut result = ValidationResult::<DocumentTransitionAction>::new_with_data(
+            let mut result = ConsensusValidationResult::<DocumentTransitionAction>::new_with_data(
                 DocumentTransitionAction::DeleteAction(DocumentDeleteTransitionAction::default()),
             );
             let validation_result = check_if_document_can_be_found(transition, fetched_documents);
@@ -331,12 +336,12 @@ fn validate_transition(
     }
 }
 
-fn check_ownership(
+pub fn check_ownership(
     document_transition: &DocumentTransition,
     fetched_document: &Document,
     owner_id: &Identifier,
-) -> SimpleValidationResult {
-    let mut result = SimpleValidationResult::default();
+) -> SimpleConsensusValidationResult {
+    let mut result = SimpleConsensusValidationResult::default();
     if fetched_document.owner_id != owner_id {
         result.add_error(ConsensusError::StateError(Box::new(
             StateError::DocumentOwnerIdMismatchError {
@@ -349,11 +354,11 @@ fn check_ownership(
     result
 }
 
-fn check_revision(
+pub fn check_revision(
     document_transition: &DocumentTransition,
     fetched_documents: &[Document],
-) -> SimpleValidationResult {
-    let mut result = SimpleValidationResult::default();
+) -> SimpleConsensusValidationResult {
+    let mut result = SimpleConsensusValidationResult::default();
     let fetched_document = match fetched_documents
         .iter()
         .find(|d| d.id == document_transition.base().id)
@@ -386,11 +391,11 @@ fn check_revision(
     result
 }
 
-fn check_if_document_is_already_present(
+pub fn check_if_document_is_already_present(
     document_transition: &DocumentTransition,
     fetched_documents: &[Document],
-) -> SimpleValidationResult {
-    let mut result = SimpleValidationResult::default();
+) -> SimpleConsensusValidationResult {
+    let mut result = SimpleConsensusValidationResult::default();
     let maybe_fetched_document = fetched_documents
         .iter()
         .find(|d| d.id == document_transition.base().id);
@@ -405,18 +410,18 @@ fn check_if_document_is_already_present(
     result
 }
 
-fn check_if_document_can_be_found<'a>(
+pub fn check_if_document_can_be_found<'a>(
     document_transition: &'a DocumentTransition,
     fetched_documents: &'a [Document],
-) -> ValidationResult<&'a Document> {
+) -> ConsensusValidationResult<&'a Document> {
     let maybe_fetched_document = fetched_documents
         .iter()
         .find(|d| d.id == document_transition.base().id);
 
     if let Some(document) = maybe_fetched_document {
-        ValidationResult::new_with_data(document)
+        ConsensusValidationResult::new_with_data(document)
     } else {
-        ValidationResult::new_with_errors(vec![ConsensusError::StateError(Box::new(
+        ConsensusValidationResult::new_with_errors(vec![ConsensusError::StateError(Box::new(
             StateError::DocumentNotFoundError {
                 document_id: document_transition.base().id,
             },
@@ -424,10 +429,10 @@ fn check_if_document_can_be_found<'a>(
     }
 }
 
-fn check_if_timestamps_are_equal(
+pub fn check_if_timestamps_are_equal(
     document_transition: &DocumentTransition,
-) -> SimpleValidationResult {
-    let mut result = SimpleValidationResult::default();
+) -> SimpleConsensusValidationResult {
+    let mut result = SimpleConsensusValidationResult::default();
     let created_at = document_transition.get_created_at();
     let updated_at = document_transition.get_updated_at();
 
@@ -442,17 +447,18 @@ fn check_if_timestamps_are_equal(
     result
 }
 
-fn check_created_inside_time_window(
+pub fn check_created_inside_time_window(
     document_transition: &DocumentTransition,
     last_block_ts_millis: TimestampMillis,
-) -> SimpleValidationResult {
-    let mut result = SimpleValidationResult::default();
+) -> SimpleConsensusValidationResult {
+    let mut result = SimpleConsensusValidationResult::default();
     let created_at = match document_transition.get_created_at() {
         Some(t) => t,
         None => return result,
     };
 
-    let window_validation = validate_time_in_block_time_window(last_block_ts_millis, created_at);
+    //todo: deal with block spacing
+    let window_validation = validate_time_in_block_time_window(last_block_ts_millis, created_at, 0);
     if !window_validation.is_valid() {
         result.add_error(ConsensusError::StateError(Box::new(
             StateError::DocumentTimestampWindowViolationError {
@@ -467,17 +473,18 @@ fn check_created_inside_time_window(
     result
 }
 
-fn check_updated_inside_time_window(
+pub fn check_updated_inside_time_window(
     document_transition: &DocumentTransition,
     last_block_ts_millis: TimestampMillis,
-) -> SimpleValidationResult {
-    let mut result = SimpleValidationResult::default();
+) -> SimpleConsensusValidationResult {
+    let mut result = SimpleConsensusValidationResult::default();
     let updated_at = match document_transition.get_updated_at() {
         Some(t) => t,
         None => return result,
     };
 
-    let window_validation = validate_time_in_block_time_window(last_block_ts_millis, updated_at);
+    //todo: deal with block spacing
+    let window_validation = validate_time_in_block_time_window(last_block_ts_millis, updated_at, 0);
     if !window_validation.is_valid() {
         result.add_error(ConsensusError::StateError(Box::new(
             StateError::DocumentTimestampWindowViolationError {

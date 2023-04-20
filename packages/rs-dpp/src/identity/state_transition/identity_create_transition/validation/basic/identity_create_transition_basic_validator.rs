@@ -10,15 +10,18 @@ use crate::identity::state_transition::validate_public_key_signatures::TPublicKe
 use crate::identity::validation::TPublicKeysValidator;
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::validation::{JsonSchemaValidator, SimpleValidationResult};
+use crate::validation::{JsonSchemaValidator, SimpleConsensusValidationResult};
 use crate::version::ProtocolVersionValidator;
 use crate::{BlsModule, DashPlatformProtocolInitError, NonConsensusError};
 
 lazy_static! {
-    static ref INDENTITY_CREATE_TRANSITION_SCHEMA: JsonValue = serde_json::from_str(include_str!(
-        "../../../../../schema/identity/stateTransition/identityCreate.json"
-    ))
+    pub static ref IDENTITY_CREATE_TRANSITION_SCHEMA: JsonValue = serde_json::from_str(
+        include_str!("../../../../../schema/identity/stateTransition/identityCreate.json")
+    )
     .unwrap();
+    pub static ref IDENTITY_CREATE_TRANSITION_SCHEMA_VALIDATOR: JsonSchemaValidator =
+        JsonSchemaValidator::new(IDENTITY_CREATE_TRANSITION_SCHEMA.clone())
+            .expect("unable to compile jsonschema");
 }
 
 const ASSET_LOCK_PROOF_PROPERTY_NAME: &str = "assetLockProof";
@@ -51,7 +54,7 @@ impl<
         public_keys_signatures_validator: Arc<SV>,
     ) -> Result<Self, DashPlatformProtocolInitError> {
         let json_schema_validator =
-            JsonSchemaValidator::new(INDENTITY_CREATE_TRANSITION_SCHEMA.clone())?;
+            JsonSchemaValidator::new(IDENTITY_CREATE_TRANSITION_SCHEMA.clone())?;
 
         let identity_validator = Self {
             protocol_version_validator,
@@ -70,7 +73,7 @@ impl<
         &self,
         transition_object: &Value,
         execution_context: &StateTransitionExecutionContext,
-    ) -> Result<SimpleValidationResult, NonConsensusError> {
+    ) -> Result<SimpleConsensusValidationResult, NonConsensusError> {
         let mut result = self.json_schema_validator.validate(
             &transition_object
                 .try_to_validating_json()

@@ -23,15 +23,18 @@ use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
 use crate::util::hash::ripemd160_sha256;
 use crate::util::{serializer, vec};
 use crate::Convertible;
+use bincode::{Decode, Encode};
 
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitness;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
 
 pub type KeyID = u32;
 pub type TimestampMillis = u64;
 
 pub const BINARY_DATA_FIELDS: [&str; 1] = ["data"];
 
-#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq, Ord, PartialOrd)]
+#[derive(
+    Debug, Serialize, Deserialize, Encode, Decode, Clone, PartialEq, Eq, Ord, PartialOrd, Hash,
+)]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityPublicKey {
     pub id: KeyID,
@@ -45,9 +48,9 @@ pub struct IdentityPublicKey {
     pub disabled_at: Option<TimestampMillis>,
 }
 
-impl Into<IdentityPublicKeyWithWitness> for &IdentityPublicKey {
-    fn into(self) -> IdentityPublicKeyWithWitness {
-        IdentityPublicKeyWithWitness {
+impl Into<IdentityPublicKeyInCreationWithWitness> for &IdentityPublicKey {
+    fn into(self) -> IdentityPublicKeyInCreationWithWitness {
+        IdentityPublicKeyInCreationWithWitness {
             id: self.id,
             purpose: self.purpose,
             security_level: self.security_level,
@@ -148,7 +151,9 @@ impl IdentityPublicKey {
                     Ok(ripemd160_sha256(self.data.as_slice()))
                 }
             }
-            KeyType::ECDSA_HASH160 | KeyType::BIP13_SCRIPT_HASH => Ok(self.data.to_vec()),
+            KeyType::ECDSA_HASH160 | KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
+                Ok(self.data.to_vec())
+            }
         }
     }
 

@@ -7,7 +7,7 @@ use crate::{
     identity::validation::{duplicated_key_ids, duplicated_keys, TPublicKeysValidator},
     prelude::IdentityPublicKey,
     util::json_value::JsonValueExt,
-    validation::SimpleValidationResult,
+    validation::SimpleConsensusValidationResult,
     ProtocolError, StateError,
 };
 
@@ -15,6 +15,7 @@ lazy_static! {
     pub static ref IDENTITY_JSON_SCHEMA: JsonValue =
         serde_json::from_str(include_str!("./../../../schema/identity/identity.json"))
             .expect("Identity Schema file should exist");
+    pub static ref IDENTITY_PLATFORM_VALUE_SCHEMA: Value = IDENTITY_JSON_SCHEMA.clone().into();
 }
 
 pub struct IdentityUpdatePublicKeysValidator {}
@@ -22,7 +23,7 @@ impl TPublicKeysValidator for IdentityUpdatePublicKeysValidator {
     fn validate_keys(
         &self,
         raw_public_keys: &[Value],
-    ) -> Result<SimpleValidationResult, crate::NonConsensusError> {
+    ) -> Result<SimpleConsensusValidationResult, crate::NonConsensusError> {
         validate_public_keys(raw_public_keys)
             .map_err(|e| crate::NonConsensusError::SerdeJsonError(e.to_string()))
     }
@@ -30,8 +31,8 @@ impl TPublicKeysValidator for IdentityUpdatePublicKeysValidator {
 
 pub fn validate_public_keys(
     raw_public_keys: &[Value],
-) -> Result<SimpleValidationResult, ProtocolError> {
-    let mut validation_result = SimpleValidationResult::default();
+) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+    let mut validation_result = SimpleConsensusValidationResult::default();
 
     let maybe_max_items = IDENTITY_JSON_SCHEMA.get_value("properties.publicKeys.maxItems")?;
     let max_items = maybe_max_items

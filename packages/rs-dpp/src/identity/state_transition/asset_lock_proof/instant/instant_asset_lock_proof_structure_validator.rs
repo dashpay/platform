@@ -13,7 +13,7 @@ use crate::consensus::basic::identity::{
 use crate::identity::state_transition::asset_lock_proof::AssetLockTransactionValidator;
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::validation::{JsonSchemaValidator, ValidationResult};
+use crate::validation::{ConsensusValidationResult, JsonSchemaValidator};
 use crate::{DashPlatformProtocolInitError, NonConsensusError};
 
 lazy_static! {
@@ -56,9 +56,8 @@ where
         &self,
         asset_lock_proof_object: &Value,
         execution_context: &StateTransitionExecutionContext,
-    ) -> Result<ValidationResult<PublicKeyHash>, NonConsensusError> {
-        let mut result = ValidationResult::default();
-
+    ) -> Result<ConsensusValidationResult<PublicKeyHash>, NonConsensusError> {
+        let mut result = ConsensusValidationResult::default();
         result.merge(
             self.json_schema_validator
                 .validate(&asset_lock_proof_object.try_to_validating_json()?)?,

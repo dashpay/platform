@@ -6,7 +6,7 @@ use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::result::FeeResult;
-use crate::fee_pools::epochs::Epoch;
+use dpp::block::epoch::Epoch;
 use dpp::identifier::Identifier;
 use dpp::identity::Identity;
 
@@ -157,7 +157,7 @@ mod tests {
 
     mod fetch_full_identities {
         use super::*;
-        use crate::drive::block_info::BlockInfo;
+        use dpp::block::block_info::BlockInfo;
 
         #[test]
         fn should_get_full_identities() {
@@ -189,7 +189,7 @@ mod tests {
 
     mod fetch_full_identity {
         use super::*;
-        use crate::drive::block_info::BlockInfo;
+        use dpp::block::block_info::BlockInfo;
 
         #[test]
         fn should_return_none_if_identity_is_not_present() {

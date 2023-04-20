@@ -1,3 +1,4 @@
+use bincode::{Decode, Encode};
 use platform_value::{BinaryData, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -10,7 +11,6 @@ use crate::{
     identity::{core_script::CoreScript, KeyID},
     prelude::{Identifier, Revision},
     state_transition::{
-        state_transition_execution_context::StateTransitionExecutionContext,
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionType,
     },
@@ -24,12 +24,15 @@ use super::properties::{
 mod action;
 pub mod apply_identity_credit_withdrawal_transition_factory;
 pub mod validation;
+
+use crate::identity::SecurityLevel::{CRITICAL, HIGH, MEDIUM};
+use crate::identity::{SecurityLevel};
 pub use action::{
     IdentityCreditWithdrawalTransitionAction, IDENTITY_CREDIT_WITHDRAWAL_TRANSITION_VERSION,
 };
 
 #[repr(u8)]
-#[derive(Serialize_repr, Deserialize_repr, PartialEq, Eq, Clone, Copy, Debug)]
+#[derive(Serialize_repr, Deserialize_repr, PartialEq, Eq, Clone, Copy, Debug, Encode, Decode)]
 pub enum Pooling {
     Never = 0,
     IfAvailable = 1,
@@ -42,7 +45,7 @@ impl std::default::Default for Pooling {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityCreditWithdrawalTransition {
     pub protocol_version: u32,
@@ -52,12 +55,11 @@ pub struct IdentityCreditWithdrawalTransition {
     pub amount: u64,
     pub core_fee_per_byte: u32,
     pub pooling: Pooling,
+    #[bincode(with_serde)]
     pub output_script: CoreScript,
     pub revision: Revision,
     pub signature_public_key_id: KeyID,
     pub signature: BinaryData,
-    #[serde(skip)]
-    pub execution_context: StateTransitionExecutionContext,
 }
 
 impl std::default::Default for IdentityCreditWithdrawalTransition {
@@ -73,7 +75,6 @@ impl std::default::Default for IdentityCreditWithdrawalTransition {
             revision: Default::default(),
             signature_public_key_id: Default::default(),
             signature: Default::default(),
-            execution_context: Default::default(),
         }
     }
 }
@@ -127,6 +128,10 @@ impl StateTransitionIdentitySigned for IdentityCreditWithdrawalTransition {
     fn set_signature_public_key_id(&mut self, key_id: crate::identity::KeyID) {
         self.signature_public_key_id = key_id
     }
+
+    fn get_security_level_requirement(&self) -> Vec<SecurityLevel> {
+        vec![CRITICAL, HIGH, MEDIUM]
+    }
 }
 
 impl StateTransitionLike for IdentityCreditWithdrawalTransition {
@@ -155,18 +160,6 @@ impl StateTransitionLike for IdentityCreditWithdrawalTransition {
 
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
         self.signature = BinaryData::new(signature)
-    }
-
-    fn get_execution_context(&self) -> &StateTransitionExecutionContext {
-        &self.execution_context
-    }
-
-    fn get_execution_context_mut(&mut self) -> &mut StateTransitionExecutionContext {
-        &mut self.execution_context
-    }
-
-    fn set_execution_context(&mut self, execution_context: StateTransitionExecutionContext) {
-        self.execution_context = execution_context
     }
 }
 

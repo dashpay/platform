@@ -4,7 +4,7 @@ use crate::{
 };
 use std::collections::BTreeMap;
 
-use crate::validation::SimpleValidationResult;
+use crate::validation::SimpleConsensusValidationResult;
 use crate::{
     consensus::ConsensusError, data_contract::DataContract,
     tests::fixtures::get_data_contract_fixture, util::json_value::JsonValueExt,
@@ -61,7 +61,7 @@ fn setup_test() -> TestData {
     }
 }
 
-fn get_basic_error(result: &SimpleValidationResult, error_number: usize) -> &BasicError {
+fn get_basic_error(result: &SimpleConsensusValidationResult, error_number: usize) -> &BasicError {
     match result
         .errors
         .get(error_number)

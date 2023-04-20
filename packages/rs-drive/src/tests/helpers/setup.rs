@@ -32,10 +32,9 @@
 //! Defines helper functions pertinent to setting up Drive.
 //!
 
-use crate::drive::block_info::BlockInfo;
 use crate::drive::config::DriveConfig;
 use crate::drive::Drive;
-use crate::fee_pools::epochs::Epoch;
+use dpp::block::block_info::BlockInfo;
 
 use crate::drive::object_size_info::DocumentInfo::DocumentRefWithoutSerialization;
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
@@ -91,11 +90,7 @@ pub fn setup_system_data_contract(
         .apply_contract_cbor(
             data_contract.to_cbor().unwrap(),
             Some(data_contract.id.to_buffer()),
-            BlockInfo {
-                time_ms: 1,
-                height: 1,
-                epoch: Epoch::new(1),
-            },
+            BlockInfo::default(),
             true,
             None,
             transaction,
@@ -122,11 +117,7 @@ pub fn setup_document(
                 document_type,
             },
             false,
-            BlockInfo {
-                time_ms: 1,
-                height: 1,
-                epoch: Epoch::new(1),
-            },
+            BlockInfo::default(),
             true,
             transaction,
         )

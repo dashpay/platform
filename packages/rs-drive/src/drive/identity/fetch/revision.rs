@@ -1,4 +1,3 @@
-use crate::drive::block_info::BlockInfo;
 use crate::drive::grove_operations::DirectQueryType;
 use crate::drive::grove_operations::QueryTarget::QueryTargetValue;
 use crate::drive::identity::identity_path;
@@ -9,6 +8,7 @@ use crate::error::Error;
 use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::result::FeeResult;
+use dpp::block::block_info::BlockInfo;
 use grovedb::Element::Item;
 use grovedb::TransactionArg;
 

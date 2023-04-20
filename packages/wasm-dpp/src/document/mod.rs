@@ -168,6 +168,9 @@ impl DocumentWasm {
                 Value::Bytes(bytes) => {
                     return Ok(Buffer::from_bytes(bytes.as_slice()).into());
                 }
+                Value::Bytes20(bytes) => {
+                    return Ok(Buffer::from_bytes(bytes.as_slice()).into());
+                }
                 Value::Bytes32(bytes) => {
                     return Ok(Buffer::from_bytes(bytes.as_slice()).into());
                 }

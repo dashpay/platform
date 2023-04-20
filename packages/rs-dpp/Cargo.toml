@@ -5,45 +5,58 @@ edition = "2018"
 authors = ["Anton Suprunchuk <anton.suprunchuk@gmail.com>"]
 
 [dependencies]
-anyhow = { version = "1.0"}
-async-trait = { version = "0.1"}
+anyhow = { version = "1.0.70" }
+async-trait = { version = "0.1" }
 base64 = "0.20.0"
-bls-signatures = { version = "0.13.0" }
+bls-signatures = { git = "https://github.com/dashpay/bls-signatures", branch = "feat/threshold_bindings_working" }
 bs58 = "0.4.0"
-byteorder = { version="1.4"}
-chrono = { version="0.4.20", default-features=false, features=["wasmbind", "clock"]}
-ciborium = { git="https://github.com/qrayven/ciborium", branch="feat-ser-null-as-undefined"}
-dashcore = { git="https://github.com/dashevo/rust-dashcore", features=["std", "secp-recovery", "rand", "signer", "use-serde"], default-features = false, rev = "51548a4a1b9eca7430f5f3caf94d9784886ff2e9" }
-env_logger = { version="0.9"}
-futures = { version ="0.3"}
-getrandom= { version="0.2", features=["js"]}
-hex = { version = "0.4"}
-integer-encoding = { version="3.0.4"}
-itertools = { version ="0.10"}
+byteorder = { version = "1.4" }
+chrono = { version = "0.4.20", default-features = false, features = [
+    "wasmbind",
+    "clock",
+] }
+ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
+    "std",
+    "secp-recovery",
+    "rand",
+    "signer",
+    "use-serde",
+], default-features = false, branch = "feat/addons" }
+env_logger = { version = "0.9" }
+futures = { version = "0.3" }
+getrandom = { version = "0.2", features = ["js"] }
+hex = { version = "0.4" }
+integer-encoding = { version = "3.0.4" }
+itertools = { version = "0.10" }
 json-patch = "0.2.6"
 jsonptr = "0.1.5"
-jsonschema = { git="https://github.com/fominok/jsonschema-rs", branch="feat-unevaluated-properties", default-features=false, features=["draft202012"] }
-lazy_static = { version ="1.4"}
-log = { version="0.4"}
+jsonschema = { git = "https://github.com/fominok/jsonschema-rs", branch = "feat-unevaluated-properties", default-features = false, features = [
+    "draft202012",
+] }
+lazy_static = { version = "1.4" }
+log = { version = "0.4" }
 num_enum = "0.5.7"
-bincode = "1.3.3"
+bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 rand = { version = "0.8.4", features = ["small_rng"] }
-regex = { version="1.5"}
-serde = { version="1.0.152", features=["derive"]}
+regex = { version = "1.5" }
+serde = { version = "1.0.152", features = ["derive"] }
 serde-big-array = "0.4.1"
 serde_cbor = "0.11.2"
-serde_json = { version="1.0", features=["preserve_order"]}
+serde_json = { version = "1.0", features = ["preserve_order"] }
 serde_repr = { version = "0.1.7" }
-sha2  = { version="0.10"}
-thiserror = { version = "1.0"}
-mockall = { version="0.11.3", optional=true}
+sha2 = { version = "0.10" }
+thiserror = { version = "1.0" }
+mockall = { version = "0.11.3", optional = true }
 data-contracts = { path = "../data-contracts" }
 platform-value = { path = "../rs-platform-value" }
+derive_more = "0.99.17"
+ed25519-dalek = {version = "2.0.0-rc.2", features = ["rand_core"] }
 
 [dev-dependencies]
-test-case = { version ="2.0"}
-tokio = { version ="1.17",  features=["full"]}
-pretty_assertions = { version="1.3.0"}
+test-case = { version = "2.0" }
+tokio = { version = "1.17", features = ["full"] }
+pretty_assertions = { version = "1.3.0" }
 
 [features]
 default = ["fixtures-and-mocks"]

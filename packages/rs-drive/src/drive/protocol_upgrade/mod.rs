@@ -2,6 +2,7 @@ use crate::drive::batch::GroveDbOpBatch;
 use crate::drive::grove_operations::BatchDeleteApplyType::StatefulBatchDelete;
 use crate::drive::grove_operations::BatchInsertApplyType;
 use crate::drive::object_size_info::PathKeyElementInfo;
+use std::collections::BTreeMap;
 
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
@@ -194,6 +195,58 @@ impl Drive {
         }
         Ok(version_counter)
     }
+
+    /// Removes the proposed app versions for a list of validators.
+    ///
+    /// This function iterates through the provided list of validator ProTx hashes and
+    /// attempts to remove their proposed app versions. It also updates the version counter
+    /// for each distinct version found in the removed validator proposals.
+    ///
+    /// # Arguments
+    ///
+    /// * `validator_pro_tx_hashes` - A vector of ProTx hashes representing the validators
+    ///                                whose proposed app versions should be removed.
+    /// * `transaction` - A transaction argument to interact with the underlying storage.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Vec<[u8; 32]>, Error>` - Returns the pro_tx_hashes of validators that were removed,
+    ///                             or an error if an issue was encountered.
+    ///
+    /// # Errors
+    ///
+    /// This function may return an error if any of the following conditions are met:
+    ///
+    /// * There is an issue interacting with the underlying storage.
+    /// * The cache state is corrupted.
+    pub fn remove_validators_proposed_app_versions<I>(
+        &self,
+        validator_pro_tx_hashes: I,
+        transaction: TransactionArg,
+    ) -> Result<Vec<[u8; 32]>, Error>
+    where
+        I: IntoIterator<Item = [u8; 32]>,
+    {
+        let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
+        let inserted = self.remove_validators_proposed_app_versions_operations(
+            validator_pro_tx_hashes,
+            transaction,
+            &mut batch_operations,
+        )?;
+
+        let grove_db_operations =
+            LowLevelDriveOperation::grovedb_operations_batch(&batch_operations);
+        if !grove_db_operations.is_empty() {
+            self.apply_batch_grovedb_operations(
+                None,
+                transaction,
+                grove_db_operations,
+                &mut vec![],
+            )?;
+        }
+        Ok(inserted)
+    }
+
     /// Update the validator proposed app version
     /// returns true if the value was changed, or is new
     /// returns false if it was not changed
@@ -233,10 +286,15 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<bool, Error> {
-        let mut cache = self.cache.borrow_mut();
-        let version_counter = cache
-            .protocol_versions_counter
-            .get_or_insert(self.fetch_versions_with_counter(transaction)?);
+        let mut cache = self.cache.write().unwrap();
+        let maybe_version_counter = &mut cache.protocol_versions_counter;
+
+        let version_counter = if let Some(version_counter) = maybe_version_counter {
+            version_counter
+        } else {
+            *maybe_version_counter = Some(self.fetch_versions_with_counter(transaction)?);
+            maybe_version_counter.as_mut().unwrap()
+        };
 
         let path = desired_version_for_validators_path();
         let version_bytes = version.encode_var_vec();
@@ -307,5 +365,175 @@ impl Drive {
         }
 
         Ok(value_changed)
+    }
+
+    /// Removes the validator proposed app version
+    /// returns true if the value was removed
+    /// returns false if it never existed
+    pub(crate) fn remove_validator_proposed_app_version_operations(
+        &self,
+        validator_pro_tx_hash: [u8; 32],
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+    ) -> Result<bool, Error> {
+        let mut cache = self.cache.write().unwrap();
+        let maybe_version_counter = &mut cache.protocol_versions_counter;
+
+        let version_counter = if let Some(version_counter) = maybe_version_counter {
+            version_counter
+        } else {
+            *maybe_version_counter = Some(self.fetch_versions_with_counter(transaction)?);
+            maybe_version_counter.as_mut().unwrap()
+        };
+
+        let path = desired_version_for_validators_path();
+
+        let removed_element = self.batch_remove(
+            path,
+            validator_pro_tx_hash.as_slice(),
+            StatefulBatchDelete {
+                is_known_to_be_subtree_with_sum: Some((false, false)),
+            },
+            transaction,
+            drive_operations,
+        )?;
+
+        // if we had a different previous version we need to remove it from the version counter
+        if let Some(removed_element) = removed_element {
+            let previous_version_bytes = removed_element.as_item_bytes().map_err(GroveDB)?;
+            let previous_version = ProtocolVersion::decode_var(previous_version_bytes)
+                .ok_or(Error::Drive(DriveError::CorruptedElementType(
+                    "encoded value could not be decoded",
+                )))
+                .map(|(value, _)| value)?;
+            //we should remove 1 from the previous version
+            let previous_count = version_counter
+                .get_mut(&previous_version)
+                .ok_or(Error::Drive(DriveError::CorruptedCacheState(
+                    "trying to lower the count of a version from cache that is not found"
+                        .to_string(),
+                )))?;
+            if previous_count == &0 {
+                return Err(Error::Drive(DriveError::CorruptedCacheState(
+                    "trying to lower the count of a version from cache that is already at 0"
+                        .to_string(),
+                )));
+            }
+            *previous_count -= 1;
+            self.batch_insert(
+                PathKeyElementInfo::PathFixedSizeKeyRefElement((
+                    versions_counter_path(),
+                    previous_version_bytes,
+                    Element::new_item(previous_count.encode_var_vec()),
+                )),
+                drive_operations,
+            )?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
+    /// Removes the proposed app versions for a list of validators.
+    ///
+    /// This function iterates through the provided list of validator ProTx hashes and
+    /// attempts to remove their proposed app versions. It also updates the version counter
+    /// for each distinct version found in the removed validator proposals.
+    ///
+    /// # Arguments
+    ///
+    /// * `validator_pro_tx_hashes` - An into iterator generic of ProTx hashes representing the validators
+    ///                                whose proposed app versions should be removed.
+    /// * `transaction` - A transaction argument to interact with the underlying storage.
+    /// * `drive_operations` - A mutable reference to a vector of low-level drive operations
+    ///                        that will be populated with the required changes.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Vec<[u8; 32]>, Error>` - Returns the pro_tx_hashes of validators that were removed,
+    ///                             or an error if an issue was encountered.
+    ///
+    /// # Errors
+    ///
+    /// This function may return an error if any of the following conditions are met:
+    ///
+    /// * There is an issue interacting with the underlying storage.
+    /// * The cache state is corrupted.
+    pub(crate) fn remove_validators_proposed_app_versions_operations<I>(
+        &self,
+        validator_pro_tx_hashes: I,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+    ) -> Result<Vec<[u8; 32]>, Error>
+    where
+        I: IntoIterator<Item = [u8; 32]>,
+    {
+        let mut cache = self.cache.write().unwrap();
+        let maybe_version_counter = &mut cache.protocol_versions_counter;
+
+        let version_counter = if let Some(version_counter) = maybe_version_counter {
+            version_counter
+        } else {
+            *maybe_version_counter = Some(self.fetch_versions_with_counter(transaction)?);
+            maybe_version_counter.as_mut().unwrap()
+        };
+
+        let path = desired_version_for_validators_path();
+
+        let mut removed_pro_tx_hashes = Vec::new();
+        let mut previous_versions_removals: BTreeMap<ProtocolVersion, u64> = BTreeMap::new();
+
+        for validator_pro_tx_hash in validator_pro_tx_hashes {
+            let removed_element = self.batch_remove(
+                path.clone(),
+                validator_pro_tx_hash.as_slice(),
+                StatefulBatchDelete {
+                    is_known_to_be_subtree_with_sum: Some((false, false)),
+                },
+                transaction,
+                drive_operations,
+            )?;
+
+            if let Some(removed_element) = removed_element {
+                removed_pro_tx_hashes.push(validator_pro_tx_hash);
+
+                let previous_version_bytes = removed_element.as_item_bytes().map_err(GroveDB)?;
+                let previous_version = ProtocolVersion::decode_var(previous_version_bytes)
+                    .ok_or(Error::Drive(DriveError::CorruptedElementType(
+                        "encoded value could not be decoded",
+                    )))
+                    .map(|(value, _)| value)?;
+
+                let entry = previous_versions_removals
+                    .entry(previous_version)
+                    .or_insert(0);
+                *entry += 1;
+            }
+        }
+
+        for (previous_version, change) in previous_versions_removals {
+            let previous_count = version_counter
+                .get_mut(&previous_version)
+                .ok_or(Error::Drive(DriveError::CorruptedCacheState(
+                    "trying to lower the count of a version from cache that is not found"
+                        .to_string(),
+                )))?;
+            *previous_count = previous_count.checked_sub(change).ok_or(Error::Drive(DriveError::CorruptedDriveState(
+                "trying to lower the count of a version from cache that would result in a negative value"
+                    .to_string(),
+            )))?;
+
+            let previous_version_bytes = previous_version.encode_var_vec();
+            self.batch_insert(
+                PathKeyElementInfo::PathFixedSizeKeyRefElement((
+                    versions_counter_path(),
+                    &previous_version_bytes,
+                    Element::new_item((*previous_count + change).encode_var_vec()),
+                )),
+                drive_operations,
+            )?;
+        }
+
+        Ok(removed_pro_tx_hashes)
     }
 }

@@ -6,7 +6,7 @@ use crate::drive::object_size_info::PathKeyInfo;
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use crate::fee_pools::epochs::Epoch;
+use dpp::block::epoch::Epoch;
 use dpp::identity::IdentityPublicKey;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};

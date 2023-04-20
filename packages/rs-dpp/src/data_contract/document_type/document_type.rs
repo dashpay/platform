@@ -12,7 +12,7 @@ use crate::document::document_transition::INITIAL_REVISION;
 use crate::prelude::Revision;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
-use platform_value::Value;
+use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
 
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -40,6 +40,8 @@ pub struct DocumentType {
     pub required_fields: BTreeSet<String>,
     pub documents_keep_history: bool,
     pub documents_mutable: bool,
+    #[serde(skip)]
+    pub data_contract_id: Identifier,
 }
 
 #[derive(Debug, PartialEq, Default, Clone)]
@@ -52,8 +54,37 @@ pub struct IndexLevel {
     pub level_identifier: u64,
 }
 
+impl From<&[Index]> for IndexLevel {
+    fn from(indices: &[Index]) -> Self {
+        let mut index_level = IndexLevel::default();
+        let mut counter: u64 = 0;
+        for index in indices {
+            let mut current_level = &mut index_level;
+            let mut properties_iter = index.properties.iter().peekable();
+            while let Some(index_part) = properties_iter.next() {
+                current_level = current_level
+                    .sub_index_levels
+                    .entry(index_part.name.clone())
+                    .or_insert_with(|| {
+                        counter += 1;
+                        IndexLevel {
+                            level_identifier: counter,
+                            ..Default::default()
+                        }
+                    });
+                if properties_iter.peek().is_none() {
+                    current_level.has_index_with_uniqueness = Some(index.unique);
+                }
+            }
+        }
+
+        index_level
+    }
+}
+
 impl DocumentType {
     pub fn new(
+        data_contract_id: Identifier,
         name: String,
         indices: Vec<Index>,
         properties: BTreeMap<String, DocumentField>,
@@ -61,7 +92,7 @@ impl DocumentType {
         documents_keep_history: bool,
         documents_mutable: bool,
     ) -> Self {
-        let index_structure = Self::build_index_structure(indices.as_slice());
+        let index_structure = IndexLevel::from(indices.as_slice());
         DocumentType {
             name,
             indices,
@@ -70,6 +101,7 @@ impl DocumentType {
             required_fields,
             documents_keep_history,
             documents_mutable,
+            data_contract_id,
         }
     }
     // index_names can be in any order
@@ -94,32 +126,6 @@ impl DocumentType {
             }
         }
         best_index
-    }
-
-    pub fn build_index_structure(indices: &[Index]) -> IndexLevel {
-        let mut index_level = IndexLevel::default();
-        let mut counter: u64 = 0;
-        for index in indices {
-            let mut current_level = &mut index_level;
-            let mut properties_iter = index.properties.iter().peekable();
-            while let Some(index_part) = properties_iter.next() {
-                current_level = current_level
-                    .sub_index_levels
-                    .entry(index_part.name.clone())
-                    .or_insert_with(|| {
-                        counter += 1;
-                        IndexLevel {
-                            level_identifier: counter,
-                            ..Default::default()
-                        }
-                    });
-                if properties_iter.peek().is_none() {
-                    current_level.has_index_with_uniqueness = Some(index.unique);
-                }
-            }
-        }
-
-        index_level
     }
 
     pub fn unique_id_for_storage(&self) -> [u8; 32] {
@@ -176,6 +182,7 @@ impl DocumentType {
     }
 
     pub fn from_platform_value(
+        data_contract_id: Identifier,
         name: &str,
         document_type_value_map: &[(Value, Value)],
         definition_references: &BTreeMap<String, &Value>,
@@ -264,7 +271,7 @@ impl DocumentType {
             );
         }
 
-        let index_structure = Self::build_index_structure(indices.as_slice());
+        let index_structure = IndexLevel::from(indices.as_slice());
 
         Ok(DocumentType {
             name: String::from(name),
@@ -274,6 +281,7 @@ impl DocumentType {
             required_fields,
             documents_keep_history,
             documents_mutable,
+            data_contract_id,
         })
     }
 

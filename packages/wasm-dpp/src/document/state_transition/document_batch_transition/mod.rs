@@ -1,5 +1,4 @@
 use dpp::identity::KeyID;
-use dpp::state_transition::fee::calculate_state_transition_fee_factory::calculate_state_transition_fee;
 use dpp::{
     document::{
         document_transition::document_base_transition,
@@ -16,7 +15,6 @@ use dpp::{
 use js_sys::{Array, Reflect};
 use serde::{Deserialize, Serialize};
 
-use dpp::platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use dpp::platform_value::{BinaryData, ReplacementType};
 use wasm_bindgen::prelude::*;
 
@@ -78,9 +76,11 @@ impl DocumentsBatchTransitionWasm {
             .map_err(ProtocolError::ValueError)
             .with_js_error()?;
 
-        let documents_batch_transition =
-            DocumentsBatchTransition::from_raw_object(batch_transition_value, data_contracts)
-                .with_js_error()?;
+        let documents_batch_transition = DocumentsBatchTransition::from_raw_object_with_contracts(
+            batch_transition_value,
+            data_contracts,
+        )
+        .with_js_error()?;
 
         Ok(documents_batch_transition.into())
     }
@@ -310,8 +310,12 @@ impl DocumentsBatchTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getKeySecurityLevelRequirement)]
-    pub fn get_security_level_requirement(&self) -> u8 {
-        self.0.get_security_level_requirement() as u8
+    pub fn get_security_level_requirement(&self) -> Vec<u8> {
+        self.0
+            .get_security_level_requirement()
+            .iter()
+            .map(|security_level| *security_level as u8)
+            .collect()
     }
 
     // AbstractStateTransition methods
@@ -345,16 +349,6 @@ impl DocumentsBatchTransitionWasm {
         self.0.is_identity_state_transition()
     }
 
-    #[wasm_bindgen(js_name=setExecutionContext)]
-    pub fn set_execution_context(&mut self, context: StateTransitionExecutionContextWasm) {
-        self.0.set_execution_context(context.into())
-    }
-
-    #[wasm_bindgen(js_name=getExecutionContext)]
-    pub fn get_execution_context(&mut self) -> StateTransitionExecutionContextWasm {
-        self.0.get_execution_context().clone().into()
-    }
-
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self, options: &JsValue) -> Result<Buffer, JsValue> {
         let skip_signature = if options.is_object() {
@@ -363,7 +357,7 @@ impl DocumentsBatchTransitionWasm {
         } else {
             false
         };
-        let bytes = self.0.to_buffer(skip_signature).with_js_error()?;
+        let bytes = self.0.to_cbor_buffer(skip_signature).with_js_error()?;
 
         Ok(Buffer::from_bytes(&bytes))
     }

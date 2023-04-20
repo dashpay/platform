@@ -3,13 +3,21 @@ use regex::Regex;
 
 use crate::consensus::basic::data_contract::IncompatibleRe2PatternError;
 use crate::consensus::{basic::BasicError, ConsensusError};
-use crate::validation::SimpleValidationResult;
+use crate::validation::SimpleConsensusValidationResult;
 
-pub type SubValidator =
-    fn(path: &str, key: &str, parent: &Value, value: &Value, result: &mut SimpleValidationResult);
+pub type SubValidator = fn(
+    path: &str,
+    key: &str,
+    parent: &Value,
+    value: &Value,
+    result: &mut SimpleConsensusValidationResult,
+);
 
-pub fn validate(raw_data_contract: &Value, validators: &[SubValidator]) -> SimpleValidationResult {
-    let mut result = SimpleValidationResult::default();
+pub fn validate(
+    raw_data_contract: &Value,
+    validators: &[SubValidator],
+) -> SimpleConsensusValidationResult {
+    let mut result = SimpleConsensusValidationResult::default();
     let mut values_queue: Vec<(&Value, String)> = vec![(raw_data_contract, String::from(""))];
 
     while let Some((value, path)) = values_queue.pop() {
@@ -50,7 +58,7 @@ pub fn pattern_is_valid_regex_validator(
     key: &str,
     _parent: &Value,
     value: &Value,
-    result: &mut SimpleValidationResult,
+    result: &mut SimpleConsensusValidationResult,
 ) {
     if key == "pattern" {
         if let Some(pattern) = value.as_str() {
@@ -77,7 +85,7 @@ pub fn pattern_is_valid_regex_validator(
 
 fn unwrap_error_to_result<'a, 'b>(
     v: Result<Option<&'a Value>, ConsensusError>,
-    result: &'b mut SimpleValidationResult,
+    result: &'b mut SimpleConsensusValidationResult,
 ) -> Option<&'a Value> {
     match v {
         Ok(v) => v,
@@ -93,7 +101,7 @@ pub fn byte_array_has_no_items_as_parent_validator(
     key: &str,
     parent: &Value,
     value: &Value,
-    result: &mut SimpleValidationResult,
+    result: &mut SimpleConsensusValidationResult,
 ) {
     if key == "byteArray"
         && value.is_bool()

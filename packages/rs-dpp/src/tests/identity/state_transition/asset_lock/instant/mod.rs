@@ -496,7 +496,7 @@ mod validate_instant_asset_lock_proof_structure_factory {
 
         assert!(result.is_valid());
         assert_eq!(
-            result.data().expect("expected data").to_vec(),
+            result.data_as_borrowed().expect("expected data").to_vec(),
             test_data.public_key_hash
         );
     }

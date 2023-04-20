@@ -57,13 +57,14 @@ use sqlparser::dialect::GenericDialect;
 #[cfg(any(feature = "full", feature = "verify"))]
 use sqlparser::parser::Parser;
 
-#[cfg(feature = "full")]
-use crate::drive::block_info::BlockInfo;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub use conditions::WhereClause;
 /// Import conditions
 #[cfg(any(feature = "full", feature = "verify"))]
 pub use conditions::WhereOperator;
+#[cfg(feature = "full")]
+use dpp::block::block_info::BlockInfo;
+
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::data_contract::document_type::DocumentType;
 #[cfg(feature = "full")]
@@ -95,14 +96,18 @@ use crate::fee::op::LowLevelDriveOperation;
 
 #[cfg(feature = "full")]
 use crate::drive::contract::paths::ContractPaths;
+
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::data_contract::extra::common::bytes_for_system_value;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::document::Document;
+
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
+use dpp::platform_value::platform_value;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::platform_value::Value;
+
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::ProtocolError;
 
@@ -242,8 +247,31 @@ impl InternalClauses {
 }
 
 #[cfg(any(feature = "full", feature = "verify"))]
-/// Drive query struct
+/// The encoding returned by queries
 #[derive(Debug, PartialEq)]
+pub enum QueryResultEncoding {
+    /// Cbor encoding
+    CborEncodedQueryResult,
+}
+
+#[cfg(any(feature = "full", feature = "verify"))]
+impl QueryResultEncoding {
+    /// Encode the value based on the encoding desired
+    pub fn encode_value(&self, value: &Value) -> Result<Vec<u8>, Error> {
+        let mut buffer = vec![];
+        match self {
+            QueryResultEncoding::CborEncodedQueryResult => {
+                ciborium::ser::into_writer(value, &mut buffer)
+                    .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
+            }
+        }
+        Ok(buffer)
+    }
+}
+
+#[cfg(any(feature = "full", feature = "verify"))]
+/// Drive query struct
+#[derive(Debug, PartialEq, Clone)]
 pub struct DriveQuery<'a> {
     /// Contract
     pub contract: &'a Contract,
@@ -308,16 +336,32 @@ impl<'a> DriveQuery<'a> {
         contract: &'a Contract,
         document_type: &'a DocumentType,
     ) -> Result<Self, Error> {
-        let query_document_cbor: BTreeMap<String, ciborium::Value> =
-            ciborium::de::from_reader(query_cbor).map_err(|_| {
-                Error::Query(QueryError::DeserializationError(
-                    "unable to decode query from cbor",
-                ))
-            })?;
-        let mut query_document: BTreeMap<String, Value> =
-            Value::convert_from_cbor_map(query_document_cbor)
-                .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
+        let query_document_value: Value = ciborium::de::from_reader(query_cbor).map_err(|_| {
+            Error::Query(QueryError::DeserializationError(
+                "unable to decode query from cbor",
+            ))
+        })?;
+        Self::from_value(query_document_value, contract, document_type)
+    }
 
+    #[cfg(any(feature = "full", feature = "verify"))]
+    /// Converts a query Value to a `DriveQuery`.
+    pub fn from_value(
+        query_value: Value,
+        contract: &'a Contract,
+        document_type: &'a DocumentType,
+    ) -> Result<Self, Error> {
+        let query_document: BTreeMap<String, Value> = query_value.into_btree_string_map()?;
+        Self::from_btree_map_value(query_document, contract, document_type)
+    }
+
+    #[cfg(any(feature = "full", feature = "verify"))]
+    /// Converts a query Value to a `DriveQuery`.
+    pub fn from_btree_map_value(
+        mut query_document: BTreeMap<String, Value>,
+        contract: &'a Contract,
+        document_type: &'a DocumentType,
+    ) -> Result<Self, Error> {
         let maybe_limit: Option<u16> = query_document
             .remove_optional_integer("limit")
             .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
@@ -415,7 +459,7 @@ impl<'a> DriveQuery<'a> {
 
         if !query_document.is_empty() {
             return Err(Error::Query(QueryError::Unsupported(
-                "unsupported syntax in where clause",
+                "unsupported syntax in where clause".to_string(),
             )));
         }
 
@@ -727,7 +771,9 @@ impl<'a> DriveQuery<'a> {
                     // if the documents keep history then we should insert a subquery
                     if let Some(_block_time) = self.block_time {
                         //todo
-                        return Err(Error::Query(QueryError::Unsupported("Not yet implemented")));
+                        return Err(Error::Query(QueryError::Unsupported(
+                            "Not yet implemented".to_string(),
+                        )));
                         // in order to be able to do this we would need limited subqueries
                         // as we only want the first element before the block_time
 
@@ -765,7 +811,9 @@ impl<'a> DriveQuery<'a> {
                 if self.document_type.documents_keep_history {
                     // if the documents keep history then we should insert a subquery
                     if let Some(_block_time) = self.block_time {
-                        return Err(Error::Query(QueryError::Unsupported("Not yet implemented")));
+                        return Err(Error::Query(QueryError::Unsupported(
+                            "this query is not supported".to_string(),
+                        )));
                         // in order to be able to do this we would need limited subqueries
                         // as we only want the first element before the block_time
 
@@ -1360,8 +1408,31 @@ impl<'a> DriveQuery<'a> {
     }
 
     #[cfg(feature = "full")]
+    /// Executes a query with no proof and returns the items encoded in a map.
+    pub fn execute_serialized_as_result_no_proof(
+        &self,
+        drive: &Drive,
+        _block_info: Option<BlockInfo>,
+        query_result_encoding: QueryResultEncoding,
+        transaction: TransactionArg,
+    ) -> Result<Vec<u8>, Error> {
+        let mut drive_operations = vec![];
+        let (items, _) = self.execute_no_proof_internal(
+            drive,
+            QueryResultType::QueryKeyElementPairResultType,
+            transaction,
+            &mut drive_operations,
+        )?;
+        //todo: we could probably give better results depending on the query
+        let result = platform_value!({
+            "documents": items.to_key_elements()
+        });
+        query_result_encoding.encode_value(&result)
+    }
+
+    #[cfg(feature = "full")]
     /// Executes a query with no proof and returns the items, skipped items, and fee.
-    pub fn execute_serialized_no_proof(
+    pub fn execute_raw_results_no_proof(
         &self,
         drive: &Drive,
         block_info: Option<BlockInfo>,
@@ -1369,7 +1440,7 @@ impl<'a> DriveQuery<'a> {
     ) -> Result<(Vec<Vec<u8>>, u16, u64), Error> {
         let mut drive_operations = vec![];
         let (items, skipped) =
-            self.execute_serialized_no_proof_internal(drive, transaction, &mut drive_operations)?;
+            self.execute_raw_results_no_proof_internal(drive, transaction, &mut drive_operations)?;
         let cost = if let Some(block_info) = block_info {
             let fee_result = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
             fee_result.processing_fee
@@ -1381,7 +1452,7 @@ impl<'a> DriveQuery<'a> {
 
     #[cfg(feature = "full")]
     /// Executes an internal query with no proof and returns the values and skipped items.
-    pub(crate) fn execute_serialized_no_proof_internal(
+    pub(crate) fn execute_raw_results_no_proof_internal(
         &self,
         drive: &Drive,
         transaction: TransactionArg,
@@ -1454,7 +1525,7 @@ mod tests {
     use dpp::util::serializer;
     use serde_json::Value::Null;
 
-    use crate::drive::block_info::BlockInfo;
+    use dpp::block::block_info::BlockInfo;
 
     fn setup_family_contract() -> (Drive, Contract) {
         let tmp_dir = TempDir::new().unwrap();
@@ -1474,7 +1545,7 @@ mod tests {
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
         drive
-            .apply_contract(
+            .apply_contract_with_serialization(
                 &contract,
                 contract_cbor,
                 BlockInfo::default(),
@@ -1505,7 +1576,7 @@ mod tests {
             .expect("expected to deserialize the contract");
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
         drive
-            .apply_contract(
+            .apply_contract_with_serialization(
                 &contract,
                 contract_cbor,
                 BlockInfo::default(),
@@ -1656,7 +1727,7 @@ mod tests {
         let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
             .expect("fields of queries length must be under 256 bytes long");
         query
-            .execute_serialized_no_proof(&drive, None, None)
+            .execute_raw_results_no_proof(&drive, None, None)
             .expect_err("fields of queries length must be under 256 bytes long");
     }
 
@@ -1738,7 +1809,7 @@ mod tests {
         let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
             .expect("The query itself should be valid for a null type");
         query
-            .execute_serialized_no_proof(&drive, None, None)
+            .execute_raw_results_no_proof(&drive, None, None)
             .expect("a Null value doesn't make sense for a float");
     }
 
@@ -1766,7 +1837,7 @@ mod tests {
             .expect("query should be valid for empty array");
 
         query
-            .execute_serialized_no_proof(&drive, None, None)
+            .execute_raw_results_no_proof(&drive, None, None)
             .expect_err("query should not be able to execute for empty array");
     }
 
@@ -1798,7 +1869,7 @@ mod tests {
             .expect("query is valid for too many elements");
 
         query
-            .execute_serialized_no_proof(&drive, None, None)
+            .execute_raw_results_no_proof(&drive, None, None)
             .expect_err("query should not be able to execute with too many elements");
     }
 
@@ -1830,7 +1901,7 @@ mod tests {
             .expect("the query should be created");
 
         query
-            .execute_serialized_no_proof(&drive, None, None)
+            .execute_raw_results_no_proof(&drive, None, None)
             .expect_err("there should be no duplicates values for In query");
     }
 
