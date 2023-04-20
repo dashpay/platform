@@ -183,7 +183,7 @@ impl HashFunction {
 #[derive(Debug, PartialEq, Eq)]
 pub struct FunctionOp {
     pub(crate) hash: HashFunction,
-    pub(crate) rounds: u16,
+    pub(crate) rounds: u32,
 }
 
 impl FunctionOp {
@@ -194,7 +194,7 @@ impl FunctionOp {
 
     /// Create a new function operation with the following hash knowing the rounds it will take
     /// in advance
-    pub fn new_with_round_count(hash: HashFunction, rounds: u16) -> Self {
+    pub fn new_with_round_count(hash: HashFunction, rounds: u32) -> Self {
         FunctionOp { hash, rounds }
     }
 
@@ -203,7 +203,10 @@ impl FunctionOp {
     pub fn new_with_byte_count(hash: HashFunction, byte_count: u16) -> Self {
         let blocks = byte_count / hash.block_size() + 1;
         let rounds = blocks + hash.rounds() - 1;
-        FunctionOp { hash, rounds }
+        FunctionOp {
+            hash,
+            rounds: rounds as u32,
+        }
     }
 }
 

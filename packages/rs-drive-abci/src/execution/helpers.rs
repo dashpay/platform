@@ -57,7 +57,7 @@ where
         block_time_ms: u64,
         transaction: &Transaction,
     ) -> Result<u64, Error> {
-        if block_height == self.config.abci.genesis_height as u64 {
+        if block_height == self.config.abci.genesis_height {
             // we do not set the genesis time to the cache here,
             // instead that must be done after finalizing the block
             Ok(block_time_ms)
@@ -110,7 +110,7 @@ where
             .validator_sets
             .retain(|key, _| quorum_info.contains_key(key));
 
-        let mut new_quorums = quorum_info
+        let new_quorums = quorum_info
             .iter()
             .filter(|(key, _)| !state.validator_sets.contains_key(key.as_ref()))
             .map(|(key, _)| {
@@ -118,7 +118,7 @@ where
                     self.core_rpc
                         .get_quorum_info(self.config.quorum_type(), key, None)?;
                 let quorum: Quorum = quorum_info_result.try_into()?;
-                Ok((key.clone(), quorum))
+                Ok((*key, quorum))
             })
             .collect::<Result<Vec<_>, Error>>()?;
 
@@ -126,10 +126,8 @@ where
         state.validator_sets.extend(new_quorums.into_iter());
 
         state.quorums_extended_info = quorum_list.quorums_by_type;
-        return Ok(());
+        Ok(())
     }
-
-    // TODO: re-enable
 
     pub(crate) fn update_state_masternode_list(
         &self,
@@ -160,7 +158,7 @@ where
         //todo: clean up
         let added_hpmns = added_mns.iter().filter_map(|masternode| {
             if masternode.node_type == MasternodeType::HighPerformance {
-                Some((masternode.protx_hash.clone(), masternode.clone()))
+                Some((masternode.protx_hash, masternode.clone()))
             } else {
                 None
             }
@@ -175,13 +173,13 @@ where
 
         let added_masternodes = added_mns
             .iter()
-            .map(|masternode| (masternode.protx_hash.clone(), masternode.clone()));
+            .map(|masternode| (masternode.protx_hash, masternode.clone()));
 
         state.full_masternode_list.extend(added_masternodes);
 
         let updated_masternodes = updated_mns
             .iter()
-            .map(|masternode| (masternode.protx_hash.clone(), masternode.state_diff.clone()));
+            .map(|masternode| (masternode.protx_hash, masternode.state_diff.clone()));
 
         updated_masternodes.for_each(|(pro_tx_hash, state_diff)| {
             if let Some(masternode_list_item) = state.full_masternode_list.get_mut(&pro_tx_hash) {
@@ -195,10 +193,7 @@ where
 
         let deleted_masternodes = removed_mns
             .iter()
-            .map(|masternode| {
-                let pro_tx_hash = masternode.protx_hash;
-                pro_tx_hash
-            })
+            .map(|masternode| masternode.protx_hash)
             .collect::<BTreeSet<ProTxHash>>();
 
         state
@@ -235,35 +230,34 @@ where
         &self,
         state: &mut PlatformState,
         core_block_height: u32,
+        is_init_chain: bool,
         block_info: &BlockInfo,
         transaction: &Transaction,
     ) -> Result<(), Error> {
-        let previous_core_height = state.core_height();
-        if core_block_height == previous_core_height {
-            return Ok(()); // no need to do anything
+        if let Some(last_commited_block_info) = state.last_committed_block_info.as_ref() {
+            if core_block_height == last_commited_block_info.core_height {
+                return Ok(()); // no need to do anything
+            }
         }
+        if state.last_committed_block_info.is_some() || is_init_chain {
+            let UpdateStateMasternodeListOutcome {
+                masternode_list_diff,
+                deleted_masternodes,
+            } = self.update_state_masternode_list(state, core_block_height, false)?;
 
-        let UpdateStateMasternodeListOutcome {
-            masternode_list_diff,
-            deleted_masternodes,
-        } = self.update_state_masternode_list(state, core_block_height, false)?;
-
-        // //Todo: masternode identities
-        // self.update_masternode_identities(
-        //     previous_core_height,
-        //     core_block_height,
-        //     &block_info,
-        //     state,
-        //     &transaction,
-        // )?;
-
-        //For all deleted masternodes we need to remove them from the state of the app version votes
-
-        if !deleted_masternodes.is_empty() {
-            self.drive.remove_validators_proposed_app_versions(
-                deleted_masternodes.into_iter().map(|a| a.into_inner()),
-                Some(transaction),
+            self.update_masternode_identities(
+                masternode_list_diff,
+                block_info,
+                state,
+                transaction,
             )?;
+
+            if !deleted_masternodes.is_empty() {
+                self.drive.remove_validators_proposed_app_versions(
+                    deleted_masternodes.into_iter().map(|a| a.into_inner()),
+                    Some(transaction),
+                )?;
+            }
         }
 
         Ok(())

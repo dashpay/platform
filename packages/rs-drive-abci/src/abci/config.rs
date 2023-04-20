@@ -40,12 +40,12 @@ pub struct AbciConfig {
 }
 
 impl AbciConfig {
-    fn default_genesis_height() -> u64 {
+    pub(crate) fn default_genesis_height() -> u64 {
         1
     }
 
-    fn default_genesis_core_height() -> u32 {
-        0
+    pub(crate) fn default_genesis_core_height() -> u32 {
+        1
     }
 }
 

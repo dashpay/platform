@@ -13,7 +13,8 @@ use std::sync::RwLock;
 pub struct AbciApplication<'a, C> {
     /// Platform
     pub platform: &'a Platform<C>,
-    pub(crate) transaction: RwLock<Option<Transaction<'a>>>,
+    /// The current transaction
+    pub transaction: RwLock<Option<Transaction<'a>>>,
 }
 
 /// Start ABCI server and process incoming connections.
@@ -27,8 +28,8 @@ pub fn start<C: CoreRPCLike>(config: &PlatformConfig, core_rpc: C) -> Result<(),
 
     let abci = AbciApplication::new(&platform)?;
 
-    let server = tenderdash_abci::start_server(&bind_address, abci)
-        .map_err(|e| super::AbciError::from(e))?;
+    let server =
+        tenderdash_abci::start_server(&bind_address, abci).map_err(super::AbciError::from)?;
 
     loop {
         tracing::info!("waiting for new connection");
@@ -51,12 +52,13 @@ impl<'a, C> AbciApplication<'a, C> {
     }
 
     /// create and store a new transaction
-    pub(crate) fn start_transaction(&self) {
+    pub fn start_transaction(&self) {
         let transaction = self.platform.drive.grove.start_transaction();
         self.transaction.write().unwrap().replace(transaction);
     }
 
-    pub(crate) fn commit_transaction(&self) -> Result<(), Error> {
+    /// Commit a transaction
+    pub fn commit_transaction(&self) -> Result<(), Error> {
         let transaction = self
             .transaction
             .write()

@@ -1,8 +1,8 @@
 //! Withdrawal transactions definitions and processing
 
-use bls_signatures;
 use dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::block::block_info::BlockInfo;
+use dpp::bls_signatures;
 use dpp::validation::SimpleValidationResult;
 use drive::{
     drive::{batch::DriveOperation, Drive},
@@ -217,8 +217,8 @@ impl<'a> PartialEq for WithdrawalTxs<'a> {
         std::iter::zip(&self.inner, &other.inner).all(|(left, right)| {
             left.r#type == right.r#type
                 && left.extension == right.extension
-                && (left.signature.len() == 0
-                    || right.signature.len() == 0
+                && (left.signature.is_empty()
+                    || right.signature.is_empty()
                     || left.signature == right.signature)
         })
     }
@@ -258,9 +258,8 @@ mod test {
             r#type: VoteExtensionType::ThresholdRecover.into(),
         });
 
-        assert_eq!(
-            true,
-            wt.verify_signatures(
+        assert!(wt
+            .verify_signatures(
                 CHAIN_ID,
                 QuorumType::LlmqTest,
                 &quorum_hash,
@@ -268,14 +267,12 @@ mod test {
                 ROUND,
                 &pubkey
             )
-            .is_valid()
-        );
+            .is_valid());
 
         // Now break the data
         wt.inner[0].extension[3] = 0;
-        assert_eq!(
-            false,
-            wt.verify_signatures(
+        assert!(!wt
+            .verify_signatures(
                 CHAIN_ID,
                 QuorumType::LlmqTest,
                 &quorum_hash,
@@ -283,7 +280,6 @@ mod test {
                 ROUND,
                 &pubkey
             )
-            .is_valid()
-        );
+            .is_valid());
     }
 }

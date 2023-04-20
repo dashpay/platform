@@ -59,7 +59,7 @@ impl FetchAssetLockProofTxOut for AssetLockProof {
                     }
                 };
 
-                if transaction_data.chainlock == false {
+                if !transaction_data.chainlock {
                     let best_chain_lock = core.get_best_chain_lock()?;
                     if asset_lock_proof.core_chain_locked_height > best_chain_lock.core_block_height
                     {
@@ -91,7 +91,7 @@ impl FetchAssetLockProofTxOut for AssetLockProof {
                                 }
                             };
 
-                        if transaction_data.chainlock == false {
+                        if !transaction_data.chainlock {
                             // Very weird
                             // We are getting back that the transaction is not locked, but the chain
                             // lock proof says that it should be, most likely the client is lying.

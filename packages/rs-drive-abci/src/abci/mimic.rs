@@ -1,9 +1,8 @@
-use crate::abci::commit::Commit;
 use crate::abci::server::AbciApplication;
 use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::quorum::Quorum;
+
 use crate::execution::test_quorum::TestQuorumInfo;
 use crate::rpc::core::CoreRPCLike;
 use dashcore::blockdata::transaction::special_transaction::asset_unlock::qualified_asset_unlock::AssetUnlockPayload;
@@ -92,7 +91,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             validator_set_update: _,
         } = response_prepare_proposal;
 
-        if expect_validation_errors == false {
+        if !expect_validation_errors {
             if tx_results.len() != tx_records.len() {
                 return Err(Error::Abci(AbciError::GenericWithCode(0)));
             }
@@ -140,10 +139,10 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                         block_info.height, block_info.time_ms, e
                     )
                 });
-            if expect_validation_errors == false {
-                if response_validate_vote_extension.status != VerifyStatus::Accept as i32 {
-                    return Err(Error::Abci(AbciError::GenericWithCode(1)));
-                }
+            if !expect_validation_errors
+                && response_validate_vote_extension.status != VerifyStatus::Accept as i32
+            {
+                return Err(Error::Abci(AbciError::GenericWithCode(1)));
             }
         }
 
@@ -173,8 +172,8 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         //todo: tidy up and fix
         let withdrawals = block_execution_context
             .withdrawal_transactions
-            .iter()
-            .map(|(tx_id, transaction)| {
+            .values()
+            .map(|transaction| {
                 let AssetUnlockBaseTransactionInfo {
                     version,
                     lock_time,
@@ -229,19 +228,24 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             threshold_vote_extensions: Default::default(),
         };
 
-        let digest = commit
-            .sign_digest(
-                &chain_id,
-                quorum_type as u8,
-                &current_quorum.quorum_hash,
-                height as i64,
-                0,
-            )
-            .expect("expected to sign digest");
+        //if not in testing this will default to true
+        if self.platform.config.testing_configs.block_signing {
+            let digest = commit
+                .sign_digest(
+                    &chain_id,
+                    quorum_type as u8,
+                    &current_quorum.quorum_hash,
+                    height as i64,
+                    0,
+                )
+                .expect("expected to sign digest");
 
-        let block_signature = current_quorum.private_key.sign(digest.as_slice());
+            let block_signature = current_quorum.private_key.sign(digest.as_slice());
 
-        commit_info.block_signature = block_signature.to_bytes().to_vec();
+            commit_info.block_signature = block_signature.to_bytes().to_vec();
+        } else {
+            commit_info.block_signature = [0u8; 96].to_vec();
+        }
 
         let request_finalize_block = RequestFinalizeBlock {
             commit: Some(commit_info),

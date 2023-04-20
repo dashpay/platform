@@ -88,7 +88,7 @@ impl CoreRPCLike for DefaultCoreRPC {
             blockhash,
             height,
             signature,
-            known_block,
+            known_block: _,
         } = self.inner.get_best_chain_lock()?;
         Ok(CoreChainLock {
             core_block_height: height,
@@ -132,8 +132,8 @@ impl CoreRPCLike for DefaultCoreRPC {
 
     fn get_protx_diff_with_masternodes(
         &self,
-        base_block: u32,
-        block: u32,
+        _base_block: u32,
+        _block: u32,
     ) -> Result<MasternodeListDiffWithMasternodes, Error> {
         // method does not yet exist in core
         todo!()

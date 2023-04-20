@@ -89,9 +89,11 @@ where
             // the default behavior from
             // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransitionIdentitySigned.js#L108
             // is to return the error for the BIP13_SCRIPT_HASH
-            KeyType::BIP13_SCRIPT_HASH => Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
-                InvalidIdentityPublicKeyTypeError::new(identity_public_key.key_type),
-            )),
+            KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
+                Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
+                    InvalidIdentityPublicKeyTypeError::new(identity_public_key.key_type),
+                ))
+            }
         }?;
 
         self.set_signature_public_key_id(identity_public_key.id);
@@ -130,7 +132,7 @@ where
             KeyType::BLS12_381 => self.verify_bls_signature_by_public_key(public_key_bytes, bls),
 
             // per https://github.com/dashevo/platform/pull/353, signing and verification is not supported
-            KeyType::BIP13_SCRIPT_HASH => Ok(()),
+            KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => Ok(()),
         }
     }
 

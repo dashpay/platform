@@ -45,7 +45,7 @@ pub fn delete_withdrawal_data_trigger<'a>(
         .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)?;
 
     let drive_query = DriveQuery {
-        contract: &context.data_contract,
+        contract: context.data_contract,
         document_type,
         internal_clauses: InternalClauses {
             primary_key_in_clause: None,
@@ -130,7 +130,7 @@ mod tests {
 
     #[test]
     fn should_throw_error_if_withdrawal_not_found() {
-        let mut platform = TestPlatformBuilder::new()
+        let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
         let state_read_guard = platform.state.read().unwrap();
@@ -165,7 +165,7 @@ mod tests {
 
     #[test]
     fn should_throw_error_if_withdrawal_has_wrong_status() {
-        let mut platform = TestPlatformBuilder::new()
+        let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_genesis_state();
         let state_read_guard = platform.state.read().unwrap();
@@ -224,7 +224,7 @@ mod tests {
         let document_transition =
             DocumentTransitionAction::DeleteAction(DocumentDeleteTransitionAction {
                 base: DocumentBaseTransitionAction {
-                    id: document.id.clone(),
+                    id: document.id,
                     ..Default::default()
                 },
             });
@@ -236,12 +236,9 @@ mod tests {
             state_transition_execution_context: &transition_execution_context,
             transaction: None,
         };
-        let result = delete_withdrawal_data_trigger(
-            &document_transition.into(),
-            &data_trigger_context,
-            None,
-        )
-        .expect("the execution result should be returned");
+        let result =
+            delete_withdrawal_data_trigger(&document_transition, &data_trigger_context, None)
+                .expect("the execution result should be returned");
 
         assert!(!result.is_valid());
 

@@ -8,6 +8,7 @@ use dashcore::secp256k1::Secp256k1;
 use dashcore::Network;
 use itertools::Itertools;
 use lazy_static::lazy_static;
+use rand::rngs::OsRng;
 use rand::rngs::StdRng;
 use rand::Rng;
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -35,9 +36,7 @@ pub enum KeyType {
     BLS12_381 = 1,
     ECDSA_HASH160 = 2,
     BIP13_SCRIPT_HASH = 3,
-    // TODO: re-enable this keys
-    // EDDSA_25519 = 4,
-    // EDDSA_25519_HASH160 = 5,
+    EDDSA_25519_HASH160 = 4,
 }
 
 lazy_static! {
@@ -84,7 +83,7 @@ impl KeyType {
                     .to_bytes()
                     .to_vec()
             }
-            KeyType::ECDSA_HASH160 | KeyType::BIP13_SCRIPT_HASH => {
+            KeyType::ECDSA_HASH160 | KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
                 (0..self.default_size()).map(|_| rng.gen::<u8>()).collect()
             }
         }
@@ -122,6 +121,13 @@ impl KeyType {
                 (
                     ripemd160_sha256(private_key.public_key(&secp).to_bytes().as_slice()),
                     private_key.to_bytes(),
+                )
+            }
+            KeyType::EDDSA_25519_HASH160 => {
+                let key_pair = ed25519_dalek::SigningKey::generate(rng);
+                (
+                    key_pair.verifying_key().to_bytes().to_vec(),
+                    key_pair.to_bytes().to_vec(),
                 )
             }
             KeyType::BIP13_SCRIPT_HASH => {

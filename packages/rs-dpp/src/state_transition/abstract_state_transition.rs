@@ -75,7 +75,7 @@ pub trait StateTransitionLike:
             // the default behavior from
             // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L187
             // is to return the error for the BIP13_SCRIPT_HASH
-            KeyType::BIP13_SCRIPT_HASH => {
+            KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
                 return Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
                     InvalidIdentityPublicKeyTypeError::new(key_type),
                 ))
@@ -96,9 +96,11 @@ pub trait StateTransitionLike:
                 self.verify_ecdsa_hash_160_signature_by_public_key_hash(public_key)
             }
             KeyType::BLS12_381 => self.verify_bls_signature_by_public_key(public_key, bls),
-            KeyType::BIP13_SCRIPT_HASH => Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
-                InvalidIdentityPublicKeyTypeError::new(public_key_type),
-            )),
+            KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
+                Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
+                    InvalidIdentityPublicKeyTypeError::new(public_key_type),
+                ))
+            }
         }
     }
 

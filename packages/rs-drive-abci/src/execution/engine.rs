@@ -1,7 +1,7 @@
-use bls_signatures;
 use dashcore::hashes::Hash;
 use dashcore::{QuorumHash, Txid};
-use dpp::bincode;
+use dpp::bls_signatures;
+
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use dpp::consensus::basic::identity::IdentityInsufficientBalanceError;
@@ -15,7 +15,7 @@ use drive::error::Error::GroveDB;
 use drive::fee::result::FeeResult;
 use drive::grovedb::{Transaction, TransactionArg};
 use std::collections::BTreeMap;
-use tenderdash_abci::proto;
+
 use tenderdash_abci::proto::abci::ExecTxResult;
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 
@@ -24,7 +24,7 @@ use crate::abci::withdrawal::WithdrawalTxs;
 use crate::abci::AbciError;
 use crate::block::{BlockExecutionContext, BlockStateInfo};
 use crate::error::execution::ExecutionError;
-use crate::error::serialization::SerializationError;
+
 use crate::error::Error;
 use crate::execution::block_proposal::BlockProposal;
 use crate::execution::execution_event::ExecutionResult::{
@@ -35,6 +35,7 @@ use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::execution::finalize_block_cleaned_request::{CleanedBlock, FinalizeBlockCleanedRequest};
 use crate::platform::{Platform, PlatformRef};
 use crate::rpc::core::CoreRPCLike;
+
 use crate::validation::state_transition::process_state_transition;
 
 /// The outcome of the block execution, either by prepare proposal, or process proposal
@@ -120,7 +121,7 @@ where
         //todo: we need to split out errors
         //  between failed execution and internal errors
         let validation_result =
-            self.validate_fees_of_event(&event, block_info, Some(&transaction))?;
+            self.validate_fees_of_event(&event, block_info, Some(transaction))?;
         match event {
             ExecutionEvent::PaidFromAssetLockDriveEvent {
                 identity,
@@ -141,7 +142,7 @@ where
                         individual_fee_result.into_balance_change(identity.id.to_buffer());
 
                     let outcome = self.drive.apply_balance_change_from_fee_to_identity(
-                        balance_change.clone(),
+                        balance_change,
                         Some(transaction),
                     )?;
 
@@ -236,13 +237,16 @@ where
     ) -> Result<ValidationResult<BlockExecutionOutcome, Error>, Error> {
         // Start by getting information from the state
         let state = self.state.read().unwrap();
+
         let last_block_time_ms = state.last_block_time_ms();
         let last_block_height =
-            state.known_height_or((self.config.abci.genesis_height as u64).saturating_sub(1));
+            state.known_height_or(self.config.abci.genesis_height.saturating_sub(1));
         let last_block_core_height =
             state.known_core_height_or(self.config.abci.genesis_core_height);
         let hpmn_list_len = state.hpmn_list_len();
-        let quorum_hash = state.current_validator_set_quorum_hash;
+        let _quorum_hash = state.current_validator_set_quorum_hash;
+
+        let mut block_platform_state = state.clone();
         drop(state);
 
         // Init block execution context
@@ -260,11 +264,11 @@ where
 
         // destructure the block proposal
         let BlockProposal {
-            consensus_versions,
-            block_hash,
+            consensus_versions: _,
+            block_hash: _,
             height,
-            round,
-            core_chain_locked_height,
+            round: _,
+            core_chain_locked_height: _,
             proposed_app_version,
             proposer_pro_tx_hash,
             validator_set_quorum_hash,
@@ -273,12 +277,32 @@ where
         } = block_proposal;
         // todo: verify that we support the consensus versions
         // We start by getting the epoch we are in
-        let genesis_time_ms = self.get_genesis_time(height, block_time_ms, &transaction)?;
+        let genesis_time_ms = self.get_genesis_time(height, block_time_ms, transaction)?;
 
         let epoch_info =
             EpochInfo::from_genesis_time_and_block_info(genesis_time_ms, &block_state_info)?;
 
-        //
+        let block_info = block_state_info.to_block_info(
+            Epoch::new(epoch_info.current_epoch_index)
+                .expect("current epoch index should be in range"),
+        );
+
+        // Update the active quorums
+        self.update_quorum_info(
+            &mut block_platform_state,
+            block_proposal.core_chain_locked_height,
+        )?;
+
+        // Update the masternode list and create masternode identities
+        self.update_masternode_list(
+            &mut block_platform_state,
+            block_proposal.core_chain_locked_height,
+            false,
+            &block_info,
+            transaction,
+        )?;
+
+        // Update the validator proposed app version
         self.drive
             .update_validator_proposed_app_version(
                 proposer_pro_tx_hash,
@@ -289,15 +313,12 @@ where
                 Error::Execution(ExecutionError::UpdateValidatorProposedAppVersionError(e))
             })?; // This is a system error
 
-        let block_info = block_state_info.to_block_info(
-            Epoch::new(epoch_info.current_epoch_index)
-                .expect("current epoch index should be in range"),
-        );
         let mut block_execution_context = BlockExecutionContext {
             block_state_info,
             epoch_info: epoch_info.clone(),
             hpmn_count: hpmn_list_len as u32,
             withdrawal_transactions: BTreeMap::new(),
+            block_platform_state,
         };
 
         // If last synced Core block height is not set instead of scanning
@@ -316,7 +337,7 @@ where
         self.update_broadcasted_withdrawal_transaction_statuses(
             last_synced_core_height,
             &block_execution_context,
-            &transaction,
+            transaction,
         )?;
 
         // This takes withdrawals from the transaction queue
@@ -324,10 +345,10 @@ where
             .fetch_and_prepare_unsigned_withdrawal_transactions(
                 validator_set_quorum_hash,
                 &block_execution_context,
-                &transaction,
+                transaction,
             )?;
 
-        // Set the withdrawal transactions
+        // Set the withdrawal transactions that were done in the previous block
         block_execution_context.withdrawal_transactions = unsigned_withdrawal_transaction_bytes
             .into_iter()
             .map(|withdrawal_transaction| {
@@ -339,14 +360,14 @@ where
             .collect();
 
         let (block_fees, tx_results) =
-            self.process_raw_state_transitions(&raw_state_transitions, &block_info, transaction)?;
+            self.process_raw_state_transitions(raw_state_transitions, &block_info, transaction)?;
 
         self.pool_withdrawals_into_transactions_queue(&block_execution_context, transaction)?;
 
         // while we have the state transitions executed, we now need to process the block fees
 
         // Process fees
-        let process_block_fees_outcome = self.process_block_fees(
+        let _process_block_fees_outcome = self.process_block_fees(
             &block_execution_context.block_state_info,
             &epoch_info,
             block_fees.into(),
@@ -381,7 +402,7 @@ where
         transaction: &Transaction,
     ) -> Result<(), Error> {
         // we need to serialize the block info
-        let mut serialized_block_info = block_info.serialize()?;
+        let serialized_block_info = block_info.serialize()?;
 
         // next we need to store this data in groveb
         self.drive
@@ -401,7 +422,7 @@ where
                 b"saved_quorum_hash",
                 &quorum_hash.into_inner(),
                 None,
-                Some(&transaction),
+                Some(transaction),
             )
             .unwrap()
             .map_err(|e| Error::Drive(GroveDB(e)))?;
@@ -416,18 +437,40 @@ where
         updated_validator_hash: QuorumHash,
         transaction: &Transaction,
     ) -> Result<(), Error> {
+        let mut block_execution_context = self.block_execution_context.write().unwrap();
+
+        let block_execution_context = block_execution_context.take().ok_or(Error::Execution(
+            ExecutionError::CorruptedCodeExecution("there should be a block execution context"),
+        ))?;
+
         let mut state_cache = self.state.write().unwrap();
 
+        *state_cache = block_execution_context.block_platform_state;
+
+        // Determine a new protocol version if enough proposers voted
+        if block_execution_context
+            .epoch_info
+            .is_epoch_change_but_not_genesis()
+        {
+            // Set current protocol version to the version from upcoming epoch
+            state_cache.current_protocol_version_in_consensus =
+                state_cache.next_epoch_protocol_version;
+
+            // Determine new protocol version based on votes for the next epoch
+            let maybe_new_protocol_version = self.check_for_desired_protocol_upgrade(
+                block_execution_context.hpmn_count,
+                &state_cache,
+                transaction,
+            )?;
+            if let Some(new_protocol_version) = maybe_new_protocol_version {
+                state_cache.next_epoch_protocol_version = new_protocol_version;
+            } else {
+                state_cache.next_epoch_protocol_version =
+                    state_cache.current_protocol_version_in_consensus;
+            }
+        }
+
         state_cache.current_validator_set_quorum_hash = updated_validator_hash;
-
-        self.update_quorum_info(&mut state_cache, block_info.core_height)?;
-
-        self.update_masternode_list(
-            &mut state_cache,
-            block_info.core_height,
-            &block_info,
-            transaction,
-        )?;
 
         state_cache.last_committed_block_info = Some(block_info.clone());
 
@@ -447,7 +490,7 @@ where
         verify_with_validator_public_key: Option<&bls_signatures::PublicKey>,
         quorum_hash: Option<&[u8]>,
     ) -> SimpleValidationResult<AbciError> {
-        if received_withdrawals.ne(&our_withdrawals) {
+        if received_withdrawals.ne(our_withdrawals) {
             return SimpleValidationResult::new_with_error(
                 AbciError::VoteExtensionMismatchReceived {
                     got: received_withdrawals.to_string(),
@@ -476,8 +519,7 @@ where
                         .errors
                         .into_iter()
                         .next()
-                        .expect("expected an error")
-                        .into(),
+                        .expect("expected an error"),
                 )
             }
         } else {
@@ -510,7 +552,7 @@ where
         let mut validation_result = SimpleValidationResult::<AbciError>::new_with_errors(vec![]);
 
         // Retrieve block execution context before we do anything at all
-        let mut guarded_block_execution_context = self.block_execution_context.write().unwrap();
+        let guarded_block_execution_context = self.block_execution_context.read().unwrap();
         let block_execution_context =
             guarded_block_execution_context
                 .as_ref()
@@ -521,14 +563,14 @@ where
         let BlockExecutionContext {
             block_state_info,
             epoch_info,
-            hpmn_count,
-            withdrawal_transactions,
+            block_platform_state,
+            ..
         } = &block_execution_context;
 
         // Let's decompose the request
         let FinalizeBlockCleanedRequest {
             commit: commit_info,
-            misbehavior,
+            misbehavior: _,
             hash,
             height,
             round,
@@ -538,10 +580,10 @@ where
 
         let CleanedBlock {
             header: block_header,
-            data,
-            evidence,
-            last_commit,
-            core_chain_lock,
+            data: _,
+            evidence: _,
+            last_commit: _,
+            core_chain_lock: _,
         } = block;
 
         //// Verification that commit is for our current executed block
@@ -563,32 +605,42 @@ where
             return Ok(validation_result.into());
         }
 
-        let mut state = self.state.write().unwrap();
-        if state.current_validator_set_quorum_hash.as_inner() != &commit_info.quorum_hash {
+        if block_platform_state
+            .current_validator_set_quorum_hash
+            .as_inner()
+            != &commit_info.quorum_hash
+        {
             validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
                 "received a block for h: {} r: {} with validator set quorum hash {} expected current validator set quorum hash is {}",
-                height, round, hex::encode(commit_info.quorum_hash), hex::encode(state.current_validator_set_quorum_hash)
+                height, round, hex::encode(commit_info.quorum_hash), hex::encode(block_platform_state.current_validator_set_quorum_hash)
             )));
             return Ok(validation_result.into());
         }
 
-        let quorum_public_key = self.get_quorum_key(commit_info.quorum_hash)?;
+        // In production this will always be true
+        if self
+            .config
+            .testing_configs
+            .block_commit_signature_verification
+        {
+            let quorum_public_key = self.get_quorum_key(commit_info.quorum_hash)?;
 
-        // Verify commit
+            // Verify commit
 
-        let quorum_type = self.config.quorum_type();
-        let commit = Commit::new_from_cleaned(
-            commit_info.clone(),
-            block_id.clone(),
-            height,
-            quorum_type,
-            &block_header.chain_id,
-        );
-        let validation_result =
-            commit.verify_signature(&commit_info.block_signature, &quorum_public_key);
+            let quorum_type = self.config.quorum_type();
+            let commit = Commit::new_from_cleaned(
+                commit_info.clone(),
+                block_id,
+                height,
+                quorum_type,
+                &block_header.chain_id,
+            );
+            let validation_result =
+                commit.verify_signature(&commit_info.block_signature, &quorum_public_key);
 
-        if !validation_result.is_valid() {
-            return Ok(validation_result.into());
+            if !validation_result.is_valid() {
+                return Ok(validation_result.into());
+            }
         }
 
         // Verify vote extensions
@@ -612,41 +664,22 @@ where
             self.drive.set_genesis_time(block_state_info.block_time_ms);
         }
 
-        // Determine a new protocol version if enough proposers voted
-        let changed_protocol_version = if epoch_info.is_epoch_change_but_not_genesis() {
-            // Set current protocol version to the version from upcoming epoch
-            state.current_protocol_version_in_consensus = state.next_epoch_protocol_version;
-
-            // Determine new protocol version based on votes for the next epoch
-            let maybe_new_protocol_version =
-                self.check_for_desired_protocol_upgrade(*hpmn_count, &state, transaction)?;
-            if let Some(new_protocol_version) = maybe_new_protocol_version {
-                state.next_epoch_protocol_version = new_protocol_version;
-            } else {
-                state.next_epoch_protocol_version = state.current_protocol_version_in_consensus;
-            }
-
-            let current_protocol_version_in_consensus = state.current_protocol_version_in_consensus;
-
-            Some(current_protocol_version_in_consensus)
-        } else {
-            None
-        };
-        drop(state);
-
-        let mut to_commit_block_info = block_state_info.to_block_info(
+        let mut to_commit_block_info: BlockInfo = block_state_info.to_block_info(
             Epoch::new(epoch_info.current_epoch_index)
                 .expect("current epoch info should be in range"),
         );
 
         // we need to add the block time
-        to_commit_block_info.time_ms = block_header.time.to_milis() as u64;
+        to_commit_block_info.time_ms = block_header.time.to_milis();
+
+        to_commit_block_info.core_height = block_header.core_chain_locked_height;
 
         // // Finalize withdrawal processing
         // our_withdrawals.finalize(Some(transaction), &self.drive, &to_commit_block_info)?;
 
         // At the end we update the state cache
 
+        drop(guarded_block_execution_context);
         self.update_state_cache_and_quorums(
             to_commit_block_info,
             QuorumHash::from_inner(block_header.next_validators_hash),
@@ -683,15 +716,14 @@ where
         // We should run the execution event in dry run to see if we would have enough fees for the transaction
 
         // We need the approximate block info
-        let block_info_guard = self.state.read().unwrap();
-        if let Some(block_info) = block_info_guard.last_committed_block_info.as_ref() {
+        if let Some(block_info) = state_read_guard.last_committed_block_info.as_ref() {
             // We do not put the transaction, because this event happens outside of a block
             execution_event.and_then_borrowed_validation(|execution_event| {
-                self.validate_fees_of_event(&execution_event, block_info, None)
+                self.validate_fees_of_event(execution_event, block_info, None)
             })
         } else {
             execution_event.and_then_borrowed_validation(|execution_event| {
-                self.validate_fees_of_event(&execution_event, &BlockInfo::default(), None)
+                self.validate_fees_of_event(execution_event, &BlockInfo::default(), None)
             })
         }
     }

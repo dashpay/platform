@@ -52,9 +52,9 @@ pub fn validate_state_transition_identity_signature(
     let mut validation_result = ConsensusValidationResult::<PartialIdentity>::default();
 
     let key_id = state_transition.get_signature_public_key_id().ok_or(
-        ProtocolError::CorruptedCodeExecution(format!(
-            "state_transition does not have a public key Id to verify"
-        )),
+        ProtocolError::CorruptedCodeExecution(
+            "state_transition does not have a public key Id to verify".to_string(),
+        ),
     )?;
 
     let key_request = IdentityKeysRequest::new_specific_key_query(
@@ -127,7 +127,7 @@ pub fn validate_state_transition_identity_signature(
     // }
 
     let signature_is_valid =
-        state_transition.verify_signature(&public_key, &NativeBlsModule::default());
+        state_transition.verify_signature(public_key, &NativeBlsModule::default());
 
     if let Err(err) = signature_is_valid {
         let consensus_error = convert_to_consensus_signature_error(err)?;
@@ -157,7 +157,7 @@ pub fn validate_identity_public_keys_structure(
     }
 
     // Check that there's not duplicates key ids in the state transition
-    let duplicated_ids = duplicated_key_ids_witness(&identity_public_keys_with_witness);
+    let duplicated_ids = duplicated_key_ids_witness(identity_public_keys_with_witness);
     if !duplicated_ids.is_empty() {
         return Ok(SimpleConsensusValidationResult::new_with_error(
             StateError::DuplicatedIdentityPublicKeyIdError { duplicated_ids }.into(),
@@ -165,7 +165,7 @@ pub fn validate_identity_public_keys_structure(
     }
 
     // Check that there's no duplicated keys
-    let duplicated_key_ids = duplicated_keys_witness(&identity_public_keys_with_witness);
+    let duplicated_key_ids = duplicated_keys_witness(identity_public_keys_with_witness);
     if !duplicated_key_ids.is_empty() {
         return Ok(SimpleConsensusValidationResult::new_with_error(
             StateError::DuplicatedIdentityPublicKeyError {
@@ -177,7 +177,7 @@ pub fn validate_identity_public_keys_structure(
 
     // We should check all the security levels
     let validation_errors = identity_public_keys_with_witness
-        .into_iter()
+        .iter()
         .filter_map(|identity_public_key| {
             let allowed_security_levels = ALLOWED_SECURITY_LEVELS.get(&identity_public_key.purpose);
             if let Some(levels) = allowed_security_levels {
@@ -218,7 +218,7 @@ pub fn validate_identity_public_keys_signatures(
     identity_public_keys_with_witness: &[IdentityPublicKeyInCreationWithWitness],
 ) -> Result<SimpleConsensusValidationResult, Error> {
     let validation_errors = identity_public_keys_with_witness
-        .into_iter()
+        .iter()
         .map(|identity_public_key| {
             identity_public_key
                 .verify_signature()

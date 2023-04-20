@@ -42,13 +42,11 @@ use drive::drive::defaults::PROTOCOL_VERSION;
 use std::path::Path;
 use std::sync::RwLock;
 
-use crate::error::serialization::SerializationError;
-use crate::error::Error::Serialization;
 use crate::rpc::core::MockCoreRPCLike;
 use dashcore::hashes::hex::FromHex;
 use dashcore::hashes::Hash;
 use dashcore::{BlockHash, QuorumHash};
-use dpp::bincode;
+
 use dpp::block::block_info::BlockInfo;
 use drive::error::drive::DriveError;
 use drive::error::Error::GroveDB;
@@ -215,7 +213,7 @@ impl Platform<MockCoreRPCLike> {
         self.update_state_masternode_list(&mut state_cache, core_height, true)?;
         drop(state_cache);
 
-        return Ok(true);
+        Ok(true)
     }
 }
 
@@ -318,7 +316,7 @@ impl<C> Platform<C> {
         platform.update_state_masternode_list(&mut state_cache, core_height, true)?;
         drop(state_cache);
 
-        return Ok(platform);
+        Ok(platform)
     }
 
     /// Open Platform with Drive and block execution context without saved state.

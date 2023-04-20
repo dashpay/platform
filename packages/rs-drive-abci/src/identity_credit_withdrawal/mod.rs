@@ -323,7 +323,7 @@ where
             data_contract_id.to_buffer(),
             None,
             true,
-            Some(&transaction),
+            Some(transaction),
         )? else {
             return Err(Error::Execution(
                 ExecutionError::CorruptedCodeExecution("can't fetch withdrawal data contract"),
@@ -332,7 +332,7 @@ where
 
         let mut documents = self.drive.fetch_withdrawal_documents_by_status(
             withdrawals_contract::WithdrawalStatus::QUEUED.into(),
-            Some(&transaction),
+            Some(transaction),
         )?;
 
         if documents.is_empty() {
@@ -344,7 +344,7 @@ where
         let withdrawal_transactions = self.build_withdrawal_transactions_from_documents(
             &documents,
             &mut drive_operations,
-            Some(&transaction),
+            Some(transaction),
         )?;
 
         for document in documents.iter_mut() {
@@ -560,6 +560,7 @@ mod tests {
     };
 
     mod update_withdrawal_statuses {
+        use crate::state::PlatformState;
         use crate::{block::BlockStateInfo, test::helpers::setup::TestPlatformBuilder};
         use dpp::identity::core_script::CoreScript;
         use dpp::platform_value::platform_value;
@@ -649,6 +650,16 @@ mod tests {
                 },
                 hpmn_count: 100,
                 withdrawal_transactions: Default::default(),
+                block_platform_state: PlatformState {
+                    last_committed_block_info: None,
+                    current_protocol_version_in_consensus: 0,
+                    next_epoch_protocol_version: 0,
+                    quorums_extended_info: Default::default(),
+                    current_validator_set_quorum_hash: Default::default(),
+                    validator_sets: Default::default(),
+                    full_masternode_list: Default::default(),
+                    hpmn_masternode_list: Default::default(),
+                },
             };
 
             let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
@@ -767,13 +778,14 @@ mod tests {
         use drive::dpp::contracts::withdrawals_contract;
         use drive::tests::helpers::setup::setup_system_data_contract;
 
+        use crate::state::PlatformState;
         use crate::{block::BlockStateInfo, test::helpers::setup::TestPlatformBuilder};
 
         use super::*;
 
         #[test]
         fn test_pooling() {
-            let mut platform = TestPlatformBuilder::new()
+            let platform = TestPlatformBuilder::new()
                 .build_with_mock_rpc()
                 .set_initial_state_structure();
 
@@ -804,6 +816,16 @@ mod tests {
                     },
                     hpmn_count: 100,
                     withdrawal_transactions: Default::default(),
+                    block_platform_state: PlatformState {
+                        last_committed_block_info: None,
+                        current_protocol_version_in_consensus: 0,
+                        next_epoch_protocol_version: 0,
+                        quorums_extended_info: Default::default(),
+                        current_validator_set_quorum_hash: Default::default(),
+                        validator_sets: Default::default(),
+                        full_masternode_list: Default::default(),
+                        hpmn_masternode_list: Default::default(),
+                    },
                 });
 
             let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
@@ -866,7 +888,7 @@ mod tests {
             let guarded_block_execution_context = platform.block_execution_context.write().unwrap();
             let block_execution_context = guarded_block_execution_context.as_ref().unwrap();
             platform
-                .pool_withdrawals_into_transactions_queue(&block_execution_context, &transaction)
+                .pool_withdrawals_into_transactions_queue(block_execution_context, &transaction)
                 .expect("to pool withdrawal documents into transactions");
 
             let updated_documents = platform

@@ -177,6 +177,6 @@ impl StateTransitionValidation for IdentityUpdateTransition {
         }
 
         validation_result.set_data(IdentityUpdateTransitionAction::from(self).into());
-        return Ok(validation_result);
+        Ok(validation_result)
     }
 }

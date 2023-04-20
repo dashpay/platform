@@ -77,6 +77,6 @@ impl StateTransitionValidation for IdentityTopUpTransition {
         validation_result.set_data(
             IdentityTopUpTransitionAction::from_borrowed(self, tx_out.value * 1000).into(),
         );
-        return Ok(validation_result);
+        Ok(validation_result)
     }
 }

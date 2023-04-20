@@ -150,7 +150,7 @@ impl IdentityPublicKeyInCreationWithWitness {
             KeyType::ECDSA_SECP256K1 | KeyType::BLS12_381 => {
                 public_key_with_witness.signature = signer.sign(&public_key, data.as_slice())?;
             }
-            KeyType::ECDSA_HASH160 | KeyType::BIP13_SCRIPT_HASH => {
+            KeyType::ECDSA_HASH160 | KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
                 // don't sign (on purpose)
             }
         }
@@ -178,7 +178,7 @@ impl IdentityPublicKeyInCreationWithWitness {
             // the default behavior from
             // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L187
             // is to return the error for the BIP13_SCRIPT_HASH
-            KeyType::BIP13_SCRIPT_HASH => {
+            KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
                 return Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
                     InvalidIdentityPublicKeyTypeError::new(key_type),
                 ))
@@ -413,6 +413,15 @@ impl IdentityPublicKeyInCreationWithWitness {
                 if !self.signature.is_empty() {
                     Ok(SimpleConsensusValidationResult::new_with_error(ConsensusError::SignatureError(
                         SignatureError::SignatureShouldNotBePresent("script hash keys should not have a signature as that would reveal the script".to_string()),
+                    )))
+                } else {
+                    Ok(SimpleConsensusValidationResult::default())
+                }
+            }
+            KeyType::EDDSA_25519_HASH160 => {
+                if !self.signature.is_empty() {
+                    Ok(SimpleConsensusValidationResult::new_with_error(ConsensusError::SignatureError(
+                        SignatureError::SignatureShouldNotBePresent("eddsa hash 160 keys should not have a signature as that would reveal the script".to_string()),
                     )))
                 } else {
                     Ok(SimpleConsensusValidationResult::default())

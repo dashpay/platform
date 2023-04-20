@@ -15,7 +15,8 @@ pub const fn signature_verify_cost(key_type: KeyType) -> Credits {
     match key_type {
         KeyType::ECDSA_SECP256K1 => 3000,
         KeyType::BLS12_381 => 6000,
-        KeyType::ECDSA_HASH160 => 3000,
+        KeyType::ECDSA_HASH160 => 4000,
         KeyType::BIP13_SCRIPT_HASH => 6000,
+        KeyType::EDDSA_25519_HASH160 => 3000,
     }
 }

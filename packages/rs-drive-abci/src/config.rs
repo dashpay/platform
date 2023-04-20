@@ -59,7 +59,7 @@ pub struct CoreRpcConfig {
 impl CoreRpcConfig {
     /// Return core address in the `host:port` format.
     pub fn url(&self) -> String {
-        return format!("{}:{}", self.host, self.port);
+        format!("{}:{}", self.host, self.port)
     }
 }
 
@@ -91,17 +91,15 @@ pub struct CoreConfig {
 impl CoreConfig {
     /// return dkg_interval
     pub fn dkg_interval(&self) -> u32 {
-        return self
-            .dkg_interval
+        self.dkg_interval
             .parse::<u32>()
-            .expect("DKG_INTERVAL is not an int");
+            .expect("DKG_INTERVAL is not an int")
     }
     /// Returns minimal number of quorum members
     pub fn min_quorum_valid_members(&self) -> u32 {
-        return self
-            .min_quorum_valid_members
+        self.min_quorum_valid_members
             .parse::<u32>()
-            .expect("MIN_QUORUM_VALID_MEMBERS is not an int");
+            .expect("MIN_QUORUM_VALID_MEMBERS is not an int")
     }
 }
 impl Default for CoreConfig {
@@ -164,6 +162,11 @@ pub struct PlatformConfig {
 
     /// Path to data storage
     pub db_path: PathBuf,
+
+    // todo: put this in tests like #[cfg(test)]
+    /// This should be None, except in the case of Testing platform
+    #[serde(skip)]
+    pub testing_configs: PlatformTestConfig,
 }
 
 impl PlatformConfig {
@@ -194,7 +197,7 @@ pub trait FromEnv {
     where
         Self: Sized + DeserializeOwned,
     {
-        envy::from_env::<Self>().map_err(|e| Error::from(e))
+        envy::from_env::<Self>().map_err(Error::from)
     }
 }
 
@@ -212,12 +215,41 @@ impl Default for PlatformConfig {
             abci: AbciConfig {
                 bind_address: "tcp://127.0.0.1:1234".to_string(),
                 keys: Keys::new_random_keys_with_seed(18012014), //Dash genesis day
-                genesis_height: 1,
-                genesis_core_height: 0,
+                genesis_height: AbciConfig::default_genesis_height(),
+                genesis_core_height: AbciConfig::default_genesis_core_height(),
                 chain_id: "chain_id".to_string(),
             },
             core: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
+            testing_configs: PlatformTestConfig::default(),
+        }
+    }
+}
+
+/// Configs that should only happen during testing
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PlatformTestConfig {
+    /// Block signing
+    pub block_signing: bool,
+    /// Block signature verification
+    pub block_commit_signature_verification: bool,
+}
+
+impl PlatformTestConfig {
+    /// Much faster config for tests
+    pub fn default_with_no_block_signing() -> Self {
+        Self {
+            block_signing: false,
+            block_commit_signature_verification: false,
+        }
+    }
+}
+
+impl Default for PlatformTestConfig {
+    fn default() -> Self {
+        Self {
+            block_signing: true,
+            block_commit_signature_verification: true,
         }
     }
 }
@@ -236,7 +268,7 @@ mod tests {
         assert_eq!("5", env::var("QUORUM_SIZE").unwrap());
 
         let config = super::PlatformConfig::from_env().unwrap();
-        assert_eq!(config.verify_sum_trees, true);
+        assert!(config.verify_sum_trees);
         assert_ne!(config.quorum_type(), QuorumType::UNKNOWN);
     }
 }

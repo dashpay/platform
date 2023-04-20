@@ -4,9 +4,10 @@ mod tests {
         continue_chain_for_strategy, run_chain_for_strategy, ChainExecutionOutcome,
         ChainExecutionParameters, Frequency, Strategy, StrategyRandomness, UpgradingInfo,
     };
+
     use tenderdash_abci::proto::types::CoreChainLock;
 
-    use drive_abci::config::PlatformConfig;
+    use drive_abci::config::{PlatformConfig, PlatformTestConfig};
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
 
     #[test]
@@ -24,7 +25,7 @@ mod tests {
             upgrading_info: Some(UpgradingInfo {
                 current_protocol_version: 1,
                 proposed_protocol_versions_with_weight: vec![(2, 1)],
-                upgrade_three_quarters_life: 0.1,
+                upgrade_three_quarters_life: 0.05,
             }),
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -37,6 +38,8 @@ mod tests {
             quorum_size: 100,
             validator_set_quorum_rotation_block_count: 125,
             block_spacing_ms: twenty_minutes_in_ms,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -93,7 +96,7 @@ mod tests {
                     .current_protocol_version_in_consensus,
                 1
             );
-            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&13), Some(&396)));
+            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&6), Some(&419)));
             //most nodes were hit (63 were not)
         }
 
@@ -127,7 +130,7 @@ mod tests {
             abci_app,
             ChainExecutionParameters {
                 block_start,
-                core_height_start: 0,
+                core_height_start: 1,
                 block_count: 200,
                 proposers,
                 quorums,
@@ -170,7 +173,7 @@ mod tests {
                 2
             );
             assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
-            assert_eq!(counter.get(&2), Some(&154));
+            assert_eq!(counter.get(&2), Some(&152));
         }
 
         // we locked in
@@ -189,7 +192,7 @@ mod tests {
             abci_app,
             ChainExecutionParameters {
                 block_start,
-                core_height_start: 0,
+                core_height_start: 1,
                 block_count: 400,
                 proposers,
                 quorums,
@@ -264,6 +267,8 @@ mod tests {
             quorum_size: 40,
             validator_set_quorum_rotation_block_count: 15,
             block_spacing_ms: hour_in_ms,
+
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -324,7 +329,7 @@ mod tests {
                 .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
-            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&49), Some(&67)));
+            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&47), Some(&65)));
         }
 
         // we did not yet hit the required threshold to upgrade
@@ -351,8 +356,8 @@ mod tests {
             abci_app,
             ChainExecutionParameters {
                 block_start,
-                core_height_start: 0,
-                block_count: 2900,
+                core_height_start: 1,
+                block_count: 2100,
                 proposers,
                 quorums,
                 current_quorum_hash,
@@ -379,7 +384,7 @@ mod tests {
                     .unwrap()
                     .epoch
                     .index,
-                12
+                10
             );
             assert_eq!(
                 platform
@@ -394,7 +399,7 @@ mod tests {
                 2
             );
             // the counter is for the current voting during that window
-            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&10), Some(&72)));
+            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&21), Some(&87)));
         }
 
         // we are now locked in, the current protocol version will change on next epoch
@@ -412,7 +417,7 @@ mod tests {
             abci_app,
             ChainExecutionParameters {
                 block_start,
-                core_height_start: 0,
+                core_height_start: 1,
                 block_count: 400,
                 proposers,
                 quorums,
@@ -425,7 +430,7 @@ mod tests {
             StrategyRandomness::SeedEntropy(8),
         );
         {
-            let drive_cache = platform.drive.cache.read().unwrap();
+            let _drive_cache = platform.drive.cache.read().unwrap();
             assert_eq!(
                 platform
                     .state
@@ -436,7 +441,7 @@ mod tests {
                     .unwrap()
                     .epoch
                     .index,
-                13
+                11
             );
             assert_eq!(
                 platform
@@ -481,6 +486,8 @@ mod tests {
             quorum_size: 50,
             validator_set_quorum_rotation_block_count: 30,
             block_spacing_ms: hour_in_ms,
+
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -557,7 +564,7 @@ mod tests {
             abci_app,
             ChainExecutionParameters {
                 block_start,
-                core_height_start: 0,
+                core_height_start: 1,
                 block_count: 2600,
                 proposers,
                 quorums,
@@ -599,7 +606,7 @@ mod tests {
                 platform.state.read().unwrap().next_epoch_protocol_version,
                 2
             );
-            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&18), Some(&115)));
+            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&17), Some(&116)));
             //not all nodes have upgraded
         }
 
@@ -649,7 +656,7 @@ mod tests {
             abci_app,
             ChainExecutionParameters {
                 block_start,
-                core_height_start: 0,
+                core_height_start: 1,
                 block_count: 2000,
                 proposers,
                 quorums,
@@ -709,7 +716,7 @@ mod tests {
             abci_app,
             ChainExecutionParameters {
                 block_start,
-                core_height_start: 0,
+                core_height_start: 1,
                 block_count: 100,
                 proposers,
                 quorums,
@@ -783,6 +790,8 @@ mod tests {
             quorum_size: 50,
             validator_set_quorum_rotation_block_count: 30,
             block_spacing_ms: hour_in_ms,
+
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
         let mut platform = TestPlatformBuilder::new()
@@ -840,7 +849,7 @@ mod tests {
             );
             assert_eq!(
                 (counter.get(&1), counter.get(&2), counter.get(&3)),
-                (Some(&3), Some(&72), Some(&2))
+                (Some(&6), Some(&67), Some(&2))
             ); //some nodes reverted to previous version
         }
 
@@ -881,7 +890,7 @@ mod tests {
             abci_app,
             ChainExecutionParameters {
                 block_start,
-                core_height_start: 0,
+                core_height_start: 1,
                 block_count: 700,
                 proposers,
                 quorums,

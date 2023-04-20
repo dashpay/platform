@@ -33,9 +33,7 @@
 //!
 
 use std::ops::{Deref, DerefMut};
-use std::path::Path;
 
-use crate::error::Error;
 use crate::platform::Platform;
 use crate::rpc::core::MockCoreRPCLike;
 use crate::test::fixture::abci::static_system_identity_public_keys;

@@ -1,11 +1,9 @@
 use dpp::data_contract::DriveContractExt;
-use dpp::document::document_transition::{
-    DocumentCreateTransitionAction, DocumentTransitionAction,
-};
-use dpp::document::Document;
+use dpp::document::document_transition::DocumentTransitionAction;
+
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::{Identifier, Value};
-use dpp::prelude::DocumentTransition;
+
 use dpp::{get_from_transition_action, ProtocolError};
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 use std::collections::BTreeMap;
@@ -104,7 +102,7 @@ pub fn create_masternode_reward_shares_data_trigger<'a>(
         .document_type_for_name(&document_create_transition.base.document_type_name)?;
 
     let drive_query = DriveQuery {
-        contract: &context.data_contract,
+        contract: context.data_contract,
         document_type,
         internal_clauses: InternalClauses {
             primary_key_in_clause: None,
@@ -121,7 +119,7 @@ pub fn create_masternode_reward_shares_data_trigger<'a>(
             )]),
         },
         offset: 0,
-        limit: 0,
+        limit: (MAX_DOCUMENTS + 1) as u16,
         order_by: Default::default(),
         start_at: None,
         start_at_included: false,
@@ -174,7 +172,7 @@ pub fn create_masternode_reward_shares_data_trigger<'a>(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::platform::{PlatformRef, PlatformStateRef};
+    use crate::platform::PlatformStateRef;
     use crate::state::PlatformState;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dashcore::hashes::Hash;
@@ -183,17 +181,17 @@ mod test {
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
     use dpp::data_contract::DataContract;
-    use dpp::document::document_transition::Action;
-    use dpp::document::ExtendedDocument;
+    use dpp::document::document_transition::{Action, DocumentCreateTransitionAction};
+    use dpp::document::{Document, ExtendedDocument};
     use dpp::identity::Identity;
-    use dpp::mocks::{SMLEntry, SMLStore, SimplifiedMNList};
+
     use dpp::platform_value::Value;
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use dpp::tests::fixtures::{
         get_document_transitions_fixture, get_masternode_reward_shares_documents_fixture,
     };
     use dpp::tests::utils::generate_random_identifier_struct;
-    use dpp::version::LATEST_VERSION;
+
     use dpp::DataTriggerActionError;
     use drive::drive::object_size_info::DocumentInfo::{
         DocumentRefWithoutSerialization, DocumentWithoutSerialization,
@@ -230,7 +228,7 @@ mod test {
                 owner_address: [1;20],
                 voting_address: [2;20],
                 payout_address: [3;20],
-                pub_key_operator: hex::decode("987a4873caba62cd45a2f7d4aa6d94519ee6753e9bef777c927cb94ade768a542b0ff34a93231d3a92b4e75ffdaa366e").expect("expected to decode collateral hash").try_into().expect("expected 48 bytes"),
+                pub_key_operator: hex::decode("987a4873caba62cd45a2f7d4aa6d94519ee6753e9bef777c927cb94ade768a542b0ff34a93231d3a92b4e75ffdaa366e").expect("expected to decode collateral hash"),
                 operator_payout_address: None,
                 platform_node_id: None,
             },
@@ -258,7 +256,7 @@ mod test {
                 owner_address: [1;20],
                 voting_address: [2;20],
                 payout_address: [3;20],
-                pub_key_operator: hex::decode("a87a4873caba62cd45a2f7d4aa6d94519ee6753e9bef777c927cb94ade768a542b0ff34a93231d3a92b4e75ffdaa366e").expect("expected to decode collateral hash").try_into().expect("expected 48 bytes"),
+                pub_key_operator: hex::decode("a87a4873caba62cd45a2f7d4aa6d94519ee6753e9bef777c927cb94ade768a542b0ff34a93231d3a92b4e75ffdaa366e").expect("expected to decode collateral hash"),
                 operator_payout_address: None,
                 platform_node_id: None,
             },
@@ -292,7 +290,7 @@ mod test {
 
     #[test]
     fn should_return_an_error_if_percentage_greater_than_10000() {
-        let mut platform = TestPlatformBuilder::new()
+        let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
         let mut state_write_guard = platform.state.write().unwrap();
@@ -354,7 +352,7 @@ mod test {
                             owner_id: None,
                         },
                         contract: &document.data_contract,
-                        document_type: &document_type,
+                        document_type,
                     },
                     false,
                     BlockInfo::default(),
@@ -364,8 +362,7 @@ mod test {
                 .expect("expected to add document");
         }
 
-        let documents: Vec<Document> = extended_documents
-            .clone()
+        let _documents: Vec<Document> = extended_documents
             .into_iter()
             .map(|dt| dt.document)
             .collect();
@@ -399,7 +396,7 @@ mod test {
 
     #[test]
     fn should_return_an_error_if_pay_to_id_does_not_exists() {
-        let mut platform = TestPlatformBuilder::new()
+        let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
         let mut state_write_guard = platform.state.write().unwrap();
@@ -446,13 +443,13 @@ mod test {
 
     #[test]
     fn should_return_an_error_if_owner_id_is_not_a_masternode_identity() {
-        let mut platform = TestPlatformBuilder::new()
+        let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
         let mut state_write_guard = platform.state.write().unwrap();
         let TestData {
             document_create_transition,
-            top_level_identifier,
+
             data_contract,
             ..
         } = setup_test(&mut state_write_guard);
@@ -486,7 +483,7 @@ mod test {
 
     #[test]
     fn should_pass() {
-        let mut platform = TestPlatformBuilder::new()
+        let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
         let mut state_write_guard = platform.state.write().unwrap();
@@ -533,7 +530,7 @@ mod test {
 
     #[test]
     fn should_return_error_if_there_are_16_stored_shares() {
-        let mut platform = TestPlatformBuilder::new()
+        let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
         let mut state_write_guard = platform.state.write().unwrap();
@@ -559,20 +556,23 @@ mod test {
             .document_type_for_name(&document_create_transition.base.document_type_name)
             .expect("expected to get document type");
 
+        let mut main_identity = Identity::random_identity(2, Some(1000_u64));
+        main_identity.id = document_create_transition
+            .data
+            .get_identifier("payToId")
+            .expect("expected pay to id");
+
+        platform_ref
+            .drive
+            .add_new_identity(main_identity, &BlockInfo::default(), true, None)
+            .expect("expected to add an identity");
+
         for i in 0..16 {
-            let document = document_type.random_document(Some(i));
+            let mut document = document_type.random_document(Some(i));
 
-            let owner_id = document.owner_id;
+            document.owner_id = top_level_identifier;
 
-            let mut identity = Identity::random_identity(2, Some(i as u64));
-            identity.id = owner_id;
-
-            platform_ref
-                .drive
-                .add_new_identity(identity, &BlockInfo::default(), true, None)
-                .expect("expected to add an identity");
-
-            let mut identity = Identity::random_identity(2, Some(100 - i as u64));
+            let mut identity = Identity::random_identity(2, Some(100 - i));
             identity.id = document
                 .properties
                 .get_identifier("payToId")
@@ -589,7 +589,7 @@ mod test {
                     DocumentAndContractInfo {
                         owned_document_info: OwnedDocumentInfo {
                             document_info: DocumentWithoutSerialization((document, None)),
-                            owner_id: Some(owner_id.to_buffer()),
+                            owner_id: Some(top_level_identifier.to_buffer()),
                         },
                         contract: &data_contract,
                         document_type,
@@ -626,7 +626,7 @@ mod test {
 
     #[test]
     fn should_pass_on_dry_run() {
-        let mut platform = TestPlatformBuilder::new()
+        let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_initial_state_structure();
         let mut state_write_guard = platform.state.write().unwrap();

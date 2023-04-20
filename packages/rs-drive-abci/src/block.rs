@@ -31,10 +31,11 @@ use crate::abci::AbciError;
 use crate::error::Error;
 use crate::execution::block_proposal::BlockProposal;
 use crate::execution::fee_pools::epoch::EpochInfo;
+use crate::state::PlatformState;
 use dashcore::Txid;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
-use drive::fee::epoch::EpochIndex;
+
 use std::collections::BTreeMap;
 
 /// Block info
@@ -138,4 +139,6 @@ pub struct BlockExecutionContext {
     pub hpmn_count: u32,
     /// Current withdrawal transactions hash -> Transaction
     pub withdrawal_transactions: BTreeMap<Txid, Vec<u8>>,
+    /// Block state
+    pub block_platform_state: PlatformState,
 }
