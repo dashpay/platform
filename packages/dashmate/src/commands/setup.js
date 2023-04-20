@@ -25,6 +25,7 @@ class SetupCommand extends BaseCommand {
    * @param {ConfigFile} configFile
    * @param {setupLocalPresetTask} setupLocalPresetTask
    * @param {setupRegularPresetTask} setupRegularPresetTask
+   * @param {DockerCompose} dockerCompose
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -40,12 +41,17 @@ class SetupCommand extends BaseCommand {
     configFile,
     setupLocalPresetTask,
     setupRegularPresetTask,
+    dockerCompose,
   ) {
     if (nodeCount !== null && (nodeCount < 3)) {
       throw new Error('node-count flag should be not less than 3');
     }
 
     const tasks = new Listr([
+      {
+        title: 'System requirements',
+        task: async () => dockerCompose.throwErrorIfNotInstalled(),
+      },
       {
         title: 'Configuration preset',
         task: async (ctx, task) => {
@@ -119,7 +125,8 @@ class SetupCommand extends BaseCommand {
     });
 
     if (!isVerbose) { // TODO: We need to print it only with default renderer
-      const { begoo } = await import('begoo/index'); // don't remove index!
+      // eslint-disable-next-line import/extensions
+      const { begoo } = await import('begoo/index.js'); // don't remove index!
 
       const welcomeText = begoo(
         chalk`Hello! I'm your {bold.cyanBright Dash} mate!
