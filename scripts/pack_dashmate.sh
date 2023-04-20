@@ -41,6 +41,8 @@ yarn oclif manifest
 yarn oclif pack $COMMAND $FLAGS
 cd ..  || exit 1
 rm package.tgz
+rm package/dist/Release
+rm package/dist/Packages
 cp -R package/dist "$ROOT_PATH/packages/dashmate"
 
 # fix for deb package build
