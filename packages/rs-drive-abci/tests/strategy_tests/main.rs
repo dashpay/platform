@@ -93,6 +93,7 @@ use drive::query::DriveQuery;
 use drive_abci::abci::AbciApplication;
 use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
 
+use dashcore_rpc::json::RemovedMasternodeItem;
 use drive_abci::execution::test_quorum::TestQuorumInfo;
 use drive_abci::platform::Platform;
 use drive_abci::rpc::core::MockCoreRPCLike;
@@ -1140,7 +1141,10 @@ pub(crate) fn run_chain_for_strategy(
     let mut rng = StdRng::seed_from_u64(seed);
 
     let new_proposers_in_strategy = strategy.new_proposers.is_set();
-    let (initial_proposers, with_extra_proposers) = if new_proposers_in_strategy {
+    let removed_proposers_in_strategy = strategy.removed_proposers.is_set();
+    let (initial_proposers, with_extra_proposers) = if new_proposers_in_strategy
+        || removed_proposers_in_strategy
+    {
         let initial_proposers =
             generate_test_masternodes(strategy.extra_normal_mns, strategy.total_hpmns, &mut rng);
         let mut all_proposers = initial_proposers.clone();
@@ -1150,8 +1154,16 @@ pub(crate) fn run_chain_for_strategy(
         let extra_proposers_by_block = (config.abci.genesis_core_height..end_core_height)
             .map(|height| {
                 let new_proposers = strategy.new_proposers.events_if_hit(&mut rng);
+                let removed_proposers_count = strategy.removed_proposers.events_if_hit(&mut rng);
                 let extra_proposers_by_block =
                     generate_test_masternodes(0, new_proposers, &mut rng);
+
+                if removed_proposers_in_strategy {
+                    let removed_count =
+                        std::cmp::min(removed_proposers_count as usize, all_proposers.len());
+                    all_proposers.drain(0..removed_count);
+                }
+
                 all_proposers.extend(extra_proposers_by_block.clone());
                 (height, all_proposers.clone())
             })
@@ -1293,11 +1305,20 @@ pub(crate) fn run_chain_for_strategy(
                         .filter(|item| !start_proposers.contains(item))
                         .map(|a| a.clone())
                         .collect();
+
+                    let removed_mns: Vec<_> = start_proposers
+                        .iter()
+                        .filter(|item| !end_proposers.contains(item))
+                        .map(|masternode_list_item| RemovedMasternodeItem {
+                            protx_hash: masternode_list_item.protx_hash,
+                        })
+                        .collect();
+
                     MasternodeListDiffWithMasternodes {
                         base_height: base_block,
                         block_height: block,
                         added_mns,
-                        removed_mns: vec![],
+                        removed_mns,
                         updated_mns: vec![],
                     }
                 }
@@ -2019,6 +2040,74 @@ mod tests {
                 chance_per_block: Some(0.5),
             },
             removed_proposers: Default::default(),
+            rotate_quorums: true,
+        };
+        let config = PlatformConfig {
+            verify_sum_trees: true,
+            quorum_size: 10,
+            validator_set_quorum_rotation_block_count: 25,
+            block_spacing_ms: 300,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            quorums,
+            current_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            ..
+        } = run_chain_for_strategy(&mut platform, 300, strategy, config, 43);
+
+        // With these params if we add new mns the hpmn masternode list would be 100, but we
+        // can expect it to be much higher.
+
+        let platform = abci_app.platform;
+        let platform_state = platform.state.read().unwrap();
+
+        assert!(platform_state.hpmn_masternode_list.len() > 100);
+    }
+
+    #[test]
+    fn run_chain_core_height_randomly_increasing_with_quorum_updates_changing_proposers() {
+        let strategy = Strategy {
+            contracts_with_updates: vec![],
+            operations: vec![],
+            identities_inserts: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: 1..2,
+                chance_per_block: Some(0.2),
+            },
+            new_proposers: Frequency {
+                times_per_block_range: 1..3,
+                chance_per_block: Some(0.5),
+            },
+            removed_proposers: Frequency {
+                times_per_block_range: 1..3,
+                chance_per_block: Some(0.5),
+            },
             rotate_quorums: true,
         };
         let config = PlatformConfig {
