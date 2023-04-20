@@ -15,27 +15,32 @@ In order for this binding to work, you have to have a rs-platform cloned
 alongside platform repo, so you can have access to the rust dpp.
 
 ## IMPORTANT! 
+
 ### Build on a Mac
-
-To build on a mac, you need to perform two steps. First, install `clang`
-from the homebrew. XCode's `clang` doesn't ship with the WASM support. Second,
-just adding llvm to the `.zshrc` doesn't seem to work - run 
-`AR=/usr/local/opt/llvm/bin/llvm-ar CC=/usr/local/opt/llvm/bin/clang yarn workspace @dashevo/wasm-dpp build:node`
-instead.
-
-Alternatively, you can add the following to the `yarn workspace @dashevo/wasm-dpp build:node:mac` instead.
+Built-in `llvm` on OSX does not work, it needs to be installed from brew:
+- `brew install llvm`
+- LLVM installed from brew is keg only, and path to it must be provided in the profile file, e.g.`echo 'export PATH="/opt/homebrew/opt/llvm/bin:$PATH"' >> ~/.zshrc`
 
 ### Class names minification
 Library consumers must ignore class names minification for `@dashevo/wasm-dpp` library in their bundlers.  
 
 ## Table of Contents
-
-- [Install](#install)
+- [Prerequisites](#Prerequisites)
+- [Build](#build)
 - [Usage](#usage)
 - [Contributing](#contributing)
 - [License](#license)
 
-## Install
+
+
+## Prerequisites
+- Install [Rust](https://www.rust-lang.org/tools/install) v1.67+
+- Add wasm32 target: `$ rustup target add wasm32-unknown-unknown`
+- Install wasm-bingen-cli: `cargo install wasm-bindgen-cli`
+  - _Depending on system, additional packages may need to be installed as a prerequisite for wasm-bindgen-cli. If anything is missing, installation will error and prompt what packages are missing (i.e. clang, llvm, libssl-dev)_
+
+## Build
+`$ yarn build`
 
 ## TODO
 
