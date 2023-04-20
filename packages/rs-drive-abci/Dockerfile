@@ -90,6 +90,8 @@ ENV RUSTC_WRAPPER=/usr/bin/sccache
 ARG SCCACHE_GHA_ENABLED
 ARG ACTIONS_CACHE_URL
 ARG ACTIONS_RUNTIME_TOKEN
+# Alternative solution is to use memcache
+ARG SCCACHE_MEMCACHED
 
 # Disable incremental buildings, not supported by sccache
 ENV CARGO_INCREMENTAL=false
