@@ -41,8 +41,8 @@ yarn oclif manifest
 yarn oclif pack $COMMAND $FLAGS
 cd ..  || exit 1
 rm package.tgz
-rm package/dist/Release
-rm package/dist/Packages
+rm -rf package/dist/Release
+rm -rf package/dist/Packages
 cp -R package/dist "$ROOT_PATH/packages/dashmate"
 
 # fix for deb package build
@@ -50,6 +50,6 @@ sudo chown -R $USER "$ROOT_PATH/packages/dashmate/package" || true
 sudo chgrp -R $USER "$ROOT_PATH/packages/dashmate/package" || true
 
 # remove build folder
-rm -rf package || true
+rm -rf package
 
 echo "Done"
