@@ -1,3 +1,15 @@
+## [0.24.0-dev.22](https://github.com/dashpay/platform/compare/v0.24.0-dev.21...v0.24.0-dev.22) (2023-04-20)
+
+
+### Continuous Integration
+
+* remove drive node.js binding release
+
+
+### Build System
+
+* **dashamte:** build arm64 deb file instead of armel ([#943](https://github.com/dashpay/platform/issues/943))
+
 ## [0.24.0-dev.21](https://github.com/dashpay/platform/compare/v0.24.0-dev.20...v0.24.0-dev.21) (2023-04-19)
 
 
