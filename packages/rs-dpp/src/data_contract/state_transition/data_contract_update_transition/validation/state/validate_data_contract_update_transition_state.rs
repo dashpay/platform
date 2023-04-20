@@ -106,7 +106,7 @@ mod test {
     use super::*;
     use crate::{
         data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition,
-        state_repository::MockStateRepositoryLike, state_transition::StateTransitionLike,
+        state_repository::MockStateRepositoryLike,
         tests::fixtures::get_data_contract_fixture,
     };
 
@@ -123,7 +123,7 @@ mod test {
             .expect_fetch_data_contract()
             .return_once(|_, _| Ok(None));
 
-        let mut execution_context = StateTransitionExecutionContext::default();
+        let execution_context = StateTransitionExecutionContext::default();
         execution_context.enable_dry_run();
 
         let result = validate_data_contract_update_transition_state(

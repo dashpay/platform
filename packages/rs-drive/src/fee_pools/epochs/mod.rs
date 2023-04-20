@@ -30,7 +30,7 @@
 //! Epoch pools
 //!
 
-use dpp::block::epoch::Epoch;
+
 
 /// Epoch key constants module
 pub mod epoch_key_constants;

@@ -12,7 +12,7 @@ use crate::consensus::signature::{
 use crate::consensus::ConsensusError;
 use crate::identity::signer::Signer;
 use crate::identity::{Identity, IdentityPublicKey};
-use crate::state_transition::errors::PublicKeyMismatchError;
+
 use crate::{
     identity::{KeyID, SecurityLevel},
     prelude::{Identifier, Revision, TimestampMillis},
@@ -20,8 +20,7 @@ use crate::{
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionType,
     },
-    version::LATEST_VERSION,
-    BlsModule, NonConsensusError, ProtocolError,
+    version::LATEST_VERSION, ProtocolError,
 };
 
 pub mod property_names {

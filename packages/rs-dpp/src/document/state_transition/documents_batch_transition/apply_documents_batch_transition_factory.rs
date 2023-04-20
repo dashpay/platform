@@ -158,7 +158,6 @@ mod test {
             DocumentsBatchTransition,
         },
         state_repository::MockStateRepositoryLike,
-        state_transition::StateTransitionLike,
         tests::{
             fixtures::{get_data_contract_fixture, get_document_transitions_fixture},
             utils::generate_random_identifier_struct,

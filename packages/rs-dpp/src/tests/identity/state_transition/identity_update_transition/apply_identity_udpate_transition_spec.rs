@@ -6,7 +6,6 @@ use crate::{
         identity_update_transition::IdentityUpdateTransition,
     },
     state_repository::MockStateRepositoryLike,
-    state_transition::StateTransitionLike,
     tests::fixtures::get_identity_update_transition_fixture,
 };
 use mockall::predicate::{always, eq};

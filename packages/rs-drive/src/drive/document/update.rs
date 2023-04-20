@@ -77,7 +77,7 @@ use crate::drive::grove_operations::{
     BatchDeleteUpTreeApplyType, BatchInsertApplyType, BatchInsertTreeApplyType, DirectQueryType,
     QueryType,
 };
-use crate::fee::default_costs::EpochCosts;
+
 use crate::fee::result::FeeResult;
 use dpp::prelude::DataContract;
 
@@ -700,6 +700,7 @@ mod tests {
     use crate::query::DriveQuery;
     use crate::{common::setup_contract, drive::test_utils::TestEntropyGenerator};
     use dpp::block::epoch::Epoch;
+    use crate::fee::default_costs::EpochCosts;
 
     #[test]
     fn test_create_and_update_document_same_transaction() {

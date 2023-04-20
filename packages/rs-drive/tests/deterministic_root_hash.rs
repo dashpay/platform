@@ -43,8 +43,7 @@ use dpp::document::Document;
 use dpp::util::serializer;
 #[cfg(feature = "full")]
 use drive::common;
-#[cfg(feature = "full")]
-use drive::common::setup_contract;
+
 #[cfg(feature = "full")]
 use drive::contract::Contract;
 #[cfg(feature = "full")]

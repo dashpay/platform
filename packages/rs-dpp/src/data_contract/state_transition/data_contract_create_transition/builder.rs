@@ -43,7 +43,7 @@ impl DataContractCreateTransition {
 
 impl DataContractUpdateTransition {
     pub fn new_from_data_contract<S: Signer>(
-        mut data_contract: DataContract,
+        data_contract: DataContract,
         identity: &PartialIdentity,
         key_id: KeyID,
         signer: &S,

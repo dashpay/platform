@@ -97,7 +97,7 @@ mod test {
     use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use crate::{
         identity::state_transition::identity_create_transition::IdentityCreateTransition,
-        state_repository::MockStateRepositoryLike, state_transition::StateTransitionLike,
+        state_repository::MockStateRepositoryLike,
         tests::fixtures::identity_create_transition_fixture,
     };
 

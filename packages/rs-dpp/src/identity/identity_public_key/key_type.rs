@@ -8,7 +8,7 @@ use dashcore::secp256k1::Secp256k1;
 use dashcore::Network;
 use itertools::Itertools;
 use lazy_static::lazy_static;
-use rand::rngs::OsRng;
+
 use rand::rngs::StdRng;
 use rand::Rng;
 use serde_repr::{Deserialize_repr, Serialize_repr};

@@ -19,10 +19,7 @@ use crate::consensus::basic::identity::{
 };
 use crate::consensus::state::identity::IdentityAlreadyExistsError;
 use crate::errors::consensus::basic;
-#[cfg(test)]
-use crate::errors::consensus::basic::{
-    BasicError, IncompatibleProtocolVersionError, JsonSchemaError, UnsupportedProtocolVersionError,
-};
+
 use crate::errors::StateError;
 use platform_value::Error as ValueError;
 

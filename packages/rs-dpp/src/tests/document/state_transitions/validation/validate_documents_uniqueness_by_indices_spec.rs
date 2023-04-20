@@ -1,7 +1,7 @@
 use mockall::predicate;
 use platform_value::platform_value;
 use platform_value::string_encoding::Encoding;
-use serde_json::json;
+
 
 use crate::{consensus::ConsensusError, data_contract::DataContract, document::{
     document_transition::{Action, DocumentTransition},

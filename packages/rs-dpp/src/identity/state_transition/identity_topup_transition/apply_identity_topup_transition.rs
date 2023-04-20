@@ -89,7 +89,6 @@ mod test {
             identity_topup_transition::IdentityTopUpTransition,
         },
         state_repository::MockStateRepositoryLike,
-        state_transition::StateTransitionLike,
         tests::fixtures::identity_topup_transition_fixture,
     };
 

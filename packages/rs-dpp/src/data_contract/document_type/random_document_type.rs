@@ -125,7 +125,7 @@ impl DocumentType {
             + field_weights.boolean_weight
             + field_weights.byte_array_weight;
 
-        let mut random_field = |required: bool, rng: &mut StdRng| -> DocumentField {
+        let random_field = |required: bool, rng: &mut StdRng| -> DocumentField {
             let random_weight = rng.gen_range(0..total_weight);
             let document_type = if random_weight < field_weights.string_weight {
                 let has_min_len = rng.gen_bool(parameters.field_bounds.string_has_min_len_chance);

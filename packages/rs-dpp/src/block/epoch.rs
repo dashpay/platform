@@ -1,7 +1,7 @@
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
-use std::cell::RefCell;
+
 
 /// Epoch key offset
 pub const EPOCH_KEY_OFFSET: u16 = 256;
