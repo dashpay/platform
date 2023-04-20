@@ -968,7 +968,7 @@ dependencies = [
 [[package]]
 name = "dashcore"
 version = "0.29.1"
-source = "git+https://github.com/dashpay/rust-dashcore?branch=feat/addons#c9bfcb53b77c03d533dfcbb515760ece5beb0aa9"
+source = "git+https://github.com/dashpay/rust-dashcore?branch=feat/addons#87da71ecdc33f23b3a6e90199a66aa7a16234661"
 dependencies = [
  "anyhow",
  "bech32",

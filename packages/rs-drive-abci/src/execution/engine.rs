@@ -348,7 +348,7 @@ where
                 transaction,
             )?;
 
-        // Set the withdrawal transactions
+        // Set the withdrawal transactions that were done in the previous block
         block_execution_context.withdrawal_transactions = unsigned_withdrawal_transaction_bytes
             .into_iter()
             .map(|withdrawal_transaction| {
