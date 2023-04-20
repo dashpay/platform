@@ -47,3 +47,11 @@ runs:
         cache-targets: false
         # We set a shared key, as our cache is reusable between jobs
         shared-key: rust-cargo
+
+    - name: Install clang
+      id: deps-clang
+      shell: bash
+      run: |
+        sudo apt update -qq
+        sudo apt install -qq --yes clang
+        sudo update-alternatives --set cc /usr/bin/clang
