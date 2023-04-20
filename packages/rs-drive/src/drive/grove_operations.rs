@@ -272,6 +272,40 @@ impl From<&BatchDeleteApplyType> for QueryType {
     }
 }
 
+impl From<BatchDeleteApplyType> for DirectQueryType {
+    fn from(value: BatchDeleteApplyType) -> Self {
+        match value {
+            BatchDeleteApplyType::StatelessBatchDelete {
+                is_sum_tree,
+                estimated_value_size,
+            } => DirectQueryType::StatelessDirectQuery {
+                in_tree_using_sums: is_sum_tree,
+                query_target: QueryTarget::QueryTargetValue(estimated_value_size),
+            },
+            BatchDeleteApplyType::StatefulBatchDelete { .. } => {
+                DirectQueryType::StatefulDirectQuery
+            }
+        }
+    }
+}
+
+impl From<&BatchDeleteApplyType> for DirectQueryType {
+    fn from(value: &BatchDeleteApplyType) -> Self {
+        match value {
+            BatchDeleteApplyType::StatelessBatchDelete {
+                is_sum_tree,
+                estimated_value_size,
+            } => DirectQueryType::StatelessDirectQuery {
+                in_tree_using_sums: *is_sum_tree,
+                query_target: QueryTarget::QueryTargetValue(*estimated_value_size),
+            },
+            BatchDeleteApplyType::StatefulBatchDelete { .. } => {
+                DirectQueryType::StatefulDirectQuery
+            }
+        }
+    }
+}
+
 impl Drive {
     /// Pushes the `OperationCost` of inserting an element in groveDB to `drive_operations`.
     pub fn grove_insert<'p, P>(
@@ -1534,7 +1568,8 @@ impl Drive {
 
     /// Pushes a "delete element" operation to `drive_operations` and returns the current element.
     /// If the element didn't exist does nothing.
-    pub(crate) fn batch_remove<'a, 'c, P>(
+    /// It is raw, because it does not use references.
+    pub(crate) fn batch_remove_raw<'a, 'c, P>(
         &'a self,
         path: P,
         key: &'c [u8],
@@ -1573,7 +1608,7 @@ impl Drive {
                 _ => true,
             };
 
-        let maybe_element = self.grove_get(
+        let maybe_element = self.grove_get_raw_optional(
             path_iter.clone(),
             key,
             (&apply_type).into(),

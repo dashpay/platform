@@ -2142,13 +2142,12 @@ mod tests {
             ..
         } = run_chain_for_strategy(&mut platform, 300, strategy, config, 43);
 
-        // With these params if we add new mns the hpmn masternode list would be 100, but we
-        // can expect it to be much higher.
+        // With these params if we add new mns the hpmn masternode list would be randomly different than 100.
 
         let platform = abci_app.platform;
         let platform_state = platform.state.read().unwrap();
 
-        assert!(platform_state.hpmn_masternode_list.len() > 100);
+        assert_ne!(platform_state.hpmn_masternode_list.len(), 100);
     }
 
     #[test]

@@ -388,7 +388,7 @@ impl Drive {
 
         let path = desired_version_for_validators_path();
 
-        let removed_element = self.batch_remove(
+        let removed_element = self.batch_remove_raw(
             path,
             validator_pro_tx_hash.as_slice(),
             StatefulBatchDelete {
@@ -484,7 +484,7 @@ impl Drive {
         let mut previous_versions_removals: BTreeMap<ProtocolVersion, u64> = BTreeMap::new();
 
         for validator_pro_tx_hash in validator_pro_tx_hashes {
-            let removed_element = self.batch_remove(
+            let removed_element = self.batch_remove_raw(
                 path.clone(),
                 validator_pro_tx_hash.as_slice(),
                 StatefulBatchDelete {
