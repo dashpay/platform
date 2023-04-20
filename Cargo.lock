@@ -982,7 +982,7 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc"
 version = "0.15.0"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=master#60383a281fd0c663539fae257acf61125f1e91b7"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=feat/fixesFor25#43e368ecedb8b0fad4e3ac6625b5d001e36ab042"
 dependencies = [
  "dashcore-rpc-json",
  "env_logger 0.10.0",
@@ -995,7 +995,7 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc-json"
 version = "0.15.0"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=master#60383a281fd0c663539fae257acf61125f1e91b7"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=feat/fixesFor25#43e368ecedb8b0fad4e3ac6625b5d001e36ab042"
 dependencies = [
  "dashcore",
  "hex",
@@ -1943,9 +1943,9 @@ checksum = "6df04c84bd3f83849dd23c51be4cbb22a02d80ebdea22741558fe30127d837ae"
 
 [[package]]
 name = "libc"
-version = "0.2.141"
+version = "0.2.142"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3304a64d199bb964be99741b7a14d26972741915b3649639149b2479bb46f4b5"
+checksum = "6a987beff54b60ffa6d51982e1aa1146bc42f19bd26be28b0586f252fccf5317"
 
 [[package]]
 name = "libloading"

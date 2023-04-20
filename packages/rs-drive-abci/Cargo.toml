@@ -33,7 +33,7 @@ dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
     "signer",
     "use-serde",
 ], default-features = false, branch = "feat/addons" }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", branch = "master" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore-rpc", branch = "feat/fixesFor25" }
 dpp = { path = "../rs-dpp", features = ["fixtures-and-mocks"] }
 rust_decimal = "1.2.5"
 rust_decimal_macros = "1.25.0"

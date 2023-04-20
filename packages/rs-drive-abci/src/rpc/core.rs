@@ -1,6 +1,7 @@
 use dashcore_rpc::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
-    ExtendedQuorumDetails, GetBestChainLockResult, QuorumInfoResult, QuorumListResult, QuorumType,
+    ExtendedQuorumDetails, ExtendedQuorumListResult, GetBestChainLockResult, QuorumInfoResult,
+    QuorumListResult, QuorumType,
 };
 use dashcore_rpc::json::{GetTransactionResult, MasternodeListDiffWithMasternodes};
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
@@ -41,7 +42,7 @@ pub trait CoreRPCLike {
     fn get_quorum_listextended(
         &self,
         height: Option<CoreHeight>,
-    ) -> Result<QuorumListResult<QuorumListExtendedInfo>, Error>;
+    ) -> Result<ExtendedQuorumListResult, Error>;
 
     /// Get quorum information.
     ///
@@ -116,8 +117,8 @@ impl CoreRPCLike for DefaultCoreRPC {
     fn get_quorum_listextended(
         &self,
         height: Option<CoreHeight>,
-    ) -> Result<QuorumListResult<QuorumListExtendedInfo>, Error> {
-        self.inner.get_quorum_listextended(height.map(|i| i as i64))
+    ) -> Result<ExtendedQuorumListResult, Error> {
+        self.inner.get_quorum_listextended(height.map(|i| i))
     }
 
     fn get_quorum_info(

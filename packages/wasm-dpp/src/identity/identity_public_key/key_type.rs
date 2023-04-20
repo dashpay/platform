@@ -17,6 +17,7 @@ impl From<KeyType> for KeyTypeWasm {
             KeyType::BLS12_381 => Self::BLS12_381,
             KeyType::ECDSA_HASH160 => Self::ECDSA_HASH160,
             KeyType::BIP13_SCRIPT_HASH => Self::BIP13_SCRIPT_HASH,
+            KeyType::EDDSA_25519_HASH160 => todo!(),
         }
     }
 }

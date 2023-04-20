@@ -19,6 +19,7 @@ impl From<Purpose> for PurposeWasm {
             Purpose::ENCRYPTION => PurposeWasm::ENCRYPTION,
             Purpose::DECRYPTION => PurposeWasm::DECRYPTION,
             Purpose::WITHDRAW => PurposeWasm::WITHDRAW,
+            Purpose::SYSTEM => todo!(),
         }
     }
 }
