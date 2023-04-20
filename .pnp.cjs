@@ -116,6 +116,8 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["add-stream", "npm:1.0.0"],\
             ["conventional-changelog", "npm:3.1.24"],\
             ["conventional-changelog-dash", "https://github.com/dashevo/conventional-changelog-dash.git#commit=3d4d77e2cea876a27b92641c28b15aedf13eb788"],\
+            ["es-abstract", "npm:1.21.2"],\
+            ["foreach", "npm:2.0.6"],\
             ["semver", "npm:7.3.8"],\
             ["tempfile", "npm:3.0.0"],\
             ["ultra-runner", "npm:3.10.5"]\
@@ -2728,6 +2730,8 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["add-stream", "npm:1.0.0"],\
             ["conventional-changelog", "npm:3.1.24"],\
             ["conventional-changelog-dash", "https://github.com/dashevo/conventional-changelog-dash.git#commit=3d4d77e2cea876a27b92641c28b15aedf13eb788"],\
+            ["es-abstract", "npm:1.21.2"],\
+            ["foreach", "npm:2.0.6"],\
             ["semver", "npm:7.3.8"],\
             ["tempfile", "npm:3.0.0"],\
             ["ultra-runner", "npm:3.10.5"]\
@@ -9684,6 +9688,13 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/foreach-npm-2.0.5-9fbfc73114-dab4fbfef0.zip/node_modules/foreach/",\
           "packageDependencies": [\
             ["foreach", "npm:2.0.5"]\
+          ],\
+          "linkType": "HARD"\
+        }],\
+        ["npm:2.0.6", {\
+          "packageLocation": "./.yarn/cache/foreach-npm-2.0.6-32ea85c4a8-f7b6849454.zip/node_modules/foreach/",\
+          "packageDependencies": [\
+            ["foreach", "npm:2.0.6"]\
           ],\
           "linkType": "HARD"\
         }]\
