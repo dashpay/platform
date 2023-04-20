@@ -31,6 +31,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            rotate_quorums: false,
         };
         let twenty_minutes_in_ms = 1000 * 60 * 20;
         let mut config = PlatformConfig {
@@ -260,6 +261,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            rotate_quorums: false,
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
@@ -479,6 +481,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            rotate_quorums: false,
         };
         let hour_in_ms = 1000 * 60 * 60;
         let mut config = PlatformConfig {
@@ -632,6 +635,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            rotate_quorums: false,
         };
 
         let block_start = platform
@@ -783,6 +787,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            rotate_quorums: false,
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
@@ -872,6 +877,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            rotate_quorums: false,
         };
 
         // we hit the required threshold to upgrade

@@ -2,7 +2,6 @@ use mockall::predicate;
 use platform_value::platform_value;
 use platform_value::string_encoding::Encoding;
 
-
 use crate::{consensus::ConsensusError, data_contract::DataContract, document::{
     document_transition::{Action, DocumentTransition},
     state_transition::documents_batch_transition::validation::state::validate_documents_uniqueness_by_indices::*,
