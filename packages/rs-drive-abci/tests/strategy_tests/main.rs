@@ -113,13 +113,17 @@ use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
 
 mod upgrade_fork_tests;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Frequency {
     pub times_per_block_range: Range<u16>, //insertion count when block is chosen
     pub chance_per_block: Option<f64>,     //chance of insertion if set
 }
 
 impl Frequency {
+    fn is_set(&self) -> bool {
+        self.chance_per_block.is_some() || !self.times_per_block_range.is_empty()
+    }
+
     fn check_hit(&self, rng: &mut StdRng) -> bool {
         match self.chance_per_block {
             None => true,
@@ -140,6 +144,16 @@ impl Frequency {
             self.events(rng)
         } else {
             0
+        }
+    }
+
+    fn average_event_count(&self) -> f64 {
+        if let Some(chance_per_block) = self.chance_per_block {
+            let avg_times_per_block_range =
+                (self.times_per_block_range.start + self.times_per_block_range.end) as f64 / 2.0;
+            avg_times_per_block_range * chance_per_block
+        } else {
+            (self.times_per_block_range.start + self.times_per_block_range.end) as f64 / 2.0
         }
     }
 }
@@ -274,6 +288,10 @@ pub struct Strategy {
     quorum_count: u16,
     upgrading_info: Option<UpgradingInfo>,
     core_height_increase: Frequency,
+    /// how many new proposers on average per core chain lock increase
+    new_proposers: Frequency,
+    /// how many proposers leave the system
+    removed_proposers: Frequency,
     rotate_quorums: bool,
 }
 
@@ -1121,8 +1139,36 @@ pub(crate) fn run_chain_for_strategy(
 
     let mut rng = StdRng::seed_from_u64(seed);
 
-    let proposers =
-        generate_test_masternodes(strategy.extra_normal_mns, strategy.total_hpmns, &mut rng);
+    let new_proposers_in_strategy = strategy.new_proposers.is_set();
+    let (initial_proposers, with_extra_proposers) = if new_proposers_in_strategy {
+        let initial_proposers =
+            generate_test_masternodes(strategy.extra_normal_mns, strategy.total_hpmns, &mut rng);
+        let mut all_proposers = initial_proposers.clone();
+        let approximate_end_core_height =
+            ((block_count as f64) * strategy.core_height_increase.average_event_count()) as u32;
+        let end_core_height = approximate_end_core_height * 2; //let's be safe
+        let extra_proposers_by_block = (config.abci.genesis_core_height..end_core_height)
+            .map(|height| {
+                let new_proposers = strategy.new_proposers.events_if_hit(&mut rng);
+                let extra_proposers_by_block =
+                    generate_test_masternodes(0, new_proposers, &mut rng);
+                all_proposers.extend(extra_proposers_by_block.clone());
+                (height, all_proposers.clone())
+            })
+            .collect::<HashMap<u32, Vec<MasternodeListItem>>>();
+        (initial_proposers, extra_proposers_by_block)
+    } else {
+        (
+            generate_test_masternodes(strategy.extra_normal_mns, strategy.total_hpmns, &mut rng),
+            HashMap::new(),
+        )
+    };
+
+    let mut all_proposers = with_extra_proposers
+        .iter()
+        .max_by_key(|(key, _)| *key)
+        .map(|(_, v)| v.clone())
+        .unwrap_or(initial_proposers.clone());
 
     let total_quorums = if strategy.rotate_quorums {
         quorum_count * 10
@@ -1132,7 +1178,7 @@ pub(crate) fn run_chain_for_strategy(
 
     let quorums = generate_test_quorums(
         total_quorums as usize,
-        &proposers,
+        &initial_proposers,
         quorum_size as usize,
         &mut rng,
     );
@@ -1212,8 +1258,6 @@ pub(crate) fn run_chain_for_strategy(
                 .clone())
         });
 
-    let initial_proposers = proposers.clone();
-
     platform
         .core_rpc
         .expect_get_protx_diff_with_masternodes()
@@ -1227,12 +1271,35 @@ pub(crate) fn run_chain_for_strategy(
                     updated_mns: vec![],
                 }
             } else {
-                MasternodeListDiffWithMasternodes {
-                    base_height: base_block,
-                    block_height: block,
-                    added_mns: vec![],
-                    removed_mns: vec![],
-                    updated_mns: vec![],
+                if !new_proposers_in_strategy {
+                    // no changes
+                    MasternodeListDiffWithMasternodes {
+                        base_height: base_block,
+                        block_height: block,
+                        added_mns: vec![],
+                        removed_mns: vec![],
+                        updated_mns: vec![],
+                    }
+                } else {
+                    // we need to figure out the difference of proposers between two heights
+                    let start_proposers = with_extra_proposers
+                        .get(&base_block)
+                        .expect("expected start proposers");
+                    let end_proposers = with_extra_proposers
+                        .get(&block)
+                        .expect("expected end proposers");
+                    let added_mns: Vec<_> = end_proposers
+                        .iter()
+                        .filter(|item| !start_proposers.contains(item))
+                        .map(|a| a.clone())
+                        .collect();
+                    MasternodeListDiffWithMasternodes {
+                        base_height: base_block,
+                        block_height: block,
+                        added_mns,
+                        removed_mns: vec![],
+                        updated_mns: vec![],
+                    }
                 }
             };
 
@@ -1242,7 +1309,7 @@ pub(crate) fn run_chain_for_strategy(
     start_chain_for_strategy(
         platform,
         block_count,
-        proposers,
+        all_proposers,
         quorums,
         strategy,
         config,
@@ -1580,6 +1647,8 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            new_proposers: Default::default(),
+            removed_proposers: Default::default(),
             rotate_quorums: false,
         };
         let config = PlatformConfig {
@@ -1624,6 +1693,8 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            new_proposers: Default::default(),
+            removed_proposers: Default::default(),
             rotate_quorums: false,
         };
         let config = PlatformConfig {
@@ -1668,6 +1739,8 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            new_proposers: Default::default(),
+            removed_proposers: Default::default(),
             rotate_quorums: false,
         };
         let config = PlatformConfig {
@@ -1757,6 +1830,8 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            new_proposers: Default::default(),
+            removed_proposers: Default::default(),
             rotate_quorums: false,
         };
         let config = PlatformConfig {
@@ -1810,6 +1885,8 @@ mod tests {
                 times_per_block_range: 1..3,
                 chance_per_block: Some(0.01),
             },
+            new_proposers: Default::default(),
+            removed_proposers: Default::default(),
             rotate_quorums: false,
         };
         let config = PlatformConfig {
@@ -1854,6 +1931,8 @@ mod tests {
                 times_per_block_range: 5..6,
                 chance_per_block: Some(0.5),
             },
+            new_proposers: Default::default(),
+            removed_proposers: Default::default(),
             rotate_quorums: true,
         };
         let config = PlatformConfig {
@@ -1919,6 +1998,71 @@ mod tests {
     }
 
     #[test]
+    fn run_chain_core_height_randomly_increasing_with_quorum_updates_new_proposers() {
+        let strategy = Strategy {
+            contracts_with_updates: vec![],
+            operations: vec![],
+            identities_inserts: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: 1..2,
+                chance_per_block: Some(0.2),
+            },
+            new_proposers: Frequency {
+                times_per_block_range: 1..3,
+                chance_per_block: Some(0.5),
+            },
+            removed_proposers: Default::default(),
+            rotate_quorums: true,
+        };
+        let config = PlatformConfig {
+            verify_sum_trees: true,
+            quorum_size: 10,
+            validator_set_quorum_rotation_block_count: 25,
+            block_spacing_ms: 300,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            quorums,
+            current_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            ..
+        } = run_chain_for_strategy(&mut platform, 300, strategy, config, 43);
+
+        // With these params if we add new mns the hpmn masternode list would be 100, but we
+        // can expect it to be much higher.
+
+        let platform = abci_app.platform;
+        let platform_state = platform.state.read().unwrap();
+
+        assert!(platform_state.hpmn_masternode_list.len() > 100);
+    }
+
+    #[test]
     fn run_chain_insert_one_new_identity_per_block() {
         let strategy = Strategy {
             contracts_with_updates: vec![],
@@ -1935,6 +2079,8 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            new_proposers: Default::default(),
+            removed_proposers: Default::default(),
             rotate_quorums: false,
         };
         let config = PlatformConfig {
@@ -1980,6 +2126,8 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            new_proposers: Default::default(),
+            removed_proposers: Default::default(),
             rotate_quorums: false,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -2040,6 +2188,8 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            new_proposers: Default::default(),
+            removed_proposers: Default::default(),
             rotate_quorums: false,
         };
         let config = PlatformConfig {
@@ -2140,6 +2290,8 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            new_proposers: Default::default(),
+            removed_proposers: Default::default(),
             rotate_quorums: false,
         };
         let config = PlatformConfig {
@@ -2226,6 +2378,8 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            new_proposers: Default::default(),
+            removed_proposers: Default::default(),
             rotate_quorums: false,
         };
         let config = PlatformConfig {
@@ -2292,6 +2446,8 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            new_proposers: Default::default(),
+            removed_proposers: Default::default(),
             rotate_quorums: false,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -2386,6 +2542,8 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            new_proposers: Default::default(),
+            removed_proposers: Default::default(),
             rotate_quorums: false,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -2480,6 +2638,8 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            new_proposers: Default::default(),
+            removed_proposers: Default::default(),
             rotate_quorums: false,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -2575,6 +2735,8 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            new_proposers: Default::default(),
+            removed_proposers: Default::default(),
             rotate_quorums: false,
         };
 
@@ -2688,6 +2850,8 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            new_proposers: Default::default(),
+            removed_proposers: Default::default(),
             rotate_quorums: false,
         };
 
@@ -2749,6 +2913,8 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            new_proposers: Default::default(),
+            removed_proposers: Default::default(),
             rotate_quorums: false,
         };
         let config = PlatformConfig {
@@ -2817,6 +2983,8 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            new_proposers: Default::default(),
+            removed_proposers: Default::default(),
             rotate_quorums: false,
         };
         let config = PlatformConfig {
@@ -2886,6 +3054,8 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            new_proposers: Default::default(),
+            removed_proposers: Default::default(),
             rotate_quorums: false,
         };
         let config = PlatformConfig {
@@ -2966,6 +3136,8 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            new_proposers: Default::default(),
+            removed_proposers: Default::default(),
             rotate_quorums: false,
         };
         let config = PlatformConfig {

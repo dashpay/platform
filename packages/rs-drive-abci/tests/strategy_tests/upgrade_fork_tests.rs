@@ -31,6 +31,8 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            new_proposers: Default::default(),
+            removed_proposers: Default::default(),
             rotate_quorums: false,
         };
         let twenty_minutes_in_ms = 1000 * 60 * 20;
@@ -261,6 +263,8 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            new_proposers: Default::default(),
+            removed_proposers: Default::default(),
             rotate_quorums: false,
         };
         let hour_in_ms = 1000 * 60 * 60;
@@ -481,6 +485,8 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            new_proposers: Default::default(),
+            removed_proposers: Default::default(),
             rotate_quorums: false,
         };
         let hour_in_ms = 1000 * 60 * 60;
@@ -635,6 +641,8 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            new_proposers: Default::default(),
+            removed_proposers: Default::default(),
             rotate_quorums: false,
         };
 
@@ -787,6 +795,8 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            new_proposers: Default::default(),
+            removed_proposers: Default::default(),
             rotate_quorums: false,
         };
         let hour_in_ms = 1000 * 60 * 60;
@@ -877,6 +887,8 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
+            new_proposers: Default::default(),
+            removed_proposers: Default::default(),
             rotate_quorums: false,
         };
 
