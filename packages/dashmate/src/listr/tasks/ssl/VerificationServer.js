@@ -42,9 +42,7 @@ class VerificationServer {
     // set up envoy config
     const envoyConfig = template({ route, body });
     const configDir = path.join(HOME_DIR_PATH, config.getName());
-    const configName = templatePath
-      .substring(templatePath.lastIndexOf('/') + 1)
-      .replace('.dot', '');
+    const configName = path.basename(templatePath, '.dot');
     this.configPath = path.join(configDir, configName);
 
     if (!fs.existsSync(configDir)) {
