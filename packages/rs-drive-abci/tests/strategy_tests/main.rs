@@ -35,8 +35,9 @@ extern crate core;
 use anyhow::anyhow;
 use dashcore::{signer, Network, PrivateKey, ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{
-    DMNState, ExtendedQuorumDetails, MasternodeListDiffWithMasternodes, MasternodeListItem,
-    MasternodeType, QuorumInfoResult, QuorumType,
+    Bip9SoftforkInfo, Bip9SoftforkStatus, DMNState, ExtendedQuorumDetails,
+    MasternodeListDiffWithMasternodes, MasternodeListItem, MasternodeType, QuorumInfoResult,
+    QuorumType,
 };
 use dpp::bls_signatures::PrivateKey as BlsPrivateKey;
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
@@ -108,7 +109,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::net::SocketAddr;
 use std::ops::Range;
 use std::str::FromStr;
-use tenderdash_abci::proto::abci::ValidatorSetUpdate;
+use tenderdash_abci::proto::abci::{ResponseInitChain, ValidatorSetUpdate};
 use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
 
 mod upgrade_fork_tests;
@@ -1087,7 +1088,8 @@ pub fn generate_test_quorums(
 ) -> BTreeMap<QuorumHash, TestQuorumInfo> {
     (0..count)
         .into_iter()
-        .map(|_| {
+        .enumerate()
+        .map(|(index, _)| {
             let quorum_hash: QuorumHash = QuorumHash::from_inner(rng.gen());
             let validator_pro_tx_hashes = proposers
                 .iter()
@@ -1099,6 +1101,7 @@ pub fn generate_test_quorums(
             (
                 quorum_hash,
                 TestQuorumInfo::from_quorum_hash_and_pro_tx_hashes(
+                    index as u32 * 24,
                     quorum_hash,
                     validator_pro_tx_hashes,
                     rng,
@@ -1145,6 +1148,22 @@ pub(crate) fn run_chain_for_strategy(
             )
         })
         .collect();
+
+    let start_core_height = platform.config.abci.genesis_core_height;
+
+    platform
+        .core_rpc
+        .expect_get_fork_info()
+        .returning(move |_| {
+            Ok(Some(Bip9SoftforkInfo {
+                status: Bip9SoftforkStatus::Active,
+                bit: None,
+                start_time: 0,
+                timeout: 0,
+                since: start_core_height, // block height 1
+                statistics: None,
+            }))
+        });
 
     platform
         .core_rpc
@@ -1262,7 +1281,10 @@ pub(crate) fn start_chain_for_strategy(
 
     let transaction = binding.as_ref().expect("expected a transaction");
 
-    platform
+    let ResponseInitChain {
+        initial_core_height,
+        ..
+    } = platform
         .init_chain(init_chain_request, transaction)
         .expect("should init chain");
 
@@ -1274,7 +1296,7 @@ pub(crate) fn start_chain_for_strategy(
         abci_application,
         ChainExecutionParameters {
             block_start: 1,
-            core_height_start: config.abci.genesis_core_height,
+            core_height_start: initial_core_height,
             block_count,
             proposers,
             quorums,
@@ -1491,7 +1513,9 @@ mod tests {
     use crate::DocumentAction::DocumentActionReplace;
     use dashcore::hashes::Hash;
     use dashcore::BlockHash;
-    use dashcore_rpc::dashcore_rpc_json::ExtendedQuorumDetails;
+    use dashcore_rpc::dashcore_rpc_json::{
+        Bip9SoftforkInfo, Bip9SoftforkStatus, ExtendedQuorumDetails,
+    };
     use drive::dpp::data_contract::extra::common::json_document_to_cbor;
     use drive::dpp::data_contract::DriveContractExt;
     use drive_abci::config::PlatformTestConfig;

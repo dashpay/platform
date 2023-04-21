@@ -52,9 +52,7 @@ mod tests {
     use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
     use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
     use crate::identity::Identity;
-    use crate::state_transition::{
-        StateTransition, StateTransitionLike, StateTransitionType,
-    };
+    use crate::state_transition::{StateTransition, StateTransitionLike, StateTransitionType};
     use crate::tests::fixtures::{
         get_data_contract_fixture, get_document_transitions_fixture,
         get_documents_fixture_with_owner_id_from_contract, raw_instant_asset_lock_proof_fixture,

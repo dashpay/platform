@@ -1,7 +1,7 @@
 use platform_value::Identifier;
 use std::io::Write;
 
-use crate::util::hash::{hash};
+use crate::util::hash::hash;
 
 /// Generate data contract id based on owner id and entropy
 pub fn generate_data_contract_id(

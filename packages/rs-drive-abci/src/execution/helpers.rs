@@ -1,5 +1,6 @@
 use dashcore::hashes::Hash;
 use dashcore::ProTxHash;
+use std::cmp::Ordering;
 use std::collections::BTreeSet;
 
 use dashcore_rpc::json::{MasternodeListDiffWithMasternodes, MasternodeType};
@@ -110,7 +111,7 @@ where
             .validator_sets
             .retain(|key, _| quorum_info.contains_key(key));
 
-        let new_quorums = quorum_info
+        let mut new_quorums = quorum_info
             .iter()
             .filter(|(key, _)| !state.validator_sets.contains_key(key.as_ref()))
             .map(|(key, _)| {
@@ -124,6 +125,18 @@ where
 
         // Add new validator_sets entries
         state.validator_sets.extend(new_quorums.into_iter());
+
+        state.validator_sets.sort_by(|_, quorum_a, _, quorum_b| {
+            let primary_comparison = quorum_b.core_height.cmp(&quorum_a.core_height);
+            if primary_comparison == Ordering::Equal {
+                quorum_b
+                    .quorum_hash
+                    .cmp(&quorum_a.quorum_hash)
+                    .then_with(|| quorum_b.core_height.cmp(&quorum_a.core_height))
+            } else {
+                primary_comparison
+            }
+        });
 
         state.quorums_extended_info = quorum_list.quorums_by_type;
         Ok(())

@@ -52,6 +52,8 @@ impl From<ValidatorInQuorum> for ValidatorWithPublicKeyShare {
 /// indexed by their `ProTxHash` identifiers.
 #[derive(Clone)]
 pub struct TestQuorumInfo {
+    /// The core height that the quorum was created at
+    pub core_height: u32,
     /// The hash of the quorum.
     pub quorum_hash: QuorumHash,
     /// The set of validators that belong to the quorum.
@@ -69,6 +71,7 @@ impl TestQuorumInfo {
     /// The `TestQuorumInfo` object contains a set of validators, as well as a map of validators indexed by their
     /// `ProTxHash` identifiers. The private and public keys are generated randomly using the given RNG.
     pub fn from_quorum_hash_and_pro_tx_hashes(
+        core_height: u32,
         quorum_hash: QuorumHash,
         pro_tx_hashes: Vec<ProTxHash>,
         rng: &mut StdRng,
@@ -103,6 +106,7 @@ impl TestQuorumInfo {
             .map(|v| (v.pro_tx_hash, v.clone()))
             .collect();
         TestQuorumInfo {
+            core_height,
             quorum_hash,
             validator_set,
             validator_map: map,
@@ -115,6 +119,7 @@ impl TestQuorumInfo {
 impl From<&TestQuorumInfo> for Quorum {
     fn from(value: &TestQuorumInfo) -> Self {
         let TestQuorumInfo {
+            core_height,
             quorum_hash,
             validator_set,
             private_key: _,
@@ -123,6 +128,7 @@ impl From<&TestQuorumInfo> for Quorum {
         } = value;
 
         Quorum {
+            core_height: *core_height,
             quorum_hash: *quorum_hash,
             validator_set: validator_set
                 .iter()
@@ -136,6 +142,7 @@ impl From<&TestQuorumInfo> for Quorum {
 impl From<TestQuorumInfo> for Quorum {
     fn from(value: TestQuorumInfo) -> Self {
         let TestQuorumInfo {
+            core_height,
             quorum_hash,
             validator_set,
             private_key: _,
@@ -145,6 +152,7 @@ impl From<TestQuorumInfo> for Quorum {
 
         Quorum {
             quorum_hash,
+            core_height,
             validator_set: validator_set
                 .iter()
                 .map(|v| (v.pro_tx_hash, v.into()))

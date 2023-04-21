@@ -1,6 +1,7 @@
 use dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
-    ExtendedQuorumDetails, GetBestChainLockResult, QuorumInfoResult, QuorumListResult, QuorumType,
+    Bip9SoftforkInfo, Bip9SoftforkStatus, ExtendedQuorumDetails, GetBestChainLockResult,
+    QuorumInfoResult, QuorumListResult, QuorumType,
 };
 use dashcore_rpc::json::{GetTransactionResult, MasternodeListDiffWithMasternodes};
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
@@ -28,6 +29,9 @@ pub trait CoreRPCLike {
 
     /// Get transaction
     fn get_transaction_extended_info(&self, tx_id: &Txid) -> Result<GetTransactionResult, Error>;
+
+    /// Get block by hash
+    fn get_fork_info(&self, name: &str) -> Result<Option<Bip9SoftforkInfo>, Error>;
 
     /// Get block by hash
     fn get_block(&self, block_hash: &BlockHash) -> Result<Block, Error>;
@@ -103,6 +107,14 @@ impl CoreRPCLike for DefaultCoreRPC {
 
     fn get_transaction_extended_info(&self, tx_id: &Txid) -> Result<GetTransactionResult, Error> {
         self.inner.get_transaction(tx_id, None)
+    }
+
+    fn get_fork_info(&self, name: &str) -> Result<Option<Bip9SoftforkInfo>, Error> {
+        let blockchain_info = self.inner.get_blockchain_info()?;
+        Ok(blockchain_info
+            .bip9_softforks
+            .get(name)
+            .map(|info| info.clone()))
     }
 
     fn get_block(&self, block_hash: &BlockHash) -> Result<Block, Error> {

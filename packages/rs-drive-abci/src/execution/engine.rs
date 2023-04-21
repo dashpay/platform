@@ -245,6 +245,7 @@ where
             state.known_core_height_or(self.config.abci.genesis_core_height);
         let hpmn_list_len = state.hpmn_list_len();
         let _quorum_hash = state.current_validator_set_quorum_hash;
+        let is_initialization = state.initialization_information.is_some();
 
         let mut block_platform_state = state.clone();
         drop(state);
@@ -287,20 +288,22 @@ where
                 .expect("current epoch index should be in range"),
         );
 
-        // Update the active quorums
-        self.update_quorum_info(
-            &mut block_platform_state,
-            block_proposal.core_chain_locked_height,
-        )?;
+        if !is_initialization {
+            // Update the active quorums
+            self.update_quorum_info(
+                &mut block_platform_state,
+                block_proposal.core_chain_locked_height,
+            )?;
 
-        // Update the masternode list and create masternode identities
-        self.update_masternode_list(
-            &mut block_platform_state,
-            block_proposal.core_chain_locked_height,
-            false,
-            &block_info,
-            transaction,
-        )?;
+            // Update the masternode list and create masternode identities
+            self.update_masternode_list(
+                &mut block_platform_state,
+                block_proposal.core_chain_locked_height,
+                false,
+                &block_info,
+                transaction,
+            )?;
+        }
 
         // Update the validator proposed app version
         self.drive

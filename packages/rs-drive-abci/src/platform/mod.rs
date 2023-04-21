@@ -203,6 +203,7 @@ impl Platform<MockCoreRPCLike> {
             validator_sets: Default::default(),
             full_masternode_list: Default::default(),
             hpmn_masternode_list: Default::default(),
+            initialization_information: None,
         };
 
         let core_height = new_state.core_height();
@@ -299,6 +300,7 @@ impl<C> Platform<C> {
             validator_sets: Default::default(),
             full_masternode_list: Default::default(),
             hpmn_masternode_list: Default::default(),
+            initialization_information: None,
         };
 
         let core_height = state.core_height();
@@ -339,6 +341,7 @@ impl<C> Platform<C> {
             validator_sets: Default::default(),
             full_masternode_list: Default::default(),
             hpmn_masternode_list: Default::default(),
+            initialization_information: None,
         };
 
         Ok(Platform {

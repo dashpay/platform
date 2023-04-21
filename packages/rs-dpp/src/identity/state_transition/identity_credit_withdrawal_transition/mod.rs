@@ -25,8 +25,8 @@ mod action;
 pub mod apply_identity_credit_withdrawal_transition_factory;
 pub mod validation;
 
+use crate::identity::SecurityLevel;
 use crate::identity::SecurityLevel::{CRITICAL, HIGH, MEDIUM};
-use crate::identity::{SecurityLevel};
 pub use action::{
     IdentityCreditWithdrawalTransitionAction, IDENTITY_CREDIT_WITHDRAWAL_TRANSITION_VERSION,
 };

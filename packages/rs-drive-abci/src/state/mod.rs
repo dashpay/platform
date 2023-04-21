@@ -8,6 +8,7 @@ use dashcore_rpc::json::QuorumType;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use drive::dpp::util::deserializer::ProtocolVersion;
+use indexmap::IndexMap;
 use std::collections::{BTreeMap, HashMap};
 
 mod genesis;
@@ -29,13 +30,23 @@ pub struct PlatformState {
     /// current validator set quorums
     /// The validator set quorums are a subset of the quorums, but they also contain the list of
     /// all members
-    pub validator_sets: HashMap<QuorumHash, Quorum>,
+    pub validator_sets: IndexMap<QuorumHash, Quorum>,
 
     /// current full masternode list
     pub full_masternode_list: BTreeMap<ProTxHash, MasternodeListItem>,
 
     /// current hpmn masternode list
     pub hpmn_masternode_list: BTreeMap<ProTxHash, MasternodeListItem>,
+
+    /// if we initialized the chain this block
+    pub initialization_information: Option<PlatformInitializationState>,
+}
+
+/// Platform state for the first block
+#[derive(Clone)]
+pub struct PlatformInitializationState {
+    /// Core initialization height
+    pub core_initialization_height: u32,
 }
 
 impl PlatformState {
@@ -60,7 +71,14 @@ impl PlatformState {
         self.last_committed_block_info
             .as_ref()
             .map(|block_info| block_info.core_height)
-            .unwrap_or_default()
+            .unwrap_or_else(|| {
+                self.initialization_information
+                    .as_ref()
+                    .map(|initialization_information| {
+                        initialization_information.core_initialization_height
+                    })
+                    .unwrap_or_default()
+            })
     }
 
     /// The height of the core blockchain that Platform knows about through chain locks
@@ -68,7 +86,14 @@ impl PlatformState {
         self.last_committed_block_info
             .as_ref()
             .map(|block_info| block_info.core_height)
-            .unwrap_or(default)
+            .unwrap_or_else(|| {
+                self.initialization_information
+                    .as_ref()
+                    .map(|initialization_information| {
+                        initialization_information.core_initialization_height
+                    })
+                    .unwrap_or(default)
+            })
     }
 
     /// The last block time in milliseconds

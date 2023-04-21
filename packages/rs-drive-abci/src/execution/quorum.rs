@@ -10,6 +10,8 @@ use std::collections::BTreeMap;
 pub struct Quorum {
     /// The quorum hash
     pub quorum_hash: QuorumHash,
+    /// Active height
+    pub core_height: u32,
     /// The list of masternodes
     pub validator_set: BTreeMap<ProTxHash, ValidatorWithPublicKeyShare>,
     /// The threshold quorum public key
@@ -21,6 +23,7 @@ impl TryFrom<QuorumInfoResult> for Quorum {
 
     fn try_from(value: QuorumInfoResult) -> Result<Self, Self::Error> {
         let QuorumInfoResult {
+            height,
             quorum_hash,
             quorum_public_key,
             members,
@@ -44,6 +47,7 @@ impl TryFrom<QuorumInfoResult> for Quorum {
 
         Ok(Quorum {
             quorum_hash,
+            core_height: height as u32,
             validator_set,
             threshold_public_key: BlsPublicKey::from_bytes(quorum_public_key.as_slice())
                 .map_err(ExecutionError::BlsErrorFromDashCoreResponse)?,

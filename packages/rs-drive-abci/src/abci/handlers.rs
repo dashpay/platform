@@ -83,11 +83,7 @@ where
         self.start_transaction();
         let transaction_guard = self.transaction.read().unwrap();
         let transaction = transaction_guard.as_ref().unwrap();
-        self.platform.init_chain(request, transaction)?;
-
-        let response = ResponseInitChain {
-            ..Default::default()
-        };
+        let response = self.platform.init_chain(request, transaction)?;
 
         tracing::info!(method = "init_chain", "init chain executed");
         Ok(response)
