@@ -30,8 +30,6 @@
 //! Epoch pools
 //!
 
-
-
 /// Epoch key constants module
 pub mod epoch_key_constants;
 pub mod operations_factory;
