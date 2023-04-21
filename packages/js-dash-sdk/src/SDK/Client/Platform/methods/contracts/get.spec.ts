@@ -35,6 +35,7 @@ let metadataFixture;
 
 describe('Client - Platform - Contracts - .get()', () => {
   before(function before() {
+    metadataFixture = getResponseMetadataFixture();
     askedFromDapi = 0;
     const getDataContract = async (id) => {
       const fixtureIdentifier = Identifier.from(contractsFixtures.ratePlatform.$id);
@@ -42,7 +43,7 @@ describe('Client - Platform - Contracts - .get()', () => {
 
       if (id.equals(fixtureIdentifier)) {
         const contract = await dpp.dataContract.createFromObject(contractsFixtures.ratePlatform);
-        return new GetDataContractResponse(contract.toBuffer(), getResponseMetadataFixture());
+        return new GetDataContractResponse(contract.toBuffer(), metadataFixture);
       }
 
       throw new NotFoundError();
@@ -71,6 +72,9 @@ describe('Client - Platform - Contracts - .get()', () => {
       expect(contract.toJSON()).to.deep.equal(contractsFixtures.ratePlatform);
       expect(contract.getMetadata().getBlockHeight()).to.equal(10);
       expect(contract.getMetadata().getCoreChainLockedHeight()).to.equal(42);
+      expect(contract.getMetadata().getTimeMs()).to.equal(metadataFixture.getTimeMs());
+      expect(contract.getMetadata().getProtocolVersion())
+        .to.equal(metadataFixture.getProtocolVersion());
       expect(askedFromDapi).to.equal(1);
     });
 
@@ -82,6 +86,9 @@ describe('Client - Platform - Contracts - .get()', () => {
       expect(contract.toJSON()).to.deep.equal(contractsFixtures.ratePlatform);
       expect(contract.getMetadata().getBlockHeight()).to.equal(10);
       expect(contract.getMetadata().getCoreChainLockedHeight()).to.equal(42);
+      expect(contract.getMetadata().getTimeMs()).to.equal(metadataFixture.getTimeMs());
+      expect(contract.getMetadata().getProtocolVersion())
+        .to.equal(metadataFixture.getProtocolVersion());
       expect(askedFromDapi).to.equal(1);
     });
   });

@@ -46,12 +46,8 @@ class StateRepository {
     };
   }
 
-  async fetchLatestPlatformBlockHeader(): Promise<{ coreChainLockedHeight: number }> {
-    const coreChainLockedHeight = await this.client.wallet!.transport.getBestBlockHeight();
-
-    return {
-      coreChainLockedHeight,
-    };
+  async fetchLatestPlatformCoreChainLockedHeight(): Promise<number> {
+    return this.client.wallet!.transport.getBestBlockHeight();
   }
 }
 
