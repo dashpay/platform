@@ -5,12 +5,11 @@ use dashcore::hashes::Hash;
 use dashcore::{ProTxHash, PubkeyHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem};
 use dashcore_rpc::json::QuorumInfoResult;
-use dpp::bls_signatures::{G1Element, PublicKey as BlsPublicKey};
+use dpp::bls_signatures::PublicKey as BlsPublicKey;
 use std::collections::BTreeMap;
 use tenderdash_abci::proto::abci::ValidatorSetUpdate;
 use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
 use tenderdash_abci::proto::{abci, crypto};
-use tracing_subscriber::fmt::format;
 
 /// Quorum information
 #[derive(Clone)]

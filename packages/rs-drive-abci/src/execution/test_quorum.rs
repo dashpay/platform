@@ -4,7 +4,7 @@ use dashcore::{ProTxHash, PubkeyHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{QuorumInfoResult, QuorumMember, QuorumType};
 use dpp::bls_signatures;
 use dpp::bls_signatures::{PrivateKey as BlsPrivateKey, PublicKey as BlsPublicKey};
-use rand::rngs::{StdRng, ThreadRng};
+use rand::rngs::StdRng;
 use rand::Rng;
 use std::collections::BTreeMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};

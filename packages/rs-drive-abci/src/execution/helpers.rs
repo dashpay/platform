@@ -112,7 +112,7 @@ where
             .validator_sets
             .retain(|key, _| quorum_info.contains_key(key));
 
-        let mut new_quorums = quorum_info
+        let new_quorums = quorum_info
             .iter()
             .filter(|(key, _)| !state.validator_sets.contains_key(key.as_ref()))
             .map(|(key, _)| {
