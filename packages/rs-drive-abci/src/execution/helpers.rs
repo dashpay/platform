@@ -1,9 +1,9 @@
 use dashcore::hashes::Hash;
 use dashcore::ProTxHash;
 use std::cmp::Ordering;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
-use dashcore_rpc::json::{MasternodeListDiffWithMasternodes, MasternodeType};
+use dashcore_rpc::json::{MasternodeListDiffWithMasternodes, MasternodeListItem, MasternodeType};
 use dpp::block::block_info::BlockInfo;
 use drive::grovedb::Transaction;
 
@@ -19,7 +19,7 @@ pub struct UpdateStateMasternodeListOutcome {
     /// The diff between two masternode lists.
     masternode_list_diff: MasternodeListDiffWithMasternodes,
     /// The set of ProTxHashes that correspond to masternodes that were deleted from the list.
-    deleted_masternodes: BTreeSet<ProTxHash>,
+    removed_masternodes: BTreeMap<ProTxHash, MasternodeListItem>,
 }
 
 impl Default for UpdateStateMasternodeListOutcome {
@@ -32,7 +32,7 @@ impl Default for UpdateStateMasternodeListOutcome {
                 removed_mns: vec![],
                 updated_mns: vec![],
             },
-            deleted_masternodes: Default::default(),
+            removed_masternodes: Default::default(),
         }
     }
 }
@@ -213,13 +213,17 @@ where
         state
             .hpmn_masternode_list
             .retain(|key, _| !deleted_masternodes.contains(key));
-        state
-            .full_masternode_list
-            .retain(|key, _| !deleted_masternodes.contains(key));
+        let mut removed_masternodes = BTreeMap::new();
+
+        for key in deleted_masternodes {
+            if let Some(value) = state.full_masternode_list.remove(&key) {
+                removed_masternodes.insert(key, value);
+            }
+        }
 
         Ok(UpdateStateMasternodeListOutcome {
             masternode_list_diff: masternode_diff,
-            deleted_masternodes,
+            removed_masternodes,
         })
     }
 
@@ -256,19 +260,22 @@ where
         if state.last_committed_block_info.is_some() || is_init_chain {
             let UpdateStateMasternodeListOutcome {
                 masternode_list_diff,
-                deleted_masternodes,
+                removed_masternodes,
             } = self.update_state_masternode_list(state, core_block_height, false)?;
 
             self.update_masternode_identities(
                 masternode_list_diff,
+                &removed_masternodes,
                 block_info,
                 state,
                 transaction,
             )?;
 
-            if !deleted_masternodes.is_empty() {
+            if !removed_masternodes.is_empty() {
                 self.drive.remove_validators_proposed_app_versions(
-                    deleted_masternodes.into_iter().map(|a| a.into_inner()),
+                    removed_masternodes
+                        .into_iter()
+                        .map(|(pro_tx_hash, _)| pro_tx_hash.into_inner()),
                     Some(transaction),
                 )?;
             }

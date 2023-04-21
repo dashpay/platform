@@ -17,7 +17,7 @@ use dpp::util::deserializer::ProtocolVersion;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::{
     CommitInfo, RequestExtendVote, RequestFinalizeBlock, RequestPrepareProposal,
-    RequestVerifyVoteExtension, ResponsePrepareProposal,
+    RequestVerifyVoteExtension, ResponsePrepareProposal, ValidatorSetUpdate,
 };
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::types::{
@@ -29,6 +29,14 @@ use tenderdash_abci::{
     Application,
 };
 
+/// The outcome struct when mimicking block execution
+pub struct MimicExecuteBlockOutcome {
+    /// withdrawal transactions
+    pub withdrawal_transactions: Vec<dashcore::Transaction>,
+    /// The next validators hash
+    pub next_validator_set_hash: Vec<u8>,
+}
+
 impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
     /// Execute a block with various state transitions
     /// Returns the withdrawal transactions that were signed in the block
@@ -36,13 +44,12 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         &self,
         proposer_pro_tx_hash: [u8; 32],
         current_quorum: &TestQuorumInfo,
-        next_quorum: &TestQuorumInfo,
         proposed_version: ProtocolVersion,
         _total_hpmns: u32,
         block_info: BlockInfo,
         expect_validation_errors: bool,
         state_transitions: Vec<StateTransition>,
-    ) -> Result<Vec<dashcore::Transaction>, Error> {
+    ) -> Result<MimicExecuteBlockOutcome, Error> {
         let serialized_state_transitions = state_transitions
             .into_iter()
             .map(|st| st.serialize().map_err(Error::Protocol))
@@ -88,7 +95,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             tx_results,
             consensus_param_updates: _,
             core_chain_lock_update: _,
-            validator_set_update: _,
+            validator_set_update,
         } = response_prepare_proposal;
 
         if !expect_validation_errors {
@@ -247,6 +254,10 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             commit_info.block_signature = [0u8; 96].to_vec();
         }
 
+        let next_validator_set_hash = validator_set_update
+            .map(|update| update.quorum_hash)
+            .unwrap_or(current_quorum.quorum_hash.to_vec());
+
         let request_finalize_block = RequestFinalizeBlock {
             commit: Some(commit_info),
             misbehavior: vec![],
@@ -269,7 +280,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                     last_commit_hash: [0; 32].to_vec(),
                     data_hash: [0; 32].to_vec(),
                     validators_hash: current_quorum.quorum_hash.to_vec(),
-                    next_validators_hash: next_quorum.quorum_hash.to_vec(),
+                    next_validators_hash: next_validator_set_hash.clone(),
                     consensus_hash: [0; 32].to_vec(),
                     next_consensus_hash: [0; 32].to_vec(),
                     app_hash,
@@ -297,6 +308,9 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                 )
             });
 
-        Ok(withdrawals)
+        Ok(MimicExecuteBlockOutcome {
+            withdrawal_transactions: withdrawals,
+            next_validator_set_hash,
+        })
     }
 }

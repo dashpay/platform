@@ -9,9 +9,12 @@ use crate::{
 #[wasm_bindgen(js_name=calculateStateTransitionFee)]
 pub fn calculate_state_transition_fee_wasm(
     state_transition_js: &JsValue,
-    execution_context: StateTransitionExecutionContextWasm,
+    execution_context: &StateTransitionExecutionContextWasm,
 ) -> Result<FeeResultWasm, JsValue> {
     let state_transition = create_state_transition_from_wasm_instance(state_transition_js)?;
 
-    Ok(calculate_state_transition_fee(&state_transition, &execution_context.into()).into())
+    Ok(
+        calculate_state_transition_fee(&state_transition, &execution_context.to_owned().into())
+            .into(),
+    )
 }

@@ -187,7 +187,7 @@ impl Validator {
             platform_http_port,
             ..
         } = state;
-        if pose_ban_height.is_none() {
+        if pose_ban_height.is_some() {
             // if we are banned then we remove the validator from the list
             return None;
         };

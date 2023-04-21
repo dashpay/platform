@@ -35,6 +35,7 @@ use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::execution::finalize_block_cleaned_request::{CleanedBlock, FinalizeBlockCleanedRequest};
 use crate::platform::{Platform, PlatformRef};
 use crate::rpc::core::CoreRPCLike;
+use crate::state::PlatformState;
 
 use crate::validation::state_transition::process_state_transition;
 
@@ -382,7 +383,9 @@ where
 
         block_execution_context.block_state_info.commit_hash = Some(root_hash);
 
-        let validator_set_update = self.validator_set_update(&mut block_execution_context)?;
+        let state = self.state.read().unwrap();
+        let validator_set_update =
+            self.validator_set_update(&state, &mut block_execution_context)?;
 
         self.block_execution_context
             .write()
@@ -396,51 +399,71 @@ where
         }))
     }
 
+    /// We need to validate against the platform state for rotation and not the block execution
+    /// context state
     fn validator_set_update(
         &self,
+        platform_state: &PlatformState,
         block_execution_context: &mut BlockExecutionContext,
     ) -> Result<Option<ValidatorSetUpdate>, Error> {
-        let perform_rotation = if block_execution_context.block_state_info.height
+        let mut perform_rotation = false;
+
+        if block_execution_context.block_state_info.height
             % self.config.validator_set_quorum_rotation_block_count as u64
             == 0
         {
-            true
-        } else {
-            //todo: perform a rotation if quorum health is low
-            false
-        };
+            perform_rotation = true;
+        }
+        // we also need to perform a rotation if the validator set is being removed
+        if block_execution_context
+            .block_platform_state
+            .validator_sets
+            .get(&platform_state.current_validator_set_quorum_hash)
+            .is_none()
+        {
+            perform_rotation = true;
+        }
+
+        //todo: perform a rotation if quorum health is low
 
         if perform_rotation {
             // get the index of the previous quorum
-            let index = block_execution_context
-                .block_platform_state
+            let mut index = platform_state
                 .validator_sets
-                .get_index_of(
-                    &block_execution_context
-                        .block_platform_state
-                        .current_validator_set_quorum_hash,
-                )
+                .get_index_of(&platform_state.current_validator_set_quorum_hash)
                 .ok_or(Error::Execution(ExecutionError::CorruptedCachedState(
                     "current quorums do not contain current validator set",
                 )))?;
             // we should rotate the quorum
-            let quorum_count = block_execution_context
-                .block_platform_state
-                .validator_sets
-                .len();
+            let quorum_count = platform_state.validator_sets.len();
             match quorum_count {
                 0 => Err(Error::Execution(ExecutionError::CorruptedCachedState(
                     "no current quorums",
                 ))),
                 1 => Ok(None),
                 count => {
-                    let (_, new_quorum) = block_execution_context
-                        .block_platform_state
-                        .validator_sets
-                        .get_index((index + 1) % count)
-                        .expect("expected next validator set");
-                    let validator_set = new_quorum.into();
-                    Ok(Some(validator_set))
+                    let start_index = index;
+                    index = (index + 1) % count;
+                    // We can't just take the next item because it might no longer be in the state
+                    while index != start_index {
+                        let (quorum_hash, new_quorum) = platform_state
+                            .validator_sets
+                            .get_index(index)
+                            .expect("expected next validator set");
+                        // We still have it in the state
+                        if block_execution_context
+                            .block_platform_state
+                            .validator_sets
+                            .contains_key(quorum_hash)
+                        {
+                            block_execution_context
+                                .block_platform_state
+                                .current_validator_set_quorum_hash = quorum_hash.clone();
+                            return Ok(Some(new_quorum.into()));
+                        }
+                        index = (index + 1) % count;
+                    }
+                    Ok(None)
                 }
             }
         } else {

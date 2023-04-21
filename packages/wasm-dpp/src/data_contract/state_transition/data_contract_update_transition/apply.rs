@@ -35,10 +35,13 @@ impl ApplyDataContractUpdateTransitionWasm {
     pub async fn apply_data_contract_update_transition(
         &self,
         transition: DataContractUpdateTransitionWasm,
-        execution_context: StateTransitionExecutionContextWasm,
+        execution_context: &StateTransitionExecutionContextWasm,
     ) -> Result<(), JsError> {
         self.0
-            .apply_data_contract_update_transition(&transition.into(), &execution_context.into())
+            .apply_data_contract_update_transition(
+                &transition.into(),
+                &execution_context.to_owned().into(),
+            )
             .await
             .map_err(|e| e.deref().into())
     }

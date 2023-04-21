@@ -9,12 +9,14 @@ let {
   InvalidStateTransitionTypeError,
   ValidationResult,
   DataContractAlreadyPresentError,
+  StateTransitionExecutionContext,
 } = require('../../../..');
 
 describe('validateStateTransitionStateFactory', () => {
   let stateTransition;
   let dpp;
   let stateRepositoryMock;
+  let executionContext;
 
   beforeEach(async function beforeEach() {
     ({
@@ -22,8 +24,10 @@ describe('validateStateTransitionStateFactory', () => {
       InvalidStateTransitionTypeError,
       ValidationResult,
       DataContractAlreadyPresentError,
+      StateTransitionExecutionContext,
     } = await loadWasmDpp());
     const dataContract = await getDataContractFixture();
+    executionContext = new StateTransitionExecutionContext();
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchDataContract.resolves();
@@ -46,7 +50,7 @@ describe('validateStateTransitionStateFactory', () => {
     };
 
     try {
-      await dpp.stateTransition.validateState(stateTransition);
+      await dpp.stateTransition.validateState(stateTransition, executionContext);
 
       expect.fail('should throw InvalidStateTransitionTypeError');
     } catch (e) {
@@ -58,7 +62,7 @@ describe('validateStateTransitionStateFactory', () => {
   it('should return invalid result if Data Contract State Transition is not valid', async () => {
     stateRepositoryMock.fetchDataContract.resolves(await getDataContractFixture());
 
-    const result = await dpp.stateTransition.validateState(stateTransition);
+    const result = await dpp.stateTransition.validateState(stateTransition, executionContext);
 
     await expectValidationError(result);
 
@@ -70,7 +74,7 @@ describe('validateStateTransitionStateFactory', () => {
   });
 
   it('should return valid result', async () => {
-    const result = await dpp.stateTransition.validateState(stateTransition);
+    const result = await dpp.stateTransition.validateState(stateTransition, executionContext);
 
     expect(result).to.be.an.instanceOf(ValidationResult);
     expect(result.isValid()).to.be.true();
