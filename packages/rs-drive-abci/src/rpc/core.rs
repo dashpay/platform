@@ -1,6 +1,7 @@
 use dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
-    ExtendedQuorumDetails, GetBestChainLockResult, QuorumInfoResult, QuorumListResult, QuorumType,
+    Bip9SoftforkInfo, ExtendedQuorumDetails, ExtendedQuorumListResult, GetBestChainLockResult,
+    MasternodeListDiff, QuorumInfoResult, QuorumType,
 };
 use dashcore_rpc::json::{GetTransactionResult, MasternodeListDiffWithMasternodes};
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
@@ -30,6 +31,9 @@ pub trait CoreRPCLike {
     fn get_transaction_extended_info(&self, tx_id: &Txid) -> Result<GetTransactionResult, Error>;
 
     /// Get block by hash
+    fn get_fork_info(&self, name: &str) -> Result<Option<Bip9SoftforkInfo>, Error>;
+
+    /// Get block by hash
     fn get_block(&self, block_hash: &BlockHash) -> Result<Block, Error>;
 
     /// Get block by hash in JSON format
@@ -41,7 +45,7 @@ pub trait CoreRPCLike {
     fn get_quorum_listextended(
         &self,
         height: Option<CoreHeight>,
-    ) -> Result<QuorumListResult<QuorumListExtendedInfo>, Error>;
+    ) -> Result<ExtendedQuorumListResult, Error>;
 
     /// Get quorum information.
     ///
@@ -58,10 +62,10 @@ pub trait CoreRPCLike {
         &self,
         base_block: u32,
         block: u32,
-    ) -> Result<MasternodeListDiffWithMasternodes, Error>;
+    ) -> Result<MasternodeListDiff, Error>;
 
     // /// Get the detailed information about a deterministic masternode
-    // fn get_protx_info(&self, protx_hash: &ProTxHash) -> Result<ProTxInfo, Error>;
+    // fn get_protx_info(&self, pro_tx_hash: &ProTxHash) -> Result<ProTxInfo, Error>;
 }
 
 /// Default implementation of Dash Core RPC using DashCoreRPC client
@@ -105,6 +109,14 @@ impl CoreRPCLike for DefaultCoreRPC {
         self.inner.get_transaction(tx_id, None)
     }
 
+    fn get_fork_info(&self, name: &str) -> Result<Option<Bip9SoftforkInfo>, Error> {
+        let blockchain_info = self.inner.get_blockchain_info()?;
+        Ok(blockchain_info
+            .bip9_softforks
+            .get(name)
+            .map(|info| info.clone()))
+    }
+
     fn get_block(&self, block_hash: &BlockHash) -> Result<Block, Error> {
         self.inner.get_block(block_hash)
     }
@@ -116,8 +128,8 @@ impl CoreRPCLike for DefaultCoreRPC {
     fn get_quorum_listextended(
         &self,
         height: Option<CoreHeight>,
-    ) -> Result<QuorumListResult<QuorumListExtendedInfo>, Error> {
-        self.inner.get_quorum_listextended(height.map(|i| i as i64))
+    ) -> Result<ExtendedQuorumListResult, Error> {
+        self.inner.get_quorum_listextended(height.map(|i| i))
     }
 
     fn get_quorum_info(
@@ -132,14 +144,9 @@ impl CoreRPCLike for DefaultCoreRPC {
 
     fn get_protx_diff_with_masternodes(
         &self,
-        _base_block: u32,
-        _block: u32,
-    ) -> Result<MasternodeListDiffWithMasternodes, Error> {
-        // method does not yet exist in core
-        todo!()
+        base_block: u32,
+        block: u32,
+    ) -> Result<MasternodeListDiff, Error> {
+        self.inner.get_protx_listdiff(base_block, block)
     }
-
-    // fn get_protx_info(&self, protx_hash: &ProTxHash) -> Result<ProTxInfo, Error> {
-    //     self.inner.get_protx_info(protx_hash)
-    // }
 }

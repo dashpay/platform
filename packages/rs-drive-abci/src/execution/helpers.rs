@@ -1,5 +1,7 @@
 use dashcore::hashes::Hash;
 use dashcore::ProTxHash;
+use dashcore_rpc::dashcore_rpc_json::MasternodeListDiff;
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 
 use dashcore_rpc::json::{MasternodeListDiffWithMasternodes, MasternodeListItem, MasternodeType};
@@ -16,7 +18,7 @@ use crate::state::PlatformState;
 /// Represents the outcome of an attempt to update the state of a masternode list.
 pub struct UpdateStateMasternodeListOutcome {
     /// The diff between two masternode lists.
-    masternode_list_diff: MasternodeListDiffWithMasternodes,
+    masternode_list_diff: MasternodeListDiff,
     /// The set of ProTxHashes that correspond to masternodes that were deleted from the list.
     removed_masternodes: BTreeMap<ProTxHash, MasternodeListItem>,
 }
@@ -24,7 +26,7 @@ pub struct UpdateStateMasternodeListOutcome {
 impl Default for UpdateStateMasternodeListOutcome {
     fn default() -> Self {
         UpdateStateMasternodeListOutcome {
-            masternode_list_diff: MasternodeListDiffWithMasternodes {
+            masternode_list_diff: MasternodeListDiff {
                 base_height: 0,
                 block_height: 0,
                 added_mns: vec![],
@@ -87,8 +89,9 @@ where
         &self,
         state: &mut PlatformState,
         core_block_height: u32,
+        start_from_scratch: bool,
     ) -> Result<(), Error> {
-        if core_block_height == state.core_height() {
+        if !start_from_scratch && core_block_height == state.core_height() {
             return Ok(()); // no need to do anything
         }
 
@@ -117,13 +120,25 @@ where
                 let quorum_info_result =
                     self.core_rpc
                         .get_quorum_info(self.config.quorum_type(), key, None)?;
-                let quorum: Quorum = quorum_info_result.try_into()?;
+                let quorum = Quorum::try_from_info_result(quorum_info_result, state)?;
                 Ok((*key, quorum))
             })
             .collect::<Result<Vec<_>, Error>>()?;
 
         // Add new validator_sets entries
         state.validator_sets.extend(new_quorums.into_iter());
+
+        state.validator_sets.sort_by(|_, quorum_a, _, quorum_b| {
+            let primary_comparison = quorum_b.core_height.cmp(&quorum_a.core_height);
+            if primary_comparison == Ordering::Equal {
+                quorum_b
+                    .quorum_hash
+                    .cmp(&quorum_a.quorum_hash)
+                    .then_with(|| quorum_b.core_height.cmp(&quorum_a.core_height))
+            } else {
+                primary_comparison
+            }
+        });
 
         state.quorums_extended_info = quorum_list.quorums_by_type;
         Ok(())
@@ -148,7 +163,7 @@ where
             .core_rpc
             .get_protx_diff_with_masternodes(previous_core_height, core_block_height)?;
 
-        let MasternodeListDiffWithMasternodes {
+        let MasternodeListDiff {
             added_mns,
             removed_mns,
             updated_mns,
@@ -158,7 +173,7 @@ where
         //todo: clean up
         let added_hpmns = added_mns.iter().filter_map(|masternode| {
             if masternode.node_type == MasternodeType::HighPerformance {
-                Some((masternode.protx_hash, masternode.clone()))
+                Some((masternode.pro_tx_hash, masternode.clone()))
             } else {
                 None
             }
@@ -173,17 +188,17 @@ where
 
         let added_masternodes = added_mns
             .iter()
-            .map(|masternode| (masternode.protx_hash, masternode.clone()));
+            .map(|masternode| (masternode.pro_tx_hash, masternode.clone()));
 
         state.full_masternode_list.extend(added_masternodes);
 
         let updated_masternodes = updated_mns
             .iter()
-            .map(|masternode| (masternode.protx_hash, masternode.state_diff.clone()));
+            .map(|(pro_tx_hash, masternode)| (pro_tx_hash, masternode.clone()));
 
         updated_masternodes.for_each(|(pro_tx_hash, state_diff)| {
-            if let Some(masternode_list_item) = state.full_masternode_list.get_mut(&pro_tx_hash) {
-                if let Some(masternode_list_item) = state.hpmn_masternode_list.get_mut(&pro_tx_hash)
+            if let Some(masternode_list_item) = state.full_masternode_list.get_mut(pro_tx_hash) {
+                if let Some(masternode_list_item) = state.hpmn_masternode_list.get_mut(pro_tx_hash)
                 {
                     masternode_list_item.state.apply_diff(state_diff.clone());
                 }
@@ -193,7 +208,7 @@ where
 
         let deleted_masternodes = removed_mns
             .iter()
-            .map(|masternode| masternode.protx_hash)
+            .map(|pro_tx_hash| *pro_tx_hash)
             .collect::<BTreeSet<ProTxHash>>();
 
         state
@@ -230,7 +245,7 @@ where
     ///
     /// * `Result<(), Error>` - Returns `Ok(())` if the update is successful. Returns an error if
     ///   there is a problem fetching the masternode list difference or updating the state.
-    pub(crate) fn update_masternode_list(
+    fn update_masternode_list(
         &self,
         state: &mut PlatformState,
         core_block_height: u32,
@@ -268,5 +283,42 @@ where
         }
 
         Ok(())
+    }
+
+    /// Updates the core information in the platform state based on the given core block height.
+    ///
+    /// This function updates both the masternode list and the quorum information in the platform
+    /// state. It calls the update_masternode_list and update_quorum_info functions to perform
+    /// the respective updates.
+    ///
+    /// # Arguments
+    ///
+    /// * state - A mutable reference to the platform state to be updated.
+    /// * core_block_height - The current block height in the Dash Core.
+    /// * is_init_chain - A boolean indicating if the chain is being initialized.
+    /// * block_info - A reference to the block information.
+    /// * transaction - The current groveDB transaction.
+    ///
+    /// # Returns
+    ///
+    /// * Result<(), Error> - Returns Ok(()) if the update is successful. Returns an error if
+    /// there is a problem updating the masternode list, quorum information, or the state.
+    pub(crate) fn update_core_info(
+        &self,
+        state: &mut PlatformState,
+        core_block_height: u32,
+        is_init_chain: bool,
+        block_info: &BlockInfo,
+        transaction: &Transaction,
+    ) -> Result<(), Error> {
+        self.update_masternode_list(
+            state,
+            core_block_height,
+            is_init_chain,
+            block_info,
+            transaction,
+        )?;
+
+        self.update_quorum_info(state, core_block_height, false)
     }
 }

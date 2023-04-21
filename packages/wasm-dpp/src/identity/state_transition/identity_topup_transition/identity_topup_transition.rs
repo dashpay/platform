@@ -14,7 +14,6 @@ use crate::{
     identity::state_transition::asset_lock_proof::{
         ChainAssetLockProofWasm, InstantAssetLockProofWasm,
     },
-    state_transition::StateTransitionExecutionContextWasm,
     with_js_error,
 };
 

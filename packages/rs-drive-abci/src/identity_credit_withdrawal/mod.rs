@@ -659,6 +659,7 @@ mod tests {
                     validator_sets: Default::default(),
                     full_masternode_list: Default::default(),
                     hpmn_masternode_list: Default::default(),
+                    initialization_information: None,
                 },
             };
 
@@ -825,6 +826,7 @@ mod tests {
                         validator_sets: Default::default(),
                         full_masternode_list: Default::default(),
                         hpmn_masternode_list: Default::default(),
+                        initialization_information: None,
                     },
                 });
 

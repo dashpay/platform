@@ -1,7 +1,6 @@
 use crate::buffer::Buffer;
 use crate::document::state_transition::document_batch_transition::document_transition::from_document_transition_to_js_value;
 
-use dpp::document::document_transition::DocumentTransitionAction;
 use dpp::identifier::Identifier;
 use dpp::prelude::DocumentTransition;
 use wasm_bindgen::prelude::*;

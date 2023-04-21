@@ -1,11 +1,13 @@
-use crate::execution::quorum::{Quorum, ValidatorWithPublicKeyShare};
+use crate::execution::quorum::{Quorum, Validator};
 use dashcore::hashes::Hash;
-use dashcore::{ProTxHash, QuorumHash};
+use dashcore::{ProTxHash, PubkeyHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{QuorumInfoResult, QuorumMember, QuorumType};
 use dpp::bls_signatures;
 use dpp::bls_signatures::{PrivateKey as BlsPrivateKey, PublicKey as BlsPublicKey};
 use rand::rngs::StdRng;
+use rand::Rng;
 use std::collections::BTreeMap;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 /// ValidatorInQuorum represents a validator in a quorum or consensus algorithm.
 /// Each validator is identified by a `ProTxHash` and has a corresponding BLS private key and public key.
@@ -17,32 +19,62 @@ pub struct ValidatorInQuorum {
     pub private_key: BlsPrivateKey,
     /// The public key for this validator's BLS signature scheme.
     pub public_key: BlsPublicKey,
+    /// The node address
+    pub node_ip: String,
+    /// The node id
+    pub node_id: PubkeyHash,
+    /// Core port
+    pub core_port: u16,
+    /// Http port
+    pub platform_http_port: u16,
+    /// Tenderdash port
+    pub platform_p2p_port: u16,
 }
 
-impl From<&ValidatorInQuorum> for ValidatorWithPublicKeyShare {
+impl From<&ValidatorInQuorum> for Validator {
     fn from(value: &ValidatorInQuorum) -> Self {
         let ValidatorInQuorum {
             pro_tx_hash,
             public_key,
+            node_ip,
+            node_id,
+            core_port,
+            platform_http_port,
+            platform_p2p_port,
             ..
         } = value;
-        ValidatorWithPublicKeyShare {
+        Validator {
             pro_tx_hash: *pro_tx_hash,
             public_key: public_key.clone(),
+            node_ip: node_ip.to_string(),
+            node_id: node_id.clone(),
+            core_port: *core_port,
+            platform_http_port: *platform_http_port,
+            platform_p2p_port: *platform_p2p_port,
         }
     }
 }
 
-impl From<ValidatorInQuorum> for ValidatorWithPublicKeyShare {
+impl From<ValidatorInQuorum> for Validator {
     fn from(value: ValidatorInQuorum) -> Self {
         let ValidatorInQuorum {
             pro_tx_hash,
             public_key,
+            node_ip,
+            node_id,
+            core_port,
+            platform_http_port,
+            platform_p2p_port,
             ..
         } = value;
-        ValidatorWithPublicKeyShare {
+        Validator {
             pro_tx_hash,
             public_key,
+            node_ip,
+            node_id,
+            core_port,
+            platform_http_port,
+            platform_p2p_port,
         }
     }
 }
@@ -52,6 +84,8 @@ impl From<ValidatorInQuorum> for ValidatorWithPublicKeyShare {
 /// indexed by their `ProTxHash` identifiers.
 #[derive(Clone)]
 pub struct TestQuorumInfo {
+    /// The core height that the quorum was created at
+    pub core_height: u32,
     /// The hash of the quorum.
     pub quorum_hash: QuorumHash,
     /// The set of validators that belong to the quorum.
@@ -64,11 +98,29 @@ pub struct TestQuorumInfo {
     pub public_key: BlsPublicKey,
 }
 
+fn random_ipv4_address(rng: &mut StdRng) -> Ipv4Addr {
+    Ipv4Addr::new(
+        rng.gen_range(1..=254),
+        rng.gen_range(0..=255),
+        rng.gen_range(0..=255),
+        rng.gen_range(1..=254),
+    )
+}
+
+fn random_port(rng: &mut StdRng) -> u16 {
+    rng.gen_range(1024..=65535)
+}
+
+fn random_socket_addr(rng: &mut StdRng) -> SocketAddr {
+    SocketAddr::new(IpAddr::V4(random_ipv4_address(rng)), random_port(rng))
+}
+
 impl TestQuorumInfo {
     /// Constructs a new `TestQuorumInfo` object from a quorum hash and a list of `ProTxHash` identifiers.
     /// The `TestQuorumInfo` object contains a set of validators, as well as a map of validators indexed by their
     /// `ProTxHash` identifiers. The private and public keys are generated randomly using the given RNG.
     pub fn from_quorum_hash_and_pro_tx_hashes(
+        core_height: u32,
         quorum_hash: QuorumHash,
         pro_tx_hashes: Vec<ProTxHash>,
         rng: &mut StdRng,
@@ -92,6 +144,11 @@ impl TestQuorumInfo {
                         .expect("expected 32 bytes for pro_tx_hash"),
                     private_key: key,
                     public_key,
+                    node_ip: random_socket_addr(rng).to_string(),
+                    node_id: PubkeyHash::from_slice(pro_tx_hash.split_at(20).0).unwrap(),
+                    core_port: 1,
+                    platform_http_port: 2,
+                    platform_p2p_port: 3,
                 }
             })
             .collect();
@@ -103,6 +160,7 @@ impl TestQuorumInfo {
             .map(|v| (v.pro_tx_hash, v.clone()))
             .collect();
         TestQuorumInfo {
+            core_height,
             quorum_hash,
             validator_set,
             validator_map: map,
@@ -115,6 +173,7 @@ impl TestQuorumInfo {
 impl From<&TestQuorumInfo> for Quorum {
     fn from(value: &TestQuorumInfo) -> Self {
         let TestQuorumInfo {
+            core_height,
             quorum_hash,
             validator_set,
             private_key: _,
@@ -123,6 +182,7 @@ impl From<&TestQuorumInfo> for Quorum {
         } = value;
 
         Quorum {
+            core_height: *core_height,
             quorum_hash: *quorum_hash,
             validator_set: validator_set
                 .iter()
@@ -136,6 +196,7 @@ impl From<&TestQuorumInfo> for Quorum {
 impl From<TestQuorumInfo> for Quorum {
     fn from(value: TestQuorumInfo) -> Self {
         let TestQuorumInfo {
+            core_height,
             quorum_hash,
             validator_set,
             private_key: _,
@@ -145,6 +206,7 @@ impl From<TestQuorumInfo> for Quorum {
 
         Quorum {
             quorum_hash,
+            core_height,
             validator_set: validator_set
                 .iter()
                 .map(|v| (v.pro_tx_hash, v.into()))

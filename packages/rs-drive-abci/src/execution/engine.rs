@@ -16,7 +16,7 @@ use drive::fee::result::FeeResult;
 use drive::grovedb::{Transaction, TransactionArg};
 use std::collections::BTreeMap;
 
-use tenderdash_abci::proto::abci::ExecTxResult;
+use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 
 use crate::abci::commit::Commit;
@@ -35,6 +35,7 @@ use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::execution::finalize_block_cleaned_request::{CleanedBlock, FinalizeBlockCleanedRequest};
 use crate::platform::{Platform, PlatformRef};
 use crate::rpc::core::CoreRPCLike;
+use crate::state::PlatformState;
 
 use crate::validation::state_transition::process_state_transition;
 
@@ -46,6 +47,8 @@ pub struct BlockExecutionOutcome {
     pub app_hash: [u8; 32],
     /// The results of the execution of each transaction
     pub tx_results: Vec<ExecTxResult>,
+    /// The changes to the validator set
+    pub validator_set_update: Option<ValidatorSetUpdate>,
 }
 
 /// The outcome of the finalization of the block
@@ -245,6 +248,7 @@ where
             state.known_core_height_or(self.config.abci.genesis_core_height);
         let hpmn_list_len = state.hpmn_list_len();
         let _quorum_hash = state.current_validator_set_quorum_hash;
+        let is_initialization = state.initialization_information.is_some();
 
         let mut block_platform_state = state.clone();
         drop(state);
@@ -287,20 +291,16 @@ where
                 .expect("current epoch index should be in range"),
         );
 
-        // Update the active quorums
-        self.update_quorum_info(
-            &mut block_platform_state,
-            block_proposal.core_chain_locked_height,
-        )?;
-
-        // Update the masternode list and create masternode identities
-        self.update_masternode_list(
-            &mut block_platform_state,
-            block_proposal.core_chain_locked_height,
-            false,
-            &block_info,
-            transaction,
-        )?;
+        if !is_initialization {
+            // Update the masternode list and create masternode identities and also update the active quorums
+            self.update_core_info(
+                &mut block_platform_state,
+                block_proposal.core_chain_locked_height,
+                false,
+                &block_info,
+                transaction,
+            )?;
+        }
 
         // Update the validator proposed app version
         self.drive
@@ -383,6 +383,10 @@ where
 
         block_execution_context.block_state_info.commit_hash = Some(root_hash);
 
+        let state = self.state.read().unwrap();
+        let validator_set_update =
+            self.validator_set_update(&state, &mut block_execution_context)?;
+
         self.block_execution_context
             .write()
             .unwrap()
@@ -391,7 +395,80 @@ where
         Ok(ValidationResult::new_with_data(BlockExecutionOutcome {
             app_hash: root_hash,
             tx_results,
+            validator_set_update,
         }))
+    }
+
+    /// We need to validate against the platform state for rotation and not the block execution
+    /// context state
+    fn validator_set_update(
+        &self,
+        platform_state: &PlatformState,
+        block_execution_context: &mut BlockExecutionContext,
+    ) -> Result<Option<ValidatorSetUpdate>, Error> {
+        let mut perform_rotation = false;
+
+        if block_execution_context.block_state_info.height
+            % self.config.validator_set_quorum_rotation_block_count as u64
+            == 0
+        {
+            perform_rotation = true;
+        }
+        // we also need to perform a rotation if the validator set is being removed
+        if block_execution_context
+            .block_platform_state
+            .validator_sets
+            .get(&platform_state.current_validator_set_quorum_hash)
+            .is_none()
+        {
+            perform_rotation = true;
+        }
+
+        //todo: perform a rotation if quorum health is low
+
+        if perform_rotation {
+            // get the index of the previous quorum
+            let mut index = platform_state
+                .validator_sets
+                .get_index_of(&platform_state.current_validator_set_quorum_hash)
+                .ok_or(Error::Execution(ExecutionError::CorruptedCachedState(
+                    "current quorums do not contain current validator set",
+                )))?;
+            // we should rotate the quorum
+            let quorum_count = platform_state.validator_sets.len();
+            match quorum_count {
+                0 => Err(Error::Execution(ExecutionError::CorruptedCachedState(
+                    "no current quorums",
+                ))),
+                1 => Ok(None),
+                count => {
+                    let start_index = index;
+                    index = (index + 1) % count;
+                    // We can't just take the next item because it might no longer be in the state
+                    while index != start_index {
+                        let (quorum_hash, new_quorum) = platform_state
+                            .validator_sets
+                            .get_index(index)
+                            .expect("expected next validator set");
+                        // We still have it in the state
+                        if block_execution_context
+                            .block_platform_state
+                            .validator_sets
+                            .contains_key(quorum_hash)
+                        {
+                            block_execution_context
+                                .block_platform_state
+                                .current_validator_set_quorum_hash = quorum_hash.clone();
+                            return Ok(Some(new_quorum.into()));
+                        }
+                        index = (index + 1) % count;
+                    }
+                    Ok(None)
+                }
+            }
+        } else {
+            Ok(None)
+        }
     }
 
     // TODO: remove function from here
@@ -473,6 +550,8 @@ where
         state_cache.current_validator_set_quorum_hash = updated_validator_hash;
 
         state_cache.last_committed_block_info = Some(block_info.clone());
+
+        state_cache.initialization_information = None;
 
         // Persist ephemeral data
         self.store_ephemeral_data(&block_info, &updated_validator_hash, transaction)?;
@@ -605,17 +684,15 @@ where
             return Ok(validation_result.into());
         }
 
-        if block_platform_state
-            .current_validator_set_quorum_hash
-            .as_inner()
-            != &commit_info.quorum_hash
-        {
+        let mut state_cache = self.state.read().unwrap();
+        if state_cache.current_validator_set_quorum_hash.as_inner() != &commit_info.quorum_hash {
             validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
                 "received a block for h: {} r: {} with validator set quorum hash {} expected current validator set quorum hash is {}",
                 height, round, hex::encode(commit_info.quorum_hash), hex::encode(block_platform_state.current_validator_set_quorum_hash)
             )));
             return Ok(validation_result.into());
         }
+        drop(state_cache);
 
         // In production this will always be true
         if self
