@@ -9,6 +9,7 @@ use crate::identity::state_transition::identity_topup_transition::ApplyIdentityT
 use crate::identity::state_transition::identity_update_transition::apply_identity_update_transition::ApplyIdentityUpdateTransition;
 use crate::ProtocolError;
 use crate::state_repository::StateRepositoryLike;
+use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::state_transition::StateTransition;
 
 #[derive(Clone)]
@@ -53,35 +54,42 @@ where
     }
 
     pub async fn apply(&self, state_transition: &StateTransition) -> Result<(), ProtocolError> {
+        // TODO(v0.24-merge): is it fine using default context here?
+        //   (Check if applier is actually used in the drive executor)
+        let execution_context = StateTransitionExecutionContext::default();
         match state_transition {
             StateTransition::DataContractCreate(st) => self
                 .apply_data_contract_create_transition
-                .apply_data_contract_create_transition(st)
+                .apply_data_contract_create_transition(st, Some(&execution_context))
                 .await
                 .map_err(ProtocolError::from),
             StateTransition::DataContractUpdate(st) => self
                 .apply_data_contract_update_transition
-                .apply_data_contract_update_transition(st)
+                .apply_data_contract_update_transition(st, &execution_context)
                 .await
                 .map_err(ProtocolError::from),
             StateTransition::DocumentsBatch(st) => {
-                self.apply_documents_batch_transition.apply(st).await
+                self.apply_documents_batch_transition
+                    .apply(st, execution_context)
+                    .await
             }
             StateTransition::IdentityCreate(st) => self
                 .apply_identity_create_transition
-                .apply_identity_create_transition(st)
+                .apply_identity_create_transition(st, &execution_context)
                 .await
                 .map_err(ProtocolError::from),
             StateTransition::IdentityTopUp(st) => self
                 .apply_identity_top_up_transition
-                .apply(st)
+                .apply(st, &execution_context)
                 .await
                 .map_err(ProtocolError::from),
             StateTransition::IdentityCreditWithdrawal(_) => {
                 Err(ProtocolError::Error(anyhow!("Not implemented yet")))
             }
             StateTransition::IdentityUpdate(st) => {
-                self.apply_identity_update_transition.apply(st).await
+                self.apply_identity_update_transition
+                    .apply(st, &execution_context)
+                    .await
             }
         }
     }

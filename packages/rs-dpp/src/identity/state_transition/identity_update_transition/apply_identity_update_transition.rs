@@ -20,7 +20,7 @@ where
         Self { state_repository }
     }
 
-    async fn apply(
+    pub async fn apply(
         &self,
         state_transition: &IdentityUpdateTransition,
         execution_context: &StateTransitionExecutionContext,

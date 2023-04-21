@@ -40,7 +40,7 @@ where
         execution_context: StateTransitionExecutionContext,
     ) -> Result<(), ProtocolError> {
         apply_documents_batch_transition(
-            &self.state_repository,
+            self.state_repository.as_ref(),
             state_transition,
             &execution_context,
         )

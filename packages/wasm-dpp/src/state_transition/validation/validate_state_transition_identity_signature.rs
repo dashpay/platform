@@ -7,6 +7,7 @@ use crate::errors::consensus_error::from_consensus_error;
 use dpp::consensus::basic::state_transition::InvalidStateTransitionTypeError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
+use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use dpp::state_transition::validation::validate_state_transition_identity_signature::validate_state_transition_identity_signature;
 use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned};
 use std::sync::Arc;
@@ -27,6 +28,7 @@ impl StValidator {
             self.state_repository.clone(),
             state_transition,
             &self.bls,
+            &StateTransitionExecutionContext::default(), // TODO(v0.24-merge): is it fine using default context here?
         )
         .await
         .with_js_error()?;
