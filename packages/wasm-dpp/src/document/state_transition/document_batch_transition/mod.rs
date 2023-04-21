@@ -25,7 +25,7 @@ use crate::{
     identifier::IdentifierWrapper,
     lodash::lodash_set,
     utils::{Inner, IntoWasm, ToSerdeJSONExt, WithJsError},
-    IdentityPublicKeyWasm, StateTransitionExecutionContextWasm,
+    IdentityPublicKeyWasm,
 };
 pub mod apply_document_batch_transition;
 pub mod document_transition;
@@ -311,7 +311,7 @@ impl DocumentsBatchTransitionWasm {
 
     #[wasm_bindgen(js_name=getKeySecurityLevelRequirement)]
     pub fn get_security_level_requirement(&self) -> js_sys::Array {
-        let mut array = js_sys::Array::new();
+        let array = js_sys::Array::new();
         for security_level in self.0.get_security_level_requirement() {
             array.push(&JsValue::from(security_level as u32));
         }

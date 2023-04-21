@@ -540,22 +540,22 @@ where
     }
 
     fn get_operator_identifier(masternode: &MasternodeListItem) -> Result<[u8; 32], Error> {
-        let protx_hash = &masternode.pro_tx_hash.into_inner();
+        let pro_tx_hash = &masternode.pro_tx_hash.into_inner();
         let operator_pub_key = masternode.state.pub_key_operator.as_slice();
-        let operator_identifier = Self::hash_concat_protxhash(protx_hash, operator_pub_key)?;
+        let operator_identifier = Self::hash_concat_protxhash(pro_tx_hash, operator_pub_key)?;
         Ok(operator_identifier)
     }
 
     fn get_voter_identifier(masternode: &MasternodeListItem) -> Result<[u8; 32], Error> {
-        let protx_hash = &masternode.pro_tx_hash.into_inner();
+        let pro_tx_hash = &masternode.pro_tx_hash.into_inner();
         let voting_address = masternode.state.voting_address.as_slice();
-        let voting_identifier = Self::hash_concat_protxhash(protx_hash, voting_address)?;
+        let voting_identifier = Self::hash_concat_protxhash(pro_tx_hash, voting_address)?;
         Ok(voting_identifier)
     }
 
-    fn hash_concat_protxhash(protx_hash: &[u8; 32], key_data: &[u8]) -> Result<[u8; 32], Error> {
+    fn hash_concat_protxhash(pro_tx_hash: &[u8; 32], key_data: &[u8]) -> Result<[u8; 32], Error> {
         let mut hasher = Sha256::new();
-        hasher.update(protx_hash);
+        hasher.update(pro_tx_hash);
         hasher.update(key_data);
         // TODO: handle unwrap, use custom error
         Ok(hasher.finalize().try_into().unwrap())
@@ -611,7 +611,7 @@ mod tests {
             block_height: 867165,
             added_mns: vec![MasternodeListItem {
                 node_type: Regular,
-                protx_hash: ProTxHash::from_str(
+                pro_tx_hash: ProTxHash::from_str(
                     "1628e387a7badd30fd4ee391ae0cab7e3bc84e792126c6b7cccd99257dad741d",
                 )
                 .expect("expected pro_tx_hash"),

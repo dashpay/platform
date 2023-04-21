@@ -6,9 +6,7 @@ use crate::utils::{ToSerdeJSONExt, WithJsError};
 use crate::validation::ValidationResultWasm;
 use crate::{with_js_error, StateTransitionExecutionContextWasm};
 use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
-use dpp::state_transition::{
-    StateTransitionConvert, StateTransitionFacade, StateTransitionLike, ValidateOptions,
-};
+use dpp::state_transition::{StateTransitionConvert, StateTransitionFacade, ValidateOptions};
 use dpp::version::ProtocolVersionValidator;
 use serde::Deserialize;
 

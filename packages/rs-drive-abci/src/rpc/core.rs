@@ -65,7 +65,7 @@ pub trait CoreRPCLike {
     ) -> Result<MasternodeListDiff, Error>;
 
     // /// Get the detailed information about a deterministic masternode
-    // fn get_protx_info(&self, protx_hash: &ProTxHash) -> Result<ProTxInfo, Error>;
+    // fn get_protx_info(&self, pro_tx_hash: &ProTxHash) -> Result<ProTxInfo, Error>;
 }
 
 /// Default implementation of Dash Core RPC using DashCoreRPC client
