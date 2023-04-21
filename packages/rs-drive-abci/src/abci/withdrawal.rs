@@ -226,8 +226,8 @@ impl<'a> PartialEq for WithdrawalTxs<'a> {
 #[cfg(test)]
 mod test {
     use dashcore_rpc::dashcore_rpc_json::QuorumType;
-    use tenderdash_abci::proto::types::{VoteExtension, VoteExtensionType};
     use dpp::bls_signatures;
+    use tenderdash_abci::proto::types::{VoteExtension, VoteExtensionType};
 
     #[test]
     fn verify_signature() {

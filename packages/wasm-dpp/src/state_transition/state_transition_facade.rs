@@ -95,7 +95,7 @@ impl StateTransitionFacadeWasm {
     pub async fn validate(
         &self,
         raw_state_transition: JsValue,
-        execution_context: StateTransitionExecutionContextWasm,
+        execution_context: &StateTransitionExecutionContextWasm,
         options: JsValue,
     ) -> Result<ValidationResultWasm, JsValue> {
         let options: ValidateOptionsWasm = if options.is_object() {
@@ -108,7 +108,8 @@ impl StateTransitionFacadeWasm {
             super::super::conversion::create_state_transition_from_wasm_instance(
                 &raw_state_transition,
             ) {
-            let execution_context: StateTransitionExecutionContext = execution_context.into();
+            let execution_context: StateTransitionExecutionContext =
+                execution_context.to_owned().into();
             (state_transition, execution_context)
         } else {
             let state_transition_json = raw_state_transition.with_serde_to_platform_value()?;
@@ -134,7 +135,7 @@ impl StateTransitionFacadeWasm {
     pub async fn validate_basic(
         &self,
         raw_state_transition: JsValue,
-        execution_context: StateTransitionExecutionContextWasm,
+        execution_context: &StateTransitionExecutionContextWasm,
     ) -> Result<ValidationResultWasm, JsValue> {
         let state_transition_json;
 
@@ -150,7 +151,7 @@ impl StateTransitionFacadeWasm {
 
         let validation_result = self
             .0
-            .validate_basic(&state_transition_json, &execution_context.into())
+            .validate_basic(&state_transition_json, &execution_context.to_owned().into())
             .await
             .with_js_error()?;
 
@@ -161,7 +162,7 @@ impl StateTransitionFacadeWasm {
     pub async fn validate_signature(
         &self,
         raw_state_transition: JsValue,
-        execution_context: StateTransitionExecutionContextWasm,
+        execution_context: &StateTransitionExecutionContextWasm,
     ) -> Result<ValidationResultWasm, JsValue> {
         let state_transition =
             super::super::conversion::create_state_transition_from_wasm_instance(
@@ -170,7 +171,7 @@ impl StateTransitionFacadeWasm {
 
         let validation_result = self
             .0
-            .validate_signature(state_transition, &execution_context.into())
+            .validate_signature(state_transition, &execution_context.to_owned().into())
             .await
             .with_js_error()?;
 
@@ -181,7 +182,7 @@ impl StateTransitionFacadeWasm {
     pub async fn validate_fee(
         &self,
         raw_state_transition: JsValue,
-        execution_context: StateTransitionExecutionContextWasm,
+        execution_context: &StateTransitionExecutionContextWasm,
     ) -> Result<ValidationResultWasm, JsValue> {
         let state_transition =
             super::super::conversion::create_state_transition_from_wasm_instance(
@@ -190,7 +191,7 @@ impl StateTransitionFacadeWasm {
 
         let validation_result = self
             .0
-            .validate_fee(&state_transition, &execution_context.into())
+            .validate_fee(&state_transition, &execution_context.to_owned().into())
             .await
             .with_js_error()?;
 
@@ -201,7 +202,7 @@ impl StateTransitionFacadeWasm {
     pub async fn validate_state(
         &self,
         raw_state_transition: JsValue,
-        execution_context: StateTransitionExecutionContextWasm,
+        execution_context: &StateTransitionExecutionContextWasm,
     ) -> Result<ValidationResultWasm, JsValue> {
         let state_transition =
             super::super::conversion::create_state_transition_from_wasm_instance(
@@ -210,7 +211,7 @@ impl StateTransitionFacadeWasm {
 
         let validation_result = self
             .0
-            .validate_state(&state_transition, &execution_context.into())
+            .validate_state(&state_transition, &execution_context.to_owned().into())
             .await
             .with_js_error()?;
 

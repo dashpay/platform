@@ -20,6 +20,7 @@ describe('StateTransitionFacade', () => {
   let dataContract;
   let identityPublicKey;
   let identity;
+  let executionContext;
 
   let DashPlatformProtocol;
   let DataContractFactory;
@@ -36,6 +37,7 @@ describe('StateTransitionFacade', () => {
   let InvalidStateTransitionSignatureError;
   let DataContractAlreadyPresentError;
   let BalanceIsNotEnoughError;
+  let StateTransitionExecutionContext;
 
   before(async () => {
     ({
@@ -54,6 +56,7 @@ describe('StateTransitionFacade', () => {
       InvalidStateTransitionSignatureError,
       DataContractAlreadyPresentError,
       BalanceIsNotEnoughError,
+      StateTransitionExecutionContext,
     } = await loadWasmDpp());
   });
 
@@ -62,6 +65,8 @@ describe('StateTransitionFacade', () => {
     const privateKey = privateKeyModel.toBuffer();
     const publicKey = privateKeyModel.toPublicKey().toBuffer();
     const publicKeyId = 1;
+
+    executionContext = new StateTransitionExecutionContext();
 
     identityPublicKey = new IdentityPublicKey({
       id: publicKeyId,
@@ -141,7 +146,7 @@ describe('StateTransitionFacade', () => {
       const rawStateTransition = dataContractCreateTransition.toObject();
       rawStateTransition.protocolVersion = 100;
 
-      const result = await dpp.stateTransition.validate(rawStateTransition);
+      const result = await dpp.stateTransition.validate(rawStateTransition, executionContext);
 
       expect(result).to.be.an.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
@@ -154,7 +159,7 @@ describe('StateTransitionFacade', () => {
       const rawStateTransition = dataContractCreateTransition.toObject();
       rawStateTransition.signature = Buffer.alloc(65).fill(1);
 
-      const result = await dpp.stateTransition.validate(rawStateTransition);
+      const result = await dpp.stateTransition.validate(rawStateTransition, executionContext);
 
       expect(result).to.be.an.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
@@ -165,7 +170,9 @@ describe('StateTransitionFacade', () => {
 
     it('should return invalid result if not enough balance to pay fee for State Transition', async () => {
       identity.setBalance(0);
-      const result = await dpp.stateTransition.validate(dataContractCreateTransition);
+      const result = await dpp.stateTransition.validate(
+        dataContractCreateTransition, executionContext,
+      );
 
       expect(result).to.be.an.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
@@ -177,7 +184,9 @@ describe('StateTransitionFacade', () => {
     it('should return invalid result if State Transition is invalid against state', async () => {
       stateRepositoryMock.fetchDataContract.resolves(dataContract);
 
-      const result = await dpp.stateTransition.validate(dataContractCreateTransition);
+      const result = await dpp.stateTransition.validate(
+        dataContractCreateTransition, executionContext,
+      );
 
       expect(result).to.be.an.instanceOf(ValidationResult);
       expect(result.isValid()).to.be.false();
@@ -189,6 +198,7 @@ describe('StateTransitionFacade', () => {
     it('should validate DataContractCreateTransition', async () => {
       const result = await dpp.stateTransition.validate(
         dataContractCreateTransition,
+        executionContext,
       );
 
       expect(result).to.be.an.instanceOf(ValidationResult);
@@ -202,6 +212,7 @@ describe('StateTransitionFacade', () => {
       stateRepositoryMock.fetchDataContract.resolves(dataContract);
       const result = await dpp.stateTransition.validate(
         documentsBatchTransition,
+        executionContext,
       );
 
       expect(result).to.be.an.instanceOf(ValidationResult);
@@ -212,7 +223,7 @@ describe('StateTransitionFacade', () => {
   describe('validateBasic', () => {
     it('should validate State Transition', async () => {
       const result = await dpp.stateTransition.validateBasic(
-        dataContractCreateTransition.toObject(),
+        dataContractCreateTransition.toObject(), executionContext,
       );
 
       expect(result).to.be.an.instanceOf(ValidationResult);
@@ -223,7 +234,7 @@ describe('StateTransitionFacade', () => {
   describe('validateSignature', () => {
     it('should validate identity signed State Transition', async () => {
       const result = await dpp.stateTransition.validateSignature(
-        dataContractCreateTransition,
+        dataContractCreateTransition, executionContext,
       );
 
       expect(result).to.be.an.instanceOf(ValidationResult);
@@ -246,7 +257,7 @@ describe('StateTransitionFacade', () => {
       );
 
       const result = await dpp.stateTransition.validateSignature(
-        identityCreateTransition,
+        identityCreateTransition, executionContext,
       );
 
       expect(result).to.be.an.instanceOf(ValidationResult);
@@ -258,6 +269,7 @@ describe('StateTransitionFacade', () => {
     it('should validate State Transition', async () => {
       const result = await dpp.stateTransition.validateFee(
         dataContractCreateTransition,
+        executionContext,
       );
 
       expect(result).to.be.an.instanceOf(ValidationResult);
@@ -269,6 +281,7 @@ describe('StateTransitionFacade', () => {
     it('should validate State Transition', async () => {
       const result = await dpp.stateTransition.validateState(
         dataContractCreateTransition,
+        executionContext,
       );
 
       expect(result).to.be.an.instanceOf(ValidationResult);

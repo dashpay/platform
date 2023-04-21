@@ -28,14 +28,14 @@ use crate::{
 #[wasm_bindgen(js_name=validateDataContractUpdateTransitionState)]
 pub async fn validate_data_contract_update_transition_state(
     state_repository: ExternalStateRepositoryLike,
-    state_transition: DataContractUpdateTransitionWasm,
-    execution_context: StateTransitionExecutionContextWasm,
+    state_transition: &DataContractUpdateTransitionWasm,
+    execution_context: &StateTransitionExecutionContextWasm,
 ) -> Result<ValidationResultWasm, JsValue> {
     let wrapped_state_repository = ExternalStateRepositoryLikeWrapper::new(state_repository);
     let result = dpp_validate_data_contract_update_transition_state(
         &wrapped_state_repository,
-        &state_transition.into(),
-        &execution_context.into(),
+        &state_transition.to_owned().into(),
+        &execution_context.to_owned().into(),
     )
     .await
     .with_js_error()?;

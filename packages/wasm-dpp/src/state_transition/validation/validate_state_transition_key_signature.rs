@@ -47,7 +47,7 @@ impl StateTransitionKeySignatureValidatorWasm {
     pub async fn validate(
         &self,
         state_transition: JsValue,
-        execution_context: StateTransitionExecutionContextWasm,
+        execution_context: &StateTransitionExecutionContextWasm,
     ) -> Result<ValidationResultWasm, JsValue> {
         let state_transition =
             super::super::conversion::create_state_transition_from_wasm_instance(
@@ -56,7 +56,7 @@ impl StateTransitionKeySignatureValidatorWasm {
 
         let validation_result = self
             .0
-            .validate(&state_transition, &execution_context.into())
+            .validate(&state_transition, &execution_context.to_owned().into())
             .await
             .with_js_error()?;
         Ok(validation_result.map(|_| JsValue::undefined()).into())

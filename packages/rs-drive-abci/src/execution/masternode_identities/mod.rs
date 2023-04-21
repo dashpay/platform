@@ -31,6 +31,7 @@ where
     pub fn update_masternode_identities(
         &self,
         masternode_diff: MasternodeListDiffWithMasternodes,
+        removed_masternodes: &BTreeMap<ProTxHash, MasternodeListItem>,
         block_info: &BlockInfo,
         state: &PlatformState,
         transaction: &Transaction,
@@ -38,7 +39,6 @@ where
         let MasternodeListDiffWithMasternodes {
             added_mns,
             updated_mns,
-            removed_mns,
             ..
         } = masternode_diff;
 
@@ -72,8 +72,8 @@ where
             self.update_operator_identity(&masternode, block_info, state, Some(transaction))?;
         }
 
-        for masternode in removed_mns {
-            self.disable_identity_keys(&masternode, block_info, state, Some(transaction))?;
+        for (_, masternode) in removed_masternodes.iter() {
+            self.disable_identity_keys(masternode, block_info, Some(transaction))?;
         }
 
         Ok(())
@@ -379,21 +379,13 @@ where
 
     fn disable_identity_keys(
         &self,
-        masternode: &RemovedMasternodeItem,
+        old_masternode: &MasternodeListItem,
         block_info: &BlockInfo,
-        state: &PlatformState,
         transaction: Option<&Transaction>,
     ) -> Result<(), Error> {
-        let protx_hash: &ProTxHash = &masternode.protx_hash;
-        let old_masternode = state.full_masternode_list.get(protx_hash).ok_or_else(|| {
-            Error::Abci(AbciError::InvalidState(
-                "expected masternode to be in state".to_string(),
-            ))
-        })?;
-
         let owner_identifier = Self::get_owner_identifier(old_masternode)?;
         let operator_identifier = Self::get_operator_identifier(old_masternode)?;
-        let voter_identifer = Self::get_voter_identifier(old_masternode)?;
+        let voter_identifier = Self::get_voter_identifier(old_masternode)?;
 
         let owner_identity = self
             .drive
@@ -405,7 +397,7 @@ where
             .unwrap();
         let voter_identity = self
             .drive
-            .fetch_full_identity(voter_identifer, transaction)?
+            .fetch_full_identity(voter_identifier, transaction)?
             .unwrap();
 
         let mut keys_to_disable = HashSet::new();

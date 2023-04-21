@@ -20,7 +20,8 @@ use crate::{
         StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike,
         StateTransitionType,
     },
-    version::LATEST_VERSION, ProtocolError,
+    version::LATEST_VERSION,
+    ProtocolError,
 };
 
 pub mod property_names {

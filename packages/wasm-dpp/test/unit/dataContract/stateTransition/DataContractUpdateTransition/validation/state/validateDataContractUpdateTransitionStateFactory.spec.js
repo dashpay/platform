@@ -44,8 +44,6 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
 
     executionContext = new StateTransitionExecutionContext();
 
-    stateTransition.setExecutionContext(executionContext);
-
     const validator = new DataContractValidator();
     const dataContractFactory = new DataContractFactory(protocolVersion.latestVersion, validator);
     const wasmDataContract = await dataContractFactory.createFromBuffer(dataContract.toBuffer());
@@ -57,6 +55,7 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
     validateTransitionWithExistingContract = (t) => validateDataContractUpdateTransitionState(
       stateRepositoryLike,
       t,
+      executionContext,
     );
   });
 
@@ -68,6 +67,7 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
     const validateTransitionWithNoContract = (t) => validateDataContractUpdateTransitionState(
       stateRepositoryLikeNoDataContract,
       t,
+      executionContext,
     );
 
     const result = await validateTransitionWithNoContract(stateTransition);
@@ -114,6 +114,7 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
     const validateTransitionWithNoContract = (t) => validateDataContractUpdateTransitionState(
       stateRepositoryLikeNoDataContract,
       t,
+      executionContext,
     );
 
     executionContext.enableDryRun();

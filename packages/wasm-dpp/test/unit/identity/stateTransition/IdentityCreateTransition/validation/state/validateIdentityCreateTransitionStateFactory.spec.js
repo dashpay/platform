@@ -9,11 +9,13 @@ describe('validateIdentityCreateTransitionStateFactory', () => {
   let validateIdentityCreateTransitionState;
   let stateTransition;
   let stateRepositoryMock;
+  let executionContext;
 
   let IdentityCreateTransition;
   let IdentityPublicKey;
   let IdentityAlreadyExistsError;
   let IdentityCreateTransitionStateValidator;
+  let StateTransitionExecutionContext;
 
   before(async () => {
     ({
@@ -21,15 +23,17 @@ describe('validateIdentityCreateTransitionStateFactory', () => {
       IdentityAlreadyExistsError,
       IdentityPublicKey,
       IdentityCreateTransitionStateValidator,
+      StateTransitionExecutionContext,
     } = await loadWasmDpp());
   });
 
   beforeEach(async function () {
+    executionContext = new StateTransitionExecutionContext();
     const privateKey = Buffer.from('af432c476f65211f45f48f1d42c9c0b497e56696aa1736b40544ef1a496af837', 'hex');
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 
     const validator = new IdentityCreateTransitionStateValidator(stateRepositoryMock);
-    validateIdentityCreateTransitionState = (st) => validator.validate(st);
+    validateIdentityCreateTransitionState = (st) => validator.validate(st, executionContext);
 
     stateTransition = new IdentityCreateTransition(
       getIdentityCreateTransitionFixture().toObject(),
@@ -69,11 +73,11 @@ describe('validateIdentityCreateTransitionStateFactory', () => {
   it('should return valid result on dry run', async () => {
     stateRepositoryMock.fetchIdentityBalance.resolves(1);
 
-    stateTransition.getExecutionContext().enableDryRun();
+    executionContext.enableDryRun();
 
     const result = await validateIdentityCreateTransitionState(stateTransition);
 
-    stateTransition.getExecutionContext().disableDryRun();
+    executionContext.disableDryRun();
 
     expect(result.isValid()).to.be.true();
   });

@@ -25,7 +25,6 @@ describe('applyIdentityUpdateTransition', () => {
     stateTransition.setRevision(stateTransition.getRevision() + 1);
 
     executionContext = new StateTransitionExecutionContext();
-    stateTransition.setExecutionContext(executionContext);
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.updateIdentityRevision.resolves();
@@ -35,6 +34,7 @@ describe('applyIdentityUpdateTransition', () => {
     applyIdentityUpdateTransition = (st) => applyIdentityUpdateTransitionDPP(
       stateRepositoryMock,
       st,
+      executionContext,
     );
   });
 
@@ -69,11 +69,11 @@ describe('applyIdentityUpdateTransition', () => {
   it('should add and disable public keys on dry run', async function () {
     const { match } = this.sinonSandbox;
 
-    stateTransition.getExecutionContext().enableDryRun();
+    executionContext.enableDryRun();
 
     await applyIdentityUpdateTransition(stateTransition);
 
-    stateTransition.getExecutionContext().disableDryRun();
+    executionContext.disableDryRun();
 
     expect(stateRepositoryMock.updateIdentityRevision).to.be.calledOnceWithExactly(
       match((id) => id.toBuffer().equals(stateTransition.getOwnerId().toBuffer())),
