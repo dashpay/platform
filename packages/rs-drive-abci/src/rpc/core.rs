@@ -1,7 +1,7 @@
 use dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
     Bip9SoftforkInfo, ExtendedQuorumDetails, ExtendedQuorumListResult, GetBestChainLockResult,
-    QuorumInfoResult, QuorumType,
+    MasternodeListDiff, QuorumInfoResult, QuorumType,
 };
 use dashcore_rpc::json::{GetTransactionResult, MasternodeListDiffWithMasternodes};
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
@@ -62,7 +62,7 @@ pub trait CoreRPCLike {
         &self,
         base_block: u32,
         block: u32,
-    ) -> Result<MasternodeListDiffWithMasternodes, Error>;
+    ) -> Result<MasternodeListDiff, Error>;
 
     // /// Get the detailed information about a deterministic masternode
     // fn get_protx_info(&self, protx_hash: &ProTxHash) -> Result<ProTxInfo, Error>;
@@ -144,14 +144,9 @@ impl CoreRPCLike for DefaultCoreRPC {
 
     fn get_protx_diff_with_masternodes(
         &self,
-        _base_block: u32,
-        _block: u32,
-    ) -> Result<MasternodeListDiffWithMasternodes, Error> {
-        // method does not yet exist in core
-        todo!()
+        base_block: u32,
+        block: u32,
+    ) -> Result<MasternodeListDiff, Error> {
+        self.inner.get_protx_listdiff(base_block, block)
     }
-
-    // fn get_protx_info(&self, protx_hash: &ProTxHash) -> Result<ProTxInfo, Error> {
-    //     self.inner.get_protx_info(protx_hash)
-    // }
 }

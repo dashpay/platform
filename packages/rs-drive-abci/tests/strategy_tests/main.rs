@@ -33,7 +33,7 @@
 extern crate core;
 
 use anyhow::anyhow;
-use dashcore::{signer, Network, PrivateKey, ProTxHash, QuorumHash};
+use dashcore::{signer, Network, PrivateKey, ProTxHash, QuorumHash, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
     Bip9SoftforkInfo, Bip9SoftforkStatus, DMNState, ExtendedQuorumDetails,
     MasternodeListDiffWithMasternodes, MasternodeListItem, MasternodeType, QuorumInfoResult,
@@ -94,7 +94,7 @@ use drive::query::DriveQuery;
 use drive_abci::abci::AbciApplication;
 use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
 
-use dashcore_rpc::json::RemovedMasternodeItem;
+use dashcore_rpc::json::{MasternodeListDiff, RemovedMasternodeItem};
 use drive_abci::abci::mimic::MimicExecuteBlockOutcome;
 use drive_abci::execution::test_quorum::TestQuorumInfo;
 use drive_abci::platform::Platform;
@@ -1045,9 +1045,10 @@ pub fn generate_test_masternodes(
         let pro_tx_hash = ProTxHash::from_inner(rng.gen::<[u8; 32]>());
         let masternode_list_item = MasternodeListItem {
             node_type: MasternodeType::Regular,
-            protx_hash: pro_tx_hash,
-            collateral_hash: rng.gen::<[u8; 32]>(),
+            pro_tx_hash,
+            collateral_hash: Txid::from_inner(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
+            collateral_address: [0; 20],
             operator_reward: 0,
             state: DMNState {
                 service: SocketAddr::from_str(format!("1.0.{}.{}:1234", i / 256, i % 256).as_str())
@@ -1079,9 +1080,10 @@ pub fn generate_test_masternodes(
             .to_vec();
         let masternode_list_item = MasternodeListItem {
             node_type: MasternodeType::HighPerformance,
-            protx_hash: ProTxHash::from_inner(rng.gen::<[u8; 32]>()),
-            collateral_hash: rng.gen::<[u8; 32]>(),
+            pro_tx_hash: ProTxHash::from_inner(rng.gen::<[u8; 32]>()),
+            collateral_hash: Txid::from_inner(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
+            collateral_address: [0; 20],
             operator_reward: 0,
             state: DMNState {
                 service: SocketAddr::from_str(format!("1.1.{}.{}:1234", i / 256, i % 256).as_str())
@@ -1122,7 +1124,7 @@ pub fn generate_test_quorums(
                 .filter(|m| m.node_type == MasternodeType::HighPerformance)
                 .choose_multiple(rng, quorum_size)
                 .iter()
-                .map(|masternode| masternode.protx_hash)
+                .map(|masternode| masternode.pro_tx_hash)
                 .collect(); //choose multiple chooses out of order (as we would like)
             (
                 quorum_hash,
@@ -1300,7 +1302,7 @@ pub(crate) fn run_chain_for_strategy(
         .expect_get_protx_diff_with_masternodes()
         .returning(move |base_block, block| {
             let diff = if base_block == 0 {
-                MasternodeListDiffWithMasternodes {
+                MasternodeListDiff {
                     base_height: base_block,
                     block_height: block,
                     added_mns: initial_proposers.clone(),
@@ -1310,7 +1312,7 @@ pub(crate) fn run_chain_for_strategy(
             } else {
                 if !new_proposers_in_strategy {
                     // no changes
-                    MasternodeListDiffWithMasternodes {
+                    MasternodeListDiff {
                         base_height: base_block,
                         block_height: block,
                         added_mns: vec![],
@@ -1334,12 +1336,10 @@ pub(crate) fn run_chain_for_strategy(
                     let removed_mns: Vec<_> = start_proposers
                         .iter()
                         .filter(|item| !end_proposers.contains(item))
-                        .map(|masternode_list_item| RemovedMasternodeItem {
-                            protx_hash: masternode_list_item.protx_hash,
-                        })
+                        .map(|masternode_list_item| masternode_list_item.pro_tx_hash)
                         .collect();
 
-                    MasternodeListDiffWithMasternodes {
+                    MasternodeListDiff {
                         base_height: base_block,
                         block_height: block,
                         added_mns,
@@ -1491,7 +1491,7 @@ pub(crate) fn continue_chain_for_strategy(
             upgrading_info.apply_to_proposers(
                 proposers
                     .iter()
-                    .map(|masternode_list_item| masternode_list_item.protx_hash)
+                    .map(|masternode_list_item| masternode_list_item.pro_tx_hash)
                     .collect(),
                 blocks_per_epoch,
                 &mut rng,
@@ -1625,7 +1625,7 @@ pub(crate) fn continue_chain_for_strategy(
         .fetch_identities_balances(
             &proposers
                 .iter()
-                .map(|proposer| proposer.protx_hash.into_inner())
+                .map(|proposer| proposer.pro_tx_hash.into_inner())
                 .collect(),
             None,
         )
