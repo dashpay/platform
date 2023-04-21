@@ -42,13 +42,12 @@ describe('applyIdentityCreateTransitionFactory', () => {
 
     executionContext = new StateTransitionExecutionContext();
 
-    stateTransition.setExecutionContext(executionContext);
-
     output = stateTransition.getAssetLockProof().getOutput();
 
     applyIdentityCreateTransition = (st) => applyIdentityCreateTransitionDPP(
       stateRepositoryMock,
       st,
+      executionContext,
     );
   });
 

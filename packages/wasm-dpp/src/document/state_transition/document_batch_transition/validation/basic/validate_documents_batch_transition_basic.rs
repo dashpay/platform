@@ -17,7 +17,7 @@ pub async fn validate_documents_batch_transition_basic_wasm(
     protocol_version_validator: ProtocolVersionValidatorWasm,
     state_repository: ExternalStateRepositoryLike,
     js_raw_state_transition: JsValue,
-    execution_context: StateTransitionExecutionContextWasm,
+    execution_context: &StateTransitionExecutionContextWasm,
 ) -> Result<ValidationResultWasm, JsValue> {
     let wrapped_state_repository = ExternalStateRepositoryLikeWrapper::new(state_repository);
     let mut value = js_raw_state_transition.with_serde_to_platform_value()?;
@@ -33,7 +33,7 @@ pub async fn validate_documents_batch_transition_basic_wasm(
             &protocol_version_validator.into(),
             &value,
             Arc::new(wrapped_state_repository),
-            &execution_context.into(),
+            &execution_context.to_owned().into(),
         )
         .await
         .with_js_error()?,

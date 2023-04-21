@@ -310,12 +310,12 @@ impl DocumentsBatchTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=getKeySecurityLevelRequirement)]
-    pub fn get_security_level_requirement(&self) -> Vec<u8> {
-        self.0
-            .get_security_level_requirement()
-            .iter()
-            .map(|security_level| *security_level as u8)
-            .collect()
+    pub fn get_security_level_requirement(&self) -> js_sys::Array {
+        let mut array = js_sys::Array::new();
+        for security_level in self.0.get_security_level_requirement() {
+            array.push(&JsValue::from(security_level as u32));
+        }
+        array
     }
 
     // AbstractStateTransition methods

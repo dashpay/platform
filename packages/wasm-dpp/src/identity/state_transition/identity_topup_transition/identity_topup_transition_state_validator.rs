@@ -24,12 +24,12 @@ impl IdentityTopUpTransitionStateValidator {
     pub async fn validate(
         &self,
         state_transition: &IdentityTopUpTransitionWasm,
-        execution_context: StateTransitionExecutionContextWasm,
+        execution_context: &StateTransitionExecutionContextWasm,
     ) -> Result<ValidationResultWasm, JsValue> {
         let validation_result = validate_identity_topup_transition_state(
             &self.state_repository,
             &state_transition.to_owned().into(),
-            &execution_context.into(),
+            &execution_context.to_owned().into(),
         )
         .await
         .map_err(|e| from_dpp_err(e.into()))?;

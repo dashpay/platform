@@ -17,7 +17,6 @@ describe('validateDataContractFactory', () => {
   let UniqueIndicesLimitReachedError;
   let SystemPropertyIndexAlreadyPresentError;
   let InvalidIndexPropertyTypeError;
-  let InvalidCompoundIndexError;
   let InvalidIndexedPropertyConstraintError;
   let InvalidJsonSchemaRefError;
 
@@ -32,7 +31,6 @@ describe('validateDataContractFactory', () => {
       UniqueIndicesLimitReachedError,
       SystemPropertyIndexAlreadyPresentError,
       InvalidIndexPropertyTypeError,
-      InvalidCompoundIndexError,
       InvalidIndexedPropertyConstraintError,
       InvalidJsonSchemaRefError,
     } = await loadWasmDpp());
@@ -1930,23 +1928,6 @@ describe('validateDataContractFactory', () => {
         expect(error.getPropertyType()).to.equal('array');
         expect(error.getDocumentType()).to.deep.equal('indexedDocument');
         expect(error.getIndexDefinition().toObject()).to.deep.equal(indexDefinition);
-      });
-
-      it('should return invalid result if unique compound index contains both required and optional properties', async () => {
-        const rawDataContract = dataContract.toObject();
-        rawDataContract.documents.optionalUniqueIndexedDocument.required.splice(-1);
-
-        const result = await validateDataContract(rawDataContract);
-
-        expectValidationError(result, InvalidCompoundIndexError);
-
-        const [error] = result.getErrors();
-
-        expect(error.getCode()).to.equal(1010);
-        expect(error.getIndexDefinition().toObject()).to.deep.equal(
-          rawDataContract.documents.optionalUniqueIndexedDocument.indices[1],
-        );
-        expect(error.getDocumentType()).to.equal('optionalUniqueIndexedDocument');
       });
     });
   });
