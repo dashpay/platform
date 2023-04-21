@@ -215,15 +215,16 @@ mod test {
 
         platform_state.hpmn_masternode_list.insert(ProTxHash::from_inner(top_level_identifier.to_buffer()), MasternodeListItem {
             node_type: MasternodeType::HighPerformance,
-            protx_hash: ProTxHash::from_inner(top_level_identifier.to_buffer()),
-            collateral_hash: hex::decode("4eb56228c535db3b234907113fd41d57bcc7cdcb8e0e00e57590af27ee88c119").expect("expected to decode collateral hash").try_into().expect("expected 32 bytes"),
+            pro_tx_hash: ProTxHash::from_inner(top_level_identifier.to_buffer()),
+            collateral_hash: Txid::from_str("4eb56228c535db3b234907113fd41d57bcc7cdcb8e0e00e57590af27ee88c119").expect("expected to decode collateral hash"),
             collateral_index: 0,
+            collateral_address: [0;20],
             operator_reward: 0,
             state: DMNState {  
                 service: SocketAddr::from_str("1.2.3.4:1234").unwrap(),
                 registered_height: 0,
                 pose_revived_height: 0,
-                pose_ban_height: 0,
+                pose_ban_height: None,
                 revocation_reason: 0,
                 owner_address: [1;20],
                 voting_address: [2;20],
@@ -231,6 +232,8 @@ mod test {
                 pub_key_operator: hex::decode("987a4873caba62cd45a2f7d4aa6d94519ee6753e9bef777c927cb94ade768a542b0ff34a93231d3a92b4e75ffdaa366e").expect("expected to decode collateral hash"),
                 operator_payout_address: None,
                 platform_node_id: None,
+                platform_p2p_port: None,
+                platform_http_port: None,
             },
         });
 
@@ -243,15 +246,16 @@ mod test {
 
         platform_state.hpmn_masternode_list.insert(pro_tx_hash, MasternodeListItem {
             node_type: MasternodeType::HighPerformance,
-            protx_hash: pro_tx_hash,
-            collateral_hash: hex::decode("4eb56228c535db3b234907113fd41d57bcc7cdcb8e0e00e57590af27ee88c119").expect("expected to decode collateral hash").try_into().expect("expected 32 bytes"),
+            pro_tx_hash,
+            collateral_hash: Txid::from_str("4eb56228c535db3b234907113fd41d57bcc7cdcb8e0e00e57590af27ee88c119").expect("expected to decode collateral hash"),
             collateral_index: 0,
+            collateral_address: [0;20],
             operator_reward: 0,
             state: DMNState {
                 service: SocketAddr::from_str("1.2.3.5:1234").unwrap(),
                 registered_height: 0,
                 pose_revived_height: 0,
-                pose_ban_height: 0,
+                pose_ban_height: None,
                 revocation_reason: 0,
                 owner_address: [1;20],
                 voting_address: [2;20],
@@ -259,6 +263,8 @@ mod test {
                 pub_key_operator: hex::decode("a87a4873caba62cd45a2f7d4aa6d94519ee6753e9bef777c927cb94ade768a542b0ff34a93231d3a92b4e75ffdaa366e").expect("expected to decode collateral hash"),
                 operator_payout_address: None,
                 platform_node_id: None,
+                platform_p2p_port: None,
+                platform_http_port: None,
             },
         });
 

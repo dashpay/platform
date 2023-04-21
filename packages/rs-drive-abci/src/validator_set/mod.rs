@@ -266,7 +266,7 @@ mod tests {
         client
             .expect_get_quorum_listextended()
             .returning(move |_| {
-                Ok(dashcore_rpc::dashcore_rpc_json::QuorumListResult {
+                Ok(dashcore_rpc::dashcore_rpc_json::ExtendedQuorumListResult {
                     quorums_by_type: HashMap::from([(
                         QuorumType::Llmq100_67,
                         generate_quorums_extended_info(100),
@@ -279,7 +279,7 @@ mod tests {
             .expect_get_quorum_info()
             .returning(|quorum_type, quorum_hash, _| {
                 Ok(QuorumInfoResult {
-                    height: CORE_HEIGHT as u64,
+                    height: CORE_HEIGHT,
                     quorum_type,
                     mined_block: vec![],
                     quorum_hash: *quorum_hash,

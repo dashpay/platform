@@ -6,8 +6,9 @@ use crate::state::PlatformState;
 use chrono::Utc;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::ProTxHash;
+use dashcore_rpc::dashcore_rpc_json::MasternodeListDiff;
 use dashcore_rpc::json::{
-    MasternodeListDiffWithMasternodes, MasternodeListItem, RemovedMasternodeItem,
+    DMNStateDiff, MasternodeListDiffWithMasternodes, MasternodeListItem, RemovedMasternodeItem,
     UpdatedMasternodeItem,
 };
 use dpp::block::block_info::BlockInfo;
@@ -30,13 +31,13 @@ where
     /// Update of the masternode identities
     pub fn update_masternode_identities(
         &self,
-        masternode_diff: MasternodeListDiffWithMasternodes,
+        masternode_diff: MasternodeListDiff,
         removed_masternodes: &BTreeMap<ProTxHash, MasternodeListItem>,
         block_info: &BlockInfo,
         state: &PlatformState,
         transaction: &Transaction,
     ) -> Result<(), Error> {
-        let MasternodeListDiffWithMasternodes {
+        let MasternodeListDiff {
             added_mns,
             updated_mns,
             ..
@@ -66,10 +67,10 @@ where
             .apply_drive_operations(drive_operations, true, block_info, Some(transaction))?;
 
         //todo: batch updates as well
-        for masternode in updated_mns {
-            self.update_owner_identity(&masternode, block_info, Some(transaction))?;
-            self.update_voter_identity(&masternode, block_info, state, Some(transaction))?;
-            self.update_operator_identity(&masternode, block_info, state, Some(transaction))?;
+        for update in updated_mns.iter() {
+            self.update_owner_identity(update, block_info, Some(transaction))?;
+            self.update_voter_identity(update, block_info, state, Some(transaction))?;
+            self.update_operator_identity(update, block_info, state, Some(transaction))?;
         }
 
         for (_, masternode) in removed_masternodes.iter() {
@@ -81,15 +82,16 @@ where
 
     fn update_owner_identity(
         &self,
-        masternode: &UpdatedMasternodeItem,
+        masternode: &(ProTxHash, DMNStateDiff),
         block_info: &BlockInfo,
         transaction: Option<&Transaction>,
     ) -> Result<(), Error> {
-        if masternode.state_diff.payout_address.is_none() {
+        let (pro_tx_hash, state_diff) = masternode;
+        if state_diff.payout_address.is_none() {
             return Ok(());
         }
 
-        let owner_identifier: [u8; 32] = masternode.protx_hash.into_inner();
+        let owner_identifier: [u8; 32] = pro_tx_hash.into_inner();
         let owner_identity = self
             .drive
             .fetch_full_identity(owner_identifier, transaction)?
@@ -113,13 +115,8 @@ where
             .map(|(id, _)| *id)
             .collect::<Vec<KeyID>>();
 
-        let new_owner_key = Self::get_owner_identity_key(
-            masternode
-                .state_diff
-                .payout_address
-                .expect("confirmed is some"),
-            0,
-        )?;
+        let new_owner_key =
+            Self::get_owner_identity_key(state_diff.payout_address.expect("confirmed is some"), 0)?;
         let current_time = Utc::now().timestamp_millis() as TimestampMillis;
 
         self.drive.disable_identity_keys(
@@ -143,17 +140,17 @@ where
 
     fn update_voter_identity(
         &self,
-        masternode: &UpdatedMasternodeItem,
+        masternode: &(ProTxHash, DMNStateDiff),
         block_info: &BlockInfo,
         state: &PlatformState,
         transaction: Option<&Transaction>,
     ) -> Result<(), Error> {
-        if masternode.state_diff.voting_address.is_none() {
+        let (pro_tx_hash, state_diff) = masternode;
+        if state_diff.voting_address.is_none() {
             return Ok(());
         }
 
-        let protx_hash: &ProTxHash = &masternode.protx_hash;
-        let old_masternode = state.full_masternode_list.get(protx_hash).ok_or_else(|| {
+        let old_masternode = state.full_masternode_list.get(pro_tx_hash).ok_or_else(|| {
             Error::Abci(AbciError::InvalidState(
                 "expected masternode to be in state".to_string(),
             ))
@@ -186,10 +183,7 @@ where
 
         // we need to build the new key
         let new_voter_key = Self::get_voter_identity_key(
-            masternode
-                .state_diff
-                .voting_address
-                .expect("confirmed is some"),
+            state_diff.voting_address.expect("confirmed is some"),
             new_key_id,
         )?;
 
@@ -216,24 +210,24 @@ where
 
     fn update_operator_identity(
         &self,
-        masternode: &UpdatedMasternodeItem,
+        masternode: &(ProTxHash, DMNStateDiff),
         block_info: &BlockInfo,
         state: &PlatformState,
         transaction: Option<&Transaction>,
     ) -> Result<(), Error> {
+        let (pro_tx_hash, state_diff) = masternode;
         // TODO: key type seems fragile might be better to use purpose
 
-        if masternode.state_diff.pub_key_operator.is_none()
-            && masternode.state_diff.operator_payout_address.is_none()
-            && masternode.state_diff.platform_node_id.is_none()
+        if state_diff.pub_key_operator.is_none()
+            && state_diff.operator_payout_address.is_none()
+            && state_diff.platform_node_id.is_none()
         {
             return Ok(());
         }
 
         // we will perform at least one update, proceed to get the current identity
-        let protx_hash: &ProTxHash = &masternode.protx_hash;
         // TODO: masternode is not really in state right, this error is not appropriate
-        let old_masternode = state.full_masternode_list.get(protx_hash).ok_or_else(|| {
+        let old_masternode = state.full_masternode_list.get(pro_tx_hash).ok_or_else(|| {
             Error::Abci(AbciError::InvalidState(
                 "expected masternode to be in state".to_string(),
             ))
@@ -259,7 +253,7 @@ where
         let mut keys_to_create: Vec<IdentityPublicKey> = Vec::new();
 
         // now we need to handle each key
-        if masternode.state_diff.pub_key_operator.is_some() {
+        if state_diff.pub_key_operator.is_some() {
             // we need to get the keys to disable
             let to_disable = operator_identity
                 .public_keys
@@ -276,8 +270,7 @@ where
                 security_level: SecurityLevel::CRITICAL,
                 read_only: true,
                 data: BinaryData::new(
-                    masternode
-                        .state_diff
+                    state_diff
                         .pub_key_operator
                         .clone()
                         .expect("confirmed is some"),
@@ -288,7 +281,7 @@ where
             new_key_id += 1;
         }
 
-        if masternode.state_diff.operator_payout_address.is_some() {
+        if state_diff.operator_payout_address.is_some() {
             let to_disable = operator_identity
                 .public_keys
                 .iter()
@@ -307,8 +300,7 @@ where
                 read_only: true,
                 // TODO: can this be Some(None)
                 data: BinaryData::new(
-                    masternode
-                        .state_diff
+                    state_diff
                         .operator_payout_address
                         .expect("confirmed is some")
                         .unwrap()
@@ -320,7 +312,7 @@ where
             new_key_id += 1;
         }
 
-        if masternode.state_diff.platform_node_id.is_some() {
+        if state_diff.platform_node_id.is_some() {
             let to_disable = operator_identity
                 .public_keys
                 .iter()
@@ -343,8 +335,7 @@ where
                 read_only: true,
                 // TODO: this should be the node id
                 data: BinaryData::new(
-                    masternode
-                        .state_diff
+                    state_diff
                         .payout_address
                         .expect("confirmed is some")
                         .to_vec(),
@@ -544,27 +535,27 @@ where
     }
 
     fn get_owner_identifier(masternode: &MasternodeListItem) -> Result<[u8; 32], Error> {
-        let masternode_identifier: [u8; 32] = masternode.protx_hash.into_inner();
+        let masternode_identifier: [u8; 32] = masternode.pro_tx_hash.into_inner();
         Ok(masternode_identifier)
     }
 
     fn get_operator_identifier(masternode: &MasternodeListItem) -> Result<[u8; 32], Error> {
-        let protx_hash = &masternode.protx_hash.into_inner();
+        let pro_tx_hash = &masternode.pro_tx_hash.into_inner();
         let operator_pub_key = masternode.state.pub_key_operator.as_slice();
-        let operator_identifier = Self::hash_concat_protxhash(protx_hash, operator_pub_key)?;
+        let operator_identifier = Self::hash_concat_protxhash(pro_tx_hash, operator_pub_key)?;
         Ok(operator_identifier)
     }
 
     fn get_voter_identifier(masternode: &MasternodeListItem) -> Result<[u8; 32], Error> {
-        let protx_hash = &masternode.protx_hash.into_inner();
+        let pro_tx_hash = &masternode.pro_tx_hash.into_inner();
         let voting_address = masternode.state.voting_address.as_slice();
-        let voting_identifier = Self::hash_concat_protxhash(protx_hash, voting_address)?;
+        let voting_identifier = Self::hash_concat_protxhash(pro_tx_hash, voting_address)?;
         Ok(voting_identifier)
     }
 
-    fn hash_concat_protxhash(protx_hash: &[u8; 32], key_data: &[u8]) -> Result<[u8; 32], Error> {
+    fn hash_concat_protxhash(pro_tx_hash: &[u8; 32], key_data: &[u8]) -> Result<[u8; 32], Error> {
         let mut hasher = Sha256::new();
-        hasher.update(protx_hash);
+        hasher.update(pro_tx_hash);
         hasher.update(key_data);
         // TODO: handle unwrap, use custom error
         Ok(hasher.finalize().try_into().unwrap())
@@ -620,7 +611,7 @@ mod tests {
             block_height: 867165,
             added_mns: vec![MasternodeListItem {
                 node_type: Regular,
-                protx_hash: ProTxHash::from_str(
+                pro_tx_hash: ProTxHash::from_str(
                     "1628e387a7badd30fd4ee391ae0cab7e3bc84e792126c6b7cccd99257dad741d",
                 )
                 .expect("expected pro_tx_hash"),

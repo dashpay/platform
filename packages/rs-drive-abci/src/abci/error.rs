@@ -34,6 +34,10 @@ pub enum AbciError {
     #[error("bad request received from Tenderdash: {0}")]
     BadRequest(String),
 
+    /// Bad initialization from Tenderdash
+    #[error("bad initialization: {0}")]
+    BadInitialization(String),
+
     /// Bad commit signature from Tenderdash
     #[error("bad commit signature: {0}")]
     BadCommitSignature(String),

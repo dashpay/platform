@@ -29,6 +29,10 @@ pub enum ExecutionError {
     #[error("platform corrupted cached state error: {0}")]
     CorruptedCachedState(&'static str),
 
+    /// The fork is not yet active for core.
+    #[error("initialization fork not active: {0}")]
+    InitializationForkNotActive(String),
+
     /// An error occurred during initialization.
     #[error("initialization error: {0}")]
     InitializationError(&'static str),

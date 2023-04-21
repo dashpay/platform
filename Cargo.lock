@@ -360,7 +360,7 @@ dependencies = [
 [[package]]
 name = "bls-dash-sys"
 version = "1.2.5"
-source = "git+https://github.com/dashpay/bls-signatures?branch=feat/clone#ea2552b44b6403c153d1ea7f4556c1d576f1c547"
+source = "git+https://github.com/dashpay/bls-signatures?branch=feat/clone#0a8919751fac9674413255e308359d2e72b17ccf"
 dependencies = [
  "bindgen 0.65.1",
  "cc",
@@ -370,7 +370,7 @@ dependencies = [
 [[package]]
 name = "bls-signatures"
 version = "1.2.5"
-source = "git+https://github.com/dashpay/bls-signatures?branch=feat/clone#ea2552b44b6403c153d1ea7f4556c1d576f1c547"
+source = "git+https://github.com/dashpay/bls-signatures?branch=feat/clone#0a8919751fac9674413255e308359d2e72b17ccf"
 dependencies = [
  "bls-dash-sys",
  "rand",
@@ -968,7 +968,7 @@ dependencies = [
 [[package]]
 name = "dashcore"
 version = "0.29.1"
-source = "git+https://github.com/dashpay/rust-dashcore?branch=feat/addons#87da71ecdc33f23b3a6e90199a66aa7a16234661"
+source = "git+https://github.com/dashpay/rust-dashcore?branch=feat/addons#b6d2233595193218f3c91565e36a16d229f2fa30"
 dependencies = [
  "anyhow",
  "bech32",
@@ -982,7 +982,7 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc"
 version = "0.15.0"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=feat/protx-listdiff-call#7ea4bca9406c5f6d3291d58f7dcaac4340e003a8"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=master#fc8d1749f87dcc37e327452101ba986eca6ea917"
 dependencies = [
  "dashcore-rpc-json",
  "env_logger 0.10.0",
@@ -995,7 +995,7 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc-json"
 version = "0.15.0"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=feat/protx-listdiff-call#7ea4bca9406c5f6d3291d58f7dcaac4340e003a8"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=master#fc8d1749f87dcc37e327452101ba986eca6ea917"
 dependencies = [
  "dashcore",
  "hex",
@@ -1181,13 +1181,13 @@ dependencies = [
  "chrono",
  "ciborium",
  "clap 4.2.4",
- "dashcore",
  "dashcore-rpc",
  "dotenvy",
  "dpp",
  "drive",
  "envy",
  "hex",
+ "indexmap",
  "itertools",
  "lazy_static",
  "mockall",

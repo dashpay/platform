@@ -10,8 +10,7 @@ use crate::identifier::IdentifierWrapper;
 use crate::{
     buffer::Buffer, errors::RustConversionError,
     identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitnessWasm,
-    identity::IdentityPublicKeyWasm, state_transition::StateTransitionExecutionContextWasm,
-    with_js_error,
+    identity::IdentityPublicKeyWasm, with_js_error,
 };
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};

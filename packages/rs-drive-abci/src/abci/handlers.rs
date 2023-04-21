@@ -83,11 +83,7 @@ where
         self.start_transaction();
         let transaction_guard = self.transaction.read().unwrap();
         let transaction = transaction_guard.as_ref().unwrap();
-        self.platform.init_chain(request, transaction)?;
-
-        let response = ResponseInitChain {
-            ..Default::default()
-        };
+        let response = self.platform.init_chain(request, transaction)?;
 
         tracing::info!(method = "init_chain", "init chain executed");
         Ok(response)
@@ -126,6 +122,7 @@ where
         let BlockExecutionOutcome {
             app_hash,
             tx_results,
+            validator_set_update,
         } = run_result.into_data().map_err(Error::Protocol)?;
 
         // We need to let Tenderdash know about the transactions we should remove from execution
@@ -177,6 +174,7 @@ where
             app_hash: app_hash.to_vec(),
             tx_records,
             core_chain_lock_update,
+            validator_set_update,
             ..Default::default()
         };
 
@@ -222,6 +220,7 @@ where
             let BlockExecutionOutcome {
                 app_hash,
                 tx_results,
+                validator_set_update,
             } = run_result.into_data().map_err(Error::Protocol)?;
 
             // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
@@ -229,6 +228,7 @@ where
                 app_hash: app_hash.to_vec(),
                 tx_results,
                 status: proto::response_process_proposal::ProposalStatus::Accept.into(),
+                validator_set_update,
                 ..Default::default()
             };
             Ok(response)

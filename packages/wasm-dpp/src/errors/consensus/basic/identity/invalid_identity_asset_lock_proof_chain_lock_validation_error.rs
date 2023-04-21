@@ -1,9 +1,7 @@
-use dpp::consensus::basic::identity::{
-    InvalidIdentityAssetLockProofChainLockValidationError, InvalidIdentityAssetLockTransactionError,
-};
+use dpp::consensus::basic::identity::InvalidIdentityAssetLockProofChainLockValidationError;
 
 use crate::buffer::Buffer;
-use dpp::consensus::ConsensusError;
+
 use dpp::dashcore::hashes::Hash;
 use wasm_bindgen::prelude::*;
 

@@ -7,7 +7,6 @@ pub use document_create_transition::*;
 pub use document_delete_transition::*;
 pub use document_replace_transition::*;
 
-use dpp::document::document_transition::DocumentTransitionAction;
 use dpp::platform_value::Value;
 use dpp::{
     document::document_transition::{

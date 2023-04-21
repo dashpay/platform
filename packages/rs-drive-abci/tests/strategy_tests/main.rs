@@ -35,8 +35,9 @@ extern crate core;
 use anyhow::anyhow;
 use dashcore_rpc::dashcore::{signer, Network, PrivateKey, ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{
-    DMNState, ExtendedQuorumDetails, MasternodeListDiffWithMasternodes, MasternodeListItem,
-    MasternodeType, QuorumInfoResult, QuorumType,
+    Bip9SoftforkInfo, Bip9SoftforkStatus, DMNState, ExtendedQuorumDetails,
+    MasternodeListDiffWithMasternodes, MasternodeListItem, MasternodeType, QuorumInfoResult,
+    QuorumType,
 };
 use dpp::bls_signatures::PrivateKey as BlsPrivateKey;
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
@@ -93,7 +94,8 @@ use drive::query::DriveQuery;
 use drive_abci::abci::AbciApplication;
 use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
 
-use dashcore_rpc::json::RemovedMasternodeItem;
+use dashcore_rpc::json::{MasternodeListDiff, RemovedMasternodeItem};
+use drive_abci::abci::mimic::MimicExecuteBlockOutcome;
 use drive_abci::execution::test_quorum::TestQuorumInfo;
 use drive_abci::platform::Platform;
 use drive_abci::rpc::core::MockCoreRPCLike;
@@ -109,7 +111,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::net::SocketAddr;
 use std::ops::Range;
 use std::str::FromStr;
-use tenderdash_abci::proto::abci::ValidatorSetUpdate;
+use tenderdash_abci::proto::abci::{ResponseInitChain, ValidatorSetUpdate};
 use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
 
 mod upgrade_fork_tests;
@@ -1040,18 +1042,20 @@ pub fn generate_test_masternodes(
             .expect("expected to get public key")
             .to_bytes()
             .to_vec();
+        let pro_tx_hash = ProTxHash::from_inner(rng.gen::<[u8; 32]>());
         let masternode_list_item = MasternodeListItem {
             node_type: MasternodeType::Regular,
-            protx_hash: ProTxHash::from_inner(rng.gen::<[u8; 32]>()),
-            collateral_hash: rng.gen::<[u8; 32]>(),
+            pro_tx_hash,
+            collateral_hash: Txid::from_inner(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
+            collateral_address: [0; 20],
             operator_reward: 0,
             state: DMNState {
                 service: SocketAddr::from_str(format!("1.0.{}.{}:1234", i / 256, i % 256).as_str())
                     .unwrap(),
                 registered_height: 0,
                 pose_revived_height: 0,
-                pose_ban_height: 0,
+                pose_ban_height: None,
                 revocation_reason: 0,
                 owner_address: rng.gen::<[u8; 20]>(),
                 voting_address: rng.gen::<[u8; 20]>(),
@@ -1059,6 +1063,8 @@ pub fn generate_test_masternodes(
                 pub_key_operator,
                 operator_payout_address: None,
                 platform_node_id: None,
+                platform_p2p_port: None,
+                platform_http_port: None,
             },
         };
         masternodes.push(masternode_list_item);
@@ -1074,16 +1080,17 @@ pub fn generate_test_masternodes(
             .to_vec();
         let masternode_list_item = MasternodeListItem {
             node_type: MasternodeType::HighPerformance,
-            protx_hash: ProTxHash::from_inner(rng.gen::<[u8; 32]>()),
-            collateral_hash: rng.gen::<[u8; 32]>(),
+            pro_tx_hash: ProTxHash::from_inner(rng.gen::<[u8; 32]>()),
+            collateral_hash: Txid::from_inner(rng.gen::<[u8; 32]>()),
             collateral_index: 0,
+            collateral_address: [0; 20],
             operator_reward: 0,
             state: DMNState {
                 service: SocketAddr::from_str(format!("1.1.{}.{}:1234", i / 256, i % 256).as_str())
                     .unwrap(),
                 registered_height: 0,
                 pose_revived_height: 0,
-                pose_ban_height: 0,
+                pose_ban_height: None,
                 revocation_reason: 0,
                 owner_address: rng.gen::<[u8; 20]>(),
                 voting_address: rng.gen::<[u8; 20]>(),
@@ -1091,6 +1098,8 @@ pub fn generate_test_masternodes(
                 pub_key_operator,
                 operator_payout_address: None,
                 platform_node_id: Some(rng.gen::<[u8; 20]>()),
+                platform_p2p_port: Some(3010),
+                platform_http_port: Some(8080),
             },
         };
         masternodes.push(masternode_list_item);
@@ -1107,18 +1116,20 @@ pub fn generate_test_quorums(
 ) -> BTreeMap<QuorumHash, TestQuorumInfo> {
     (0..count)
         .into_iter()
-        .map(|_| {
+        .enumerate()
+        .map(|(index, _)| {
             let quorum_hash: QuorumHash = QuorumHash::from_inner(rng.gen());
             let validator_pro_tx_hashes = proposers
                 .iter()
                 .filter(|m| m.node_type == MasternodeType::HighPerformance)
                 .choose_multiple(rng, quorum_size)
                 .iter()
-                .map(|masternode| masternode.protx_hash)
+                .map(|masternode| masternode.pro_tx_hash)
                 .collect(); //choose multiple chooses out of order (as we would like)
             (
                 quorum_hash,
                 TestQuorumInfo::from_quorum_hash_and_pro_tx_hashes(
+                    index as u32 * 24,
                     quorum_hash,
                     validator_pro_tx_hashes,
                     rng,
@@ -1211,12 +1222,28 @@ pub(crate) fn run_chain_for_strategy(
         })
         .collect();
 
+    let start_core_height = platform.config.abci.genesis_core_height;
+
+    platform
+        .core_rpc
+        .expect_get_fork_info()
+        .returning(move |_| {
+            Ok(Some(Bip9SoftforkInfo {
+                status: Bip9SoftforkStatus::Active,
+                bit: None,
+                start_time: 0,
+                timeout: 0,
+                since: start_core_height, // block height 1
+                statistics: None,
+            }))
+        });
+
     platform
         .core_rpc
         .expect_get_quorum_listextended()
         .returning(move |core_height: Option<u32>| {
             if !strategy.rotate_quorums {
-                Ok(dashcore_rpc::dashcore_rpc_json::QuorumListResult {
+                Ok(dashcore_rpc::dashcore_rpc_json::ExtendedQuorumListResult {
                     quorums_by_type: HashMap::from([(
                         QuorumType::Llmq100_67,
                         quorums_clone.clone(),
@@ -1249,7 +1276,7 @@ pub(crate) fn run_chain_for_strategy(
                         .collect()
                 };
 
-                Ok(dashcore_rpc::dashcore_rpc_json::QuorumListResult {
+                Ok(dashcore_rpc::dashcore_rpc_json::ExtendedQuorumListResult {
                     quorums_by_type: HashMap::from([(QuorumType::Llmq100_67, quorums)]),
                 })
             }
@@ -1275,7 +1302,7 @@ pub(crate) fn run_chain_for_strategy(
         .expect_get_protx_diff_with_masternodes()
         .returning(move |base_block, block| {
             let diff = if base_block == 0 {
-                MasternodeListDiffWithMasternodes {
+                MasternodeListDiff {
                     base_height: base_block,
                     block_height: block,
                     added_mns: initial_proposers.clone(),
@@ -1285,7 +1312,7 @@ pub(crate) fn run_chain_for_strategy(
             } else {
                 if !new_proposers_in_strategy {
                     // no changes
-                    MasternodeListDiffWithMasternodes {
+                    MasternodeListDiff {
                         base_height: base_block,
                         block_height: block,
                         added_mns: vec![],
@@ -1309,12 +1336,10 @@ pub(crate) fn run_chain_for_strategy(
                     let removed_mns: Vec<_> = start_proposers
                         .iter()
                         .filter(|item| !end_proposers.contains(item))
-                        .map(|masternode_list_item| RemovedMasternodeItem {
-                            protx_hash: masternode_list_item.protx_hash,
-                        })
+                        .map(|masternode_list_item| masternode_list_item.pro_tx_hash)
                         .collect();
 
-                    MasternodeListDiffWithMasternodes {
+                    MasternodeListDiff {
                         base_height: base_block,
                         block_height: block,
                         added_mns,
@@ -1351,7 +1376,7 @@ pub(crate) fn start_chain_for_strategy(
 
     let quorum_hashes: Vec<&QuorumHash> = quorums.keys().collect();
 
-    let current_quorum_hash = **quorum_hashes
+    let mut current_quorum_hash = **quorum_hashes
         .choose(&mut rng)
         .expect("expected quorums to be initialized");
 
@@ -1392,9 +1417,19 @@ pub(crate) fn start_chain_for_strategy(
 
     let transaction = binding.as_ref().expect("expected a transaction");
 
-    platform
+    let ResponseInitChain {
+        initial_core_height,
+        ..
+    } = platform
         .init_chain(init_chain_request, transaction)
         .expect("should init chain");
+
+    // initialization will change the current quorum hash
+    current_quorum_hash = platform
+        .state
+        .read()
+        .unwrap()
+        .current_validator_set_quorum_hash;
 
     platform.create_mn_shares_contract(Some(transaction));
 
@@ -1404,7 +1439,7 @@ pub(crate) fn start_chain_for_strategy(
         abci_application,
         ChainExecutionParameters {
             block_start: 1,
-            core_height_start: config.abci.genesis_core_height,
+            core_height_start: initial_core_height,
             block_count,
             proposers,
             quorums,
@@ -1456,7 +1491,7 @@ pub(crate) fn continue_chain_for_strategy(
             upgrading_info.apply_to_proposers(
                 proposers
                     .iter()
-                    .map(|masternode_list_item| masternode_list_item.protx_hash)
+                    .map(|masternode_list_item| masternode_list_item.pro_tx_hash)
                     .collect(),
                 blocks_per_epoch,
                 &mut rng,
@@ -1505,10 +1540,10 @@ pub(crate) fn continue_chain_for_strategy(
         if current_quorum_with_test_info.quorum_hash != current_quorum_hash {
             current_quorum_with_test_info = quorums.get(&current_quorum_hash).unwrap();
         }
-
-        if next_quorum_with_test_info.quorum_hash != next_quorum_hash {
-            next_quorum_with_test_info = quorums.get(&next_quorum_hash).unwrap();
-        }
+        //
+        // if next_quorum_with_test_info.quorum_hash != next_quorum_hash {
+        //     next_quorum_with_test_info = quorums.get(&next_quorum_hash).unwrap();
+        // }
 
         let proposer = current_quorum_with_test_info
             .validator_set
@@ -1541,11 +1576,13 @@ pub(crate) fn continue_chain_for_strategy(
             })
             .unwrap_or(1);
 
-        let mut withdrawals_this_block = abci_app
+        let MimicExecuteBlockOutcome {
+            withdrawal_transactions: mut withdrawals_this_block,
+            next_validator_set_hash,
+        } = abci_app
             .mimic_execute_block(
                 proposer.pro_tx_hash.into_inner(),
                 current_quorum_with_test_info,
-                next_quorum_with_test_info,
                 proposed_version,
                 proposer_count,
                 block_info,
@@ -1572,10 +1609,14 @@ pub(crate) fn continue_chain_for_strategy(
         signer.commit_block_keys();
 
         current_time_ms += config.block_spacing_ms;
-        i += 1;
-        i %= quorum_size;
-        if needs_rotation_on_next_block {
+
+        let next_quorum_hash = QuorumHash::from_inner(next_validator_set_hash.try_into().unwrap());
+        if current_quorum_hash != next_quorum_hash {
             current_quorum_hash = next_quorum_hash;
+            i = 0;
+        } else {
+            i += 1;
+            i %= quorum_size; //todo: this could be variable
         }
     }
 
@@ -1584,7 +1625,7 @@ pub(crate) fn continue_chain_for_strategy(
         .fetch_identities_balances(
             &proposers
                 .iter()
-                .map(|proposer| proposer.protx_hash.into_inner())
+                .map(|proposer| proposer.pro_tx_hash.into_inner())
                 .collect(),
             None,
         )
@@ -1619,9 +1660,12 @@ pub(crate) fn continue_chain_for_strategy(
 mod tests {
     use super::*;
     use crate::DocumentAction::DocumentActionReplace;
+
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::BlockHash;
-    use dashcore_rpc::dashcore_rpc_json::ExtendedQuorumDetails;
+    use dashcore_rpc::dashcore_rpc_json::{
+        Bip9SoftforkInfo, Bip9SoftforkStatus, ExtendedQuorumDetails,
+    };
     use drive::dpp::data_contract::extra::common::json_document_to_cbor;
     use drive::dpp::data_contract::DriveContractExt;
     use drive_abci::config::PlatformTestConfig;
@@ -1886,7 +1930,7 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99874449360)
+        assert_eq!(balance, 99873699460)
     }
 
     #[test]
@@ -2853,7 +2897,7 @@ mod tests {
                 })
             });
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
-        assert_eq!(outcome.identities.len() as u64, 371);
+        assert_eq!(outcome.identities.len() as u64, 449);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
@@ -2968,7 +3012,7 @@ mod tests {
                 })
             });
         let outcome = run_chain_for_strategy(&mut platform, block_count, strategy, config, 15);
-        assert_eq!(outcome.identities.len() as u64, 87);
+        assert_eq!(outcome.identities.len() as u64, 82);
         assert_eq!(outcome.masternode_identity_balances.len(), 100);
         let balance_count = outcome
             .masternode_identity_balances
@@ -3252,6 +3296,6 @@ mod tests {
         let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
 
         assert_eq!(outcome.identities.len(), 10);
-        assert_eq!(outcome.withdrawals.len(), 18);
+        assert_eq!(outcome.withdrawals.len(), 17);
     }
 }

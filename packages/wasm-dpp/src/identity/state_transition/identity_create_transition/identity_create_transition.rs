@@ -14,7 +14,6 @@ use crate::{
         ChainAssetLockProofWasm, InstantAssetLockProofWasm,
     },
     identity::state_transition::identity_public_key_transitions::IdentityPublicKeyWithWitnessWasm,
-    state_transition::StateTransitionExecutionContextWasm,
     with_js_error,
 };
 

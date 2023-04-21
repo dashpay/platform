@@ -203,13 +203,14 @@ impl Platform<MockCoreRPCLike> {
             validator_sets: Default::default(),
             full_masternode_list: Default::default(),
             hpmn_masternode_list: Default::default(),
+            initialization_information: None,
         };
 
         let core_height = new_state.core_height();
 
         let mut state_cache = self.state.write().unwrap();
         *state_cache = new_state;
-        self.update_quorum_info(&mut state_cache, core_height)?;
+        self.update_quorum_info(&mut state_cache, core_height, true)?;
         self.update_state_masternode_list(&mut state_cache, core_height, true)?;
         drop(state_cache);
 
@@ -299,6 +300,7 @@ impl<C> Platform<C> {
             validator_sets: Default::default(),
             full_masternode_list: Default::default(),
             hpmn_masternode_list: Default::default(),
+            initialization_information: None,
         };
 
         let core_height = state.core_height();
@@ -312,7 +314,7 @@ impl<C> Platform<C> {
         };
 
         let mut state_cache = platform.state.write().unwrap();
-        platform.update_quorum_info(&mut state_cache, core_height)?;
+        platform.update_quorum_info(&mut state_cache, core_height, true)?;
         platform.update_state_masternode_list(&mut state_cache, core_height, true)?;
         drop(state_cache);
 
@@ -339,6 +341,7 @@ impl<C> Platform<C> {
             validator_sets: Default::default(),
             full_masternode_list: Default::default(),
             hpmn_masternode_list: Default::default(),
+            initialization_information: None,
         };
 
         Ok(Platform {
