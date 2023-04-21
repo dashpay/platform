@@ -198,9 +198,6 @@ pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
         DPPConsensusError::ValueError(value_error) => {
             PlatformValueErrorWasm::new(value_error.clone()).into()
         }
-        DPPConsensusError::InvalidIdentityAssetLockProofChainLockValidationError(_) => todo!(),
-        #[cfg(test)]
-        DPPConsensusError::TestConsensusError(_) => todo!(),
         DPPConsensusError::DefaultError => panic!(), //not possible
         DPPConsensusError::InvalidIdentityAssetLockProofChainLockValidationError(e) => {
             InvalidIdentityAssetLockProofChainLockValidationErrorWasm::from(e).into()
