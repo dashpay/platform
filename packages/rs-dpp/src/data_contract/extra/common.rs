@@ -1,4 +1,5 @@
 use crate::data_contract::errors::StructureError;
+use crate::document::Document;
 use crate::util::cbor_value::cbor_value_into_json_value;
 use crate::util::serializer::serializable_value_to_cbor;
 use crate::ProtocolError;
@@ -277,6 +278,20 @@ pub fn json_document_to_cbor(
 ) -> Result<Vec<u8>, ProtocolError> {
     let json = json_document_to_value(path)?;
     serializable_value_to_cbor(&json, protocol_version)
+}
+
+/// Reads a JSON file and converts it a document.
+pub fn json_document_to_document(path: impl AsRef<Path>) -> Result<Document, ProtocolError> {
+    let file = File::open(path.as_ref()).map_err(|_| {
+        ProtocolError::FileNotFound(format!(
+            "file not found at path {}",
+            path.as_ref().to_str().unwrap()
+        ))
+    })?;
+
+    let reader = BufReader::new(file);
+    serde_json::from_reader(reader)
+        .map_err(|_| ProtocolError::DecodingError("error decoding value from document".to_string()))
 }
 
 /// Make sure the protocol version is correct.

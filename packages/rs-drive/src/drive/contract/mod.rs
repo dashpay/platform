@@ -113,6 +113,7 @@ use crate::fee::result::FeeResult;
 use crate::query::QueryResultEncoding;
 #[cfg(feature = "full")]
 use dpp::block::epoch::Epoch;
+use dpp::prelude::DataContract;
 
 #[cfg(feature = "full")]
 /// Adds operations to the op batch relevant to initializing the contract's structure.
@@ -914,8 +915,7 @@ impl Drive {
             Ok(Element::Item(stored_contract_bytes, element_flag)) => {
                 let contract = cost_return_on_error_no_add!(
                     &cost,
-                    <Contract as DriveContractExt>::from_cbor(&stored_contract_bytes, None,)
-                        .map_err(Error::Protocol)
+                    DataContract::deserialize(&stored_contract_bytes).map_err(Error::Protocol)
                 );
                 let drive_operation = CalculatedCostOperation(cost.clone());
                 let fee = if let Some(epoch) = epoch {
@@ -1156,8 +1156,8 @@ mod tests {
         let contract_cbor =
             json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
 
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("expected to deserialize the contract");
+        let contract =
+            Contract::from_cbor(&contract_cbor).expect("expected to deserialize the contract");
         drive
             .apply_contract_with_serialization(
                 &contract,
@@ -1185,8 +1185,8 @@ mod tests {
         // let's construct the grovedb structure for the dashpay data contract
         let contract_cbor =
             json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("expected to deserialize the contract");
+        let contract =
+            Contract::from_cbor(&contract_cbor).expect("expected to deserialize the contract");
         drive
             .apply_contract_with_serialization(
                 &contract,
@@ -1214,12 +1214,11 @@ mod tests {
         // let's construct the grovedb structure for the dashpay data contract
         let contract_cbor =
             json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("expected to deserialize the contract");
+        let contract =
+            Contract::from_cbor(&contract_cbor).expect("expected to deserialize the contract");
         drive
-            .apply_contract_with_serialization(
+            .apply_contract(
                 &contract,
-                contract_cbor.clone(),
                 BlockInfo::default(),
                 true,
                 StorageFlags::optional_default_as_cow(),
@@ -1364,8 +1363,8 @@ mod tests {
         // let's construct the grovedb structure for the dashpay data contract
         let contract_cbor =
             json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("expected to deserialize the contract");
+        let contract =
+            Contract::from_cbor(&contract_cbor).expect("expected to deserialize the contract");
         drive
             .apply_contract_with_serialization(
                 &contract,
@@ -1393,8 +1392,8 @@ mod tests {
         // let's construct the grovedb structure for the dashpay data contract
         let contract_cbor =
             json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("expected to deserialize the contract");
+        let contract =
+            Contract::from_cbor(&contract_cbor).expect("expected to deserialize the contract");
         drive
             .apply_contract_with_serialization(
                 &contract,
@@ -1421,8 +1420,8 @@ mod tests {
         // let's construct the grovedb structure for the dashpay data contract
         let contract_cbor =
             json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("expected to deserialize the contract");
+        let contract =
+            Contract::from_cbor(&contract_cbor).expect("expected to deserialize the contract");
 
         // Create a contract first
         drive
@@ -1545,12 +1544,9 @@ mod tests {
             for i in 0..150u8 {
                 ref_contract.id = Identifier::from([i; 32]);
 
-                let ref_contract_cbor = ref_contract.to_cbor().expect("should serialize contract");
-
                 drive
-                    .apply_contract_with_serialization(
+                    .apply_contract(
                         &ref_contract,
-                        ref_contract_cbor,
                         BlockInfo::default(),
                         true,
                         StorageFlags::optional_default_as_cow(),
@@ -1563,12 +1559,11 @@ mod tests {
             let contract_path = "tests/supporting_files/contract/deepNested/deep-nested10.json";
             let contract_cbor = json_document_to_cbor(contract_path, Some(1))
                 .expect("expected to get cbor document");
-            let deep_contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-                .expect("expected to deserialize the contract");
+            let deep_contract =
+                Contract::from_cbor(&contract_cbor).expect("expected to deserialize the contract");
             drive
-                .apply_contract_with_serialization(
+                .apply_contract(
                     &deep_contract,
-                    contract_cbor,
                     BlockInfo::default(),
                     true,
                     StorageFlags::optional_default_as_cow(),
@@ -1695,12 +1690,9 @@ mod tests {
             for i in 150..200u8 {
                 ref_contract.id = Identifier::from([i; 32]);
 
-                let ref_contract_cbor = ref_contract.to_cbor().expect("should serialize contract");
-
                 drive
-                    .apply_contract_with_serialization(
+                    .apply_contract(
                         &ref_contract,
-                        ref_contract_cbor,
                         BlockInfo::default(),
                         true,
                         StorageFlags::optional_default_as_cow(),

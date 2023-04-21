@@ -2301,8 +2301,8 @@ mod tests {
             Some(PROTOCOL_VERSION),
         )
         .expect("expected to get cbor from a json document");
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("contract should be deserialized");
+        let contract =
+            Contract::from_cbor(&contract_cbor).expect("contract should be deserialized");
 
         let strategy = Strategy {
             contracts_with_updates: vec![(contract, None)],
@@ -2374,8 +2374,8 @@ mod tests {
             Some(PROTOCOL_VERSION),
         )
         .expect("expected to get cbor from a json document");
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("contract should be deserialized");
+        let contract =
+            Contract::from_cbor(&contract_cbor).expect("contract should be deserialized");
 
         let contract_cbor_update_1 = json_document_to_cbor(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable-update-1.json",
@@ -2476,8 +2476,8 @@ mod tests {
             Some(PROTOCOL_VERSION),
         )
         .expect("expected to get cbor from a json document");
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("contract should be deserialized");
+        let contract =
+            Contract::from_cbor(&contract_cbor).expect("contract should be deserialized");
 
         let document_op = DocumentOp {
             contract: contract.clone(),
@@ -2544,8 +2544,8 @@ mod tests {
             Some(PROTOCOL_VERSION),
         )
         .expect("expected to get cbor from a json document");
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("contract should be deserialized");
+        let contract =
+            Contract::from_cbor(&contract_cbor).expect("contract should be deserialized");
 
         let document_op = DocumentOp {
             contract: contract.clone(),
@@ -2622,8 +2622,8 @@ mod tests {
             Some(PROTOCOL_VERSION),
         )
         .expect("expected to get cbor from a json document");
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("contract should be deserialized");
+        let contract =
+            Contract::from_cbor(&contract_cbor).expect("contract should be deserialized");
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
@@ -2718,8 +2718,8 @@ mod tests {
             Some(PROTOCOL_VERSION),
         )
         .expect("expected to get cbor from a json document");
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("contract should be deserialized");
+        let contract =
+            Contract::from_cbor(&contract_cbor).expect("contract should be deserialized");
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
@@ -2815,8 +2815,8 @@ mod tests {
             Some(PROTOCOL_VERSION),
         )
         .expect("expected to get cbor from a json document");
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("contract should be deserialized");
+        let contract =
+            Contract::from_cbor(&contract_cbor).expect("contract should be deserialized");
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
@@ -2914,8 +2914,8 @@ mod tests {
             Some(PROTOCOL_VERSION),
         )
         .expect("expected to get cbor from a json document");
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("contract should be deserialized");
+        let contract =
+            Contract::from_cbor(&contract_cbor).expect("contract should be deserialized");
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),

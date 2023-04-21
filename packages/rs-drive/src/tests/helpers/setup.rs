@@ -87,14 +87,7 @@ pub fn setup_system_data_contract(
     transaction: TransactionArg,
 ) {
     drive
-        .apply_contract_cbor(
-            data_contract.to_cbor().unwrap(),
-            Some(data_contract.id.to_buffer()),
-            BlockInfo::default(),
-            true,
-            None,
-            transaction,
-        )
+        .apply_contract(data_contract, BlockInfo::default(), true, None, transaction)
         .unwrap();
 }
 

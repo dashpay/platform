@@ -1540,8 +1540,8 @@ mod tests {
         // let's construct the grovedb structure for the dashpay data contract
         let contract_cbor =
             json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("expected to deserialize the contract");
+        let contract =
+            Contract::from_cbor(&contract_cbor).expect("expected to deserialize the contract");
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
         drive
@@ -1572,8 +1572,8 @@ mod tests {
         // let's construct the grovedb structure for the dashpay data contract
         let contract_cbor =
             json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("expected to deserialize the contract");
+        let contract =
+            Contract::from_cbor(&contract_cbor).expect("expected to deserialize the contract");
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
         drive
             .apply_contract_with_serialization(

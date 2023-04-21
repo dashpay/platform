@@ -816,7 +816,9 @@ mod tests {
     use crate::drive::document::tests::setup_dashpay;
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::DocumentAndContractInfo;
-    use crate::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
+    use crate::drive::object_size_info::DocumentInfo::{
+        DocumentRefAndSerialization, DocumentRefWithoutSerialization,
+    };
     use crate::drive::Drive;
     use crate::fee::credits::Creditable;
     use crate::fee::default_costs::EpochCosts;
@@ -1076,11 +1078,7 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefAndSerialization((
-                            &document,
-                            &person_serialized_document,
-                            storage_flags,
-                        )),
+                        document_info: DocumentRefWithoutSerialization((&document, storage_flags)),
                         owner_id: None,
                     },
                     contract: &contract,
@@ -1115,11 +1113,7 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefAndSerialization((
-                            &document,
-                            &person_serialized_document,
-                            storage_flags,
-                        )),
+                        document_info: DocumentRefWithoutSerialization((&document, storage_flags)),
                         owner_id: None,
                     },
                     contract: &contract,

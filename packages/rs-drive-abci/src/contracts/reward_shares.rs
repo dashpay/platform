@@ -96,8 +96,8 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
 
         let contract_cbor = hex::decode(contract_hex).expect("Decoding failed");
 
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("expected to deserialize the contract");
+        let contract =
+            Contract::from_cbor(&contract_cbor).expect("expected to deserialize the contract");
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 

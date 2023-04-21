@@ -212,7 +212,7 @@ mod tests {
 
     use super::*;
 
-    use dpp::data_contract::extra::common::json_document_to_cbor;
+    use dpp::data_contract::extra::common::{json_document_to_cbor, json_document_to_document};
     use dpp::data_contract::DriveContractExt;
     use dpp::document::Document;
     use dpp::util::serializer;
@@ -232,12 +232,15 @@ mod tests {
     use crate::drive::batch::drive_op_batch::document::{
         DocumentOperationsForContractDocumentType, UpdateOperationInfo,
     };
+    use crate::drive::batch::DocumentOperationType::AddDocumentForContract;
     use crate::drive::batch::DriveOperation::{ContractOperation, DocumentOperation};
     use crate::drive::config::DriveConfig;
     use crate::drive::contract::paths::contract_root_path;
     use crate::drive::flags::StorageFlags;
-    use crate::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
-    use crate::drive::object_size_info::OwnedDocumentInfo;
+    use crate::drive::object_size_info::DocumentInfo::{
+        DocumentRefAndSerialization, DocumentRefWithoutSerialization,
+    };
+    use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::drive::Drive;
 
     #[test]
@@ -257,8 +260,8 @@ mod tests {
             Some(crate::drive::defaults::PROTOCOL_VERSION),
         )
         .expect("expected to get cbor contract");
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("contract should be deserialized");
+        let contract =
+            Contract::from_cbor(&contract_cbor).expect("contract should be deserialized");
         let serialized_contract =
             DriveContractExt::to_cbor(&contract).expect("contract should be serialized");
 
@@ -350,8 +353,8 @@ mod tests {
             Some(crate::drive::defaults::PROTOCOL_VERSION),
         )
         .expect("expected to get cbor contract");
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("contract should be deserialized");
+        let contract =
+            Contract::from_cbor(&contract_cbor).expect("contract should be deserialized");
         let serialized_contract =
             DriveContractExt::to_cbor(&contract).expect("contract should be serialized");
 
@@ -365,36 +368,44 @@ mod tests {
             storage_flags: None,
         }));
 
-        let dashpay_cr_serialized_document = json_document_to_cbor(
+        let dashpay_cr_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
-            Some(1),
         )
         .expect("expected to get cbor contract");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
-        drive_operations.push(DocumentOperation(AddSerializedDocumentForContract {
-            serialized_document: dashpay_cr_serialized_document.as_slice(),
-            contract: &contract,
-            document_type_name: "contactRequest",
-            owner_id: Some(random_owner_id),
+        drive_operations.push(DocumentOperation(AddDocumentForContract {
+            document_and_contract_info: DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefWithoutSerialization((&dashpay_cr_document, None)),
+                    owner_id: Some(random_owner_id),
+                },
+                contract: &contract,
+                document_type: &contract
+                    .document_type_for_name("contactRequest")
+                    .expect("expected to get document type"),
+            },
             override_document: false,
-            storage_flags: StorageFlags::optional_default_as_cow(),
         }));
 
-        let dashpay_cr_serialized_document2 = json_document_to_cbor(
+        let dashpay_cr_1_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request1.json",
-            Some(1),
         )
         .expect("expected to get cbor contract");
 
-        drive_operations.push(DocumentOperation(AddSerializedDocumentForContract {
-            serialized_document: dashpay_cr_serialized_document2.as_slice(),
-            contract: &contract,
-            document_type_name: "contactRequest",
-            owner_id: Some(random_owner_id),
+        drive_operations.push(DocumentOperation(AddDocumentForContract {
+            document_and_contract_info: DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefWithoutSerialization((&dashpay_cr_1_document, None)),
+                    owner_id: Some(random_owner_id),
+                },
+                contract: &contract,
+                document_type: &contract
+                    .document_type_for_name("contactRequest")
+                    .expect("expected to get document type"),
+            },
             override_document: false,
-            storage_flags: StorageFlags::optional_default_as_cow(),
         }));
 
         drive
@@ -431,8 +442,8 @@ mod tests {
             Some(crate::drive::defaults::PROTOCOL_VERSION),
         )
         .expect("expected to get cbor contract");
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("contract should be deserialized");
+        let contract =
+            Contract::from_cbor(&contract_cbor).expect("contract should be deserialized");
         let serialized_contract =
             DriveContractExt::to_cbor(&contract).expect("contract should be serialized");
 

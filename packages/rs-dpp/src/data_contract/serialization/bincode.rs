@@ -25,7 +25,17 @@ impl DataContract {
     }
 
     pub fn deserialize(bytes: &[u8]) -> Result<Self, ProtocolError> {
-        let config = config::standard().with_big_endian().with_limit::<15000>();
+        let config = config::standard().with_big_endian();
+        let inner: DataContractInner = bincode::decode_from_slice(bytes, config)
+            .map_err(|e| {
+                ProtocolError::EncodingError(format!("unable to deserialize data contract {}", e))
+            })
+            .map(|(a, _)| a)?;
+        inner.try_into()
+    }
+
+    pub fn deserialize_with_limit(bytes: &[u8]) -> Result<Self, ProtocolError> {
+        let config = config::standard().with_big_endian().with_limit::<20000>();
         let inner: DataContractInner = bincode::decode_from_slice(bytes, config)
             .map_err(|e| {
                 ProtocolError::EncodingError(format!("unable to deserialize data contract {}", e))
