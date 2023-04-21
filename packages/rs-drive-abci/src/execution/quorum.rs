@@ -183,10 +183,21 @@ impl Validator {
         let DMNState {
             service,
             platform_node_id,
-            pose_ban_height, /*platform_p2p_port, platform_http_port,*/
+            pose_ban_height,
+            platform_p2p_port,
+            platform_http_port,
             ..
         } = state;
-        //pose_ban_height?;
+        if pose_ban_height.is_none() {
+            // if we are banned then we remove the validator from the list
+            return None;
+        };
+        let Some(platform_http_port) = platform_http_port else {
+            return None;
+        };
+        let Some(platform_p2p_port) = platform_p2p_port else {
+            return None;
+        };
         let platform_node_id = platform_node_id.clone()?;
         Some(Validator {
             pro_tx_hash,
@@ -194,8 +205,8 @@ impl Validator {
             node_ip: service.ip().to_string(),
             node_id: PubkeyHash::from_inner(platform_node_id),
             core_port: service.port(),
-            platform_http_port: 0,
-            platform_p2p_port: 0,
+            platform_http_port: *platform_http_port as u16,
+            platform_p2p_port: *platform_p2p_port as u16,
         })
     }
 }

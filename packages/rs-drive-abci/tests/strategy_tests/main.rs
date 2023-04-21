@@ -1021,9 +1021,10 @@ pub fn generate_test_masternodes(
             .expect("expected to get public key")
             .to_bytes()
             .to_vec();
+        let pro_tx_hash = ProTxHash::from_inner(rng.gen::<[u8; 32]>());
         let masternode_list_item = MasternodeListItem {
             node_type: MasternodeType::Regular,
-            protx_hash: ProTxHash::from_inner(rng.gen::<[u8; 32]>()),
+            protx_hash: pro_tx_hash,
             collateral_hash: rng.gen::<[u8; 32]>(),
             collateral_index: 0,
             operator_reward: 0,
@@ -1032,7 +1033,7 @@ pub fn generate_test_masternodes(
                     .unwrap(),
                 registered_height: 0,
                 pose_revived_height: 0,
-                pose_ban_height: 0,
+                pose_ban_height: None,
                 revocation_reason: 0,
                 owner_address: rng.gen::<[u8; 20]>(),
                 voting_address: rng.gen::<[u8; 20]>(),
@@ -1040,6 +1041,8 @@ pub fn generate_test_masternodes(
                 pub_key_operator,
                 operator_payout_address: None,
                 platform_node_id: None,
+                platform_p2p_port: None,
+                platform_http_port: None,
             },
         };
         masternodes.push(masternode_list_item);
@@ -1064,7 +1067,7 @@ pub fn generate_test_masternodes(
                     .unwrap(),
                 registered_height: 0,
                 pose_revived_height: 0,
-                pose_ban_height: 0,
+                pose_ban_height: None,
                 revocation_reason: 0,
                 owner_address: rng.gen::<[u8; 20]>(),
                 voting_address: rng.gen::<[u8; 20]>(),
@@ -1072,6 +1075,8 @@ pub fn generate_test_masternodes(
                 pub_key_operator,
                 operator_payout_address: None,
                 platform_node_id: Some(rng.gen::<[u8; 20]>()),
+                platform_p2p_port: Some(3010),
+                platform_http_port: Some(8080),
             },
         };
         masternodes.push(masternode_list_item);
@@ -1169,7 +1174,7 @@ pub(crate) fn run_chain_for_strategy(
         .core_rpc
         .expect_get_quorum_listextended()
         .returning(move |_| {
-            Ok(dashcore_rpc::dashcore_rpc_json::QuorumListResult {
+            Ok(dashcore_rpc::dashcore_rpc_json::ExtendedQuorumListResult {
                 quorums_by_type: HashMap::from([(QuorumType::Llmq100_67, quorums_clone.clone())]),
             })
         });
