@@ -119,7 +119,7 @@ where
                 let quorum_info_result =
                     self.core_rpc
                         .get_quorum_info(self.config.quorum_type(), key, None)?;
-                let quorum: Quorum = quorum_info_result.try_into()?;
+                let quorum = Quorum::try_from_info_result(quorum_info_result, state)?;
                 Ok((*key, quorum))
             })
             .collect::<Result<Vec<_>, Error>>()?;
@@ -240,7 +240,7 @@ where
     ///
     /// * `Result<(), Error>` - Returns `Ok(())` if the update is successful. Returns an error if
     ///   there is a problem fetching the masternode list difference or updating the state.
-    pub(crate) fn update_masternode_list(
+    fn update_masternode_list(
         &self,
         state: &mut PlatformState,
         core_block_height: u32,
@@ -275,5 +275,42 @@ where
         }
 
         Ok(())
+    }
+
+    /// Updates the core information in the platform state based on the given core block height.
+    ///
+    /// This function updates both the masternode list and the quorum information in the platform
+    /// state. It calls the update_masternode_list and update_quorum_info functions to perform
+    /// the respective updates.
+    ///
+    /// # Arguments
+    ///
+    /// * state - A mutable reference to the platform state to be updated.
+    /// * core_block_height - The current block height in the Dash Core.
+    /// * is_init_chain - A boolean indicating if the chain is being initialized.
+    /// * block_info - A reference to the block information.
+    /// * transaction - The current groveDB transaction.
+    ///
+    /// # Returns
+    ///
+    /// * Result<(), Error> - Returns Ok(()) if the update is successful. Returns an error if
+    /// there is a problem updating the masternode list, quorum information, or the state.
+    pub(crate) fn update_core_info(
+        &self,
+        state: &mut PlatformState,
+        core_block_height: u32,
+        is_init_chain: bool,
+        block_info: &BlockInfo,
+        transaction: &Transaction,
+    ) -> Result<(), Error> {
+        self.update_masternode_list(
+            state,
+            core_block_height,
+            is_init_chain,
+            block_info,
+            transaction,
+        )?;
+
+        self.update_quorum_info(state, core_block_height, false)
     }
 }

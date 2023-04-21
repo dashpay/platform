@@ -1,6 +1,6 @@
-use crate::execution::quorum::{Quorum, ValidatorWithPublicKeyShare};
+use crate::execution::quorum::{Quorum, Validator};
 use dashcore::hashes::Hash;
-use dashcore::{ProTxHash, QuorumHash};
+use dashcore::{ProTxHash, PubkeyHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{QuorumInfoResult, QuorumMember, QuorumType};
 use dpp::bls_signatures;
 use dpp::bls_signatures::{PrivateKey as BlsPrivateKey, PublicKey as BlsPublicKey};
@@ -19,39 +19,62 @@ pub struct ValidatorInQuorum {
     pub private_key: BlsPrivateKey,
     /// The public key for this validator's BLS signature scheme.
     pub public_key: BlsPublicKey,
-    /// node_address is an URI containing address of validator (proto://node_id@ip_address:port),
-    /// for example: tcp://f2dbd9b0a1f541a7c44d34a58674d0262f5feca5@12.34.5.6:1234
-    pub node_address: String,
+    /// The node address
+    pub node_ip: String,
+    /// The node id
+    pub node_id: PubkeyHash,
+    /// Core port
+    pub core_port: u16,
+    /// Http port
+    pub platform_http_port: u16,
+    /// Tenderdash port
+    pub platform_p2p_port: u16,
 }
 
-impl From<&ValidatorInQuorum> for ValidatorWithPublicKeyShare {
+impl From<&ValidatorInQuorum> for Validator {
     fn from(value: &ValidatorInQuorum) -> Self {
         let ValidatorInQuorum {
             pro_tx_hash,
             public_key,
-            node_address,
+            node_ip,
+            node_id,
+            core_port,
+            platform_http_port,
+            platform_p2p_port,
             ..
         } = value;
-        ValidatorWithPublicKeyShare {
+        Validator {
             pro_tx_hash: *pro_tx_hash,
             public_key: public_key.clone(),
-            node_address: node_address.clone(),
+            node_ip: node_ip.to_string(),
+            node_id: node_id.clone(),
+            core_port: *core_port,
+            platform_http_port: *platform_http_port,
+            platform_p2p_port: *platform_p2p_port,
         }
     }
 }
 
-impl From<ValidatorInQuorum> for ValidatorWithPublicKeyShare {
+impl From<ValidatorInQuorum> for Validator {
     fn from(value: ValidatorInQuorum) -> Self {
         let ValidatorInQuorum {
             pro_tx_hash,
             public_key,
-            node_address,
+            node_ip,
+            node_id,
+            core_port,
+            platform_http_port,
+            platform_p2p_port,
             ..
         } = value;
-        ValidatorWithPublicKeyShare {
+        Validator {
             pro_tx_hash,
             public_key,
-            node_address,
+            node_ip,
+            node_id,
+            core_port,
+            platform_http_port,
+            platform_p2p_port,
         }
     }
 }
@@ -121,7 +144,11 @@ impl TestQuorumInfo {
                         .expect("expected 32 bytes for pro_tx_hash"),
                     private_key: key,
                     public_key,
-                    node_address: random_socket_addr(rng).to_string(),
+                    node_ip: random_socket_addr(rng).to_string(),
+                    node_id: PubkeyHash::from_slice(pro_tx_hash.split_at(20).0).unwrap(),
+                    core_port: 1,
+                    platform_http_port: 2,
+                    platform_p2p_port: 3,
                 }
             })
             .collect();

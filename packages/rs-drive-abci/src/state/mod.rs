@@ -35,7 +35,7 @@ pub struct PlatformState {
     /// current full masternode list
     pub full_masternode_list: BTreeMap<ProTxHash, MasternodeListItem>,
 
-    /// current hpmn masternode list
+    /// current HPMN masternode list
     pub hpmn_masternode_list: BTreeMap<ProTxHash, MasternodeListItem>,
 
     /// if we initialized the chain this block

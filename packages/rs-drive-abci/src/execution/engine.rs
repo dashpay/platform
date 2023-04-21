@@ -291,15 +291,8 @@ where
         );
 
         if !is_initialization {
-            // Update the active quorums
-            self.update_quorum_info(
-                &mut block_platform_state,
-                block_proposal.core_chain_locked_height,
-                false,
-            )?;
-
-            // Update the masternode list and create masternode identities
-            self.update_masternode_list(
+            // Update the masternode list and create masternode identities and also update the active quorums
+            self.update_core_info(
                 &mut block_platform_state,
                 block_proposal.core_chain_locked_height,
                 false,
