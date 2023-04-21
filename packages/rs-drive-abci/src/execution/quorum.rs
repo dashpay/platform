@@ -41,12 +41,17 @@ impl TryFrom<QuorumInfoResult> for Quorum {
 
             Ok((quorum_member.pro_tx_hash, validator))
         }).collect::<Result<BTreeMap<ProTxHash, ValidatorWithPublicKeyShare>, Error>>()?;
+        tracing::trace!("public key share: {}", hex::encode(&quorum_public_key));
+        // TODO: this hex-decode should not be needed, figure out why we have it here
+        let quorum_public_key = hex::decode(quorum_public_key).expect("pub key is not hex-encoded");
+        let public_key = BlsPublicKey::from_bytes(&quorum_public_key)
+            .map_err(ExecutionError::BlsErrorFromDashCoreResponse)?;
+        tracing::trace!("public key decoded successfully");
 
         Ok(Quorum {
             quorum_hash,
             validator_set,
-            threshold_public_key: BlsPublicKey::from_bytes(quorum_public_key.as_slice())
-                .map_err(ExecutionError::BlsErrorFromDashCoreResponse)?,
+            threshold_public_key: public_key,
         })
     }
 }

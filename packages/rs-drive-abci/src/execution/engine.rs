@@ -538,7 +538,7 @@ where
             )?
             .quorum_public_key;
 
-        bls_signatures::PublicKey::from_bytes(public_key.as_slice())
+        bls_signatures::PublicKey::from_bytes(&public_key)
             .map_err(|e| Error::Execution(ExecutionError::BlsErrorFromDashCoreResponse(e)))
     }
 

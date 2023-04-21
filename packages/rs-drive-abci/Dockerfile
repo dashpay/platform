@@ -72,14 +72,14 @@ RUN curl -Ls \
         /opt/emsdk/emsdk install latest && \
         /opt/emsdk/emsdk activate latest
 
+
+# Switch to clang
+RUN rm /usr/bin/cc && ln -s /usr/bin/clang /usr/bin/cc
+
 #
 # EXECUTE BUILD
 #
 FROM deps as build
-
-WORKDIR /usr/src/dash-platform
-
-COPY . .
 
 #
 # Configure sccache
@@ -111,8 +111,10 @@ ARG CARGO_BUILD_PROFILE=dev
 # SCCACHE_SERVER_PORT port to avoid conflicts in case of parallel compilation
 # 5. We also set RUSTC to include exact toolchain name in compilation command, and
 # include this in cache key
-# 6. We build `dashcore-rpc` first, as arm64 builder on github hangs if we don't do this.
-RUN rm /usr/bin/cc && ln -s /usr/bin/clang /usr/bin/cc
+
+WORKDIR /usr/src/dash-platform
+
+COPY . .
 
 RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
@@ -248,6 +250,7 @@ RUN addgroup -g $USER_GID $USERNAME && \
 
 USER $USERNAME
 
+ENV RUST_BACKTRACE=1
 WORKDIR /var/lib/dash/rs-drive-abci
 ENTRYPOINT ["/usr/bin/drive-abci"]
 CMD ["-vv", "start"]
