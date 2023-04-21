@@ -122,6 +122,7 @@ class DockerCompose {
    *
    * @param {Object} envs
    * @param {string} [serviceName]
+   * @param {Array} [options]
    * @return {Observable<{string}>}
    */
   // eslint-disable-next-line no-unused-vars
@@ -144,6 +145,7 @@ class DockerCompose {
           await dockerCompose.buildAll({
             ...this.getOptions(envs),
             callback,
+            commandOptions: options,
           });
         }
 
@@ -349,7 +351,6 @@ class DockerCompose {
   }
 
   /**
-   * @private
    * @return {Promise<void>}
    */
   async throwErrorIfNotInstalled() {
@@ -359,9 +360,12 @@ class DockerCompose {
 
     this.isDockerSetupVerified = true;
 
+    const dockerComposeInstallLink = 'https://docs.docker.com/compose/install/';
+    const dockerInstallLink = 'https://docs.docker.com/engine/install/';
+
     // Check docker
     if (!hasbin.sync('docker')) {
-      throw new Error('Docker is not installed');
+      throw new Error(`Docker is not installed. Please follow instructions ${dockerInstallLink}`);
     }
 
     const dockerVersion = await new Promise((resolve, reject) => {
@@ -375,7 +379,7 @@ class DockerCompose {
     });
 
     if (semver.lt(dockerVersion.trim(), DockerCompose.DOCKER_MIN_VERSION)) {
-      throw new Error(`Update Docker to version ${DockerCompose.DOCKER_MIN_VERSION} or higher`);
+      throw new Error(`Update Docker to version ${DockerCompose.DOCKER_MIN_VERSION} or higher. Please follow instructions ${dockerInstallLink}`);
     }
 
     let version;
@@ -384,11 +388,11 @@ class DockerCompose {
     try {
       ({ out: version } = await dockerCompose.version());
     } catch (e) {
-      throw new Error('Docker Compose V2 is not available in your system');
+      throw new Error(`Docker Compose V2 is not available in your system. Please follow instructions ${dockerComposeInstallLink}`);
     }
 
     if (semver.lt(version.trim(), DockerCompose.DOCKER_COMPOSE_MIN_VERSION)) {
-      throw new Error(`Update Docker Compose to version ${DockerCompose.DOCKER_COMPOSE_MIN_VERSION} or higher`);
+      throw new Error(`Update Docker Compose to version ${DockerCompose.DOCKER_COMPOSE_MIN_VERSION} or higher. Please follow instructions ${dockerComposeInstallLink}`);
     }
   }
 

@@ -262,15 +262,5 @@ module.exports = async function getDataContractFixture(ownerId = randomOwnerId) 
     entropyGenerator,
   );
 
-  // TODO: Identifier/buffer issue - hidden Identifier bug.
-  //  Without toBuffer() it results on Identifier filled with zeroes
-  const dataContract = factory.create(ownerId.toBuffer(), documents);
-
-  // dataContract.setDefinitions({
-  //   lastName: {
-  //     type: 'string',
-  //   },
-  // });
-
-  return dataContract;
+  return factory.create(ownerId, documents);
 };

@@ -189,6 +189,7 @@ describe('DataContract', () => {
 
       expect(anotherDocuments).to.have.property(anotherType);
       expect(anotherDocuments[anotherType]).to.deep.equal(anotherDefinition);
+      expect(dataContract.isDocumentDefined(anotherType)).to.be.true();
     });
   });
 

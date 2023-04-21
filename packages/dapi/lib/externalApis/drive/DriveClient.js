@@ -54,7 +54,7 @@ class DriveClient {
       return Buffer.from(response.value, 'base64');
     }
 
-    throw createGrpcErrorFromDriveResponse(response.code, response.info);
+    throw await createGrpcErrorFromDriveResponse(response.code, response.info);
   }
 
   /**

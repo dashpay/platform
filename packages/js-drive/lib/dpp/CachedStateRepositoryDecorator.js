@@ -219,6 +219,20 @@ class CachedStateRepositoryDecorator {
   }
 
   /**
+   * Fetch Extended Documents by contract ID and type
+   *
+   * @param {Identifier} contractId
+   * @param {string} type
+   * @param {{ where: Object }} [options]
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<ExtendedDocument[]>}
+   */
+  async fetchExtendedDocuments(contractId, type, options = {}, executionContext = undefined) {
+    return this.stateRepository.fetchExtendedDocuments(contractId, type, options, executionContext);
+  }
+
+  /**
    * Create document
    *
    * @param {Document} document
@@ -338,6 +352,16 @@ class CachedStateRepositoryDecorator {
    */
   async fetchLatestPlatformBlockTime() {
     return this.stateRepository.fetchLatestPlatformBlockTime();
+  }
+
+  /**
+   * Verifies that a given masternode id is in the current valid masternode list
+   *
+   * @param {Buffer} masternodeId
+   * @returns {Promise<boolean>}
+   */
+  async isInTheValidMasterNodesList(masternodeId) {
+    return this.stateRepository.isInTheValidMasterNodesList(masternodeId);
   }
 }
 

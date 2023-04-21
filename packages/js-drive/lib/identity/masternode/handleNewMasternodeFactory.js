@@ -1,7 +1,6 @@
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const Address = require('@dashevo/dashcore-lib/lib/address');
 const Script = require('@dashevo/dashcore-lib/lib/script');
+const { KeyType, Identifier } = require('@dashevo/wasm-dpp');
 const createOperatorIdentifier = require('./createOperatorIdentifier');
 const createVotingIdentifier = require('./createVotingIdentifier');
 
@@ -56,7 +55,7 @@ function handleNewMasternodeFactory(
         blockInfo,
         masternodeIdentifier,
         ownerPublicKeyHash,
-        IdentityPublicKey.TYPES.ECDSA_HASH160,
+        KeyType.ECDSA_HASH160,
         payoutScript,
       ),
     );
@@ -79,7 +78,7 @@ function handleNewMasternodeFactory(
           blockInfo,
           operatorIdentifier,
           operatorPubKey,
-          IdentityPublicKey.TYPES.BLS12_381,
+          KeyType.BLS12_381,
           operatorPayoutScript,
         ),
       );
@@ -110,7 +109,7 @@ function handleNewMasternodeFactory(
           blockInfo,
           votingIdentifier,
           votingPubKeyHash,
-          IdentityPublicKey.TYPES.ECDSA_HASH160,
+          KeyType.ECDSA_HASH160,
         ),
       );
     }

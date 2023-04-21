@@ -31,6 +31,7 @@ jobs:
   js-checks:
     name: JS
     uses: ./.github/workflows/js-checks.yml
+    secrets: inherit
     with:
       package: 'dash'
       start-local-network: true

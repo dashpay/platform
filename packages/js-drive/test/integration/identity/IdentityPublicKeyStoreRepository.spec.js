@@ -1,7 +1,9 @@
 const fs = require('fs');
+const { PrivateKey } = require('@dashevo/dashcore-lib');
 const Drive = require('@dashevo/rs-drive');
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
-const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
+const { IdentityPublicKey, decodeProtocolEntity } = require('@dashevo/wasm-dpp');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
+
 const IdentityPublicKeyStoreRepository = require('../../../lib/identity/IdentityPublicKeyStoreRepository');
 const GroveDBStore = require('../../../lib/storage/GroveDBStore');
 const logger = require('../../../lib/util/noopLogger');
@@ -36,13 +38,13 @@ describe('IdentityPublicKeyStoreRepository', () => {
 
     await rsDrive.createInitialStateStructure();
 
-    const decodeProtocolEntity = decodeProtocolEntityFactory();
-
     identityRepository = new IdentityStoreRepository(store, decodeProtocolEntity);
 
-    publicKeyRepository = new IdentityPublicKeyStoreRepository(store, decodeProtocolEntity);
+    publicKeyRepository = new IdentityPublicKeyStoreRepository(
+      store, decodeProtocolEntity,
+    );
 
-    identity = getIdentityFixture();
+    identity = await getIdentityFixture();
 
     blockInfo = new BlockInfo(1, 1, Date.now());
   });
@@ -59,9 +61,20 @@ describe('IdentityPublicKeyStoreRepository', () => {
 
       await identityRepository.create(identity, blockInfo);
 
+      const privateKey = new PrivateKey();
+      const publicKeyData = privateKey.toPublicKey().toBuffer();
+
+      const pk = {
+        ...publicKey.toObject(),
+        id: 12,
+        data: publicKeyData,
+      };
+
       const result = await publicKeyRepository.add(
         identity.getId(),
-        [publicKey],
+        [
+          pk,
+        ],
         blockInfo,
       );
 
@@ -72,7 +85,12 @@ describe('IdentityPublicKeyStoreRepository', () => {
 
       const fetchedIdentity = fetchedIdentityResult.getValue();
 
-      identity.getPublicKeys().push(publicKey);
+      const newPublicKeys = [
+        ...identity.getPublicKeys(),
+        new IdentityPublicKey(pk),
+      ];
+
+      identity.setPublicKeys(newPublicKeys);
 
       expect(fetchedIdentity.toObject()).to.deep.equals(identity.toObject());
     });
@@ -84,9 +102,20 @@ describe('IdentityPublicKeyStoreRepository', () => {
 
       await store.startTransaction();
 
+      const privateKey = new PrivateKey();
+      const publicKeyData = privateKey.toPublicKey().toBuffer();
+
+      const pk = {
+        ...publicKey.toObject(),
+        id: 12,
+        data: publicKeyData,
+      };
+
       await publicKeyRepository.add(
         identity.getId(),
-        [publicKey],
+        [
+          pk,
+        ],
         blockInfo,
         { useTransaction: true },
       );
@@ -103,7 +132,12 @@ describe('IdentityPublicKeyStoreRepository', () => {
 
       const transactionalIdentity = transactionalIdentityResult.getValue();
 
-      identity.getPublicKeys().push(publicKey);
+      const newPublicKeys = [
+        ...identity.getPublicKeys(),
+        new IdentityPublicKey(pk),
+      ];
+
+      identity.setPublicKeys(newPublicKeys);
 
       expect(transactionalIdentity.toObject()).to.deep.equals(identity.toObject());
 
@@ -121,10 +155,12 @@ describe('IdentityPublicKeyStoreRepository', () => {
     it('should disable public keys in identity', async () => {
       await identityRepository.create(identity, blockInfo);
 
+      const disabledAt = Date.now();
+
       const result = await publicKeyRepository.disable(
         identity.getId(),
         [0, 1],
-        Date.now(),
+        disabledAt,
         blockInfo,
       );
 
@@ -135,7 +171,9 @@ describe('IdentityPublicKeyStoreRepository', () => {
 
       const fetchedIdentity = fetchedIdentityResult.getValue();
 
-      expect(fetchedIdentity.toObject()).to.not.deep.equals(identity.toObject());
+      fetchedIdentity.getPublicKeys().forEach((pk) => {
+        expect(pk.toObject().disabledAt).to.equal(disabledAt);
+      });
     });
 
     it('should store public key to identities using transaction', async () => {
@@ -143,10 +181,12 @@ describe('IdentityPublicKeyStoreRepository', () => {
 
       await store.startTransaction();
 
+      const disabledAt = Date.now();
+
       await publicKeyRepository.disable(
         identity.getId(),
         [0, 1],
-        Date.now(),
+        disabledAt,
         blockInfo,
         { useTransaction: true },
       );
@@ -163,7 +203,9 @@ describe('IdentityPublicKeyStoreRepository', () => {
 
       const transactionalIdentity = transactionalIdentityResult.getValue();
 
-      expect(transactionalIdentity.toObject()).to.not.deep.equals(identity.toObject());
+      transactionalIdentity.getPublicKeys().forEach((pk) => {
+        expect(pk.toObject().disabledAt).to.equal(disabledAt);
+      });
 
       await store.commitTransaction();
 
@@ -171,7 +213,9 @@ describe('IdentityPublicKeyStoreRepository', () => {
 
       const committedIdentity = committedIdentityResult.getValue();
 
-      expect(committedIdentity.toObject()).to.not.deep.equals(identity.toObject());
+      committedIdentity.getPublicKeys().forEach((pk) => {
+        expect(pk.toObject().disabledAt).to.equal(disabledAt);
+      });
     });
   });
 });

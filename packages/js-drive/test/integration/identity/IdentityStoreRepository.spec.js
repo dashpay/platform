@@ -1,10 +1,10 @@
 const fs = require('fs');
 const Drive = require('@dashevo/rs-drive');
-const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
-const Identity = require('@dashevo/dpp/lib/identity/Identity');
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+
+const { Identity, IdentityPublicKey, decodeProtocolEntity } = require('@dashevo/wasm-dpp');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
+const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
+
 const GroveDBStore = require('../../../lib/storage/GroveDBStore');
 const IdentityStoreRepository = require('../../../lib/identity/IdentityStoreRepository');
 const logger = require('../../../lib/util/noopLogger');
@@ -15,7 +15,6 @@ describe('IdentityStoreRepository', () => {
   let rsDrive;
   let store;
   let repository;
-  let decodeProtocolEntity;
   let identity;
   let blockInfo;
   let publicKeyHashes;
@@ -39,10 +38,8 @@ describe('IdentityStoreRepository', () => {
 
     store = new GroveDBStore(rsDrive, logger);
 
-    decodeProtocolEntity = decodeProtocolEntityFactory();
-
     repository = new IdentityStoreRepository(store, decodeProtocolEntity);
-    identity = getIdentityFixture();
+    identity = await getIdentityFixture();
 
     blockInfo = new BlockInfo(1, 1, Date.now());
 
@@ -299,7 +296,7 @@ describe('IdentityStoreRepository', () => {
         const fetchedIdentity = fetchedIdentities[i];
 
         expect(fetchedIdentity).to.be.instanceOf(Identity);
-        expect(fetchedIdentity).to.deep.equal(identity.toObject());
+        expect(fetchedIdentity).to.deep.equals(identity);
       }
     });
   });
@@ -451,7 +448,7 @@ describe('IdentityStoreRepository', () => {
 
       identity2 = new Identity({
         protocolVersion: 1,
-        id: generateRandomIdentifier().toBuffer(),
+        id: (await generateRandomIdentifier()).toBuffer(),
         publicKeys: [
           {
             id: 0,

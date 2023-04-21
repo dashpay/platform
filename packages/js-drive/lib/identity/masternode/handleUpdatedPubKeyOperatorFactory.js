@@ -1,7 +1,6 @@
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const Address = require('@dashevo/dashcore-lib/lib/address');
 const Script = require('@dashevo/dashcore-lib/lib/script');
+const { KeyType, Identifier } = require('@dashevo/wasm-dpp');
 const createOperatorIdentifier = require('./createOperatorIdentifier');
 
 /**
@@ -77,7 +76,7 @@ function handleUpdatedPubKeyOperatorFactory(
           blockInfo,
           operatorIdentifier,
           operatorPublicKey,
-          IdentityPublicKey.TYPES.BLS12_381,
+          KeyType.BLS12_381,
           operatorPayoutPubKey,
         ),
       );

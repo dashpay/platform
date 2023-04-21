@@ -55,7 +55,13 @@ pub trait StateRepositoryLike: Sync {
     ) -> AnyResult<Option<Self::FetchDataContract>>;
 
     /// Store Data Contract
-    async fn store_data_contract<'a>(
+    async fn create_data_contract<'a>(
+        &self,
+        data_contract: DataContract,
+        execution_context: Option<&'a StateTransitionExecutionContext>,
+    ) -> AnyResult<()>;
+
+    async fn update_data_contract<'a>(
         &self,
         data_contract: DataContract,
         execution_context: Option<&'a StateTransitionExecutionContext>,
@@ -224,6 +230,12 @@ pub trait StateRepositoryLike: Sync {
     async fn fetch_sml_store<T>(&self) -> AnyResult<T>
     where
         T: for<'de> serde::de::Deserialize<'de> + 'static;
+
+    /// Check if AssetLock Transaction outPoint exists in spent list
+    async fn is_in_the_valid_master_nodes_list(
+        &self,
+        out_point_buffer: [u8; 32],
+    ) -> AnyResult<bool>;
 
     // Get latest (in a queue) withdrawal transaction index
     async fn fetch_latest_withdrawal_transaction_index(&self) -> AnyResult<u64>;

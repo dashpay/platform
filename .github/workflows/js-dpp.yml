@@ -25,6 +25,7 @@ jobs:
   js-dpp-tests:
     name: JS
     uses: ./.github/workflows/js-checks.yml
+    secrets: inherit
     with:
       package: '@dashevo/dpp'
       install-browsers: true

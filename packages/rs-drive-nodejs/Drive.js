@@ -1,9 +1,9 @@
 const { promisify } = require('util');
 const cbor = require('cbor');
-const Document = require('@dashevo/dpp/lib/document/Document');
-const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
-const Identity = require('@dashevo/dpp/lib/identity/Identity');
-const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
+
+const {
+  Document, ExtendedDocument, decodeProtocolEntity, Identity, DataContract,
+} = require('@dashevo/wasm-dpp');
 
 // This file is crated when run `npm run build`. The actual source file that
 // exports those functions is ./src/lib.rs
@@ -50,8 +50,6 @@ const GroveDB = require('./GroveDB');
 const FeeResult = require('./FeeResult');
 
 const { appendStackAsync, appendStack } = require('./appendStack');
-
-const decodeProtocolEntity = decodeProtocolEntityFactory();
 
 // Convert the Drive methods from using callbacks to returning promises
 const driveCloseAsync = appendStackAsync(promisify(driveClose));
@@ -156,7 +154,7 @@ class Drive {
   async fetchContract(id, epochIndex = undefined, useTransaction = false) {
     return driveFetchContractAsync.call(
       this.drive,
-      Buffer.from(id),
+      id,
       epochIndex,
       useTransaction,
     ).then(([encodedDataContract, innerFeeResult]) => {
@@ -230,9 +228,9 @@ class Drive {
     return driveCreateDocumentAsync.call(
       this.drive,
       document.toBuffer(),
-      document.getDataContractId().toBuffer(),
+      document.getDataContractId(),
       document.getType(),
-      document.getOwnerId().toBuffer(),
+      document.getOwnerId(),
       true,
       blockInfo,
       !dryRun,
@@ -252,9 +250,9 @@ class Drive {
     return driveUpdateDocumentAsync.call(
       this.drive,
       document.toBuffer(),
-      document.getDataContractId().toBuffer(),
+      document.getDataContractId(),
       document.getType(),
-      document.getOwnerId().toBuffer(),
+      document.getOwnerId(),
       blockInfo,
       !dryRun,
       useTransaction,
@@ -281,8 +279,8 @@ class Drive {
   ) {
     return driveDeleteDocumentAsync.call(
       this.drive,
-      documentId.toBuffer(),
-      dataContractId.toBuffer(),
+      documentId,
+      dataContractId,
       documentType,
       blockInfo,
       !dryRun,
@@ -302,6 +300,7 @@ class Drive {
    * @param [query.startAfter]
    * @param [query.orderBy]
    * @param {boolean} [useTransaction=false]
+   * @param {boolean} [extended=false]
    *
    * @returns {Promise<[Document[], number]>}
    */
@@ -311,24 +310,26 @@ class Drive {
     epochIndex = undefined,
     query = {},
     useTransaction = false,
+    extended = false,
   ) {
     const encodedQuery = await cbor.encodeAsync(query);
 
     const [encodedDocuments, , processingFee] = await driveQueryDocumentsAsync.call(
       this.drive,
       encodedQuery,
-      dataContract.getId().toBuffer(),
+      dataContract.getId(),
       documentType,
       epochIndex,
       useTransaction,
     );
-
     const documents = encodedDocuments.map((encodedDocument) => {
       const [protocolVersion, rawDocument] = decodeProtocolEntity(encodedDocument);
 
       rawDocument.$protocolVersion = protocolVersion;
 
-      return new Document(rawDocument, dataContract);
+      return extended
+        ? new ExtendedDocument(rawDocument, dataContract)
+        : new Document(rawDocument, dataContract, documentType);
     });
 
     return [
@@ -358,7 +359,7 @@ class Drive {
     return await driveProveDocumentsQueryAsync.call(
       this.drive,
       encodedQuery,
-      dataContract.getId().toBuffer(),
+      dataContract.getId(),
       documentType,
       useTransaction,
     );
@@ -391,7 +392,7 @@ class Drive {
   async fetchIdentity(id, useTransaction = false) {
     return driveFetchIdentityAsync.call(
       this.drive,
-      Buffer.from(id),
+      id,
       useTransaction,
     ).then((encodedIdentity) => {
       if (encodedIdentity === null) {
@@ -417,7 +418,7 @@ class Drive {
   async fetchIdentityBalance(id, useTransaction = false) {
     return driveFetchIdentityBalanceAsync.call(
       this.drive,
-      Buffer.from(id),
+      id,
       useTransaction,
     );
   }
@@ -433,7 +434,7 @@ class Drive {
   async fetchIdentityBalanceWithCosts(id, blockInfo, useTransaction = false, dryRun = false) {
     return driveFetchIdentityBalanceWithCostsAsync.call(
       this.drive,
-      Buffer.from(id),
+      id,
       blockInfo,
       !dryRun,
       useTransaction,
@@ -456,7 +457,7 @@ class Drive {
   ) {
     return driveFetchIdentityBalanceIncludeDebtWithCostsAsync.call(
       this.drive,
-      Buffer.from(id),
+      id,
       blockInfo,
       !dryRun,
       useTransaction,
@@ -472,7 +473,7 @@ class Drive {
   async proveIdentity(id, useTransaction = false) {
     return driveFetchProvedIdentityAsync.call(
       this.drive,
-      Buffer.from(id),
+      id,
       useTransaction,
     );
   }
@@ -486,7 +487,7 @@ class Drive {
   async proveManyIdentities(ids, useTransaction = false) {
     return driveFetchManyProvedIdentitiesAsync.call(
       this.drive,
-      ids.map((id) => Buffer.from(id)),
+      ids.map((id) => id),
       useTransaction,
     );
   }
@@ -501,7 +502,7 @@ class Drive {
   async fetchIdentityWithCosts(id, epochIndex, useTransaction = false) {
     return driveFetchIdentityWithCostsAsync.call(
       this.drive,
-      Buffer.from(id),
+      id,
       epochIndex,
       useTransaction,
     ).then(([encodedIdentity, innerFeeResult]) => {
@@ -539,7 +540,7 @@ class Drive {
   ) {
     return driveAddToIdentityBalanceAsync.call(
       this.drive,
-      identityId.toBuffer(),
+      identityId,
       amount,
       blockInfo,
       !dryRun,
@@ -565,7 +566,7 @@ class Drive {
   ) {
     return driveRemoveFromIdentityBalanceAsync.call(
       this.drive,
-      identityId.toBuffer(),
+      identityId,
       amount,
       blockInfo,
       !dryRun,
@@ -587,7 +588,7 @@ class Drive {
   ) {
     return driveApplyFeesToIdentityBalanceAsync.call(
       this.drive,
-      identityId.toBuffer(),
+      identityId,
       fees.inner,
       useTransaction,
     ).then((innerFeeResult) => new FeeResult(innerFeeResult));
@@ -666,7 +667,7 @@ class Drive {
   ) {
     return driveAddKeysToIdentityAsync.call(
       this.drive,
-      identityId.toBuffer(),
+      identityId,
       keys,
       blockInfo,
       !dryRun,
@@ -694,7 +695,7 @@ class Drive {
   ) {
     return driveDisableIdentityKeysAsync.call(
       this.drive,
-      identityId.toBuffer(),
+      identityId,
       keyIds,
       disableAt,
       blockInfo,
@@ -721,7 +722,7 @@ class Drive {
   ) {
     return driveUpdateIdentityRevisionAsync.call(
       this.drive,
-      identityId.toBuffer(),
+      identityId,
       revision,
       blockInfo,
       !dryRun,

@@ -321,7 +321,7 @@ impl DocumentsBatchTransitionWasm {
         .with_js_error()
     }
 
-    #[wasm_bindgen(js_name=setSignaturePublicKey)]
+    #[wasm_bindgen(js_name=setSignaturePublicKeyId)]
     pub fn set_signature_public_key(&mut self, key_id: KeyID) {
         self.0.set_signature_public_key_id(key_id)
     }
@@ -363,7 +363,7 @@ impl DocumentsBatchTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=setExecutionContext)]
-    pub fn set_execution_context(&mut self, context: StateTransitionExecutionContextWasm) {
+    pub fn set_execution_context(&mut self, context: &StateTransitionExecutionContextWasm) {
         self.0.set_execution_context(context.into())
     }
 

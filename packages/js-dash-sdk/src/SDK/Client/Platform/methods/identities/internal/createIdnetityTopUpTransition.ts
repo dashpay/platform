@@ -1,5 +1,5 @@
 import { PrivateKey } from '@dashevo/dashcore-lib';
-import IdentityPublicKey from '@dashevo/dpp/lib/identity/IdentityPublicKey';
+import { IdentityPublicKey } from '@dashevo/wasm-dpp';
 import { Platform } from '../../../Platform';
 
 /**
@@ -31,12 +31,13 @@ export async function createIdentityTopUpTransition(
   );
 
   await identityTopUpTransition
-    .signByPrivateKey(assetLockPrivateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
+    .signByPrivateKey(assetLockPrivateKey.toBuffer(), IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
   const result = await dpp.stateTransition.validateBasic(identityTopUpTransition);
 
   if (!result.isValid()) {
-    throw new Error(`StateTransition is invalid - ${JSON.stringify(result.getErrors())}`);
+    const messages = result.getErrors().map((error) => error.message);
+    throw new Error(`StateTransition is invalid - ${JSON.stringify(messages)}`);
   }
 
   return identityTopUpTransition;

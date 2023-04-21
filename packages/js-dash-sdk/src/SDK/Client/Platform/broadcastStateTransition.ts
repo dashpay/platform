@@ -82,7 +82,7 @@ export default async function broadcastStateTransition(
     // Which is not compatible with web
     grpcError.metadata = error.data;
 
-    let cause = createGrpcTransportError(grpcError);
+    let cause = await createGrpcTransportError(grpcError);
 
     // Pass DPP consensus error directly to avoid
     // additional wrappers

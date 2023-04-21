@@ -1,6 +1,6 @@
 const { expect } = require('chai');
 
-const Identifier = require('@dashevo/dpp/lib/Identifier');
+const { Identifier } = require('@dashevo/wasm-dpp');
 
 const {
   Networks,
@@ -39,10 +39,10 @@ describe('SDK', function suite() {
     expect(clientInstance.network).to.equal(process.env.NETWORK);
 
     expect(clientInstance.defaultAccountIndex).to.equal(0);
-
     expect(clientInstance.getApps().has('dpns')).to.be.true;
     expect(clientInstance.getApps().get('dpns')).to.deep.equal({
       contractId: dpnsContractId,
+      contract: undefined,
     });
 
     const network = Networks.get(process.env.NETWORK).name;

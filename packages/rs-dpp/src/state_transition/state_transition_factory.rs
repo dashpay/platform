@@ -133,6 +133,34 @@ where
             }
         };
 
+        let maybe_transition_type = raw_state_transition.get_optional_integer::<u8>("type")?;
+
+        // When converting to buffer and back, for the update identity transition
+        // the type information about identifiers is going to be lost. In order
+        // to fix it, we need to call clean_value on it.
+        if let Some(transition_type_int) = maybe_transition_type {
+            let state_transition_type = StateTransitionType::try_from(transition_type_int)
+                .map_err(|_| StateTransitionError::InvalidStateTransitionError {
+                    errors: vec![ConsensusError::from(InvalidStateTransitionTypeError::new(
+                        transition_type_int,
+                    ))],
+                    raw_state_transition: raw_state_transition.clone(),
+                })?;
+
+            match state_transition_type {
+                StateTransitionType::DataContractUpdate => {
+                    DataContractUpdateTransition::clean_value(&mut raw_state_transition)?;
+                }
+                _ => {}
+            }
+        } else {
+            return Err(StateTransitionError::InvalidStateTransitionError {
+                errors: vec![ConsensusError::from(MissingStateTransitionTypeError::new())],
+                raw_state_transition,
+            }
+            .into());
+        }
+
         self.create_from_object(raw_state_transition, options).await
     }
 }

@@ -36,6 +36,8 @@ pub struct DPPOptions {
     pub current_protocol_version: Option<u32>,
 }
 
+static mut LOGGER_INITIALIZED: bool = false;
+
 #[wasm_bindgen(js_class=DashPlatformProtocol)]
 impl DashPlatformProtocol {
     #[wasm_bindgen(constructor)]
@@ -45,6 +47,16 @@ impl DashPlatformProtocol {
         entropy_generator: ExternalEntropyGenerator,
         maybe_protocol_version: Option<u32>,
     ) -> Result<DashPlatformProtocol, JsValue> {
+        // Initialize logger only once to avoid repeating warnings
+        // "attempted to set a logger after the logging system was already initialized"
+        // Usage of unsafe is fine here as we are in a single-threaded JS environment
+        unsafe {
+            if cfg!(LOGGER_INITIALIZED) && !LOGGER_INITIALIZED {
+                LOGGER_INITIALIZED = true;
+                wasm_logger::init(wasm_logger::Config::new(log::Level::Debug));
+            }
+        }
+
         let bls = BlsAdapter(bls_adapter);
         let protocol_version = maybe_protocol_version.unwrap_or(LATEST_VERSION);
         let public_keys_validator = Arc::new(PublicKeysValidator::new(bls.clone()).unwrap());

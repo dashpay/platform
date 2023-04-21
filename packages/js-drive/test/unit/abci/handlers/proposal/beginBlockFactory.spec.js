@@ -7,6 +7,7 @@ const {
   },
 } = require('@dashevo/abci/types');
 
+// TODO: should we load it from other place?
 const { hash } = require('@dashevo/dpp/lib/util/hash');
 
 const beginBlockFactory = require('../../../../../lib/abci/handlers/proposal/beginBlockFactory');
@@ -49,7 +50,6 @@ describe('beginBlockFactory', () => {
   let time;
   let lastSyncedCoreHeightRepositoryMock;
   let simplifyMasternodeListMock;
-  let validMasternodesListLength;
 
   beforeEach(function beforeEach() {
     round = 0;
@@ -117,15 +117,13 @@ describe('beginBlockFactory', () => {
       }),
     };
 
-    validMasternodesListLength = 400;
-
     simplifyMasternodeListMock = {
       getStore() {
         return {
           getCurrentSML() {
             return {
               getValidMasternodesList() {
-                return validMasternodesListLength;
+                return new Array(400);
               },
             };
           },
@@ -191,7 +189,10 @@ describe('beginBlockFactory', () => {
       coreChainLockedHeight, { logger: loggerMock },
     );
 
-    expect(synchronizeMasternodeIdentitiesMock).to.not.been.called();
+    expect(synchronizeMasternodeIdentitiesMock).to.be.calledWithExactly(
+      coreChainLockedHeight,
+      blockInfo,
+    );
 
     expect(executionTimerMock.clearTimer).to.be.calledTwice();
     expect(executionTimerMock.clearTimer.getCall(1)).to.be.calledWithExactly('roundExecution');
