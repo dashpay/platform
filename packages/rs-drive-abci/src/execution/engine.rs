@@ -551,6 +551,8 @@ where
 
         state_cache.last_committed_block_info = Some(block_info.clone());
 
+        state_cache.initialization_information = None;
+
         // Persist ephemeral data
         self.store_ephemeral_data(&block_info, &updated_validator_hash, transaction)?;
 
@@ -682,17 +684,15 @@ where
             return Ok(validation_result.into());
         }
 
-        if block_platform_state
-            .current_validator_set_quorum_hash
-            .as_inner()
-            != &commit_info.quorum_hash
-        {
+        let mut state_cache = self.state.read().unwrap();
+        if state_cache.current_validator_set_quorum_hash.as_inner() != &commit_info.quorum_hash {
             validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
                 "received a block for h: {} r: {} with validator set quorum hash {} expected current validator set quorum hash is {}",
                 height, round, hex::encode(commit_info.quorum_hash), hex::encode(block_platform_state.current_validator_set_quorum_hash)
             )));
             return Ok(validation_result.into());
         }
+        drop(state_cache);
 
         // In production this will always be true
         if self
