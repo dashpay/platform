@@ -4,7 +4,6 @@ use crate::document::document_transition::document_replace_transition_action::Do
 use crate::document::document_transition::{Action, DocumentBaseTransitionAction};
 use derive_more::From;
 
-
 pub const DOCUMENT_TRANSITION_ACTION_VERSION: u32 = 0;
 
 #[derive(Debug, Clone, From)]

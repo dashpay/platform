@@ -106,8 +106,7 @@ mod test {
     use super::*;
     use crate::{
         data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition,
-        state_repository::MockStateRepositoryLike,
-        tests::fixtures::get_data_contract_fixture,
+        state_repository::MockStateRepositoryLike, tests::fixtures::get_data_contract_fixture,
     };
 
     #[tokio::test]

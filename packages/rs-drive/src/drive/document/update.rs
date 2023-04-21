@@ -696,11 +696,11 @@ mod tests {
     use crate::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
     use crate::drive::{defaults, Drive};
     use crate::fee::credits::Creditable;
+    use crate::fee::default_costs::EpochCosts;
     use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use crate::query::DriveQuery;
     use crate::{common::setup_contract, drive::test_utils::TestEntropyGenerator};
     use dpp::block::epoch::Epoch;
-    use crate::fee::default_costs::EpochCosts;
 
     #[test]
     fn test_create_and_update_document_same_transaction() {
