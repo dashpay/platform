@@ -1240,7 +1240,7 @@ pub(crate) fn start_chain_for_strategy(
 
     let quorum_hashes: Vec<&QuorumHash> = quorums.keys().collect();
 
-    let current_quorum_hash = **quorum_hashes
+    let mut current_quorum_hash = **quorum_hashes
         .choose(&mut rng)
         .expect("expected quorums to be initialized");
 
@@ -1287,6 +1287,13 @@ pub(crate) fn start_chain_for_strategy(
     } = platform
         .init_chain(init_chain_request, transaction)
         .expect("should init chain");
+
+    // initialization will change the current quorum hash
+    current_quorum_hash = platform
+        .state
+        .read()
+        .unwrap()
+        .current_validator_set_quorum_hash;
 
     platform.create_mn_shares_contract(Some(transaction));
 

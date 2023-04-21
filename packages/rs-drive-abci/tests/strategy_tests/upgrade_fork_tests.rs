@@ -25,7 +25,7 @@ mod tests {
             upgrading_info: Some(UpgradingInfo {
                 current_protocol_version: 1,
                 proposed_protocol_versions_with_weight: vec![(2, 1)],
-                upgrade_three_quarters_life: 0.05,
+                upgrade_three_quarters_life: 0.1,
             }),
             core_height_increase: Frequency {
                 times_per_block_range: Default::default(),
@@ -63,7 +63,7 @@ mod tests {
             current_proposer_versions,
             end_time_ms,
             ..
-        } = run_chain_for_strategy(&mut platform, 1300, strategy.clone(), config.clone(), 15);
+        } = run_chain_for_strategy(&mut platform, 1300, strategy.clone(), config.clone(), 13);
         {
             let platform = abci_app.platform;
             let drive_cache = platform.drive.cache.read().unwrap();
@@ -96,7 +96,7 @@ mod tests {
                     .current_protocol_version_in_consensus,
                 1
             );
-            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&6), Some(&419)));
+            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&15), Some(&391)));
             //most nodes were hit (63 were not)
         }
 
@@ -173,7 +173,7 @@ mod tests {
                 2
             );
             assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
-            assert_eq!(counter.get(&2), Some(&152));
+            assert_eq!(counter.get(&2), Some(&149));
         }
 
         // we locked in
@@ -235,7 +235,7 @@ mod tests {
                 2
             );
             assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
-            assert_eq!(counter.get(&2), Some(&124));
+            assert_eq!(counter.get(&2), Some(&118));
         }
     }
 
