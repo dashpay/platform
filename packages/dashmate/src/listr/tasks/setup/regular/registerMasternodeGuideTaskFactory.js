@@ -36,7 +36,8 @@ function registerMasternodeGuideTaskFactory() {
   async function registerMasternodeGuideTask() {
     const blsSignatures = await BlsSignatures();
 
-    const validateBLSPrivateKey = validateBLSPrivateKeyFactory(blsSignatures);
+    const validateBLSPrivateKeyPrompt = validateBLSPrivateKeyFactory(blsSignatures);
+    const validateBLSPrivateKey = (rawData) => validateBLSPrivateKeyPrompt(rawData) === true;
 
     const REGISTRARS = {
       CORE: 'dashCore',
