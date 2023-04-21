@@ -16,7 +16,7 @@ use drive::fee::result::FeeResult;
 use drive::grovedb::{Transaction, TransactionArg};
 use std::collections::BTreeMap;
 
-use tenderdash_abci::proto::abci::ExecTxResult;
+use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 
 use crate::abci::commit::Commit;
@@ -46,6 +46,8 @@ pub struct BlockExecutionOutcome {
     pub app_hash: [u8; 32],
     /// The results of the execution of each transaction
     pub tx_results: Vec<ExecTxResult>,
+    /// The changes to the validator set
+    pub validator_set_update: Option<ValidatorSetUpdate>,
 }
 
 /// The outcome of the finalization of the block
@@ -386,6 +388,8 @@ where
 
         block_execution_context.block_state_info.commit_hash = Some(root_hash);
 
+        let validator_set_update = self.validator_set_update(&mut block_execution_context)?;
+
         self.block_execution_context
             .write()
             .unwrap()
@@ -394,7 +398,60 @@ where
         Ok(ValidationResult::new_with_data(BlockExecutionOutcome {
             app_hash: root_hash,
             tx_results,
+            validator_set_update,
         }))
+    }
+
+    fn validator_set_update(
+        &self,
+        block_execution_context: &mut BlockExecutionContext,
+    ) -> Result<Option<ValidatorSetUpdate>, Error> {
+        let perform_rotation = if block_execution_context.block_state_info.height
+            % self.config.validator_set_quorum_rotation_block_count as u64
+            == 0
+        {
+            true
+        } else {
+            //todo: perform a rotation if quorum health is low
+            false
+        };
+
+        if perform_rotation {
+            // get the index of the previous quorum
+            let index = block_execution_context
+                .block_platform_state
+                .validator_sets
+                .get_index_of(
+                    &block_execution_context
+                        .block_platform_state
+                        .current_validator_set_quorum_hash,
+                )
+                .ok_or(Error::Execution(ExecutionError::CorruptedCachedState(
+                    "current quorums does not contain current validator set",
+                )))?;
+            // we should rotate the quorum
+            let quorum_count = block_execution_context
+                .block_platform_state
+                .validator_sets
+                .len();
+            match quorum_count {
+                0 => Err(Error::Execution(ExecutionError::CorruptedCachedState(
+                    "no current quorums",
+                ))),
+                1 => Ok(None),
+                count => {
+                    let (_, new_quorum) = block_execution_context
+                        .block_platform_state
+                        .validator_sets
+                        .get_index((index + 1) % count)
+                        .expect("expected next validator set");
+                    let validator_set = new_quorum.into();
+                    Ok(Some(validator_set))
+                }
+            }
+        } else {
+            Ok(None)
+        }
     }
 
     // TODO: remove function from here

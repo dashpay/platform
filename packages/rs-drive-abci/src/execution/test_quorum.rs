@@ -4,8 +4,10 @@ use dashcore::{ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{QuorumInfoResult, QuorumMember, QuorumType};
 use dpp::bls_signatures;
 use dpp::bls_signatures::{PrivateKey as BlsPrivateKey, PublicKey as BlsPublicKey};
-use rand::rngs::StdRng;
+use rand::rngs::{StdRng, ThreadRng};
+use rand::Rng;
 use std::collections::BTreeMap;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 /// ValidatorInQuorum represents a validator in a quorum or consensus algorithm.
 /// Each validator is identified by a `ProTxHash` and has a corresponding BLS private key and public key.
@@ -17,6 +19,9 @@ pub struct ValidatorInQuorum {
     pub private_key: BlsPrivateKey,
     /// The public key for this validator's BLS signature scheme.
     pub public_key: BlsPublicKey,
+    /// node_address is an URI containing address of validator (proto://node_id@ip_address:port),
+    /// for example: tcp://f2dbd9b0a1f541a7c44d34a58674d0262f5feca5@12.34.5.6:1234
+    pub node_address: String,
 }
 
 impl From<&ValidatorInQuorum> for ValidatorWithPublicKeyShare {
@@ -24,11 +29,13 @@ impl From<&ValidatorInQuorum> for ValidatorWithPublicKeyShare {
         let ValidatorInQuorum {
             pro_tx_hash,
             public_key,
+            node_address,
             ..
         } = value;
         ValidatorWithPublicKeyShare {
             pro_tx_hash: *pro_tx_hash,
             public_key: public_key.clone(),
+            node_address: node_address.clone(),
         }
     }
 }
@@ -38,11 +45,13 @@ impl From<ValidatorInQuorum> for ValidatorWithPublicKeyShare {
         let ValidatorInQuorum {
             pro_tx_hash,
             public_key,
+            node_address,
             ..
         } = value;
         ValidatorWithPublicKeyShare {
             pro_tx_hash,
             public_key,
+            node_address,
         }
     }
 }
@@ -64,6 +73,23 @@ pub struct TestQuorumInfo {
     pub private_key: BlsPrivateKey,
     /// The public key corresponding to the private key used for signing.
     pub public_key: BlsPublicKey,
+}
+
+fn random_ipv4_address(rng: &mut StdRng) -> Ipv4Addr {
+    Ipv4Addr::new(
+        rng.gen_range(1..=254),
+        rng.gen_range(0..=255),
+        rng.gen_range(0..=255),
+        rng.gen_range(1..=254),
+    )
+}
+
+fn random_port(rng: &mut StdRng) -> u16 {
+    rng.gen_range(1024..=65535)
+}
+
+fn random_socket_addr(rng: &mut StdRng) -> SocketAddr {
+    SocketAddr::new(IpAddr::V4(random_ipv4_address(rng)), random_port(rng))
 }
 
 impl TestQuorumInfo {
@@ -95,6 +121,7 @@ impl TestQuorumInfo {
                         .expect("expected 32 bytes for pro_tx_hash"),
                     private_key: key,
                     public_key,
+                    node_address: random_socket_addr(rng).to_string(),
                 }
             })
             .collect();

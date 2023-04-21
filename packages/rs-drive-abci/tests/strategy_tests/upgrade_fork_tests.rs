@@ -96,7 +96,7 @@ mod tests {
                     .current_protocol_version_in_consensus,
                 1
             );
-            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&15), Some(&391)));
+            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&16), Some(&401)));
             //most nodes were hit (63 were not)
         }
 
@@ -173,7 +173,7 @@ mod tests {
                 2
             );
             assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
-            assert_eq!(counter.get(&2), Some(&149));
+            assert_eq!(counter.get(&2), Some(&154));
         }
 
         // we locked in
@@ -235,7 +235,7 @@ mod tests {
                 2
             );
             assert_eq!(counter.get(&1), None); //no one has proposed 1 yet
-            assert_eq!(counter.get(&2), Some(&118));
+            assert_eq!(counter.get(&2), Some(&126));
         }
     }
 
@@ -329,7 +329,7 @@ mod tests {
                 .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
-            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&47), Some(&65)));
+            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&42), Some(&71)));
         }
 
         // we did not yet hit the required threshold to upgrade
@@ -357,7 +357,7 @@ mod tests {
             ChainExecutionParameters {
                 block_start,
                 core_height_start: 1,
-                block_count: 2100,
+                block_count: 1700,
                 proposers,
                 quorums,
                 current_quorum_hash,
@@ -384,7 +384,7 @@ mod tests {
                     .unwrap()
                     .epoch
                     .index,
-                10
+                9
             );
             assert_eq!(
                 platform
@@ -399,7 +399,7 @@ mod tests {
                 2
             );
             // the counter is for the current voting during that window
-            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&21), Some(&87)));
+            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&18), Some(&86)));
         }
 
         // we are now locked in, the current protocol version will change on next epoch
@@ -441,7 +441,7 @@ mod tests {
                     .unwrap()
                     .epoch
                     .index,
-                11
+                10
             );
             assert_eq!(
                 platform
@@ -565,7 +565,7 @@ mod tests {
             ChainExecutionParameters {
                 block_start,
                 core_height_start: 1,
-                block_count: 2600,
+                block_count: 2200,
                 proposers,
                 quorums,
                 current_quorum_hash,
@@ -592,7 +592,7 @@ mod tests {
                     .unwrap()
                     .epoch
                     .index,
-                10
+                9
             );
             assert_eq!(
                 platform
@@ -606,7 +606,7 @@ mod tests {
                 platform.state.read().unwrap().next_epoch_protocol_version,
                 2
             );
-            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&17), Some(&116)));
+            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&25), Some(&121)));
             //not all nodes have upgraded
         }
 
@@ -674,7 +674,7 @@ mod tests {
                 .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
-            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&174), Some(&23)));
+            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&175), Some(&24)));
             //a lot nodes reverted to previous version, however this won't impact things
             assert_eq!(
                 platform
@@ -686,7 +686,7 @@ mod tests {
                     .unwrap()
                     .epoch
                     .index,
-                11
+                10
             );
             assert_eq!(
                 platform
@@ -734,7 +734,7 @@ mod tests {
                 .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
-            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&30), Some(&2)));
+            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&36), Some(&7)));
             assert_eq!(
                 platform
                     .state
@@ -745,7 +745,7 @@ mod tests {
                     .unwrap()
                     .epoch
                     .index,
-                12
+                11
             );
             assert_eq!(
                 platform
@@ -849,7 +849,7 @@ mod tests {
             );
             assert_eq!(
                 (counter.get(&1), counter.get(&2), counter.get(&3)),
-                (Some(&6), Some(&67), Some(&2))
+                (Some(&5), Some(&67), Some(&4))
             ); //some nodes reverted to previous version
         }
 
@@ -934,7 +934,7 @@ mod tests {
             );
             assert_eq!(
                 (counter.get(&1), counter.get(&2), counter.get(&3)),
-                (None, Some(&5), Some(&159))
+                (None, Some(&7), Some(&158))
             );
         }
     }
