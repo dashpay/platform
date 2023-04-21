@@ -295,6 +295,7 @@ where
             self.update_quorum_info(
                 &mut block_platform_state,
                 block_proposal.core_chain_locked_height,
+                false,
             )?;
 
             // Update the masternode list and create masternode identities
@@ -427,7 +428,7 @@ where
                         .current_validator_set_quorum_hash,
                 )
                 .ok_or(Error::Execution(ExecutionError::CorruptedCachedState(
-                    "current quorums does not contain current validator set",
+                    "current quorums do not contain current validator set",
                 )))?;
             // we should rotate the quorum
             let quorum_count = block_execution_context

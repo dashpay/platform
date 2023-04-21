@@ -88,8 +88,9 @@ where
         &self,
         state: &mut PlatformState,
         core_block_height: u32,
+        start_from_scratch: bool,
     ) -> Result<(), Error> {
-        if core_block_height == state.core_height() {
+        if !start_from_scratch && core_block_height == state.core_height() {
             return Ok(()); // no need to do anything
         }
 

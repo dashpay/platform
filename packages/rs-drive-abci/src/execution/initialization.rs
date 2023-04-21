@@ -54,7 +54,7 @@ where
 
         let mut state_cache = self.state.write().unwrap();
 
-        self.update_quorum_info(&mut state_cache, fork_info.since)?;
+        self.update_quorum_info(&mut state_cache, fork_info.since, true)?;
 
         self.update_masternode_list(
             &mut state_cache,

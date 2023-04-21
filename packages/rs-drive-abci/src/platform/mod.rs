@@ -210,7 +210,7 @@ impl Platform<MockCoreRPCLike> {
 
         let mut state_cache = self.state.write().unwrap();
         *state_cache = new_state;
-        self.update_quorum_info(&mut state_cache, core_height)?;
+        self.update_quorum_info(&mut state_cache, core_height, true)?;
         self.update_state_masternode_list(&mut state_cache, core_height, true)?;
         drop(state_cache);
 
@@ -314,7 +314,7 @@ impl<C> Platform<C> {
         };
 
         let mut state_cache = platform.state.write().unwrap();
-        platform.update_quorum_info(&mut state_cache, core_height)?;
+        platform.update_quorum_info(&mut state_cache, core_height, true)?;
         platform.update_state_masternode_list(&mut state_cache, core_height, true)?;
         drop(state_cache);
 
