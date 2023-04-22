@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::convert::TryInto;
 
 use std::io::{BufReader, Read};
 
@@ -8,7 +9,7 @@ use crate::prelude::TimestampMillis;
 use crate::ProtocolError;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use integer_encoding::{VarInt, VarIntReader};
-use platform_value::Value;
+use platform_value::{Identifier, Value};
 use rand::distributions::{Alphanumeric, Standard};
 use rand::rngs::StdRng;
 use rand::Rng;
@@ -29,6 +30,7 @@ pub enum DocumentFieldType {
     Number,
     String(Option<u16>, Option<u16>),
     ByteArray(Option<u16>, Option<u16>),
+    Identifier,
     Boolean,
     Date,
     Object(BTreeMap<String, DocumentField>),
@@ -57,6 +59,7 @@ impl DocumentFieldType {
                 .sum(),
             DocumentFieldType::Array(_) => None,
             DocumentFieldType::VariableTypeArray(_) => None,
+            DocumentFieldType::Identifier => Some(32),
         }
     }
 
@@ -80,6 +83,7 @@ impl DocumentFieldType {
                 .sum(),
             DocumentFieldType::Array(_) => None,
             DocumentFieldType::VariableTypeArray(_) => None,
+            DocumentFieldType::Identifier => Some(32),
         }
     }
 
@@ -103,6 +107,7 @@ impl DocumentFieldType {
                 .sum(),
             DocumentFieldType::Array(_) => None,
             DocumentFieldType::VariableTypeArray(_) => None,
+            DocumentFieldType::Identifier => Some(32),
         }
     }
 
@@ -126,6 +131,7 @@ impl DocumentFieldType {
                 .sum(),
             DocumentFieldType::Array(_) => None,
             DocumentFieldType::VariableTypeArray(_) => None,
+            DocumentFieldType::Identifier => Some(32),
         }
     }
 
@@ -215,6 +221,7 @@ impl DocumentFieldType {
             }
             DocumentFieldType::Array(_) => Value::Null,
             DocumentFieldType::VariableTypeArray(_) => Value::Null,
+            DocumentFieldType::Identifier => Value::Identifier(rng.gen()),
         }
     }
 
@@ -254,6 +261,7 @@ impl DocumentFieldType {
             }
             DocumentFieldType::Array(_) => Value::Null,
             DocumentFieldType::VariableTypeArray(_) => Value::Null,
+            DocumentFieldType::Identifier => Value::Identifier(rng.gen()),
         }
     }
 
@@ -347,6 +355,18 @@ impl DocumentFieldType {
                 let bytes = Self::read_varint_value(buf)?;
                 Ok(bytes.map(Value::Bytes))
             }
+            DocumentFieldType::Identifier => {
+                let bytes = Self::read_varint_value(buf)?;
+
+                bytes
+                    .map(|bytes| {
+                        let fixed_bytes = bytes.try_into().map_err(|_| {
+                            ProtocolError::DecodingError("identifier was not 32 bytes".to_string())
+                        })?;
+                        Ok(Value::Identifier(fixed_bytes))
+                    })
+                    .transpose()
+            }
 
             DocumentFieldType::Object(inner_fields) => {
                 let values = inner_fields
@@ -435,27 +455,14 @@ impl DocumentFieldType {
                 }
             }
             DocumentFieldType::ByteArray(_, _) => {
-                let mut bytes = match value {
-                    Value::Bytes(bytes) => Ok(bytes),
-                    Value::Text(text) => {
-                        let value_as_bytes = base64::decode(text).map_err(|_| {
-                            ProtocolError::DataContractError(DataContractError::ValueDecodingError(
-                                "bytearray: invalid base64 value",
-                            ))
-                        })?;
-                        Ok(value_as_bytes)
-                    }
-                    Value::Array(array) => array
-                        .into_iter()
-                        .map(|byte| match byte {
-                            Value::U8(value_as_u8) => Ok(value_as_u8),
-                            _ => Err(ProtocolError::DataContractError(
-                                DataContractError::ValueWrongType("not an array of bytes"),
-                            )),
-                        })
-                        .collect::<Result<Vec<u8>, ProtocolError>>(),
-                    _ => Err(get_field_type_matching_error()),
-                }?;
+                let mut bytes = value.into_binary_bytes()?;
+
+                let mut r_vec = bytes.len().encode_var_vec();
+                r_vec.append(&mut bytes);
+                Ok(r_vec)
+            }
+            DocumentFieldType::Identifier => {
+                let mut bytes = value.into_identifier_bytes()?;
 
                 let mut r_vec = bytes.len().encode_var_vec();
                 r_vec.append(&mut bytes);
@@ -576,6 +583,14 @@ impl DocumentFieldType {
             }
             DocumentFieldType::ByteArray(_, _) => {
                 let mut bytes = value.to_binary_bytes()?;
+
+                let mut r_vec = bytes.len().encode_var_vec();
+                r_vec.append(&mut bytes);
+                Ok(r_vec)
+            }
+            DocumentFieldType::Identifier => {
+                let mut bytes = value.to_identifier_bytes()?;
+
                 let mut r_vec = bytes.len().encode_var_vec();
                 r_vec.append(&mut bytes);
                 Ok(r_vec)
@@ -668,6 +683,9 @@ impl DocumentFieldType {
             DocumentFieldType::ByteArray(_, _) => {
                 value.to_binary_bytes().map_err(ProtocolError::ValueError)
             }
+            DocumentFieldType::Identifier => value
+                .to_identifier_bytes()
+                .map_err(ProtocolError::ValueError),
             DocumentFieldType::Boolean => {
                 let value_as_boolean = value.as_bool().ok_or_else(get_field_type_matching_error)?;
                 if value_as_boolean {
@@ -734,7 +752,7 @@ impl DocumentFieldType {
                 if let Some(max) = max {
                     if str.len() / 2 > *max as usize {
                         return Err(ProtocolError::DataContractError(
-                            DataContractError::FieldRequirementUnmet("byte array  is too big"),
+                            DataContractError::FieldRequirementUnmet("byte array is too big"),
                         ));
                     }
                 }
@@ -744,6 +762,9 @@ impl DocumentFieldType {
                     ))
                 })?))
             }
+            DocumentFieldType::Identifier => Ok(Value::Identifier(
+                Value::Text(str.to_owned()).to_identifier()?.into_buffer(),
+            )),
             DocumentFieldType::Boolean => {
                 if str.to_lowercase().as_str() == "true" {
                     Ok(Value::Bool(true))

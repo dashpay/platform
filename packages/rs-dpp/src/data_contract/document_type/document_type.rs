@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::convert::TryInto;
 
 use super::{
@@ -9,10 +9,13 @@ use crate::data_contract::document_type::{property_names, ArrayFieldType};
 use crate::data_contract::errors::{DataContractError, StructureError};
 
 use crate::document::document_transition::INITIAL_REVISION;
+use crate::document::Document;
 use crate::prelude::Revision;
 use crate::ProtocolError;
-use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
-use platform_value::{Identifier, Value};
+use platform_value::btreemap_extensions::{
+    BTreeValueMapHelper, BTreeValueMapReplacementPathHelper, BTreeValueRemoveFromMapHelper,
+};
+use platform_value::{Identifier, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -37,6 +40,10 @@ pub struct DocumentType {
     #[serde(skip)]
     pub index_structure: IndexLevel,
     pub properties: BTreeMap<String, DocumentField>,
+    #[serde(skip)]
+    pub identifier_paths: BTreeSet<String>,
+    #[serde(skip)]
+    pub binary_paths: BTreeSet<String>,
     pub required_fields: BTreeSet<String>,
     pub documents_keep_history: bool,
     pub documents_mutable: bool,
@@ -93,11 +100,14 @@ impl DocumentType {
         documents_mutable: bool,
     ) -> Self {
         let index_structure = IndexLevel::from(indices.as_slice());
+        let (identifier_paths, binary_paths) = Self::find_identifier_and_binary_paths(&properties);
         DocumentType {
             name,
             indices,
             index_structure,
             properties,
+            identifier_paths,
+            binary_paths,
             required_fields,
             documents_keep_history,
             documents_mutable,
@@ -179,6 +189,33 @@ impl DocumentType {
                 }
             }
         }
+    }
+
+    pub fn convert_value_to_document(&self, mut data: Value) -> Result<Document, ProtocolError> {
+        let mut document = Document {
+            id: data.remove_identifier("$id")?,
+            owner_id: data.remove_identifier("$owner_id")?,
+            properties: Default::default(),
+            revision: data.remove_optional_integer("$revision")?,
+            created_at: data.remove_optional_integer("$created_at")?,
+            updated_at: data.remove_optional_integer("$updated_at")?,
+        };
+
+        data.replace_at_paths(
+            self.identifier_paths.iter().map(|s| s.as_str()),
+            ReplacementType::Identifier,
+        )?;
+
+        data.replace_at_paths(
+            self.binary_paths.iter().map(|s| s.as_str()),
+            ReplacementType::BinaryBytes,
+        )?;
+
+        document.properties = data
+            .into_btree_string_map()
+            .map_err(ProtocolError::ValueError)?;
+
+        Ok(document)
     }
 
     pub fn from_platform_value(
@@ -273,11 +310,15 @@ impl DocumentType {
 
         let index_structure = IndexLevel::from(indices.as_slice());
 
+        let (identifier_paths, binary_paths) =
+            Self::find_identifier_and_binary_paths(&document_properties);
         Ok(DocumentType {
             name: String::from(name),
             indices,
             index_structure,
             properties: document_properties,
+            identifier_paths,
+            binary_paths,
             required_fields,
             documents_keep_history,
             documents_mutable,
@@ -354,6 +395,72 @@ impl DocumentType {
         } else {
             None
         }
+    }
+
+    pub(crate) fn find_identifier_and_binary_paths(
+        properties: &BTreeMap<String, DocumentField>,
+    ) -> (BTreeSet<String>, BTreeSet<String>) {
+        Self::find_identifier_and_binary_paths_inner(properties, "")
+    }
+    fn find_identifier_and_binary_paths_inner(
+        properties: &BTreeMap<String, DocumentField>,
+        current_path: &str,
+    ) -> (BTreeSet<String>, BTreeSet<String>) {
+        let mut identifier_paths = BTreeSet::new();
+        let mut binary_paths = BTreeSet::new();
+
+        for (key, value) in properties.iter() {
+            let new_path = if current_path.is_empty() {
+                key.clone()
+            } else {
+                format!("{}.{}", current_path, key)
+            };
+
+            match &value.document_type {
+                DocumentFieldType::Identifier => {
+                    identifier_paths.insert(new_path);
+                }
+                DocumentFieldType::ByteArray(_, _) => {
+                    binary_paths.insert(new_path);
+                }
+                DocumentFieldType::Object(inner_properties) => {
+                    let (inner_identifier_paths, inner_binary_paths) =
+                        Self::find_identifier_and_binary_paths_inner(inner_properties, &new_path);
+
+                    identifier_paths.extend(inner_identifier_paths);
+                    binary_paths.extend(inner_binary_paths);
+                }
+                DocumentFieldType::Array(array_field_type) => {
+                    let new_path = format!("{}[]", new_path);
+                    match array_field_type {
+                        ArrayFieldType::Identifier => {
+                            identifier_paths.insert(new_path.clone());
+                        }
+                        ArrayFieldType::ByteArray(_, _) => {
+                            binary_paths.insert(new_path.clone());
+                        }
+                        _ => {}
+                    }
+                }
+                DocumentFieldType::VariableTypeArray(array_field_types) => {
+                    for (i, array_field_type) in array_field_types.iter().enumerate() {
+                        let new_path = format!("{}[{}]", new_path, i);
+                        match array_field_type {
+                            ArrayFieldType::Identifier => {
+                                identifier_paths.insert(new_path.clone());
+                            }
+                            ArrayFieldType::ByteArray(_, _) => {
+                                binary_paths.insert(new_path.clone());
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        (identifier_paths, binary_paths)
     }
 }
 

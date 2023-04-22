@@ -375,8 +375,6 @@ mod tests {
         )
         .expect("expected to get cbor contract");
 
-
-
         drive_operations.push(DocumentOperation(AddDocumentForContract {
             document_and_contract_info: DocumentAndContractInfo {
                 owned_document_info: OwnedDocumentInfo {
