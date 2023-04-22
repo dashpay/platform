@@ -1,18 +1,3 @@
-use crate::data_contract::{DataContract, DataContractInner};
-use crate::ProtocolError;
-use bincode::config;
-use std::convert::TryInto;
-
-impl DataContract {
-    pub fn serialize_consume(self) -> Result<Vec<u8>, ProtocolError> {
-        let config = config::standard().with_big_endian().with_no_limit();
-        let inner: DataContractInner = self.into();
-        bincode::encode_to_vec(inner, config).map_err(|e| {
-            ProtocolError::EncodingError(format!("unable to serialize data contract {e}"))
-        })
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::data_contract::DataContract;

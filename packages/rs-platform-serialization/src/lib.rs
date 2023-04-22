@@ -4,7 +4,6 @@ use bincode;
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, DeriveInput};
-
 #[proc_macro_derive(
     PlatformSerialize,
     attributes(platform_error_type, platform_serialize_limit, platform_serialize_into)
@@ -47,9 +46,19 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
     let generics = &input.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
-    let serialize_into = match platform_serialize_into {
+    let serialize_into = match platform_serialize_into.clone() {
         Some(inner) => quote! {
             let inner: #inner = self.clone().into();
+            bincode::encode_to_vec(inner, config)
+        },
+        None => quote! {
+            bincode::encode_to_vec(self, config)
+        },
+    };
+
+    let serialize_into_consume = match platform_serialize_into {
+        Some(inner) => quote! {
+            let inner: #inner = self.into();
             bincode::encode_to_vec(inner, config)
         },
         None => quote! {
@@ -62,8 +71,15 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
             impl #impl_generics #name #ty_generics #where_clause
             {
                 pub fn serialize(&self) -> Result<Vec<u8>, #error_type> {
-                    let config = config::standard().with_big_endian().with_limit(#limit);
+                    let config = config::standard().with_big_endian().with_limit::<{ #limit }>();
                     #serialize_into.map_err(|e| {
+                        #error_type::PlatformSerializationError(format!("unable to serialize {}: {}", stringify!(#name), e))
+                    })
+                }
+
+                pub fn serialize_consume(self) -> Result<Vec<u8>, #error_type> {
+                    let config = config::standard().with_big_endian().with_limit::<{ #limit }>();
+                    #serialize_into_consume.map_err(|e| {
                         #error_type::PlatformSerializationError(format!("unable to serialize {}: {}", stringify!(#name), e))
                     })
                 }
@@ -139,18 +155,22 @@ pub fn derive_platform_deserialize(input: TokenStream) -> TokenStream {
 
     let deserialize_from_inner = match platform_deserialize_from {
         Some(inner) => quote! {
-            let inner: #inner = bincode::decode_from_slice(data, config)?;
+            let inner: #inner = bincode::decode_from_slice(data, config).map_err(|e| {
+                #platform_error_type::PlatformDeserializationError(format!("unable to deserialize {}: {}", stringify!(#name), e))
+            }).map(|(a, _)| a)?;
             inner.try_into().map_err(|e: #platform_error_type| {
                 #platform_error_type::PlatformDeserializationError(format!("unable to deserialize {}: {}", stringify!(#name), e))
             })
         },
         None => quote! {
-            bincode::decode_from_slice(data, config)
+            bincode::decode_from_slice(data, config).map(|(a, _)| a).map_err(|e| {
+                #platform_error_type::PlatformDeserializationError(format!("unable to deserialize {}: {}", stringify!(#name), e))
+            })
         },
     };
 
     let config = match platform_deserialize_limit {
-        Some(limit) => quote! { config::standard().with_big_endian().with_limit(#limit) },
+        Some(limit) => quote! { config::standard().with_big_endian().with_limit::<{ #limit }>() },
         None => quote! { config::standard().with_big_endian().with_no_limit() },
     };
 
@@ -168,7 +188,10 @@ pub fn derive_platform_deserialize(input: TokenStream) -> TokenStream {
     TokenStream::from(expanded)
 }
 
-#[proc_macro_derive(PlatformDeserializeNoLimit, attributes(platform_error_type))]
+#[proc_macro_derive(
+    PlatformDeserializeNoLimit,
+    attributes(platform_error_type, platform_deserialize_from)
+)]
 pub fn derive_platform_deserialize_no_limit(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
@@ -190,16 +213,40 @@ pub fn derive_platform_deserialize_no_limit(input: TokenStream) -> TokenStream {
         })
         .unwrap_or_else(|| syn::parse_str("Error").unwrap());
 
-    let deserialize_impl = quote! {
+    let platform_deserialize_from: Option<syn::Path> = input.attrs.iter().find_map(|attr| {
+        if attr.path().is_ident("platform_deserialize_from") {
+            Some(attr.parse_args::<syn::Path>().unwrap())
+        } else {
+            None
+        }
+    });
+
+    let deserialize_from_inner = match platform_deserialize_from {
+        Some(inner) => quote! {
+            let inner: #inner = bincode::decode_from_slice(data, config).map_err(|e| {
+                #platform_error_type::PlatformDeserializationError(format!("unable to deserialize {}: {}", stringify!(#name), e))
+            }).map(|(a, _)| a)?;
+            inner.try_into().map_err(|e: #platform_error_type| {
+                #platform_error_type::PlatformDeserializationError(format!("unable to deserialize {}: {}", stringify!(#name), e))
+            })
+        },
+        None => quote! {
+            bincode::decode_from_slice(data, config).map(|(a, _)| a).map_err(|e| {
+                #platform_error_type::PlatformDeserializationError(format!("unable to deserialize {}: {}", stringify!(#name), e))
+            })
+        },
+    };
+
+    let expanded = quote! {
         impl #impl_generics #name #ty_generics #where_clause {
             pub fn deserialize_no_limit(data: &[u8]) -> Result<Self, #platform_error_type> {
                 let config = config::standard().with_big_endian().with_no_limit();
-                bincode::decode_from_slice(data, config).map_err(|e| {
+                #deserialize_from_inner.map_err(|e| {
                     #platform_error_type::PlatformDeserializationError(format!("unable to deserialize {}: {}", stringify!(#name), e))
-                }).map(|(a, _)| a)
+                })
             }
         }
     };
 
-    TokenStream::from(deserialize_impl)
+    TokenStream::from(expanded)
 }

@@ -106,7 +106,15 @@ impl Convertible for DataContract {
 /// Additionally, `DataContract` holds definitions for JSON schemas, entropy, and binary properties
 /// of the documents.
 #[derive(
-    Serialize, Deserialize, Debug, Clone, Default, PartialEq, PlatformSerialize, PlatformDeserialize,
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    Default,
+    PartialEq,
+    PlatformSerialize,
+    PlatformDeserialize,
+    PlatformDeserializeNoLimit,
 )] // , PlatformDeserializeNoLimit
 #[platform_error_type(ProtocolError)]
 #[platform_deserialize_limit(15000)]
