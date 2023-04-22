@@ -386,13 +386,9 @@ impl DocumentFieldType {
                     Ok(Some(Value::Map(values)))
                 }
             }
-            DocumentFieldType::Array(_array_field_type) => {
-                Err(ProtocolError::DataContractError(
-                    DataContractError::Unsupported("serialization of arrays not yet supported"),
-                ))
-                // cbor_inner_array_value(value.as_array().ok_or_else(get_field_type_matching_error))
-                // let array = value.as_array().ok_or_else(get_field_type_matching_error)?;
-            }
+            DocumentFieldType::Array(_array_field_type) => Err(ProtocolError::DataContractError(
+                DataContractError::Unsupported("serialization of arrays not yet supported"),
+            )),
             DocumentFieldType::VariableTypeArray(_) => Err(ProtocolError::DataContractError(
                 DataContractError::Unsupported("serialization of arrays not yet supported"),
             )),

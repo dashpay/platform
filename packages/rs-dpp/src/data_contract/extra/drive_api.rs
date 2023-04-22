@@ -197,6 +197,7 @@ impl DriveContractExt for DataContract {
 mod test {
     use crate::data_contract::contract_config::ContractConfig;
 
+    use crate::data_contract::extra::common::json_document_to_contract;
     use crate::{
         data_contract::extra::common::json_document_to_cbor, data_contract::DataContract,
         util::json_schema::JsonSchemaExt,
@@ -349,10 +350,9 @@ mod test {
 
     #[test]
     fn should_drive_api_methods_contain_contract_data() {
-        let dashpay_cbor =
-            json_document_to_cbor("src/tests/payloads/contract/dashpay-contract.json", Some(1))
-                .expect("expected to get cbor document");
-        let contract = DataContract::from_cbor(dashpay_cbor).unwrap();
+        let contract =
+            json_document_to_contract("src/tests/payloads/contract/dashpay-contract.json")
+                .expect("expected to get a contract");
 
         assert!(contract.documents_mutable_contract_default());
         assert!(!contract.keeps_history());

@@ -95,36 +95,51 @@ impl Convertible for DataContract {
     }
 }
 
+/// `DataContract` represents a data contract in a decentralized platform.
+///
+/// It contains information about the contract, such as its protocol version, unique identifier,
+/// schema, version, and owner identifier. The struct also includes details about the document
+/// types, metadata, configuration, and document schemas associated with the contract.
+///
+/// Additionally, `DataContract` holds definitions for JSON schemas, entropy, and binary properties
+/// of the documents.
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
-#[serde(rename_all = "camelCase")]
 #[serde(try_from = "DataContractInner")]
 pub struct DataContract {
+    /// The version of the protocol this contract adheres to.
     pub protocol_version: u32,
-    #[serde(rename = "$id")]
+
+    /// A unique identifier for the data contract.
     pub id: Identifier,
-    #[serde(rename = "$schema")]
+
+    /// A reference to the JSON schema that defines the contract.
     pub schema: String,
+
+    /// The version of this data contract.
     pub version: u32,
+
+    /// The identifier of the contract owner.
     pub owner_id: Identifier,
-    #[serde(skip)]
+
+    /// A mapping of document names to their corresponding document types.
     pub document_types: BTreeMap<DocumentName, DocumentType>,
-    #[serde(skip)]
+
+    /// Optional metadata associated with the contract.
     pub metadata: Option<Metadata>,
-    #[serde(skip)]
+
+    /// Internal configuration for the contract.
     pub(crate) config: ContractConfig,
 
-    #[serde(rename = "documents")]
+    /// A mapping of document names to their corresponding JSON schemas.
     pub documents: BTreeMap<DocumentName, JsonSchema>,
 
-    // TODO we may ensure in compile time that defs are not empty if we define a type for it
-    #[serde(rename = "$defs", default)]
+    /// Optional mapping of definition names to their corresponding JSON schemas.
     pub defs: Option<BTreeMap<DefinitionName, JsonSchema>>,
 
-    //todo: we should remove entropy
-    #[serde(skip)]
+    /// A randomly generated value used for creating unique identifiers within the contract.
     pub entropy: Bytes32,
 
-    #[serde(skip)]
+    /// A nested mapping of document names and property paths to their binary values.
     pub binary_properties: BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>,
 }
 
@@ -153,17 +168,36 @@ impl<'a> BorrowDecode<'a> for DataContract {
     }
 }
 
+// Standalone default_protocol_version function
+fn default_protocol_version() -> u32 {
+    1
+}
+
 #[derive(Serialize, Deserialize, Encode, Decode)]
 #[serde(rename_all = "camelCase")]
 pub struct DataContractInner {
+    /// The version of the protocol this contract adheres to, with a default value if not provided.
+    #[serde(default = "default_protocol_version")]
     pub protocol_version: u32,
+
+    /// A unique identifier for the data contract.
     #[serde(rename = "$id")]
     pub id: Identifier,
+
+    /// A reference to the JSON schema that defines the contract.
     #[serde(rename = "$schema")]
     pub schema: String,
+
+    /// The version of this data contract.
     pub version: u32,
+
+    /// The identifier of the contract owner.
     pub owner_id: Identifier,
+
+    /// A mapping of document names to their corresponding JSON values.
     pub documents: BTreeMap<DocumentName, Value>,
+
+    /// Optional mapping of definition names to their corresponding JSON values.
     #[serde(rename = "$defs", default)]
     pub defs: Option<BTreeMap<DefinitionName, Value>>,
 }

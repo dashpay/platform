@@ -98,8 +98,6 @@ use crate::fee::op::LowLevelDriveOperation;
 use crate::drive::contract::paths::ContractPaths;
 
 #[cfg(any(feature = "full", feature = "verify"))]
-use dpp::data_contract::extra::common::bytes_for_system_value;
-#[cfg(any(feature = "full", feature = "verify"))]
 use dpp::document::Document;
 
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -577,13 +575,25 @@ impl<'a> DriveQuery<'a> {
 
         let internal_clauses = InternalClauses::extract_from_clauses(all_where_clauses)?;
 
-        let start_at_option = None;
-        let start_at_included = true;
-        let start_at: Option<Vec<u8>> = if start_at_option.is_some() {
-            bytes_for_system_value(start_at_option.unwrap())?
-        } else {
-            None
-        };
+        let start_at_option = None; //todo
+        let start_after_option = None; //todo
+        let mut start_at_included = true;
+        let mut start_option: Option<Value> = None;
+
+        if start_after_option.is_some() {
+            start_option = start_after_option;
+            start_at_included = false;
+        } else if start_at_option.is_some() {
+            start_option = start_at_option;
+            start_at_included = true;
+        }
+
+        let start_at: Option<Vec<u8>> = start_option
+            .map(|v| {
+                v.into_identifier_bytes()
+                    .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))
+            })
+            .transpose()?;
 
         Ok(DriveQuery {
             contract,

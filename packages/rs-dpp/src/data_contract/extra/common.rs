@@ -15,69 +15,6 @@ use std::io::BufReader;
 use std::iter::FromIterator;
 use std::path::Path;
 
-pub fn cbor_map_into_btree_map(
-    cbor_map: Vec<(Value, Value)>,
-) -> Result<BTreeMap<String, Value>, ProtocolError> {
-    cbor_map
-        .into_iter()
-        .map(|(key, value)| {
-            let key = key.into_text().map_err(|_| {
-                ProtocolError::StructureError(StructureError::KeyWrongType(
-                    "expected key to be string",
-                ))
-            })?;
-            Ok((key, value))
-        })
-        .collect::<Result<BTreeMap<String, Value>, ProtocolError>>()
-}
-
-//todo remove this function
-pub fn cbor_map_into_serde_btree_map(
-    cbor_map: Vec<(Value, Value)>,
-) -> Result<BTreeMap<String, serde_json::Value>, ProtocolError> {
-    cbor_map
-        .into_iter()
-        .map(|(key, value)| {
-            let key = key.into_text().map_err(|_| {
-                ProtocolError::StructureError(StructureError::KeyWrongType(
-                    "expected key to be string",
-                ))
-            })?;
-            let value = cbor_value_into_json_value(value)?;
-            Ok((key, value))
-        })
-        .collect::<Result<BTreeMap<String, serde_json::Value>, ProtocolError>>()
-}
-
-/// Converts a CBOR map to a BTree map.
-pub fn cbor_map_to_btree_map(cbor_map: &[(Value, Value)]) -> BTreeMap<String, &Value> {
-    cbor_map
-        .iter()
-        .filter_map(|(key, value)| key.as_text().map(|key| (key.to_string(), value)))
-        .collect::<BTreeMap<String, &Value>>()
-}
-
-/// Gets the inner bool value from cbor map
-pub fn cbor_inner_bool_value(document_type: &[(Value, Value)], key: &str) -> Option<bool> {
-    let key_value = get_key_from_cbor_map(document_type, key)?;
-    if let Value::Bool(bool_value) = key_value {
-        return Some(*bool_value);
-    }
-    None
-}
-
-/// Gets the inner array value from cbor map
-pub fn cbor_inner_array_value<'a>(
-    document_type: &'a [(Value, Value)],
-    key: &'a str,
-) -> Option<&'a Vec<Value>> {
-    let key_value = get_key_from_cbor_map(document_type, key)?;
-    if let Value::Array(key_value) = key_value {
-        return Some(key_value);
-    }
-    None
-}
-
 pub fn get_key_from_cbor_map<'a>(
     cbor_map: &'a [(Value, Value)],
     key: &'a str,
@@ -92,173 +29,6 @@ pub fn get_key_from_cbor_map<'a>(
         }
     }
     None
-}
-
-/// Retrieves the value of a key from a CBOR map if it's an array of strings.
-pub fn cbor_inner_array_of_strings<'a, I: FromIterator<String>>(
-    document_type: &'a [(Value, Value)],
-    key: &'a str,
-) -> Option<I> {
-    let key_value = get_key_from_cbor_map(document_type, key)?;
-    if let Value::Array(key_value) = key_value {
-        Some(
-            key_value
-                .iter()
-                .filter_map(|v| {
-                    if let Value::Text(text) = v {
-                        Some(text.clone())
-                    } else {
-                        None
-                    }
-                })
-                .collect(),
-        )
-    } else {
-        None
-    }
-}
-//
-// pub fn cbor_inner_map_value<'a>(
-//     document_type: &'a [(Value, Value)],
-//     key: &'a str,
-// ) -> Option<&'a Vec<(Value, Value)>> {
-//     let key_value = get_key_from_cbor_map(document_type, key)?;
-//     if let Value::Map(map_value) = key_value {
-//         return Some(map_value);
-//     }
-//     None
-// }
-//
-/// Retrieves the value of a key from a CBOR map, and if it's a map itself,
-/// returns it as a B-tree map.
-pub fn cbor_inner_btree_map<'a>(
-    document_type: &'a [(Value, Value)],
-    key: &'a str,
-) -> Option<BTreeMap<String, &'a Value>> {
-    let key_value = get_key_from_cbor_map(document_type, key)?;
-    if let Value::Map(map_value) = key_value {
-        return Some(cbor_map_to_btree_map(map_value));
-    }
-    None
-}
-//
-/// Retrieves the value of a key from a B-tree map, and if it's a map itself,
-/// returns it as a B-tree map.
-pub fn btree_map_inner_btree_map<'a>(
-    document_type: &'a BTreeMap<String, &'a Value>,
-    key: &'a str,
-) -> Option<BTreeMap<String, &'a Value>> {
-    let key_value = document_type.get(key)?;
-    if let Value::Map(map_value) = key_value {
-        return Some(cbor_map_to_btree_map(map_value));
-    }
-    None
-}
-
-/// Retrieves the value of a key from a B-tree map if it's a map itself.
-pub fn btree_map_inner_map_value<'a>(
-    document_type: &'a BTreeMap<String, &'a Value>,
-    key: &'a str,
-) -> Option<&'a Vec<(Value, Value)>> {
-    let key_value = document_type.get(key)?;
-    if let Value::Map(map_value) = key_value {
-        return Some(map_value);
-    }
-    None
-}
-
-/// Retrieves the value of a key from a CBOR map if it's a string.
-pub fn cbor_inner_text_value<'a>(
-    document_type: &'a [(Value, Value)],
-    key: &'a str,
-) -> Result<Option<&'a str>, ProtocolError> {
-    match get_key_from_cbor_map(document_type, key) {
-        None => Ok(None),
-        Some(key_value) => {
-            if let Value::Text(string_value) = key_value {
-                Ok(Some(string_value))
-            } else {
-                Err(ProtocolError::StructureError(
-                    StructureError::ValueWrongType("expected a string for the value"),
-                ))
-            }
-        }
-    }
-}
-
-/// Retrieves the value of a key from a CBOR map if it's a byte array.
-pub fn cbor_inner_bytes_value<'a>(
-    document_type: &'a [(Value, Value)],
-    key: &'a str,
-) -> Result<Option<Vec<u8>>, ProtocolError> {
-    match get_key_from_cbor_map(document_type, key) {
-        None => Ok(None),
-        Some(key_value) => match key_value {
-            Value::Bytes(bytes) => Ok(Some(bytes.clone())),
-            Value::Array(array) => array
-                .iter()
-                .map(|byte| match byte {
-                    Value::Integer(int) => {
-                        let value_as_u8: u8 = (*int).try_into().map_err(|_| {
-                            ProtocolError::StructureError(StructureError::ValueWrongType(
-                                "expected u8 value",
-                            ))
-                        })?;
-                        Ok(value_as_u8)
-                    }
-                    _ => Err(ProtocolError::StructureError(
-                        StructureError::ValueWrongType("not an array of integers"),
-                    )),
-                })
-                .collect::<Result<Vec<u8>, ProtocolError>>()
-                .map(Some),
-            _ => Err(ProtocolError::StructureError(
-                StructureError::ValueWrongType("value should be a byte array"),
-            )),
-        },
-    }
-}
-
-/// Takes a value (should be a system value) and returns it as a byte array if possible.
-pub fn bytes_for_system_value(value: &Value) -> Result<Option<Vec<u8>>, ProtocolError> {
-    match value {
-        Value::Bytes(bytes) => Ok(Some(bytes.clone())),
-        Value::Text(text) => match bs58::decode(text).into_vec() {
-            Ok(data) => Ok(Some(data)),
-            Err(_) => Ok(None),
-        },
-        Value::Array(array) => array
-            .iter()
-            .map(|byte| match byte {
-                Value::Integer(int) => {
-                    let value_as_u8: u8 = (*int).try_into().map_err(|_| {
-                        ProtocolError::StructureError(StructureError::ValueWrongType(
-                            "expected u8 value",
-                        ))
-                    })?;
-                    Ok(Some(value_as_u8))
-                }
-                _ => Err(ProtocolError::StructureError(
-                    StructureError::ValueWrongType("not an array of integers"),
-                )),
-            })
-            .collect::<Result<Option<Vec<u8>>, ProtocolError>>(),
-        _ => Err(ProtocolError::StructureError(
-            StructureError::ValueWrongType("system value is incorrect type"),
-        )),
-    }
-}
-
-pub fn bytes_for_system_value_from_tree_map(
-    document: &BTreeMap<String, Value>,
-    key: &str,
-) -> Result<Option<Vec<u8>>, ProtocolError> {
-    let value = document.get(key);
-    if let Some(value) = value {
-        bytes_for_system_value(value)
-    } else {
-        Ok(None)
-    }
 }
 
 /// Reads a JSON file and converts it to serde_value.
@@ -300,6 +70,36 @@ pub fn json_document_to_cbor(
 ) -> Result<Vec<u8>, ProtocolError> {
     let json = json_document_to_json_value(path)?;
     serializable_value_to_cbor(&json, protocol_version)
+}
+
+/// Reads a JSON file and converts it a contract.
+pub fn json_document_to_contract(path: impl AsRef<Path>) -> Result<DataContract, ProtocolError> {
+    let file = File::open(path.as_ref()).map_err(|_| {
+        ProtocolError::FileNotFound(format!(
+            "file not found at path {}",
+            path.as_ref().to_str().unwrap()
+        ))
+    })?;
+
+    let reader = BufReader::new(file);
+    serde_json::from_reader(reader).map_err(|e| {
+        ProtocolError::DecodingError(format!("error decoding contract from document {e}"))
+    })
+}
+
+/// Reads a JSON file and converts it a document.
+pub fn json_document_to_contract_with_owner_id(
+    path: impl AsRef<Path>,
+    owner_id: Option<Identifier>,
+) -> Result<DataContract, ProtocolError> {
+    let mut value = json_document_to_platform_value(path)?;
+    if let Some(owner_id) = owner_id {
+        value.set_value(
+            "$ownerId",
+            platform_value::Value::Identifier(owner_id.into_buffer()),
+        )?;
+    }
+    DataContract::from_raw_object(value)
 }
 
 /// Reads a JSON file and converts it a document.
