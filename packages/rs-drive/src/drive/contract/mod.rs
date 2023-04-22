@@ -1126,7 +1126,7 @@ mod tests {
         DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo,
     };
     use crate::drive::Drive;
-    use dpp::data_contract::extra::common::json_document_to_cbor;
+    use dpp::data_contract::extra::common::{json_document_to_cbor, json_document_to_contract};
 
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
 
@@ -1406,16 +1406,13 @@ mod tests {
         let contract_path = "tests/supporting_files/contract/references/references.json";
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract_cbor =
-            json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
         let contract =
-            Contract::from_cbor(&contract_cbor).expect("expected to deserialize the contract");
+            json_document_to_contract(contract_path).expect("expected to get cbor document");
 
         // Create a contract first
         drive
-            .apply_contract_with_serialization(
+            .apply_contract(
                 &contract,
-                contract_cbor.clone(),
                 BlockInfo::default(),
                 true,
                 StorageFlags::optional_default_as_cow(),
@@ -1425,13 +1422,7 @@ mod tests {
 
         // Update existing contract
         drive
-            .update_contract_cbor(
-                contract_cbor,
-                Some(contract.id.to_buffer()),
-                BlockInfo::default(),
-                false,
-                None,
-            )
+            .update_contract(&contract, BlockInfo::default(), false, None)
             .expect("expected to apply contract successfully");
     }
 
@@ -1451,13 +1442,7 @@ mod tests {
             let updated_contract_bytes = contract.serialize().expect("should serialize a contract");
 
             drive
-                .update_contract_cbor(
-                    updated_contract_cbor,
-                    None,
-                    BlockInfo::default(),
-                    true,
-                    Some(&transaction),
-                )
+                .update_contract(&contract, BlockInfo::default(), true, Some(&transaction))
                 .expect("should update contract");
 
             let fetch_info_from_database = drive

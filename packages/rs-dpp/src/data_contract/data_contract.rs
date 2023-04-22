@@ -115,21 +115,24 @@ impl Convertible for DataContract {
     PlatformSerialize,
     PlatformDeserialize,
     PlatformDeserializeNoLimit,
-)] // , PlatformDeserializeNoLimit
+)]
 #[platform_error_type(ProtocolError)]
 #[platform_deserialize_limit(15000)]
 #[platform_serialize_limit(15000)]
 #[platform_serialize_into(DataContractInner)]
 #[platform_deserialize_from(DataContractInner)]
 #[serde(try_from = "DataContractInner")]
+#[serde(rename_all = "camelCase")]
 pub struct DataContract {
     /// The version of the protocol this contract adheres to.
     pub protocol_version: u32,
 
     /// A unique identifier for the data contract.
+    #[serde(rename = "$id")]
     pub id: Identifier,
 
     /// A reference to the JSON schema that defines the contract.
+    #[serde(rename = "$schema")]
     pub schema: String,
 
     /// The version of this data contract.
@@ -139,24 +142,30 @@ pub struct DataContract {
     pub owner_id: Identifier,
 
     /// A mapping of document names to their corresponding document types.
+    #[serde(skip)]
     pub document_types: BTreeMap<DocumentName, DocumentType>,
 
     /// Optional metadata associated with the contract.
+    #[serde(skip)]
     pub metadata: Option<Metadata>,
 
     /// Internal configuration for the contract.
+    #[serde(skip)]
     pub config: ContractConfig,
 
     /// A mapping of document names to their corresponding JSON schemas.
     pub documents: BTreeMap<DocumentName, JsonSchema>,
 
     /// Optional mapping of definition names to their corresponding JSON schemas.
+    #[serde(rename = "$defs", default)]
     pub defs: Option<BTreeMap<DefinitionName, JsonSchema>>,
 
     /// A randomly generated value used for creating unique identifiers within the contract.
+    #[serde(skip)]
     pub entropy: Bytes32,
 
     /// A nested mapping of document names and property paths to their binary values.
+    #[serde(skip)]
     pub binary_properties: BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>,
 }
 
@@ -842,6 +851,7 @@ mod test {
         let data_contract: DataContract = serde_json::from_str(&string_contract)?;
 
         let raw_data_contract = data_contract.to_json_object()?;
+        dbg!(&raw_data_contract);
         for path in IDENTIFIER_FIELDS {
             assert!(raw_data_contract
                 .get(path)

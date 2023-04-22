@@ -308,7 +308,15 @@ mod tests {
             .unwrap()
             .expect("expected to get contract back");
 
-        assert_eq!(element, Element::Item(serialized_contract, None));
+        assert_eq!(
+            element,
+            Element::Item(
+                contract
+                    .serialize()
+                    .expect("expected to serialize contract"),
+                None
+            )
+        );
 
         let query_value = json!({
             "where": [
@@ -431,54 +439,42 @@ mod tests {
             .create_initial_state_structure(Some(&db_transaction))
             .expect("expected to create root tree successfully");
 
-        let contract_cbor = json_document_to_cbor(
+        let contract = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
-            Some(crate::drive::defaults::PROTOCOL_VERSION),
         )
         .expect("expected to get cbor contract");
-        let contract =
-            Contract::from_cbor(&contract_cbor).expect("contract should be deserialized");
-        let serialized_contract =
-            DriveContractExt::to_cbor(&contract).expect("contract should be serialized");
 
         let document_type = contract
             .document_type_for_name("contactRequest")
             .expect("expected to get document type");
 
-        drive_operations.push(ContractOperation(ApplyContractWithSerialization {
+        drive_operations.push(ContractOperation(ApplyContract {
             contract: Cow::Borrowed(&contract),
-            serialized_contract: serialized_contract.clone(),
             storage_flags: None,
         }));
 
-        let dashpay_cr_serialized_document0 = json_document_to_cbor(
-            "tests/supporting_files/contract/dashpay/contact-request0.json",
-            Some(1),
-        )
-        .expect("expected to get cbor contract");
-
-        let dashpay_cr_serialized_document1 = json_document_to_cbor(
-            "tests/supporting_files/contract/dashpay/contact-request1.json",
-            Some(1),
-        )
-        .expect("expected to get cbor contract");
-
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+
+        let document0 = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/contact-request0.json",
+            Some(random_owner_id.into()),
+            document_type,
+        )
+        .expect("expected to get document 0");
+
+        let document1 = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/contact-request1.json",
+            Some(random_owner_id.into()),
+            document_type,
+        )
+        .expect("expected to get document 1");
 
         let mut operations = vec![];
 
-        let document0 = Document::from_cbor(
-            dashpay_cr_serialized_document0.as_slice(),
-            None,
-            Some(random_owner_id),
-        )
-        .expect("expected to deserialize contact request");
-
         operations.push(AddOperation {
             owned_document_info: OwnedDocumentInfo {
-                document_info: DocumentRefAndSerialization((
+                document_info: DocumentRefWithoutSerialization((
                     &document0,
-                    dashpay_cr_serialized_document0.as_slice(),
                     StorageFlags::optional_default_as_cow(),
                 )),
                 owner_id: Some(random_owner_id),
@@ -486,18 +482,10 @@ mod tests {
             override_document: false,
         });
 
-        let document1 = Document::from_cbor(
-            dashpay_cr_serialized_document1.as_slice(),
-            None,
-            Some(random_owner_id),
-        )
-        .expect("expected to deserialize contact request");
-
         operations.push(AddOperation {
             owned_document_info: OwnedDocumentInfo {
-                document_info: DocumentRefAndSerialization((
+                document_info: DocumentRefWithoutSerialization((
                     &document1,
-                    dashpay_cr_serialized_document1.as_slice(),
                     StorageFlags::optional_default_as_cow(),
                 )),
                 owner_id: Some(random_owner_id),
@@ -534,7 +522,15 @@ mod tests {
             .unwrap()
             .expect("expected to get contract back");
 
-        assert_eq!(element, Element::Item(serialized_contract, None));
+        assert_eq!(
+            element,
+            Element::Item(
+                contract
+                    .serialize()
+                    .expect("expected to serialize contract"),
+                None
+            )
+        );
 
         let query_value = json!({
             "where": [
