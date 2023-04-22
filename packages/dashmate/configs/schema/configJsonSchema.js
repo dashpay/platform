@@ -251,6 +251,7 @@ module.exports = {
               properties: {
                 categories: {
                   type: 'array',
+                  uniqueItems: true,
                   items: {
                     type: 'string',
                     enum: ['all', 'net', 'tor', 'mempool', 'http', 'bench', 'zmq', 'walletdb', 'rpc', 'estimatefee',

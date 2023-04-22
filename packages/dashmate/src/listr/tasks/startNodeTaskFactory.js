@@ -1,22 +1,7 @@
-const fs = require('fs');
-const path = require('path');
-
 const { Listr } = require('listr2');
 const { Observable } = require('rxjs');
 
 const { NETWORK_LOCAL } = require('../../constants');
-
-const ensureLogFilePath = (logFilePath) => {
-  // Remove directory that could potentially be created by Docker mount
-  if (fs.existsSync(logFilePath) && fs.lstatSync(logFilePath).isDirectory()) {
-    fs.rmSync(logFilePath, { recursive: true });
-  }
-
-  if (!fs.existsSync(logFilePath)) {
-    fs.mkdirSync(path.dirname(logFilePath), { recursive: true });
-    fs.writeFileSync(logFilePath, '');
-  }
-};
 
 /**
  *
@@ -26,6 +11,7 @@ const ensureLogFilePath = (logFilePath) => {
  * @param {createRpcClient} createRpcClient
  * @param {buildServicesTask} buildServicesTask
  * @param getConnectionHost {getConnectionHost}
+ * @param ensureFileMountExists {ensureFileMountExists}
  * @return {startNodeTask}
  */
 function startNodeTaskFactory(
@@ -35,6 +21,7 @@ function startNodeTaskFactory(
   createRpcClient,
   buildServicesTask,
   getConnectionHost,
+  ensureFileMountExists,
 ) {
   /**
    * @typedef {startNodeTask}
@@ -59,15 +46,15 @@ function startNodeTaskFactory(
     }
 
     const coreLogFilePath = config.get('core.log.file.path');
-    ensureLogFilePath(coreLogFilePath);
+    ensureFileMountExists(coreLogFilePath);
 
     // Check Drive log files are created
     if (config.get('platform.enable')) {
       const prettyFilePath = config.get('platform.drive.abci.log.prettyFile.path');
-      ensureLogFilePath(prettyFilePath);
+      ensureFileMountExists(prettyFilePath);
 
       const jsonFilePath = config.get('platform.drive.abci.log.jsonFile.path');
-      ensureLogFilePath(jsonFilePath);
+      ensureFileMountExists(jsonFilePath);
     }
 
     return new Listr([

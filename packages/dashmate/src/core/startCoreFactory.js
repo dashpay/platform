@@ -1,5 +1,3 @@
-const fs = require('fs');
-const path = require('path');
 const CoreService = require('./CoreService');
 
 /**
@@ -8,6 +6,7 @@ const CoreService = require('./CoreService');
  * @param {waitForCoreSync} waitForCoreSync
  * @param {DockerCompose} dockerCompose
  * @param {getConnectionHost} getConnectionHost
+ * @param {ensureFileMountExists} ensureFileMountExists
  * @return {startCore}
  */
 function startCoreFactory(
@@ -16,6 +15,7 @@ function startCoreFactory(
   waitForCoreSync,
   dockerCompose,
   getConnectionHost,
+  ensureFileMountExists,
 ) {
   /**
    * @typedef startCore
@@ -60,19 +60,7 @@ function startCoreFactory(
     }
 
     const logFilePath = config.get('core.log.file.path');
-
-    // Remove directory that could potentially be created by Docker mount
-    if (fs.existsSync(logFilePath) && fs.lstatSync(logFilePath).isDirectory()) {
-      fs.rmSync(logFilePath, { recursive: true });
-    }
-
-    if (!fs.existsSync(logFilePath)) {
-      fs.mkdirSync(path.dirname(logFilePath), { recursive: true });
-      fs.writeFileSync(logFilePath, '');
-    }
-
-    console.log(config.toEnvs());
-    console.log(logFilePath);
+    ensureFileMountExists(logFilePath);
 
     const coreContainer = await dockerCompose.runService(
       config.toEnvs(),
