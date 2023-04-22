@@ -4,7 +4,6 @@ pub mod factory;
 pub mod key_type;
 pub mod purpose;
 pub mod security_level;
-pub mod serialize;
 
 use std::convert::{TryFrom, TryInto};
 
@@ -26,10 +25,11 @@ use crate::util::cbor_serializer;
 use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
 use crate::util::hash::ripemd160_sha256;
 use crate::Convertible;
-use bincode::{Decode, Encode};
+use bincode::{config, Decode, Encode};
 
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
 use crate::util::vec;
+use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
 pub type KeyID = u32;
 pub type TimestampMillis = u64;
@@ -37,9 +37,24 @@ pub type TimestampMillis = u64;
 pub const BINARY_DATA_FIELDS: [&str; 1] = ["data"];
 
 #[derive(
-    Debug, Serialize, Deserialize, Encode, Decode, Clone, PartialEq, Eq, Ord, PartialOrd, Hash,
+    Debug,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    PlatformDeserialize,
+    PlatformSerialize,
+    Clone,
+    PartialEq,
+    Eq,
+    Ord,
+    PartialOrd,
+    Hash,
 )]
 #[serde(rename_all = "camelCase")]
+#[platform_error_type(ProtocolError)]
+#[platform_deserialize_limit(2000)]
+#[platform_serialize_limit(2000)]
 pub struct IdentityPublicKey {
     pub id: KeyID,
     pub purpose: Purpose,
@@ -280,4 +295,18 @@ where
     S: Serializer,
 {
     serializer.serialize_str(&base64::encode(buffer))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::identity::IdentityPublicKey;
+
+    #[test]
+    fn test_identity_key_serialization_deserialization() {
+        let key = IdentityPublicKey::random_key(1, Some(500));
+        let serialized = key.serialize().expect("expected to serialize key");
+        let unserialized = IdentityPublicKey::deserialize(serialized.as_slice())
+            .expect("expected to deserialize key");
+        assert_eq!(key, unserialized)
+    }
 }

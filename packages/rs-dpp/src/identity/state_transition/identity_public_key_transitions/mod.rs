@@ -1,4 +1,3 @@
-mod serialize;
 use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 #[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
@@ -6,7 +5,7 @@ use dashcore::signer;
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 
-use bincode::{Decode, Encode};
+use bincode::{config, Decode, Encode};
 
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
@@ -18,6 +17,7 @@ use crate::consensus::signature::SignatureError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use crate::identity::signer::Signer;
+use crate::platform_serialization::{PlatformDeserialize, PlatformSerialize};
 use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
 #[cfg(feature = "cbor")]
 use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
@@ -41,7 +41,10 @@ pub struct IdentityPublicKeyInCreationWithWitness {
     pub signature: BinaryData,
 }
 
-#[derive(Debug, Encode, Decode, Clone, PartialEq, Eq)]
+#[derive(Debug, Encode, Decode, PlatformDeserialize, PlatformSerialize, Clone, PartialEq, Eq)]
+#[platform_error_type(ProtocolError)]
+#[platform_deserialize_limit(2000)]
+#[platform_serialize_limit(2000)]
 pub struct IdentityPublicKeyInCreationWithoutWitness {
     pub id: KeyID,
     pub key_type: KeyType,
