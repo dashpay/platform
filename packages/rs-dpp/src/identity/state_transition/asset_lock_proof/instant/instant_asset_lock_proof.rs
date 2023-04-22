@@ -9,6 +9,7 @@ use serde::ser::Error as SerError;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::prelude::Identifier;
+#[cfg(feature = "cbor")]
 use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::hash::hash_to_vec;
 use crate::util::vec::vec_to_array;
@@ -126,7 +127,8 @@ impl InstantAssetLockProof {
         Ok(Identifier::new(vec_to_array(&buffer)?))
     }
 
-    pub fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
+    #[cfg(feature = "cbor")]
+    pub fn to_cbor_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
         let mut map = CborCanonicalMap::new();
         let mut is_lock_buffer = Vec::<u8>::new();
         let mut transaction_buffer = Vec::<u8>::new();

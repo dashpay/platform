@@ -14,6 +14,7 @@ use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::ProtocolError;
 
 use byteorder::{BigEndian, ReadBytesExt};
+#[cfg(feature = "cbor")]
 use ciborium::Value as CborValue;
 use integer_encoding::VarIntWriter;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
@@ -325,6 +326,7 @@ impl Document {
 
     /// Reads a CBOR-serialized document and creates a Document from it.
     /// If Document and Owner IDs are provided, they are used, otherwise they are created.
+    #[cfg(feature = "cbor")]
     pub fn from_cbor(
         document_cbor: &[u8],
         document_id: Option<[u8; 32]>,
@@ -387,6 +389,7 @@ impl Document {
     }
 
     /// Serializes the Document to CBOR.
+    #[cfg(feature = "cbor")]
     pub fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
         let mut buffer: Vec<u8> = Vec::new();
         buffer.write_varint(PROTOCOL_VERSION).map_err(|_| {

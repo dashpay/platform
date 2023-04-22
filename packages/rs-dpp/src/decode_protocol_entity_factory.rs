@@ -1,4 +1,5 @@
 use anyhow::anyhow;
+#[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
 use std::convert::TryInto;
 

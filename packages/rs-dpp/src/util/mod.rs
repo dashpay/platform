@@ -1,3 +1,4 @@
+#[cfg(feature = "cbor")]
 pub mod cbor_value;
 pub mod deserializer;
 pub mod entropy_generator;

@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::convert::{TryFrom, TryInto};
 
 use anyhow::{anyhow, Context};
+#[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
 use integer_encoding::VarInt;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -16,6 +17,7 @@ use crate::data_contract::DataContract;
 use crate::document::document_transition::DocumentTransitionObjectLike;
 use crate::prelude::{DocumentTransition, Identifier};
 
+#[cfg(feature = "cbor")]
 use crate::util::cbor_value::{CborCanonicalMap, FieldType, ReplacePaths, ValuesCollection};
 use crate::util::json_value::JsonValueExt;
 use crate::version::LATEST_VERSION;
@@ -401,6 +403,7 @@ impl StateTransitionConvert for DocumentsBatchTransition {
         Ok(object)
     }
 
+    #[cfg(feature = "cbor")]
     fn to_cbor_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
         let mut result_buf = self.protocol_version.encode_var_vec();
         let value: CborValue = self.to_object(skip_signature)?.try_into()?;

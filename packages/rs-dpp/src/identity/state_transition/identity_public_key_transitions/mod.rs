@@ -1,5 +1,6 @@
 mod serialize;
 use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+#[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
 use dashcore::signer;
 use std::collections::BTreeMap;
@@ -18,6 +19,7 @@ use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use crate::identity::signer::Signer;
 use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
+#[cfg(feature = "cbor")]
 use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
 use crate::util::vec;
 use crate::validation::SimpleConsensusValidationResult;
@@ -323,6 +325,7 @@ impl IdentityPublicKeyInCreationWithWitness {
         })
     }
 
+    #[cfg(feature = "cbor")]
     pub fn to_cbor_value(&self) -> CborValue {
         let mut pk_map = CborCanonicalMap::new();
 

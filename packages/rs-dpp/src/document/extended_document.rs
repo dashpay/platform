@@ -2,12 +2,14 @@ use crate::data_contract::{DataContract, DriveContractExt};
 use crate::metadata::Metadata;
 use crate::prelude::Identifier;
 use crate::prelude::{Revision, TimestampMillis};
+#[cfg(feature = "cbor")]
 use crate::util::cbor_value::CborCanonicalMap;
+#[cfg(feature = "cbor")]
+use ciborium::Value as CborValue;
 use crate::util::deserializer;
 use crate::util::deserializer::{ProtocolVersion, SplitProtocolVersionOutcome};
 use crate::util::hash::hash_to_vec;
 use crate::ProtocolError;
-use ciborium::Value as CborValue;
 use integer_encoding::VarInt;
 
 use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
@@ -261,7 +263,8 @@ impl ExtendedDocument {
         Ok(value)
     }
 
-    pub fn from_buffer(cbor_bytes: impl AsRef<[u8]>) -> Result<Self, ProtocolError> {
+    #[cfg(feature = "cbor")]
+    pub fn from_cbor_buffer(cbor_bytes: impl AsRef<[u8]>) -> Result<Self, ProtocolError> {
         let SplitProtocolVersionOutcome {
             protocol_version,
             main_message_bytes: document_cbor_bytes,
@@ -574,7 +577,7 @@ mod test {
         let init_doc = new_example_document();
         let buffer_document = init_doc.to_buffer().expect("no errors");
 
-        let doc = ExtendedDocument::from_buffer(buffer_document)
+        let doc = ExtendedDocument::from_cbor_buffer(buffer_document)
             .expect("document should be created from buffer");
 
         assert_eq!(init_doc.created_at(), doc.created_at());
@@ -631,7 +634,7 @@ mod test {
     fn deserialize_js_cpp_cbor() -> Result<()> {
         let document_cbor = document_cbor_bytes();
 
-        let document = ExtendedDocument::from_buffer(document_cbor)?;
+        let document = ExtendedDocument::from_cbor_buffer(document_cbor)?;
 
         assert_eq!(document.protocol_version, 1);
         assert_eq!(
@@ -666,7 +669,7 @@ mod test {
     #[test]
     fn to_buffer_serialize_to_the_same_format_as_js_dpp() -> Result<()> {
         let document_cbor = document_cbor_bytes();
-        let document = ExtendedDocument::from_buffer(&document_cbor)?;
+        let document = ExtendedDocument::from_cbor_buffer(&document_cbor)?;
 
         let buffer = document.to_buffer()?;
 

@@ -1,6 +1,7 @@
 use crate::identity::Purpose::{AUTHENTICATION, DECRYPTION, ENCRYPTION, SYSTEM, WITHDRAW};
 use anyhow::bail;
 use bincode::{Decode, Encode};
+#[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::convert::TryFrom;

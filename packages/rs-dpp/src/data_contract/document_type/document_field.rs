@@ -9,7 +9,7 @@ use crate::prelude::TimestampMillis;
 use crate::ProtocolError;
 use byteorder::{BigEndian, ReadBytesExt, WriteBytesExt};
 use integer_encoding::{VarInt, VarIntReader};
-use platform_value::{Identifier, Value};
+use platform_value::Value;
 use rand::distributions::{Alphanumeric, Standard};
 use rand::rngs::StdRng;
 use rand::Rng;

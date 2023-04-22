@@ -1,10 +1,11 @@
 use crate::data_contract::{property_names, DataContract};
 use crate::prelude::Identifier;
 use crate::util::cbor_value::CborCanonicalMap;
+use ciborium::Value as CborValue;
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::{data_contract, ProtocolError};
-use ciborium::Value as CborValue;
+
 use integer_encoding::VarInt;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::{Bytes32, Value};

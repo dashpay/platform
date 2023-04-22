@@ -358,7 +358,7 @@ mod test {
         assert!(!contract.keeps_history());
         assert!(!contract.readonly()); // the contract shouldn't be readonly
         assert!(!contract.documents_keep_history_contract_default());
-        assert_eq!(contract.document_types().len(), 3);
+        assert_eq!(contract.document_types.len(), 3);
         assert!(contract.document_types().get("profile").is_some());
         assert!(
             contract

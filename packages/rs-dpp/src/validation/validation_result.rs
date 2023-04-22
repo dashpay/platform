@@ -1,6 +1,5 @@
 use crate::errors::consensus::ConsensusError;
 use crate::ProtocolError;
-use futures::StreamExt;
 use std::fmt::Debug;
 
 pub type SimpleConsensusValidationResult = ConsensusValidationResult<()>;

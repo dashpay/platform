@@ -9,6 +9,7 @@ pub mod serialize;
 use std::convert::{TryFrom, TryInto};
 
 use anyhow::anyhow;
+#[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
 use dashcore::PublicKey as ECDSAPublicKey;
 use platform_value::{BinaryData, ReplacementType, Value, ValueMapHelper};
@@ -19,6 +20,7 @@ use crate::errors::{InvalidVectorSizeError, ProtocolError};
 pub use crate::identity::key_type::KeyType;
 pub use crate::identity::purpose::Purpose;
 pub use crate::identity::security_level::SecurityLevel;
+#[cfg(feature = "cbor")]
 use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
 use crate::util::hash::ripemd160_sha256;
 use crate::util::{serializer, vec};
@@ -202,6 +204,7 @@ impl IdentityPublicKey {
         })
     }
 
+    #[cfg(feature = "cbor")]
     pub fn to_cbor_value(&self) -> CborValue {
         let mut pk_map = CborCanonicalMap::new();
 
@@ -219,6 +222,7 @@ impl IdentityPublicKey {
     }
 }
 
+#[cfg(feature = "cbor")]
 impl Into<CborValue> for &IdentityPublicKey {
     fn into(self) -> CborValue {
         self.to_cbor_value()

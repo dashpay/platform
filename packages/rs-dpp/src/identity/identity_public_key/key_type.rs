@@ -1,6 +1,7 @@
 use crate::util::hash::ripemd160_sha256;
 use anyhow::bail;
 use bincode::{Decode, Encode};
+#[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
 use dashcore::secp256k1::rand::rngs::StdRng as EcdsaRng;
 use dashcore::secp256k1::rand::SeedableRng;

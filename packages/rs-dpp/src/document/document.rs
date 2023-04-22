@@ -37,6 +37,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::convert::TryInto;
 use std::fmt;
 
+#[cfg(feature = "cbor")]
 use ciborium::Value as CborValue;
 use serde_json::{json, Value as JsonValue};
 

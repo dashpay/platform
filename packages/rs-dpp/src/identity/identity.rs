@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::convert::{TryFrom, TryInto};
 use std::hash::{Hash, Hasher};
 
-use ciborium::value::Value as CborValue;
+
 use integer_encoding::VarInt;
 use platform_value::{ReplacementType, Value};
 use serde::{Deserialize, Serialize};
@@ -11,7 +11,10 @@ use serde_json::Value as JsonValue;
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::identity::{identity_public_key, KeyType, Purpose, SecurityLevel};
 use crate::prelude::Revision;
+#[cfg(feature = "cbor")]
 use crate::util::cbor_value::{CborBTreeMapHelper, CborCanonicalMap};
+#[cfg(feature = "cbor")]
+use ciborium::value::Value as CborValue;
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::{
@@ -295,6 +298,7 @@ impl Identity {
         Self::from_cbor(b.as_ref())
     }
 
+    #[cfg(feature = "cbor")]
     pub fn from_cbor(identity_cbor: &[u8]) -> Result<Self, ProtocolError> {
         let SplitProtocolVersionOutcome {
             protocol_version,

@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryInto;
 
 use super::{
@@ -13,7 +13,7 @@ use crate::document::Document;
 use crate::prelude::Revision;
 use crate::ProtocolError;
 use platform_value::btreemap_extensions::{
-    BTreeValueMapHelper, BTreeValueMapReplacementPathHelper, BTreeValueRemoveFromMapHelper,
+    BTreeValueMapHelper, BTreeValueRemoveFromMapHelper,
 };
 use platform_value::{Identifier, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
