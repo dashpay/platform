@@ -31,6 +31,7 @@ use crate::{errors::ProtocolError, metadata::Metadata, util::hash::hash_to_vec};
 use crate::{identifier, Convertible};
 use platform_value::string_encoding::Encoding;
 
+use crate::version::LATEST_VERSION;
 use platform_serialization::{PlatformDeserialize, PlatformDeserializeNoLimit, PlatformSerialize};
 
 use super::document_type::DocumentType;
@@ -125,6 +126,7 @@ impl Convertible for DataContract {
 #[serde(rename_all = "camelCase")]
 pub struct DataContract {
     /// The version of the protocol this contract adheres to.
+    #[serde(default = "default_protocol_version")]
     pub protocol_version: u32,
 
     /// A unique identifier for the data contract.
@@ -291,8 +293,9 @@ impl DataContract {
             mutability.documents_mutable_contract_default,
         )?;
 
-        let protocol_version =
-            data_contract_map.remove_integer(property_names::PROTOCOL_VERSION)?;
+        let protocol_version = data_contract_map
+            .remove_optional_integer(property_names::PROTOCOL_VERSION)?
+            .unwrap_or(LATEST_VERSION);
 
         let documents = data_contract_map
             .remove(property_names::DOCUMENTS)
