@@ -1,3 +1,4 @@
+use bincode::config;
 use bincode::de::{BorrowDecoder, Decoder};
 use bincode::enc::Encoder;
 use bincode::error::{DecodeError, EncodeError};
@@ -29,6 +30,8 @@ use crate::util::cbor_serializer;
 use crate::{errors::ProtocolError, metadata::Metadata, util::hash::hash_to_vec};
 use crate::{identifier, Convertible};
 use platform_value::string_encoding::Encoding;
+
+use platform_serialization::{PlatformDeserialize, PlatformDeserializeNoLimit, PlatformSerialize};
 
 use super::document_type::DocumentType;
 use super::errors::*;
@@ -102,7 +105,14 @@ impl Convertible for DataContract {
 ///
 /// Additionally, `DataContract` holds definitions for JSON schemas, entropy, and binary properties
 /// of the documents.
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
+#[derive(
+    Serialize, Deserialize, Debug, Clone, Default, PartialEq, PlatformSerialize, PlatformDeserialize,
+)] // , PlatformDeserializeNoLimit
+#[platform_error_type(ProtocolError)]
+#[platform_deserialize_limit(15000)]
+#[platform_serialize_limit(15000)]
+#[platform_serialize_into(DataContractInner)]
+#[platform_deserialize_from(DataContractInner)]
 #[serde(try_from = "DataContractInner")]
 pub struct DataContract {
     /// The version of the protocol this contract adheres to.

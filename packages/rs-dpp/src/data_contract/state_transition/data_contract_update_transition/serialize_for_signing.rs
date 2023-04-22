@@ -10,7 +10,7 @@ use platform_serialization::PlatformSerialize;
 use platform_value::Bytes32;
 
 #[derive(Debug, Clone, PartialEq, Encode, PlatformSerialize)]
-#[platform_serialize_error_type(ProtocolError)]
+#[platform_error_type(ProtocolError)]
 pub struct TempDataContractUpdateTransitionWithoutWitness<'a> {
     pub protocol_version: u32,
     pub transition_type: StateTransitionType,

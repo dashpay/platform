@@ -17,9 +17,10 @@ use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::{
     errors::ProtocolError, identifier::Identifier, metadata::Metadata, util::hash, Convertible,
 };
-use bincode::{Decode, Encode};
+use bincode::{config, Decode, Encode};
 #[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
+use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
 use super::{IdentityPublicKey, KeyID};
 
@@ -36,7 +37,22 @@ pub const IDENTIFIER_FIELDS_RAW_OBJECT: [&str; 1] = [property_names::ID_RAW_OBJE
 
 /// Implement the Identity. Identity is a low-level construct that provides the foundation
 /// for user-facing functionality on the platform
-#[derive(Default, Debug, Serialize, Deserialize, Encode, Decode, Clone, Eq, PartialEq)]
+#[derive(
+    Default,
+    Debug,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    PlatformDeserialize,
+    PlatformSerialize,
+    Clone,
+    Eq,
+    PartialEq,
+)]
+#[platform_error_type(ProtocolError)]
+#[platform_deserialize_limit(15000)]
+#[platform_serialize_limit(15000)]
 #[serde(rename_all = "camelCase")]
 pub struct Identity {
     pub protocol_version: u32,
