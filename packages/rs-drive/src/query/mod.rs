@@ -70,7 +70,7 @@ use dpp::data_contract::document_type::DocumentType;
 #[cfg(feature = "full")]
 use dpp::data_contract::document_type::{Index, IndexProperty};
 #[cfg(any(feature = "full", feature = "verify"))]
-use dpp::data_contract::DriveContractExt;
+
 /// Import ordering
 #[cfg(any(feature = "full", feature = "verify"))]
 pub use ordering::OrderClause;
@@ -545,13 +545,12 @@ impl<'a> DriveQuery<'a> {
             "Issue parsing sql: invalid from value",
         )))?;
 
-        let document_type =
-            contract
-                .document_types
-                .get(document_type_name)
-                .ok_or(Error::Query(QueryError::DocumentTypeNotFound(
-                    "document type not found in contract",
-                )))?;
+        let document_type = contract
+            .document_types
+            .get(document_type_name)
+            .ok_or(Error::Query(QueryError::DocumentTypeNotFound(
+                "document type not found in contract",
+            )))?;
 
         // Restrictions
         // only binary where clauses are supported
@@ -1531,7 +1530,7 @@ mod tests {
     use crate::query::DriveQuery;
     use dpp::data_contract::document_type::DocumentType;
     use dpp::data_contract::extra::common::json_document_to_cbor;
-    use dpp::data_contract::DriveContractExt;
+
     use dpp::util::serializer;
     use serde_json::Value::Null;
 

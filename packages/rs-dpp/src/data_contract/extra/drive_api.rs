@@ -9,7 +9,6 @@ use crate::ProtocolError;
 use crate::data_contract::contract_config;
 use crate::data_contract::errors::DataContractError;
 
-
 #[cfg(test)]
 mod test {
     use crate::data_contract::contract_config::ContractConfig;
@@ -202,11 +201,7 @@ mod test {
         );
         assert!(contract.document_types.get("non_existent_key").is_none());
 
-        let contact_info_indices = &contract
-            .document_types
-            .get("contactInfo")
-            .unwrap()
-            .indices;
+        let contact_info_indices = &contract.document_types.get("contactInfo").unwrap().indices;
         assert_eq!(contact_info_indices.len(), 2);
         assert!(contact_info_indices[0].unique);
         assert!(!contact_info_indices[1].unique);

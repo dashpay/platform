@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 
+use dpp::contracts::withdrawals_contract;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::document::Document;
 use dpp::platform_value::Value;
-use dpp::{contracts::withdrawals_contract, data_contract::DriveContractExt};
 use grovedb::TransactionArg;
 use indexmap::IndexMap;
 use lazy_static::__Deref;
@@ -195,7 +195,7 @@ mod tests {
     use crate::tests::helpers::setup::{setup_document, setup_system_data_contract};
 
     mod fetch_withdrawal_documents_by_status {
-        use dpp::data_contract::DriveContractExt;
+
         use dpp::identity::core_script::CoreScript;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
         use dpp::platform_value::platform_value;
@@ -296,7 +296,7 @@ mod tests {
     }
 
     mod find_document_by_transaction_id {
-        use dpp::data_contract::DriveContractExt;
+
         use dpp::identity::core_script::CoreScript;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
         use dpp::platform_value::{platform_value, Bytes32};

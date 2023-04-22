@@ -438,12 +438,10 @@ mod tests {
 
     #[test]
     fn test_serialization() {
-        let dashpay_cbor = json_document_to_cbor(
+        let contract = json_document_to_contract(
             "../rs-dpp/src/tests/payloads/contract/dashpay-contract.json",
-            Some(1),
         )
-        .expect("expected to get cbor contract");
-        let contract = DataContract::from_cbor(&dashpay_cbor).unwrap();
+        .expect("expected to get dashpay contract");
 
         let document_type = contract
             .document_type_for_name("contactRequest")
@@ -471,12 +469,10 @@ mod tests {
 
     #[test]
     fn test_document_cbor_serialization() {
-        let dashpay_cbor = json_document_to_cbor(
+        let contract = json_document_to_contract(
             "../rs-dpp/src/tests/payloads/contract/dashpay-contract.json",
-            Some(1),
         )
         .expect("expected to get cbor contract");
-        let contract = DataContract::from_cbor(&dashpay_cbor).unwrap();
 
         let document_type = contract
             .document_type_for_name("profile")
@@ -494,7 +490,7 @@ mod tests {
     #[test]
     fn test_document_display() {
         let contract = json_document_to_contract(
-            "../rs-dpp/src/tests/payloads/contract/dashpay-contract.json"
+            "../rs-dpp/src/tests/payloads/contract/dashpay-contract.json",
         )
         .expect("expected to get contract");
 

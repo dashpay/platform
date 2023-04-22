@@ -45,7 +45,6 @@ use rand::{Rng, SeedableRng};
 use dpp::block::block_info::BlockInfo;
 use drive::common::helpers::identities::create_test_identity_with_rng;
 use drive::contract::Contract;
-use drive::dpp::data_contract::DriveContractExt;
 use drive::dpp::document::Document;
 use drive::drive::flags::StorageFlags;
 use drive::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;

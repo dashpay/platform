@@ -33,7 +33,7 @@
 //!
 
 use dpp::data_contract::document_type::{encode_unsigned_integer, IndexLevel};
-use dpp::data_contract::DriveContractExt;
+
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
@@ -134,7 +134,7 @@ impl Drive {
                     StorageFlags::optional_default_as_ref(),
                 )
             } else {
-                let inserted_storage_flags = if contract.can_be_deleted() {
+                let inserted_storage_flags = if contract.config.can_be_deleted {
                     document_and_contract_info
                         .owned_document_info
                         .document_info
@@ -488,7 +488,7 @@ impl Drive {
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
-        let contract = <Contract as DriveContractExt>::from_cbor(serialized_contract, None)?;
+        let contract = Contract::from_cbor(serialized_contract)?;
 
         let document = Document::from_cbor(serialized_document, None, owner_id)?;
 
@@ -1022,7 +1022,7 @@ impl Drive {
         let contract = document_and_contract_info.contract;
         let event_id = unique_event_id();
         let document_type = document_and_contract_info.document_type;
-        let storage_flags = if document_type.documents_mutable || contract.can_be_deleted() {
+        let storage_flags = if document_type.documents_mutable || contract.config.can_be_deleted {
             document_and_contract_info
                 .owned_document_info
                 .document_info

@@ -212,8 +212,10 @@ mod tests {
 
     use super::*;
 
-    use dpp::data_contract::extra::common::{json_document_to_cbor, json_document_to_document};
-    use dpp::data_contract::DriveContractExt;
+    use dpp::data_contract::extra::common::{
+        json_document_to_cbor, json_document_to_contract, json_document_to_document,
+    };
+
     use dpp::document::Document;
     use dpp::util::serializer;
     use rand::Rng;
@@ -232,6 +234,7 @@ mod tests {
     use crate::drive::batch::drive_op_batch::document::{
         DocumentOperationsForContractDocumentType, UpdateOperationInfo,
     };
+    use crate::drive::batch::ContractOperationType::ApplyContract;
     use crate::drive::batch::DocumentOperationType::AddDocumentForContract;
     use crate::drive::batch::DriveOperation::{ContractOperation, DocumentOperation};
     use crate::drive::config::DriveConfig;
@@ -255,23 +258,17 @@ mod tests {
             .create_initial_state_structure(Some(&db_transaction))
             .expect("expected to create root tree successfully");
 
-        let contract_cbor = json_document_to_cbor(
+        let contract = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
-            Some(crate::drive::defaults::PROTOCOL_VERSION),
         )
         .expect("expected to get cbor contract");
-        let contract =
-            Contract::from_cbor(&contract_cbor).expect("contract should be deserialized");
-        let serialized_contract =
-            DriveContractExt::to_cbor(&contract).expect("contract should be serialized");
 
         let document_type = contract
             .document_type_for_name("contactRequest")
             .expect("expected to get document type");
 
-        drive_operations.push(ContractOperation(ApplyContractWithSerialization {
+        drive_operations.push(ContractOperation(ApplyContract {
             contract: Cow::Borrowed(&contract),
-            serialized_contract: serialized_contract.clone(),
             storage_flags: None,
         }));
 
@@ -348,23 +345,17 @@ mod tests {
             .create_initial_state_structure(Some(&db_transaction))
             .expect("expected to create root tree successfully");
 
-        let contract_cbor = json_document_to_cbor(
+        let contract = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
-            Some(crate::drive::defaults::PROTOCOL_VERSION),
         )
         .expect("expected to get cbor contract");
-        let contract =
-            Contract::from_cbor(&contract_cbor).expect("contract should be deserialized");
-        let serialized_contract =
-            DriveContractExt::to_cbor(&contract).expect("contract should be serialized");
 
-        let _document_type = contract
+        let document_type = contract
             .document_type_for_name("contactRequest")
             .expect("expected to get document type");
 
-        drive_operations.push(ContractOperation(ApplyContractWithSerialization {
+        drive_operations.push(ContractOperation(ApplyContract {
             contract: Cow::Borrowed(&contract),
-            serialized_contract,
             storage_flags: None,
         }));
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
@@ -372,6 +363,7 @@ mod tests {
         let dashpay_cr_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(random_owner_id.into()),
+            document_type,
         )
         .expect("expected to get cbor contract");
 
@@ -392,6 +384,7 @@ mod tests {
         let dashpay_cr_1_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request1.json",
             Some(random_owner_id.into()),
+            document_type,
         )
         .expect("expected to get cbor contract");
 

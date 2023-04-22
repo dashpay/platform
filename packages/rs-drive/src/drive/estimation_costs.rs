@@ -32,7 +32,7 @@ use crate::drive::defaults::{DEFAULT_HASH_SIZE_U8, ESTIMATED_AVERAGE_DOCUMENT_TY
 use crate::drive::flags::StorageFlags;
 use crate::drive::{contract_documents_path, Drive};
 
-use dpp::data_contract::{DataContract, DriveContractExt};
+use dpp::data_contract::DataContract;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerInformation;
@@ -80,7 +80,7 @@ impl Drive {
         let document_type_count = contract.documents.len() as u32;
 
         // we only store the owner_id storage
-        let storage_flags = if contract.can_be_deleted() {
+        let storage_flags = if contract.config.can_be_deleted {
             Some(StorageFlags::approximate_size(true, None))
         } else {
             None

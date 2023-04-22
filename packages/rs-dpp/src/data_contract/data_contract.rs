@@ -128,7 +128,7 @@ pub struct DataContract {
     pub metadata: Option<Metadata>,
 
     /// Internal configuration for the contract.
-    pub(crate) config: ContractConfig,
+    pub config: ContractConfig,
 
     /// A mapping of document names to their corresponding JSON schemas.
     pub documents: BTreeMap<DocumentName, JsonSchema>,
@@ -482,7 +482,10 @@ impl DataContract {
             .unwrap_or_default())
     }
 
-    pub fn optional_document_type_for_name(&self, document_type_name: &str) -> Option<&DocumentType> {
+    pub fn optional_document_type_for_name(
+        &self,
+        document_type_name: &str,
+    ) -> Option<&DocumentType> {
         self.document_types.get(document_type_name)
     }
 

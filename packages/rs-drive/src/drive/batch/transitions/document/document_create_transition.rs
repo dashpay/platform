@@ -6,7 +6,7 @@ use crate::drive::object_size_info::DocumentInfo::DocumentWithoutSerialization;
 use crate::drive::object_size_info::OwnedDocumentInfo;
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
-use dpp::data_contract::DriveContractExt;
+
 use dpp::document::document_transition::{
     DocumentBaseTransitionAction, DocumentCreateTransitionAction,
 };

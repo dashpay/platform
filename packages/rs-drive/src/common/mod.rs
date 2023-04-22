@@ -51,8 +51,7 @@ use std::path::Path;
 
 #[cfg(feature = "full")]
 use ciborium::value::Value;
-#[cfg(feature = "full")]
-use dpp::data_contract::DriveContractExt;
+
 #[cfg(feature = "full")]
 use grovedb::TransactionArg;
 
@@ -66,6 +65,8 @@ use dpp::data_contract::extra::common::json_document_to_cbor;
 
 #[cfg(feature = "full")]
 use dpp::block::block_info::BlockInfo;
+use dpp::data_contract::extra::common::json_document_to_contract_with_ids;
+use dpp::prelude::Identifier;
 
 #[cfg(feature = "full")]
 /// Serializes to CBOR and applies to Drive a JSON contract from the file system.
@@ -75,22 +76,12 @@ pub fn setup_contract(
     contract_id: Option<[u8; 32]>,
     transaction: TransactionArg,
 ) -> Contract {
-    let contract_cbor = json_document_to_cbor(path, Some(crate::drive::defaults::PROTOCOL_VERSION))
-        .expect("expected to get cbor contract");
-    let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, contract_id)
-        .expect("contract should be deserialized");
-    let contract_cbor =
-        DriveContractExt::to_cbor(&contract).expect("contract should be serialized");
+    let contract =
+        json_document_to_contract_with_ids(path, contract_id.map(|i| Identifier::from(i)), None)
+            .expect("expected to get cbor contract");
 
     drive
-        .apply_contract_cbor(
-            contract_cbor,
-            contract_id,
-            BlockInfo::default(),
-            true,
-            None,
-            transaction,
-        )
+        .apply_contract(&contract, BlockInfo::default(), true, None, transaction)
         .expect("contract should be applied");
     contract
 }

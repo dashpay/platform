@@ -47,7 +47,7 @@ use std::option::Option::None;
 use std::sync::Arc;
 
 #[cfg(feature = "full")]
-use dpp::data_contract::{DataContractFactory, DriveContractExt};
+use dpp::data_contract::DataContractFactory;
 #[cfg(feature = "full")]
 use rand::seq::SliceRandom;
 #[cfg(feature = "full")]

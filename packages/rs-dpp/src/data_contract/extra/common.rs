@@ -4,11 +4,11 @@ use crate::prelude::DataContract;
 use crate::util::serializer::serializable_value_to_cbor;
 use crate::ProtocolError;
 use crate::ProtocolError::ValueError;
+use platform_value::Identifier;
 use std::convert::TryInto;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
-use platform_value::Identifier;
 
 /// Reads a JSON file and converts it to serde_value.
 pub fn json_document_to_json_value(
@@ -67,11 +67,15 @@ pub fn json_document_to_contract(path: impl AsRef<Path>) -> Result<DataContract,
 }
 
 /// Reads a JSON file and converts it a document.
-pub fn json_document_to_contract_with_owner_id(
+pub fn json_document_to_contract_with_ids(
     path: impl AsRef<Path>,
+    id: Option<Identifier>,
     owner_id: Option<Identifier>,
 ) -> Result<DataContract, ProtocolError> {
     let mut value = json_document_to_platform_value(path)?;
+    if let Some(id) = id {
+        value.set_value("$id", platform_value::Value::Identifier(id.into_buffer()))?;
+    }
     if let Some(owner_id) = owner_id {
         value.set_value(
             "$ownerId",

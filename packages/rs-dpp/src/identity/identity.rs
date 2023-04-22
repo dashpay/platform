@@ -2,7 +2,6 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::convert::{TryFrom, TryInto};
 use std::hash::{Hash, Hasher};
 
-
 use integer_encoding::VarInt;
 use platform_value::{ReplacementType, Value};
 use serde::{Deserialize, Serialize};
@@ -13,14 +12,14 @@ use crate::identity::{identity_public_key, KeyType, Purpose, SecurityLevel};
 use crate::prelude::Revision;
 #[cfg(feature = "cbor")]
 use crate::util::cbor_value::{CborBTreeMapHelper, CborCanonicalMap};
-#[cfg(feature = "cbor")]
-use ciborium::value::Value as CborValue;
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::{
     errors::ProtocolError, identifier::Identifier, metadata::Metadata, util::hash, Convertible,
 };
 use bincode::{Decode, Encode};
+#[cfg(feature = "cbor")]
+use ciborium::value::Value as CborValue;
 
 use super::{IdentityPublicKey, KeyID};
 

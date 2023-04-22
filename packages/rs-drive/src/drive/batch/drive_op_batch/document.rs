@@ -10,7 +10,7 @@ use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::DocumentType;
-use dpp::data_contract::{DataContract as Contract, DriveContractExt};
+use dpp::data_contract::DataContract;
 use dpp::document::Document;
 use dpp::prelude::Identifier;
 use grovedb::batch::KeyInfoPath;
@@ -38,7 +38,7 @@ pub struct DocumentOperationsForContractDocumentType<'a> {
     /// Document info
     pub operations: Vec<DocumentOperation<'a>>,
     /// Contract
-    pub contract: &'a Contract,
+    pub contract: &'a DataContract,
     /// Document type
     pub document_type: &'a DocumentType,
 }
@@ -66,7 +66,7 @@ pub enum DocumentOperationType<'a> {
         /// The serialized document
         serialized_document: &'a [u8],
         /// The contract
-        contract: &'a Contract,
+        contract: &'a DataContract,
         /// The name of the document type
         document_type_name: &'a str,
         /// The owner id, if none is specified will try to recover from serialized document
@@ -120,7 +120,7 @@ pub enum DocumentOperationType<'a> {
         /// The document id
         document_id: [u8; 32],
         /// The contract
-        contract: &'a Contract,
+        contract: &'a DataContract,
         /// The name of the document type
         document_type_name: &'a str,
         /// The owner id, if none is specified will try to recover from serialized document
@@ -131,7 +131,7 @@ pub enum DocumentOperationType<'a> {
         /// The document id
         document_id: [u8; 32],
         /// The contract
-        contract: &'a Contract,
+        contract: &'a DataContract,
         /// The name of the document type
         document_type: &'a DocumentType,
         /// The owner id, if none is specified will try to recover from serialized document
@@ -167,7 +167,7 @@ pub enum DocumentOperationType<'a> {
         /// The serialized document
         serialized_document: &'a [u8],
         /// The contract
-        contract: &'a Contract,
+        contract: &'a DataContract,
         /// The name of the document type
         document_type_name: &'a str,
         /// The owner id, if none is specified will try to recover from serialized document
@@ -191,7 +191,7 @@ pub enum DocumentOperationType<'a> {
         /// The document in pre-serialized form
         serialized_document: &'a [u8],
         /// The contract
-        contract: &'a Contract,
+        contract: &'a DataContract,
         /// The name of the document type
         document_type_name: &'a str,
         /// The owner id, if none is specified will try to recover from serialized document
@@ -220,8 +220,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 override_document,
                 storage_flags,
             } => {
-                let contract =
-                    <Contract as DriveContractExt>::from_cbor(serialized_contract, None)?;
+                let contract = DataContract::from_cbor(serialized_contract)?;
 
                 let document = Document::from_cbor(serialized_document, None, owner_id)?;
 
@@ -399,7 +398,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 document_type_name,
                 owner_id,
             } => {
-                let contract = <Contract as DriveContractExt>::from_cbor(contract_cbor, None)?;
+                let contract = DataContract::from_cbor(contract_cbor)?;
                 drive.delete_document_for_contract_with_named_type_operations(
                     document_id,
                     &contract,
@@ -417,7 +416,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 owner_id,
                 storage_flags,
             } => {
-                let contract = <Contract as DriveContractExt>::from_cbor(contract_cbor, None)?;
+                let contract = DataContract::from_cbor(contract_cbor)?;
 
                 let document = Document::from_cbor(serialized_document, None, owner_id)?;
 

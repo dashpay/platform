@@ -4,12 +4,12 @@ use crate::prelude::Identifier;
 use crate::prelude::{Revision, TimestampMillis};
 #[cfg(feature = "cbor")]
 use crate::util::cbor_value::CborCanonicalMap;
-#[cfg(feature = "cbor")]
-use ciborium::Value as CborValue;
 use crate::util::deserializer;
 use crate::util::deserializer::{ProtocolVersion, SplitProtocolVersionOutcome};
 use crate::util::hash::hash_to_vec;
 use crate::ProtocolError;
+#[cfg(feature = "cbor")]
+use ciborium::Value as CborValue;
 use integer_encoding::VarInt;
 
 use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;

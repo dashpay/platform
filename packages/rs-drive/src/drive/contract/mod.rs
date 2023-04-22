@@ -63,9 +63,7 @@ use grovedb::batch::KeyInfoPath;
 #[cfg(feature = "full")]
 use grovedb::reference_path::ReferencePathType::SiblingReference;
 
-#[cfg(feature = "full")]
-use dpp::data_contract::DriveContractExt;
-use dpp::platform_value::{platform_value, Value};
+use dpp::platform_value::{platform_value, Identifier, Value};
 use dpp::Convertible;
 #[cfg(feature = "full")]
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
@@ -227,9 +225,12 @@ impl Drive {
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, contract_id)?;
+        let contract = DataContract::from_cbor_with_id(
+            &contract_cbor,
+            contract_id.map(|identifier| Identifier::from(identifier)),
+        )?;
 
-        let storage_flags = if contract.can_be_deleted() || !contract.config.readonly {
+        let storage_flags = if contract.config.can_be_deleted || !contract.config.readonly {
             Some(StorageFlags::new_single_epoch(
                 block_info.epoch.index,
                 Some(contract.owner_id.to_buffer()),
@@ -354,7 +355,7 @@ impl Drive {
         // toDo: change this to be a reference by index
         let contract_documents_path = contract_documents_path(contract.id.as_bytes());
 
-        for (type_key, document_type) in contract.document_types {
+        for (type_key, document_type) in contract.document_types.iter() {
             self.batch_insert_empty_tree(
                 contract_documents_path,
                 KeyRef(type_key.as_bytes()),
@@ -425,7 +426,10 @@ impl Drive {
         }
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, contract_id)?;
+        let contract = DataContract::from_cbor_with_id(
+            &contract_cbor,
+            contract_id.map(|identifier| Identifier::from(identifier)),
+        )?;
 
         let contract_id = contract_id.unwrap_or_else(|| *contract.id.as_bytes());
 
@@ -573,7 +577,9 @@ impl Drive {
         }
 
         if contract.config.documents_keep_history_contract_default
-            ^ original_contract.config.documents_keep_history_contract_default
+            ^ original_contract
+                .config
+                .documents_keep_history_contract_default
         {
             return Err(Error::Drive(
                 DriveError::ChangingContractDocumentsKeepsHistoryDefault(
@@ -606,7 +612,7 @@ impl Drive {
         let storage_flags = StorageFlags::map_cow_some_element_flags_ref(&element_flags)?;
 
         let contract_documents_path = contract_documents_path(contract.id.as_bytes());
-        for (type_key, document_type) in contract.document_types {
+        for (type_key, document_type) in contract.document_types.iter() {
             let original_document_type = &original_contract.document_types.get(type_key);
             if let Some(original_document_type) = original_document_type {
                 if original_document_type.documents_mutable ^ document_type.documents_mutable {
@@ -714,7 +720,10 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         // first we need to deserialize the contract
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, contract_id)?;
+        let contract = DataContract::from_cbor_with_id(
+            &contract_cbor,
+            contract_id.map(|identifier| Identifier::from(identifier)),
+        )?;
 
         self.apply_contract_with_serialization(
             &contract,
@@ -1095,10 +1104,7 @@ impl Drive {
 
         if already_exists {
             if !original_contract_stored_data.is_empty() {
-                let original_contract = <Contract as DriveContractExt>::from_cbor(
-                    &original_contract_stored_data,
-                    None,
-                )?;
+                let original_contract = Contract::from_cbor(&original_contract_stored_data)?;
                 // if the contract is not mutable update_contract will return an error
                 self.update_contract_add_operations(
                     contract_element,

@@ -7,7 +7,7 @@ use crate::drive::document::contract_document_type_path;
 use crate::drive::flags::StorageFlags;
 use crate::drive::Drive;
 
-use dpp::data_contract::{DataContract, DriveContractExt};
+use dpp::data_contract::DataContract;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel};
 use grovedb::EstimatedLayerInformation;
@@ -27,7 +27,7 @@ impl Drive {
         );
 
         // we only store the owner_id storage
-        let storage_flags = if contract.can_be_deleted() || !contract.config.readonly {
+        let storage_flags = if contract.config.can_be_deleted || !contract.config.readonly {
             Some(StorageFlags::approximate_size(true, None))
         } else {
             None

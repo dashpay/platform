@@ -4,7 +4,8 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
 use dpp::block::block_info::BlockInfo;
-use dpp::data_contract::{DataContract as Contract, DriveContractExt};
+use dpp::data_contract::DataContract as Contract;
+use dpp::platform_value::Identifier;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use std::borrow::{Borrow, Cow};
@@ -63,8 +64,10 @@ impl DriveLowLevelOperationConverter for ContractOperationType<'_> {
                 storage_flags,
             } => {
                 // first we need to deserialize the contract
-                let contract =
-                    <Contract as DriveContractExt>::from_cbor(&contract_cbor, contract_id)?;
+                let contract = Contract::from_cbor_with_id(
+                    &contract_cbor,
+                    contract_id.map(|bytes| Identifier::from(bytes)),
+                )?;
 
                 drive.apply_contract_with_serialization_operations(
                     &contract,

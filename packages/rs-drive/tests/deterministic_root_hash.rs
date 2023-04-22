@@ -36,8 +36,6 @@ use std::borrow::Cow;
 use std::option::Option::None;
 
 #[cfg(feature = "full")]
-use dpp::data_contract::DriveContractExt;
-#[cfg(feature = "full")]
 use dpp::document::Document;
 #[cfg(feature = "full")]
 use dpp::util::serializer;

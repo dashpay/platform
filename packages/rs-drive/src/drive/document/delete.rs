@@ -40,7 +40,7 @@ use grovedb::EstimatedLayerSizes::{AllItems, AllReference, AllSubtrees};
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 
 use dpp::data_contract::document_type::{DocumentType, IndexLevel};
-use dpp::data_contract::DriveContractExt;
+
 use grovedb::EstimatedSumTrees::NoSumTrees;
 use std::collections::HashMap;
 
@@ -121,7 +121,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
-        let contract = <Contract as DriveContractExt>::from_cbor(contract_cbor, None)?;
+        let contract = Contract::from_cbor(contract_cbor)?;
         self.delete_document_for_contract(
             document_id,
             &contract,
@@ -511,7 +511,7 @@ impl Drive {
         let index_level = &document_type.index_structure;
         let contract = document_and_contract_info.contract;
         let event_id = unique_event_id();
-        let storage_flags = if document_type.documents_mutable || contract.can_be_deleted() {
+        let storage_flags = if document_type.documents_mutable || contract.config.can_be_deleted {
             document_and_contract_info
                 .owned_document_info
                 .document_info

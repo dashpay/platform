@@ -33,9 +33,8 @@
 //!
 
 use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
-use dpp::data_contract::extra::common::json_document_to_cbor;
+use dpp::data_contract::extra::common::{json_document_to_cbor, json_document_to_contract};
 
-use dpp::data_contract::DriveContractExt;
 use dpp::document::Document;
 use drive::contract::Contract;
 use drive::contract::CreateRandomDocument;
@@ -47,12 +46,9 @@ criterion_group!(deserialization, test_drive_10_deserialization);
 /// Benchmarks the `DDSR 10`, `CBOR 10`, and `DDSR Consume 10` serialization functions
 /// using 10 Dashpay `contactRequest` documents with random data.
 fn test_drive_10_serialization(c: &mut Criterion) {
-    let dashpay_cbor = json_document_to_cbor(
-        "tests/supporting_files/contract/dashpay/dashpay-contract.json",
-        Some(1),
-    )
-    .expect("expected to get cbor contract");
-    let contract = <Contract as DriveContractExt>::from_cbor(&dashpay_cbor, None).unwrap();
+    let contract =
+        json_document_to_contract("tests/supporting_files/contract/dashpay/dashpay-contract.json")
+            .expect("expected to get contract");
 
     let document_type = contract
         .document_type_for_name("contactRequest")
@@ -102,12 +98,9 @@ fn test_drive_10_serialization(c: &mut Criterion) {
 /// Benchmarks the `DDSR 10` and `CBOR 10` deserialization functions
 /// using 10 serialized Dashpay `contactRequest` documents with random data.
 fn test_drive_10_deserialization(c: &mut Criterion) {
-    let dashpay_cbor = json_document_to_cbor(
-        "tests/supporting_files/contract/dashpay/dashpay-contract.json",
-        Some(1),
-    )
-    .expect("expected to get cbor contract");
-    let contract = <Contract as DriveContractExt>::from_cbor(&dashpay_cbor, None).unwrap();
+    let contract =
+        json_document_to_contract("tests/supporting_files/contract/dashpay/dashpay-contract.json")
+            .expect("expected to get contract");
 
     let document_type = contract
         .document_type_for_name("contactRequest")
