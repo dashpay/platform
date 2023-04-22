@@ -1,7 +1,8 @@
 use crate::data_contract::document_type::DocumentType;
 use crate::document::Document;
 use crate::prelude::DataContract;
-use crate::util::serializer::serializable_value_to_cbor;
+#[cfg(feature = "cbor")]
+use crate::util::cbor_serializer::serializable_value_to_cbor;
 use crate::ProtocolError;
 use crate::ProtocolError::ValueError;
 use platform_value::Identifier;
@@ -43,6 +44,7 @@ pub fn json_document_to_platform_value(
 }
 
 /// Reads a JSON file and converts it to CBOR.
+#[cfg(feature = "cbor")]
 pub fn json_document_to_cbor(
     path: impl AsRef<Path>,
     protocol_version: Option<u32>,

@@ -682,7 +682,7 @@ mod tests {
 
     use dpp::platform_value::{platform_value, Value};
     use dpp::prelude::DataContract;
-    use dpp::util::serializer;
+    use dpp::util::cbor_serializer;
     use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
     use rand::Rng;
     use serde::{Deserialize, Serialize};
@@ -1138,9 +1138,11 @@ mod tests {
             },
         });
 
-        let contract =
-            serializer::serializable_value_to_cbor(&contract, Some(defaults::PROTOCOL_VERSION))
-                .expect("expected to serialize to cbor");
+        let contract = cbor_serializer::serializable_value_to_cbor(
+            &contract,
+            Some(defaults::PROTOCOL_VERSION),
+        )
+        .expect("expected to serialize to cbor");
 
         drive
             .apply_contract_cbor(
@@ -1168,9 +1170,11 @@ mod tests {
            "$updatedAt":1647535750329_u64,
         });
 
-        let serialized_document =
-            serializer::serializable_value_to_cbor(&document, Some(defaults::PROTOCOL_VERSION))
-                .expect("expected to serialize to cbor");
+        let serialized_document = cbor_serializer::serializable_value_to_cbor(
+            &document,
+            Some(defaults::PROTOCOL_VERSION),
+        )
+        .expect("expected to serialize to cbor");
 
         drive
             .add_serialized_document_for_serialized_contract(
@@ -1201,9 +1205,11 @@ mod tests {
            "$updatedAt":1647535754556_u64,
         });
 
-        let serialized_document =
-            serializer::serializable_value_to_cbor(&document, Some(defaults::PROTOCOL_VERSION))
-                .expect("expected to serialize to cbor");
+        let serialized_document = cbor_serializer::serializable_value_to_cbor(
+            &document,
+            Some(defaults::PROTOCOL_VERSION),
+        )
+        .expect("expected to serialize to cbor");
 
         drive
             .update_document_for_contract_cbor(
@@ -2102,7 +2108,7 @@ mod tests {
     ) -> FeeResult {
         let value = serde_json::to_value(person).expect("serialized person");
         let document_cbor =
-            serializer::serializable_value_to_cbor(&value, Some(defaults::PROTOCOL_VERSION))
+            cbor_serializer::serializable_value_to_cbor(&value, Some(defaults::PROTOCOL_VERSION))
                 .expect("expected to serialize to cbor");
         let document = Document::from_cbor(document_cbor.as_slice(), None, None)
             .expect("document should be properly deserialized");
@@ -2405,7 +2411,7 @@ mod tests {
             )
             .expect("should create a document");
 
-        let document_cbor = document.to_buffer().expect("should encode to buffer");
+        let document_cbor = document.to_cbor_buffer().expect("should encode to buffer");
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(
             0,
@@ -2434,7 +2440,7 @@ mod tests {
             .set("name", Value::Text("Ivaaaaaaaaaan!".to_string()))
             .expect("should change name");
 
-        let document_cbor = document.to_buffer().expect("should encode to buffer");
+        let document_cbor = document.to_cbor_buffer().expect("should encode to buffer");
 
         let block_info = BlockInfo::default_with_time(10000);
 

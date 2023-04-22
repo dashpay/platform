@@ -826,7 +826,7 @@ mod tests {
     use crate::query::DriveQuery;
     use dpp::block::epoch::Epoch;
     use dpp::document::Document;
-    use dpp::util::serializer;
+    use dpp::util::cbor_serializer;
 
     #[test]
     fn test_add_and_remove_family_one_document_no_transaction() {
@@ -1724,7 +1724,7 @@ mod tests {
             ],
         });
 
-        let query_cbor = serializer::serializable_value_to_cbor(&query_json, None)
+        let query_cbor = cbor_serializer::serializable_value_to_cbor(&query_json, None)
             .expect("expected to serialize to cbor");
 
         drive
@@ -1765,7 +1765,7 @@ mod tests {
             ],
         });
 
-        let query_cbor = serializer::serializable_value_to_cbor(&query_json, None)
+        let query_cbor = cbor_serializer::serializable_value_to_cbor(&query_json, None)
             .expect("expected to serialize to cbor");
 
         let (results, _, _) = drive

@@ -68,4 +68,5 @@ pub use bincode;
 pub use bls_signatures;
 pub use ed25519_dalek;
 pub use jsonschema;
+pub use platform_serialization;
 pub use platform_value;

@@ -42,7 +42,7 @@ use crate::platform::Platform;
 use dpp::block::block_info::BlockInfo;
 use drive::contract::Contract;
 use drive::dpp::document::Document;
-use drive::dpp::util::serializer;
+use drive::dpp::util::cbor_serializer;
 use drive::drive::flags::StorageFlags;
 use drive::drive::query::QuerySerializedDocumentsOutcome;
 use drive::grovedb::TransactionArg;
@@ -71,7 +71,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             ],
         });
 
-        let query_cbor = serializer::serializable_value_to_cbor(&query_json, None)
+        let query_cbor = cbor_serializer::serializable_value_to_cbor(&query_json, None)
             .expect("expected to serialize to cbor");
 
         let QuerySerializedDocumentsOutcome { items, .. } =

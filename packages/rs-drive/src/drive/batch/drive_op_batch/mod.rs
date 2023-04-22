@@ -217,7 +217,7 @@ mod tests {
     };
 
     use dpp::document::Document;
-    use dpp::util::serializer;
+    use dpp::util::cbor_serializer;
     use rand::Rng;
     use serde_json::json;
     use tempfile::TempDir;
@@ -318,7 +318,7 @@ mod tests {
                 ["$ownerId", "asc"],
             ]
         });
-        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
@@ -544,7 +544,7 @@ mod tests {
                 ["$ownerId", "asc"],
             ]
         });
-        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
@@ -672,7 +672,7 @@ mod tests {
                 ["$ownerId", "asc"],
             ]
         });
-        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
@@ -865,7 +865,7 @@ mod tests {
                 ["age", "asc"],
             ]
         });
-        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
@@ -888,7 +888,7 @@ mod tests {
                 ["age", "asc"],
             ]
         });
-        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
@@ -911,7 +911,7 @@ mod tests {
                 ["age", "asc"],
             ]
         });
-        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
@@ -1105,7 +1105,7 @@ mod tests {
                 ["age", "asc"],
             ]
         });
-        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
@@ -1128,7 +1128,7 @@ mod tests {
                 ["age", "asc"],
             ]
         });
-        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive
@@ -1151,7 +1151,7 @@ mod tests {
                 ["age", "asc"],
             ]
         });
-        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
 
         let (docs, _, _) = drive

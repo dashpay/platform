@@ -137,7 +137,8 @@ impl Convertible for Identity {
             .map_err(ProtocolError::ValueError)
     }
 
-    fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
+    #[cfg(feature = "cbor")]
+    fn to_cbor_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
         self.to_cbor()
     }
 }
@@ -268,6 +269,7 @@ impl Identity {
     }
 
     /// Converts the identity to a cbor buffer
+    #[cfg(feature = "cbor")]
     pub fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
         // Prepend protocol version to the result
         let mut buf = self.get_protocol_version().encode_var_vec();
@@ -293,6 +295,7 @@ impl Identity {
         Ok(buf)
     }
 
+    #[cfg(feature = "cbor")]
     pub fn from_buffer(b: impl AsRef<[u8]>) -> Result<Self, ProtocolError> {
         Self::from_cbor(b.as_ref())
     }
@@ -370,7 +373,7 @@ impl Identity {
 
     /// Computes the hash of an identity
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash::hash_to_vec(self.to_buffer()?))
+        Ok(hash::hash_to_vec(self.serialize()?))
     }
 
     /// Convenience method to get Partial Identity Info

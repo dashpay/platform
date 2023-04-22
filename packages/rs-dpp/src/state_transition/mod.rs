@@ -92,32 +92,6 @@ pub enum StateTransition {
 }
 
 impl StateTransition {
-    // pub fn from_value(value: Value) -> Result<Self, ProtocolError> {
-    //     let state_transition_type = value.get_integer("type")? as StateTransitionType;
-    //     Ok(match state_transition_type {
-    //         StateTransitionType::DataContractCreate => {
-    //             DataContractCreateTransition::from_raw_object(value)?.into()
-    //         }
-    //         StateTransitionType::DocumentsBatch => {
-    //             DocumentsBatchTransition::from_raw_object_with_contracts(value)?.into()
-    //         }
-    //         StateTransitionType::IdentityCreate => {
-    //             IdentityCreateTransition::from_raw_object(value)?.into()
-    //         }
-    //         StateTransitionType::IdentityTopUp => {
-    //             IdentityTopUpTransition::from_raw_object(value)?.into()
-    //         }
-    //         StateTransitionType::DataContractUpdate => {
-    //             DataContractUpdateTransition::from_raw_object(value)?.into()
-    //         }
-    //         StateTransitionType::IdentityUpdate => {
-    //             IdentityUpdateTransition::from_raw_object(value)?.into()
-    //         }
-    //         StateTransitionType::IdentityCreditWithdrawal => {
-    //             IdentityCreditWithdrawalTransition::from_raw_object(value)?.into()
-    //         }
-    //     })
-    // }
     fn signature_property_paths(&self) -> Vec<&'static str> {
         call_static_method!(self, signature_property_paths)
     }

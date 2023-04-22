@@ -214,21 +214,15 @@ impl Drive {
         Ok(())
     }
 
-    /// Insert a contract CBOR.
-    pub fn insert_contract_cbor(
+    /// Insert a contract.
+    pub fn insert_contract(
         &self,
-        contract_cbor: Vec<u8>,
-        contract_id: Option<[u8; 32]>,
+        contract: &DataContract,
         block_info: BlockInfo,
         apply: bool,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
-
-        let contract = DataContract::from_cbor_with_id(
-            &contract_cbor,
-            contract_id.map(|identifier| Identifier::from(identifier)),
-        )?;
 
         let storage_flags = if contract.config.can_be_deleted || !contract.config.readonly {
             Some(StorageFlags::new_single_epoch(
@@ -240,13 +234,13 @@ impl Drive {
         };
 
         let contract_element = Element::Item(
-            contract_cbor,
+            contract.serialize()?,
             StorageFlags::map_to_some_element_flags(storage_flags.as_ref()),
         );
 
         self.insert_contract_element(
             contract_element,
-            &contract,
+            contract,
             &block_info,
             apply,
             transaction,
@@ -406,32 +400,20 @@ impl Drive {
         Ok(batch_operations)
     }
 
-    /// Insert a contract CBOR.
-    pub fn update_contract_cbor(
+    /// Update a data contract
+    pub fn update_contract(
         &self,
-        contract_cbor: Vec<u8>,
-        contract_id: Option<[u8; 32]>,
+        contract: &DataContract,
         block_info: BlockInfo,
         apply: bool,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         if !apply {
-            return self.insert_contract_cbor(
-                contract_cbor,
-                contract_id,
-                block_info,
-                false,
-                transaction,
-            );
+            return self.insert_contract(contract, block_info, false, transaction);
         }
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
-        let contract = DataContract::from_cbor_with_id(
-            &contract_cbor,
-            contract_id.map(|identifier| Identifier::from(identifier)),
-        )?;
-
-        let contract_id = contract_id.unwrap_or_else(|| *contract.id.as_bytes());
+        let contract_bytes = contract.serialize()?;
 
         // Since we can update the contract by definition it already has storage flags
         let storage_flags = Some(StorageFlags::new_single_epoch(
@@ -440,13 +422,13 @@ impl Drive {
         ));
 
         let contract_element = Element::Item(
-            contract_cbor,
+            contract_bytes,
             StorageFlags::map_to_some_element_flags(storage_flags.as_ref()),
         );
 
         let original_contract_fetch_info = self
             .get_contract_with_fetch_info_and_add_to_operations(
-                contract_id,
+                contract.id.to_buffer(),
                 Some(&block_info.epoch),
                 true,
                 transaction,
@@ -474,7 +456,7 @@ impl Drive {
         // Update Data Contracts cache with the new contract
         let updated_contract_fetch_info = self
             .fetch_contract_and_add_operations(
-                contract_id,
+                contract.id.to_buffer(),
                 Some(&block_info.epoch),
                 transaction,
                 &mut drive_operations,
@@ -1466,7 +1448,7 @@ mod tests {
 
             contract.increment_version();
 
-            let updated_contract_cbor = contract.to_buffer().expect("should serialize a contract");
+            let updated_contract_bytes = contract.serialize().expect("should serialize a contract");
 
             drive
                 .update_contract_cbor(

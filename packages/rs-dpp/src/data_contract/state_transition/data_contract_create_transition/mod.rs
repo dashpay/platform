@@ -25,6 +25,7 @@ use bincode::{Decode, Encode};
 mod action;
 pub mod apply_data_contract_create_transition_factory;
 pub mod builder;
+mod serialize_for_signing;
 pub mod validation;
 
 pub use action::{

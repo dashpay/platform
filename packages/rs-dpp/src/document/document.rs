@@ -340,6 +340,7 @@ impl Document {
         Ok(self.to_map_value()?.into())
     }
 
+    #[cfg(feature = "cbor")]
     pub fn to_cbor_value(&self) -> Result<CborValue, ProtocolError> {
         self.to_object()
             .map(|v| v.try_into().map_err(ProtocolError::ValueError))?

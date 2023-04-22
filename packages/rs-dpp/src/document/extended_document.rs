@@ -352,7 +352,8 @@ impl ExtendedDocument {
             .map_err(ProtocolError::ValueError)
     }
 
-    pub fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
+    #[cfg(feature = "cbor")]
+    pub fn to_cbor_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
         let mut result_buf = self.protocol_version.encode_var_vec();
 
         let mut cbor_value = self.document.to_cbor_value()?;
@@ -379,8 +380,9 @@ impl ExtendedDocument {
         Ok(result_buf)
     }
 
+    #[cfg(feature = "cbor")]
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash_to_vec(self.to_buffer()?))
+        Ok(hash_to_vec(self.to_cbor_buffer()?))
     }
 
     /// Set the value under given path.
@@ -575,7 +577,7 @@ mod test {
     fn test_buffer_serialize_deserialize() {
         init();
         let init_doc = new_example_document();
-        let buffer_document = init_doc.to_buffer().expect("no errors");
+        let buffer_document = init_doc.to_cbor_buffer().expect("no errors");
 
         let doc = ExtendedDocument::from_cbor_buffer(buffer_document)
             .expect("document should be created from buffer");
@@ -671,7 +673,7 @@ mod test {
         let document_cbor = document_cbor_bytes();
         let document = ExtendedDocument::from_cbor_buffer(&document_cbor)?;
 
-        let buffer = document.to_buffer()?;
+        let buffer = document.to_cbor_buffer()?;
 
         assert_eq!(hex::encode(document_cbor), hex::encode(buffer));
         Ok(())

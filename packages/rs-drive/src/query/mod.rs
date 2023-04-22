@@ -1531,7 +1531,7 @@ mod tests {
     use dpp::data_contract::document_type::DocumentType;
     use dpp::data_contract::extra::common::json_document_to_cbor;
 
-    use dpp::util::serializer;
+    use dpp::util::cbor_serializer;
     use serde_json::Value::Null;
 
     use dpp::block::block_info::BlockInfo;
@@ -1614,7 +1614,7 @@ mod tests {
         let contract = Contract::default();
         let document_type = DocumentType::default();
 
-        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
         DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
             .expect_err("all ranges must be on same field");
@@ -1636,7 +1636,7 @@ mod tests {
         let contract = Contract::default();
         let document_type = DocumentType::default();
 
-        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
         DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type).expect_err(
             "fields of queries must of defined supported types (where, limit, orderBy...)",
@@ -1660,7 +1660,7 @@ mod tests {
         let contract = Contract::default();
         let document_type = DocumentType::default();
 
-        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
         DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
             .expect_err("the query should not be created");
@@ -1683,7 +1683,7 @@ mod tests {
         let contract = Contract::default();
         let document_type = DocumentType::default();
 
-        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
         DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
             .expect("the query should be created");
@@ -1705,7 +1705,7 @@ mod tests {
         let contract = Contract::default();
         let document_type = DocumentType::default();
 
-        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
         DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
             .expect("query should be fine for a 255 byte long string");
@@ -1731,7 +1731,7 @@ mod tests {
             ],
         });
 
-        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
         let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
             .expect("fields of queries length must be under 256 bytes long");
@@ -1813,7 +1813,7 @@ mod tests {
             ],
         });
 
-        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
         let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
             .expect("The query itself should be valid for a null type");
@@ -1840,7 +1840,7 @@ mod tests {
             ],
         });
 
-        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
         let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
             .expect("query should be valid for empty array");
@@ -1872,7 +1872,7 @@ mod tests {
             ],
         });
 
-        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
         let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
             .expect("query is valid for too many elements");
@@ -1900,7 +1900,7 @@ mod tests {
             ],
         });
 
-        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
 
         // The is actually valid, however executing it is not
@@ -1929,7 +1929,7 @@ mod tests {
         let contract = Contract::default();
         let document_type = DocumentType::default();
 
-        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
         DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
             .expect_err("starts with can not start with an empty string");
@@ -1950,7 +1950,7 @@ mod tests {
         let contract = Contract::default();
         let document_type = DocumentType::default();
 
-        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
         DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
             .expect_err("starts with can not start with an empty string");
@@ -1971,7 +1971,7 @@ mod tests {
         let contract = Contract::default();
         let document_type = DocumentType::default();
 
-        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
         DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
             .expect_err("starts with can not start with an empty string");
@@ -1992,7 +1992,7 @@ mod tests {
         let contract = Contract::default();
         let document_type = DocumentType::default();
 
-        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
         DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
             .expect_err("starts with can not start with an empty string");

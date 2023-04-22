@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 use std::convert::TryFrom;
 use std::io::{BufReader, Read};
 
-//todo: delete in later PR
+#[cfg(feature = "cbor")]
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct DocumentForCbor {
     /// The unique document ID.
@@ -49,6 +49,7 @@ pub struct DocumentForCbor {
     pub updated_at: Option<TimestampMillis>,
 }
 
+#[cfg(feature = "cbor")]
 impl TryFrom<Document> for DocumentForCbor {
     type Error = ProtocolError;
 

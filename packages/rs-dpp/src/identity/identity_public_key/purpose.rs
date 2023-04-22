@@ -48,6 +48,7 @@ impl TryFrom<u8> for Purpose {
     }
 }
 
+#[cfg(feature = "cbor")]
 impl Into<CborValue> for Purpose {
     fn into(self) -> CborValue {
         CborValue::from(self as u128)

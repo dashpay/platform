@@ -38,7 +38,7 @@ use std::option::Option::None;
 #[cfg(feature = "full")]
 use dpp::document::Document;
 #[cfg(feature = "full")]
-use dpp::util::serializer;
+use dpp::util::cbor_serializer;
 #[cfg(feature = "full")]
 use drive::common;
 
@@ -140,7 +140,7 @@ pub fn add_domains_to_contract(
     let domains = Domain::random_domains_in_parent(count, seed, "dash");
     for domain in domains {
         let value = serde_json::to_value(domain).expect("serialized domain");
-        let document_cbor = serializer::serializable_value_to_cbor(
+        let document_cbor = cbor_serializer::serializable_value_to_cbor(
             &value,
             Some(drive::drive::defaults::PROTOCOL_VERSION),
         )

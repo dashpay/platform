@@ -1,5 +1,6 @@
 [package]
 name = "platform-value"
+authors = ["Samuel Westrich <sam@dash.org>"]
 description = "A simple value module"
 version = "0.1.0"
 edition = "2021"

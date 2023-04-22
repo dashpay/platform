@@ -3,7 +3,7 @@
 mod tests {
     use dpp::data_contract::document_type::{DocumentType, Index, IndexProperty};
     use dpp::platform_value::Identifier;
-    use dpp::util::serializer;
+    use dpp::util::cbor_serializer;
     use serde_json::json;
 
     use crate::contract::Contract;
@@ -82,7 +82,7 @@ mod tests {
                 ["b", "==", "2"],
             ]
         });
-        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
         let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
             .expect("query should be valid");
@@ -94,7 +94,7 @@ mod tests {
                 ["a", "==", "1"],
             ]
         });
-        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
         let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
             .expect("query should be valid");
@@ -112,7 +112,7 @@ mod tests {
                 ["c", "==", "1"]
             ]
         });
-        let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
         let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
             .expect("query should be valid");

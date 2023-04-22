@@ -30,6 +30,7 @@ pub enum SecurityLevel {
     MEDIUM = 3,
 }
 
+#[cfg(feature = "cbor")]
 impl Into<CborValue> for SecurityLevel {
     fn into(self) -> CborValue {
         CborValue::from(self as u128)

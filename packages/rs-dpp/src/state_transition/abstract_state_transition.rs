@@ -12,10 +12,12 @@ use crate::errors::consensus::signature::SignatureError;
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, StateTransitionIsNotSignedError,
 };
+#[cfg(feature = "cbor")]
+use crate::util::cbor_serializer;
 use crate::{
     identity::KeyType,
     prelude::{Identifier, ProtocolError},
-    util::{hash, serializer},
+    util::hash,
     BlsModule,
 };
 
@@ -236,11 +238,20 @@ pub trait StateTransitionConvert: Serialize {
     }
 
     // Returns the cbor-encoded bytes representation of the object. The data is  prefixed by 4 bytes containing the Protocol Version
+    fn to_bincode_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
+        let mut value = self.to_canonical_cleaned_object(skip_signature)?;
+        let protocol_version = value.remove_integer(PROPERTY_PROTOCOL_VERSION)?;
+
+        cbor_serializer::serializable_value_to_cbor(&value, Some(protocol_version))
+    }
+
+    #[cfg(feature = "cbor")]
+    // Returns the cbor-encoded bytes representation of the object. The data is  prefixed by 4 bytes containing the Protocol Version
     fn to_cbor_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
         let mut value = self.to_canonical_cleaned_object(skip_signature)?;
         let protocol_version = value.remove_integer(PROPERTY_PROTOCOL_VERSION)?;
 
-        serializer::serializable_value_to_cbor(&value, Some(protocol_version))
+        cbor_serializer::serializable_value_to_cbor(&value, Some(protocol_version))
     }
 
     // Returns the hash of cibor-encoded bytes representation of the object

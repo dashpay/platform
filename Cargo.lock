@@ -1120,6 +1120,7 @@ dependencies = [
  "log",
  "mockall",
  "num_enum",
+ "platform-serialization",
  "platform-value",
  "pretty_assertions",
  "rand",
@@ -2460,6 +2461,16 @@ name = "pkg-config"
 version = "0.3.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ac9a59f73473f1b8d852421e59e64809f025994837ef743615c6d0c5b305160"
+
+[[package]]
+name = "platform-serialization"
+version = "0.1.0"
+dependencies = [
+ "bincode 2.0.0-rc.3",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.15",
+]
 
 [[package]]
 name = "platform-value"

@@ -204,7 +204,7 @@ impl IdentityWasm {
 
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Vec<u8> {
-        self.0.to_buffer().unwrap()
+        self.0.to_cbor_buffer().unwrap()
     }
 
     #[wasm_bindgen]

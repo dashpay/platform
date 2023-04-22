@@ -24,11 +24,9 @@ use crate::data_contract::contract_config::{
 
 use crate::data_contract::get_binary_properties_from_schema::get_binary_properties;
 
-use crate::{
-    errors::ProtocolError,
-    metadata::Metadata,
-    util::{hash::hash_to_vec, serializer},
-};
+#[cfg(feature = "cbor")]
+use crate::util::cbor_serializer;
+use crate::{errors::ProtocolError, metadata::Metadata, util::hash::hash_to_vec};
 use crate::{identifier, Convertible};
 use platform_value::string_encoding::Encoding;
 
@@ -78,7 +76,8 @@ impl Convertible for DataContract {
     }
 
     /// Returns Data Contract as a Buffer
-    fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
+    #[cfg(feature = "cbor")]
+    fn to_cbor_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
         let protocol_version = self.protocol_version;
 
         let mut object = self.to_object()?;
@@ -91,7 +90,7 @@ impl Convertible for DataContract {
             .unwrap()
             .sort_by_lexicographical_byte_ordering_keys_and_inner_maps();
 
-        serializer::serializable_value_to_cbor(&object, Some(protocol_version))
+        cbor_serializer::serializable_value_to_cbor(&object, Some(protocol_version))
     }
 }
 
@@ -326,7 +325,7 @@ impl DataContract {
 
     // Returns hash from Data Contract
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash_to_vec(self.to_buffer()?))
+        Ok(hash_to_vec(self.serialize()?))
     }
 
     /// Increments version of Data Contract
@@ -684,7 +683,7 @@ mod test {
         let data_contract = get_data_contract_fixture(None);
 
         let data_contract_bytes = data_contract
-            .to_buffer()
+            .to_cbor_buffer()
             .expect("data contract should be converted into the bytes");
         let data_contract_restored = DataContract::from_cbor_buffer(data_contract_bytes)
             .expect("data contract should be created from bytes");
@@ -715,7 +714,7 @@ mod test {
         data_contract.protocol_version = 10000;
 
         let data_contract_bytes = data_contract
-            .to_buffer()
+            .to_cbor_buffer()
             .expect("data contract should be converted into the bytes");
 
         let data_contract_restored = DataContract::from_cbor_buffer(data_contract_bytes)
@@ -746,7 +745,7 @@ mod test {
         let data_contract = get_data_contract_fixture(None);
 
         let data_contract_bytes = data_contract
-            .to_buffer()
+            .to_cbor_buffer()
             .expect("data contract should be converted into the bytes");
 
         let mut high_protocol_version_bytes = u64::MAX.encode_var_vec();
@@ -903,7 +902,7 @@ mod test {
 
         let data_contract = DataContract::from_cbor_buffer(&data_contract_cbor).unwrap();
 
-        let serialized = data_contract.to_buffer().unwrap();
+        let serialized = data_contract.to_cbor_buffer().unwrap();
 
         assert_eq!(hex::encode(data_contract_cbor), hex::encode(serialized));
     }

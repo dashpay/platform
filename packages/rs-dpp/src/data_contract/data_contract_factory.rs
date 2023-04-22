@@ -305,7 +305,7 @@ mod tests {
             ..
         } = get_test_data();
         let serialized_data_contract = data_contract
-            .to_buffer()
+            .to_cbor_buffer()
             .expect("should be serialized to buffer");
         let result = factory
             .create_from_buffer(serialized_data_contract, false)

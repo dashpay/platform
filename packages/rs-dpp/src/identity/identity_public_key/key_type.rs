@@ -165,6 +165,7 @@ impl TryFrom<u8> for KeyType {
     }
 }
 
+#[cfg(feature = "cbor")]
 impl Into<CborValue> for KeyType {
     fn into(self) -> CborValue {
         CborValue::from(self as u128)
