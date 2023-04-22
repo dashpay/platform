@@ -367,13 +367,15 @@ mod tests {
             serialized_contract,
             storage_flags: None,
         }));
+        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let dashpay_cr_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
+            Some(random_owner_id.into()),
         )
         .expect("expected to get cbor contract");
 
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+
 
         drive_operations.push(DocumentOperation(AddDocumentForContract {
             document_and_contract_info: DocumentAndContractInfo {
@@ -391,6 +393,7 @@ mod tests {
 
         let dashpay_cr_1_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request1.json",
+            Some(random_owner_id.into()),
         )
         .expect("expected to get cbor contract");
 

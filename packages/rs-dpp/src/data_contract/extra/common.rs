@@ -10,6 +10,10 @@ use std::fs::File;
 use std::io::BufReader;
 use std::iter::FromIterator;
 use std::path::Path;
+use platform_value::Identifier;
+use crate::data_contract::document_type::DocumentType;
+use crate::prelude::DataContract;
+use crate::ProtocolError::ValueError;
 
 pub fn cbor_map_into_btree_map(
     cbor_map: Vec<(Value, Value)>,
@@ -258,7 +262,21 @@ pub fn bytes_for_system_value_from_tree_map(
 }
 
 /// Reads a JSON file and converts it to serde_value.
-pub fn json_document_to_value(path: impl AsRef<Path>) -> Result<serde_json::Value, ProtocolError> {
+pub fn json_document_to_json_value(path: impl AsRef<Path>) -> Result<serde_json::Value, ProtocolError> {
+    let file = File::open(path.as_ref()).map_err(|_| {
+        ProtocolError::FileNotFound(format!(
+            "file not found at path {}",
+            path.as_ref().to_str().unwrap()
+        ))
+    })?;
+
+    let reader = BufReader::new(file);
+    serde_json::from_reader(reader)
+        .map_err(|_| ProtocolError::DecodingError("error decoding value from document".to_string()))
+}
+
+/// Reads a JSON file and converts it to serde_value.
+pub fn json_document_to_platform_value(path: impl AsRef<Path>) -> Result<platform_value::Value, ProtocolError> {
     let file = File::open(path.as_ref()).map_err(|_| {
         ProtocolError::FileNotFound(format!(
             "file not found at path {}",
@@ -276,22 +294,29 @@ pub fn json_document_to_cbor(
     path: impl AsRef<Path>,
     protocol_version: Option<u32>,
 ) -> Result<Vec<u8>, ProtocolError> {
-    let json = json_document_to_value(path)?;
+    let json = json_document_to_json_value(path)?;
     serializable_value_to_cbor(&json, protocol_version)
 }
 
 /// Reads a JSON file and converts it a document.
-pub fn json_document_to_document(path: impl AsRef<Path>) -> Result<Document, ProtocolError> {
-    let file = File::open(path.as_ref()).map_err(|_| {
-        ProtocolError::FileNotFound(format!(
-            "file not found at path {}",
-            path.as_ref().to_str().unwrap()
-        ))
-    })?;
+pub fn json_document_to_document(path: impl AsRef<Path>, owner_id: Option<Identifier>) -> Result<Document, ProtocolError> {
+    if let Some(owner_id) = owner_id {
+        let mut value = json_document_to_platform_value(path)?;
+        dbg!(&value);
+        value.set_value("$ownerId", platform_value::Value::Identifier(owner_id.into_buffer()))?;
+        platform_value::from_value(value).map_err(ValueError)
+    } else {
+        let file = File::open(path.as_ref()).map_err(|_| {
+            ProtocolError::FileNotFound(format!(
+                "file not found at path {}",
+                path.as_ref().to_str().unwrap()
+            ))
+        })?;
 
-    let reader = BufReader::new(file);
-    serde_json::from_reader(reader)
-        .map_err(|_| ProtocolError::DecodingError("error decoding value from document".to_string()))
+        let reader = BufReader::new(file);
+        serde_json::from_reader(reader)
+            .map_err(|e| ProtocolError::DecodingError(format!("error decoding document from json document {e}")))
+    }
 }
 
 /// Make sure the protocol version is correct.
