@@ -481,6 +481,25 @@ impl DataContract {
             })
             .unwrap_or_default())
     }
+
+    pub fn optional_document_type_for_name(&self, document_type_name: &str) -> Option<&DocumentType> {
+        self.document_types.get(document_type_name)
+    }
+
+    pub fn document_type_for_name(
+        &self,
+        document_type_name: &str,
+    ) -> Result<&DocumentType, ProtocolError> {
+        self.document_types.get(document_type_name).ok_or({
+            ProtocolError::DataContractError(DataContractError::DocumentTypeNotFound(
+                "can not get document type from contract",
+            ))
+        })
+    }
+
+    pub fn has_document_type_for_name(&self, document_type_name: &str) -> bool {
+        self.document_types.get(document_type_name).is_some()
+    }
 }
 
 impl TryFrom<JsonValue> for DataContract {

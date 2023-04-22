@@ -152,7 +152,7 @@ impl Drive {
         insert_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         let contract_root_path = paths::contract_root_path(contract.id.as_bytes());
-        if contract.keeps_history() {
+        if contract.config.keeps_history {
             let element_flags = contract_element.get_flags().clone();
             let storage_flags =
                 StorageFlags::map_cow_some_element_flags_ref(contract_element.get_flags())?;
@@ -229,7 +229,7 @@ impl Drive {
 
         let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, contract_id)?;
 
-        let storage_flags = if contract.can_be_deleted() || !contract.readonly() {
+        let storage_flags = if contract.can_be_deleted() || !contract.config.readonly {
             Some(StorageFlags::new_single_epoch(
                 block_info.epoch.index,
                 Some(contract.owner_id.to_buffer()),
@@ -354,7 +354,7 @@ impl Drive {
         // toDo: change this to be a reference by index
         let contract_documents_path = contract_documents_path(contract.id.as_bytes());
 
-        for (type_key, document_type) in contract.document_types() {
+        for (type_key, document_type) in contract.document_types {
             self.batch_insert_empty_tree(
                 contract_documents_path,
                 KeyRef(type_key.as_bytes()),
@@ -452,7 +452,7 @@ impl Drive {
                 "contract should exist",
             )))?;
 
-        if original_contract_fetch_info.contract.readonly() {
+        if original_contract_fetch_info.contract.config.readonly {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableContract(
                 "original contract is readonly",
             )));
@@ -554,26 +554,26 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
-        if original_contract.readonly() {
+        if original_contract.config.readonly {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableContract(
                 "contract is readonly",
             )));
         }
 
-        if contract.readonly() {
+        if contract.config.readonly {
             return Err(Error::Drive(DriveError::ChangingContractToReadOnly(
                 "contract can not be changed to readonly",
             )));
         }
 
-        if contract.keeps_history() ^ original_contract.keeps_history() {
+        if contract.config.keeps_history ^ original_contract.config.keeps_history {
             return Err(Error::Drive(DriveError::ChangingContractKeepsHistory(
                 "contract can not change whether it keeps history",
             )));
         }
 
-        if contract.documents_keep_history_contract_default()
-            ^ original_contract.documents_keep_history_contract_default()
+        if contract.config.documents_keep_history_contract_default
+            ^ original_contract.config.documents_keep_history_contract_default
         {
             return Err(Error::Drive(
                 DriveError::ChangingContractDocumentsKeepsHistoryDefault(
@@ -582,8 +582,8 @@ impl Drive {
             ));
         }
 
-        if contract.documents_mutable_contract_default()
-            ^ original_contract.documents_mutable_contract_default()
+        if contract.config.documents_mutable_contract_default
+            ^ original_contract.config.documents_mutable_contract_default
         {
             return Err(Error::Drive(
                 DriveError::ChangingContractDocumentsMutabilityDefault(
@@ -606,8 +606,8 @@ impl Drive {
         let storage_flags = StorageFlags::map_cow_some_element_flags_ref(&element_flags)?;
 
         let contract_documents_path = contract_documents_path(contract.id.as_bytes());
-        for (type_key, document_type) in contract.document_types() {
-            let original_document_type = &original_contract.document_types().get(type_key);
+        for (type_key, document_type) in contract.document_types {
+            let original_document_type = &original_contract.document_types.get(type_key);
             if let Some(original_document_type) = original_document_type {
                 if original_document_type.documents_mutable ^ document_type.documents_mutable {
                     return Err(Error::Drive(DriveError::ChangingDocumentTypeMutability(

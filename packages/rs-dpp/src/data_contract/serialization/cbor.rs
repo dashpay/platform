@@ -1,4 +1,4 @@
-use crate::data_contract::{property_names, DataContract};
+use crate::data_contract::{property_names, DataContract, contract_config};
 use crate::prelude::Identifier;
 use crate::util::cbor_value::CborCanonicalMap;
 use ciborium::Value as CborValue;
@@ -13,6 +13,13 @@ use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 
 impl DataContract {
+    pub fn from_cbor_with_id(cbor_bytes: impl AsRef<[u8]>, contract_id: Option<Identifier>) -> Result<Self, ProtocolError> {
+            let mut data_contract = Self::from_cbor(cbor_bytes)?;
+            if let Some(id) = contract_id {
+                data_contract.id = id;
+            }
+            Ok(data_contract)
+        }
     pub fn from_cbor(cbor_bytes: impl AsRef<[u8]>) -> Result<Self, ProtocolError> {
         let SplitProtocolVersionOutcome {
             protocol_version,
@@ -80,7 +87,22 @@ impl DataContract {
     pub fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
         let mut buf = self.protocol_version.encode_var_vec();
 
-        let contract_cbor_map = self.to_cbor_canonical_map()?;
+        let mut contract_cbor_map = self.to_cbor_canonical_map()?;
+
+        contract_cbor_map.insert(contract_config::property::READONLY, self.config.readonly);
+        contract_cbor_map.insert(
+            contract_config::property::KEEPS_HISTORY,
+            self.config.keeps_history,
+        );
+        contract_cbor_map.insert(
+            contract_config::property::DOCUMENTS_KEEP_HISTORY_CONTRACT_DEFAULT,
+            self.config.documents_keep_history_contract_default,
+        );
+        contract_cbor_map.insert(
+            contract_config::property::DOCUMENTS_MUTABLE_CONTRACT_DEFAULT,
+            self.config.documents_mutable_contract_default,
+        );
+
         let mut contract_buf = contract_cbor_map
             .to_bytes()
             .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;

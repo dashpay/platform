@@ -9,189 +9,6 @@ use crate::ProtocolError;
 use crate::data_contract::contract_config;
 use crate::data_contract::errors::DataContractError;
 
-pub enum DriveEncoding {
-    DriveCbor,
-    DriveProtobuf,
-}
-
-/// The traits provides method specific for RS-Drive
-pub trait DriveContractExt {
-    fn id(&self) -> &[u8; 32];
-
-    fn document_types(&self) -> &BTreeMap<String, DocumentType>;
-    fn document_types_mut(&mut self) -> &mut BTreeMap<String, DocumentType>;
-    fn set_document_types(&mut self, document_types: BTreeMap<String, DocumentType>);
-
-    fn keeps_history(&self) -> bool;
-    fn set_keeps_history(&mut self, value: bool);
-
-    fn can_be_deleted(&self) -> bool;
-    fn set_can_be_deleted(&mut self, can_be_deleted: bool);
-
-    fn readonly(&self) -> bool;
-    fn set_readonly(&mut self, is_read_only: bool);
-
-    fn documents_keep_history_contract_default(&self) -> bool;
-    fn set_documents_keep_history_contract_default(&mut self, value: bool);
-
-    fn documents_mutable_contract_default(&self) -> bool;
-    fn set_documents_mutable_contract_default(&mut self, value: bool);
-
-    fn deserialize(
-        serialized_contract: &[u8],
-        contract_id: Option<[u8; 32]>,
-        encoding: DriveEncoding,
-    ) -> Result<Self, ProtocolError>
-    where
-        Self: Sized;
-
-    fn from_cbor(
-        contract_cbor: &[u8],
-        contract_id: Option<[u8; 32]>,
-    ) -> Result<Self, ProtocolError>
-    where
-        Self: Sized;
-
-    fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError>;
-    fn optional_document_type_for_name(&self, document_type_name: &str) -> Option<&DocumentType>;
-
-    fn document_type_for_name(
-        &self,
-        document_type_name: &str,
-    ) -> Result<&DocumentType, ProtocolError>;
-    fn has_document_type_for_name(&self, document_type_name: &str) -> bool;
-}
-
-impl DriveContractExt for DataContract {
-    fn id(&self) -> &[u8; 32] {
-        &self.id.0 .0
-    }
-    fn document_types(&self) -> &BTreeMap<String, DocumentType> {
-        &self.document_types
-    }
-    fn document_types_mut(&mut self) -> &mut BTreeMap<String, DocumentType> {
-        &mut self.document_types
-    }
-    fn set_document_types(&mut self, document_types: BTreeMap<String, DocumentType>) {
-        self.document_types = document_types
-    }
-
-    fn keeps_history(&self) -> bool {
-        self.config.keeps_history
-    }
-
-    fn set_keeps_history(&mut self, value: bool) {
-        self.config.keeps_history = value
-    }
-
-    fn can_be_deleted(&self) -> bool {
-        self.config.can_be_deleted
-    }
-    fn set_can_be_deleted(&mut self, can_be_deleted: bool) {
-        self.config.can_be_deleted = can_be_deleted;
-    }
-
-    fn readonly(&self) -> bool {
-        self.config.readonly
-    }
-    fn set_readonly(&mut self, is_read_only: bool) {
-        self.config.readonly = is_read_only;
-    }
-
-    fn documents_keep_history_contract_default(&self) -> bool {
-        self.config.documents_keep_history_contract_default
-    }
-    fn set_documents_keep_history_contract_default(&mut self, value: bool) {
-        self.config.documents_keep_history_contract_default = value;
-    }
-
-    fn documents_mutable_contract_default(&self) -> bool {
-        self.config.documents_mutable_contract_default
-    }
-    fn set_documents_mutable_contract_default(&mut self, value: bool) {
-        self.config.documents_mutable_contract_default = value
-    }
-
-    fn deserialize(
-        serialized_contract: &[u8],
-        contract_id: Option<[u8; 32]>,
-        encoding: DriveEncoding,
-    ) -> Result<Self, ProtocolError>
-    where
-        Self: Sized,
-    {
-        let mut data_contract = match encoding {
-            DriveEncoding::DriveCbor => DataContract::from_cbor(serialized_contract)?,
-            DriveEncoding::DriveProtobuf => {
-                todo!()
-            }
-        };
-        if let Some(id) = contract_id {
-            data_contract.id = Identifier::new(id)
-        }
-        Ok(data_contract)
-    }
-
-    fn from_cbor(contract_cbor: &[u8], contract_id: Option<[u8; 32]>) -> Result<Self, ProtocolError>
-    where
-        Self: Sized,
-    {
-        let mut data_contract = DataContract::from_cbor(contract_cbor)?;
-        if let Some(id) = contract_id {
-            data_contract.id = Identifier::from(id)
-        }
-
-        Ok(data_contract)
-    }
-
-    /// `to_cbor` overloads the original method from [`DataContract`] and adds the properties
-    /// from [`super::Mutability`].
-    fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
-        let mut buf = self.protocol_version.encode_var_vec();
-
-        let mut contract_cbor_map = self.to_cbor_canonical_map()?;
-
-        contract_cbor_map.insert(contract_config::property::READONLY, self.readonly());
-        contract_cbor_map.insert(
-            contract_config::property::KEEPS_HISTORY,
-            self.keeps_history(),
-        );
-        contract_cbor_map.insert(
-            contract_config::property::DOCUMENTS_KEEP_HISTORY_CONTRACT_DEFAULT,
-            self.documents_keep_history_contract_default(),
-        );
-        contract_cbor_map.insert(
-            contract_config::property::DOCUMENTS_MUTABLE_CONTRACT_DEFAULT,
-            self.documents_mutable_contract_default(),
-        );
-
-        let mut contract_buf = contract_cbor_map
-            .to_bytes()
-            .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
-
-        buf.append(&mut contract_buf);
-        Ok(buf)
-    }
-
-    fn optional_document_type_for_name(&self, document_type_name: &str) -> Option<&DocumentType> {
-        self.document_types.get(document_type_name)
-    }
-
-    fn document_type_for_name(
-        &self,
-        document_type_name: &str,
-    ) -> Result<&DocumentType, ProtocolError> {
-        self.document_types.get(document_type_name).ok_or({
-            ProtocolError::DataContractError(DataContractError::DocumentTypeNotFound(
-                "can not get document type from contract",
-            ))
-        })
-    }
-
-    fn has_document_type_for_name(&self, document_type_name: &str) -> bool {
-        self.document_types.get(document_type_name).is_some()
-    }
-}
 
 #[cfg(test)]
 mod test {
@@ -354,39 +171,39 @@ mod test {
             json_document_to_contract("src/tests/payloads/contract/dashpay-contract.json")
                 .expect("expected to get a contract");
 
-        assert!(contract.documents_mutable_contract_default());
-        assert!(!contract.keeps_history());
-        assert!(!contract.readonly()); // the contract shouldn't be readonly
-        assert!(!contract.documents_keep_history_contract_default());
+        assert!(contract.config.documents_mutable_contract_default);
+        assert!(!contract.config.keeps_history);
+        assert!(!contract.config.readonly); // the contract shouldn't be readonly
+        assert!(!contract.config.documents_keep_history_contract_default);
         assert_eq!(contract.document_types.len(), 3);
-        assert!(contract.document_types().get("profile").is_some());
+        assert!(contract.document_types.get("profile").is_some());
         assert!(
             contract
-                .document_types()
+                .document_types
                 .get("profile")
                 .unwrap()
                 .documents_mutable
         );
-        assert!(contract.document_types().get("contactInfo").is_some());
+        assert!(contract.document_types.get("contactInfo").is_some());
         assert!(
             contract
-                .document_types()
+                .document_types
                 .get("contactInfo")
                 .unwrap()
                 .documents_mutable
         );
-        assert!(contract.document_types().get("contactRequest").is_some());
+        assert!(contract.document_types.get("contactRequest").is_some());
         assert!(
             !contract
-                .document_types()
+                .document_types
                 .get("contactRequest")
                 .unwrap()
                 .documents_mutable
         );
-        assert!(contract.document_types().get("non_existent_key").is_none());
+        assert!(contract.document_types.get("non_existent_key").is_none());
 
         let contact_info_indices = &contract
-            .document_types()
+            .document_types
             .get("contactInfo")
             .unwrap()
             .indices;
@@ -415,18 +232,17 @@ mod test {
                 .expect("expected to get a cbor document");
         let mut contract = DataContract::from_cbor(dashpay_cbor).unwrap();
 
-        assert!(!contract.readonly());
-        assert!(!contract.keeps_history());
-        assert!(contract.documents_mutable_contract_default());
-        assert!(!contract.documents_keep_history_contract_default());
+        assert!(!contract.config.readonly);
+        assert!(!contract.config.keeps_history);
+        assert!(contract.config.documents_mutable_contract_default);
+        assert!(!contract.config.documents_keep_history_contract_default);
 
-        contract.set_readonly(true);
-        contract.set_keeps_history(true);
-        contract.set_documents_mutable_contract_default(false);
-        contract.set_documents_keep_history_contract_default(true);
+        contract.config.readonly = true;
+        contract.config.keeps_history = true;
+        contract.config.documents_mutable_contract_default = false;
+        contract.config.documents_keep_history_contract_default = true;
 
-        let contract_cbor =
-            DriveContractExt::to_cbor(&contract).expect("serialization shouldn't fail");
+        let contract_cbor = contract.to_cbor().expect("serialization shouldn't fail");
         let deserialized_contract =
             DataContract::from_cbor(contract_cbor).expect("deserialization shouldn't fail");
 

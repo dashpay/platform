@@ -1736,7 +1736,7 @@ mod tests {
         let (results, _, _) = drive
             .query_documents_cbor_from_contract(
                 &contract,
-                contract.document_types().get("niceDocument").unwrap(),
+                contract.document_types.get("niceDocument").unwrap(),
                 query_cbor.as_slice(),
                 None,
                 None,
@@ -1771,7 +1771,7 @@ mod tests {
         let (results, _, _) = drive
             .query_documents_cbor_from_contract(
                 &contract,
-                contract.document_types().get("niceDocument").unwrap(),
+                contract.document_types.get("niceDocument").unwrap(),
                 query_cbor.as_slice(),
                 None,
                 Some(&db_transaction),

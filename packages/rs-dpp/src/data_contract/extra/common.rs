@@ -8,6 +8,7 @@ use std::convert::TryInto;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
+use platform_value::Identifier;
 
 /// Reads a JSON file and converts it to serde_value.
 pub fn json_document_to_json_value(

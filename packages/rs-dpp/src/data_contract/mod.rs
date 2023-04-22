@@ -7,7 +7,6 @@ pub mod errors;
 pub mod extra;
 
 mod data_contract_facade;
-pub use extra::drive_api::DriveContractExt;
 
 pub mod contract_config;
 mod data_contract_factory;

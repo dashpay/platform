@@ -547,7 +547,7 @@ impl<'a> DriveQuery<'a> {
 
         let document_type =
             contract
-                .document_types()
+                .document_types
                 .get(document_type_name)
                 .ok_or(Error::Query(QueryError::DocumentTypeNotFound(
                     "document type not found in contract",

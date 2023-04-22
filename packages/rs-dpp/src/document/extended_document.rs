@@ -1,4 +1,4 @@
-use crate::data_contract::{DataContract, DriveContractExt};
+use crate::data_contract::DataContract;
 use crate::metadata::Metadata;
 use crate::prelude::Identifier;
 use crate::prelude::{Revision, TimestampMillis};

@@ -322,7 +322,7 @@ fn test_query_historical() {
     let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
         .expect("expected to serialize to cbor");
     let person_document_type = contract
-        .document_types()
+        .document_types
         .get("person")
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
@@ -360,7 +360,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types()
+        .document_types
         .get("person")
         .expect("contract should have a person document type");
 
@@ -389,7 +389,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types()
+        .document_types
         .get("person")
         .expect("contract should have a person document type");
 
@@ -433,7 +433,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types()
+        .document_types
         .get("person")
         .expect("contract should have a person document type");
 
@@ -464,7 +464,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types()
+        .document_types
         .get("person")
         .expect("contract should have a person document type");
 
@@ -503,7 +503,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types()
+        .document_types
         .get("person")
         .expect("contract should have a person document type");
 
@@ -531,7 +531,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types()
+        .document_types
         .get("person")
         .expect("contract should have a person document type");
 
@@ -561,7 +561,7 @@ fn test_query_historical() {
     let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
         .expect("expected to serialize to cbor");
     let person_document_type = contract
-        .document_types()
+        .document_types
         .get("person")
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
@@ -607,7 +607,7 @@ fn test_query_historical() {
     let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
         .expect("expected to serialize to cbor");
     let person_document_type = contract
-        .document_types()
+        .document_types
         .get("person")
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
@@ -649,7 +649,7 @@ fn test_query_historical() {
     let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
         .expect("expected to serialize to cbor");
     let person_document_type = contract
-        .document_types()
+        .document_types
         .get("person")
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
@@ -725,7 +725,7 @@ fn test_query_historical() {
     let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
         .expect("expected to serialize to cbor");
     let person_document_type = contract
-        .document_types()
+        .document_types
         .get("person")
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
@@ -775,7 +775,7 @@ fn test_query_historical() {
     let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
         .expect("expected to serialize to cbor");
     let person_document_type = contract
-        .document_types()
+        .document_types
         .get("person")
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
@@ -819,7 +819,7 @@ fn test_query_historical() {
     let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
         .expect("expected to serialize to cbor");
     let person_document_type = contract
-        .document_types()
+        .document_types
         .get("person")
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
@@ -857,7 +857,7 @@ fn test_query_historical() {
     let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
         .expect("expected to serialize to cbor");
     let person_document_type = contract
-        .document_types()
+        .document_types
         .get("person")
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
@@ -928,7 +928,7 @@ fn test_query_historical() {
     let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
         .expect("expected to serialize to cbor");
     let person_document_type = contract
-        .document_types()
+        .document_types
         .get("person")
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
@@ -978,7 +978,7 @@ fn test_query_historical() {
     let where_cbor = serializer::serializable_value_to_cbor(&query_value, None)
         .expect("expected to serialize to cbor");
     let person_document_type = contract
-        .document_types()
+        .document_types
         .get("person")
         .expect("contract should have a person document type");
     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, person_document_type)
@@ -1156,7 +1156,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types()
+        .document_types
         .get("person")
         .expect("contract should have a person document type");
 
@@ -1182,7 +1182,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types()
+        .document_types
         .get("person")
         .expect("contract should have a person document type");
 
@@ -1209,7 +1209,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types()
+        .document_types
         .get("person")
         .expect("contract should have a person document type");
 
@@ -1238,7 +1238,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types()
+        .document_types
         .get("person")
         .expect("contract should have a person document type");
 
@@ -1279,7 +1279,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types()
+        .document_types
         .get("person")
         .expect("contract should have a person document type");
 
@@ -1316,7 +1316,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types()
+        .document_types
         .get("person")
         .expect("contract should have a person document type");
 
@@ -1343,7 +1343,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types()
+        .document_types
         .get("person")
         .expect("contract should have a person document type");
 
@@ -1395,7 +1395,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types()
+        .document_types
         .get("person")
         .expect("contract should have a person document type");
 
@@ -1449,7 +1449,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types()
+        .document_types
         .get("person")
         .expect("contract should have a person document type");
 
@@ -1479,7 +1479,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types()
+        .document_types
         .get("person")
         .expect("contract should have a person document type");
 
@@ -1546,7 +1546,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types()
+        .document_types
         .get("person")
         .expect("contract should have a person document type");
 
@@ -1576,7 +1576,7 @@ fn test_query_historical() {
         .expect("expected to serialize to cbor");
 
     let person_document_type = contract
-        .document_types()
+        .document_types
         .get("person")
         .expect("contract should have a person document type");
 

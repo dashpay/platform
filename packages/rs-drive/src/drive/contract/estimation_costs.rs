@@ -27,13 +27,13 @@ impl Drive {
         );
 
         // we only store the owner_id storage
-        let storage_flags = if contract.can_be_deleted() || !contract.readonly() {
+        let storage_flags = if contract.can_be_deleted() || !contract.config.readonly {
             Some(StorageFlags::approximate_size(true, None))
         } else {
             None
         };
 
-        for document_type_name in contract.document_types().keys() {
+        for document_type_name in contract.document_types.keys() {
             estimated_costs_only_with_layer_info.insert(
                 KeyInfoPath::from_known_path(contract_document_type_path(
                     contract.id.as_bytes(),
@@ -51,7 +51,7 @@ impl Drive {
             );
         }
 
-        if contract.keeps_history() {
+        if contract.config.keeps_history {
             // we are dealing with a sibling reference
             // sibling reference serialized size is going to be the encoded time size
             // (DEFAULT_FLOAT_SIZE) plus 1 byte for reference type and 1 byte for the space of

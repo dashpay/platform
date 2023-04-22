@@ -41,7 +41,7 @@ use std::fmt;
 use ciborium::Value as CborValue;
 use serde_json::{json, Value as JsonValue};
 
-use crate::data_contract::{DataContract, DriveContractExt};
+use crate::data_contract::DataContract;
 use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::Value;
@@ -138,7 +138,7 @@ impl Document {
         contract: &DataContract,
         owner_id: Option<[u8; 32]>,
     ) -> Result<Option<Vec<u8>>, ProtocolError> {
-        let document_type = contract.document_types().get(document_type_name).ok_or({
+        let document_type = contract.document_types.get(document_type_name).ok_or({
             ProtocolError::DataContractError(DataContractError::DocumentTypeNotFound(
                 "document type should exist for name",
             ))
@@ -433,7 +433,7 @@ impl fmt::Display for Document {
 mod tests {
     use super::*;
     use crate::data_contract::document_type::random_document::CreateRandomDocument;
-    use crate::data_contract::extra::common::json_document_to_cbor;
+    use crate::data_contract::extra::common::{json_document_to_cbor, json_document_to_contract};
     use regex::Regex;
 
     #[test]
@@ -443,7 +443,7 @@ mod tests {
             Some(1),
         )
         .expect("expected to get cbor contract");
-        let contract = <DataContract as DriveContractExt>::from_cbor(&dashpay_cbor, None).unwrap();
+        let contract = DataContract::from_cbor(&dashpay_cbor).unwrap();
 
         let document_type = contract
             .document_type_for_name("contactRequest")
@@ -476,7 +476,7 @@ mod tests {
             Some(1),
         )
         .expect("expected to get cbor contract");
-        let contract = <DataContract as DriveContractExt>::from_cbor(&dashpay_cbor, None).unwrap();
+        let contract = DataContract::from_cbor(&dashpay_cbor).unwrap();
 
         let document_type = contract
             .document_type_for_name("profile")
@@ -493,12 +493,10 @@ mod tests {
 
     #[test]
     fn test_document_display() {
-        let dashpay_cbor = json_document_to_cbor(
-            "../rs-dpp/src/tests/payloads/contract/dashpay-contract.json",
-            Some(1),
+        let contract = json_document_to_contract(
+            "../rs-dpp/src/tests/payloads/contract/dashpay-contract.json"
         )
-        .expect("expected to get cbor contract");
-        let contract = <DataContract as DriveContractExt>::from_cbor(&dashpay_cbor, None).unwrap();
+        .expect("expected to get contract");
 
         let document_type = contract
             .document_type_for_name("profile")
