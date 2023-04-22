@@ -319,7 +319,8 @@ impl DataContract {
         Self::from_raw_object(value)
     }
 
-    pub fn from_buffer(b: impl AsRef<[u8]>) -> Result<DataContract, ProtocolError> {
+    #[cfg(feature = "cbor")]
+    pub fn from_cbor_buffer(b: impl AsRef<[u8]>) -> Result<DataContract, ProtocolError> {
         Self::from_cbor(b)
     }
 
@@ -685,7 +686,7 @@ mod test {
         let data_contract_bytes = data_contract
             .to_buffer()
             .expect("data contract should be converted into the bytes");
-        let data_contract_restored = DataContract::from_buffer(data_contract_bytes)
+        let data_contract_restored = DataContract::from_cbor_buffer(data_contract_bytes)
             .expect("data contract should be created from bytes");
 
         assert_eq!(
@@ -717,7 +718,7 @@ mod test {
             .to_buffer()
             .expect("data contract should be converted into the bytes");
 
-        let data_contract_restored = DataContract::from_buffer(data_contract_bytes)
+        let data_contract_restored = DataContract::from_cbor_buffer(data_contract_bytes)
             .expect("data contract should be created from bytes");
 
         assert_eq!(
@@ -759,7 +760,7 @@ mod test {
 
         high_protocol_version_bytes.extend_from_slice(contract_cbor_bytes);
 
-        let data_contract_restored = DataContract::from_buffer(&high_protocol_version_bytes)
+        let data_contract_restored = DataContract::from_cbor_buffer(&high_protocol_version_bytes)
             .expect("data contract should be created from bytes");
 
         assert_eq!(u32::MAX, data_contract_restored.protocol_version);
@@ -872,7 +873,7 @@ mod test {
     fn deserialize_dpp_cbor() {
         let data_contract_cbor = get_data_contract_cbor_bytes();
 
-        let data_contract = DataContract::from_buffer(data_contract_cbor).unwrap();
+        let data_contract = DataContract::from_cbor_buffer(data_contract_cbor).unwrap();
 
         assert_eq!(data_contract.version, 1);
         assert_eq!(data_contract.protocol_version, 1);
@@ -900,7 +901,7 @@ mod test {
     fn serialize_deterministically_serialize_to_cbor() {
         let data_contract_cbor = get_data_contract_cbor_bytes();
 
-        let data_contract = DataContract::from_buffer(&data_contract_cbor).unwrap();
+        let data_contract = DataContract::from_cbor_buffer(&data_contract_cbor).unwrap();
 
         let serialized = data_contract.to_buffer().unwrap();
 
