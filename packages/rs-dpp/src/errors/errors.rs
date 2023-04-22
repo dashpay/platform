@@ -131,6 +131,14 @@ pub enum ProtocolError {
     #[error("value error: {0}")]
     ValueError(#[from] ValueError),
 
+    /// Value error
+    #[error("platform serialization error: {0}")]
+    PlatformSerializationError(String),
+
+    /// Value error
+    #[error("platform deserialization error: {0}")]
+    PlatformDeserializationError(String),
+
     /// Dash core error
     #[error("dash core error: {0}")]
     DashCoreError(#[from] DashCoreError),

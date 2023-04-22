@@ -5,10 +5,12 @@ use crate::state_transition::StateTransitionType;
 use crate::util::hash::{hash, hash_to_vec};
 use crate::ProtocolError;
 use bincode::config;
+use bincode::Encode;
 use platform_serialization::PlatformSerialize;
 use platform_value::Bytes32;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Encode, PlatformSerialize)]
+#[platform_serialize_error_type(ProtocolError)]
 pub struct TempDataContractUpdateTransitionWithoutWitness<'a> {
     pub protocol_version: u32,
     pub transition_type: StateTransitionType,
