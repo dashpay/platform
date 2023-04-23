@@ -100,11 +100,11 @@ where
 
         if let Err(ProtocolError::MaxEncodedBytesReachedError {
             max_size_kbytes,
-            payload,
-        }) = state_transition.to_cbor_buffer(false)
+            size_hit,
+        }) = state_transition.serialize()
         {
             result.add_error(BasicError::StateTransitionMaxSizeExceededError(
-                StateTransitionMaxSizeExceededError::new(payload.len() / 1024, max_size_kbytes),
+                StateTransitionMaxSizeExceededError::new(size_hit / 1024, max_size_kbytes),
             ));
         }
 

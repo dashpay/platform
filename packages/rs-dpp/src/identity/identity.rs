@@ -6,6 +6,7 @@ use integer_encoding::VarInt;
 use platform_value::{ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use crate::serialization_traits::PlatformDeserializable;
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::identity::{identity_public_key, KeyType, Purpose, SecurityLevel};

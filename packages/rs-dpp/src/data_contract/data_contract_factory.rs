@@ -163,7 +163,7 @@ impl DataContractFactory {
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
         let (protocol_version, mut raw_data_contract) =
-            DecodeProtocolEntity::decode_protocol_entity(buffer)?;
+            DecodeProtocolEntity::decode_protocol_entity_to_value::<DataContract>(buffer)?;
 
         raw_data_contract.set_value("protocolVersion", Value::U32(protocol_version))?;
 

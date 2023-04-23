@@ -73,15 +73,19 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
                 pub fn serialize(&self) -> Result<Vec<u8>, #error_type> {
                     let config = config::standard().with_big_endian().with_limit::<{ #limit }>();
                     #serialize_into.map_err(|e| {
-                        #error_type::PlatformSerializationError(format!("unable to serialize {}: {}", stringify!(#name), e))
-                    })
+                    match e {
+                        bincode::error::EncodeError::Io{inner, index} => #error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit, size_hit: index},
+                        _ => #error_type::PlatformSerializationError(format!("unable to serialize {}: {}", stringify!(#name), e)),
+                    }})
                 }
 
                 pub fn serialize_consume(self) -> Result<Vec<u8>, #error_type> {
                     let config = config::standard().with_big_endian().with_limit::<{ #limit }>();
                     #serialize_into_consume.map_err(|e| {
-                        #error_type::PlatformSerializationError(format!("unable to serialize {}: {}", stringify!(#name), e))
-                    })
+                    match e {
+                        bincode::error::EncodeError::Io{inner, index} => #error_type::MaxEncodedBytesReachedError{max_size_kbytes: #limit, size_hit: index},
+                        _ => #error_type::PlatformSerializationError(format!("unable to serialize {}: {}", stringify!(#name), e)),
+                    }})
                 }
             }
         }
@@ -175,8 +179,8 @@ pub fn derive_platform_deserialize(input: TokenStream) -> TokenStream {
     };
 
     let expanded = quote! {
-        impl #impl_generics #name #ty_generics #where_clause {
-            pub fn deserialize(data: &[u8]) -> Result<Self, #platform_error_type> {
+        impl PlatformDeserializable for #impl_generics #name #ty_generics #where_clause {
+            fn deserialize(data: &[u8]) -> Result<Self, #platform_error_type> {
                 let config = #config;
                 #deserialize_from_inner.map_err(|e| {
                     #platform_error_type::PlatformDeserializationError(format!("unable to deserialize {}: {}", stringify!(#name), e))

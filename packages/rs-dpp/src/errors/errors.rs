@@ -31,8 +31,8 @@ pub enum ProtocolError {
     EmptyPublicKeyDataError,
     #[error("Payload reached a {max_size_kbytes}KB limit")]
     MaxEncodedBytesReachedError {
-        payload: Vec<u8>,
         max_size_kbytes: usize,
+        size_hit: usize,
     },
     #[error("Encoding Error - {0}")]
     EncodingError(String),

@@ -204,7 +204,7 @@ where
         skip_validation: bool,
     ) -> Result<Identity, ProtocolError> {
         let (protocol_version, mut raw_identity) =
-            DecodeProtocolEntity::decode_protocol_entity(buffer)?;
+            DecodeProtocolEntity::decode_protocol_entity_to_value(buffer)?;
         raw_identity
             .set_value("protocolVersion", Value::U32(protocol_version))
             .map_err(ProtocolError::ValueError)?;

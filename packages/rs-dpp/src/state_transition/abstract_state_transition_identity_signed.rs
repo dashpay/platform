@@ -33,7 +33,7 @@ where
     ) -> Result<(), ProtocolError> {
         self.verify_public_key_level_and_purpose(identity_public_key)?;
         self.verify_public_key_is_enabled(identity_public_key)?;
-        let data = self.to_cbor_buffer(true)?;
+        let data = self.signable_bytes()?;
         self.set_signature(signer.sign(identity_public_key, data.as_slice())?);
         self.set_signature_public_key_id(identity_public_key.id);
         Ok(())

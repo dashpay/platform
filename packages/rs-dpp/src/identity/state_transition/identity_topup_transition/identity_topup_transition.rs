@@ -1,5 +1,5 @@
 use crate::platform_serialization::PlatformSignable;
-use crate::signable::Signable;
+use crate::serialization_traits::{Signable, PlatformDeserializable};
 use bincode::{config, Decode, Encode};
 use std::convert::{TryFrom, TryInto};
 

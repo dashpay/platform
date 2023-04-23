@@ -8,6 +8,7 @@ use crate::state_transition::StateTransitionConvert;
 use crate::state_transition::StateTransitionType::{DataContractCreate, DataContractUpdate};
 use crate::version::LATEST_VERSION;
 use crate::{NonConsensusError, ProtocolError};
+use crate::serialization_traits::{Signable, PlatformDeserializable};
 
 impl DataContractCreateTransition {
     pub fn new_from_data_contract<S: Signer>(
@@ -26,7 +27,7 @@ impl DataContractCreateTransition {
             signature_public_key_id: key_id,
             signature: Default::default(),
         };
-        let value = transition.to_cbor_buffer(true)?;
+        let value = transition.signable_bytes()?;
         let public_key =
             identity
                 .loaded_public_keys
@@ -55,7 +56,7 @@ impl DataContractUpdateTransition {
             signature_public_key_id: key_id,
             signature: Default::default(),
         };
-        let value = transition.to_cbor_buffer(true)?;
+        let value = transition.signable_bytes()?;
         let public_key =
             identity
                 .loaded_public_keys

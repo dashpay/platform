@@ -21,7 +21,7 @@ use crate::{
 
 use super::property_names::*;
 
-use crate::signable::Signable;
+use crate::serialization_traits::{Signable, PlatformDeserializable};
 use bincode::enc::Encoder;
 use bincode::error::EncodeError;
 use bincode::{config, Decode, Encode};

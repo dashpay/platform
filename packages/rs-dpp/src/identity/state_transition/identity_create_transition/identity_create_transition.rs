@@ -1,7 +1,7 @@
 use std::convert::{TryFrom, TryInto};
 
 use crate::platform_serialization::PlatformSignable;
-use crate::signable::Signable;
+use crate::serialization_traits::{Signable, PlatformDeserializable};
 use bincode::{config, Decode, Encode};
 
 use platform_value::btreemap_extensions::BTreeValueMapHelper;

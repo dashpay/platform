@@ -43,7 +43,7 @@ mod bls;
 pub mod tests;
 
 pub mod block;
-pub mod signable;
+pub mod serialization_traits;
 pub mod system_data_contracts;
 
 pub use async_trait;

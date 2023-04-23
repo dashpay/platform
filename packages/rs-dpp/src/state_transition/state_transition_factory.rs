@@ -107,7 +107,7 @@ where
         options: Option<StateTransitionFactoryOptions>,
     ) -> Result<StateTransition, ProtocolError> {
         let (protocol_version, mut raw_state_transition) =
-            DecodeProtocolEntity::decode_protocol_entity(state_transition_buffer)?;
+            DecodeProtocolEntity::decode_protocol_entity_to_value(state_transition_buffer)?;
 
         match raw_state_transition {
             Value::Map(ref mut m) => m.insert_string_key_value(

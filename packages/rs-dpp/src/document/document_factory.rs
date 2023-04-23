@@ -274,7 +274,7 @@ where
         buffer: impl AsRef<[u8]>,
         options: FactoryOptions,
     ) -> Result<ExtendedDocument, ProtocolError> {
-        let result = DecodeProtocolEntity::decode_protocol_entity(buffer);
+        let result = DecodeProtocolEntity::decode_protocol_entity_to_value::<ExtendedDocument>(buffer);
 
         match result {
             Err(ProtocolError::AbstractConsensusError(err)) => {

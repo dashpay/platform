@@ -15,6 +15,8 @@ use serde::de::Error;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
+use crate::serialization_traits::PlatformDeserializable;
+
 use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::data_contract::contract_config;
 use crate::data_contract::contract_config::{

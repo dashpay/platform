@@ -39,7 +39,7 @@ mod example;
 mod serialization;
 mod state_transition_action;
 
-use crate::signable::Signable;
+use crate::serialization_traits::{Signable, PlatformDeserializable};
 pub use state_transition_action::StateTransitionAction;
 macro_rules! call_method {
     ($state_transition:expr, $method:ident, $args:tt ) => {
@@ -130,6 +130,7 @@ impl StateTransitionConvert for StateTransition {
         call_method!(self, hash, skip_signature)
     }
 
+    #[cfg(feature = "cbor")]
     fn to_cbor_buffer(&self, _skip_signature: bool) -> Result<Vec<u8>, crate::ProtocolError> {
         call_method!(self, to_cbor_buffer, true)
     }

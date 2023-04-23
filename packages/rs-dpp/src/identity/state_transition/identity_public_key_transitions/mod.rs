@@ -18,10 +18,13 @@ use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use crate::identity::signer::Signer;
 use crate::platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use crate::serialization_traits::PlatformDeserializable;
 use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
 #[cfg(feature = "cbor")]
 use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
-use crate::util::{cbor_serializer, vec};
+#[cfg(feature = "cbor")]
+use crate::util::cbor_serializer;
+use crate::util::vec;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::{BlsModule, Convertible, InvalidVectorSizeError, SerdeParsingError};
 
