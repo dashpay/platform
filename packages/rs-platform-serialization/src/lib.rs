@@ -259,7 +259,6 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
 
-    // Extract the error type from the attribute.
     let error_type = input
         .attrs
         .iter()
@@ -272,13 +271,11 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
         })
         .expect("Missing platform_error_type attribute");
 
-    // Extract the fields of the struct.
     let fields = match &input.data {
         syn::Data::Struct(data) => &data.fields,
         _ => panic!("PlatformSignable can only be derived for structs"),
     };
 
-    // Filter out the fields with the `exclude_from_sig_hash` attribute.
     let filtered_fields: Vec<&syn::Field> = fields
         .iter()
         .filter(|field| {
@@ -286,15 +283,13 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
         })
         .collect();
 
-    // Construct the intermediate structure.
     let intermediate_name = syn::Ident::new(&format!("{}Intermediate", name), name.span());
-    let intermediate_fields = filtered_fields.iter().map(|field| {
+    let intermediate_fields: Vec<_> = filtered_fields.iter().map(|field| {
         let ident = &field.ident;
         let ty = &field.ty;
         quote! { #ident: #ty }
-    });
+    }).collect();
 
-    // Extract the generics.
     let generics = &input.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
@@ -303,25 +298,47 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
         quote! { #ident: self.#ident.clone() }
     });
 
+    let field_mapping_clone = field_mapping.clone();
+
     let expanded = quote! {
-        struct #intermediate_name #generics {
-            #( #intermediate_fields, )*
+    struct #intermediate_name #impl_generics {
+        #( #intermediate_fields, )*
+    }
+
+    // impl #impl_generics Clone for #intermediate_name #ty_generics #where_clause {
+    //     fn clone(&self) -> Self {
+    //         #intermediate_name {
+    //             #( #field_mapping_clone.clone(), )*
+    //         }
+    //     }
+    // }
+
+    impl #impl_generics bincode::Encode for #intermediate_name #ty_generics #where_clause {
+        fn encode<E>(&self, encoder: &mut E) -> Result<(), bincode::error::EncodeError>
+        where
+            E: bincode::Encoder,
+        {
+            #( encoder.encode_field(&self.#field_mapping_clone.clone())?; )*
+            Ok(())
         }
+    }
 
-        impl #impl_generics #name #ty_generics #where_clause {
-            pub fn sig_hash(&self) -> Result<Vec<u8>, #error_type> {
-                let config = config::standard().with_big_endian();
+    impl #impl_generics #name #ty_generics #where_clause {
+        pub fn sig_hash(&self) -> Result<Vec<u8>, #error_type> {
+            let config = config::standard().with_big_endian();
 
-                let intermediate = #intermediate_name {
-                    #( #field_mapping, )*
-                };
+            let intermediate = #intermediate_name {
+                #( #field_mapping.clone(), )*
+            };
 
-                bincode::encode_to_vec(&intermediate, config).map_err(|e| {
-                    #error_type::PlatformSerializationError(format!("unable to serialize to produce sig hash {}: {}", stringify!(#name), e))
-                })
-            }
+            bincode::encode_to_vec(&intermediate, config).map_err(|e| {
+                #error_type::PlatformSerializationError(format!("unable to serialize to produce sig hash {}: {}", stringify!(#name), e))
+            })
         }
-    };
+    }
+};
+
+    println!("Expanded code: {}", expanded.to_string());
 
     TokenStream::from(expanded)
 }
