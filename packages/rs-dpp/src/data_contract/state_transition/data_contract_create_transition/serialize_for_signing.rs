@@ -8,7 +8,7 @@ use platform_value::Bytes32;
 
 use bincode::{Decode, Encode};
 
-#[derive(Debug, Clone, PartialEq, Encode, Decode)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TempDataContractCreateTransitionWithoutWitness<'a> {
     pub protocol_version: u32,
     pub transition_type: StateTransitionType,

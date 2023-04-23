@@ -60,17 +60,7 @@ pub const U32_FIELDS: [&str; 2] = [
     property_names::DATA_CONTRACT_PROTOCOL_VERSION,
 ];
 
-#[derive(Encode, Decode, PlatformSignable)]
-#[platform_error_type(ProtocolError)]
-pub struct Test12 {
-    test: u32,
-    #[exclude_from_sig_hash]
-    signature_public_key_id: KeyID,
-    #[exclude_from_sig_hash]
-    signature: BinaryData,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq, PlatformSignable)]
 #[serde(rename_all = "camelCase")]
 #[platform_error_type(ProtocolError)]
 pub struct DataContractCreateTransition {
