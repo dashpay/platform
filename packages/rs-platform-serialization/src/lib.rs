@@ -250,6 +250,7 @@ pub fn derive_platform_deserialize_no_limit(input: TokenStream) -> TokenStream {
 
     TokenStream::from(expanded)
 }
+
 #[proc_macro_derive(
     PlatformSignable,
     attributes(platform_error_type, exclude_from_sig_hash)
@@ -291,7 +292,7 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
         .map(|field| {
             let ident = &field.ident;
             let ty = &field.ty;
-            quote! { #ident: &'a #ty }
+            quote! { #ident: std::borrow::Cow<'a, #ty> }
         })
         .collect();
 
@@ -310,7 +311,7 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
             #( #intermediate_fields, )*
         }
 
-        impl #impl_generics bincode::Encode for #intermediate_name #ty_generics #where_clause {
+        impl #impl_generics <'a> bincode::Encode for #intermediate_name<'a> #ty_generics #where_clause {
             fn encode<E>(&self, encoder: &mut E) -> Result<(), bincode::error::EncodeError>
             where
                 E: bincode::enc::Encoder,
@@ -324,7 +325,7 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
         impl #impl_generics <'a> From<&'a #name #ty_generics> for #intermediate_name<'a> #ty_generics #where_clause {
             fn from(original: &'a #name #ty_generics) -> Self {
                 #intermediate_name {
-                    #( #cloned_field_mapping: &original.#cloned_field_mapping, )*
+                    #( #cloned_field_mapping: std::borrow::Cow::Borrowed(&original.#cloned_field_mapping), )*
                 }
             }
         }
@@ -335,12 +336,11 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
 
                 let intermediate : #intermediate_name = self.into();
 
-                bincode::encode_to_vec(self, config).map_err(|e| {
+                bincode::encode_to_vec(intermediate, config).map_err(|e| {
                     #error_type::PlatformSerializationError(format!("unable to serialize to produce sig hash {}: {}", stringify!(#name), e))
                 })
             }
         }
     };
-    println!("{}", expanded.to_string());
     TokenStream::from(expanded)
 }
