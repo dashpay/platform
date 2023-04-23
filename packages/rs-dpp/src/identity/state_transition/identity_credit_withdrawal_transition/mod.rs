@@ -58,7 +58,6 @@ pub struct IdentityCreditWithdrawalTransition {
     pub amount: u64,
     pub core_fee_per_byte: u32,
     pub pooling: Pooling,
-    #[bincode(with_serde)]
     pub output_script: CoreScript,
     pub revision: Revision,
     #[exclude_from_sig_hash]

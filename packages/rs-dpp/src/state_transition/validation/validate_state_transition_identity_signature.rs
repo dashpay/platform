@@ -171,14 +171,14 @@ mod test {
     #[serde(rename_all = "camelCase")]
     struct ExampleStateTransition {
         pub protocol_version: u32,
-        pub signature: BinaryData,
-        pub signature_public_key_id: KeyID,
         pub transition_type: StateTransitionType,
         pub owner_id: Identifier,
 
         pub return_error: Option<usize>,
         #[serde(skip)]
         pub execution_context: StateTransitionExecutionContext,
+        pub signature_public_key_id: KeyID,
+        pub signature: BinaryData,
     }
 
     impl StateTransitionConvert for ExampleStateTransition {

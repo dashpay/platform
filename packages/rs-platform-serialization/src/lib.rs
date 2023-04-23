@@ -303,6 +303,8 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
         quote! { #ident }
     });
 
+    let cloned_field_mapping = field_mapping.clone();
+
     let expanded = quote! {
         struct #intermediate_name #impl_generics {
             #( #intermediate_fields, )*
@@ -316,6 +318,14 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
 
                 #(self.#field_mapping.encode(encoder)?; )*
                 Ok(())
+            }
+        }
+
+        impl #impl_generics From<&#name #ty_generics> for #intermediate_name #ty_generics #where_clause {
+            fn from(original: &#name #ty_generics) -> Self {
+                #intermediate_name {
+                    #( #cloned_field_mapping: original.#cloned_field_mapping, )*
+                }
             }
         }
 

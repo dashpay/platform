@@ -73,13 +73,12 @@ pub struct IdentityUpdateTransition {
     /// Timestamp when keys were disabled
     pub public_keys_disabled_at: Option<TimestampMillis>,
 
-    /// Cryptographic signature of the State Transition
-    #[exclude_from_sig_hash]
-    pub signature: BinaryData,
-
     /// The ID of the public key used to sing the State Transition
     #[exclude_from_sig_hash]
     pub signature_public_key_id: KeyID,
+    /// Cryptographic signature of the State Transition
+    #[exclude_from_sig_hash]
+    pub signature: BinaryData,
 }
 
 impl Default for IdentityUpdateTransition {
