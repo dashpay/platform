@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use platform_serialization::{PlatformSignable};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
@@ -21,7 +21,7 @@ use crate::{
 
 use super::property_names::*;
 
-use bincode::{Decode, Encode};
+use bincode::{Decode, Encode, config};
 
 mod action;
 pub mod apply_data_contract_create_transition_factory;
@@ -32,6 +32,7 @@ pub mod validation;
 pub use action::{
     DataContractCreateTransitionAction, DATA_CONTRACT_CREATE_TRANSITION_ACTION_VERSION,
 };
+use crate::data_contract::state_transition::data_contract_create_transition::serialize_for_signing::TempDataContractCreateTransitionWithoutWitness;
 
 pub mod property_names {
     pub const PROTOCOL_VERSION: &str = "protocolVersion";
@@ -59,15 +60,28 @@ pub const U32_FIELDS: [&str; 2] = [
     property_names::DATA_CONTRACT_PROTOCOL_VERSION,
 ];
 
+#[derive(Encode, Decode, PlatformSignable)]
+#[platform_error_type(ProtocolError)]
+pub struct Test12 {
+    test: u32,
+    #[exclude_from_sig_hash]
+    signature_public_key_id: KeyID,
+    #[exclude_from_sig_hash]
+    signature: BinaryData,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[platform_error_type(ProtocolError)]
 pub struct DataContractCreateTransition {
     pub protocol_version: u32,
     #[serde(rename = "type")]
     pub transition_type: StateTransitionType,
     pub data_contract: DataContract,
     pub entropy: Bytes32,
+    #[exclude_from_sig_hash]
     pub signature_public_key_id: KeyID,
+    #[exclude_from_sig_hash]
     pub signature: BinaryData,
 }
 

@@ -5,9 +5,10 @@ use crate::util::hash::{hash, hash_to_vec};
 use crate::ProtocolError;
 use bincode::config;
 use platform_value::Bytes32;
-// use platform_serialization::PlatformSerialize;
 
-#[derive(Debug, Clone, PartialEq)]
+use bincode::{Decode, Encode};
+
+#[derive(Debug, Clone, PartialEq, Encode, Decode)]
 pub struct TempDataContractCreateTransitionWithoutWitness<'a> {
     pub protocol_version: u32,
     pub transition_type: StateTransitionType,
@@ -21,14 +22,13 @@ impl<'a> From<&'a DataContractCreateTransition>
     fn from(value: &'a DataContractCreateTransition) -> Self {
         let DataContractCreateTransition {
             protocol_version,
-            transition_type,
             data_contract,
             entropy,
             ..
         } = value;
         TempDataContractCreateTransitionWithoutWitness {
             protocol_version: *protocol_version,
-            transition_type: *transition_type,
+            transition_type: StateTransitionType::DataContractCreate,
             data_contract,
             entropy,
         }

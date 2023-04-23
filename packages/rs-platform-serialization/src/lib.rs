@@ -250,3 +250,73 @@ pub fn derive_platform_deserialize_no_limit(input: TokenStream) -> TokenStream {
 
     TokenStream::from(expanded)
 }
+
+#[proc_macro_derive(
+PlatformSignable,
+attributes(platform_error_type, exclude_from_sig_hash)
+)]
+pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let name = &input.ident;
+
+    // Extract the error type from the attribute.
+    let error_type = input
+        .attrs
+        .iter()
+        .find_map(|attr| {
+            if attr.path().is_ident("platform_error_type") {
+                Some(attr.parse_args::<syn::Path>().unwrap())
+            } else {
+                None
+            }
+        })
+        .expect("Missing platform_error_type attribute");
+
+    // Extract the fields of the struct.
+    let fields = match &input.data {
+        syn::Data::Struct(data) => &data.fields,
+        _ => panic!("PlatformSignable can only be derived for structs"),
+    };
+
+    // Filter out the fields with the `exclude_from_sig_hash` attribute.
+    let filtered_fields: Vec<&syn::Field> = fields
+        .iter()
+        .filter(|field| {
+            !field.attrs.iter().any(|attr| attr.path().is_ident("exclude_from_sig_hash"))
+        })
+        .collect();
+
+    // Construct the intermediate structure.
+    let intermediate_name = syn::Ident::new(&format!("{}Intermediate", name), name.span());
+    let intermediate_fields = filtered_fields.iter().map(|field| {
+        let ident = &field.ident;
+        let ty = &field.ty;
+        quote! { #ident: #ty }
+    });
+
+    // Extract the generics.
+    let generics = &input.generics;
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
+    let expanded = quote! {
+        struct #intermediate_name #generics {
+            #( #intermediate_fields, )*
+        }
+
+        impl #impl_generics #name #ty_generics #where_clause {
+            pub fn sig_hash(&self) -> Result<Vec<u8>, #error_type> {
+                let config = config::standard().with_big_endian();
+
+                let intermediate = #intermediate_name {
+                    #( #filtered_fields: self.#filtered_fields.clone(), )*
+                };
+
+                bincode::encode_to_vec(&intermediate, config).map_err(|e| {
+                    #error_type::PlatformSerializationError(format!("unable to serialize to produce sig hash {}: {}", stringify!(#name), e))
+                })
+            }
+        }
+    };
+
+    TokenStream::from(expanded)
+}
