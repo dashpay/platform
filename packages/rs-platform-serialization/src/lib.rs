@@ -1,6 +1,7 @@
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
+use proc_macro2::Span;
 use quote::quote;
 use syn::{parse_macro_input, DeriveInput};
 #[proc_macro_derive(
@@ -249,7 +250,6 @@ pub fn derive_platform_deserialize_no_limit(input: TokenStream) -> TokenStream {
 
     TokenStream::from(expanded)
 }
-
 #[proc_macro_derive(
     PlatformSignable,
     attributes(platform_error_type, exclude_from_sig_hash)
@@ -291,7 +291,7 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
         .map(|field| {
             let ident = &field.ident;
             let ty = &field.ty;
-            quote! { #ident: #ty }
+            quote! { #ident: &'a #ty }
         })
         .collect();
 
@@ -306,7 +306,7 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
     let cloned_field_mapping = field_mapping.clone();
 
     let expanded = quote! {
-        struct #intermediate_name #impl_generics {
+        struct #intermediate_name<'a> #impl_generics {
             #( #intermediate_fields, )*
         }
 
@@ -321,10 +321,10 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
             }
         }
 
-        impl #impl_generics From<&#name #ty_generics> for #intermediate_name #ty_generics #where_clause {
-            fn from(original: &#name #ty_generics) -> Self {
+        impl #impl_generics <'a> From<&'a #name #ty_generics> for #intermediate_name<'a> #ty_generics #where_clause {
+            fn from(original: &'a #name #ty_generics) -> Self {
                 #intermediate_name {
-                    #( #cloned_field_mapping: original.#cloned_field_mapping, )*
+                    #( #cloned_field_mapping: &original.#cloned_field_mapping, )*
                 }
             }
         }
@@ -341,6 +341,6 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
             }
         }
     };
-
+    println!("{}", expanded.to_string());
     TokenStream::from(expanded)
 }
