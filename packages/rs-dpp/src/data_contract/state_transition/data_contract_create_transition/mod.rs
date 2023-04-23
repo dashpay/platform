@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 
-use platform_serialization::{PlatformSignable};
+use platform_serialization::PlatformSignable;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{BinaryData, Bytes32, IntegerReplacementType, ReplacementType, Value};
@@ -21,9 +21,9 @@ use crate::{
 
 use super::property_names::*;
 
-use bincode::{Decode, Encode, config};
 use bincode::enc::Encoder;
 use bincode::error::EncodeError;
+use bincode::{config, Decode, Encode};
 
 mod action;
 pub mod apply_data_contract_create_transition_factory;
@@ -61,62 +61,19 @@ pub const U32_FIELDS: [&str; 2] = [
     property_names::PROTOCOL_VERSION,
     property_names::DATA_CONTRACT_PROTOCOL_VERSION,
 ];
-//
-// // #[derive(Encode, Decode, PlatformSignable)]
-// // #[platform_error_type(ProtocolError)]
-// // pub struct Test12 {
-// //     test: u32,
-// //     #[exclude_from_sig_hash]
-// //     signature_public_key_id: KeyID,
-// //     #[exclude_from_sig_hash]
-// //     signature: BinaryData,
-// // }
-//
-// struct Test12Intermediate { test : u32, }
-// impl bincode :: Encode for
-// Test12Intermediate
-// {
-//     fn encode < E > (& self, encoder : & mut E) -> Result < (), bincode ::
-//     error :: EncodeError > where E : bincode::,
-//     {
-//         encoder.
-//         encoder.encode_field(& self.test : self.test.clone().clone()) ? ;
-//         Ok(())
-//     }
-// }
-//
-// impl Test12
-// {
-//     pub fn sig_hash(& self) -> Result < Vec < u8 >, ProtocolError >
-//     {
-//         let config = config :: standard().with_big_endian() ; let intermediate
-//         = Test12Intermediate { test : self.test.clone().clone(), } ; bincode
-//     ::
-//     encode_to_vec(& intermediate,
-//                   config).map_err(| e |
-//         {
-//             ProtocolError ::
-//             PlatformSerializationError(format!
-//             ("unable to serialize to produce sig hash {}: {}", stringify!
-//             (Test12), e))
-//         })
-//     }
-// }
 
-
-
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq, PlatformSignable)]
 #[serde(rename_all = "camelCase")]
-// #[platform_error_type(ProtocolError)]
+#[platform_error_type(ProtocolError)]
 pub struct DataContractCreateTransition {
     pub protocol_version: u32,
     #[serde(rename = "type")]
     pub transition_type: StateTransitionType,
     pub data_contract: DataContract,
     pub entropy: Bytes32,
-    // #[exclude_from_sig_hash]
+    #[exclude_from_sig_hash]
     pub signature_public_key_id: KeyID,
-    // #[exclude_from_sig_hash]
+    #[exclude_from_sig_hash]
     pub signature: BinaryData,
 }
 
