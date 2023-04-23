@@ -1,4 +1,6 @@
-use bincode::{Decode, Encode};
+use crate::platform_serialization::PlatformSignable;
+use crate::signable::Signable;
+use bincode::{config, Decode, Encode};
 use platform_value::{BinaryData, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -45,8 +47,9 @@ impl std::default::Default for Pooling {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PlatformSignable, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[platform_error_type(ProtocolError)]
 pub struct IdentityCreditWithdrawalTransition {
     pub protocol_version: u32,
     #[serde(rename = "type")]
@@ -58,7 +61,9 @@ pub struct IdentityCreditWithdrawalTransition {
     #[bincode(with_serde)]
     pub output_script: CoreScript,
     pub revision: Revision,
+    #[exclude_from_sig_hash]
     pub signature_public_key_id: KeyID,
+    #[exclude_from_sig_hash]
     pub signature: BinaryData,
 }
 

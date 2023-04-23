@@ -1,5 +1,10 @@
+use crate::ProtocolError;
 use platform_value::BinaryData;
 use serde::{Deserialize, Serialize};
+
+use crate::platform_serialization::PlatformSignable;
+use crate::signable::Signable;
+use bincode::{config, Decode, Encode};
 
 use super::{
     state_transition_execution_context::StateTransitionExecutionContext, StateTransition,
@@ -10,14 +15,17 @@ const PROPERTY_SIGNATURE: &str = "signature";
 const PROPERTY_PROTOCOL_VERSION: &str = "protocolVersion";
 
 // The example implementation of generic state transition:
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PlatformSignable)]
 #[serde(rename_all = "camelCase")]
+#[platform_error_type(ProtocolError)]
 struct ExampleStateTransition {
     pub protocol_version: u32,
-    pub signature: BinaryData,
     pub transition_type: StateTransitionType,
     #[serde(skip)]
+    #[exclude_from_sig_hash]
     pub execution_context: StateTransitionExecutionContext,
+    #[exclude_from_sig_hash]
+    pub signature: BinaryData,
 }
 
 impl From<ExampleStateTransition> for StateTransition {

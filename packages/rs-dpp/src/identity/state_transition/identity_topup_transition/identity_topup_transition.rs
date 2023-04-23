@@ -1,4 +1,6 @@
-use bincode::{Decode, Encode};
+use crate::platform_serialization::PlatformSignable;
+use crate::signable::Signable;
+use bincode::{config, Decode, Encode};
 use std::convert::{TryFrom, TryInto};
 
 use platform_value::{BinaryData, Value};
@@ -23,8 +25,9 @@ mod property_names {
     pub const IDENTITY_ID: &str = "identityId";
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PlatformSignable, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[platform_error_type(ProtocolError)]
 pub struct IdentityTopUpTransition {
     #[serde(rename = "type")]
     pub transition_type: StateTransitionType,
@@ -33,6 +36,7 @@ pub struct IdentityTopUpTransition {
     pub identity_id: Identifier,
     // Generic identity ST fields
     pub protocol_version: u32,
+    #[exclude_from_sig_hash]
     pub signature: BinaryData,
 }
 

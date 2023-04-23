@@ -39,6 +39,7 @@ mod example;
 mod serialization;
 mod state_transition_action;
 
+use crate::signable::Signable;
 pub use state_transition_action::StateTransitionAction;
 macro_rules! call_method {
     ($state_transition:expr, $method:ident, $args:tt ) => {
@@ -158,6 +159,12 @@ impl StateTransitionConvert for StateTransition {
 
     fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         call_method!(self, to_cleaned_object, skip_signature)
+    }
+}
+
+impl Signable for StateTransition {
+    fn signable_bytes(&self) -> Result<Vec<u8>, ProtocolError> {
+        call_method!(self, signable_bytes)
     }
 }
 

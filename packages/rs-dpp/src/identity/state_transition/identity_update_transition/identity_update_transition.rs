@@ -1,4 +1,6 @@
-use bincode::{Decode, Encode};
+use crate::platform_serialization::PlatformSignable;
+use crate::signable::Signable;
+use bincode::{config, Decode, Encode};
 use platform_value::{BinaryData, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -45,18 +47,13 @@ pub const BINARY_FIELDS: [&str; 3] = [
     property_names::SIGNATURE,
 ];
 
-#[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Encode, Decode, PlatformSignable, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[platform_error_type(ProtocolError)]
 pub struct IdentityUpdateTransition {
     pub protocol_version: u32,
     #[serde(rename = "type")]
     pub transition_type: StateTransitionType,
-
-    /// Cryptographic signature of the State Transition
-    pub signature: BinaryData,
-
-    /// The ID of the public key used to sing the State Transition
-    pub signature_public_key_id: KeyID,
 
     /// Unique identifier of the identity to be updated
     pub identity_id: Identifier,
@@ -75,6 +72,14 @@ pub struct IdentityUpdateTransition {
 
     /// Timestamp when keys were disabled
     pub public_keys_disabled_at: Option<TimestampMillis>,
+
+    /// Cryptographic signature of the State Transition
+    #[exclude_from_sig_hash]
+    pub signature: BinaryData,
+
+    /// The ID of the public key used to sing the State Transition
+    #[exclude_from_sig_hash]
+    pub signature_public_key_id: KeyID,
 }
 
 impl Default for IdentityUpdateTransition {

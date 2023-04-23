@@ -1,4 +1,6 @@
-use bincode::{Decode, Encode};
+use crate::platform_serialization::PlatformSignable;
+use crate::signable::Signable;
+use bincode::{config, Decode, Encode};
 use std::collections::{BTreeMap, HashMap};
 use std::convert::{TryFrom, TryInto};
 
@@ -66,8 +68,9 @@ pub const U32_FIELDS: [&str; 1] = [property_names::PROTOCOL_VERSION];
 const DEFAULT_SECURITY_LEVEL: SecurityLevel = SecurityLevel::HIGH;
 const EMPTY_VEC: Vec<u8> = vec![];
 
-#[derive(Debug, Serialize, Deserialize, Encode, Decode, Clone, PartialEq)]
+#[derive(Debug, Serialize, Deserialize, Encode, Decode, Clone, PartialEq, PlatformSignable)]
 #[serde(rename_all = "camelCase")]
+#[platform_error_type(ProtocolError)]
 pub struct DocumentsBatchTransition {
     pub protocol_version: u32,
     #[serde(rename = "type")]
@@ -78,9 +81,11 @@ pub struct DocumentsBatchTransition {
     pub transitions: Vec<DocumentTransition>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[exclude_from_sig_hash]
     pub signature_public_key_id: Option<KeyID>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[exclude_from_sig_hash]
     pub signature: Option<BinaryData>,
 }
 

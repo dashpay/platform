@@ -9,6 +9,7 @@ use serde_json::Value as JsonValue;
 use crate::consensus::ConsensusError;
 use crate::errors::consensus::signature::SignatureError;
 
+use crate::signable::Signable;
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, StateTransitionIsNotSignedError,
 };
@@ -43,7 +44,7 @@ pub const DATA_CONTRACT_TRANSITION_TYPES: [StateTransitionType; 2] = [
 /// The StateTransitionLike represents set of methods that are shared for all types of State Transition.
 /// Every type of state transition should also implement Debug, Clone, and support conversion to compounded [`StateTransition`]
 pub trait StateTransitionLike:
-    StateTransitionConvert + Clone + Debug + Into<StateTransition>
+    StateTransitionConvert + Clone + Debug + Into<StateTransition> + Signable
 {
     /// returns the protocol version
     fn get_protocol_version(&self) -> u32;
@@ -63,7 +64,7 @@ pub trait StateTransitionLike:
         key_type: KeyType,
         bls: &impl BlsModule,
     ) -> Result<(), ProtocolError> {
-        let data = self.to_cbor_buffer(true)?;
+        let data = self.signable_bytes()?;
         match key_type {
             KeyType::BLS12_381 => self.set_signature(bls.sign(&data, private_key)?.into()),
 

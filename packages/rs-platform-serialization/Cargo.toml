@@ -11,8 +11,6 @@ private = true
 proc-macro = true
 
 [dependencies]
-thiserror = { version = "1.0" }
-bincode = { version = "2.0.0-rc.3", features = ["serde"] }
 proc-macro2 = "1.0.56"
 quote = "1.0.26"
 syn = "2.0.15"

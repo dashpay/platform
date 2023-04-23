@@ -1,6 +1,5 @@
 extern crate proc_macro;
 
-use bincode;
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{parse_macro_input, DeriveInput};
@@ -301,11 +300,6 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
 
     let field_mapping = filtered_fields.iter().map(|field| {
         let ident = field.ident.as_ref().expect("Expected named field");
-        quote! { #ident: self.#ident.clone() }
-    });
-
-    let field_mapping_2 = filtered_fields.iter().map(|field| {
-        let ident = field.ident.as_ref().expect("Expected named field");
         quote! { #ident }
     });
 
@@ -314,28 +308,22 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
             #( #intermediate_fields, )*
         }
 
-        // impl #impl_generics Clone for #intermediate_name #ty_generics #where_clause {
-        //     fn clone(&self) -> Self {
-        //         #intermediate_name {
-        //             #( #field_mapping_clone.clone(), )*
-        //         }
-        //     }
-        // }
-
         impl #impl_generics bincode::Encode for #intermediate_name #ty_generics #where_clause {
             fn encode<E>(&self, encoder: &mut E) -> Result<(), bincode::error::EncodeError>
             where
                 E: bincode::enc::Encoder,
             {
 
-                #(self.#field_mapping_2.encode(encoder)?; )*
+                #(self.#field_mapping.encode(encoder)?; )*
                 Ok(())
             }
         }
 
-        impl #impl_generics #intermediate_name  #ty_generics #where_clause {
-            pub fn sig_hash(&self) -> Result<Vec<u8>, #error_type> {
+        impl #impl_generics Signable for #name #ty_generics #where_clause {
+            fn signable_bytes(&self) -> Result<Vec<u8>, #error_type> {
                 let config = config::standard().with_big_endian();
+
+                let intermediate : #intermediate_name = self.into();
 
                 bincode::encode_to_vec(self, config).map_err(|e| {
                     #error_type::PlatformSerializationError(format!("unable to serialize to produce sig hash {}: {}", stringify!(#name), e))
@@ -343,8 +331,6 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
             }
         }
     };
-
-    println!("Expanded code: {}", expanded.to_string());
 
     TokenStream::from(expanded)
 }
