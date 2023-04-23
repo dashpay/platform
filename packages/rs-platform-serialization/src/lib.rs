@@ -99,6 +99,13 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
                         #error_type::PlatformSerializationError(format!("unable to serialize {}: {}", stringify!(#name), e))
                     })
                 }
+
+                pub fn serialize_consume(self) -> Result<Vec<u8>, #error_type> {
+                    let config = config::standard().with_big_endian().with_no_limit();
+                    #serialize_into_consume.map_err(|e| {
+                        #error_type::PlatformSerializationError(format!("unable to serialize {}: {}", stringify!(#name), e))
+                    })
+                }
             }
         }
     };

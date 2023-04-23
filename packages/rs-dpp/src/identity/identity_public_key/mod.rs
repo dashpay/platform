@@ -7,6 +7,7 @@ pub mod security_level;
 
 use std::convert::{TryFrom, TryInto};
 
+use crate::serialization_traits::PlatformDeserializable;
 use anyhow::anyhow;
 #[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
@@ -14,7 +15,6 @@ use dashcore::PublicKey as ECDSAPublicKey;
 use platform_value::{BinaryData, ReplacementType, Value, ValueMapHelper};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
-use crate::serialization_traits::PlatformDeserializable;
 
 use crate::errors::{InvalidVectorSizeError, ProtocolError};
 pub use crate::identity::key_type::KeyType;

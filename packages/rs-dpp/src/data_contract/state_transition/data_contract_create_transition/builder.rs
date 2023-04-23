@@ -4,11 +4,11 @@ use crate::data_contract::state_transition::data_contract_update_transition::Dat
 use crate::identity::signer::Signer;
 use crate::identity::{KeyID, PartialIdentity};
 use crate::prelude::DataContract;
+use crate::serialization_traits::{PlatformDeserializable, Signable};
 use crate::state_transition::StateTransitionConvert;
 use crate::state_transition::StateTransitionType::{DataContractCreate, DataContractUpdate};
 use crate::version::LATEST_VERSION;
 use crate::{NonConsensusError, ProtocolError};
-use crate::serialization_traits::{Signable, PlatformDeserializable};
 
 impl DataContractCreateTransition {
     pub fn new_from_data_contract<S: Signer>(

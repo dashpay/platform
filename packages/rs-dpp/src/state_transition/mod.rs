@@ -39,7 +39,7 @@ mod example;
 mod serialization;
 mod state_transition_action;
 
-use crate::serialization_traits::{Signable, PlatformDeserializable};
+use crate::serialization_traits::{PlatformDeserializable, Signable};
 pub use state_transition_action::StateTransitionAction;
 macro_rules! call_method {
     ($state_transition:expr, $method:ident, $args:tt ) => {

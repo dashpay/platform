@@ -6,6 +6,7 @@ members = [
     "packages/rs-drive",
     "packages/rs-platform-value",
     "packages/rs-platform-serialization",
+    "packages/rs-platform-value-convertible",
     "packages/rs-drive-abci",
     "packages/dashpay-contract",
     "packages/withdrawals-contract",

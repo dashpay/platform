@@ -21,9 +21,9 @@ use crate::platform_serialization::{PlatformDeserialize, PlatformSerialize};
 use crate::serialization_traits::PlatformDeserializable;
 use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
 #[cfg(feature = "cbor")]
-use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
-#[cfg(feature = "cbor")]
 use crate::util::cbor_serializer;
+#[cfg(feature = "cbor")]
+use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
 use crate::util::vec;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::{BlsModule, Convertible, InvalidVectorSizeError, SerdeParsingError};

@@ -2,7 +2,7 @@ use crate::ProtocolError;
 use platform_value::BinaryData;
 use serde::{Deserialize, Serialize};
 
-use crate::serialization_traits::{Signable, PlatformDeserializable};
+use crate::serialization_traits::{PlatformDeserializable, Signable};
 
 use super::{
     state_transition_execution_context::StateTransitionExecutionContext, StateTransition,

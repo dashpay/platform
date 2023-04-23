@@ -9,7 +9,7 @@ use serde_json::Value as JsonValue;
 use crate::consensus::ConsensusError;
 use crate::errors::consensus::signature::SignatureError;
 
-use crate::serialization_traits::{Signable, PlatformDeserializable};
+use crate::serialization_traits::{PlatformDeserializable, Signable};
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, StateTransitionIsNotSignedError,
 };

@@ -5,5 +5,7 @@ pub trait Signable {
 }
 
 pub trait PlatformDeserializable {
-    fn deserialize(data: &[u8]) -> Result<Self, ProtocolError> where Self: Sized;
+    fn deserialize(data: &[u8]) -> Result<Self, ProtocolError>
+    where
+        Self: Sized;
 }

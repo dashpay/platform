@@ -1,9 +1,9 @@
 use crate::block::epoch::Epoch;
+use crate::serialization_traits::PlatformDeserializable;
 use crate::ProtocolError;
 use bincode::config;
 use bincode::{Decode, Encode};
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
-use crate::serialization_traits::PlatformDeserializable;
 
 /// Block information
 #[derive(Clone, Default, Encode, Decode, PlatformSerialize, PlatformDeserialize)]

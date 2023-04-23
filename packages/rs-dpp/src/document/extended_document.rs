@@ -15,6 +15,9 @@ use integer_encoding::VarInt;
 use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::data_contract::document_type::DocumentType;
 use crate::document::Document;
+use crate::serialization_traits::PlatformDeserializable;
+use bincode::{Decode, Encode};
+use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 use platform_value::btreemap_extensions::BTreeValueMapInsertionPathHelper;
 use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
@@ -44,7 +47,12 @@ pub const IDENTIFIER_FIELDS: [&str; 3] = [
 ];
 
 /// The document object represents the data provided by the platform in response to a query.
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PlatformSerialize, PlatformDeserialize)]
+#[platform_error_type(ProtocolError)]
+#[platform_deserialize_limit(2000)]
+#[platform_serialize_limit(2000)]
+#[platform_serialize_into(ExtendedDocumentInner)]
+#[platform_deserialize_from(ExtendedDocumentInner)]
 pub struct ExtendedDocument {
     #[serde(rename = "$protocolVersion")]
     pub protocol_version: u32,
@@ -61,6 +69,53 @@ pub struct ExtendedDocument {
     #[serde(skip)]
     //todo: make entropy optional
     pub entropy: Bytes32,
+}
+
+impl From<ExtendedDocumentInner> for ExtendedDocument {
+    fn from(value: ExtendedDocumentInner) -> Self {
+        let ExtendedDocumentInner {
+            protocol_version,
+            document_type_name,
+            data_contract_id,
+            document,
+        } = value;
+        ExtendedDocument {
+            protocol_version,
+            document_type_name,
+            data_contract_id,
+            document,
+            data_contract: Default::default(),
+            metadata: None,
+            entropy: Default::default(),
+        }
+    }
+}
+
+impl From<ExtendedDocument> for ExtendedDocumentInner {
+    fn from(value: ExtendedDocument) -> Self {
+        let ExtendedDocument {
+            protocol_version,
+            document_type_name,
+            data_contract_id,
+            document,
+            ..
+        } = value;
+        ExtendedDocumentInner {
+            protocol_version,
+            document_type_name,
+            data_contract_id,
+            document,
+        }
+    }
+}
+
+/// The document object represents the data provided by the platform in response to a query.
+#[derive(Debug, Clone, Default, Encode, Decode)]
+pub struct ExtendedDocumentInner {
+    pub protocol_version: u32,
+    pub document_type_name: String,
+    pub data_contract_id: Identifier,
+    pub document: Document,
 }
 
 impl ExtendedDocument {

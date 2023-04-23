@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::convert::TryInto;
 
 use crate::platform_serialization::PlatformSignable;
-use crate::serialization_traits::{Signable, PlatformDeserializable};
+use crate::serialization_traits::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
 
 use crate::{
