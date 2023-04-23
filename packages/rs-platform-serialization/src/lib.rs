@@ -298,6 +298,12 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
     let generics = &input.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
+    // Create a list of field access expressions.
+    let field_access = filtered_fields.iter().map(|field| {
+        let ident = field.ident.as_ref().expect("Expected named field");
+        quote! { self.#ident.clone() }
+    });
+
     let expanded = quote! {
         struct #intermediate_name #generics {
             #( #intermediate_fields, )*
@@ -308,7 +314,7 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
                 let config = config::standard().with_big_endian();
 
                 let intermediate = #intermediate_name {
-                    #( #filtered_fields: self.#filtered_fields.clone(), )*
+                    #( #filtered_fields: #field_access, )*
                 };
 
                 bincode::encode_to_vec(&intermediate, config).map_err(|e| {
