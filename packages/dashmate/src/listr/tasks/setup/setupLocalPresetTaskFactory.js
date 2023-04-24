@@ -39,12 +39,18 @@ function setupLocalPresetTaskFactory(
         enabled: (ctx) => ctx.nodeCount === undefined,
         task: async (ctx, task) => {
           ctx.nodeCount = await task.prompt({
-            type: 'Numeral',
+            type: 'input',
             message: 'Enter the number of masternodes',
             initial: 3,
-            float: false,
-            min: 3,
             validate: (state) => {
+              if (Number.isNaN(+state)) {
+                return 'You must set a number of masternodes';
+              }
+
+              if (!Number.isInteger(+state)) {
+                return 'Must be an integer';
+              }
+
               if (+state < 3) {
                 return 'You must set not less than 3';
               }
