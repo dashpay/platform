@@ -419,7 +419,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 let document = Document::from_cbor(serialized_document, None, owner_id)?;
 
                 let document_info =
-                    DocumentRefSerialization((&document, serialized_document, storage_flags));
+                    DocumentRefAndSerialization((&document, serialized_document, storage_flags));
 
                 let document_type = contract.document_type_for_name(document_type_name)?;
 

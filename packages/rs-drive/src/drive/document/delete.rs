@@ -1403,7 +1403,9 @@ mod tests {
     fn test_delete_dashpay_documents_no_transaction() {
         let (drive, dashpay) = setup_dashpay("delete", false);
 
-        let document_type = dashpay.document_type_for_name("profile")?;
+        let document_type = dashpay
+            .document_type_for_name("profile")
+            .expect("expected to get profile document type");
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         let dashpay_profile_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/profile0.json",

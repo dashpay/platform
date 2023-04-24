@@ -55,7 +55,7 @@ use crate::drive::document::{
 };
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
-    DocumentOwnedInfo, DocumentRefAndSerialization,
+    DocumentOwnedInfo, DocumentRefAndSerialization, DocumentRefInfo,
 };
 use dpp::document::Document;
 
@@ -102,7 +102,7 @@ impl Drive {
 
         let reserialized_document = document.serialize(document_type)?;
 
-        self.update_document_for_contract(
+        self.update_document_with_serialization_for_contract(
             &document,
             reserialized_document.as_slice(),
             &contract,
@@ -187,7 +187,7 @@ impl Drive {
     ) -> Result<FeeResult, Error> {
         let document = Document::from_cbor(serialized_document, None, owner_id)?;
 
-        self.update_document_for_contract(
+        self.update_document_with_serialization_for_contract(
             &document,
             serialized_document,
             contract,
@@ -202,6 +202,45 @@ impl Drive {
 
     /// Updates a document and returns the associated fee.
     pub fn update_document_for_contract(
+        &self,
+        document: &Document,
+        contract: &Contract,
+        document_type: &DocumentType,
+        owner_id: Option<[u8; 32]>,
+        block_info: BlockInfo,
+        apply: bool,
+        storage_flags: Option<Cow<StorageFlags>>,
+        transaction: TransactionArg,
+    ) -> Result<FeeResult, Error> {
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+        let estimated_costs_only_with_layer_info = if apply {
+            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+        } else {
+            Some(HashMap::new())
+        };
+
+        let document_info = DocumentRefInfo((document, storage_flags));
+
+        self.update_document_for_contract_apply_and_add_to_operations(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info,
+                    owner_id,
+                },
+                contract,
+                document_type,
+            },
+            &block_info,
+            estimated_costs_only_with_layer_info,
+            transaction,
+            &mut drive_operations,
+        )?;
+        let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+        Ok(fees)
+    }
+
+    /// Updates a document and returns the associated fee.
+    pub fn update_document_with_serialization_for_contract(
         &self,
         document: &Document,
         serialized_document: &[u8],
@@ -806,10 +845,7 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefWithoutSerialization((
-                            &alice_profile,
-                            storage_flags,
-                        )),
+                        document_info: DocumentRefInfo((&alice_profile, storage_flags)),
                         owner_id: None,
                     },
                     contract: &contract,
@@ -898,10 +934,7 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefWithoutSerialization((
-                            &alice_profile,
-                            storage_flags,
-                        )),
+                        document_info: DocumentRefInfo((&alice_profile, storage_flags)),
                         owner_id: None,
                     },
                     contract: &contract,
@@ -1010,10 +1043,7 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefWithoutSerialization((
-                            &alice_profile,
-                            storage_flags,
-                        )),
+                        document_info: DocumentRefInfo((&alice_profile, storage_flags)),
                         owner_id: None,
                     },
                     contract: &contract,
@@ -1299,9 +1329,9 @@ mod tests {
 
         drive
             .update_document_for_contract(
-                &dashpay_cr_serialized_document,
+                &dashpay_cr_document,
                 &contract,
-                "contactRequest",
+                document_type,
                 Some(random_owner_id),
                 BlockInfo::default(),
                 true,
@@ -1311,15 +1341,21 @@ mod tests {
             .expect_err("expected not to be able to update a non mutable document");
 
         drive
-            .add_serialized_document_for_contract(
-                &dashpay_cr_serialized_document,
-                &contract,
-                "contactRequest",
-                Some(random_owner_id),
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            &dashpay_cr_document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
                 true,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect_err("expected not to be able to override a non mutable document");
@@ -1343,38 +1379,51 @@ mod tests {
             Some(&db_transaction),
         );
 
-        let dashpay_profile_serialized_document = json_document_to_cbor(
-            "tests/supporting_files/contract/dashpay/profile0.json",
-            Some(1),
-        )
-        .expect("expected to get cbor document");
-
-        let dashpay_profile_updated_public_message_serialized_document = json_document_to_cbor(
-            "tests/supporting_files/contract/dashpay/profile0-updated-public-message.json",
-            Some(1),
-        )
-        .expect("expected to get cbor document");
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("expected to get document type");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+
+        let dashpay_profile_document = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/profile0.json",
+            Some(random_owner_id.into()),
+            document_type,
+        )
+        .expect("expected to get cbor document");
+
+        let dashpay_profile_updated_public_message_document = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/profile0-updated-public-message.json",
+            Some(random_owner_id.into()),
+            document_type,
+        )
+        .expect("expected to get cbor document");
+
         drive
-            .add_serialized_document_for_contract(
-                &dashpay_profile_serialized_document,
-                &contract,
-                "profile",
-                Some(random_owner_id),
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            &dashpay_profile_document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
 
         drive
-            .update_serialized_document_for_contract(
-                &dashpay_profile_updated_public_message_serialized_document,
+            .update_document_for_contract(
+                &dashpay_profile_updated_public_message_document,
                 &contract,
-                "profile",
+                document_type,
                 Some(random_owner_id),
                 BlockInfo::default(),
                 true,
@@ -2139,11 +2188,7 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefAndSerialization((
-                            &document,
-                            document_cbor.as_slice(),
-                            storage_flags,
-                        )),
+                        document_info: DocumentRefInfo((&document, storage_flags)),
                         owner_id: None,
                     },
                     contract,

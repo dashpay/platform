@@ -1275,7 +1275,7 @@ mod tests {
 
     #[test]
     fn test_create_reference_contract() {
-        let (drive, contract, _contract_cbor) = setup_reference_contract();
+        let (drive, contract) = setup_reference_contract();
 
         let document_type = contract
             .document_type_for_name("note")
@@ -1397,7 +1397,7 @@ mod tests {
 
         #[test]
         fn should_get_contract_from_global_and_block_cache() {
-            let (drive, mut contract, _) = setup_reference_contract();
+            let (drive, mut contract) = setup_reference_contract();
 
             let transaction = drive.grove.start_transaction();
 
@@ -1465,7 +1465,7 @@ mod tests {
             // Merk trees have own cache and depends on does contract node cached or not
             // we get could get different costs. To avoid of it we fetch contracts without tree caching
 
-            let (drive, mut ref_contract, _) = setup_reference_contract();
+            let (drive, mut ref_contract) = setup_reference_contract();
 
             /*
              * Firstly, we create multiple contracts during block processing (in transaction)
