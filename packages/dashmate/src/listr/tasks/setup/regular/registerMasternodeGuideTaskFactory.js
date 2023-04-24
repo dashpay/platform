@@ -36,8 +36,7 @@ function registerMasternodeGuideTaskFactory() {
   async function registerMasternodeGuideTask() {
     const blsSignatures = await BlsSignatures();
 
-    const validateBLSPrivateKeyPrompt = validateBLSPrivateKeyFactory(blsSignatures);
-    const validateBLSPrivateKey = (rawData) => validateBLSPrivateKeyPrompt(rawData) === true;
+    const validateBLSPrivateKey = validateBLSPrivateKeyFactory(blsSignatures);
 
     const REGISTRARS = {
       CORE: 'dashCore',
@@ -187,8 +186,8 @@ function registerMasternodeGuideTaskFactory() {
                     result: (value) => Number(value).toFixed(2),
                   },
                 ],
-                validate: ({ privateKey, rewardShare }) => validateBLSPrivateKey(privateKey)
-                  && validatePercentage(rewardShare),
+                validate: ({ privateKey, rewardShare }) => (
+                  validateBLSPrivateKey(privateKey) === true && validatePercentage(rewardShare)),
               },
             ];
 
