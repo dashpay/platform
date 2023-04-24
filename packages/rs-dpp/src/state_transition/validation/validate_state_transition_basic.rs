@@ -99,14 +99,26 @@ where
             create_state_transition(self.state_repository.as_ref(), raw_state_transition.clone())
                 .await?;
 
-        if let Err(ProtocolError::MaxEncodedBytesReachedError {
-            max_size_kbytes,
-            size_hit,
-        }) = state_transition.serialize()
-        {
-            result.add_error(BasicError::StateTransitionMaxSizeExceededError(
-                StateTransitionMaxSizeExceededError::new(size_hit / 1024, max_size_kbytes),
-            ));
+        let serialization_result = state_transition.serialize();
+
+        match serialization_result {
+            Ok(serialized) => {
+                let len = serialized.len();
+                if len > 16384 {
+                    result.add_error(BasicError::StateTransitionMaxSizeExceededError(
+                        StateTransitionMaxSizeExceededError::new(len / 1024, 16),
+                    ));
+                }
+            }
+            Err(ProtocolError::MaxEncodedBytesReachedError {
+                max_size_kbytes,
+                size_hit,
+            }) => {
+                result.add_error(BasicError::StateTransitionMaxSizeExceededError(
+                    StateTransitionMaxSizeExceededError::new(size_hit / 1024, max_size_kbytes),
+                ));
+            }
+            _ => {}
         }
 
         Ok(result)
@@ -332,7 +344,7 @@ mod test {
 
         match basic_error {
             BasicError::StateTransitionMaxSizeExceededError(err) => {
-                assert_eq!(err.actual_size_kbytes(), 53);
+                assert_eq!(err.actual_size_kbytes(), 60);
                 assert_eq!(err.max_size_kbytes(), 16);
             }
             _ => panic!(
