@@ -96,6 +96,8 @@ function synchronizeMasternodeIdentitiesFactory(
       .getSMLbyHeight(coreHeight)
       .mnList;
 
+    const currentValidMNList = currentMNList.filter((entry) => entry.isValid);
+
     const dataContractResult = await dataContractRepository.fetch(
       masternodeRewardSharesContractId,
       {
@@ -107,7 +109,7 @@ function synchronizeMasternodeIdentitiesFactory(
 
     if (lastSyncedCoreHeight === 0) {
       // Create identities for all masternodes on the first sync
-      newMasternodes = currentMNList;
+      newMasternodes = currentValidMNList;
     } else {
       // simplifiedMasternodeList contains sml only for the last `smlMaxListsLimit` number of blocks
       if (coreHeight - lastSyncedCoreHeight >= smlMaxListsLimit) {
@@ -120,14 +122,14 @@ function synchronizeMasternodeIdentitiesFactory(
       }
 
       // Get the difference between last sync and requested core height
-      newMasternodes = currentMNList.filter((currentMnListEntry) => (
+      newMasternodes = currentValidMNList.filter((currentMnListEntry) => (
         !previousMNList.find((previousMnListEntry) => (
           previousMnListEntry.proRegTxHash === currentMnListEntry.proRegTxHash
         ))
       ));
 
       // Update operator identities (PubKeyOperator is changed)
-      for (const mnEntry of currentMNList) {
+      for (const mnEntry of currentValidMNList) {
         const previousMnEntry = previousMNList.find((previousMnListEntry) => (
           previousMnListEntry.proRegTxHash === mnEntry.proRegTxHash
           && previousMnListEntry.pubKeyOperator !== mnEntry.pubKeyOperator
