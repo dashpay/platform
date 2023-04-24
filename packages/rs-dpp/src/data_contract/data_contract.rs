@@ -272,7 +272,66 @@ impl TryFrom<DataContractInner> for DataContract {
     type Error = ProtocolError;
 
     fn try_from(value: DataContractInner) -> Result<Self, Self::Error> {
-        DataContract::from_raw_object(platform_value!(value))
+        let DataContractInner {
+            protocol_version,
+            id,
+            config,
+            schema,
+            version,
+            owner_id,
+            documents,
+            defs,
+        } = value;
+
+        let document_types = get_document_types_from_value_array(
+            id,
+            &documents
+                .iter()
+                .map(|(key, value)| (key.as_str(), value))
+                .collect(),
+            &defs
+                .as_ref()
+                .map(|defs| {
+                    defs.iter()
+                        .map(|(key, value)| Ok((key.clone(), value)))
+                        .collect::<Result<BTreeMap<String, &Value>, ProtocolError>>()
+                })
+                .transpose()?
+                .unwrap_or_default(),
+            config.documents_keep_history_contract_default,
+            config.documents_mutable_contract_default,
+        )?;
+
+        let binary_properties = documents
+            .iter()
+            .map(|(doc_type, schema)| Ok((String::from(doc_type), get_binary_properties(&schema.clone().try_into()?))))
+            .collect::<Result<BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>, ProtocolError>>()?;
+
+        let data_contract = DataContract {
+            protocol_version,
+            id,
+            schema,
+            version,
+            owner_id,
+            document_types,
+            metadata: None,
+            config,
+            documents: documents
+                .into_iter()
+                .map(|(key, value)| Ok((key, value.try_into()?)))
+                .collect::<Result<BTreeMap<DocumentName, JsonSchema>, ProtocolError>>()?,
+            defs: defs
+                .map(|defs| {
+                    defs.into_iter()
+                        .map(|(key, value)| Ok((key, value.try_into()?)))
+                        .collect::<Result<BTreeMap<DefinitionName, JsonSchema>, ProtocolError>>()
+                })
+                .transpose()?,
+            entropy: Default::default(),
+            binary_properties,
+        };
+
+        Ok(data_contract)
     }
 }
 
@@ -641,15 +700,32 @@ pub fn get_document_types_from_value(
             .as_map()
             .ok_or(ProtocolError::DataContractError(
                 DataContractError::InvalidContractStructure("documents must be a map"),
-            ))?;
-    let mut contract_document_types: BTreeMap<String, DocumentType> = BTreeMap::new();
-    for (type_key_value, document_type_value) in contract_document_types_raw {
-        let Some(type_key_str) = type_key_value.as_text() else {
-            return Err(ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
-                "document type name is not a string as expected",
-            )));
-        };
+            ))?.iter().map(|(key, value)| {
+            let Some(type_key_str) = key.as_text() else {
+                return Err(ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
+                    "document type name is not a string as expected",
+                )));
+            };
+            Ok((type_key_str, value))
+        }).collect::<Result<Vec<(&str, &Value)>, ProtocolError>>()?;
+    get_document_types_from_value_array(
+        data_contract_id,
+        &contract_document_types_raw,
+        definition_references,
+        documents_keep_history_contract_default,
+        documents_mutable_contract_default,
+    )
+}
 
+pub fn get_document_types_from_value_array(
+    data_contract_id: Identifier,
+    contract_document_types_raw: &Vec<(&str, &Value)>,
+    definition_references: &BTreeMap<String, &Value>,
+    documents_keep_history_contract_default: bool,
+    documents_mutable_contract_default: bool,
+) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
+    let mut contract_document_types: BTreeMap<String, DocumentType> = BTreeMap::new();
+    for (type_key_str, document_type_value) in contract_document_types_raw {
         // Make sure the document_type_value is a map
         let Some(document_type_value_map) = document_type_value.as_map() else {
             return Err(ProtocolError::DataContractError(DataContractError::InvalidContractStructure(

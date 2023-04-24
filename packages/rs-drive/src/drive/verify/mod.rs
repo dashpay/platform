@@ -13,6 +13,7 @@ use dpp::prelude::{Identity, Revision};
 use crate::fee::credits::Credits;
 use grovedb::GroveDb;
 use std::collections::BTreeMap;
+use dpp::serialization_traits::PlatformDeserializable;
 
 /// Represents the root hash of the grovedb tree
 pub type RootHash = [u8; 32];
