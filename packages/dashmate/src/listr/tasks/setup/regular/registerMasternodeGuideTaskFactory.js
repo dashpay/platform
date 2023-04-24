@@ -186,8 +186,8 @@ function registerMasternodeGuideTaskFactory() {
                     result: (value) => Number(value).toFixed(2),
                   },
                 ],
-                validate: ({ privateKey, rewardShare }) => validateBLSPrivateKey(privateKey)
-                  && validatePercentage(rewardShare),
+                validate: ({ privateKey, rewardShare }) => (
+                  validateBLSPrivateKey(privateKey) === true && validatePercentage(rewardShare)),
               },
             ];
 
