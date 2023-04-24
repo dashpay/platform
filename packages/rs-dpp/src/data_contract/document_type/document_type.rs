@@ -395,6 +395,10 @@ impl DocumentType {
         }
     }
 
+    pub fn requires_revision(&self) -> bool {
+        self.documents_mutable
+    }
+
     pub(crate) fn find_identifier_and_binary_paths(
         properties: &BTreeMap<String, DocumentField>,
     ) -> (BTreeSet<String>, BTreeSet<String>) {

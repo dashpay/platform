@@ -16,7 +16,7 @@ use crate::ProtocolError;
 use byteorder::{BigEndian, ReadBytesExt};
 #[cfg(feature = "cbor")]
 use ciborium::Value as CborValue;
-use integer_encoding::VarIntWriter;
+use integer_encoding::{VarInt, VarIntReader, VarIntWriter};
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
@@ -83,7 +83,9 @@ impl Document {
         let mut buffer: Vec<u8> = self.id.as_slice().to_vec();
         buffer.extend(self.owner_id.as_slice());
         if let Some(revision) = self.revision {
-            buffer.extend(revision.to_be_bytes())
+            buffer.extend(revision.encode_var_vec())
+        } else if document_type.requires_revision() {
+            buffer.extend((1 as Revision).encode_var_vec())
         }
         document_type
             .properties
@@ -91,6 +93,7 @@ impl Document {
             .try_for_each(|(field_name, field)| {
                 if field_name == CREATED_AT {
                     if let Some(created_at) = self.created_at {
+                        // dbg!("we pushed created at {}", hex::encode(created_at.to_be_bytes()));
                         buffer.extend(created_at.to_be_bytes());
                         Ok(())
                     } else if field.required {
@@ -100,21 +103,24 @@ impl Document {
                             ),
                         ))
                     } else {
+                        // dbg!("we pushed created at with 0");
                         // We don't have the created_at that wasn't required
                         buffer.push(0);
                         Ok(())
                     }
                 } else if field_name == UPDATED_AT {
                     if let Some(updated_at) = self.updated_at {
+                        // dbg!("we pushed updated at {}", hex::encode(updated_at.to_be_bytes()));
                         buffer.extend(updated_at.to_be_bytes());
                         Ok(())
                     } else if field.required {
                         Err(ProtocolError::DataContractError(
                             DataContractError::MissingRequiredKey(
-                                "created at field is not present",
+                                "updated at field is not present",
                             ),
                         ))
                     } else {
+                        // dbg!("we pushed updated at with 0");
                         // We don't have the updated_at that wasn't required
                         buffer.push(0);
                         Ok(())
@@ -123,6 +129,7 @@ impl Document {
                     let value = field
                         .document_type
                         .encode_value_ref_with_size(value, field.required)?;
+                    // dbg!("we pushed {} with {}", field_name, hex::encode(&value));
                     buffer.extend(value.as_slice());
                     Ok(())
                 } else if field.required {
@@ -130,6 +137,7 @@ impl Document {
                         DataContractError::MissingRequiredKey("a required field is not present"),
                     ))
                 } else {
+                    // dbg!("we pushed {} with 0", field_name);
                     // We don't have something that wasn't required
                     buffer.push(0);
                     Ok(())
@@ -234,8 +242,8 @@ impl Document {
         })?;
 
         // if the document type is mutable then we should deserialize the revision
-        let revision: Option<Revision> = if document_type.documents_mutable {
-            let revision = buf.read_u64::<BigEndian>().map_err(|_| {
+        let revision: Option<Revision> = if document_type.requires_revision() {
+            let revision = buf.read_varint().map_err(|_| {
                 ProtocolError::DecodingError(
                     "error reading revision from serialized document for revision".to_string(),
                 )
