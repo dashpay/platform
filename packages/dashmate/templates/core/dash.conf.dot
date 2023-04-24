@@ -6,6 +6,7 @@ maxconnections=256
 printtoconsole=1
 debug={{=it.core.debug }}
 logips={{=it.core.logIps }}
+fallbackfee=0.00001
 
 # JSONRPC
 server=1
