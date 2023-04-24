@@ -363,6 +363,7 @@ class DockerCompose {
     const dockerComposeInstallLink = 'https://docs.docker.com/compose/install/';
     const dockerInstallLink = 'https://docs.docker.com/engine/install/';
     const dockerPostInstallLinuxLink = 'https://docs.docker.com/engine/install/linux-postinstall/';
+    const dockerContextLink = 'https://docs.docker.com/engine/context/working-with-contexts/';
 
     // Check docker
     if (!hasbin.sync('docker')) {
@@ -381,7 +382,7 @@ class DockerCompose {
         });
       });
     } catch (e) {
-      throw new Error(`Docker is not accessible. Please follow instructions ${dockerPostInstallLinuxLink}`);
+      throw new Error(`Can't connect to Docker Engine: ${e.message}.\n\nPossible reasons:\n1. Docker is not started\n2. Permission issues ${dockerPostInstallLinuxLink}\n3. Wrong context ${dockerContextLink}`);
     }
 
     if (semver.lt(dockerVersion.trim(), DockerCompose.DOCKER_MIN_VERSION)) {
