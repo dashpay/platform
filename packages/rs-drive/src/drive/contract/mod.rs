@@ -112,6 +112,7 @@ use crate::query::QueryResultEncoding;
 #[cfg(feature = "full")]
 use dpp::block::epoch::Epoch;
 use dpp::prelude::DataContract;
+use dpp::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 
 #[cfg(feature = "full")]
 /// Adds operations to the op batch relevant to initializing the contract's structure.

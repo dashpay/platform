@@ -20,10 +20,10 @@ use dpp::identity::{IdentityPublicKey, Purpose, SecurityLevel};
 use grovedb::batch::KeyInfoPath;
 use grovedb::reference_path::ReferencePathType;
 
+use dpp::serialization_traits::PlatformSerializable;
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use integer_encoding::VarInt;
 use std::collections::HashMap;
-use dpp::serialization_traits::PlatformSerializable;
 
 /// The contract apply info
 pub enum ContractApplyInfo {

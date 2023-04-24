@@ -1260,7 +1260,7 @@ mod tests {
     use std::option::Option::None;
 
     use super::*;
-    use dpp::data_contract::extra::common::json_document_to_cbor;
+    use dpp::data_contract::extra::common::{json_document_to_cbor, json_document_to_document};
     use rand::Rng;
     use tempfile::TempDir;
 
@@ -1278,54 +1278,78 @@ mod tests {
 
     #[test]
     fn test_add_dashpay_documents_no_transaction() {
-        let (drive, dashpay_cbor) = setup_dashpay("add", true);
+        let (drive, dashpay) = setup_dashpay("add", true);
 
-        let dashpay_cr_serialized_document = json_document_to_cbor(
+        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+
+        let document_type = dashpay
+            .document_type_for_name("contactRequest")
+            .expect("expected to get document type");
+
+        let dashpay_cr_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
-            Some(1),
+            Some(random_owner_id.into()),
+            document_type,
         )
         .expect("expected to get cbor document");
 
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         drive
-            .add_serialized_document_for_serialized_contract(
-                &dashpay_cr_serialized_document,
-                &dashpay_cbor,
-                "contactRequest",
-                Some(random_owner_id),
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefWithoutSerialization((
+                            &dashpay_cr_document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_cow(),
-                None,
+                Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
 
         drive
-            .add_serialized_document_for_serialized_contract(
-                &dashpay_cr_serialized_document,
-                &dashpay_cbor,
-                "contactRequest",
-                Some(random_owner_id),
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefWithoutSerialization((
+                            &dashpay_cr_document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_cow(),
-                None,
+                Some(&db_transaction),
             )
             .expect_err("expected not to be able to insert same document twice");
 
         drive
-            .add_serialized_document_for_serialized_contract(
-                &dashpay_cr_serialized_document,
-                &dashpay_cbor,
-                "contactRequest",
-                Some(random_owner_id),
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefWithoutSerialization((
+                            &dashpay_cr_document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
                 true,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_cow(),
-                None,
+                Some(&db_transaction),
             )
             .expect("expected to override a document successfully");
     }
@@ -1348,51 +1372,75 @@ mod tests {
             Some(&db_transaction),
         );
 
-        let dashpay_cr_serialized_document = json_document_to_cbor(
+        let document_type = dashpay
+            .document_type_for_name("contactRequest")
+            .expect("expected to get document type");
+
+        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+
+        let dashpay_cr_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
-            Some(1),
+            Some(random_owner_id.into()),
+            document_type,
         )
         .expect("expected to get cbor document");
 
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         drive
-            .add_serialized_document_for_contract(
-                &dashpay_cr_serialized_document,
-                &contract,
-                "contactRequest",
-                Some(random_owner_id),
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefWithoutSerialization((
+                            &dashpay_cr_document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
 
         drive
-            .add_serialized_document_for_contract(
-                &dashpay_cr_serialized_document,
-                &contract,
-                "contactRequest",
-                Some(random_owner_id),
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefWithoutSerialization((
+                            &dashpay_cr_document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect_err("expected not to be able to insert same document twice");
 
         drive
-            .add_serialized_document_for_contract(
-                &dashpay_cr_serialized_document,
-                &contract,
-                "contactRequest",
-                Some(random_owner_id),
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefWithoutSerialization((
+                            &dashpay_cr_document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
                 true,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to override a document successfully");
@@ -1416,24 +1464,35 @@ mod tests {
             Some(&db_transaction),
         );
 
-        let dashpay_cr_serialized_document = json_document_to_cbor(
-            "tests/supporting_files/contract/dashpay/contact-request0.json",
-            Some(1),
-        )
-        .expect("expected to get cbor document");
+        let document_type = dashpay
+            .document_type_for_name("contactRequest")
+            .expect("expected to get document type");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
+        let dashpay_cr_document = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/contact-request0.json",
+            Some(random_owner_id.into()),
+            document_type,
+        )
+        .expect("expected to get cbor document");
+
         let fee_result = drive
-            .add_serialized_document_for_contract(
-                &dashpay_cr_serialized_document,
-                &contract,
-                "contactRequest",
-                Some(random_owner_id),
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefWithoutSerialization((
+                            &dashpay_cr_document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
@@ -1469,24 +1528,35 @@ mod tests {
             Some(&db_transaction),
         );
 
-        let dashpay_cr_serialized_document = json_document_to_cbor(
-            "tests/supporting_files/contract/dashpay/profile0.json",
-            Some(1),
-        )
-        .expect("expected to get cbor document");
+        let document_type = dashpay
+            .document_type_for_name("profile")
+            .expect("expected to get document type");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
+        let dashpay_profile_document = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/profile0.json",
+            Some(random_owner_id.into()),
+            document_type,
+        )
+        .expect("expected to get cbor document");
+
         let fee_result = drive
-            .add_serialized_document_for_contract(
-                &dashpay_cr_serialized_document,
-                &contract,
-                "profile",
-                Some(random_owner_id),
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefWithoutSerialization((
+                            &dashpay_profile_document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
@@ -1522,13 +1592,18 @@ mod tests {
             Some(&db_transaction),
         );
 
-        let dashpay_cr_serialized_document = json_document_to_cbor(
-            "tests/supporting_files/contract/dashpay/profile0.json",
-            Some(1),
-        )
-        .expect("expected to get cbor document");
+        let document_type = dashpay
+            .document_type_for_name("profile")
+            .expect("expected to get document type");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+
+        let dashpay_profile_document = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/profile0.json",
+            Some(random_owner_id.into()),
+            document_type,
+        )
+        .expect("expected to get cbor document");
 
         let FeeResult {
             storage_fee,
@@ -1536,15 +1611,21 @@ mod tests {
             fee_refunds: _,
             removed_bytes_from_system: _,
         } = drive
-            .add_serialized_document_for_contract(
-                &dashpay_cr_serialized_document,
-                &contract,
-                "profile",
-                Some(random_owner_id),
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefWithoutSerialization((
+                            &dashpay_profile_document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
                 false,
                 BlockInfo::default(),
                 false,
-                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
@@ -1575,37 +1656,55 @@ mod tests {
             Some(&db_transaction),
         );
 
-        let dashpay_cr_serialized_document = json_document_to_cbor(
+        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+
+        let document_type = dashpay
+            .document_type_for_name("contactRequest")
+            .expect("expected to get document type");
+
+        let dashpay_cr_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
-            Some(1),
+            Some(random_owner_id.into()),
+            document_type,
         )
         .expect("expected to get cbor document");
 
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         let fees = drive
-            .add_serialized_document_for_contract(
-                &dashpay_cr_serialized_document,
-                &contract,
-                "contactRequest",
-                Some(random_owner_id),
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefWithoutSerialization((
+                            &dashpay_cr_document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
                 false,
                 BlockInfo::default(),
                 false,
-                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
-            .expect("expected to get back fee for document insertion successfully");
+            .expect("expected to insert a document successfully");
 
         let actual_fees = drive
-            .add_serialized_document_for_contract(
-                &dashpay_cr_serialized_document,
-                &contract,
-                "contactRequest",
-                Some(random_owner_id),
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefWithoutSerialization((
+                            &dashpay_cr_document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
@@ -1631,27 +1730,23 @@ mod tests {
             Some(&db_transaction),
         );
 
-        let dashpay_cr_serialized_document = json_document_to_cbor(
+        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+
+        let document_type = dashpay
+            .document_type_for_name("contactRequest")
+            .expect("expected to get document type");
+
+        let dashpay_cr_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
-            Some(1),
+            Some(random_owner_id.into()),
+            document_type,
         )
         .expect("expected to get cbor document");
 
-        let owner_id = rand::thread_rng().gen::<[u8; 32]>();
-        let document = Document::from_cbor(&dashpay_cr_serialized_document, None, Some(owner_id))
-            .expect("expected to deserialize document successfully");
-
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
-        let document_info = DocumentRefAndSerialization((
-            &document,
-            &dashpay_cr_serialized_document,
-            storage_flags,
-        ));
+        let document_info = DocumentRefWithoutSerialization((&dashpay_cr_document, storage_flags));
 
-        let document_type = contract
-            .document_type_for_name("contactRequest")
-            .expect("expected to get document type successfully");
         let mut fee_drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let mut actual_drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
@@ -1728,22 +1823,18 @@ mod tests {
             Some(&db_transaction),
         );
 
-        let dpns_domain_serialized_document =
-            json_document_to_cbor("tests/supporting_files/contract/dpns/domain0.json", Some(1))
-                .expect("expected to get cbor document");
-
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
-        let document = Document::from_cbor(
-            &dpns_domain_serialized_document,
-            None,
-            Some(random_owner_id),
-        )
-        .expect("expected to deserialize the document");
-
-        let document_type = contract
+        let document_type = dashpay
             .document_type_for_name("domain")
-            .expect("expected to get a document type");
+            .expect("expected to get document type");
+
+        let dpns_domain_document = json_document_to_document(
+            "tests/supporting_files/contract/dpns/domain0.json",
+            Some(random_owner_id.into()),
+            document_type,
+        )
+        .expect("expected to get document");
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
@@ -1751,11 +1842,7 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefAndSerialization((
-                            &document,
-                            &dpns_domain_serialized_document,
-                            storage_flags,
-                        )),
+                        document_info: DocumentRefWithoutSerialization((&document, storage_flags)),
                         owner_id: None,
                     },
                     contract: &contract,
@@ -1791,61 +1878,85 @@ mod tests {
     fn test_add_dashpay_many_non_conflicting_documents() {
         let (drive, dashpay_cbor) = setup_dashpay("add_no_conflict", true);
 
-        let dashpay_cr_serialized_document_0 = json_document_to_cbor(
-            "tests/supporting_files/contract/dashpay/contact-request0.json",
-            Some(1),
-        )
-        .expect("expected to get cbor document");
-
-        let dashpay_cr_serialized_document_1 = json_document_to_cbor(
-            "tests/supporting_files/contract/dashpay/contact-request1.json",
-            Some(1),
-        )
-        .expect("expected to get cbor document");
-
-        let dashpay_cr_serialized_document_2 = json_document_to_cbor(
-            "tests/supporting_files/contract/dashpay/contact-request2.json",
-            Some(1),
-        )
-        .expect("expected to get cbor document");
-
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+
+        let dashpay_cr_document_0 = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/contact-request0.json",
+            Some(random_owner_id.into()),
+            document_type,
+        )
+        .expect("expected to get cbor document");
+
+        let dashpay_cr_document_1 = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/contact-request1.json",
+            Some(random_owner_id.into()),
+            document_type,
+        )
+        .expect("expected to get cbor document");
+
+        let dashpay_cr_document_2 = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/contact-request2.json",
+            Some(random_owner_id.into()),
+            document_type,
+        )
+        .expect("expected to get cbor document");
+
         drive
-            .add_serialized_document_for_serialized_contract(
-                &dashpay_cr_serialized_document_0,
-                &dashpay_cbor,
-                "contactRequest",
-                Some(random_owner_id),
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefWithoutSerialization((
+                            &dashpay_cr_document_0,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to insert a document successfully");
+
         drive
-            .add_serialized_document_for_serialized_contract(
-                &dashpay_cr_serialized_document_1,
-                &dashpay_cbor,
-                "contactRequest",
-                Some(random_owner_id),
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefWithoutSerialization((
+                            &dashpay_cr_document_1,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to insert a document successfully");
+
         drive
-            .add_serialized_document_for_serialized_contract(
-                &dashpay_cr_serialized_document_2,
-                &dashpay_cbor,
-                "contactRequest",
-                Some(random_owner_id),
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefWithoutSerialization((
+                            &dashpay_cr_document_2,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to insert a document successfully");
@@ -1855,42 +1966,56 @@ mod tests {
     fn test_add_dashpay_conflicting_unique_index_documents() {
         let (drive, dashpay_cbor) = setup_dashpay("add_conflict", true);
 
-        let dashpay_cr_serialized_document_0 = json_document_to_cbor(
+        let dashpay_cr_document_0 = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
-            Some(1),
+            Some(random_owner_id.into()),
+            document_type,
         )
         .expect("expected to get cbor document");
 
-        let dashpay_cr_serialized_document_0_dup = json_document_to_cbor(
+        let dashpay_cr_document_0_dup = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0-dup-unique-index.json",
-            Some(1),
+            Some(random_owner_id.into()),
+            document_type,
         )
         .expect("expected to get cbor document");
 
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         drive
-            .add_serialized_document_for_serialized_contract(
-                &dashpay_cr_serialized_document_0,
-                &dashpay_cbor,
-                "contactRequest",
-                Some(random_owner_id),
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefWithoutSerialization((
+                            &dashpay_cr_document_0,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to insert a document successfully");
+
         drive
-            .add_serialized_document_for_serialized_contract(
-                &dashpay_cr_serialized_document_0_dup,
-                &dashpay_cbor,
-                "contactRequest",
-                Some(random_owner_id),
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefWithoutSerialization((
+                            &dashpay_cr_document_0_dup,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect_err(
