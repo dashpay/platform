@@ -166,6 +166,9 @@ module.exports = {
           key: null,
         },
         genesis: {
+          genesis_time: '2021-07-22T12:57:05.429Z',
+          chain_id: 'devnet', // TODO: Synchronize with RS-Drive-ABCI
+          validator_quorum_type: 4, // TODO: Synchronize with RS-Drive-ABCI
           consensus_params: {
             block: {
               max_bytes: '22020096',
