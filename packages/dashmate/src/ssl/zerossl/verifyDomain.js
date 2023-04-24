@@ -1,6 +1,7 @@
 const fetch = require('node-fetch');
 
 const qs = require('qs');
+const errorDescriptions = require('./errors/errorDescriptions');
 
 /**
  * Verify the domain/ip specified by certificate id
@@ -30,7 +31,9 @@ async function verifyDomain(id, apiKey) {
   const data = await response.json();
 
   if (data.error) {
-    throw new Error(data.error.type);
+    const errorMessage = errorDescriptions[data.error.code];
+
+    throw new Error(errorMessage || JSON.stringify(data.error));
   }
 
   return data;
