@@ -131,7 +131,7 @@ impl CoreRPCLike for DefaultCoreRPC {
     fn get_chain_tips(&self) -> Result<GetChainTipsResult, Error> {
         self.inner.get_chain_tips()
     }
-    
+
     fn get_quorum_listextended(
         &self,
         height: Option<CoreHeight>,
