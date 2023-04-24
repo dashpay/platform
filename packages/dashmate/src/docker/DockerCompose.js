@@ -382,7 +382,7 @@ class DockerCompose {
         });
       });
     } catch (e) {
-      throw new Error(`${e.message}. Can't connect to Docker. Possible reasons: 1. Docker is not started 2. Permission issues ${dockerPostInstallLinuxLink} 3. Wrong context ${dockerContextLink}`);
+      throw new Error(`Can't connect to Docker Engine: ${e.message}.\n\nPossible reasons:\n1. Docker is not started\n2. Permission issues ${dockerPostInstallLinuxLink}\n3. Wrong context ${dockerContextLink}`);
     }
 
     if (semver.lt(dockerVersion.trim(), DockerCompose.DOCKER_MIN_VERSION)) {
