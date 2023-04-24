@@ -15,6 +15,7 @@ use crate::identity::state_transition::validate_public_key_signatures::PublicKey
 use crate::identity::validation::{PUBLIC_KEY_SCHEMA_FOR_TRANSITION, PublicKeysValidator};
 
 use crate::state_repository::StateRepositoryLike;
+use crate::state_transition::apply_state_transition::ApplyStateTransition;
 use crate::state_transition::{
     StateTransition, StateTransitionAction, StateTransitionConvert, StateTransitionFactory,
     StateTransitionFactoryOptions,
@@ -47,6 +48,7 @@ where
     fee_validator: Arc<StateTransitionFeeValidator<SR>>,
     bls: BLS,
     factory: Arc<StateTransitionFactory<SR, BLS>>,
+    apply_state_transition: ApplyStateTransition<SR>,
 }
 
 impl<SR, BLS> StateTransitionFacade<SR, BLS>
@@ -163,13 +165,14 @@ where
             state_transition_basic_validator.clone(),
         );
 
-        let state_transition_key_signature_validator = {
-            let asset_lock_transaction_output_fetcher =
-                AssetLockTransactionOutputFetcher::new(wrapped_state_repository.clone());
+        let asset_lock_transaction_output_fetcher = Arc::new(
+            AssetLockTransactionOutputFetcher::new(wrapped_state_repository.clone()),
+        );
 
+        let state_transition_key_signature_validator = {
             let asset_public_key_hash_fetcher = AssetLockPublicKeyHashFetcher::new(
                 wrapped_state_repository.clone(),
-                asset_lock_transaction_output_fetcher,
+                asset_lock_transaction_output_fetcher.clone(),
             );
 
             StateTransitionKeySignatureValidator::new(
@@ -184,13 +187,17 @@ where
         let state_transition_state_validator = StateTransitionStateValidator::new(state_repository);
 
         Ok(Self {
-            state_repository: wrapped_state_repository,
+            state_repository: wrapped_state_repository.clone(),
             factory: Arc::new(state_transition_factory),
             basic_validator: state_transition_basic_validator,
             key_signature_validator: Arc::new(state_transition_key_signature_validator),
             fee_validator: Arc::new(state_transition_fee_validator),
             state_validator: Arc::new(state_transition_state_validator),
             bls: adapter,
+            apply_state_transition: ApplyStateTransition::new(
+                wrapped_state_repository,
+                asset_lock_transaction_output_fetcher,
+            ),
         })
     }
 
@@ -360,6 +367,10 @@ where
         self.state_validator
             .validate(state_transition, execution_context)
             .await
+    }
+
+    pub async fn apply(&self, state_transition: &StateTransition) -> Result<(), ProtocolError> {
+        self.apply_state_transition.apply(state_transition).await
     }
 }
 

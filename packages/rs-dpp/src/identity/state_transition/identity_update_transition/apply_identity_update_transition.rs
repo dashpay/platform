@@ -7,7 +7,8 @@ use crate::{state_repository::StateRepositoryLike, ProtocolError};
 
 use super::identity_update_transition::IdentityUpdateTransition;
 
-struct ApplyIdentityUpdateTransition<SR> {
+#[derive(Clone)]
+pub struct ApplyIdentityUpdateTransition<SR> {
     state_repository: Arc<SR>,
 }
 
@@ -19,9 +20,9 @@ where
         Self { state_repository }
     }
 
-    async fn apply(
+    pub async fn apply(
         &self,
-        state_transition: IdentityUpdateTransition,
+        state_transition: &IdentityUpdateTransition,
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<(), ProtocolError> {
         apply_identity_update_transition(
@@ -36,7 +37,7 @@ where
 /// Apply Identity Update state transition
 pub async fn apply_identity_update_transition(
     state_repository: &impl StateRepositoryLike,
-    state_transition: IdentityUpdateTransition,
+    state_transition: &IdentityUpdateTransition,
     execution_context: &StateTransitionExecutionContext,
 ) -> Result<(), ProtocolError> {
     state_repository

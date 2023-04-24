@@ -17,6 +17,12 @@ impl From<ReadOperation> for ReadOperationWasm {
     }
 }
 
+impl From<ReadOperationWasm> for ReadOperation {
+    fn from(value: ReadOperationWasm) -> Self {
+        value.0
+    }
+}
+
 #[wasm_bindgen(js_class=ReadOperation)]
 impl ReadOperationWasm {
     #[wasm_bindgen(constructor)]
