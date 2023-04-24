@@ -7,6 +7,7 @@ use drive_abci::config::{FromEnv, PlatformConfig};
 use drive_abci::rpc::core::DefaultCoreRPC;
 use std::path::PathBuf;
 use tracing::warn;
+use tracing_log::LogTracer;
 use tracing_subscriber::prelude::*;
 
 // struct aaa {}
@@ -57,7 +58,7 @@ pub fn main() {
     let cli = Cli::parse();
     let config = load_config(&cli.config);
 
-    set_verbosity(&cli);
+    configure_logging(&cli);
 
     install_panic_hook();
 
@@ -106,7 +107,7 @@ fn load_config(path: &Option<PathBuf>) -> PlatformConfig {
     config.expect("cannot parse configuration file")
 }
 
-fn set_verbosity(cli: &Cli) {
+fn configure_logging(cli: &Cli) {
     use tracing_subscriber::*;
 
     let env_filter = match cli.verbose {
@@ -119,7 +120,7 @@ fn set_verbosity(cli: &Cli) {
             .from_env_lossy(),
         1 => EnvFilter::new("error,tenderdash_abci=info,drive_abci=info"),
         2 => EnvFilter::new("info,tenderdash_abci=debug,drive_abci=debug"),
-        3 => EnvFilter::new("debug,tenderdash_abci=debug,drive_abci=debug"),
+        3 => EnvFilter::new("debug"),
         4 => EnvFilter::new("debug,tenderdash_abci=trace,drive_abci=trace"),
         5 => EnvFilter::new("trace"),
         _ => panic!("max verbosity level is 5"),
@@ -128,6 +129,8 @@ fn set_verbosity(cli: &Cli) {
     let layer = fmt::layer().with_ansi(atty::is(atty::Stream::Stdout));
 
     registry().with(layer).with(env_filter).init();
+
+    LogTracer::init().expect("cannot initialize LogTracer");
 }
 
 /// Install panic hook to ensure that all panic logs are correctly formatted.
