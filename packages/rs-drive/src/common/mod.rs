@@ -61,9 +61,6 @@ use crate::contract::Contract;
 use crate::drive::Drive;
 
 #[cfg(feature = "full")]
-use dpp::data_contract::extra::common::json_document_to_cbor;
-
-#[cfg(feature = "full")]
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::extra::common::json_document_to_contract_with_ids;
 use dpp::prelude::Identifier;
@@ -88,7 +85,7 @@ pub fn setup_contract(
 
 #[cfg(feature = "full")]
 /// Serializes to CBOR and applies to Drive a contract from hex string format.
-pub fn setup_contract_from_hex(
+pub fn setup_contract_from_cbor_hex(
     drive: &Drive,
     hex_string: String,
     transaction: TransactionArg,

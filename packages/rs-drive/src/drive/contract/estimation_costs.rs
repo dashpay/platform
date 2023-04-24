@@ -8,6 +8,7 @@ use crate::drive::flags::StorageFlags;
 use crate::drive::Drive;
 
 use dpp::data_contract::DataContract;
+use dpp::serialization_traits::PlatformSerializable;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel};
 use grovedb::EstimatedLayerInformation;
@@ -69,7 +70,7 @@ impl Drive {
                         subtrees_size: None,
                         items_size: Some((
                             DEFAULT_FLOAT_SIZE_U8,
-                            contract.to_cbor().unwrap().len() as u32, //todo: fix this
+                            contract.serialize().unwrap().len() as u32, //todo: fix this
                             storage_flags,
                             AVERAGE_NUMBER_OF_UPDATES,
                         )),

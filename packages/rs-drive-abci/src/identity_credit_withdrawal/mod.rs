@@ -501,7 +501,7 @@ where
 
             let state_transition_size = 190;
 
-            let output_script: Script = Script::from(output_script_bytes);
+            let output_script: Script = Script(output_script_bytes.into());
 
             let tx_out = TxOut {
                 value: convert_credits_to_satoshi(amount),
@@ -1070,20 +1070,7 @@ mod tests {
                 Some(&transaction),
             );
 
-            let documents = vec![
-                Document::from_cbor(
-                    &document_1.to_cbor().expect("to convert document to cbor"),
-                    None,
-                    None,
-                )
-                .expect("to create document from cbor"),
-                Document::from_cbor(
-                    &document_2.to_cbor().expect("to convert document to cbor"),
-                    None,
-                    None,
-                )
-                .expect("to create document from cbor"),
-            ];
+            let documents = vec![document_1, document_2];
 
             let mut batch = vec![];
 

@@ -192,9 +192,7 @@ mod test {
     use dpp::tests::utils::generate_random_identifier_struct;
 
     use dpp::DataTriggerActionError;
-    use drive::drive::object_size_info::DocumentInfo::{
-        DocumentRefInfo, DocumentOwnedInfo,
-    };
+    use drive::drive::object_size_info::DocumentInfo::{DocumentOwnedInfo, DocumentRefInfo};
     use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use std::net::SocketAddr;
     use std::str::FromStr;
@@ -350,10 +348,7 @@ mod test {
                 .add_document_for_contract(
                     DocumentAndContractInfo {
                         owned_document_info: OwnedDocumentInfo {
-                            document_info: DocumentRefInfo((
-                                &document.document,
-                                None,
-                            )),
+                            document_info: DocumentRefInfo((&document.document, None)),
                             owner_id: None,
                         },
                         contract: &document.data_contract,

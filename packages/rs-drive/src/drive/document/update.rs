@@ -1503,14 +1503,14 @@ mod tests {
             //Explanation for 1290
 
             //todo
-            1287
+            1233
         } else {
             //Explanation for 1014
 
             // Document Storage
 
             //// Item
-            // = 412 Bytes
+            // = 358 Bytes
 
             // Explanation for 412 storage_written_bytes
 
@@ -1525,7 +1525,7 @@ mod tests {
             //   35 for flags 32 + 1 + 2
             //   1 for the enum type
             //   1 for item
-            //   170 for item serialized bytes
+            //   116 for item serialized bytes
             //   1 for Basic Merk
             // 32 for node hash
             // 32 for value hash
@@ -1636,7 +1636,7 @@ mod tests {
 
             // Total 65 + 145 + 68 = 275
 
-            1011
+            957
         };
         assert_eq!(original_bytes, expected_added_bytes);
 
@@ -1771,7 +1771,7 @@ mod tests {
             / Epoch::new(0)
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
-        let expected_added_bytes = if using_history { 1287 } else { 1011 };
+        let expected_added_bytes = if using_history { 1233 } else { 957 };
         assert_eq!(original_bytes, expected_added_bytes);
         if !using_history {
             // let's delete it, just to make sure everything is working.
@@ -1963,32 +1963,32 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         let expected_added_bytes = if using_history {
-            //Explanation for 1290
+            //Explanation for 1233
 
             //todo
-            1287
+            1233
         } else {
-            //Explanation for 1114
+            //Explanation for 957
 
             // Document Storage
 
             //// Item
-            // = 409 Bytes
+            // = 355 Bytes
 
-            // Explanation for 409 storage_written_bytes
+            // Explanation for 355 storage_written_bytes
 
             // Key -> 65 bytes
             // 32 bytes for the key prefix
             // 32 bytes for the unique id
             // 1 byte for key_size (required space for 64)
 
-            // Value -> 276
+            // Value -> 222
             //   1 for the flag option with flags
             //   1 for the flags size
             //   35 for flags 32 + 1 + 2
             //   1 for the enum type
             //   1 for item
-            //   170 for item serialized bytes
+            //   116 for item serialized bytes
             //   1 for Basic Merk
             // 32 for node hash
             // 32 for value hash
@@ -2001,7 +2001,7 @@ mod tests {
             // Child Heights 2
             // Feature Type Basic 1
 
-            // Total 65 + 279 + 68 = 412
+            // Total 65 + 222 + 68 = 355
 
             //// Tree 1 / <Person Contract> / 1 / person / message
             // Key: My apples are safe
@@ -2099,9 +2099,9 @@ mod tests {
 
             // Total 65 + 145 + 68 = 278
 
-            // 409 + 179 + 145 + 278 = 1011
+            // 355 + 179 + 145 + 278 = 957
 
-            1011
+            957
         };
         assert_eq!(original_bytes, expected_added_bytes);
 
@@ -2121,7 +2121,7 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
-        let expected_added_bytes = if using_history { 1288 } else { 1012 };
+        let expected_added_bytes = if using_history { 1234 } else { 958 };
         assert_eq!(added_bytes, expected_added_bytes);
     }
 

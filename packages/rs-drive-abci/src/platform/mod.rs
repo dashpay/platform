@@ -48,6 +48,7 @@ use dashcore::hashes::Hash;
 use dashcore::{BlockHash, QuorumHash};
 
 use dpp::block::block_info::BlockInfo;
+use dpp::serialization_traits::PlatformDeserializable;
 use drive::error::drive::DriveError;
 use drive::error::Error::GroveDB;
 use serde_json::json;

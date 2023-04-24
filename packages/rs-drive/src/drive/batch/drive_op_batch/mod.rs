@@ -389,7 +389,7 @@ mod tests {
             document_and_contract_info: DocumentAndContractInfo {
                 owned_document_info: OwnedDocumentInfo {
                     document_info: DocumentRefInfo((&dashpay_cr_document, None)),
-                    owner_id: Some(random_owner_id),
+                    owner_id: None,
                 },
                 contract: &contract,
                 document_type: &contract
@@ -398,6 +398,8 @@ mod tests {
             },
             override_document: false,
         }));
+
+        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let dashpay_cr_1_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request1.json",
@@ -410,7 +412,7 @@ mod tests {
             document_and_contract_info: DocumentAndContractInfo {
                 owned_document_info: OwnedDocumentInfo {
                     document_info: DocumentRefInfo((&dashpay_cr_1_document, None)),
-                    owner_id: Some(random_owner_id),
+                    owner_id: None,
                 },
                 contract: &contract,
                 document_type: &contract

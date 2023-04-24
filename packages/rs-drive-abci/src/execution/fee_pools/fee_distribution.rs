@@ -114,11 +114,9 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             Some(transaction),
         )?;
 
-        if unpaid_epoch.is_none() {
+        let Some(unpaid_epoch) = unpaid_epoch else {
             return Ok(None);
-        }
-
-        let unpaid_epoch = unpaid_epoch.unwrap();
+        };
 
         // Process more proposers at once if we have many unpaid epochs in past
         let proposers_limit: u16 = (current_epoch_index - unpaid_epoch.epoch_index) * 50;

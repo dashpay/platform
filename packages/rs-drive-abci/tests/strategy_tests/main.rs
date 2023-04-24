@@ -95,6 +95,7 @@ use drive_abci::abci::AbciApplication;
 use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
 
 use dashcore_rpc::json::{MasternodeListDiff, RemovedMasternodeItem};
+use dpp::serialization_traits::PlatformSerializable;
 use drive_abci::abci::mimic::MimicExecuteBlockOutcome;
 use drive_abci::execution::test_quorum::TestQuorumInfo;
 use drive_abci::platform::Platform;
@@ -357,7 +358,7 @@ impl Strategy {
         for op in &self.operations {
             match &op.op_type {
                 OperationType::Document(doc_op) => {
-                    let serialize = doc_op.contract.to_cbor().expect("expected to serialize");
+                    let serialize = doc_op.contract.serialize().expect("expected to serialize");
                     drive
                         .apply_contract_with_serialization(
                             &doc_op.contract,
@@ -1666,7 +1667,6 @@ mod tests {
         Bip9SoftforkInfo, Bip9SoftforkStatus, ExtendedQuorumDetails,
     };
     use dpp::data_contract::extra::common::json_document_to_contract;
-    use drive::dpp::data_contract::extra::common::json_document_to_cbor;
     use drive_abci::config::PlatformTestConfig;
     use drive_abci::rpc::core::QuorumListExtendedInfo;
     use tenderdash_abci::proto::types::CoreChainLock;

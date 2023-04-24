@@ -40,6 +40,7 @@ use drive::dpp::identity::{
 };
 
 use dpp::block::block_info::BlockInfo;
+use dpp::serialization_traits::PlatformSerializable;
 use drive::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use drive::drive::batch::{
     ContractOperationType, DocumentOperationType, DriveOperation, IdentityOperationType,
@@ -169,7 +170,7 @@ impl<C> Platform<C> {
         data_contract: DataContract,
         operations: &mut Vec<DriveOperation>,
     ) {
-        let serialization = data_contract.to_cbor().unwrap();
+        let serialization = data_contract.serialize().unwrap();
         operations.push(DriveOperation::ContractOperation(
             //todo: remove cbor
             ContractOperationType::ApplyContractWithSerialization {

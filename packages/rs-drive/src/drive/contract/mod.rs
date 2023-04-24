@@ -1008,8 +1008,7 @@ impl Drive {
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        //todo: change this from cbor
-        let serialized_contract = contract.to_cbor().map_err(Error::Protocol)?;
+        let serialized_contract = contract.serialize().map_err(Error::Protocol)?;
         self.apply_contract_with_serialization_operations(
             contract,
             serialized_contract,
@@ -1080,7 +1079,7 @@ impl Drive {
 
         if already_exists {
             if !original_contract_stored_data.is_empty() {
-                let original_contract = Contract::from_cbor(&original_contract_stored_data)?;
+                let original_contract = Contract::deserialize(&original_contract_stored_data)?;
                 // if the contract is not mutable update_contract will return an error
                 self.update_contract_add_operations(
                     contract_element,
