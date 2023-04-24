@@ -1,8 +1,6 @@
 use crate::drive::batch::drive_op_batch::DriveLowLevelOperationConverter;
 use crate::drive::flags::StorageFlags;
-use crate::drive::object_size_info::DocumentInfo::{
-    DocumentRefAndSerialization, DocumentRefWithoutSerialization,
-};
+use crate::drive::object_size_info::DocumentInfo::{DocumentRefAndSerialization, DocumentRefInfo};
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use crate::drive::Drive;
 use crate::error::document::DocumentError;
@@ -421,7 +419,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                 let document = Document::from_cbor(serialized_document, None, owner_id)?;
 
                 let document_info =
-                    DocumentRefAndSerialization((&document, serialized_document, storage_flags));
+                    DocumentRefSerialization((&document, serialized_document, storage_flags));
 
                 let document_type = contract.document_type_for_name(document_type_name)?;
 
@@ -547,7 +545,7 @@ impl DriveLowLevelOperationConverter for DocumentOperationType<'_> {
                                         storage_flags,
                                     ))
                                 } else {
-                                    DocumentRefWithoutSerialization((document, storage_flags))
+                                    DocumentRefInfo((document, storage_flags))
                                 };
                             let document_and_contract_info = DocumentAndContractInfo {
                                 owned_document_info: OwnedDocumentInfo {

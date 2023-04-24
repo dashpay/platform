@@ -55,7 +55,7 @@ use crate::drive::document::{
 };
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
-    DocumentRefAndSerialization, DocumentWithoutSerialization,
+    DocumentOwnedInfo, DocumentRefAndSerialization,
 };
 use dpp::document::Document;
 
@@ -372,10 +372,7 @@ impl Drive {
                 let document =
                     Document::from_bytes(old_serialized_document.as_slice(), document_type)?;
                 let storage_flags = StorageFlags::map_some_element_flags_ref(&element_flags)?;
-                Ok(DocumentWithoutSerialization((
-                    document,
-                    storage_flags.map(Cow::Owned),
-                )))
+                Ok(DocumentOwnedInfo((document, storage_flags.map(Cow::Owned))))
             } else {
                 Err(Error::Drive(DriveError::CorruptedDocumentNotItem(
                     "old document is not an item",
@@ -678,7 +675,6 @@ mod tests {
     use std::option::Option::None;
     use std::sync::Arc;
 
-    use dpp::data_contract::extra::common::json_document_to_cbor;
     use dpp::data_contract::validation::data_contract_validator::DataContractValidator;
     use dpp::data_contract::DataContractFactory;
     use dpp::document::document_factory::DocumentFactory;
@@ -697,7 +693,9 @@ mod tests {
     use crate::drive::config::{DriveConfig, DriveEncoding};
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::DocumentAndContractInfo;
-    use crate::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
+    use crate::drive::object_size_info::DocumentInfo::{
+        DocumentRefAndSerialization, DocumentRefInfo,
+    };
     use crate::drive::{defaults, Drive};
     use crate::fee::credits::Creditable;
     use crate::fee::default_costs::EpochCosts;
@@ -705,6 +703,7 @@ mod tests {
     use crate::query::DriveQuery;
     use crate::{common::setup_contract, drive::test_utils::TestEntropyGenerator};
     use dpp::block::epoch::Epoch;
+    use dpp::data_contract::extra::common::json_document_to_document;
 
     #[test]
     fn test_create_and_update_document_same_transaction() {
@@ -807,9 +806,8 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefAndSerialization((
+                        document_info: DocumentRefWithoutSerialization((
                             &alice_profile,
-                            alice_profile_cbor.as_slice(),
                             storage_flags,
                         )),
                         owner_id: None,
@@ -900,9 +898,8 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefAndSerialization((
+                        document_info: DocumentRefWithoutSerialization((
                             &alice_profile,
-                            alice_profile_cbor.as_slice(),
                             storage_flags,
                         )),
                         owner_id: None,
@@ -1013,9 +1010,8 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefAndSerialization((
+                        document_info: DocumentRefWithoutSerialization((
                             &alice_profile,
-                            alice_profile_cbor.as_slice(),
                             storage_flags,
                         )),
                         owner_id: None,
@@ -1268,29 +1264,41 @@ mod tests {
             Some(&db_transaction),
         );
 
-        let dashpay_cr_serialized_document = json_document_to_cbor(
-            "tests/supporting_files/contract/dashpay/contact-request0.json",
-            Some(1),
-        )
-        .expect("expected to get cbor document");
+        let document_type = contract
+            .document_type_for_name("contactRequest")
+            .expect("expected to get document type");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+
+        let dashpay_cr_document = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/contact-request0.json",
+            Some(random_owner_id.into()),
+            document_type,
+        )
+        .expect("expected to get document");
+
         drive
-            .add_serialized_document_for_contract(
-                &dashpay_cr_serialized_document,
-                &contract,
-                "contactRequest",
-                Some(random_owner_id),
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            &dashpay_cr_document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
 
         drive
-            .update_serialized_document_for_contract(
+            .update_document_for_contract(
                 &dashpay_cr_serialized_document,
                 &contract,
                 "contactRequest",

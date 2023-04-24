@@ -240,7 +240,7 @@ mod tests {
     use crate::drive::contract::paths::contract_root_path;
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::DocumentInfo::{
-        DocumentRefAndSerialization, DocumentRefWithoutSerialization,
+        DocumentRefAndSerialization, DocumentRefInfo,
     };
     use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::drive::Drive;
@@ -287,7 +287,7 @@ mod tests {
         drive_operations.push(DocumentOperation(AddDocumentForContract {
             document_and_contract_info: DocumentAndContractInfo {
                 owned_document_info: OwnedDocumentInfo {
-                    document_info: DocumentRefWithoutSerialization((
+                    document_info: DocumentRefInfo((
                         &dashpay_cr_document,
                         StorageFlags::optional_default_as_cow(),
                     )),
@@ -388,7 +388,7 @@ mod tests {
         drive_operations.push(DocumentOperation(AddDocumentForContract {
             document_and_contract_info: DocumentAndContractInfo {
                 owned_document_info: OwnedDocumentInfo {
-                    document_info: DocumentRefWithoutSerialization((&dashpay_cr_document, None)),
+                    document_info: DocumentRefInfo((&dashpay_cr_document, None)),
                     owner_id: Some(random_owner_id),
                 },
                 contract: &contract,
@@ -409,7 +409,7 @@ mod tests {
         drive_operations.push(DocumentOperation(AddDocumentForContract {
             document_and_contract_info: DocumentAndContractInfo {
                 owned_document_info: OwnedDocumentInfo {
-                    document_info: DocumentRefWithoutSerialization((&dashpay_cr_1_document, None)),
+                    document_info: DocumentRefInfo((&dashpay_cr_1_document, None)),
                     owner_id: Some(random_owner_id),
                 },
                 contract: &contract,
@@ -483,7 +483,7 @@ mod tests {
 
         operations.push(AddOperation {
             owned_document_info: OwnedDocumentInfo {
-                document_info: DocumentRefWithoutSerialization((
+                document_info: DocumentRefInfo((
                     &document0,
                     StorageFlags::optional_default_as_cow(),
                 )),
@@ -494,7 +494,7 @@ mod tests {
 
         operations.push(AddOperation {
             owned_document_info: OwnedDocumentInfo {
-                document_info: DocumentRefWithoutSerialization((
+                document_info: DocumentRefInfo((
                     &document1,
                     StorageFlags::optional_default_as_cow(),
                 )),
@@ -617,7 +617,7 @@ mod tests {
 
         operations.push(AddOperation {
             owned_document_info: OwnedDocumentInfo {
-                document_info: DocumentRefWithoutSerialization((
+                document_info: DocumentRefInfo((
                     &person_document0,
                     StorageFlags::optional_default_as_cow(),
                 )),
@@ -630,7 +630,7 @@ mod tests {
 
         operations.push(AddOperation {
             owned_document_info: OwnedDocumentInfo {
-                document_info: DocumentRefWithoutSerialization((
+                document_info: DocumentRefInfo((
                     &person_document1,
                     StorageFlags::optional_default_as_cow(),
                 )),
@@ -733,7 +733,7 @@ mod tests {
 
         operations.push(AddOperation {
             owned_document_info: OwnedDocumentInfo {
-                document_info: DocumentRefWithoutSerialization((
+                document_info: DocumentRefInfo((
                     &person_document0,
                     StorageFlags::optional_default_as_cow(),
                 )),
@@ -744,7 +744,7 @@ mod tests {
 
         operations.push(AddOperation {
             owned_document_info: OwnedDocumentInfo {
-                document_info: DocumentRefWithoutSerialization((
+                document_info: DocumentRefInfo((
                     &person_document1,
                     StorageFlags::optional_default_as_cow(),
                 )),
@@ -950,7 +950,7 @@ mod tests {
 
         operations.push(AddOperation {
             owned_document_info: OwnedDocumentInfo {
-                document_info: DocumentRefWithoutSerialization((
+                document_info: DocumentRefInfo((
                     &person_document0,
                     StorageFlags::optional_default_as_cow(),
                 )),
@@ -961,7 +961,7 @@ mod tests {
 
         operations.push(AddOperation {
             owned_document_info: OwnedDocumentInfo {
-                document_info: DocumentRefWithoutSerialization((
+                document_info: DocumentRefInfo((
                     &person_document1,
                     StorageFlags::optional_default_as_cow(),
                 )),

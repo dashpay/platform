@@ -125,7 +125,7 @@ mod tests {
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dpp::tests::fixtures::{get_data_contract_fixture, get_withdrawal_document_fixture};
-    use drive::drive::object_size_info::DocumentInfo::DocumentRefWithoutSerialization;
+    use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
     use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 
     #[test]
@@ -208,7 +208,7 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefWithoutSerialization((&document, None)),
+                        document_info: DocumentRefInfo((&document, None)),
                         owner_id: Some(owner_id.to_buffer()),
                     },
                     contract: &data_contract,

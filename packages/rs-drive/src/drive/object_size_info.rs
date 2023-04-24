@@ -528,14 +528,14 @@ pub struct DocumentAndContractInfo<'a> {
 /// Document info
 #[derive(Clone, Debug)]
 pub enum DocumentInfo<'a> {
+    /// The document without it's serialized form
+    DocumentOwnedInfo((Document, Option<Cow<'a, StorageFlags>>)),
+    /// The borrowed document without it's serialized form
+    DocumentRefInfo((&'a Document, Option<Cow<'a, StorageFlags>>)),
     /// The borrowed document and it's serialized form
     DocumentRefAndSerialization((&'a Document, &'a [u8], Option<Cow<'a, StorageFlags>>)),
-    /// The borrowed document without it's serialized form
-    DocumentRefWithoutSerialization((&'a Document, Option<Cow<'a, StorageFlags>>)),
     /// The document and it's serialized form
     DocumentAndSerialization((Document, Vec<u8>, Option<Cow<'a, StorageFlags>>)),
-    /// The document without it's serialized form
-    DocumentWithoutSerialization((Document, Option<Cow<'a, StorageFlags>>)),
     /// An element size
     DocumentEstimatedAverageSize(u32),
 }
@@ -555,8 +555,8 @@ impl<'a> DocumentInfo<'a> {
     pub fn get_borrowed_document(&self) -> Option<&Document> {
         match self {
             DocumentInfo::DocumentRefAndSerialization((document, _, _))
-            | DocumentInfo::DocumentRefWithoutSerialization((document, _)) => Some(document),
-            DocumentInfo::DocumentWithoutSerialization((document, _))
+            | DocumentInfo::DocumentRefInfo((document, _)) => Some(document),
+            DocumentInfo::DocumentOwnedInfo((document, _))
             | DocumentInfo::DocumentAndSerialization((document, _, _)) => Some(document),
             DocumentInfo::DocumentEstimatedAverageSize(_) => None,
         }
@@ -566,10 +566,8 @@ impl<'a> DocumentInfo<'a> {
     pub fn id_key_value_info(&self) -> KeyValueInfo {
         match self {
             DocumentInfo::DocumentRefAndSerialization((document, _, _))
-            | DocumentInfo::DocumentRefWithoutSerialization((document, _)) => {
-                KeyRefRequest(document.id.as_slice())
-            }
-            DocumentInfo::DocumentWithoutSerialization((document, _))
+            | DocumentInfo::DocumentRefInfo((document, _)) => KeyRefRequest(document.id.as_slice()),
+            DocumentInfo::DocumentOwnedInfo((document, _))
             | DocumentInfo::DocumentAndSerialization((document, _, _)) => {
                 KeyRefRequest(document.id.as_slice())
             }
@@ -617,7 +615,7 @@ impl<'a> DocumentInfo<'a> {
     ) -> Result<Option<DriveKeyInfo>, Error> {
         match self {
             DocumentInfo::DocumentRefAndSerialization((document, _, _))
-            | DocumentInfo::DocumentRefWithoutSerialization((document, _)) => {
+            | DocumentInfo::DocumentRefInfo((document, _)) => {
                 let raw_value =
                     document.get_raw_for_document_type(key_path, document_type, owner_id)?;
                 match raw_value {
@@ -625,7 +623,7 @@ impl<'a> DocumentInfo<'a> {
                     Some(value) => Ok(Some(Key(value))),
                 }
             }
-            DocumentInfo::DocumentWithoutSerialization((document, _))
+            DocumentInfo::DocumentOwnedInfo((document, _))
             | DocumentInfo::DocumentAndSerialization((document, _, _)) => {
                 let raw_value =
                     document.get_raw_for_document_type(key_path, document_type, owner_id)?;
@@ -685,10 +683,10 @@ impl<'a> DocumentInfo<'a> {
     ) -> Option<(&Document, Option<&StorageFlags>)> {
         match self {
             DocumentInfo::DocumentRefAndSerialization((document, _, storage_flags))
-            | DocumentInfo::DocumentRefWithoutSerialization((document, storage_flags)) => {
+            | DocumentInfo::DocumentRefInfo((document, storage_flags)) => {
                 Some((document, storage_flags.as_ref().map(|flags| flags.as_ref())))
             }
-            DocumentInfo::DocumentWithoutSerialization((document, storage_flags))
+            DocumentInfo::DocumentOwnedInfo((document, storage_flags))
             | DocumentInfo::DocumentAndSerialization((document, _, storage_flags)) => {
                 Some((document, storage_flags.as_ref().map(|flags| flags.as_ref())))
             }
@@ -700,8 +698,8 @@ impl<'a> DocumentInfo<'a> {
     pub fn get_storage_flags_ref(&self) -> Option<&StorageFlags> {
         match self {
             DocumentInfo::DocumentRefAndSerialization((_, _, storage_flags))
-            | DocumentInfo::DocumentRefWithoutSerialization((_, storage_flags))
-            | DocumentInfo::DocumentWithoutSerialization((_, storage_flags))
+            | DocumentInfo::DocumentRefInfo((_, storage_flags))
+            | DocumentInfo::DocumentOwnedInfo((_, storage_flags))
             | DocumentInfo::DocumentAndSerialization((_, _, storage_flags)) => {
                 storage_flags.as_ref().map(|flags| flags.as_ref())
             }
@@ -715,10 +713,8 @@ impl<'a> DocumentInfo<'a> {
     pub fn get_document_id_as_slice(&self) -> Option<&[u8]> {
         match self {
             DocumentInfo::DocumentRefAndSerialization((document, _, _))
-            | DocumentInfo::DocumentRefWithoutSerialization((document, _)) => {
-                Some(document.id.as_slice())
-            }
-            DocumentInfo::DocumentWithoutSerialization((document, _))
+            | DocumentInfo::DocumentRefInfo((document, _)) => Some(document.id.as_slice()),
+            DocumentInfo::DocumentOwnedInfo((document, _))
             | DocumentInfo::DocumentAndSerialization((document, _, _)) => {
                 Some(document.id.as_slice())
             }

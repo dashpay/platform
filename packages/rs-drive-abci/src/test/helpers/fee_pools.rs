@@ -47,9 +47,9 @@ use drive::common::helpers::identities::create_test_identity_with_rng;
 use drive::contract::Contract;
 use drive::dpp::document::Document;
 use drive::drive::flags::StorageFlags;
-use drive::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
 use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use drive::drive::Drive;
+use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
 use drive::grovedb::TransactionArg;
 
 use crate::contracts::reward_shares::MN_REWARD_SHARES_DOCUMENT_TYPE;
@@ -88,15 +88,12 @@ fn create_test_mn_share_document(
 
     let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
-    let document_cbor = document.to_cbor().expect("expected to encode to cbor");
-
     drive
         .add_document_for_contract(
             DocumentAndContractInfo {
                 owned_document_info: OwnedDocumentInfo {
-                    document_info: DocumentRefAndSerialization((
+                    document_info: DocumentRefInfo((
                         &document,
-                        &document_cbor,
                         storage_flags,
                     )),
                     owner_id: None,

@@ -58,8 +58,8 @@ use crate::drive::document::{
 };
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
-    DocumentAndSerialization, DocumentEstimatedAverageSize, DocumentRefAndSerialization,
-    DocumentRefWithoutSerialization, DocumentWithoutSerialization,
+    DocumentAndSerialization, DocumentEstimatedAverageSize, DocumentOwnedInfo,
+    DocumentRefAndSerialization, DocumentRefInfo,
 };
 use crate::drive::object_size_info::DriveKeyInfo::{Key, KeyRef};
 use crate::drive::object_size_info::KeyElementInfo::{KeyElement, KeyUnknownElementSize};
@@ -215,7 +215,7 @@ impl Drive {
                             element,
                         ))
                     }
-                    DocumentWithoutSerialization((document, storage_flags)) => {
+                    DocumentOwnedInfo((document, storage_flags)) => {
                         let serialized_document =
                             document.serialize(document_and_contract_info.document_type)?;
                         let element = Element::Item(
@@ -234,7 +234,7 @@ impl Drive {
                             element,
                         ))
                     }
-                    DocumentRefWithoutSerialization((document, storage_flags)) => {
+                    DocumentRefInfo((document, storage_flags)) => {
                         let serialized_document =
                             document.serialize(document_and_contract_info.document_type)?;
                         let element = Element::Item(
@@ -332,7 +332,7 @@ impl Drive {
                     );
                     PathFixedSizeKeyRefElement((primary_key_path, document.id.as_slice(), element))
                 }
-                DocumentRefWithoutSerialization((document, storage_flags)) => {
+                DocumentRefInfo((document, storage_flags)) => {
                     let serialized_document =
                         document.serialize(document_and_contract_info.document_type)?;
                     let element = Element::Item(
@@ -349,7 +349,7 @@ impl Drive {
                     },
                     Element::required_item_space(*average_size, STORAGE_FLAGS_SIZE),
                 )),
-                DocumentWithoutSerialization((document, storage_flags)) => {
+                DocumentOwnedInfo((document, storage_flags)) => {
                     let serialized_document =
                         document.serialize(document_and_contract_info.document_type)?;
                     let element = Element::Item(
@@ -379,7 +379,7 @@ impl Drive {
                     );
                     PathFixedSizeKeyRefElement((primary_key_path, document.id.as_slice(), element))
                 }
-                DocumentWithoutSerialization((document, storage_flags)) => {
+                DocumentOwnedInfo((document, storage_flags)) => {
                     let serialized_document =
                         document.serialize(document_and_contract_info.document_type)?;
                     let element = Element::Item(
@@ -388,7 +388,7 @@ impl Drive {
                     );
                     PathFixedSizeKeyRefElement((primary_key_path, document.id.as_slice(), element))
                 }
-                DocumentRefWithoutSerialization((document, storage_flags)) => {
+                DocumentRefInfo((document, storage_flags)) => {
                     let serialized_document =
                         document.serialize(document_and_contract_info.document_type)?;
                     let element = Element::Item(
@@ -743,7 +743,7 @@ impl Drive {
             let key_element_info =
                 match &document_and_contract_info.owned_document_info.document_info {
                     DocumentRefAndSerialization((document, _, storage_flags))
-                    | DocumentRefWithoutSerialization((document, storage_flags)) => {
+                    | DocumentRefInfo((document, storage_flags)) => {
                         let document_reference = make_document_reference(
                             document,
                             document_and_contract_info.document_type,
@@ -751,7 +751,7 @@ impl Drive {
                         );
                         KeyElement((document.id.as_slice(), document_reference))
                     }
-                    DocumentWithoutSerialization((document, storage_flags))
+                    DocumentOwnedInfo((document, storage_flags))
                     | DocumentAndSerialization((document, _, storage_flags)) => {
                         let document_reference = make_document_reference(
                             document,
@@ -783,7 +783,7 @@ impl Drive {
             let key_element_info =
                 match &document_and_contract_info.owned_document_info.document_info {
                     DocumentRefAndSerialization((document, _, storage_flags))
-                    | DocumentRefWithoutSerialization((document, storage_flags)) => {
+                    | DocumentRefInfo((document, storage_flags)) => {
                         let document_reference = make_document_reference(
                             document,
                             document_and_contract_info.document_type,
@@ -791,7 +791,7 @@ impl Drive {
                         );
                         KeyElement((&[0], document_reference))
                     }
-                    DocumentWithoutSerialization((document, storage_flags))
+                    DocumentOwnedInfo((document, storage_flags))
                     | DocumentAndSerialization((document, _, storage_flags)) => {
                         let document_reference = make_document_reference(
                             document,
@@ -1260,7 +1260,7 @@ mod tests {
     use std::option::Option::None;
 
     use super::*;
-    use dpp::data_contract::extra::common::{json_document_to_cbor, json_document_to_document};
+    use dpp::data_contract::extra::common::json_document_to_document;
     use rand::Rng;
     use tempfile::TempDir;
 
@@ -1268,13 +1268,11 @@ mod tests {
     use crate::drive::document::tests::setup_dashpay;
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::DocumentAndContractInfo;
-    use crate::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
     use crate::drive::Drive;
     use crate::fee::default_costs::EpochCosts;
     use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;
     use crate::fee::op::LowLevelDriveOperation;
     use dpp::block::epoch::Epoch;
-    use dpp::document::Document;
 
     #[test]
     fn test_add_dashpay_documents_no_transaction() {
@@ -1297,19 +1295,19 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefWithoutSerialization((
+                        document_info: DocumentRefInfo((
                             &dashpay_cr_document,
                             StorageFlags::optional_default_as_cow(),
                         )),
                         owner_id: Some(random_owner_id),
                     },
-                    contract: &contract,
+                    contract: &dashpay,
                     document_type,
                 },
                 false,
                 BlockInfo::default(),
                 true,
-                Some(&db_transaction),
+                None,
             )
             .expect("expected to insert a document successfully");
 
@@ -1317,19 +1315,19 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefWithoutSerialization((
+                        document_info: DocumentRefInfo((
                             &dashpay_cr_document,
                             StorageFlags::optional_default_as_cow(),
                         )),
                         owner_id: Some(random_owner_id),
                     },
-                    contract: &contract,
+                    contract: &dashpay,
                     document_type,
                 },
                 false,
                 BlockInfo::default(),
                 true,
-                Some(&db_transaction),
+                None,
             )
             .expect_err("expected not to be able to insert same document twice");
 
@@ -1337,19 +1335,19 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefWithoutSerialization((
+                        document_info: DocumentRefInfo((
                             &dashpay_cr_document,
                             StorageFlags::optional_default_as_cow(),
                         )),
                         owner_id: Some(random_owner_id),
                     },
-                    contract: &contract,
+                    contract: &dashpay,
                     document_type,
                 },
                 true,
                 BlockInfo::default(),
                 true,
-                Some(&db_transaction),
+                None,
             )
             .expect("expected to override a document successfully");
     }
@@ -1372,7 +1370,7 @@ mod tests {
             Some(&db_transaction),
         );
 
-        let document_type = dashpay
+        let document_type = contract
             .document_type_for_name("contactRequest")
             .expect("expected to get document type");
 
@@ -1389,7 +1387,7 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefWithoutSerialization((
+                        document_info: DocumentRefInfo((
                             &dashpay_cr_document,
                             StorageFlags::optional_default_as_cow(),
                         )),
@@ -1409,7 +1407,7 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefWithoutSerialization((
+                        document_info: DocumentRefInfo((
                             &dashpay_cr_document,
                             StorageFlags::optional_default_as_cow(),
                         )),
@@ -1429,7 +1427,7 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefWithoutSerialization((
+                        document_info: DocumentRefInfo((
                             &dashpay_cr_document,
                             StorageFlags::optional_default_as_cow(),
                         )),
@@ -1464,7 +1462,7 @@ mod tests {
             Some(&db_transaction),
         );
 
-        let document_type = dashpay
+        let document_type = contract
             .document_type_for_name("contactRequest")
             .expect("expected to get document type");
 
@@ -1481,7 +1479,7 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefWithoutSerialization((
+                        document_info: DocumentRefInfo((
                             &dashpay_cr_document,
                             StorageFlags::optional_default_as_cow(),
                         )),
@@ -1528,7 +1526,7 @@ mod tests {
             Some(&db_transaction),
         );
 
-        let document_type = dashpay
+        let document_type = contract
             .document_type_for_name("profile")
             .expect("expected to get document type");
 
@@ -1545,7 +1543,7 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefWithoutSerialization((
+                        document_info: DocumentRefInfo((
                             &dashpay_profile_document,
                             StorageFlags::optional_default_as_cow(),
                         )),
@@ -1592,7 +1590,7 @@ mod tests {
             Some(&db_transaction),
         );
 
-        let document_type = dashpay
+        let document_type = contract
             .document_type_for_name("profile")
             .expect("expected to get document type");
 
@@ -1614,7 +1612,7 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefWithoutSerialization((
+                        document_info: DocumentRefInfo((
                             &dashpay_profile_document,
                             StorageFlags::optional_default_as_cow(),
                         )),
@@ -1658,7 +1656,7 @@ mod tests {
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
-        let document_type = dashpay
+        let document_type = contract
             .document_type_for_name("contactRequest")
             .expect("expected to get document type");
 
@@ -1673,7 +1671,7 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefWithoutSerialization((
+                        document_info: DocumentRefInfo((
                             &dashpay_cr_document,
                             StorageFlags::optional_default_as_cow(),
                         )),
@@ -1693,7 +1691,7 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefWithoutSerialization((
+                        document_info: DocumentRefInfo((
                             &dashpay_cr_document,
                             StorageFlags::optional_default_as_cow(),
                         )),
@@ -1732,7 +1730,7 @@ mod tests {
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
-        let document_type = dashpay
+        let document_type = contract
             .document_type_for_name("contactRequest")
             .expect("expected to get document type");
 
@@ -1745,7 +1743,7 @@ mod tests {
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
-        let document_info = DocumentRefWithoutSerialization((&dashpay_cr_document, storage_flags));
+        let document_info = DocumentRefInfo((&dashpay_cr_document, storage_flags));
 
         let mut fee_drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let mut actual_drive_operations: Vec<LowLevelDriveOperation> = vec![];
@@ -1788,7 +1786,7 @@ mod tests {
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
                         document_info,
-                        owner_id: Some(owner_id),
+                        owner_id: None,
                     },
                     contract: &contract,
                     document_type,
@@ -1825,7 +1823,7 @@ mod tests {
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
-        let document_type = dashpay
+        let document_type = contract
             .document_type_for_name("domain")
             .expect("expected to get document type");
 
@@ -1842,7 +1840,7 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefWithoutSerialization((&document, storage_flags)),
+                        document_info: DocumentRefInfo((&dpns_domain_document, storage_flags)),
                         owner_id: None,
                     },
                     contract: &contract,
@@ -1876,7 +1874,7 @@ mod tests {
 
     #[test]
     fn test_add_dashpay_many_non_conflicting_documents() {
-        let (drive, dashpay_cbor) = setup_dashpay("add_no_conflict", true);
+        let (drive, dashpay) = setup_dashpay("add_no_conflict", true);
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
@@ -1909,13 +1907,13 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefWithoutSerialization((
+                        document_info: DocumentRefInfo((
                             &dashpay_cr_document_0,
                             StorageFlags::optional_default_as_cow(),
                         )),
                         owner_id: Some(random_owner_id),
                     },
-                    contract: &contract,
+                    contract: &dashpay,
                     document_type,
                 },
                 false,
@@ -1929,13 +1927,13 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefWithoutSerialization((
+                        document_info: DocumentRefInfo((
                             &dashpay_cr_document_1,
                             StorageFlags::optional_default_as_cow(),
                         )),
                         owner_id: Some(random_owner_id),
                     },
-                    contract: &contract,
+                    contract: &dashpay,
                     document_type,
                 },
                 false,
@@ -1949,13 +1947,13 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefWithoutSerialization((
+                        document_info: DocumentRefInfo((
                             &dashpay_cr_document_2,
                             StorageFlags::optional_default_as_cow(),
                         )),
                         owner_id: Some(random_owner_id),
                     },
-                    contract: &contract,
+                    contract: &dashpay,
                     document_type,
                 },
                 false,
@@ -1968,11 +1966,13 @@ mod tests {
 
     #[test]
     fn test_add_dashpay_conflicting_unique_index_documents() {
-        let (drive, dashpay_cbor) = setup_dashpay("add_conflict", true);
+        let (drive, dashpay) = setup_dashpay("add_conflict", true);
 
         let document_type = dashpay
             .document_type_for_name("contactRequest")
             .expect("expected to get document type");
+
+        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
         let dashpay_cr_document_0 = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
@@ -1992,13 +1992,13 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefWithoutSerialization((
+                        document_info: DocumentRefInfo((
                             &dashpay_cr_document_0,
                             StorageFlags::optional_default_as_cow(),
                         )),
-                        owner_id: Some(random_owner_id),
+                        owner_id: None,
                     },
-                    contract: &contract,
+                    contract: &dashpay,
                     document_type,
                 },
                 false,
@@ -2012,13 +2012,13 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefWithoutSerialization((
+                        document_info: DocumentRefInfo((
                             &dashpay_cr_document_0_dup,
                             StorageFlags::optional_default_as_cow(),
                         )),
-                        owner_id: Some(random_owner_id),
+                        owner_id: None,
                     },
-                    contract: &contract,
+                    contract: &dashpay,
                     document_type,
                 },
                 false,

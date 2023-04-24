@@ -193,7 +193,7 @@ mod test {
 
     use dpp::DataTriggerActionError;
     use drive::drive::object_size_info::DocumentInfo::{
-        DocumentRefWithoutSerialization, DocumentWithoutSerialization,
+        DocumentRefInfo, DocumentOwnedInfo,
     };
     use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use std::net::SocketAddr;
@@ -350,7 +350,7 @@ mod test {
                 .add_document_for_contract(
                     DocumentAndContractInfo {
                         owned_document_info: OwnedDocumentInfo {
-                            document_info: DocumentRefWithoutSerialization((
+                            document_info: DocumentRefInfo((
                                 &document.document,
                                 None,
                             )),
@@ -593,7 +593,7 @@ mod test {
                 .add_document_for_contract(
                     DocumentAndContractInfo {
                         owned_document_info: OwnedDocumentInfo {
-                            document_info: DocumentWithoutSerialization((document, None)),
+                            document_info: DocumentOwnedInfo((document, None)),
                             owner_id: Some(top_level_identifier.to_buffer()),
                         },
                         contract: &data_contract,

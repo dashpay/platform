@@ -229,7 +229,7 @@ impl<C> Platform<C> {
             DriveOperation::DocumentOperation(DocumentOperationType::AddDocumentForContract {
                 document_and_contract_info: DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentInfo::DocumentWithoutSerialization((document, None)),
+                        document_info: DocumentInfo::DocumentOwnedInfo((document, None)),
                         owner_id: None,
                     },
                     contract,

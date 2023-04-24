@@ -1076,11 +1076,7 @@ fn test_query_historical() {
         .add_document_for_contract(
             DocumentAndContractInfo {
                 owned_document_info: OwnedDocumentInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &document,
-                        &person_cbor,
-                        storage_flags,
-                    )),
+                    document_info: DocumentRefWithoutSerialization((&document, storage_flags)),
                     owner_id: None,
                 },
                 contract: &contract,
@@ -1127,11 +1123,7 @@ fn test_query_historical() {
         .add_document_for_contract(
             DocumentAndContractInfo {
                 owned_document_info: OwnedDocumentInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &document,
-                        &person_cbor,
-                        storage_flags,
-                    )),
+                    document_info: DocumentRefWithoutSerialization((&document, storage_flags)),
                     owner_id: None,
                 },
                 contract: &contract,

@@ -72,8 +72,6 @@ use drive::drive::contract::add_init_contracts_structure_operations;
 #[cfg(feature = "full")]
 use drive::drive::flags::StorageFlags;
 #[cfg(feature = "full")]
-use drive::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
-#[cfg(feature = "full")]
 use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 #[cfg(feature = "full")]
 use drive::drive::Drive;
@@ -105,6 +103,7 @@ use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
 #[cfg(feature = "full")]
 use drive::contract::Contract;
 use drive::drive::defaults;
+use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
 #[cfg(feature = "full")]
 use drive::drive::query::QuerySerializedDocumentsOutcome;
 
@@ -253,11 +252,7 @@ pub fn setup_family_tests(count: u32, seed: u64) -> (Drive, Contract) {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefAndSerialization((
-                            &document,
-                            &document_cbor,
-                            storage_flags,
-                        )),
+                        document_info: DocumentRefInfo((&document, storage_flags)),
                         owner_id: None,
                     },
                     contract: &contract,
@@ -325,11 +320,7 @@ pub fn setup_family_tests_with_nulls(count: u32, seed: u64) -> (Drive, Contract)
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefAndSerialization((
-                            &document,
-                            &document_cbor,
-                            storage_flags,
-                        )),
+                        document_info: DocumentRefInfo((&document, storage_flags)),
                         owner_id: None,
                     },
                     contract: &contract,
@@ -398,11 +389,7 @@ pub fn setup_family_tests_only_first_name_index(count: u32, seed: u64) -> (Drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefAndSerialization((
-                            &document,
-                            &document_cbor,
-                            storage_flags,
-                        )),
+                        document_info: DocumentRefInfo((&document, storage_flags)),
                         owner_id: None,
                     },
                     contract: &contract,
@@ -511,11 +498,7 @@ pub fn add_domains_to_contract(
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefAndSerialization((
-                            &document,
-                            &document_cbor,
-                            storage_flags,
-                        )),
+                        document_info: DocumentRefInfo((&document, storage_flags)),
                         owner_id: None,
                     },
                     contract,
@@ -612,11 +595,7 @@ pub fn setup_dpns_test_with_data(path: &str) -> (Drive, Contract) {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefAndSerialization((
-                            &domain,
-                            &domain_cbor,
-                            storage_flags,
-                        )),
+                        document_info: DocumentRefInfo((&domain, storage_flags)),
                         owner_id: None,
                     },
                     contract: &contract,
@@ -665,11 +644,7 @@ fn test_query_many() {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefAndSerialization((
-                            &document,
-                            &document_cbor,
-                            storage_flags,
-                        )),
+                        document_info: DocumentRefInfo((&document, storage_flags)),
                         owner_id: None,
                     },
                     contract: &contract,
@@ -1597,11 +1572,7 @@ fn test_family_basic_queries() {
         .add_document_for_contract(
             DocumentAndContractInfo {
                 owned_document_info: OwnedDocumentInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &document,
-                        &person_cbor,
-                        storage_flags,
-                    )),
+                    document_info: DocumentRefInfo((&document, storage_flags)),
                     owner_id: None,
                 },
                 contract: &contract,
@@ -1647,11 +1618,7 @@ fn test_family_basic_queries() {
         .add_document_for_contract(
             DocumentAndContractInfo {
                 owned_document_info: OwnedDocumentInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &document,
-                        &person_cbor,
-                        storage_flags,
-                    )),
+                    document_info: DocumentRefInfo((&document, storage_flags)),
                     owner_id: None,
                 },
                 contract: &contract,
@@ -3526,11 +3493,7 @@ fn test_dpns_query_start_at_with_null_id() {
         .add_document_for_contract(
             DocumentAndContractInfo {
                 owned_document_info: OwnedDocumentInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &document0,
-                        &document_cbor0,
-                        storage_flags,
-                    )),
+                    document_info: DocumentRefInfo((&document0, storage_flags)),
                     owner_id: None,
                 },
                 contract: &contract,
@@ -3572,11 +3535,7 @@ fn test_dpns_query_start_at_with_null_id() {
         .add_document_for_contract(
             DocumentAndContractInfo {
                 owned_document_info: OwnedDocumentInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &document1,
-                        &document_cbor1,
-                        storage_flags,
-                    )),
+                    document_info: DocumentRefInfo((&document1, storage_flags)),
                     owner_id: None,
                 },
                 contract: &contract,
@@ -3730,11 +3689,7 @@ fn test_dpns_query_start_after_with_null_id() {
         .add_document_for_contract(
             DocumentAndContractInfo {
                 owned_document_info: OwnedDocumentInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &document0,
-                        &document_cbor0,
-                        storage_flags,
-                    )),
+                    document_info: DocumentRefInfo((&document0, storage_flags)),
                     owner_id: None,
                 },
                 contract: &contract,
@@ -3777,11 +3732,7 @@ fn test_dpns_query_start_after_with_null_id() {
         .add_document_for_contract(
             DocumentAndContractInfo {
                 owned_document_info: OwnedDocumentInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &document1,
-                        &document_cbor1,
-                        storage_flags,
-                    )),
+                    document_info: DocumentRefInfo((&document1, storage_flags)),
                     owner_id: None,
                 },
                 contract: &contract,
@@ -3937,11 +3888,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
         .add_document_for_contract(
             DocumentAndContractInfo {
                 owned_document_info: OwnedDocumentInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &document0,
-                        &document_cbor0,
-                        storage_flags,
-                    )),
+                    document_info: DocumentRefInfo((&document0, storage_flags)),
                     owner_id: None,
                 },
                 contract: &contract,
@@ -3984,11 +3931,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
         .add_document_for_contract(
             DocumentAndContractInfo {
                 owned_document_info: OwnedDocumentInfo {
-                    document_info: DocumentRefAndSerialization((
-                        &document1,
-                        &document_cbor1,
-                        storage_flags,
-                    )),
+                    document_info: DocumentRefInfo((&document1, storage_flags)),
                     owner_id: None,
                 },
                 contract: &contract,

@@ -55,7 +55,7 @@ use crate::drive::document::{
 };
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
-    DocumentEstimatedAverageSize, DocumentWithoutSerialization,
+    DocumentEstimatedAverageSize, DocumentOwnedInfo,
 };
 use crate::drive::object_size_info::DriveKeyInfo::KeyRef;
 use dpp::block::block_info::BlockInfo;
@@ -759,7 +759,7 @@ impl Drive {
             if let Element::Item(data, element_flags) = document_element {
                 let document = Document::from_bytes(data.as_slice(), document_type)?;
                 let storage_flags = StorageFlags::map_cow_some_element_flags_ref(element_flags)?;
-                DocumentWithoutSerialization((document, storage_flags))
+                DocumentOwnedInfo((document, storage_flags))
             } else {
                 return Err(Error::Drive(DriveError::CorruptedDocumentNotItem(
                     "document being deleted is not an item",
@@ -817,7 +817,7 @@ mod tests {
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::DocumentAndContractInfo;
     use crate::drive::object_size_info::DocumentInfo::{
-        DocumentRefAndSerialization, DocumentRefWithoutSerialization,
+        DocumentRefAndSerialization, DocumentRefInfo,
     };
     use crate::drive::Drive;
     use crate::fee::credits::Creditable;
@@ -844,21 +844,18 @@ mod tests {
             None,
         );
 
-        let person_document0 = json_document_to_cbor(
-            "tests/supporting_files/contract/family/person0.json",
-            Some(1),
-        )
-        .expect("expected to get document");
-
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
-
-        let document =
-            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
-                .expect("expected to deserialize the document");
-
         let document_type = contract
             .document_type_for_name("person")
-            .expect("expected to get a document type");
+            .expect("expected to get document type");
+
+        let random_owner_id0 = rand::thread_rng().gen::<[u8; 32]>();
+
+        let person_document0 = json_document_to_document(
+            "tests/supporting_files/contract/family/person0.json",
+            Some(random_owner_id0.into()),
+            document_type,
+        )
+        .expect("expected to get document");
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
@@ -866,11 +863,7 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefAndSerialization((
-                            &document,
-                            &person_serialized_document,
-                            storage_flags,
-                        )),
+                        document_info: DocumentRefInfo((&person_document0, storage_flags)),
                         owner_id: None,
                     },
                     contract: &contract,
@@ -910,7 +903,7 @@ mod tests {
                 document_id,
                 &contract,
                 "person",
-                Some(random_owner_id),
+                Some(random_owner_id0),
                 BlockInfo::default(),
                 true,
                 None,
@@ -942,21 +935,18 @@ mod tests {
             Some(&db_transaction),
         );
 
-        let person_serialized_document = json_document_to_cbor(
-            "tests/supporting_files/contract/family/person0.json",
-            Some(1),
-        )
-        .expect("expected to get cbor document");
-
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
-
-        let document =
-            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
-                .expect("expected to deserialize the document");
-
         let document_type = contract
             .document_type_for_name("person")
             .expect("expected to get a document type");
+
+        let random_owner_id0 = rand::thread_rng().gen::<[u8; 32]>();
+
+        let person_document0 = json_document_to_document(
+            "tests/supporting_files/contract/family/person0.json",
+            Some(random_owner_id0.into()),
+            document_type,
+        )
+        .expect("expected to get document");
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
@@ -964,11 +954,7 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefAndSerialization((
-                            &document,
-                            &person_serialized_document,
-                            storage_flags,
-                        )),
+                        document_info: DocumentRefInfo((&person_document0, storage_flags)),
                         owner_id: None,
                     },
                     contract: &contract,
@@ -1016,7 +1002,7 @@ mod tests {
                 document_id,
                 &contract,
                 "person",
-                Some(random_owner_id),
+                Some(random_owner_id0),
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
@@ -1056,21 +1042,18 @@ mod tests {
             Some(&db_transaction),
         );
 
-        let person_serialized_document = json_document_to_cbor(
-            "tests/supporting_files/contract/family/person0.json",
-            Some(1),
-        )
-        .expect("expected to get cbor document");
-
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
-
-        let document =
-            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
-                .expect("expected to deserialize the document");
-
         let document_type = contract
             .document_type_for_name("person")
             .expect("expected to get a document type");
+
+        let random_owner_id0 = rand::thread_rng().gen::<[u8; 32]>();
+
+        let person_document0 = json_document_to_document(
+            "tests/supporting_files/contract/family/person0.json",
+            Some(random_owner_id0.into()),
+            document_type,
+        )
+        .expect("expected to get document");
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
@@ -1078,7 +1061,7 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefWithoutSerialization((&document, storage_flags)),
+                        document_info: DocumentRefInfo((&person_document0, storage_flags)),
                         owner_id: None,
                     },
                     contract: &contract,
@@ -1091,21 +1074,18 @@ mod tests {
             )
             .expect("expected to insert a document successfully");
 
-        let person_serialized_document = json_document_to_cbor(
-            "tests/supporting_files/contract/family/person1.json",
-            Some(1),
-        )
-        .expect("expected to get cbor document");
-
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
-
-        let document =
-            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
-                .expect("expected to deserialize the document");
-
         let document_type = contract
             .document_type_for_name("person")
             .expect("expected to get a document type");
+
+        let random_owner_id1 = rand::thread_rng().gen::<[u8; 32]>();
+
+        let person_document1 = json_document_to_document(
+            "tests/supporting_files/contract/family/person1.json",
+            Some(random_owner_id0.into()),
+            document_type,
+        )
+        .expect("expected to get document");
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
@@ -1113,7 +1093,7 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefWithoutSerialization((&document, storage_flags)),
+                        document_info: DocumentRefInfo((&person_document1, storage_flags)),
                         owner_id: None,
                     },
                     contract: &contract,
@@ -1156,7 +1136,7 @@ mod tests {
                 document_id,
                 &contract,
                 "person",
-                Some(random_owner_id),
+                Some(random_owner_id0),
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
@@ -1193,7 +1173,7 @@ mod tests {
                 document_id,
                 &contract,
                 "person",
-                Some(random_owner_id),
+                Some(random_owner_id0),
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
@@ -1235,21 +1215,18 @@ mod tests {
             Some(&db_transaction),
         );
 
-        let person_serialized_document = json_document_to_cbor(
-            "tests/supporting_files/contract/family/person0.json",
-            Some(1),
-        )
-        .expect("expected to get cbor document");
-
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
-
-        let document =
-            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
-                .expect("expected to deserialize the document");
-
         let document_type = contract
             .document_type_for_name("person")
-            .expect("expected to get a document type");
+            .expect("expected to get document type");
+
+        let random_owner_id0 = rand::thread_rng().gen::<[u8; 32]>();
+
+        let person_document0 = json_document_to_document(
+            "tests/supporting_files/contract/family/person0.json",
+            Some(random_owner_id0.into()),
+            document_type,
+        )
+        .expect("expected to get document");
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
@@ -1257,11 +1234,7 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefAndSerialization((
-                            &document,
-                            &person_serialized_document,
-                            storage_flags,
-                        )),
+                        document_info: DocumentRefInfo((&person_document0, storage_flags)),
                         owner_id: None,
                     },
                     contract: &contract,
@@ -1274,21 +1247,14 @@ mod tests {
             )
             .expect("expected to insert a document successfully");
 
-        let person_serialized_document = json_document_to_cbor(
+        let random_owner_id0 = rand::thread_rng().gen::<[u8; 32]>();
+
+        let person_document1 = json_document_to_document(
             "tests/supporting_files/contract/family/person2-no-middle-name.json",
-            Some(1),
+            Some(random_owner_id0.into()),
+            document_type,
         )
-        .expect("expected to get cbor document");
-
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
-
-        let document =
-            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
-                .expect("expected to deserialize the document");
-
-        let document_type = contract
-            .document_type_for_name("person")
-            .expect("expected to get a document type");
+        .expect("expected to get document");
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
@@ -1296,11 +1262,7 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefAndSerialization((
-                            &document,
-                            &person_serialized_document,
-                            storage_flags,
-                        )),
+                        document_info: DocumentRefInfo((&person_document1, storage_flags)),
                         owner_id: None,
                     },
                     contract: &contract,
@@ -1343,7 +1305,7 @@ mod tests {
                 document_id,
                 &contract,
                 "person",
-                Some(random_owner_id),
+                Some(random_owner_id0),
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
@@ -1360,21 +1322,13 @@ mod tests {
 
         let db_transaction = drive.grove.start_transaction();
 
-        let document =
-            Document::from_cbor(&person_serialized_document, None, Some(random_owner_id))
-                .expect("expected to deserialize the document");
-
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefAndSerialization((
-                            &document,
-                            &person_serialized_document,
-                            storage_flags,
-                        )),
+                        document_info: DocumentRefInfo((&person_document1, storage_flags)),
                         owner_id: None,
                     },
                     contract: &contract,
@@ -1402,7 +1356,7 @@ mod tests {
                 document_id,
                 &contract,
                 "person",
-                Some(random_owner_id),
+                Some(random_owner_id0),
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
@@ -1421,7 +1375,7 @@ mod tests {
                 document_id,
                 &contract,
                 "person",
-                Some(random_owner_id),
+                Some(random_owner_id0),
                 BlockInfo::default(),
                 true,
                 Some(&db_transaction),
@@ -1462,7 +1416,7 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefWithoutSerialization((
+                        document_info: DocumentRefInfo((
                             &dashpay_profile_document,
                             StorageFlags::optional_default_as_cow(),
                         )),

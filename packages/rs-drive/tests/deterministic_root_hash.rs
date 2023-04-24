@@ -157,11 +157,7 @@ pub fn add_domains_to_contract(
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefAndSerialization((
-                            &document,
-                            &document_cbor,
-                            storage_flags,
-                        )),
+                        document_info: DocumentRefWithoutSerialization((&document, storage_flags)),
                         owner_id: None,
                     },
                     contract,
