@@ -51,7 +51,7 @@ masternodeblsprivkey={{=it.core.masternode.operator.privateKey}}
 {{?}}
 
 {{? it.network === 'testnet'}}testnet=1
-fallbackfee=1000
+fallbackfee=0.00001
 [test]
 {{?? it.network === 'local'}}
 regtest=1
