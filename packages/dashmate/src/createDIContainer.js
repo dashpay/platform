@@ -93,7 +93,7 @@ const registerMasternodeGuideTaskFactory = require('./listr/tasks/setup/regular/
 const configureNodeTaskFactory = require('./listr/tasks/setup/regular/configureNodeTaskFactory');
 const configureSSLCertificateTaskFactory = require('./listr/tasks/setup/regular/configureSSLCertificateTaskFactory');
 const createHttpApiServerFactory = require('./helper/api/createHttpApiServerFactory');
-const resolveDockerSocket = require('./docker/resolveDockerSocketPath');
+const resolveDockerSocketPath = require('./docker/resolveDockerSocketPath');
 
 async function createDIContainer() {
   const container = createAwilixContainer({
@@ -150,9 +150,11 @@ async function createDIContainer() {
    */
 
   const dockerOptions = {};
-  const dockerSocketPath = await resolveDockerSocket();
-  if (dockerSocketPath) {
-    dockerOptions.socketPath = dockerSocketPath;
+  try {
+    dockerOptions.socketPath = await resolveDockerSocketPath();
+  } catch (e) {
+    // Here we skip possible error which is happening if docker is not installed or not running
+    // It will be handled in the logic below
   }
 
   container.register({
