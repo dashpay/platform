@@ -844,11 +844,11 @@ mod tests {
             None,
         );
 
-        let person_serialized_document = json_document_to_cbor(
+        let person_document0 = json_document_to_cbor(
             "tests/supporting_files/contract/family/person0.json",
             Some(1),
         )
-        .expect("expected to get cbor document");
+        .expect("expected to get document");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 

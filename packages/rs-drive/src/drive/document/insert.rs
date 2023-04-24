@@ -1880,6 +1880,10 @@ mod tests {
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
 
+        let document_type = dashpay
+            .document_type_for_name("contactRequest")
+            .expect("expected to get document type");
+
         let dashpay_cr_document_0 = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
             Some(random_owner_id.into()),
@@ -1965,6 +1969,10 @@ mod tests {
     #[test]
     fn test_add_dashpay_conflicting_unique_index_documents() {
         let (drive, dashpay_cbor) = setup_dashpay("add_conflict", true);
+
+        let document_type = dashpay
+            .document_type_for_name("contactRequest")
+            .expect("expected to get document type");
 
         let dashpay_cr_document_0 = json_document_to_document(
             "tests/supporting_files/contract/dashpay/contact-request0.json",
