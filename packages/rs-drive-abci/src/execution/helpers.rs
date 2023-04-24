@@ -1,17 +1,17 @@
-use dashcore_rpc::dashcore::hashes::Hash;
-use dashcore_rpc::dashcore::ProTxHash;
-use dashcore_rpc::dashcore_rpc_json::MasternodeListDiff;
-use std::cmp::Ordering;
-use std::collections::{BTreeMap, BTreeSet};
-use dashcore_rpc::json::{MasternodeListDiffWithMasternodes, MasternodeListItem, MasternodeType};
-use dpp::block::block_info::BlockInfo;
-use drive::grovedb::Transaction;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::quorum::Quorum;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformState;
+use dashcore_rpc::dashcore::hashes::Hash;
+use dashcore_rpc::dashcore::ProTxHash;
+use dashcore_rpc::dashcore_rpc_json::MasternodeListDiff;
+use dashcore_rpc::json::{MasternodeListDiffWithMasternodes, MasternodeListItem, MasternodeType};
+use dpp::block::block_info::BlockInfo;
+use drive::grovedb::Transaction;
+use std::cmp::Ordering;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Represents the outcome of an attempt to update the state of a masternode list.
 pub struct UpdateStateMasternodeListOutcome {
@@ -149,7 +149,8 @@ where
         start_from_scratch: bool,
     ) -> Result<UpdateStateMasternodeListOutcome, Error> {
         let previous_core_height = if start_from_scratch {
-            0
+            // baseBlock must be a chain height and not 0
+            1
         } else {
             state.core_height()
         };
@@ -260,7 +261,7 @@ where
             let UpdateStateMasternodeListOutcome {
                 masternode_list_diff,
                 removed_masternodes,
-            } = self.update_state_masternode_list(state, core_block_height, false)?;
+            } = self.update_state_masternode_list(state, core_block_height, is_init_chain)?;
 
             self.update_masternode_identities(
                 masternode_list_diff,

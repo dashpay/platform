@@ -3,7 +3,9 @@ use crate::error::Error;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformInitializationState;
-use dashcore_rpc::dashcore_rpc_json::Bip9SoftforkStatus;
+use dashcore_rpc::dashcore_rpc_json::{
+    Bip9SoftforkInfo, Bip9SoftforkStatus, GetChainTipsResultStatus,
+};
 use dpp::block::block_info::BlockInfo;
 use dpp::identity::TimestampMillis;
 use drive::error::Error::GroveDB;
@@ -53,9 +55,10 @@ where
 
         let mut state_cache = self.state.write().unwrap();
 
+        let core_height = self.initial_core_height(request.initial_core_height, &fork_info)?;
         self.update_core_info(
             &mut state_cache,
-            fork_info.since,
+            core_height,
             true,
             &BlockInfo::genesis(),
             transaction,
@@ -70,7 +73,7 @@ where
             .map(|(quorum_hash, _)| *quorum_hash)?;
 
         state_cache.initialization_information = Some(PlatformInitializationState {
-            core_initialization_height: fork_info.since,
+            core_initialization_height: core_height,
         });
 
         let app_hash = self
@@ -85,7 +88,36 @@ where
             app_hash: app_hash.to_vec(),
             validator_set_update: None,
             next_core_chain_lock_update: None,
-            initial_core_height: fork_info.since, // we send back the core height when the fork happens
+            initial_core_height: core_height, // we send back the core height when the fork happens
         })
+    }
+
+    /// Determine initial core height.
+    ///
+    /// TODO: rewrite this, it is non-deterministic
+    /// We use either core height received from Tenderdash (from genesis file), OR the current tip of active core chain.
+    /// We use current tip as default because we need a fully functional, up-to-date validator set.
+    fn initial_core_height(
+        &self,
+        requested: u32,
+        _fork_info: &Bip9SoftforkInfo,
+    ) -> Result<u32, Error> {
+        let core_height = if requested != 0 {
+            requested
+        } else {
+            let tip = self
+                .core_rpc
+                .get_chain_tips()?
+                .into_iter()
+                .filter(|t| t.status == GetChainTipsResultStatus::Active)
+                .next()
+                .ok_or(ExecutionError::InitializationError(
+                    "cannot determine active core block height",
+                ))?;
+
+            tip.height as u32
+        };
+
+        Ok(core_height)
     }
 }
