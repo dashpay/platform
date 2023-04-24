@@ -1122,6 +1122,7 @@ dependencies = [
  "num_enum",
  "platform-serialization",
  "platform-value",
+ "platform-value-convertible",
  "pretty_assertions",
  "rand",
  "regex",
@@ -2488,6 +2489,15 @@ dependencies = [
  "serde_json",
  "thiserror",
  "treediff 4.0.2",
+]
+
+[[package]]
+name = "platform-value-convertible"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.15",
 ]
 
 [[package]]

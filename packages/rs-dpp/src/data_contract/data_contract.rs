@@ -7,6 +7,7 @@ use futures::StreamExt;
 use std::collections::{BTreeMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 
+use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable, ValueConvertible};
 use itertools::{Either, Itertools};
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::{platform_value, Bytes32, Identifier};
@@ -14,8 +15,6 @@ use platform_value::{ReplacementType, Value, ValueMapHelper};
 use serde::de::Error;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-
-use crate::serialization_traits::PlatformDeserializable;
 
 use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::data_contract::contract_config;
@@ -357,7 +356,7 @@ impl DataContract {
 
     // Returns hash from Data Contract
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash_to_vec(self.serialize()?))
+        Ok(hash_to_vec(PlatformSerializable::serialize(self)?))
     }
 
     /// Increments version of Data Contract

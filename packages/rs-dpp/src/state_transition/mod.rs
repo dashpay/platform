@@ -17,6 +17,7 @@ use crate::identity::state_transition::identity_credit_withdrawal_transition::Id
 use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use crate::prelude::Identifier;
+use crate::serialization_traits::PlatformSerializable;
 use bincode::{config, Decode, Encode};
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
@@ -35,11 +36,11 @@ pub mod errors;
 pub mod fee;
 pub mod state_transition_execution_context;
 
-mod example;
 mod serialization;
 mod state_transition_action;
 
 use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::util::hash;
 pub use state_transition_action::StateTransitionAction;
 macro_rules! call_method {
     ($state_transition:expr, $method:ident, $args:tt ) => {
@@ -101,7 +102,7 @@ pub enum StateTransition {
     DataContractCreate(DataContractCreateTransition),
     DataContractUpdate(DataContractUpdateTransition),
     DocumentsBatch(DocumentsBatchTransition),
-    IdentityCreate(#[bincode(with_serde)] IdentityCreateTransition),
+    IdentityCreate(IdentityCreateTransition),
     IdentityTopUp(IdentityTopUpTransition),
     IdentityCreditWithdrawal(IdentityCreditWithdrawalTransition),
     IdentityUpdate(IdentityUpdateTransition),
@@ -126,8 +127,12 @@ impl StateTransition {
 }
 
 impl StateTransitionConvert for StateTransition {
-    fn hash(&self, skip_signature: bool) -> Result<Vec<u8>, crate::ProtocolError> {
-        call_method!(self, hash, skip_signature)
+    fn hash(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
+        if skip_signature {
+            Ok(hash::hash_to_vec(self.signable_bytes()?))
+        } else {
+            Ok(hash::hash_to_vec(PlatformSerializable::serialize(self)?))
+        }
     }
 
     #[cfg(feature = "cbor")]

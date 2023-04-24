@@ -15,8 +15,9 @@ use integer_encoding::VarInt;
 use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::data_contract::document_type::DocumentType;
 use crate::document::Document;
-use crate::serialization_traits::PlatformDeserializable;
-use bincode::{Decode, Encode};
+use crate::serialization_traits::ValueConvertible;
+use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+use bincode::{config, Decode, Encode};
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 use platform_value::btreemap_extensions::BTreeValueMapInsertionPathHelper;
 use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
@@ -24,9 +25,11 @@ use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::converter::serde_json::BTreeValueJsonConverter;
 use platform_value::{Bytes32, ReplacementType, Value};
+use platform_value_convertible::PlatformValueConvert;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use std::collections::{BTreeMap, HashSet};
+use std::convert::TryFrom;
 use std::convert::TryInto;
 
 pub mod property_names {
@@ -47,12 +50,7 @@ pub const IDENTIFIER_FIELDS: [&str; 3] = [
 ];
 
 /// The document object represents the data provided by the platform in response to a query.
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PlatformSerialize, PlatformDeserialize)]
-#[platform_error_type(ProtocolError)]
-#[platform_deserialize_limit(2000)]
-#[platform_serialize_limit(2000)]
-#[platform_serialize_into(ExtendedDocumentInner)]
-#[platform_deserialize_from(ExtendedDocumentInner)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct ExtendedDocument {
     #[serde(rename = "$protocolVersion")]
     pub protocol_version: u32,
@@ -69,53 +67,6 @@ pub struct ExtendedDocument {
     #[serde(skip)]
     //todo: make entropy optional
     pub entropy: Bytes32,
-}
-
-impl From<ExtendedDocumentInner> for ExtendedDocument {
-    fn from(value: ExtendedDocumentInner) -> Self {
-        let ExtendedDocumentInner {
-            protocol_version,
-            document_type_name,
-            data_contract_id,
-            document,
-        } = value;
-        ExtendedDocument {
-            protocol_version,
-            document_type_name,
-            data_contract_id,
-            document,
-            data_contract: Default::default(),
-            metadata: None,
-            entropy: Default::default(),
-        }
-    }
-}
-
-impl From<ExtendedDocument> for ExtendedDocumentInner {
-    fn from(value: ExtendedDocument) -> Self {
-        let ExtendedDocument {
-            protocol_version,
-            document_type_name,
-            data_contract_id,
-            document,
-            ..
-        } = value;
-        ExtendedDocumentInner {
-            protocol_version,
-            document_type_name,
-            data_contract_id,
-            document,
-        }
-    }
-}
-
-/// The document object represents the data provided by the platform in response to a query.
-#[derive(Debug, Clone, Default, Encode, Decode)]
-pub struct ExtendedDocumentInner {
-    pub protocol_version: u32,
-    pub document_type_name: String,
-    pub data_contract_id: Identifier,
-    pub document: Document,
 }
 
 impl ExtendedDocument {
@@ -479,19 +430,36 @@ impl ExtendedDocument {
     }
 }
 
-impl TryInto<Value> for ExtendedDocument {
-    type Error = ProtocolError;
-
-    fn try_into(self) -> Result<Value, Self::Error> {
-        self.into_value()
+impl PlatformDeserializable for ExtendedDocument {
+    fn deserialize(data: &[u8]) -> Result<Self, ProtocolError>
+    where
+        Self: Sized,
+    {
+        todo!()
     }
 }
 
-impl TryInto<Value> for &ExtendedDocument {
-    type Error = ProtocolError;
+impl ValueConvertible for ExtendedDocument {
+    fn to_object(&self) -> Result<Value, ProtocolError> {
+        todo!()
+    }
 
-    fn try_into(self) -> Result<Value, Self::Error> {
-        self.to_value()
+    fn into_object(self) -> Result<Value, ProtocolError> {
+        todo!()
+    }
+
+    fn from_object(value: Value) -> Result<Self, ProtocolError>
+    where
+        Self: Sized,
+    {
+        todo!()
+    }
+
+    fn from_object_ref(value: &Value) -> Result<Self, ProtocolError>
+    where
+        Self: Sized,
+    {
+        todo!()
     }
 }
 

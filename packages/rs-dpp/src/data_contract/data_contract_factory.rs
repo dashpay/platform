@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
@@ -11,13 +12,18 @@ use crate::data_contract::errors::InvalidDataContractError;
 
 use crate::data_contract::property_names::PROTOCOL_VERSION;
 
+use crate::consensus::ConsensusError;
+use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use crate::state_transition::StateTransitionType;
+use crate::util::deserializer;
+use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
 use crate::{
     data_contract::{self, generate_data_contract_id},
     decode_protocol_entity_factory::DecodeProtocolEntity,
     errors::ProtocolError,
     prelude::Identifier,
+    Convertible,
 };
 
 use super::state_transition::data_contract_create_transition::DataContractCreateTransition;
@@ -162,13 +168,25 @@ impl DataContractFactory {
         buffer: Vec<u8>,
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
-        let (protocol_version, mut raw_data_contract) =
-            DecodeProtocolEntity::decode_protocol_entity_to_value::<DataContract>(buffer)?;
+        let SplitProtocolVersionOutcome {
+            protocol_version,
+            main_message_bytes: document_bytes,
+            ..
+        } = deserializer::split_protocol_version(buffer.as_ref())?;
 
-        raw_data_contract.set_value("protocolVersion", Value::U32(protocol_version))?;
+        let data_contract = DataContract::deserialize(document_bytes).map_err(|e| {
+            ConsensusError::SerializedObjectParsingError {
+                parsing_error: anyhow!("Decode protocol entity: {:#?}", e),
+            }
+        })?;
 
-        self.create_from_object(raw_data_contract, skip_validation)
-            .await
+        if !skip_validation {
+            let mut value = data_contract.to_object()?;
+            value.set_value("protocolVersion", Value::U32(protocol_version))?;
+            self.create_from_object(value, skip_validation).await
+        } else {
+            Ok(data_contract)
+        }
     }
 
     pub fn create_data_contract_create_transition(

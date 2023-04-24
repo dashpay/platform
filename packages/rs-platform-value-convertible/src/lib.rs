@@ -5,11 +5,11 @@ use proc_macro2::Span;
 use quote::quote;
 use syn::spanned::Spanned;
 use syn::Error;
-use syn::{parse_macro_input, Data, DeriveInput, Fields, Meta, NestedMeta};
+use syn::{parse_macro_input, DeriveInput};
 
 #[proc_macro_derive(
     PlatformValueConvert,
-    attributes(platform_error_type, platform_convert_into, platform_value)
+    attributes(platform_error_type, platform_convert_into)
 )]
 pub fn derive_platform_convert(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -35,27 +35,6 @@ pub fn derive_platform_convert(input: TokenStream) -> TokenStream {
             None
         }
     });
-
-    let fields = match &input.data {
-        Data::Struct(data_struct) => match &data_struct.fields {
-            Fields::Named(fields_named) => &fields_named.named,
-            _ => panic!("Only named fields are supported"),
-        },
-        _ => panic!("Only structs are supported"),
-    };
-
-    let mut filtered_fields = vec![];
-    for field in fields {
-        if !field.attrs.iter().any(|attr| {
-            attr.path.is_ident("platform_value") && attr.parse_args::<Meta>().ok().map_or(false, |meta| {
-                matches!(meta, Meta::List(list) if list.nested.iter().any(|n| matches!(n, NestedMeta::Meta(Meta::Path(p)) if p.is_ident("skip"))))
-            })
-        }) {
-            filtered_fields.push(field);
-        }
-    }
-
-    let field_idents: Vec<_> = filtered_fields.iter().map(|f| &f.ident).collect();
 
     // Extract the generics.
     let generics = &input.generics;
@@ -95,10 +74,7 @@ pub fn derive_platform_convert(input: TokenStream) -> TokenStream {
             inner.to_object()
         },
         None => quote! {
-                       platform_value::to_value_with_filter(self, |field_name| {
-                let field_names = vec![#(#field_idents),*];
-                field_names.contains(&field_name)
-            }).map_err(#error_type::ValueError)
+            self.to_object()
         },
     };
 
@@ -119,6 +95,38 @@ pub fn derive_platform_convert(input: TokenStream) -> TokenStream {
 
             fn from_object_ref(value: &Value) -> Result<Self, ProtocolError> {
                 #convert_from_value_ref
+            }
+        }
+
+        impl #impl_generics TryFrom<&Value> for #name #ty_generics #where_clause {
+            type Error = ProtocolError;
+
+            fn try_from(value: &Value) -> Result<Self, Self::Error> {
+                Self::from_object_ref(value)
+            }
+        }
+
+        impl #impl_generics TryFrom<Value> for #name #ty_generics #where_clause {
+            type Error = ProtocolError;
+
+            fn try_from(value: Value) -> Result<Self, Self::Error> {
+                Self::from_object(value)
+            }
+        }
+
+        impl #impl_generics TryFrom<#name> for Value #ty_generics #where_clause {
+            type Error = ProtocolError;
+
+            fn try_from(value: #name) -> Result<Self, Self::Error> {
+                value.into_object()
+            }
+        }
+
+        impl #impl_generics TryFrom<&#name> for Value #ty_generics #where_clause {
+            type Error = ProtocolError;
+
+            fn try_from(value: &#name) -> Result<Self, Self::Error> {
+                value.to_object()
             }
         }
     };

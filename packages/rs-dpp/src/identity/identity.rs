@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::convert::{TryFrom, TryInto};
 use std::hash::{Hash, Hasher};
 
-use crate::serialization_traits::PlatformDeserializable;
+use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use integer_encoding::VarInt;
 use platform_value::{ReplacementType, Value};
 use serde::{Deserialize, Serialize};
@@ -390,7 +390,7 @@ impl Identity {
 
     /// Computes the hash of an identity
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash::hash_to_vec(self.serialize()?))
+        Ok(hash::hash_to_vec(PlatformSerializable::serialize(self)?))
     }
 
     /// Convenience method to get Partial Identity Info

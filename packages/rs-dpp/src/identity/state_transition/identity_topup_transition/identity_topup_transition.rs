@@ -13,9 +13,11 @@ use crate::identity::Identity;
 use crate::identity::KeyType::ECDSA_HASH160;
 use crate::prelude::Identifier;
 
+use crate::serialization_traits::PlatformSerializable;
 use crate::state_transition::{StateTransitionConvert, StateTransitionLike, StateTransitionType};
 use crate::version::LATEST_VERSION;
 use crate::{BlsModule, NonConsensusError, ProtocolError};
+use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
 mod property_names {
     pub const ASSET_LOCK_PROOF: &str = "assetLockProof";
@@ -25,7 +27,18 @@ mod property_names {
     pub const IDENTITY_ID: &str = "identityId";
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PlatformSignable, PartialEq)]
+#[derive(
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    PlatformDeserialize,
+    PlatformSerialize,
+    PlatformSignable,
+    PartialEq,
+)]
 #[serde(rename_all = "camelCase")]
 #[platform_error_type(ProtocolError)]
 pub struct IdentityTopUpTransition {

@@ -9,6 +9,10 @@ use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
 use crate::data_contract::errors::DataContractNotPresentError;
 use crate::data_contract::state_transition::errors::MissingDataContractIdError;
 use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
+use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+use crate::state_transition::StateTransitionConvert;
+use crate::util::deserializer;
+use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     data_contract::{
@@ -106,25 +110,29 @@ where
         state_transition_buffer: &[u8],
         options: Option<StateTransitionFactoryOptions>,
     ) -> Result<StateTransition, ProtocolError> {
-        let (protocol_version, mut raw_state_transition) =
-            DecodeProtocolEntity::decode_protocol_entity_to_value::<StateTransition>(
-                state_transition_buffer,
-            )?;
+        let SplitProtocolVersionOutcome {
+            protocol_version,
+            main_message_bytes: document_bytes,
+            ..
+        } = deserializer::split_protocol_version(state_transition_buffer.as_ref())?;
 
-        match raw_state_transition {
-            Value::Map(ref mut m) => m.insert_string_key_value(
-                "protocolVersion".to_string(),
-                Value::U32(protocol_version),
-            ),
-            _ => {
-                return Err(ConsensusError::SerializedObjectParsingError {
-                    parsing_error: anyhow!("the '{:?}' is not a map", raw_state_transition),
-                }
-                .into())
+        let state_transition = StateTransition::deserialize(document_bytes).map_err(|e| {
+            ConsensusError::SerializedObjectParsingError {
+                parsing_error: anyhow!("Decode protocol entity: {:#?}", e),
             }
-        };
+        })?;
 
-        self.create_from_object(raw_state_transition, options).await
+        if options
+            .as_ref()
+            .map(|options| options.skip_validation)
+            .unwrap_or_default()
+        {
+            Ok(state_transition)
+        } else {
+            let mut value = state_transition.to_object(false)?;
+            value.set_value("protocolVersion", Value::U32(protocol_version))?;
+            self.create_from_object(value, options).await
+        }
     }
 }
 

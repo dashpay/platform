@@ -1,5 +1,5 @@
 use crate::block::epoch::Epoch;
-use crate::serialization_traits::PlatformDeserializable;
+use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use crate::ProtocolError;
 use bincode::config;
 use bincode::{Decode, Encode};

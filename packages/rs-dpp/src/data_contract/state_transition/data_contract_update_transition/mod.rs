@@ -7,8 +7,10 @@ use std::collections::BTreeMap;
 use std::convert::TryInto;
 
 use crate::platform_serialization::PlatformSignable;
+use crate::serialization_traits::PlatformSerializable;
 use crate::serialization_traits::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
+use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
 use crate::{
     data_contract::DataContract,
@@ -56,7 +58,18 @@ pub const U32_FIELDS: [&str; 2] = [
     property_names::DATA_CONTRACT_PROTOCOL_VERSION,
 ];
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq, PlatformSignable)]
+#[derive(
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    PlatformDeserialize,
+    PlatformSerialize,
+    PartialEq,
+    PlatformSignable,
+)]
 #[serde(rename_all = "camelCase")]
 #[platform_error_type(ProtocolError)]
 pub struct DataContractUpdateTransition {

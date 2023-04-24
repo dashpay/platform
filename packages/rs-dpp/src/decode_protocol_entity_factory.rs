@@ -5,7 +5,7 @@ use std::convert::TryInto;
 
 use platform_value::Value;
 
-use crate::serialization_traits::PlatformDeserializable;
+use crate::serialization_traits::{PlatformDeserializable, ValueConvertible};
 use crate::state_transition::{StateTransition, StateTransitionConvert};
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
@@ -34,7 +34,8 @@ impl DecodeProtocolEntity {
 
         Ok((protocol_version, protocol_entity))
     }
-    pub fn decode_protocol_entity_to_value<T: PlatformDeserializable + Convertible>(
+
+    pub fn decode_protocol_entity_to_value<T: PlatformDeserializable + ValueConvertible>(
         buffer: impl AsRef<[u8]>,
     ) -> Result<(u32, Value), ProtocolError> {
         let SplitProtocolVersionOutcome {

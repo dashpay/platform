@@ -6,6 +6,7 @@ use platform_value::Value;
 use crate::consensus::basic::state_transition::{
     InvalidStateTransitionTypeError, StateTransitionMaxSizeExceededError,
 };
+use crate::serialization_traits::PlatformSerializable;
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     state_repository::StateRepositoryLike,

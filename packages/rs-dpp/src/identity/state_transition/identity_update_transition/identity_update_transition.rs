@@ -15,6 +15,7 @@ use crate::consensus::ConsensusError;
 use crate::identity::signer::Signer;
 use crate::identity::{Identity, IdentityPublicKey};
 
+use crate::serialization_traits::PlatformSerializable;
 use crate::{
     identity::{KeyID, SecurityLevel},
     prelude::{Identifier, Revision, TimestampMillis},
@@ -25,6 +26,7 @@ use crate::{
     version::LATEST_VERSION,
     ProtocolError,
 };
+use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
 pub mod property_names {
     pub const PROTOCOL_VERSION: &str = "protocolVersion";
@@ -47,7 +49,18 @@ pub const BINARY_FIELDS: [&str; 3] = [
     property_names::SIGNATURE,
 ];
 
-#[derive(Serialize, Deserialize, Encode, Decode, PlatformSignable, Debug, Clone, PartialEq)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    PlatformDeserialize,
+    PlatformSerialize,
+    PlatformSignable,
+    Debug,
+    Clone,
+    PartialEq,
+)]
 #[serde(rename_all = "camelCase")]
 #[platform_error_type(ProtocolError)]
 pub struct IdentityUpdateTransition {

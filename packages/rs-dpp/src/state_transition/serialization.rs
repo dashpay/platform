@@ -1,3 +1,4 @@
+use crate::serialization_traits::PlatformDeserializable;
 use crate::state_transition::StateTransition;
 use crate::ProtocolError;
 use bincode::config;
@@ -29,6 +30,7 @@ mod tests {
     use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
     use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
     use crate::identity::Identity;
+    use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
     use crate::state_transition::{StateTransition, StateTransitionLike, StateTransitionType};
     use crate::tests::fixtures::{
         get_data_contract_fixture, get_document_transitions_fixture,

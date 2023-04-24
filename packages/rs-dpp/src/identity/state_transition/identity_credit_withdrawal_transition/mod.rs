@@ -22,6 +22,8 @@ use crate::{
 use super::properties::{
     PROPERTY_IDENTITY_ID, PROPERTY_SIGNATURE, PROPERTY_SIGNATURE_PUBLIC_KEY_ID,
 };
+use crate::serialization_traits::PlatformSerializable;
+use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
 mod action;
 pub mod apply_identity_credit_withdrawal_transition_factory;
@@ -47,7 +49,18 @@ impl std::default::Default for Pooling {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PlatformSignable, PartialEq)]
+#[derive(
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    PlatformDeserialize,
+    PlatformSerialize,
+    PlatformSignable,
+    PartialEq,
+)]
 #[serde(rename_all = "camelCase")]
 #[platform_error_type(ProtocolError)]
 pub struct IdentityCreditWithdrawalTransition {

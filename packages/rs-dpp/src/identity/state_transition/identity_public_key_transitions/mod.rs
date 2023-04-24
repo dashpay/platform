@@ -18,7 +18,7 @@ use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use crate::identity::signer::Signer;
 use crate::platform_serialization::{PlatformDeserialize, PlatformSerialize};
-use crate::serialization_traits::PlatformDeserializable;
+use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
 #[cfg(feature = "cbor")]
 use crate::util::cbor_serializer;

@@ -1,8 +1,10 @@
 use std::convert::{TryFrom, TryInto};
 
 use crate::platform_serialization::PlatformSignable;
+use crate::serialization_traits::PlatformSerializable;
 use crate::serialization_traits::{PlatformDeserializable, Signable};
 use bincode::{config, Decode, Encode};
+use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::{BinaryData, IntegerReplacementType, ReplacementType, Value};
@@ -45,7 +47,18 @@ pub struct SerializationOptions {
     pub into_validating_json: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Encode, Decode, PlatformSignable)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Encode,
+    Decode,
+    PlatformDeserialize,
+    PlatformSerialize,
+    PlatformSignable,
+)]
 #[serde(rename_all = "camelCase")]
 #[serde(try_from = "IdentityCreateTransitionInner")]
 #[platform_error_type(ProtocolError)]

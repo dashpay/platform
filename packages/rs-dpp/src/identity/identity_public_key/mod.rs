@@ -7,7 +7,7 @@ pub mod security_level;
 
 use std::convert::{TryFrom, TryInto};
 
-use crate::serialization_traits::PlatformDeserializable;
+use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use anyhow::anyhow;
 #[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;

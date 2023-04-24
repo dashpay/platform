@@ -68,9 +68,9 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
 
     let expanded = if let Some(limit) = limit {
         quote! {
-            impl #impl_generics #name #ty_generics #where_clause
+            impl #impl_generics PlatformSerializable for #name #ty_generics #where_clause
             {
-                pub fn serialize(&self) -> Result<Vec<u8>, #error_type> {
+                fn serialize(&self) -> Result<Vec<u8>, #error_type> {
                     let config = config::standard().with_big_endian().with_limit::<{ #limit }>();
                     #serialize_into.map_err(|e| {
                     match e {
@@ -79,7 +79,7 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
                     }})
                 }
 
-                pub fn serialize_consume(self) -> Result<Vec<u8>, #error_type> {
+                fn serialize_consume(self) -> Result<Vec<u8>, #error_type> {
                     let config = config::standard().with_big_endian().with_limit::<{ #limit }>();
                     #serialize_into_consume.map_err(|e| {
                     match e {
@@ -91,16 +91,16 @@ pub fn derive_platform_serialize(input: TokenStream) -> TokenStream {
         }
     } else {
         quote! {
-            impl #impl_generics #name #ty_generics #where_clause
+            impl #impl_generics PlatformSerializable for #name #ty_generics #where_clause
             {
-                pub fn serialize(&self) -> Result<Vec<u8>, #error_type> {
+                fn serialize(&self) -> Result<Vec<u8>, #error_type> {
                     let config = config::standard().with_big_endian().with_no_limit();
                     #serialize_into.map_err(|e| {
                         #error_type::PlatformSerializationError(format!("unable to serialize {}: {}", stringify!(#name), e))
                     })
                 }
 
-                pub fn serialize_consume(self) -> Result<Vec<u8>, #error_type> {
+                fn serialize_consume(self) -> Result<Vec<u8>, #error_type> {
                     let config = config::standard().with_big_endian().with_no_limit();
                     #serialize_into_consume.map_err(|e| {
                         #error_type::PlatformSerializationError(format!("unable to serialize {}: {}", stringify!(#name), e))

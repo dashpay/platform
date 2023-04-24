@@ -36,6 +36,8 @@ use platform_value::string_encoding::Encoding;
 use self::document_transition::{
     document_base_transition, document_create_transition, DocumentTransitionExt,
 };
+use crate::serialization_traits::PlatformSerializable;
+use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
 mod action;
 pub mod apply_documents_batch_transition_factory;
@@ -68,7 +70,18 @@ pub const U32_FIELDS: [&str; 1] = [property_names::PROTOCOL_VERSION];
 const DEFAULT_SECURITY_LEVEL: SecurityLevel = SecurityLevel::HIGH;
 const EMPTY_VEC: Vec<u8> = vec![];
 
-#[derive(Debug, Serialize, Deserialize, Encode, Decode, Clone, PartialEq, PlatformSignable)]
+#[derive(
+    Debug,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    Clone,
+    PartialEq,
+    PlatformDeserialize,
+    PlatformSerialize,
+    PlatformSignable,
+)]
 #[serde(rename_all = "camelCase")]
 #[platform_error_type(ProtocolError)]
 pub struct DocumentsBatchTransition {
