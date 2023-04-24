@@ -24,7 +24,7 @@ where
     ) -> Result<ResponseInitChain, Error> {
         // We receive the activation height, if core is not yet at this height
 
-        let fork_info = self.core_rpc.get_fork_info("DEPLOYMENT_V20")?.ok_or(
+        let fork_info = self.core_rpc.get_fork_info("v20")?.ok_or(
             ExecutionError::InitializationForkNotActive("fork is not yet known".to_string()),
         )?;
         if fork_info.status != Bip9SoftforkStatus::Active {
@@ -34,7 +34,9 @@ where
                 fork_info.status
             ))
             .into());
-        }
+        } else {
+            tracing::debug!(?fork_info, "core fork v20 is active");
+        };
 
         let genesis_time = request
             .time

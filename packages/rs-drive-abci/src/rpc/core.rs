@@ -1,7 +1,7 @@
 use dashcore_rpc::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
     Bip9SoftforkInfo, ExtendedQuorumDetails, ExtendedQuorumListResult, GetBestChainLockResult,
-    MasternodeListDiff, QuorumInfoResult, QuorumType,
+    GetChainTipsResult, MasternodeListDiff, QuorumInfoResult, QuorumType,
 };
 use dashcore_rpc::json::{GetTransactionResult, MasternodeListDiffWithMasternodes};
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
@@ -38,6 +38,9 @@ pub trait CoreRPCLike {
 
     /// Get block by hash in JSON format
     fn get_block_json(&self, block_hash: &BlockHash) -> Result<Value, Error>;
+
+    /// Get chain tips
+    fn get_chain_tips(&self) -> Result<GetChainTipsResult, Error>;
 
     /// Get list of quorums at a given height.
     ///
@@ -125,6 +128,10 @@ impl CoreRPCLike for DefaultCoreRPC {
         self.inner.get_block_json(block_hash)
     }
 
+    fn get_chain_tips(&self) -> Result<GetChainTipsResult, Error> {
+        self.inner.get_chain_tips()
+    }
+    
     fn get_quorum_listextended(
         &self,
         height: Option<CoreHeight>,
