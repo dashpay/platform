@@ -352,9 +352,16 @@ mod tests {
     }
 
     #[test]
-    fn test_add_multiple_dashpay_documents_individually_should_fail() {
+    fn test_add_multiple_dashpay_documents_individually_should_succeed() {
         let tmp_dir = TempDir::new().unwrap();
-        let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
+        let drive: Drive = Drive::open(
+            tmp_dir,
+            Some(DriveConfig {
+                batching_consistency_verification: true,
+                ..Default::default()
+            }),
+        )
+        .expect("expected to open Drive successfully");
 
         let mut drive_operations = vec![];
         let db_transaction = drive.grove.start_transaction();
@@ -429,7 +436,29 @@ mod tests {
                 &BlockInfo::default(),
                 Some(&db_transaction),
             )
-            .expect_err("expected to not be able to insert documents");
+            .expect("expected to be able to insert documents");
+
+        let query_value = json!({
+            "where": [
+            ],
+            "limit": 100,
+            "orderBy": [
+                ["$ownerId", "asc"],
+            ]
+        });
+        let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+            .expect("expected to serialize to cbor");
+
+        let (docs, _, _) = drive
+            .query_documents_cbor_from_contract(
+                &contract,
+                document_type,
+                where_cbor.as_slice(),
+                None,
+                Some(&db_transaction),
+            )
+            .expect("expected to query");
+        assert_eq!(docs.len(), 2);
     }
 
     #[test]

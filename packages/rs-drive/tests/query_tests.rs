@@ -4343,7 +4343,7 @@ fn test_query_documents_by_created_at() {
             .expect("expected to serialize to cbor");
 
     drive
-        .add_serialized_document_for_serialized_contract(
+        .add_cbor_serialized_document_for_serialized_contract(
             serialized_document.as_slice(),
             contract_cbor.as_slice(),
             "indexedDocument",

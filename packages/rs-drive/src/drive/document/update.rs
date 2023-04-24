@@ -773,7 +773,7 @@ mod tests {
         let alice_profile_cbor = hex::decode("01a763246964582035edfec54aea574df968990abb47b39c206abe5c43a6157885f62958a1f1230c6524747970656770726f66696c656561626f75746a4920616d20416c69636568246f776e65724964582041d52f93f6f7c5af79ce994381c90df73cce2863d3850b9c05ef586ff0fe795f69247265766973696f6e016961766174617255726c7819687474703a2f2f746573742e636f6d2f616c6963652e6a70676f2464617461436f6e747261637449645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd71333").unwrap();
 
         drive
-            .add_serialized_document_for_serialized_contract(
+            .add_cbor_serialized_document_for_serialized_contract(
                 alice_profile_cbor.as_slice(),
                 contract_cbor.as_slice(),
                 "profile",
@@ -1207,7 +1207,7 @@ mod tests {
         .expect("expected to serialize to cbor");
 
         drive
-            .add_serialized_document_for_serialized_contract(
+            .add_cbor_serialized_document_for_serialized_contract(
                 serialized_document.as_slice(),
                 contract.as_slice(),
                 "indexedDocument",
@@ -1438,7 +1438,6 @@ mod tests {
             batching_consistency_verification: true,
             has_raw_enabled: true,
             default_genesis_time: Some(0),
-            encoding: DriveEncoding::DriveCbor,
             ..Default::default()
         };
         let tmp_dir = TempDir::new().unwrap();
@@ -1710,7 +1709,6 @@ mod tests {
             batching_consistency_verification: true,
             has_raw_enabled: true,
             default_genesis_time: Some(0),
-            encoding: DriveEncoding::DriveCbor,
             ..Default::default()
         };
         let tmp_dir = TempDir::new().unwrap();
@@ -1901,7 +1899,6 @@ mod tests {
             batching_consistency_verification: true,
             has_raw_enabled: true,
             default_genesis_time: Some(0),
-            encoding: DriveEncoding::DriveCbor,
             ..Default::default()
         };
         let tmp_dir = TempDir::new().unwrap();
@@ -2231,7 +2228,6 @@ mod tests {
             batching_consistency_verification: true,
             has_raw_enabled: using_has_raw,
             default_genesis_time: Some(0),
-            encoding: DriveEncoding::DriveCbor,
             ..Default::default()
         };
         let tmp_dir = TempDir::new().unwrap();
