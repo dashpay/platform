@@ -362,21 +362,28 @@ class DockerCompose {
 
     const dockerComposeInstallLink = 'https://docs.docker.com/compose/install/';
     const dockerInstallLink = 'https://docs.docker.com/engine/install/';
+    const dockerPostInstallLinuxLink = 'https://docs.docker.com/engine/install/linux-postinstall/';
+    const dockerContextLink = 'https://docs.docker.com/engine/context/working-with-contexts/';
 
     // Check docker
     if (!hasbin.sync('docker')) {
       throw new Error(`Docker is not installed. Please follow instructions ${dockerInstallLink}`);
     }
 
-    const dockerVersion = await new Promise((resolve, reject) => {
-      this.docker.version((err, data) => {
-        if (err) {
-          return reject(err);
-        }
+    let dockerVersion;
+    try {
+      dockerVersion = await new Promise((resolve, reject) => {
+        this.docker.version((err, data) => {
+          if (err) {
+            return reject(err);
+          }
 
-        return resolve(data.Version);
+          return resolve(data.Version);
+        });
       });
-    });
+    } catch (e) {
+      throw new Error(`Can't connect to Docker Engine: ${e.message}.\n\nPossible reasons:\n1. Docker is not started\n2. Permission issues ${dockerPostInstallLinuxLink}\n3. Wrong context ${dockerContextLink}`);
+    }
 
     if (semver.lt(dockerVersion.trim(), DockerCompose.DOCKER_MIN_VERSION)) {
       throw new Error(`Update Docker to version ${DockerCompose.DOCKER_MIN_VERSION} or higher. Please follow instructions ${dockerInstallLink}`);
