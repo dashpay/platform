@@ -816,9 +816,7 @@ mod tests {
     use crate::drive::document::tests::setup_dashpay;
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::DocumentAndContractInfo;
-    use crate::drive::object_size_info::DocumentInfo::{
-        DocumentRefAndSerialization, DocumentRefInfo,
-    };
+    use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::drive::Drive;
     use crate::fee::credits::Creditable;
     use crate::fee::default_costs::EpochCosts;
@@ -1472,9 +1470,16 @@ mod tests {
             Some(&db_transaction),
         );
 
-        let dashpay_profile_serialized_document = json_document_to_cbor(
+        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("expected to get profile document type");
+
+        let dashpay_profile_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/profile0.json",
-            Some(1),
+            Some(random_owner_id.into()),
+            document_type,
         )
         .expect("expected to get cbor document");
 
@@ -1484,15 +1489,18 @@ mod tests {
             random_owner_id,
         )));
         let fee_result = drive
-            .add_serialized_document_for_contract(
-                &dashpay_profile_serialized_document,
-                &contract,
-                "profile",
-                Some(random_owner_id),
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&dashpay_profile_document, storage_flags)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
                 false,
                 BlockInfo::default(),
                 true,
-                storage_flags,
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
@@ -1501,8 +1509,8 @@ mod tests {
             / Epoch::new(0)
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
-        // We added 1679 bytes
-        assert_eq!(added_bytes, 1679);
+        // We added 1552 bytes
+        assert_eq!(added_bytes, 1552);
 
         let document_id = bs58::decode("AM47xnyLfTAC9f61ZQPGfMK5Datk2FeYZwgYvcAnzqFY")
             .into_vec()
@@ -1559,9 +1567,16 @@ mod tests {
             Some(&db_transaction),
         );
 
-        let dashpay_profile_serialized_document = json_document_to_cbor(
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("expected to get profile document type");
+
+        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+
+        let dashpay_profile_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/profile0.json",
-            Some(1),
+            Some(random_owner_id.into()),
+            document_type,
         )
         .expect("expected to get cbor document");
 
@@ -1571,15 +1586,18 @@ mod tests {
             random_owner_id,
         )));
         let fee_result = drive
-            .add_serialized_document_for_contract(
-                &dashpay_profile_serialized_document,
-                &contract,
-                "profile",
-                Some(random_owner_id),
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((&dashpay_profile_document, storage_flags)),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
                 false,
                 BlockInfo::default(),
                 true,
-                storage_flags,
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
@@ -1659,11 +1677,7 @@ mod tests {
                     .add_document_for_contract(
                         DocumentAndContractInfo {
                             owned_document_info: OwnedDocumentInfo {
-                                document_info: DocumentRefAndSerialization((
-                                    &document,
-                                    &serialized_document,
-                                    storage_flags.clone(),
-                                )),
+                                document_info: DocumentRefInfo((&document, storage_flags.clone())),
                                 owner_id: None,
                             },
                             contract: &contract,

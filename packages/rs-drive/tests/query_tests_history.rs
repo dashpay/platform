@@ -69,8 +69,6 @@ use drive::drive::contract::add_init_contracts_structure_operations;
 #[cfg(feature = "full")]
 use drive::drive::flags::StorageFlags;
 #[cfg(feature = "full")]
-use drive::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
-#[cfg(feature = "full")]
 use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 #[cfg(feature = "full")]
 use drive::drive::Drive;
@@ -81,6 +79,8 @@ use drive::query::DriveQuery;
 
 #[cfg(feature = "full")]
 use dpp::block::block_info::BlockInfo;
+#[cfg(feature = "full")]
+use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
 
 #[cfg(feature = "full")]
 #[derive(Serialize, Deserialize)]
@@ -240,11 +240,7 @@ pub fn setup(
                 .add_document_for_contract(
                     DocumentAndContractInfo {
                         owned_document_info: OwnedDocumentInfo {
-                            document_info: DocumentRefAndSerialization((
-                                &document,
-                                &document_cbor,
-                                storage_flags,
-                            )),
+                            document_info: DocumentRefInfo((&document, storage_flags)),
                             owner_id: None,
                         },
                         contract: &contract,
@@ -1076,7 +1072,7 @@ fn test_query_historical() {
         .add_document_for_contract(
             DocumentAndContractInfo {
                 owned_document_info: OwnedDocumentInfo {
-                    document_info: DocumentRefWithoutSerialization((&document, storage_flags)),
+                    document_info: DocumentRefInfo((&document, storage_flags)),
                     owner_id: None,
                 },
                 contract: &contract,
@@ -1123,7 +1119,7 @@ fn test_query_historical() {
         .add_document_for_contract(
             DocumentAndContractInfo {
                 owned_document_info: OwnedDocumentInfo {
-                    document_info: DocumentRefWithoutSerialization((&document, storage_flags)),
+                    document_info: DocumentRefInfo((&document, storage_flags)),
                     owner_id: None,
                 },
                 contract: &contract,

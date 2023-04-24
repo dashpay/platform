@@ -192,11 +192,11 @@ impl DocumentType {
     pub fn convert_value_to_document(&self, mut data: Value) -> Result<Document, ProtocolError> {
         let mut document = Document {
             id: data.remove_identifier("$id")?,
-            owner_id: data.remove_identifier("$owner_id")?,
+            owner_id: data.remove_identifier("$ownerId")?,
             properties: Default::default(),
             revision: data.remove_optional_integer("$revision")?,
-            created_at: data.remove_optional_integer("$created_at")?,
-            updated_at: data.remove_optional_integer("$updated_at")?,
+            created_at: data.remove_optional_integer("$createdAt")?,
+            updated_at: data.remove_optional_integer("$updatedAt")?,
         };
 
         data.replace_at_paths(
