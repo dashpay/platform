@@ -301,6 +301,7 @@ where
 #[cfg(test)]
 mod tests {
     use crate::identity::IdentityPublicKey;
+    use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 
     #[test]
     fn test_identity_key_serialization_deserialization() {

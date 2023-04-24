@@ -218,17 +218,33 @@ mod test {
 
     use super::StateTransitionIdentitySigned;
     use super::*;
+    use crate::serialization_traits::PlatformDeserializable;
+    use crate::serialization_traits::PlatformSerializable;
+    use crate::serialization_traits::Signable;
+    use bincode::{config, Decode, Encode};
+    use platform_serialization::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(
+        Debug,
+        Clone,
+        Encode,
+        Decode,
+        Serialize,
+        Deserialize,
+        PlatformDeserialize,
+        PlatformSerialize,
+        PlatformSignable,
+    )]
+    #[platform_error_type(ProtocolError)]
     #[serde(rename_all = "camelCase")]
     struct ExampleStateTransition {
         pub protocol_version: u32,
-        pub signature: BinaryData,
-        pub signature_public_key_id: KeyID,
         pub transition_type: StateTransitionType,
         pub owner_id: Identifier,
-        #[serde(skip)]
-        pub execution_context: StateTransitionExecutionContext,
+        #[exclude_from_sig_hash]
+        pub signature: BinaryData,
+        #[exclude_from_sig_hash]
+        pub signature_public_key_id: KeyID,
     }
 
     impl StateTransitionConvert for ExampleStateTransition {
@@ -306,7 +322,6 @@ mod test {
             signature: Default::default(),
             signature_public_key_id: 1,
             owner_id,
-            execution_context: Default::default(),
         }
     }
 
@@ -408,7 +423,7 @@ mod test {
         let st = get_mock_state_transition();
         let hash = st.hash(false).unwrap();
         assert_eq!(
-            "208afc16722df887c6e2935d1a0c13c56c5a91318beec4089cad6919be18debc",
+            "39b9c5951e5d83668f98909bb73d390d49867c47bbfe043a42ac83de898142c0",
             hex::encode(hash)
         )
     }

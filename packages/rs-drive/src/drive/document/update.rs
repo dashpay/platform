@@ -87,7 +87,7 @@ impl Drive {
         &self,
         serialized_document: &[u8],
         contract_cbor: &[u8],
-        document_type: &str,
+        document_type_name: &str,
         owner_id: Option<[u8; 32]>,
         block_info: BlockInfo,
         apply: bool,
@@ -98,11 +98,15 @@ impl Drive {
 
         let document = Document::from_cbor(serialized_document, None, owner_id)?;
 
+        let document_type = contract.document_type_for_name(document_type_name)?;
+
+        let reserialized_document = document.serialize(document_type)?;
+
         self.update_document_for_contract(
             &document,
-            serialized_document,
+            reserialized_document.as_slice(),
             &contract,
-            document_type,
+            document_type_name,
             owner_id,
             block_info,
             apply,

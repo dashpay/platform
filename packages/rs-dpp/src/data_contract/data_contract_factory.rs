@@ -168,13 +168,7 @@ impl DataContractFactory {
         buffer: Vec<u8>,
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
-        let SplitProtocolVersionOutcome {
-            protocol_version,
-            main_message_bytes: document_bytes,
-            ..
-        } = deserializer::split_protocol_version(buffer.as_ref())?;
-
-        let data_contract = DataContract::deserialize(document_bytes).map_err(|e| {
+        let data_contract = DataContract::deserialize(buffer.as_slice()).map_err(|e| {
             ConsensusError::SerializedObjectParsingError {
                 parsing_error: anyhow!("Decode protocol entity: {:#?}", e),
             }
@@ -182,7 +176,6 @@ impl DataContractFactory {
 
         if !skip_validation {
             let mut value = data_contract.to_object()?;
-            value.set_value("protocolVersion", Value::U32(protocol_version))?;
             self.create_from_object(value, skip_validation).await
         } else {
             Ok(data_contract)
@@ -323,7 +316,7 @@ mod tests {
             ..
         } = get_test_data();
         let serialized_data_contract = data_contract
-            .to_cbor_buffer()
+            .serialize()
             .expect("should be serialized to buffer");
         let result = factory
             .create_from_buffer(serialized_data_contract, false)

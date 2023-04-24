@@ -1,3 +1,4 @@
+use bincode::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
 pub const DEFAULT_CONTRACT_KEEPS_HISTORY: bool = false;
@@ -14,7 +15,7 @@ pub mod property {
     pub const DOCUMENTS_MUTABLE_CONTRACT_DEFAULT: &str = "documentsMutableContractDefault";
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ContractConfig {
     /// Can the contract ever be deleted

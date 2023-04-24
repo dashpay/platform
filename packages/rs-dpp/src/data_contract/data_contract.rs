@@ -213,6 +213,10 @@ pub struct DataContractInner {
     #[serde(rename = "$id")]
     pub id: Identifier,
 
+    /// Internal configuration for the contract.
+    #[serde(default)]
+    pub config: ContractConfig,
+
     /// A reference to the JSON schema that defines the contract.
     #[serde(rename = "$schema")]
     pub schema: String,
@@ -236,6 +240,7 @@ impl From<DataContract> for DataContractInner {
         let DataContract {
             protocol_version,
             id,
+            config,
             schema,
             version,
             owner_id,
@@ -246,6 +251,7 @@ impl From<DataContract> for DataContractInner {
         DataContractInner {
             protocol_version,
             id,
+            config,
             schema,
             version,
             owner_id,

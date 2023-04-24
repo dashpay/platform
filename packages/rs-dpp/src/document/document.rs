@@ -434,7 +434,7 @@ impl fmt::Display for Document {
 mod tests {
     use super::*;
     use crate::data_contract::document_type::random_document::CreateRandomDocument;
-    use crate::data_contract::extra::common::{json_document_to_cbor, json_document_to_contract};
+    use crate::data_contract::extra::common::json_document_to_contract;
     use regex::Regex;
 
     #[test]

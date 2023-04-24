@@ -2,6 +2,7 @@
 mod tests {
     use crate::data_contract::DataContract;
     use crate::identity::Identity;
+    use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
     use crate::tests::fixtures::get_data_contract_fixture;
     use platform_value::Bytes32;
 

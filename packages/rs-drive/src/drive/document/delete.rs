@@ -804,7 +804,7 @@ impl Drive {
 #[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
-    use dpp::data_contract::extra::common::json_document_to_cbor;
+    use dpp::data_contract::extra::common::{json_document_to_cbor, json_document_to_document};
     use rand::Rng;
     use serde_json::json;
     use std::borrow::Cow;
@@ -1447,25 +1447,33 @@ mod tests {
 
     #[test]
     fn test_delete_dashpay_documents_no_transaction() {
-        let (drive, dashpay_cbor) = setup_dashpay("delete", false);
+        let (drive, dashpay) = setup_dashpay("delete", false);
 
-        let dashpay_profile_serialized_document = json_document_to_cbor(
+        let document_type = dashpay.document_type_for_name("profile")?;
+        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+        let dashpay_profile_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/profile0.json",
-            Some(1),
+            Some(random_owner_id.into()),
+            document_type
         )
         .expect("expected to get cbor document");
 
-        let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
         drive
-            .add_serialized_document_for_serialized_contract(
-                &dashpay_profile_serialized_document,
-                &dashpay_cbor,
-                "profile",
-                Some(random_owner_id),
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefWithoutSerialization((
+                            &dashpay_profile_document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &dashpay,
+                    document_type,
+                },
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_cow(),
                 None,
             )
             .expect("expected to insert a document successfully");
@@ -1478,9 +1486,9 @@ mod tests {
             .expect("this be 32 bytes");
 
         drive
-            .delete_document_for_contract_cbor(
+            .delete_document_for_contract(
                 document_id,
-                &dashpay_cbor,
+                &dashpay,
                 "profile",
                 Some(random_owner_id),
                 BlockInfo::default(),

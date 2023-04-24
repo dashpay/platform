@@ -14,10 +14,8 @@ mod test {
     use crate::data_contract::contract_config::ContractConfig;
 
     use crate::data_contract::extra::common::json_document_to_contract;
-    use crate::{
-        data_contract::extra::common::json_document_to_cbor, data_contract::DataContract,
-        util::json_schema::JsonSchemaExt,
-    };
+    use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+    use crate::{data_contract::DataContract, util::json_schema::JsonSchemaExt};
 
     use super::*;
 
@@ -221,11 +219,10 @@ mod test {
     }
 
     #[test]
-    fn mutability_properties_should_be_stored_and_restored_during_serialization() {
-        let dashpay_cbor =
-            json_document_to_cbor("src/tests/payloads/contract/dashpay-contract.json", Some(1))
+    fn mutability_properties_should_be_stored_and_restored_during_cbor_serialization() {
+        let mut contract =
+            json_document_to_contract("src/tests/payloads/contract/dashpay-contract.json")
                 .expect("expected to get a cbor document");
-        let mut contract = DataContract::from_cbor(dashpay_cbor).unwrap();
 
         assert!(!contract.config.readonly);
         assert!(!contract.config.keeps_history);
@@ -251,5 +248,37 @@ mod test {
                 documents_keep_history_contract_default: true,
             }
         ));
+    }
+
+    #[test]
+    fn mutability_properties_should_be_stored_and_restored_during_serialization() {
+        let mut contract =
+            json_document_to_contract("src/tests/payloads/contract/dashpay-contract.json")
+                .expect("expected to decode a contract");
+
+        assert!(!contract.config.readonly);
+        assert!(!contract.config.keeps_history);
+        assert!(contract.config.documents_mutable_contract_default);
+        assert!(!contract.config.documents_keep_history_contract_default);
+
+        contract.config.readonly = true;
+        contract.config.keeps_history = true;
+        contract.config.documents_mutable_contract_default = false;
+        contract.config.documents_keep_history_contract_default = true;
+
+        let contract = contract.serialize().expect("serialization shouldn't fail");
+        let deserialized_contract =
+            DataContract::deserialize(contract.as_slice()).expect("deserialization shouldn't fail");
+
+        assert_eq!(
+            deserialized_contract.config,
+            ContractConfig {
+                can_be_deleted: false,
+                readonly: true,
+                keeps_history: true,
+                documents_mutable_contract_default: false,
+                documents_keep_history_contract_default: true,
+            }
+        );
     }
 }
