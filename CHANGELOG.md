@@ -3,7 +3,7 @@
 
 ### ⚠ BREAKING CHANGES
 
-* **drive:** updating a masternode identity with invalid entry from SML (#965)
+* Previous state might be invalid since to new sync mn identities logic (#965)
 
 ### Features
 
