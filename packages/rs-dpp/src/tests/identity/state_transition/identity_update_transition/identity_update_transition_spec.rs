@@ -137,8 +137,7 @@ fn to_object() {
     let expected_raw_state_transition = platform_value!({
         "protocolVersion" : 1u32,
         "type" : 5u8,
-        "signature" : BinaryData::new(vec![0u8;65]),
-        "signaturePublicKeyId": 0u32,
+
         "identityId" : transition.identity_id,
         "revision": 0 as Revision,
         "addPublicKeys" : [
@@ -155,6 +154,8 @@ fn to_object() {
         ],
         "disablePublicKeys" : [0u32],
         "publicKeysDisabledAt" : 1234567u64,
+        "signaturePublicKeyId": 0u32,
+        "signature" : BinaryData::new(vec![0u8;65]),
     });
 
     assert_eq!(expected_raw_state_transition, result);
@@ -200,8 +201,6 @@ fn to_json() {
     let expected_raw_state_transition = platform_value!({
         "protocolVersion" : 1u32,
         "type" : 5u8,
-        "signature" : BinaryData::new(vec![0u8;65]),
-        "signaturePublicKeyId": 0u32,
         "identityId" : transition.identity_id,
         "revision": 0 as Revision,
         "addPublicKeys" : [
@@ -218,6 +217,8 @@ fn to_json() {
         ],
         "disablePublicKeys" : [0u32],
         "publicKeysDisabledAt" : 1234567u64,
+        "signaturePublicKeyId": 0u32,
+        "signature" : BinaryData::new(vec![0u8;65]),
     });
 
     assert_eq!(expected_raw_state_transition, result);

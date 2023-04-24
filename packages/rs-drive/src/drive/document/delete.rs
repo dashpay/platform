@@ -1454,7 +1454,7 @@ mod tests {
         let dashpay_profile_document = json_document_to_document(
             "tests/supporting_files/contract/dashpay/profile0.json",
             Some(random_owner_id.into()),
-            document_type
+            document_type,
         )
         .expect("expected to get cbor document");
 

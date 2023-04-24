@@ -336,7 +336,6 @@ impl StateTransitionConvert for IdentityUpdateTransition {
 
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         let mut value: Value = platform_value::to_value(self)?;
-
         if skip_signature {
             value
                 .remove_values_matching_paths(Self::signature_property_paths())

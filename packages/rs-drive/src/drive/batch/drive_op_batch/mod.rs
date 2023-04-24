@@ -212,9 +212,7 @@ mod tests {
 
     use super::*;
 
-    use dpp::data_contract::extra::common::{
-        json_document_to_contract, json_document_to_document,
-    };
+    use dpp::data_contract::extra::common::{json_document_to_contract, json_document_to_document};
 
     use dpp::document::Document;
     use dpp::util::cbor_serializer;

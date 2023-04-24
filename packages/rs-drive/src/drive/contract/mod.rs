@@ -1126,7 +1126,7 @@ mod tests {
         DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo,
     };
     use crate::drive::Drive;
-    use dpp::data_contract::extra::common::{json_document_to_contract};
+    use dpp::data_contract::extra::common::json_document_to_contract;
 
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
 
