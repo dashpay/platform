@@ -1487,6 +1487,17 @@ mod tests {
             age: 35,
         };
 
+        let document_type = contract
+            .document_type_for_name("person")
+            .expect("expected to get document type");
+
+        let value = platform_value::to_value(&person_0_original).expect("person into value");
+
+        let document : Document = platform_value::from_value(value).expect("value to document");
+
+        let document_serialized = document.serialize_consume(document_type).expect("expected to serialize document");
+
+        assert_eq!(document_serialized.len(), 115);
         let original_fees = apply_person(
             &drive,
             &contract,
@@ -1505,27 +1516,27 @@ mod tests {
             //todo
             1233
         } else {
-            //Explanation for 1014
+            //Explanation for 957
 
             // Document Storage
 
             //// Item
-            // = 358 Bytes
+            // = 354 Bytes
 
-            // Explanation for 412 storage_written_bytes
+            // Explanation for 354 storage_written_bytes
 
             // Key -> 65 bytes
             // 32 bytes for the key prefix
             // 32 bytes for the unique id
             // 1 byte for key_size (required space for 64)
 
-            // Value -> 276
+            // Value -> 221
             //   1 for the flag option with flags
             //   1 for the flags size
             //   35 for flags 32 + 1 + 2
             //   1 for the enum type
             //   1 for item
-            //   116 for item serialized bytes
+            //   115 for item serialized bytes (verified above)
             //   1 for Basic Merk
             // 32 for node hash
             // 32 for value hash
@@ -1538,11 +1549,11 @@ mod tests {
             // Child Heights 2
             // Basic Merk 1
 
-            // Total 65 + 276 + 68 = 409
+            // Total 65 + 221 + 68 = 354
 
             //// Tree 1 / <Person Contract> / 1 / person / message
             // Key: My apples are safe
-            // = 177 Bytes
+            // = 179 Bytes
 
             // Explanation for 179 storage_written_bytes
 
@@ -1573,9 +1584,9 @@ mod tests {
 
             //// Tree 1 / <Person Contract> / 1 / person / message / My apples are safe
             // Key: 0
-            // = 143 Bytes
+            // = 145 Bytes
 
-            // Explanation for 143 storage_written_bytes
+            // Explanation for 145 storage_written_bytes
 
             // Key -> 34 bytes
             // 32 bytes for the key prefix
@@ -1604,7 +1615,7 @@ mod tests {
 
             //// Ref 1 / <Person Contract> / 1 / person / message / My apples are safe
             // Reference to Serialized Item
-            // = 319 Bytes
+            // = 276 Bytes
 
             // Explanation for 276 storage_written_bytes
 
@@ -1634,7 +1645,9 @@ mod tests {
             // Child Heights 2
             // Basic Merk 1
 
-            // Total 65 + 145 + 68 = 275
+            // Total 65 + 145 + 68 = 278
+
+            //// 354 + 179 + 145 + 278
 
             957
         };
@@ -1964,7 +1977,7 @@ mod tests {
             //Explanation for 1233
 
             //todo
-            1233
+            1234
         } else {
             //Explanation for 957
 
@@ -2119,7 +2132,7 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
-        let expected_added_bytes = if using_history { 1233 } else { 957 };
+        let expected_added_bytes = if using_history { 1234 } else { 958 };
         assert_eq!(added_bytes, expected_added_bytes);
     }
 
