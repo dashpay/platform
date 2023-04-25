@@ -1,11 +1,12 @@
 use crate::error::Error;
 pub use data_trigger_execution_context::*;
+use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
 use dpp::document::document_transition::{
     Action, DocumentCreateTransitionAction, DocumentTransitionAction,
 };
+use dpp::get_from_transition_action;
 use dpp::platform_value::Identifier;
 use dpp::validation::SimpleValidationResult;
-use dpp::{get_from_transition_action, DataTriggerActionError};
 pub use reject_data_trigger::*;
 
 use self::dashpay_data_triggers::create_contact_request_data_trigger;

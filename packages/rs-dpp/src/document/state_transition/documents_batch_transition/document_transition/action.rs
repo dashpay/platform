@@ -3,10 +3,11 @@ use crate::document::document_transition::document_delete_transition_action::Doc
 use crate::document::document_transition::document_replace_transition_action::DocumentReplaceTransitionAction;
 use crate::document::document_transition::{Action, DocumentBaseTransitionAction};
 use derive_more::From;
+use serde::{Deserialize, Serialize};
 
 pub const DOCUMENT_TRANSITION_ACTION_VERSION: u32 = 0;
 
-#[derive(Debug, Clone, From)]
+#[derive(Debug, Clone, From, Serialize, Deserialize)]
 pub enum DocumentTransitionAction {
     CreateAction(DocumentCreateTransitionAction),
     ReplaceAction(DocumentReplaceTransitionAction),

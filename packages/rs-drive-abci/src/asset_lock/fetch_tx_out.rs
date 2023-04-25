@@ -6,6 +6,7 @@ use dpp::consensus::basic::identity::{
     InvalidAssetLockProofCoreChainHeightError,
     InvalidIdentityAssetLockProofChainLockValidationError,
 };
+use dpp::consensus::basic::BasicError;
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{OutPoint, TxOut};
@@ -31,11 +32,12 @@ impl FetchAssetLockProofTxOut for AssetLockProof {
                     Ok(ValidationResult::new_with_data(output.clone()))
                 } else {
                     Ok(ValidationResult::new_with_error(
-                        ConsensusError::IdentityAssetLockTransactionOutputNotFoundError(
+                        BasicError::IdentityAssetLockTransactionOutputNotFoundError(
                             IdentityAssetLockTransactionOutputNotFoundError::new(
                                 asset_lock_proof.output_index(),
                             ),
-                        ),
+                        )
+                        .into(),
                     ))
                 }
             }
@@ -50,11 +52,12 @@ impl FetchAssetLockProofTxOut for AssetLockProof {
                     Err(_e) => {
                         //todo: deal with IO errors
                         return Ok(ValidationResult::new_with_error(
-                            ConsensusError::IdentityAssetLockTransactionIsNotFoundError(
+                            BasicError::IdentityAssetLockTransactionIsNotFoundError(
                                 IdentityAssetLockTransactionIsNotFoundError::new(
                                     transaction_hash.as_hash().into_inner(),
                                 ),
-                            ),
+                            )
+                            .into(),
                         ));
                     }
                 };
@@ -68,12 +71,13 @@ impl FetchAssetLockProofTxOut for AssetLockProof {
                         // so that in the event that core responds that the transaction is not chain locked we
                         // can verify the chain lock proof itself.
                         return Ok(ValidationResult::new_with_error(
-                            ConsensusError::InvalidAssetLockProofCoreChainHeightError(
+                            BasicError::InvalidAssetLockProofCoreChainHeightError(
                                 InvalidAssetLockProofCoreChainHeightError::new(
                                     asset_lock_proof.core_chain_locked_height,
                                     best_chain_lock.core_block_height,
                                 ),
-                            ),
+                            )
+                            .into(),
                         ));
                     } else {
                         // it's possible that in the meantime the transaction was locked, lets try again
@@ -82,11 +86,12 @@ impl FetchAssetLockProofTxOut for AssetLockProof {
                                 Ok(transaction) => transaction,
                                 Err(_e) => {
                                     return Ok(ValidationResult::new_with_error(
-                                        ConsensusError::IdentityAssetLockTransactionIsNotFoundError(
+                                        BasicError::IdentityAssetLockTransactionIsNotFoundError(
                                             IdentityAssetLockTransactionIsNotFoundError::new(
                                                 transaction_hash.as_hash().into_inner(),
                                             ),
-                                        ),
+                                        )
+                                        .into(),
                                     ))
                                 }
                             };
@@ -99,12 +104,13 @@ impl FetchAssetLockProofTxOut for AssetLockProof {
                             // todo: log this event
                             // todo: ban the ip sending this request
                             return Ok(ValidationResult::new_with_error(
-                                ConsensusError::InvalidIdentityAssetLockProofChainLockValidationError(
+                                BasicError::InvalidIdentityAssetLockProofChainLockValidationError(
                                     InvalidIdentityAssetLockProofChainLockValidationError::new(
                                         transaction_hash,
                                         asset_lock_proof.core_chain_locked_height,
                                     ),
-                                ),
+                                )
+                                .into(),
                             ));
                         }
                     }
@@ -120,9 +126,10 @@ impl FetchAssetLockProofTxOut for AssetLockProof {
                     // todo: log this event
                     // todo: ban the ip sending this request
                     Ok(ValidationResult::new_with_error(
-                        ConsensusError::IdentityAssetLockTransactionOutputNotFoundError(
+                        BasicError::IdentityAssetLockTransactionOutputNotFoundError(
                             IdentityAssetLockTransactionOutputNotFoundError::new(output_index),
-                        ),
+                        )
+                        .into(),
                     ))
                 }
             }

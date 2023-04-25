@@ -1,13 +1,20 @@
 use itertools::Itertools;
 use thiserror::Error;
 
-use crate::consensus::signature::SignatureError;
+use crate::consensus::signature::signature_error::SignatureError;
 use crate::consensus::ConsensusError;
 use crate::identity::SecurityLevel;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Invalid public key security level {public_key_security_level}. The state transition requires one of {}", allowed_key_security_levels.into_iter().map(|s| s.to_string()).join(" | "))]
 pub struct InvalidSignaturePublicKeySecurityLevelError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     public_key_security_level: SecurityLevel,
     allowed_key_security_levels: Vec<SecurityLevel>,
 }

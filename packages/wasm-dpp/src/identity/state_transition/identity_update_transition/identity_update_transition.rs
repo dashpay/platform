@@ -21,6 +21,7 @@ use crate::utils::{generic_of_js_val, WithJsError};
 
 use dpp::consensus::ConsensusError::SignatureError as ConsensusSignatureErrorVariant;
 
+use dpp::consensus::ConsensusError;
 use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
 use dpp::identity::{KeyID, TimestampMillis};
 use dpp::platform_value::string_encoding::Encoding;
@@ -492,9 +493,9 @@ impl IdentityUpdateTransitionWasm {
         match verification_result {
             Ok(()) => Ok(true),
             Err(protocol_error) => match &protocol_error {
-                ProtocolError::AbstractConsensusError(err) => match err.as_ref() {
-                    ConsensusSignatureErrorVariant(
-                        SignatureError::InvalidStateTransitionSignatureError,
+                ProtocolError::ConsensusError(err) => match err.as_ref() {
+                    ConsensusError::SignatureError(
+                        SignatureError::InvalidStateTransitionSignatureError { .. },
                     ) => Ok(false),
                     _ => Err(protocol_error),
                 },

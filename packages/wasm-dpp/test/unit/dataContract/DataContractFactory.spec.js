@@ -108,7 +108,7 @@ describe('DataContractFactory', () => {
         expect.fail('should throw InvalidDataContractError');
       } catch (e) {
         expect(e).to.be.an.instanceOf(SerializedObjectParsingError);
-        expect(e.getParsingError()).to.match(/Decode protocol entity/);
+        expect(e.getParsingError()).to.equals('Syntax(1)');
       }
     });
   });

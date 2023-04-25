@@ -2,10 +2,10 @@ use std::convert::TryInto;
 
 use crate::consensus::basic::data_contract::{
     DataContractImmutablePropertiesUpdateError, IncompatibleDataContractSchemaError,
+    InvalidDataContractVersionError,
 };
 use crate::consensus::basic::decode::ProtocolVersionParsingError;
-use crate::consensus::basic::invalid_data_contract_version_error::InvalidDataContractVersionError;
-use crate::consensus::ConsensusError;
+use crate::consensus::basic::document::DataContractNotPresentError;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::validation::AsyncDataValidatorWithContext;
 use crate::{
@@ -100,9 +100,7 @@ where
                 Ok(v) => v,
                 Err(parsing_error) => {
                     return Ok(SimpleConsensusValidationResult::new_with_errors(vec![
-                        ConsensusError::ProtocolVersionParsingError(
-                            ProtocolVersionParsingError::new(parsing_error.into()),
-                        ),
+                        ProtocolVersionParsingError::new(parsing_error.to_string()).into(),
                     ]))
                 }
             };
@@ -141,8 +139,7 @@ where
         {
             Some(data_contract) => data_contract,
             None => {
-                validation_result
-                    .add_error(BasicError::DataContractNotPresent { data_contract_id });
+                validation_result.add_error(DataContractNotPresentError::new(data_contract_id));
                 return Ok(validation_result);
             }
         };
@@ -181,11 +178,15 @@ where
                     operation.to_owned(),
                     property_name.to_owned(),
                     existing_data_contract_object
-                        .get(property_name.split_at(1).1)?
+                        .get(property_name.split_at(1).1)
+                        .ok()
+                        .flatten()
                         .cloned()
                         .unwrap_or(Value::Null),
                     new_base_data_contract
-                        .get(property_name.split_at(1).1)?
+                        .get(property_name.split_at(1).1)
+                        .ok()
+                        .flatten()
                         .cloned()
                         .unwrap_or(Value::Null),
                 ),

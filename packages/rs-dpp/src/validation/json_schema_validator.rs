@@ -122,7 +122,9 @@ impl JsonSchemaValidator {
             Err(validation_errors) => {
                 let errors: Vec<ConsensusError> =
                     validation_errors.map(ConsensusError::from).collect();
+
                 validation_result.add_errors(errors);
+
                 validation_result
             }
         }

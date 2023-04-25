@@ -74,7 +74,7 @@ impl StateTransitionValidation for IdentityCreateTransition {
         // Balance is here to check if the identity does already exist
         if balance.is_some() {
             return Ok(ConsensusValidationResult::new_with_error(
-                IdentityAlreadyExistsError::new(identity_id.to_buffer()).into(),
+                IdentityAlreadyExistsError::new(identity_id.to_owned()).into(),
             ));
         }
 

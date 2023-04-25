@@ -6,7 +6,6 @@ use dpp::{
         state_transition::data_contract_create_transition::DataContractCreateTransitionAction,
     },
     validation::SimpleConsensusValidationResult,
-    StateError,
 };
 use dpp::{
     data_contract::{
@@ -16,6 +15,8 @@ use dpp::{
         },
     },
 };
+use dpp::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
+use dpp::consensus::state::state_error::StateError;
 use dpp::state_transition::StateTransitionAction;
 use dpp::data_contract::state_transition::data_contract_create_transition::validation::state::validate_data_contract_create_transition_basic::DATA_CONTRACT_CREATE_SCHEMA_VALIDATOR;
 use drive::grovedb::TransactionArg;
@@ -101,9 +102,9 @@ impl StateTransitionValidation for DataContractCreateTransition {
             .is_some()
         {
             Ok(ConsensusValidationResult::new_with_errors(vec![
-                StateError::DataContractAlreadyPresentError {
-                    data_contract_id: self.data_contract.id.to_owned(),
-                }
+                StateError::DataContractAlreadyPresentError(DataContractAlreadyPresentError::new(
+                    self.data_contract.id.to_owned(),
+                ))
                 .into(),
             ]))
         } else {

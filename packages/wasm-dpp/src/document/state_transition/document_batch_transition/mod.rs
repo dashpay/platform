@@ -1,8 +1,6 @@
 use dpp::identity::KeyID;
 
 use dpp::{
-    consensus::signature::SignatureError,
-    consensus::ConsensusError::SignatureError as ConsensusSignatureErrorVariant,
     document::{
         document_transition::document_base_transition,
         state_transition::documents_batch_transition::property_names, DocumentsBatchTransition,
@@ -18,6 +16,8 @@ use dpp::{
 use js_sys::{Array, Reflect};
 use serde::{Deserialize, Serialize};
 
+use dpp::consensus::signature::SignatureError;
+use dpp::consensus::ConsensusError;
 use dpp::platform_value::{BinaryData, ReplacementType};
 use wasm_bindgen::prelude::*;
 
@@ -311,9 +311,9 @@ impl DocumentsBatchTransitionWasm {
         match verification_result {
             Ok(()) => Ok(true),
             Err(protocol_error) => match &protocol_error {
-                ProtocolError::AbstractConsensusError(err) => match err.as_ref() {
-                    ConsensusSignatureErrorVariant(
-                        SignatureError::InvalidStateTransitionSignatureError,
+                ProtocolError::ConsensusError(err) => match err.as_ref() {
+                    ConsensusError::SignatureError(
+                        SignatureError::InvalidStateTransitionSignatureError { .. },
                     ) => Ok(false),
                     _ => Err(protocol_error),
                 },

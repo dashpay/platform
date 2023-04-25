@@ -4,12 +4,16 @@ use std::{
     sync::Arc,
 };
 
-use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
+use crate::consensus::basic::state_transition::{
+    InvalidStateTransitionTypeError, MissingStateTransitionTypeError,
+};
 
+use crate::consensus::basic::decode::SerializedObjectParsingError;
 use crate::data_contract::errors::DataContractNotPresentError;
 use crate::data_contract::state_transition::errors::MissingDataContractIdError;
 use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+use crate::state_transition::errors::StateTransitionError;
 use crate::state_transition::StateTransitionConvert;
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
@@ -22,8 +26,8 @@ use crate::{
         },
         DataContract,
     },
-    decode_protocol_entity_factory::DecodeProtocolEntity,
     document::DocumentsBatchTransition,
+    encoding::decode_protocol_entity_factory::DecodeProtocolEntity,
     identity::state_transition::{
         identity_create_transition::IdentityCreateTransition,
         identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
@@ -94,7 +98,7 @@ where
 
             if !validation_result.is_valid() {
                 return Err(ProtocolError::StateTransitionError(
-                    super::errors::StateTransitionError::InvalidStateTransitionError {
+                    StateTransitionError::InvalidStateTransitionError {
                         errors: validation_result.errors,
                         raw_state_transition,
                     },
@@ -117,9 +121,9 @@ where
         } = deserializer::split_protocol_version(state_transition_buffer.as_ref())?;
 
         let state_transition = StateTransition::deserialize(document_bytes).map_err(|e| {
-            ConsensusError::SerializedObjectParsingError {
-                parsing_error: anyhow!("Decode protocol entity: {:#?}", e),
-            }
+            ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
+                SerializedObjectParsingError::new(format!("Decode protocol entity: {:#?}", e)),
+            ))
         })?;
 
         if options
@@ -236,9 +240,9 @@ pub fn try_get_transition_type(
 }
 
 fn missing_state_transition_error() -> ProtocolError {
-    ProtocolError::AbstractConsensusError(Box::new(ConsensusError::BasicError(Box::new(
-        BasicError::MissingStateTransitionTypeError,
-    ))))
+    ProtocolError::ConsensusError(Box::new(ConsensusError::BasicError(
+        BasicError::MissingStateTransitionTypeError(MissingStateTransitionTypeError::new()),
+    )))
 }
 
 #[cfg(test)]
