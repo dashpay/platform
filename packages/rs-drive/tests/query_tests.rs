@@ -95,6 +95,8 @@ use dpp::platform_value::{platform_value, BinaryData, Bytes32, Identifier};
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::extra::common::json_document_to_contract;
 use dpp::platform_value;
+use dpp::platform_value::btreemap_extensions::BTreeValueMapInsertionPathHelper;
+use dpp::platform_value::Value::Null;
 #[cfg(feature = "full")]
 use dpp::prelude::DataContract;
 use dpp::prelude::Revision;
@@ -297,7 +299,7 @@ pub fn setup_family_tests_with_nulls(count: u32, seed: u64) -> (Drive, Contract)
     // setup code
     let contract = common::setup_contract(
         &drive,
-        "tests/supporting_files/contract/family/family-contract.json",
+        "tests/supporting_files/contract/family/family-contract-fields-optional.json",
         None,
         Some(&db_transaction),
     );
@@ -456,7 +458,6 @@ fn test_serialization_and_deserialization() {
     let document_type = contract
         .document_type_for_name("domain")
         .expect("expected to get document type");
-    dbg!(document_type);
     for domain in domains {
         let value = platform_value::to_value(domain).expect("expected value");
         let mut document = Document::from_platform_value(value).expect("expected value");
@@ -466,8 +467,88 @@ fn test_serialization_and_deserialization() {
             .expect("expected to serialize domain document");
         let deserialized = Document::from_bytes(&serialized, document_type)
             .expect("expected to deserialize domain document");
-        assert_eq!(document, deserialized);
     }
+}
+
+#[cfg(feature = "full")]
+#[test]
+fn test_serialization_and_deserialization_with_null_values_should_fail_if_required() {
+    let contract =
+        json_document_to_contract("tests/supporting_files/contract/dpns/dpns-contract.json")
+            .expect("expected to get cbor contract");
+
+    let document_type = contract
+        .document_type_for_name("domain")
+        .expect("expected to get document type");
+
+    let mut rng = rand::rngs::StdRng::seed_from_u64(5);
+
+    let domain = Domain {
+        id: Identifier::random_with_rng(&mut rng),
+        owner_id: Identifier::random_with_rng(&mut rng),
+        label: None,
+        normalized_label: None,
+        normalized_parent_domain_name: "dash".to_string(),
+        records: Records {
+            dash_unique_identity_id: Identifier::random_with_rng(&mut rng),
+        },
+        preorder_salt: Bytes32::random_with_rng(&mut rng),
+        subdomain_rules: SubdomainRules {
+            allow_subdomains: false,
+        },
+    };
+
+    let value = platform_value::to_value(domain).expect("expected value");
+    let mut document = Document::from_platform_value(value).expect("expected value");
+    document.revision = Some(1);
+    document
+        .serialize(document_type)
+        .expect_err("expected to not be able to serialize domain document");
+}
+
+#[cfg(feature = "full")]
+#[test]
+fn test_serialization_and_deserialization_with_null_values() {
+    let contract = json_document_to_contract(
+        "tests/supporting_files/contract/dpns/dpns-contract-label-not-required.json",
+    )
+    .expect("expected to get cbor contract");
+
+    let document_type = contract
+        .document_type_for_name("domain")
+        .expect("expected to get document type");
+
+    let mut rng = rand::rngs::StdRng::seed_from_u64(5);
+
+    let domain = Domain {
+        id: Identifier::random_with_rng(&mut rng),
+        owner_id: Identifier::random_with_rng(&mut rng),
+        label: None,
+        normalized_label: None,
+        normalized_parent_domain_name: "dash".to_string(),
+        records: Records {
+            dash_unique_identity_id: Identifier::random_with_rng(&mut rng),
+        },
+        preorder_salt: Bytes32::random_with_rng(&mut rng),
+        subdomain_rules: SubdomainRules {
+            allow_subdomains: false,
+        },
+    };
+
+    let mut value = platform_value::to_value(domain).expect("expected value");
+    value
+        .remove_optional_value("label")
+        .expect("expected to remove null");
+    value
+        .remove_optional_value("normalizedLabel")
+        .expect("expected to remove null");
+    let mut document = Document::from_platform_value(value).expect("expected value");
+    document.revision = Some(1);
+    let serialized = document
+        .serialize(document_type)
+        .expect("expected to be able to serialize domain document");
+    Document::from_bytes(&serialized, document_type)
+        .expect("expected to deserialize domain document");
 }
 
 #[cfg(feature = "full")]
@@ -563,6 +644,40 @@ pub fn setup_dpns_tests_with_batches(count: u32, seed: u64) -> (Drive, Contract)
     let contract = setup_contract(
         &drive,
         "tests/supporting_files/contract/dpns/dpns-contract.json",
+        None,
+        Some(&db_transaction),
+    );
+
+    add_domains_to_contract(&drive, &contract, Some(&db_transaction), count, seed);
+    drive
+        .grove
+        .commit_transaction(db_transaction)
+        .unwrap()
+        .expect("transaction should be committed");
+
+    (drive, contract)
+}
+
+#[cfg(feature = "full")]
+/// Sets up and inserts random domain name data to the DPNS contract to test queries on.
+pub fn setup_dpns_tests_label_not_required(count: u32, seed: u64) -> (Drive, Contract) {
+    let drive = setup_drive(Some(DriveConfig::default()));
+
+    let db_transaction = drive.grove.start_transaction();
+
+    // Create contracts tree
+    let mut batch = GroveDbOpBatch::new();
+
+    add_init_contracts_structure_operations(&mut batch);
+
+    drive
+        .grove_apply_batch(batch, false, Some(&db_transaction))
+        .expect("expected to create contracts tree successfully");
+
+    // setup code
+    let contract = setup_contract(
+        &drive,
+        "tests/supporting_files/contract/dpns/dpns-contract-label-not-required.json",
         None,
         Some(&db_transaction),
     );
@@ -792,8 +907,8 @@ fn test_family_basic_queries() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        178, 236, 137, 244, 12, 216, 5, 234, 232, 88, 124, 87, 0, 219, 236, 153, 67, 36, 226, 34,
-        73, 82, 197, 167, 229, 202, 206, 121, 83, 206, 65, 232,
+        181, 109, 8, 213, 170, 216, 114, 214, 14, 29, 33, 19, 214, 194, 147, 208, 69, 229, 255, 17,
+        194, 142, 198, 188, 9, 141, 124, 102, 165, 16, 120, 237,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -2041,8 +2156,8 @@ fn test_family_basic_queries() {
     assert_eq!(
         root_hash.as_slice(),
         vec![
-            128, 53, 185, 186, 232, 226, 12, 157, 184, 63, 83, 178, 62, 1, 89, 27, 89, 135, 117,
-            147, 87, 217, 100, 175, 152, 113, 89, 122, 105, 213, 224, 149,
+            122, 226, 108, 85, 10, 26, 53, 19, 226, 252, 13, 68, 155, 226, 231, 159, 52, 180, 74,
+            65, 95, 241, 28, 9, 64, 194, 200, 104, 34, 44, 172, 217,
         ],
     );
 }
@@ -2061,8 +2176,8 @@ fn test_family_starts_at_queries() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        178, 236, 137, 244, 12, 216, 5, 234, 232, 88, 124, 87, 0, 219, 236, 153, 67, 36, 226, 34,
-        73, 82, 197, 167, 229, 202, 206, 121, 83, 206, 65, 232,
+        181, 109, 8, 213, 170, 216, 114, 214, 14, 29, 33, 19, 214, 194, 147, 208, 69, 229, 255, 17,
+        194, 142, 198, 188, 9, 141, 124, 102, 165, 16, 120, 237,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -2450,8 +2565,8 @@ fn test_family_with_nulls_query() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        213, 209, 8, 112, 10, 188, 65, 168, 82, 180, 236, 252, 137, 4, 76, 109, 171, 144, 32, 189,
-        65, 139, 45, 234, 210, 78, 245, 227, 15, 155, 19, 221,
+        35, 178, 180, 34, 225, 111, 160, 55, 202, 140, 247, 123, 80, 10, 164, 156, 176, 97, 11,
+        225, 137, 192, 40, 254, 180, 159, 110, 122, 148, 85, 21, 195,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -2567,8 +2682,8 @@ fn test_query_with_cached_contract() {
 
     // Make sure the state is deterministic
     let expected_app_hash = vec![
-        178, 236, 137, 244, 12, 216, 5, 234, 232, 88, 124, 87, 0, 219, 236, 153, 67, 36, 226, 34,
-        73, 82, 197, 167, 229, 202, 206, 121, 83, 206, 65, 232,
+        181, 109, 8, 213, 170, 216, 114, 214, 14, 29, 33, 19, 214, 194, 147, 208, 69, 229, 255, 17,
+        194, 142, 198, 188, 9, 141, 124, 102, 165, 16, 120, 237,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -2626,8 +2741,8 @@ fn test_dpns_query() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        246, 202, 166, 148, 46, 62, 94, 55, 109, 113, 134, 119, 230, 189, 242, 30, 224, 66, 20,
-        180, 169, 221, 231, 7, 113, 177, 49, 188, 79, 8, 97, 64,
+        54, 250, 97, 187, 157, 71, 4, 189, 235, 29, 185, 87, 218, 5, 29, 24, 104, 209, 223, 84, 79,
+        98, 29, 243, 225, 220, 244, 162, 174, 131, 72, 224,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -2869,7 +2984,7 @@ fn test_dpns_query() {
     assert_eq!(root_hash, proof_root_hash);
     assert_eq!(results, proof_results);
 
-    let record_id_base64: Vec<String> = results
+    let record_id_base68: Vec<String> = results
         .into_iter()
         .map(|result| {
             let document = Document::from_bytes(result.as_slice(), domain_document_type)
@@ -2884,19 +2999,19 @@ fn test_dpns_query() {
                 Value::inner_optional_bytes_value(map_records_value, "dashUniqueIdentityId")
                     .unwrap()
                     .expect("there should be a dashUniqueIdentityId");
-            base64::encode(record_dash_unique_identity_id)
+            bs58::encode(record_dash_unique_identity_id).into_string()
         })
         .collect();
 
-    let a_record_id_base64 = ["RdBiF9ph2C6C4dRhT9C/xVSoOxb+uvduuLlT/0EEDZA=".to_string()];
+    let a_record_id_base58 = ["5hXRj1xmmnNQ7RN1ATYym4x6bQugxcKn7FWiMnkQTQpF".to_string()];
 
-    assert_eq!(record_id_base64, a_record_id_base64);
+    assert_eq!(record_id_base68, a_record_id_base58);
 
     // A query getting elements by the dashUniqueIdentityId desc
 
     let query_value = json!({
         "where": [
-            ["records.dashUniqueIdentityId", "<=", "RdBiF9ph2C6C4dRhT9C/xVSoOxb+uvduuLlT/0EEDZA="],
+            ["records.dashUniqueIdentityId", "<=", "5hXRj1xmmnNQ7RN1ATYym4x6bQugxcKn7FWiMnkQTQpF"],
         ],
         "limit": 10,
         "orderBy": [
@@ -2948,7 +3063,7 @@ fn test_dpns_query() {
 
     let query_value = json!({
         "where": [
-            ["records.dashUniqueIdentityId", "<=", "RdBiF9ph2C6C4dRhT9C/xVSoOxb+uvduuLlT/0EEDZA="],
+            ["records.dashUniqueIdentityId", "<=", "5hXRj1xmmnNQ7RN1ATYym4x6bQugxcKn7FWiMnkQTQpF"],
         ],
         "limit": 2,
         "orderBy": [
@@ -3141,8 +3256,8 @@ fn test_dpns_query_start_at() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        246, 202, 166, 148, 46, 62, 94, 55, 109, 113, 134, 119, 230, 189, 242, 30, 224, 66, 20,
-        180, 169, 221, 231, 7, 113, 177, 49, 188, 79, 8, 97, 64,
+        54, 250, 97, 187, 157, 71, 4, 189, 235, 29, 185, 87, 218, 5, 29, 24, 104, 209, 223, 84, 79,
+        98, 29, 243, 225, 220, 244, 162, 174, 131, 72, 224,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash,);
@@ -3229,8 +3344,8 @@ fn test_dpns_query_start_after() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        246, 202, 166, 148, 46, 62, 94, 55, 109, 113, 134, 119, 230, 189, 242, 30, 224, 66, 20,
-        180, 169, 221, 231, 7, 113, 177, 49, 188, 79, 8, 97, 64,
+        54, 250, 97, 187, 157, 71, 4, 189, 235, 29, 185, 87, 218, 5, 29, 24, 104, 209, 223, 84, 79,
+        98, 29, 243, 225, 220, 244, 162, 174, 131, 72, 224,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3317,8 +3432,8 @@ fn test_dpns_query_start_at_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        246, 202, 166, 148, 46, 62, 94, 55, 109, 113, 134, 119, 230, 189, 242, 30, 224, 66, 20,
-        180, 169, 221, 231, 7, 113, 177, 49, 188, 79, 8, 97, 64,
+        54, 250, 97, 187, 157, 71, 4, 189, 235, 29, 185, 87, 218, 5, 29, 24, 104, 209, 223, 84, 79,
+        98, 29, 243, 225, 220, 244, 162, 174, 131, 72, 224,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3405,8 +3520,8 @@ fn test_dpns_query_start_after_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        246, 202, 166, 148, 46, 62, 94, 55, 109, 113, 134, 119, 230, 189, 242, 30, 224, 66, 20,
-        180, 169, 221, 231, 7, 113, 177, 49, 188, 79, 8, 97, 64,
+        54, 250, 97, 187, 157, 71, 4, 189, 235, 29, 185, 87, 218, 5, 29, 24, 104, 209, 223, 84, 79,
+        98, 29, 243, 225, 220, 244, 162, 174, 131, 72, 224,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3484,7 +3599,7 @@ fn test_dpns_query_start_at_with_null_id() {
     // The point of this test is to test the situation where we have a start at inside an index with a null value
     // While dpns doesn't really support this, other contracts might allow null values.
     // We are just using the DPNS contract because it is handy.
-    let (drive, contract) = setup_dpns_tests_with_batches(10, 11456);
+    let (drive, contract) = setup_dpns_tests_label_not_required(10, 11456);
 
     let document_type = contract
         .document_type_for_name("domain")
@@ -3510,14 +3625,9 @@ fn test_dpns_query_start_at_with_null_id() {
         },
     };
 
-    let value0 = serde_json::to_value(&domain0).expect("serialized domain");
-    let document_cbor0 = cbor_serializer::serializable_value_to_cbor(
-        &value0,
-        Some(drive::drive::defaults::PROTOCOL_VERSION),
-    )
-    .expect("expected to serialize to cbor");
-    let document0 = Document::from_cbor(document_cbor0.as_slice(), None, None)
-        .expect("document should be properly deserialized");
+    let value0 = platform_value::to_value(&domain0).expect("serialized domain");
+    let document0 =
+        platform_value::from_value(value0).expect("document should be properly deserialized");
 
     let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
@@ -3597,8 +3707,8 @@ fn test_dpns_query_start_at_with_null_id() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        231, 220, 135, 142, 39, 139, 213, 116, 86, 129, 140, 236, 104, 198, 230, 80, 35, 86, 36, 1,
-        127, 177, 116, 51, 44, 156, 29, 157, 72, 235, 182, 181,
+        190, 40, 187, 74, 248, 47, 25, 228, 232, 188, 239, 54, 120, 139, 47, 200, 120, 105, 80, 8,
+        179, 214, 201, 248, 166, 6, 254, 182, 96, 41, 55, 127,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3684,7 +3794,7 @@ fn test_dpns_query_start_after_with_null_id() {
     // The point of this test is to test the situation where we have a start at inside an index with a null value
     // While dpns doesn't really support this, other contracts might allow null values.
     // We are just using the DPNS contract because it is handy.
-    let (drive, contract) = setup_dpns_tests_with_batches(10, 11456);
+    let (drive, contract) = setup_dpns_tests_label_not_required(10, 11456);
 
     let document_type = contract
         .document_type_for_name("domain")
@@ -3798,8 +3908,8 @@ fn test_dpns_query_start_after_with_null_id() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        231, 220, 135, 142, 39, 139, 213, 116, 86, 129, 140, 236, 104, 198, 230, 80, 35, 86, 36, 1,
-        127, 177, 116, 51, 44, 156, 29, 157, 72, 235, 182, 181,
+        190, 40, 187, 74, 248, 47, 25, 228, 232, 188, 239, 54, 120, 139, 47, 200, 120, 105, 80, 8,
+        179, 214, 201, 248, 166, 6, 254, 182, 96, 41, 55, 127,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash);
@@ -3887,7 +3997,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     // The point of this test is to test the situation where we have a start at inside an index with a null value
     // While dpns doesn't really support this, other contracts might allow null values.
     // We are just using the DPNS contract because it is handy.
-    let (drive, contract) = setup_dpns_tests_with_batches(10, 11456);
+    let (drive, contract) = setup_dpns_tests_label_not_required(10, 11456);
 
     let document_type = contract
         .document_type_for_name("domain")
@@ -4001,8 +4111,8 @@ fn test_dpns_query_start_after_with_null_id_desc() {
         .expect("there is always a root hash");
 
     let expected_app_hash = vec![
-        231, 220, 135, 142, 39, 139, 213, 116, 86, 129, 140, 236, 104, 198, 230, 80, 35, 86, 36, 1,
-        127, 177, 116, 51, 44, 156, 29, 157, 72, 235, 182, 181,
+        190, 40, 187, 74, 248, 47, 25, 228, 232, 188, 239, 54, 120, 139, 47, 200, 120, 105, 80, 8,
+        179, 214, 201, 248, 166, 6, 254, 182, 96, 41, 55, 127,
     ];
 
     assert_eq!(root_hash.as_slice(), expected_app_hash,);

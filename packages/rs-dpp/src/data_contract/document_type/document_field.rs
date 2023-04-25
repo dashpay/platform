@@ -265,14 +265,14 @@ impl DocumentFieldType {
         }
     }
 
-    fn read_varint_value(buf: &mut BufReader<&[u8]>) -> Result<Option<Vec<u8>>, ProtocolError> {
+    fn read_varint_value(buf: &mut BufReader<&[u8]>) -> Result<Vec<u8>, ProtocolError> {
         let bytes: usize = buf.read_varint().map_err(|_| {
             ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
                 "error reading varint length from serialized document",
             ))
         })?;
         if bytes == 0 {
-            Ok(None)
+            Ok(vec![])
         } else {
             let mut value: Vec<u8> = vec![0u8; bytes];
             buf.read_exact(&mut value).map_err(|e| {
@@ -280,7 +280,7 @@ impl DocumentFieldType {
                     "error reading varint from serialized document",
                 ))
             })?;
-            Ok(Some(value))
+            Ok(value)
         }
     }
 
@@ -289,52 +289,38 @@ impl DocumentFieldType {
         buf: &mut BufReader<&[u8]>,
         required: bool,
     ) -> Result<Option<Value>, ProtocolError> {
+        if !required {
+            let marker = buf.read_u8().map_err(|_| {
+                ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
+                    "error reading from serialized document",
+                ))
+            })?;
+            if marker == 0 {
+                return Ok(Some(Value::Null));
+            }
+        }
         match self {
             DocumentFieldType::String(_, _) => {
                 let bytes = Self::read_varint_value(buf)?;
-                if let Some(bytes) = bytes {
-                    let string = String::from_utf8(bytes).map_err(|_| {
-                        ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-                            "error reading from serialized document",
-                        ))
-                    })?;
-                    Ok(Some(Value::Text(string)))
-                } else {
-                    Ok(None)
-                }
+                let string = String::from_utf8(bytes).map_err(|_| {
+                    ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
+                        "error reading string from serialized document",
+                    ))
+                })?;
+                Ok(Some(Value::Text(string)))
             }
             DocumentFieldType::Date | DocumentFieldType::Number => {
-                if !required {
-                    let marker = buf.read_u8().map_err(|_| {
-                        ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-                            "error reading from serialized document",
-                        ))
-                    })?;
-                    if marker == 0 {
-                        return Ok(None);
-                    }
-                }
                 let date = buf.read_f64::<BigEndian>().map_err(|_| {
                     ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-                        "error reading from serialized document",
+                        "error reading date/number from serialized document",
                     ))
                 })?;
                 Ok(Some(Value::Float(date)))
             }
             DocumentFieldType::Integer => {
-                if !required {
-                    let marker = buf.read_u8().map_err(|_| {
-                        ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-                            "error reading from serialized document",
-                        ))
-                    })?;
-                    if marker == 0 {
-                        return Ok(None);
-                    }
-                }
                 let integer = buf.read_i64::<BigEndian>().map_err(|_| {
                     ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-                        "error reading from serialized document",
+                        "error reading integer from serialized document",
                     ))
                 })?;
                 Ok(Some(Value::I64(integer)))
@@ -342,37 +328,55 @@ impl DocumentFieldType {
             DocumentFieldType::Boolean => {
                 let value = buf.read_u8().map_err(|_| {
                     ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
-                        "error reading from serialized document",
+                        "error reading bool from serialized document",
                     ))
                 })?;
                 match value {
-                    0 => Ok(None),
-                    1 => Ok(Some(Value::Bool(true))),
-                    _ => Ok(Some(Value::Bool(false))),
+                    0 => Ok(Some(Value::Bool(false))),
+                    _ => Ok(Some(Value::Bool(true))),
                 }
             }
-            DocumentFieldType::ByteArray(_, _) => {
-                let bytes = Self::read_varint_value(buf)?;
-                Ok(bytes.map(|bytes| {
-                    match bytes.len() {
-                        32 => Value::Bytes32(bytes.try_into().unwrap()),
-                        20 => Value::Bytes20(bytes.try_into().unwrap()),
-                        36 => Value::Bytes36(bytes.try_into().unwrap()),
-                        _ => Value::Bytes(bytes)
+            DocumentFieldType::ByteArray(min, max) => {
+                match (min, max) {
+                    (Some(min), Some(max)) if min == max => {
+                        // if min == max, then we don't need a varint for the length
+                        let len = *min as usize;
+                        let mut bytes = vec![0; len];
+                        buf.read_exact(&mut bytes).map_err(|_| {
+                            ProtocolError::DecodingError(
+                                "error reading 32 byte non main identifier".to_string(),
+                            )
+                        })?;
+                        //dbg!(hex::encode(&bytes));
+                        match bytes.len() {
+                            32 => Ok(Some(Value::Bytes32(bytes.try_into().unwrap()))),
+                            20 => Ok(Some(Value::Bytes20(bytes.try_into().unwrap()))),
+                            36 => Ok(Some(Value::Bytes36(bytes.try_into().unwrap()))),
+                            _ => Ok(Some(Value::Bytes(bytes)))
+                        }
                     }
-                }))
+                    _ => {
+                        let bytes = Self::read_varint_value(buf)?;
+                        Ok(Some(match bytes.len() {
+                                32 => Value::Bytes32(bytes.try_into().unwrap()),
+                                20 => Value::Bytes20(bytes.try_into().unwrap()),
+                                36 => Value::Bytes36(bytes.try_into().unwrap()),
+                                _ => Value::Bytes(bytes)
+                            })
+                        )
+                    }
+                }
+
             }
             DocumentFieldType::Identifier => {
-                let bytes = Self::read_varint_value(buf)?;
-
-                bytes
-                    .map(|bytes| {
-                        let fixed_bytes = bytes.try_into().map_err(|_| {
-                            ProtocolError::DecodingError("identifier was not 32 bytes".to_string())
-                        })?;
-                        Ok(Value::Identifier(fixed_bytes))
-                    })
-                    .transpose()
+                let mut id = [0; 32];
+                buf.read_exact(&mut id).map_err(|_| {
+                    ProtocolError::DecodingError(
+                        "error reading 32 byte non main identifier".to_string(),
+                    )
+                })?;
+                //dbg!(hex::encode(&id));
+                Ok(Some(Value::Identifier(id)))
             }
 
             DocumentFieldType::Object(inner_fields) => {
@@ -562,41 +566,28 @@ impl DocumentFieldType {
             }
             DocumentFieldType::Integer => {
                 let value_as_i64: i64 = value.to_integer().map_err(ProtocolError::ValueError)?;
-                let mut value_bytes = value_as_i64.to_be_bytes().to_vec();
-                if required {
-                    Ok(value_bytes)
-                } else {
-                    // if the value wasn't required we need to add a byte to prove it existed
-                    let mut r_vec = vec![255u8];
-                    r_vec.append(&mut value_bytes);
-                    Ok(r_vec)
-                }
+                Ok(value_as_i64.to_be_bytes().to_vec())
             }
             DocumentFieldType::Number => {
                 let value_as_f64 = value.to_float().map_err(ProtocolError::ValueError)?;
-                let mut value_bytes = value_as_f64.to_be_bytes().to_vec();
-                if required {
-                    Ok(value_bytes)
-                } else {
-                    // if the value wasn't required we need to add a byte to prove it existed
-                    let mut r_vec = vec![255u8];
-                    r_vec.append(&mut value_bytes);
-                    Ok(r_vec)
+                Ok(value_as_f64.to_be_bytes().to_vec())
+            }
+            DocumentFieldType::ByteArray(min, max) => {
+                match (min, max) {
+                    (Some(min), Some(max)) if min == max => {
+                        Ok(value.to_binary_bytes()?)
+                    }
+                    _ => {
+                        let mut bytes = value.to_binary_bytes()?;
+
+                        let mut r_vec = bytes.len().encode_var_vec();
+                        r_vec.append(&mut bytes);
+                        Ok(r_vec)
+                    }
                 }
             }
-            DocumentFieldType::ByteArray(_, _) => {
-                let mut bytes = value.to_binary_bytes()?;
-
-                let mut r_vec = bytes.len().encode_var_vec();
-                r_vec.append(&mut bytes);
-                Ok(r_vec)
-            }
             DocumentFieldType::Identifier => {
-                let mut bytes = value.to_identifier_bytes()?;
-
-                let mut r_vec = bytes.len().encode_var_vec();
-                r_vec.append(&mut bytes);
-                Ok(r_vec)
+                Ok(value.to_identifier_bytes()?)
             }
             DocumentFieldType::Boolean => {
                 let value_as_boolean = value.as_bool().ok_or_else(get_field_type_matching_error)?;
@@ -604,7 +595,7 @@ impl DocumentFieldType {
                 if value_as_boolean {
                     Ok(vec![1]) // 1 is true
                 } else {
-                    Ok(vec![2]) // 2 is false
+                    Ok(vec![0]) // 0 is false
                 }
             }
             DocumentFieldType::Object(inner_fields) => {
@@ -615,6 +606,9 @@ impl DocumentFieldType {
                 let mut r_vec = vec![];
                 inner_fields.iter().try_for_each(|(key, field)| {
                     if let Some(value) = value_map.get(key) {
+                        if !field.required {
+                            r_vec.push(1);
+                        }
                         let value = field
                             .document_type
                             .encode_value_ref_with_size(value, field.required)?;

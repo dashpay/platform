@@ -93,6 +93,9 @@ impl Document {
             .try_for_each(|(field_name, field)| {
                 if field_name == CREATED_AT {
                     if let Some(created_at) = self.created_at {
+                        if !field.required {
+                            buffer.push(1);
+                        }
                         // dbg!("we pushed created at {}", hex::encode(created_at.to_be_bytes()));
                         buffer.extend(created_at.to_be_bytes());
                         Ok(())
@@ -110,6 +113,9 @@ impl Document {
                     }
                 } else if field_name == UPDATED_AT {
                     if let Some(updated_at) = self.updated_at {
+                        if !field.required {
+                            buffer.push(1);
+                        }
                         // dbg!("we pushed updated at {}", hex::encode(updated_at.to_be_bytes()));
                         buffer.extend(updated_at.to_be_bytes());
                         Ok(())
@@ -126,12 +132,29 @@ impl Document {
                         Ok(())
                     }
                 } else if let Some(value) = self.properties.get(field_name) {
-                    let value = field
-                        .document_type
-                        .encode_value_ref_with_size(value, field.required)?;
-                    // dbg!("we pushed {} with {}", field_name, hex::encode(&value));
-                    buffer.extend(value.as_slice());
-                    Ok(())
+                    if value.is_null() {
+                        if field.required {
+                            Err(ProtocolError::DataContractError(
+                                DataContractError::MissingRequiredKey("a required field is not present"),
+                            ))
+                        } else {
+                            // dbg!("we pushed {} with 0", field_name);
+                            // We don't have something that wasn't required
+                            buffer.push(0);
+                            Ok(())
+                        }
+                    } else {
+                        if !field.required {
+                            // dbg!("we added 1", field_name);
+                            buffer.push(1);
+                        }
+                        let value = field
+                            .document_type
+                            .encode_value_ref_with_size(value, field.required)?;
+                        // dbg!("we pushed {} with {}", field_name, hex::encode(&value));
+                        buffer.extend(value.as_slice());
+                        Ok(())
+                    }
                 } else if field.required {
                     Err(ProtocolError::DataContractError(
                         DataContractError::MissingRequiredKey("a required field is not present"),
@@ -268,7 +291,7 @@ impl Document {
                         match marker_result {
                             Ok(marker) => {
                                 if marker == 0 {
-                                    return None;
+                                    return Some(Ok((key.clone(), Value::Null)));
                                 }
                             }
                             Err(e) => return Some(Err(e)),
@@ -296,7 +319,7 @@ impl Document {
                         match marker_result {
                             Ok(marker) => {
                                 if marker == 0 {
-                                    return None;
+                                    return Some(Ok((key.clone(), Value::Null)));
                                 }
                             }
                             Err(e) => return Some(Err(e)),

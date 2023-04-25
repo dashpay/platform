@@ -1035,6 +1035,7 @@ mod tests {
             .document_type_for_name("person")
             .expect("expected to get a document type");
 
+        dbg!(document_type);
         let random_owner_id0 = rand::thread_rng().gen::<[u8; 32]>();
 
         let person_document0 = json_document_to_document(
@@ -1047,7 +1048,7 @@ mod tests {
         let serialized = person_document0
             .serialize(&document_type)
             .expect("expected to serialize");
-
+        dbg!(hex::encode(&serialized));
         let deserialized =
             Document::from_bytes(&serialized, &document_type).expect("expected to deserialize");
     }
@@ -1539,8 +1540,8 @@ mod tests {
             / Epoch::new(0)
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
-        // We added 1553 bytes
-        assert_eq!(added_bytes, 1553);
+        // We added 1556 bytes
+        assert_eq!(added_bytes, 1556);
 
         let document_id = bs58::decode("AM47xnyLfTAC9f61ZQPGfMK5Datk2FeYZwgYvcAnzqFY")
             .into_vec()
@@ -1569,14 +1570,14 @@ mod tests {
             .get(&0)
             .unwrap();
 
-        assert_eq!(*removed_credits, 41511232);
+        assert_eq!(*removed_credits, 41591420);
         let refund_equivalent_bytes = removed_credits.to_unsigned()
             / Epoch::new(0)
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
         assert!(added_bytes > refund_equivalent_bytes);
-        assert_eq!(refund_equivalent_bytes, 1537); // we refunded 1537 instead of 1553
+        assert_eq!(refund_equivalent_bytes, 1540); // we refunded 1540 instead of 1556
     }
 
     #[test]
@@ -1637,7 +1638,7 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         // We added 1553 bytes
-        assert_eq!(added_bytes, 1553);
+        assert_eq!(added_bytes, 1556);
 
         let document_id = bs58::decode("AM47xnyLfTAC9f61ZQPGfMK5Datk2FeYZwgYvcAnzqFY")
             .into_vec()
