@@ -556,10 +556,17 @@ fn insert_values_nested(
             field_type = match inner_properties.get_optional_bool(property_names::BYTE_ARRAY)? {
                 Some(inner_bool) => {
                     if inner_bool {
-                        DocumentFieldType::ByteArray(
-                            inner_properties.get_optional_integer(property_names::MIN_ITEMS)?,
-                            inner_properties.get_optional_integer(property_names::MAX_ITEMS)?,
-                        )
+                        match inner_properties.get_optional_str(property_names::CONTENT_MEDIA_TYPE)? {
+                            Some(content_media_type) if content_media_type == "application/x.dash.dpp.identifier" => {
+                                DocumentFieldType::Identifier
+                            }
+                            Some(_) | None => {
+                                DocumentFieldType::ByteArray(
+                                    inner_properties.get_optional_integer(property_names::MIN_ITEMS)?,
+                                    inner_properties.get_optional_integer(property_names::MAX_ITEMS)?,
+                                )
+                            },
+                        }
                     } else {
                         return Err(ProtocolError::DataContractError(
                             DataContractError::InvalidContractStructure(
@@ -700,10 +707,17 @@ fn insert_values(
                 field_type = match inner_properties.get_optional_bool(property_names::BYTE_ARRAY)? {
                     Some(inner_bool) => {
                         if inner_bool {
-                            DocumentFieldType::ByteArray(
-                                inner_properties.get_optional_integer(property_names::MIN_ITEMS)?,
-                                inner_properties.get_optional_integer(property_names::MAX_ITEMS)?,
-                            )
+                            match inner_properties.get_optional_str(property_names::CONTENT_MEDIA_TYPE)? {
+                                Some(content_media_type) if content_media_type == "application/x.dash.dpp.identifier" => {
+                                    DocumentFieldType::Identifier
+                                }
+                                Some(_) | None => {
+                                    DocumentFieldType::ByteArray(
+                                        inner_properties.get_optional_integer(property_names::MIN_ITEMS)?,
+                                        inner_properties.get_optional_integer(property_names::MAX_ITEMS)?,
+                                    )
+                                },
+                            }
                         } else {
                             return Err(ProtocolError::DataContractError(
                                 DataContractError::InvalidContractStructure(

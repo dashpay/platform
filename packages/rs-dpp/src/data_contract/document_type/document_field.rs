@@ -353,7 +353,14 @@ impl DocumentFieldType {
             }
             DocumentFieldType::ByteArray(_, _) => {
                 let bytes = Self::read_varint_value(buf)?;
-                Ok(bytes.map(Value::Bytes))
+                Ok(bytes.map(|bytes| {
+                    match bytes.len() {
+                        32 => Value::Bytes32(bytes.try_into().unwrap()),
+                        20 => Value::Bytes20(bytes.try_into().unwrap()),
+                        36 => Value::Bytes36(bytes.try_into().unwrap()),
+                        _ => Value::Bytes(bytes)
+                    }
+                }))
             }
             DocumentFieldType::Identifier => {
                 let bytes = Self::read_varint_value(buf)?;

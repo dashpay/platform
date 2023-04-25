@@ -1493,9 +1493,11 @@ mod tests {
 
         let value = platform_value::to_value(&person_0_original).expect("person into value");
 
-        let document : Document = platform_value::from_value(value).expect("value to document");
+        let document: Document = platform_value::from_value(value).expect("value to document");
 
-        let document_serialized = document.serialize_consume(document_type).expect("expected to serialize document");
+        let document_serialized = document
+            .serialize_consume(document_type)
+            .expect("expected to serialize document");
 
         assert_eq!(document_serialized.len(), 115);
         let original_fees = apply_person(
@@ -1977,7 +1979,7 @@ mod tests {
             //Explanation for 1233
 
             //todo
-            1234
+            1233
         } else {
             //Explanation for 957
 
