@@ -136,7 +136,9 @@ impl Document {
                     if value.is_null() {
                         if field.required {
                             Err(ProtocolError::DataContractError(
-                                DataContractError::MissingRequiredKey("a required field is not present".to_string()),
+                                DataContractError::MissingRequiredKey(
+                                    "a required field is not present".to_string(),
+                                ),
                             ))
                         } else {
                             // dbg!("we pushed {} with 0", field_name);
@@ -158,7 +160,9 @@ impl Document {
                     }
                 } else if field.required {
                     Err(ProtocolError::DataContractError(
-                        DataContractError::MissingRequiredKey(format!("a required field {field_name} is not present")),
+                        DataContractError::MissingRequiredKey(format!(
+                            "a required field {field_name} is not present"
+                        )),
                     ))
                 } else {
                     // dbg!("we pushed {} with 0", field_name);
@@ -228,7 +232,9 @@ impl Document {
                     Ok(())
                 } else if field.required {
                     Err(ProtocolError::DataContractError(
-                        DataContractError::MissingRequiredKey("a required field is not present".to_string()),
+                        DataContractError::MissingRequiredKey(
+                            "a required field is not present".to_string(),
+                        ),
                     ))
                 } else {
                     // We don't have something that wasn't required

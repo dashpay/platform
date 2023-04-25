@@ -556,16 +556,18 @@ fn insert_values_nested(
             field_type = match inner_properties.get_optional_bool(property_names::BYTE_ARRAY)? {
                 Some(inner_bool) => {
                     if inner_bool {
-                        match inner_properties.get_optional_str(property_names::CONTENT_MEDIA_TYPE)? {
-                            Some(content_media_type) if content_media_type == "application/x.dash.dpp.identifier" => {
+                        match inner_properties
+                            .get_optional_str(property_names::CONTENT_MEDIA_TYPE)?
+                        {
+                            Some(content_media_type)
+                                if content_media_type == "application/x.dash.dpp.identifier" =>
+                            {
                                 DocumentFieldType::Identifier
                             }
-                            Some(_) | None => {
-                                DocumentFieldType::ByteArray(
-                                    inner_properties.get_optional_integer(property_names::MIN_ITEMS)?,
-                                    inner_properties.get_optional_integer(property_names::MAX_ITEMS)?,
-                                )
-                            },
+                            Some(_) | None => DocumentFieldType::ByteArray(
+                                inner_properties.get_optional_integer(property_names::MIN_ITEMS)?,
+                                inner_properties.get_optional_integer(property_names::MAX_ITEMS)?,
+                            ),
                         }
                     } else {
                         return Err(ProtocolError::DataContractError(
@@ -585,11 +587,12 @@ fn insert_values_nested(
         "object" => {
             let mut nested_properties = BTreeMap::new();
             if let Some(properties_as_value) = inner_properties.get(property_names::PROPERTIES) {
-                let properties = properties_as_value
-                    .as_map()
-                    .ok_or(ProtocolError::StructureError(
-                        StructureError::ValueWrongType("properties must be a map"),
-                    ))?;
+                let properties =
+                    properties_as_value
+                        .as_map()
+                        .ok_or(ProtocolError::StructureError(
+                            StructureError::ValueWrongType("properties must be a map"),
+                        ))?;
 
                 // Create a new set with the prefix removed from the keys
                 let stripped_required: BTreeSet<String> = known_required
@@ -707,16 +710,21 @@ fn insert_values(
                 field_type = match inner_properties.get_optional_bool(property_names::BYTE_ARRAY)? {
                     Some(inner_bool) => {
                         if inner_bool {
-                            match inner_properties.get_optional_str(property_names::CONTENT_MEDIA_TYPE)? {
-                                Some(content_media_type) if content_media_type == "application/x.dash.dpp.identifier" => {
+                            match inner_properties
+                                .get_optional_str(property_names::CONTENT_MEDIA_TYPE)?
+                            {
+                                Some(content_media_type)
+                                    if content_media_type
+                                        == "application/x.dash.dpp.identifier" =>
+                                {
                                     DocumentFieldType::Identifier
                                 }
-                                Some(_) | None => {
-                                    DocumentFieldType::ByteArray(
-                                        inner_properties.get_optional_integer(property_names::MIN_ITEMS)?,
-                                        inner_properties.get_optional_integer(property_names::MAX_ITEMS)?,
-                                    )
-                                },
+                                Some(_) | None => DocumentFieldType::ByteArray(
+                                    inner_properties
+                                        .get_optional_integer(property_names::MIN_ITEMS)?,
+                                    inner_properties
+                                        .get_optional_integer(property_names::MAX_ITEMS)?,
+                                ),
                             }
                         } else {
                             return Err(ProtocolError::DataContractError(

@@ -117,10 +117,10 @@ mod tests {
     use crate::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
-    use dpp::document::Document;
     use dpp::document::document_transition::{
         DocumentBaseTransitionAction, DocumentDeleteTransitionAction,
     };
+    use dpp::document::Document;
     use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
     use dpp::platform_value::{platform_value, Bytes20, Bytes32};
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
@@ -188,9 +188,11 @@ mod tests {
             }),
             None,
         )
-            .expect("expected withdrawal document");
+        .expect("expected withdrawal document");
 
-        let serialized = document.serialize(document_type).expect("expected to serialize document");
+        let serialized = document
+            .serialize(document_type)
+            .expect("expected to serialize document");
         Document::from_bytes(&serialized, document_type).expect("expected to deserialize document");
     }
 

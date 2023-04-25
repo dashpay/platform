@@ -277,7 +277,8 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             for document in documents {
                 let pay_to_id = document
                     .properties
-                    .get_identifier("payToId").map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
+                    .get_identifier("payToId")
+                    .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
 
                 // TODO this shouldn't be a percentage we need to update masternode share contract
                 let share_percentage: u64 = document

@@ -352,18 +352,15 @@ impl DocumentFieldType {
                             32 => Ok(Some(Value::Bytes32(bytes.try_into().unwrap()))),
                             20 => Ok(Some(Value::Bytes20(bytes.try_into().unwrap()))),
                             36 => Ok(Some(Value::Bytes36(bytes.try_into().unwrap()))),
-                            _ => Ok(Some(Value::Bytes(bytes)))
+                            _ => Ok(Some(Value::Bytes(bytes))),
                         }
                     }
                     _ => {
                         let bytes = Self::read_varint_value(buf)?;
 
-
-
                         Ok(Some(Value::Bytes(bytes)))
                     }
                 }
-
             }
             DocumentFieldType::Identifier => {
                 let mut id = [0; 32];
@@ -569,23 +566,17 @@ impl DocumentFieldType {
                 let value_as_f64 = value.to_float().map_err(ProtocolError::ValueError)?;
                 Ok(value_as_f64.to_be_bytes().to_vec())
             }
-            DocumentFieldType::ByteArray(min, max) => {
-                match (min, max) {
-                    (Some(min), Some(max)) if min == max => {
-                        Ok(value.to_binary_bytes()?)
-                    }
-                    _ => {
-                        let mut bytes = value.to_binary_bytes()?;
+            DocumentFieldType::ByteArray(min, max) => match (min, max) {
+                (Some(min), Some(max)) if min == max => Ok(value.to_binary_bytes()?),
+                _ => {
+                    let mut bytes = value.to_binary_bytes()?;
 
-                        let mut r_vec = bytes.len().encode_var_vec();
-                        r_vec.append(&mut bytes);
-                        Ok(r_vec)
-                    }
+                    let mut r_vec = bytes.len().encode_var_vec();
+                    r_vec.append(&mut bytes);
+                    Ok(r_vec)
                 }
-            }
-            DocumentFieldType::Identifier => {
-                Ok(value.to_identifier_bytes()?)
-            }
+            },
+            DocumentFieldType::Identifier => Ok(value.to_identifier_bytes()?),
             DocumentFieldType::Boolean => {
                 let value_as_boolean = value.as_bool().ok_or_else(get_field_type_matching_error)?;
                 // 0 means does not exist
