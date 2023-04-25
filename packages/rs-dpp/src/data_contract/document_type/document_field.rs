@@ -607,6 +607,7 @@ impl DocumentFieldType {
                 let value_map = Value::map_ref_into_btree_string_map(value_map)?;
                 let mut r_vec = vec![];
                 inner_fields.iter().try_for_each(|(key, field)| {
+                    dbg!(&key, &field);
                     if let Some(value) = value_map.get(key) {
                         let value = field
                             .document_type

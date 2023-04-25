@@ -229,6 +229,7 @@ impl DocumentType {
             name: format!("doc_type_{}", rng.gen::<u16>()),
             indices,
             index_structure,
+            flattened_properties: properties.clone(),
             properties,
             identifier_paths,
             binary_paths,

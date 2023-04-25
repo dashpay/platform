@@ -587,11 +587,12 @@ impl<'a> DocumentInfo<'a> {
             "$ownerId" | "$id" => Ok(DEFAULT_HASH_SIZE_U16),
             "$createdAt" | "$updatedAt" => Ok(DEFAULT_FLOAT_SIZE_U16),
             _ => {
-                let document_field_type = document_type.properties.get(key_path).ok_or({
-                    Error::Fee(FeeError::DocumentTypeFieldNotFoundForEstimation(
-                        "incorrect key path for document type for estimated sizes",
-                    ))
-                })?;
+                let document_field_type =
+                    document_type.flattened_properties.get(key_path).ok_or({
+                        Error::Fee(FeeError::DocumentTypeFieldNotFoundForEstimation(
+                            "incorrect key path for document type for estimated sizes",
+                        ))
+                    })?;
                 let estimated_size = document_field_type
                     .document_type
                     .middle_byte_size_ceil()
@@ -645,7 +646,7 @@ impl<'a> DocumentInfo<'a> {
                     }))),
                     _ => {
                         let document_field_type =
-                            document_type.properties.get(key_path).ok_or({
+                            document_type.flattened_properties.get(key_path).ok_or({
                                 Error::Fee(FeeError::DocumentTypeFieldNotFoundForEstimation(
                                     "incorrect key path for document type",
                                 ))

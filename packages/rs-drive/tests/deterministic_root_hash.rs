@@ -68,6 +68,8 @@ use drive::drive::{Drive, RootTree};
 
 #[cfg(feature = "full")]
 use dpp::block::block_info::BlockInfo;
+use dpp::identifier::Identifier;
+use dpp::platform_value::Bytes32;
 use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
 
 #[cfg(feature = "full")]
@@ -113,14 +115,14 @@ impl Domain {
             let label = first_names.choose(&mut rng).unwrap();
             let domain = Domain {
                 id: Vec::from(rng.gen::<[u8; 32]>()),
-                owner_id: Vec::from(rng.gen::<[u8; 32]>()),
+                owner_id: Identifier::random_with_rng(&mut rng),
                 label: Some(label.clone()),
                 normalized_label: Some(label.to_lowercase()),
                 normalized_parent_domain_name: normalized_parent_domain_name.to_string(),
                 records: Records {
-                    dash_unique_identity_id: Vec::from(rng.gen::<[u8; 32]>()),
+                    dash_unique_identity_id: Identifier::random_with_rng(&mut rng),
                 },
-                preorder_salt: Vec::from(rng.gen::<[u8; 32]>()),
+                preorder_salt: Bytes32::random_with_rng(&mut rng),
                 subdomain_rules: false,
             };
             vec.push(domain);
@@ -443,7 +445,7 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
         .unwrap()
         .expect("should return app hash");
 
-    let expected_app_hash = "c0f7380e8608b068b149e29e238dbf0812d4c6a3c3f7e5b4af9ba620edd8f83e";
+    let expected_app_hash = "4b6ef295b084f2a81b5e1863fff1454784e1f8262800c90a9120faeb83c2753a";
 
     assert_eq!(hex::encode(app_hash), expected_app_hash);
 }

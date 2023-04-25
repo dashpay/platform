@@ -129,7 +129,7 @@ impl Document {
                     let value = field
                         .document_type
                         .encode_value_ref_with_size(value, field.required)?;
-                    // dbg!("we pushed {} with {}", field_name, hex::encode(&value));
+                    dbg!("we pushed {} with {}", field_name, hex::encode(&value));
                     buffer.extend(value.as_slice());
                     Ok(())
                 } else if field.required {
@@ -137,7 +137,7 @@ impl Document {
                         DataContractError::MissingRequiredKey("a required field is not present"),
                     ))
                 } else {
-                    // dbg!("we pushed {} with 0", field_name);
+                    dbg!("we pushed {} with 0", field_name);
                     // We don't have something that wasn't required
                     buffer.push(0);
                     Ok(())
@@ -163,7 +163,7 @@ impl Document {
             buffer.extend(revision.to_be_bytes())
         }
         document_type
-            .properties
+            .flattened_properties
             .iter()
             .try_for_each(|(field_name, field)| {
                 if field_name == CREATED_AT {
@@ -255,7 +255,7 @@ impl Document {
         let mut created_at = None;
         let mut updated_at = None;
         let properties = document_type
-            .properties
+            .flattened_properties
             .iter()
             .filter_map(|(key, field)| {
                 if key == CREATED_AT {

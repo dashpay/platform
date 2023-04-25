@@ -674,7 +674,7 @@ impl<'a> DriveQuery<'a> {
                     )))?;
 
                 if let Element::Item(item, _) = start_at_document {
-                    let document = Document::from_cbor(item.as_slice(), None, None)?;
+                    let document = Document::from_bytes(item.as_slice(), self.document_type)?;
                     Ok(Some((document, self.start_at_included)))
                 } else {
                     Err(Error::Drive(DriveError::CorruptedDocumentPath(
@@ -1529,7 +1529,7 @@ mod tests {
     use crate::drive::Drive;
     use crate::query::DriveQuery;
     use dpp::data_contract::document_type::DocumentType;
-    use dpp::data_contract::extra::common::json_document_to_cbor;
+    use dpp::data_contract::extra::common::{json_document_to_cbor, json_document_to_contract};
 
     use dpp::util::cbor_serializer;
     use serde_json::Value::Null;
@@ -1547,21 +1547,11 @@ mod tests {
         let contract_path = "tests/supporting_files/contract/family/family-contract.json";
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract_cbor =
-            json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
-        let contract =
-            Contract::from_cbor(&contract_cbor).expect("expected to deserialize the contract");
+        let contract = json_document_to_contract(contract_path).expect("expected to get document");
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
         drive
-            .apply_contract_with_serialization(
-                &contract,
-                contract_cbor,
-                BlockInfo::default(),
-                true,
-                storage_flags,
-                None,
-            )
+            .apply_contract(&contract, BlockInfo::default(), true, storage_flags, None)
             .expect("expected to apply contract successfully");
 
         (drive, contract)
@@ -1579,20 +1569,10 @@ mod tests {
             "tests/supporting_files/contract/family/family-contract-with-birthday.json";
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract_cbor =
-            json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
-        let contract =
-            Contract::from_cbor(&contract_cbor).expect("expected to deserialize the contract");
+        let contract = json_document_to_contract(contract_path).expect("expected to get document");
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
         drive
-            .apply_contract_with_serialization(
-                &contract,
-                contract_cbor,
-                BlockInfo::default(),
-                true,
-                storage_flags,
-                None,
-            )
+            .apply_contract(&contract, BlockInfo::default(), true, storage_flags, None)
             .expect("expected to apply contract successfully");
 
         (drive, contract)

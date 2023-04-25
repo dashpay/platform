@@ -132,7 +132,7 @@ impl Person {
         for _ in 0..count {
             let person = Person {
                 id: Vec::from(rng.gen::<[u8; 32]>()),
-                owner_id: Vec::from(rng.gen::<[u8; 32]>()),
+                owner_id: Identifier::random_with_rng(&mut rng),
                 first_name: first_names.choose(&mut rng).unwrap().clone(),
                 middle_name: middle_names.choose(&mut rng).unwrap().clone(),
                 last_name: last_names.choose(&mut rng).unwrap().clone(),
