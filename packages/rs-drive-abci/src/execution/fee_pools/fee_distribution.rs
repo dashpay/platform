@@ -40,6 +40,8 @@ use crate::error::Error;
 use crate::platform::Platform;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
+use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+use dpp::ProtocolError;
 use drive::drive::batch::drive_op_batch::IdentityOperationType::AddToIdentityBalance;
 use drive::drive::batch::DriveOperation::IdentityOperation;
 use drive::drive::batch::GroveDbOpBatch;
@@ -273,23 +275,9 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
                 self.get_reward_shares_list_for_masternode(&proposer_tx_hash, Some(transaction))?;
 
             for document in documents {
-                let pay_to_id: [u8; 32] = document
+                let pay_to_id = document
                     .properties
-                    .get("payToId")
-                    .ok_or(Error::Execution(ExecutionError::DriveMissingData(
-                        "payToId property is missing",
-                    )))?
-                    .as_bytes()
-                    .ok_or(Error::Execution(ExecutionError::DriveIncoherence(
-                        "payToId property type is not bytes",
-                    )))?
-                    .clone()
-                    .try_into()
-                    .map_err(|_| {
-                        Error::Execution(ExecutionError::DriveIncoherence(
-                            "payToId property type is not 32 bytes long",
-                        ))
-                    })?;
+                    .get_identifier("payToId").map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
 
                 // TODO this shouldn't be a percentage we need to update masternode share contract
                 let share_percentage: u64 = document
@@ -320,7 +308,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
                 )))?;
 
                 drive_operations.push(IdentityOperation(AddToIdentityBalance {
-                    identity_id: pay_to_id,
+                    identity_id: pay_to_id.to_buffer(),
                     added_balance: share_reward,
                 }));
             }

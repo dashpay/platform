@@ -357,13 +357,10 @@ impl DocumentFieldType {
                     }
                     _ => {
                         let bytes = Self::read_varint_value(buf)?;
-                        Ok(Some(match bytes.len() {
-                                32 => Value::Bytes32(bytes.try_into().unwrap()),
-                                20 => Value::Bytes20(bytes.try_into().unwrap()),
-                                36 => Value::Bytes36(bytes.try_into().unwrap()),
-                                _ => Value::Bytes(bytes)
-                            })
-                        )
+
+
+
+                        Ok(Some(Value::Bytes(bytes)))
                     }
                 }
 
@@ -499,7 +496,7 @@ impl DocumentFieldType {
                         } else if field.required {
                             Err(ProtocolError::DataContractError(
                                 DataContractError::MissingRequiredKey(
-                                    "a required field is not present",
+                                    "a required field is not present".to_string(),
                                 ),
                             ))
                         } else {
@@ -617,7 +614,7 @@ impl DocumentFieldType {
                     } else if field.required {
                         Err(ProtocolError::DataContractError(
                             DataContractError::MissingRequiredKey(
-                                "a required field is not present",
+                                "a required field is not present".to_string(),
                             ),
                         ))
                     } else {

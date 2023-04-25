@@ -102,7 +102,7 @@ impl Document {
                     } else if field.required {
                         Err(ProtocolError::DataContractError(
                             DataContractError::MissingRequiredKey(
-                                "created at field is not present",
+                                "created at field is not present".to_string(),
                             ),
                         ))
                     } else {
@@ -114,6 +114,7 @@ impl Document {
                 } else if field_name == UPDATED_AT {
                     if let Some(updated_at) = self.updated_at {
                         if !field.required {
+                            // dbg!("we added 1", field_name);
                             buffer.push(1);
                         }
                         // dbg!("we pushed updated at {}", hex::encode(updated_at.to_be_bytes()));
@@ -122,7 +123,7 @@ impl Document {
                     } else if field.required {
                         Err(ProtocolError::DataContractError(
                             DataContractError::MissingRequiredKey(
-                                "updated at field is not present",
+                                "updated at field is not present".to_string(),
                             ),
                         ))
                     } else {
@@ -135,7 +136,7 @@ impl Document {
                     if value.is_null() {
                         if field.required {
                             Err(ProtocolError::DataContractError(
-                                DataContractError::MissingRequiredKey("a required field is not present"),
+                                DataContractError::MissingRequiredKey("a required field is not present".to_string()),
                             ))
                         } else {
                             // dbg!("we pushed {} with 0", field_name);
@@ -157,7 +158,7 @@ impl Document {
                     }
                 } else if field.required {
                     Err(ProtocolError::DataContractError(
-                        DataContractError::MissingRequiredKey("a required field is not present"),
+                        DataContractError::MissingRequiredKey(format!("a required field {field_name} is not present")),
                     ))
                 } else {
                     // dbg!("we pushed {} with 0", field_name);
@@ -196,7 +197,7 @@ impl Document {
                     } else if field.required {
                         Err(ProtocolError::DataContractError(
                             DataContractError::MissingRequiredKey(
-                                "created at field is not present",
+                                "created at field is not present".to_string(),
                             ),
                         ))
                     } else {
@@ -211,7 +212,7 @@ impl Document {
                     } else if field.required {
                         Err(ProtocolError::DataContractError(
                             DataContractError::MissingRequiredKey(
-                                "created at field is not present",
+                                "created at field is not present".to_string(),
                             ),
                         ))
                     } else {
@@ -227,7 +228,7 @@ impl Document {
                     Ok(())
                 } else if field.required {
                     Err(ProtocolError::DataContractError(
-                        DataContractError::MissingRequiredKey("a required field is not present"),
+                        DataContractError::MissingRequiredKey("a required field is not present".to_string()),
                     ))
                 } else {
                     // We don't have something that wasn't required
