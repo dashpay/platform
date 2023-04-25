@@ -104,22 +104,12 @@ where
     fn initial_core_height(
         &self,
         requested: u32,
-        _fork_info: &Bip9SoftforkInfo,
+        fork_info: &Bip9SoftforkInfo,
     ) -> Result<u32, Error> {
         let core_height = if requested != 0 {
             requested
         } else {
-            let tip = self
-                .core_rpc
-                .get_chain_tips()?
-                .into_iter()
-                .filter(|t| t.status == GetChainTipsResultStatus::Active)
-                .next()
-                .ok_or(ExecutionError::InitializationError(
-                    "cannot determine active core block height",
-                ))?;
-
-            tip.height as u32
+            fork_info.since
         };
 
         Ok(core_height)
