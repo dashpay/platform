@@ -5,7 +5,7 @@ const path = require('path');
 const {
   PRESET_LOCAL,
   HOME_DIR_PATH,
-  SSL_PROVIDERS, NODE_TYPE_MASTERNODE,
+  SSL_PROVIDERS,
 } = require('../../../constants');
 const generateTenderdashNodeKey = require('../../../tenderdash/generateTenderdashNodeKey');
 const deriveTenderdashNodeId = require('../../../tenderdash/deriveTenderdashNodeId');
