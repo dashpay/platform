@@ -22,8 +22,6 @@ impl ErrorWithCode for ConsensusError {
 
             #[cfg(test)]
             ConsensusError::TestConsensusError(_) => 1000,
-            // TODO(v0.24-merge): remove?
-            // ConsensusError::ValueError(_) => 5000,
             ConsensusError::DefaultError => 1, // this should never happen
         }
     }

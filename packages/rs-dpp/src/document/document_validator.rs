@@ -579,19 +579,11 @@ mod test {
     }
 
     fn get_first_schema_error(result: &SimpleConsensusValidationResult) -> &JsonSchemaError {
-        // TODO(v0.24-merge): do it with trait
         json_schema_error(
             result
                 .errors
                 .get(0)
                 .expect("the error should be returned in validation result"),
         )
-
-        // result
-        //     .errors
-        //     .get(0)
-        //     .expect("the error should be returned in validation result")
-        //     .json_schema_error()
-        //     .expect("the error should be json schema error")
     }
 }

@@ -29,7 +29,7 @@ impl StValidator {
             self.state_repository.clone(),
             state_transition,
             &self.bls,
-            &StateTransitionExecutionContext::default(), // TODO(v0.24-merge): is it fine using default context here?
+            &StateTransitionExecutionContext::default(), // TODO(v0.24-backport): is it fine using default context here?
         )
         .await
         .with_js_error()?;

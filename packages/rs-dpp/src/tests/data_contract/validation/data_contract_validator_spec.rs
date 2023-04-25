@@ -59,19 +59,6 @@ fn get_schema_error<TData: Clone>(
     )
 }
 
-// TODO(v0.24-merge): remove?
-// fn get_value_error<TData: Clone>(
-//     result: &ConsensusValidationResult<TData>,
-//     number: usize,
-// ) -> &platform_value::Error {
-//     result
-//         .errors
-//         .get(number)
-//         .expect("the error should be returned in validation result")
-//         .value_error()
-//         .expect("the error should be a value error")
-// }
-
 fn get_basic_error(consensus_error: &ConsensusError) -> &BasicError {
     match consensus_error {
         ConsensusError::BasicError(basic_error) => basic_error,

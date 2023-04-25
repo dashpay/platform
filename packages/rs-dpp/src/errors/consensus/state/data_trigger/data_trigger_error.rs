@@ -26,7 +26,7 @@ pub enum DataTriggerError {
     DataTriggerInvalidResultError(DataTriggerInvalidResultError),
 }
 
-// TODO(v0.24-merge): move these errors to dedicated files
+// TODO(v0.24-backport): move these errors to dedicated files?
 /// Data trigger errors represent issues that occur while processing data triggers.
 /// Data triggers are custom logic associated with the creation, modification, or deletion of documents.
 #[derive(Error, Debug, Serialize, Deserialize)]

@@ -54,7 +54,7 @@ where
     }
 
     pub async fn apply(&self, state_transition: &StateTransition) -> Result<(), ProtocolError> {
-        // TODO(v0.24-merge): is it fine using default context here?
+        // TODO(v0.24-backport): is it fine using default context here?
         //   (Check if applier is actually used in the drive executor)
         let execution_context = StateTransitionExecutionContext::default();
         match state_transition {

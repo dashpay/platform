@@ -44,16 +44,6 @@ pub fn value_error(consensus_error: &ConsensusError) -> &ValueError {
         _ => panic!("error '{:?}' isn't a value error", consensus_error),
     }
 }
-// TODO(v0.24-merge): remove?
-// pub fn get_index_error(consensus_error: &ConsensusError) -> &IndexError {
-//     match consensus_error {
-//         ConsensusError::BasicError(basic_error) => match &**basic_error {
-//             BasicError::IndexError(index_error) => index_error,
-//             _ => panic!("error '{:?}' isn't a index error", consensus_error),
-//         },
-//         _ => panic!("error '{:?}' isn't a basic error", consensus_error),
-//     }
-// }
 
 pub fn get_state_error_from_result<TData: Clone>(
     result: &ConsensusValidationResult<TData>,
