@@ -118,7 +118,7 @@ impl ErrorWithCode for SignatureError {
             Self::WrongPublicKeyPurposeError { .. } => 2005,
             Self::PublicKeyIsDisabledError { .. } => 2006,
             Self::PublicKeySecurityLevelNotMetError { .. } => 2007,
-            Self::SignatureShouldNotBePresent(_) => 2008,
+            Self::SignatureShouldNotBePresentError(_) => 2008,
             Self::BasicECDSAError(_) => 2009,
             Self::BasicBLSError(_) => 2010,
         }

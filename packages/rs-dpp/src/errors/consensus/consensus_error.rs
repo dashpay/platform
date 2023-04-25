@@ -51,6 +51,7 @@ impl From<TestConsensusError> for ConsensusError {
 
 impl ConsensusError {
     pub fn serialize(&self) -> Result<Vec<u8>, ProtocolError> {
+        // TODO(v0.24-backport): use new bincode API?
         let config = bincode::config::legacy()
             .with_variable_int_encoding()
             .with_big_endian();
@@ -61,6 +62,7 @@ impl ConsensusError {
     }
 
     pub fn deserialize(bytes: &[u8]) -> Result<ConsensusError, ProtocolError> {
+        // TODO(v0.24-backport): use new bincode API?
         let config = bincode::config::legacy()
             .with_variable_int_encoding()
             .with_big_endian();

@@ -1,8 +1,8 @@
 use crate::consensus::signature::{
-    IdentityNotFoundError, InvalidIdentityPublicKeyTypeError,
+    BasicBLSError, BasicECDSAError, IdentityNotFoundError, InvalidIdentityPublicKeyTypeError,
     InvalidSignaturePublicKeySecurityLevelError, InvalidStateTransitionSignatureError,
     MissingPublicKeyError, PublicKeyIsDisabledError, PublicKeySecurityLevelNotMetError,
-    WrongPublicKeyPurposeError,
+    SignatureShouldNotBePresentError, WrongPublicKeyPurposeError,
 };
 use crate::consensus::ConsensusError;
 use thiserror::Error;
@@ -40,14 +40,14 @@ pub enum SignatureError {
     #[error(transparent)]
     PublicKeySecurityLevelNotMetError(PublicKeySecurityLevelNotMetError),
 
-    #[error("signature should be empty {0}")]
-    SignatureShouldNotBePresent(String),
+    #[error(transparent)]
+    SignatureShouldNotBePresentError(SignatureShouldNotBePresentError),
 
-    #[error("ecdsa signing error {0}")]
-    BasicECDSAError(String),
+    #[error(transparent)]
+    BasicECDSAError(BasicECDSAError),
 
-    #[error("bls signing error {0}")]
-    BasicBLSError(String),
+    #[error(transparent)]
+    BasicBLSError(BasicBLSError),
 }
 
 impl From<SignatureError> for ConsensusError {

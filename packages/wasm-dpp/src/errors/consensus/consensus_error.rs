@@ -47,6 +47,7 @@ use dpp::consensus::basic::BasicError::{
 };
 use dpp::consensus::fee::fee_error::FeeError;
 use dpp::consensus::signature::SignatureError;
+use dpp::consensus::signature::SignatureError::BasicECDSAError;
 use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::errors::consensus::codes::ErrorWithCode;
@@ -66,7 +67,10 @@ use crate::errors::consensus::basic::state_transition::{
     InvalidStateTransitionTypeErrorWasm, MissingStateTransitionTypeErrorWasm,
     StateTransitionMaxSizeExceededErrorWasm,
 };
-use crate::errors::consensus::signature::IdentityNotFoundErrorWasm;
+use crate::errors::consensus::signature::{
+    BasicBLSErrorWasm, BasicECDSAErrorWasm, IdentityNotFoundErrorWasm,
+    SignatureShouldNotBePresentErrorWasm,
+};
 use crate::errors::consensus::state::data_contract::data_trigger::{
     DataTriggerConditionErrorWasm, DataTriggerExecutionErrorWasm,
 };
@@ -382,10 +386,11 @@ fn from_signature_error(signature_error: &SignatureError) -> JsValue {
         SignatureError::WrongPublicKeyPurposeError(err) => {
             WrongPublicKeyPurposeErrorWasm::from(err).into()
         }
-        // TODO(v0.24-backport): create wasm errors?
-        SignatureError::SignatureShouldNotBePresent(err) => JsError::new(&err).into(),
-        SignatureError::BasicECDSAError(err) => JsError::new(&err).into(),
-        SignatureError::BasicBLSError(err) => JsError::new(&err).into(),
+        SignatureError::SignatureShouldNotBePresentError(err) => {
+            SignatureShouldNotBePresentErrorWasm::from(err).into()
+        }
+        SignatureError::BasicECDSAError(err) => BasicECDSAErrorWasm::from(err).into(),
+        SignatureError::BasicBLSError(err) => BasicBLSErrorWasm::from(err).into(),
     }
 }
 
