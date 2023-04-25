@@ -3,7 +3,6 @@
 // use dashcore_rpc::dashcore::anyhow::Result;
 // use dashcore_rpc::dashcore::InstantLock;
 // use dpp::async_trait::async_trait;
-// use dpp::data_contract::{DataContract, DriveContractExt};
 // use dpp::document::{Document, ExtendedDocument};
 // use dpp::identifier::Identifier;
 // use dpp::identity::{Identity, IdentityPublicKey, KeyID};

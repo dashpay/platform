@@ -21,6 +21,12 @@ impl From<PreCalculatedOperation> for PreCalculatedOperationWasm {
     }
 }
 
+impl From<PreCalculatedOperationWasm> for PreCalculatedOperation {
+    fn from(value: PreCalculatedOperationWasm) -> Self {
+        value.0
+    }
+}
+
 #[wasm_bindgen(js_class=PreCalculatedOperation)]
 impl PreCalculatedOperationWasm {
     #[wasm_bindgen(constructor)]

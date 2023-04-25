@@ -385,8 +385,8 @@ mod tests {
             assert_eq!(
                 fee_result,
                 FeeResult {
-                    storage_fee: 345492000,
-                    processing_fee: 9665800,
+                    storage_fee: 346086000,
+                    processing_fee: 9556170,
                     ..Default::default()
                 }
             );

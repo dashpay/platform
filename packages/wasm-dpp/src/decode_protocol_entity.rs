@@ -9,8 +9,8 @@ use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(js_name=decodeProtocolEntity)]
 pub fn decode_protocol_entity(buffer: Vec<u8>) -> Result<Array, JsValue> {
-    let (protocol_version, value) =
-        DecodeProtocolEntity::decode_protocol_entity(buffer).map_err(from_protocol_error)?;
+    let (protocol_version, value) = DecodeProtocolEntity::decode_protocol_entity_to_value(buffer)
+        .map_err(from_protocol_error)?;
 
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
     let js_value = value

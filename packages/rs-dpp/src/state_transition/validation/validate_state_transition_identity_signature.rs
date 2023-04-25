@@ -136,6 +136,7 @@ pub fn convert_to_consensus_signature_error(
                 InvalidIdentityPublicKeyTypeError::new(err.public_key_type()),
             )),
         ),
+        ProtocolError::WrongPublicKeyPurposeError(err) => Ok(err.into()),
         ProtocolError::Error(_) => Err(error),
         _ => Ok(ConsensusError::SignatureError(
             SignatureError::InvalidStateTransitionSignatureError,
@@ -147,6 +148,9 @@ pub fn convert_to_consensus_signature_error(
 mod test {
     use super::*;
     use crate::consensus::signature::InvalidSignaturePublicKeySecurityLevelError;
+    use crate::serialization_traits::PlatformDeserializable;
+    use crate::serialization_traits::PlatformSerializable;
+    use crate::serialization_traits::Signable;
     use crate::state_transition::errors::{PublicKeyMismatchError, WrongPublicKeyPurposeError};
     use crate::{
         document::DocumentsBatchTransition,
@@ -163,22 +167,35 @@ mod test {
         },
         NativeBlsModule,
     };
+    use bincode::{config, Decode, Encode};
+    use platform_serialization::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
     use platform_value::BinaryData;
     use serde::{Deserialize, Serialize};
     use std::vec;
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(
+        Debug,
+        Clone,
+        Encode,
+        Decode,
+        Serialize,
+        Deserialize,
+        PlatformDeserialize,
+        PlatformSerialize,
+        PlatformSignable,
+    )]
+    #[platform_error_type(ProtocolError)]
     #[serde(rename_all = "camelCase")]
     struct ExampleStateTransition {
         pub protocol_version: u32,
-        pub signature: BinaryData,
-        pub signature_public_key_id: KeyID,
         pub transition_type: StateTransitionType,
         pub owner_id: Identifier,
 
         pub return_error: Option<usize>,
-        #[serde(skip)]
-        pub execution_context: StateTransitionExecutionContext,
+        #[exclude_from_sig_hash]
+        pub signature_public_key_id: KeyID,
+        #[exclude_from_sig_hash]
+        pub signature: BinaryData,
     }
 
     impl StateTransitionConvert for ExampleStateTransition {
@@ -294,7 +311,6 @@ mod test {
             signature_public_key_id: 1,
             owner_id: generate_random_identifier_struct(),
             return_error: None,
-            execution_context: Default::default(),
         }
     }
 

@@ -1,6 +1,7 @@
 use crate::util::hash::ripemd160_sha256;
 use anyhow::bail;
 use bincode::{Decode, Encode};
+#[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
 use dashcore::secp256k1::rand::rngs::StdRng as EcdsaRng;
 use dashcore::secp256k1::rand::SeedableRng;
@@ -164,6 +165,7 @@ impl TryFrom<u8> for KeyType {
     }
 }
 
+#[cfg(feature = "cbor")]
 impl Into<CborValue> for KeyType {
     fn into(self) -> CborValue {
         CborValue::from(self as u128)

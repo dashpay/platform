@@ -8,6 +8,7 @@ use crate::identity::state_transition::identity_topup_transition::IdentityTopUpT
 use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 
+#[derive(Clone)]
 pub struct ApplyIdentityTopUpTransition<SR>
 where
     SR: StateRepositoryLike,

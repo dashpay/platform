@@ -40,15 +40,17 @@
 use crate::error::Error;
 use crate::platform::Platform;
 use dpp::block::block_info::BlockInfo;
+use dpp::platform_value::Value;
 use drive::contract::Contract;
-use drive::dpp::data_contract::DriveContractExt;
 use drive::dpp::document::Document;
-use drive::dpp::util::serializer;
+use drive::dpp::util::cbor_serializer;
 use drive::drive::flags::StorageFlags;
-use drive::drive::query::QuerySerializedDocumentsOutcome;
+use drive::drive::query::{QueryDocumentsOutcome, QuerySerializedDocumentsOutcome};
 use drive::grovedb::TransactionArg;
+use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 use serde_json::json;
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 
 /// Masternode reward shares contract ID
 pub const MN_REWARD_SHARES_CONTRACT_ID: [u8; 32] = [
@@ -66,28 +68,42 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
         masternode_owner_id: &Vec<u8>,
         transaction: TransactionArg,
     ) -> Result<Vec<Document>, Error> {
-        let query_json = json!({
-            "where": [
-                ["$ownerId", "==", bs58::encode(masternode_owner_id).into_string()]
-            ],
-        });
+        let document_type = self
+            .drive
+            .system_contracts
+            .masternode_rewards
+            .document_type_for_name(MN_REWARD_SHARES_DOCUMENT_TYPE)?;
 
-        let query_cbor = serializer::serializable_value_to_cbor(&query_json, None)
-            .expect("expected to serialize to cbor");
+        let drive_query = DriveQuery {
+            contract: &self.drive.system_contracts.masternode_rewards,
+            document_type,
+            internal_clauses: InternalClauses {
+                primary_key_in_clause: None,
+                primary_key_equal_clause: None,
+                in_clause: None,
+                range_clause: None,
+                equal_clauses: BTreeMap::from([(
+                    "$ownerId".to_string(),
+                    WhereClause {
+                        field: "$ownerId".to_string(),
+                        operator: WhereOperator::Equal,
+                        value: Value::Bytes(masternode_owner_id.clone()),
+                    },
+                )]),
+            },
+            offset: 0,
+            limit: 1,
+            order_by: Default::default(),
+            start_at: None,
+            start_at_included: false,
+            block_time: None,
+        };
 
-        let QuerySerializedDocumentsOutcome { items, .. } =
-            self.drive.query_documents_cbor_with_document_type_lookup(
-                &query_cbor,
-                MN_REWARD_SHARES_CONTRACT_ID,
-                MN_REWARD_SHARES_DOCUMENT_TYPE,
-                None,
-                transaction,
-            )?;
+        let QueryDocumentsOutcome { documents, .. } =
+            self.drive
+                .query_documents(drive_query, None, false, transaction)?;
 
-        items
-            .iter()
-            .map(|cbor| Document::from_cbor(cbor, None, None).map_err(Error::Protocol))
-            .collect::<Result<Vec<Document>, Error>>()
+        Ok(documents)
     }
 
     /// A function to create and apply the masternode reward shares contract.
@@ -96,8 +112,8 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
 
         let contract_cbor = hex::decode(contract_hex).expect("Decoding failed");
 
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("expected to deserialize the contract");
+        let contract =
+            Contract::from_cbor(&contract_cbor).expect("expected to deserialize the contract");
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 

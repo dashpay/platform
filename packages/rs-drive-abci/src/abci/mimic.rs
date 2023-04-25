@@ -13,6 +13,7 @@ use dashcore_rpc::dashcore::bls_sig_utils::BLSSignature;
 use dashcore_rpc::dashcore::consensus::Decodable;
 use dashcore_rpc::dashcore;
 use dpp::block::block_info::BlockInfo;
+use dpp::serialization_traits::PlatformSerializable;
 use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;

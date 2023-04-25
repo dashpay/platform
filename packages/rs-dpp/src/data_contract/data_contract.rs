@@ -1,3 +1,4 @@
+use bincode::config;
 use bincode::de::{BorrowDecoder, Decoder};
 use bincode::enc::Encoder;
 use bincode::error::{DecodeError, EncodeError};
@@ -6,6 +7,7 @@ use futures::StreamExt;
 use std::collections::{BTreeMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 
+use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable, ValueConvertible};
 use itertools::{Either, Itertools};
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::{platform_value, Bytes32, Identifier};
@@ -24,13 +26,14 @@ use crate::data_contract::contract_config::{
 
 use crate::data_contract::get_binary_properties_from_schema::get_binary_properties;
 
-use crate::{
-    errors::ProtocolError,
-    metadata::Metadata,
-    util::{hash::hash_to_vec, serializer},
-};
+#[cfg(feature = "cbor")]
+use crate::util::cbor_serializer;
+use crate::{errors::ProtocolError, metadata::Metadata, util::hash::hash_to_vec};
 use crate::{identifier, Convertible};
 use platform_value::string_encoding::Encoding;
+
+use crate::version::LATEST_VERSION;
+use platform_serialization::{PlatformDeserialize, PlatformDeserializeNoLimit, PlatformSerialize};
 
 use super::document_type::DocumentType;
 use super::errors::*;
@@ -78,7 +81,8 @@ impl Convertible for DataContract {
     }
 
     /// Returns Data Contract as a Buffer
-    fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
+    #[cfg(feature = "cbor")]
+    fn to_cbor_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
         let protocol_version = self.protocol_version;
 
         let mut object = self.to_object()?;
@@ -91,39 +95,79 @@ impl Convertible for DataContract {
             .unwrap()
             .sort_by_lexicographical_byte_ordering_keys_and_inner_maps();
 
-        serializer::serializable_value_to_cbor(&object, Some(protocol_version))
+        cbor_serializer::serializable_value_to_cbor(&object, Some(protocol_version))
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
-#[serde(rename_all = "camelCase")]
+/// `DataContract` represents a data contract in a decentralized platform.
+///
+/// It contains information about the contract, such as its protocol version, unique identifier,
+/// schema, version, and owner identifier. The struct also includes details about the document
+/// types, metadata, configuration, and document schemas associated with the contract.
+///
+/// Additionally, `DataContract` holds definitions for JSON schemas, entropy, and binary properties
+/// of the documents.
+#[derive(
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    Default,
+    PartialEq,
+    PlatformSerialize,
+    PlatformDeserialize,
+    PlatformDeserializeNoLimit,
+)]
+#[platform_error_type(ProtocolError)]
+#[platform_deserialize_limit(15000)]
+#[platform_serialize_limit(15000)]
+#[platform_serialize_into(DataContractInner)]
+#[platform_deserialize_from(DataContractInner)]
 #[serde(try_from = "DataContractInner")]
+#[serde(rename_all = "camelCase")]
 pub struct DataContract {
+    /// The version of the protocol this contract adheres to.
+    #[serde(default = "default_protocol_version")]
     pub protocol_version: u32,
+
+    /// A unique identifier for the data contract.
     #[serde(rename = "$id")]
     pub id: Identifier,
+
+    /// A reference to the JSON schema that defines the contract.
     #[serde(rename = "$schema")]
     pub schema: String,
+
+    /// The version of this data contract.
     pub version: u32,
+
+    /// The identifier of the contract owner.
     pub owner_id: Identifier,
+
+    /// A mapping of document names to their corresponding document types.
     #[serde(skip)]
     pub document_types: BTreeMap<DocumentName, DocumentType>,
+
+    /// Optional metadata associated with the contract.
     #[serde(skip)]
     pub metadata: Option<Metadata>,
-    #[serde(skip)]
-    pub(crate) config: ContractConfig,
 
-    #[serde(rename = "documents")]
+    /// Internal configuration for the contract.
+    #[serde(skip)]
+    pub config: ContractConfig,
+
+    /// A mapping of document names to their corresponding JSON schemas.
     pub documents: BTreeMap<DocumentName, JsonSchema>,
 
-    // TODO we may ensure in compile time that defs are not empty if we define a type for it
+    /// Optional mapping of definition names to their corresponding JSON schemas.
     #[serde(rename = "$defs", default)]
     pub defs: Option<BTreeMap<DefinitionName, JsonSchema>>,
 
-    //todo: we should remove entropy
+    /// A randomly generated value used for creating unique identifiers within the contract.
     #[serde(skip)]
     pub entropy: Bytes32,
 
+    /// A nested mapping of document names and property paths to their binary values.
     #[serde(skip)]
     pub binary_properties: BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>,
 }
@@ -153,17 +197,40 @@ impl<'a> BorrowDecode<'a> for DataContract {
     }
 }
 
+// Standalone default_protocol_version function
+fn default_protocol_version() -> u32 {
+    1
+}
+
 #[derive(Serialize, Deserialize, Encode, Decode)]
 #[serde(rename_all = "camelCase")]
 pub struct DataContractInner {
+    /// The version of the protocol this contract adheres to, with a default value if not provided.
+    #[serde(default = "default_protocol_version")]
     pub protocol_version: u32,
+
+    /// A unique identifier for the data contract.
     #[serde(rename = "$id")]
     pub id: Identifier,
+
+    /// Internal configuration for the contract.
+    #[serde(default)]
+    pub config: ContractConfig,
+
+    /// A reference to the JSON schema that defines the contract.
     #[serde(rename = "$schema")]
     pub schema: String,
+
+    /// The version of this data contract.
     pub version: u32,
+
+    /// The identifier of the contract owner.
     pub owner_id: Identifier,
+
+    /// A mapping of document names to their corresponding JSON values.
     pub documents: BTreeMap<DocumentName, Value>,
+
+    /// Optional mapping of definition names to their corresponding JSON values.
     #[serde(rename = "$defs", default)]
     pub defs: Option<BTreeMap<DefinitionName, Value>>,
 }
@@ -173,6 +240,7 @@ impl From<DataContract> for DataContractInner {
         let DataContract {
             protocol_version,
             id,
+            config,
             schema,
             version,
             owner_id,
@@ -183,6 +251,7 @@ impl From<DataContract> for DataContractInner {
         DataContractInner {
             protocol_version,
             id,
+            config,
             schema,
             version,
             owner_id,
@@ -203,7 +272,66 @@ impl TryFrom<DataContractInner> for DataContract {
     type Error = ProtocolError;
 
     fn try_from(value: DataContractInner) -> Result<Self, Self::Error> {
-        DataContract::from_raw_object(platform_value!(value))
+        let DataContractInner {
+            protocol_version,
+            id,
+            config,
+            schema,
+            version,
+            owner_id,
+            documents,
+            defs,
+        } = value;
+
+        let document_types = get_document_types_from_value_array(
+            id,
+            &documents
+                .iter()
+                .map(|(key, value)| (key.as_str(), value))
+                .collect(),
+            &defs
+                .as_ref()
+                .map(|defs| {
+                    defs.iter()
+                        .map(|(key, value)| Ok((key.clone(), value)))
+                        .collect::<Result<BTreeMap<String, &Value>, ProtocolError>>()
+                })
+                .transpose()?
+                .unwrap_or_default(),
+            config.documents_keep_history_contract_default,
+            config.documents_mutable_contract_default,
+        )?;
+
+        let binary_properties = documents
+            .iter()
+            .map(|(doc_type, schema)| Ok((String::from(doc_type), get_binary_properties(&schema.clone().try_into()?))))
+            .collect::<Result<BTreeMap<DocumentName, BTreeMap<PropertyPath, JsonValue>>, ProtocolError>>()?;
+
+        let data_contract = DataContract {
+            protocol_version,
+            id,
+            schema,
+            version,
+            owner_id,
+            document_types,
+            metadata: None,
+            config,
+            documents: documents
+                .into_iter()
+                .map(|(key, value)| Ok((key, value.try_into()?)))
+                .collect::<Result<BTreeMap<DocumentName, JsonSchema>, ProtocolError>>()?,
+            defs: defs
+                .map(|defs| {
+                    defs.into_iter()
+                        .map(|(key, value)| Ok((key, value.try_into()?)))
+                        .collect::<Result<BTreeMap<DefinitionName, JsonSchema>, ProtocolError>>()
+                })
+                .transpose()?,
+            entropy: Default::default(),
+            binary_properties,
+        };
+
+        Ok(data_contract)
     }
 }
 
@@ -231,8 +359,9 @@ impl DataContract {
             mutability.documents_mutable_contract_default,
         )?;
 
-        let protocol_version =
-            data_contract_map.remove_integer(property_names::PROTOCOL_VERSION)?;
+        let protocol_version = data_contract_map
+            .remove_optional_integer(property_names::PROTOCOL_VERSION)?
+            .unwrap_or(LATEST_VERSION);
 
         let documents = data_contract_map
             .remove(property_names::DOCUMENTS)
@@ -285,13 +414,14 @@ impl DataContract {
         Self::from_raw_object(value)
     }
 
-    pub fn from_buffer(b: impl AsRef<[u8]>) -> Result<DataContract, ProtocolError> {
+    #[cfg(feature = "cbor")]
+    pub fn from_cbor_buffer(b: impl AsRef<[u8]>) -> Result<DataContract, ProtocolError> {
         Self::from_cbor(b)
     }
 
     // Returns hash from Data Contract
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash_to_vec(self.to_buffer()?))
+        Ok(hash_to_vec(PlatformSerializable::serialize(self)?))
     }
 
     /// Increments version of Data Contract
@@ -447,6 +577,28 @@ impl DataContract {
             })
             .unwrap_or_default())
     }
+
+    pub fn optional_document_type_for_name(
+        &self,
+        document_type_name: &str,
+    ) -> Option<&DocumentType> {
+        self.document_types.get(document_type_name)
+    }
+
+    pub fn document_type_for_name(
+        &self,
+        document_type_name: &str,
+    ) -> Result<&DocumentType, ProtocolError> {
+        self.document_types.get(document_type_name).ok_or({
+            ProtocolError::DataContractError(DataContractError::DocumentTypeNotFound(
+                "can not get document type from contract",
+            ))
+        })
+    }
+
+    pub fn has_document_type_for_name(&self, document_type_name: &str) -> bool {
+        self.document_types.get(document_type_name).is_some()
+    }
 }
 
 impl TryFrom<JsonValue> for DataContract {
@@ -548,15 +700,32 @@ pub fn get_document_types_from_value(
             .as_map()
             .ok_or(ProtocolError::DataContractError(
                 DataContractError::InvalidContractStructure("documents must be a map"),
-            ))?;
-    let mut contract_document_types: BTreeMap<String, DocumentType> = BTreeMap::new();
-    for (type_key_value, document_type_value) in contract_document_types_raw {
-        let Some(type_key_str) = type_key_value.as_text() else {
-            return Err(ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
-                "document type name is not a string as expected",
-            )));
-        };
+            ))?.iter().map(|(key, value)| {
+            let Some(type_key_str) = key.as_text() else {
+                return Err(ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
+                    "document type name is not a string as expected",
+                )));
+            };
+            Ok((type_key_str, value))
+        }).collect::<Result<Vec<(&str, &Value)>, ProtocolError>>()?;
+    get_document_types_from_value_array(
+        data_contract_id,
+        &contract_document_types_raw,
+        definition_references,
+        documents_keep_history_contract_default,
+        documents_mutable_contract_default,
+    )
+}
 
+pub fn get_document_types_from_value_array(
+    data_contract_id: Identifier,
+    contract_document_types_raw: &Vec<(&str, &Value)>,
+    definition_references: &BTreeMap<String, &Value>,
+    documents_keep_history_contract_default: bool,
+    documents_mutable_contract_default: bool,
+) -> Result<BTreeMap<String, DocumentType>, ProtocolError> {
+    let mut contract_document_types: BTreeMap<String, DocumentType> = BTreeMap::new();
+    for (type_key_str, document_type_value) in contract_document_types_raw {
         // Make sure the document_type_value is a map
         let Some(document_type_value_map) = document_type_value.as_map() else {
             return Err(ProtocolError::DataContractError(DataContractError::InvalidContractStructure(
@@ -627,9 +796,9 @@ mod test {
         let data_contract = get_data_contract_fixture(None);
 
         let data_contract_bytes = data_contract
-            .to_buffer()
+            .to_cbor_buffer()
             .expect("data contract should be converted into the bytes");
-        let data_contract_restored = DataContract::from_buffer(data_contract_bytes)
+        let data_contract_restored = DataContract::from_cbor_buffer(data_contract_bytes)
             .expect("data contract should be created from bytes");
 
         assert_eq!(
@@ -658,10 +827,10 @@ mod test {
         data_contract.protocol_version = 10000;
 
         let data_contract_bytes = data_contract
-            .to_buffer()
+            .to_cbor_buffer()
             .expect("data contract should be converted into the bytes");
 
-        let data_contract_restored = DataContract::from_buffer(data_contract_bytes)
+        let data_contract_restored = DataContract::from_cbor_buffer(data_contract_bytes)
             .expect("data contract should be created from bytes");
 
         assert_eq!(
@@ -689,7 +858,7 @@ mod test {
         let data_contract = get_data_contract_fixture(None);
 
         let data_contract_bytes = data_contract
-            .to_buffer()
+            .to_cbor_buffer()
             .expect("data contract should be converted into the bytes");
 
         let mut high_protocol_version_bytes = u64::MAX.encode_var_vec();
@@ -703,7 +872,7 @@ mod test {
 
         high_protocol_version_bytes.extend_from_slice(contract_cbor_bytes);
 
-        let data_contract_restored = DataContract::from_buffer(&high_protocol_version_bytes)
+        let data_contract_restored = DataContract::from_cbor_buffer(&high_protocol_version_bytes)
             .expect("data contract should be created from bytes");
 
         assert_eq!(u32::MAX, data_contract_restored.protocol_version);
@@ -816,7 +985,7 @@ mod test {
     fn deserialize_dpp_cbor() {
         let data_contract_cbor = get_data_contract_cbor_bytes();
 
-        let data_contract = DataContract::from_buffer(data_contract_cbor).unwrap();
+        let data_contract = DataContract::from_cbor_buffer(data_contract_cbor).unwrap();
 
         assert_eq!(data_contract.version, 1);
         assert_eq!(data_contract.protocol_version, 1);
@@ -844,9 +1013,9 @@ mod test {
     fn serialize_deterministically_serialize_to_cbor() {
         let data_contract_cbor = get_data_contract_cbor_bytes();
 
-        let data_contract = DataContract::from_buffer(&data_contract_cbor).unwrap();
+        let data_contract = DataContract::from_cbor_buffer(&data_contract_cbor).unwrap();
 
-        let serialized = data_contract.to_buffer().unwrap();
+        let serialized = data_contract.to_cbor_buffer().unwrap();
 
         assert_eq!(hex::encode(data_contract_cbor), hex::encode(serialized));
     }

@@ -29,7 +29,7 @@ impl InvalidSignaturePublicKeySecurityLevelErrorWasm {
         self.public_key_security_level as u8
     }
 
-    #[wasm_bindgen(js_name=getRequiredKeySecurityLevel)]
+    #[wasm_bindgen(js_name=getKeySecurityLevelRequirement)]
     pub fn get_allowed_key_security_levels(&self) -> Vec<u8> {
         self.allowed_key_security_levels
             .iter()

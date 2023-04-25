@@ -4,11 +4,12 @@ pub mod factory;
 pub mod key_type;
 pub mod purpose;
 pub mod security_level;
-pub mod serialize;
 
 use std::convert::{TryFrom, TryInto};
 
+use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use anyhow::anyhow;
+#[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
 use dashcore::PublicKey as ECDSAPublicKey;
 use platform_value::{BinaryData, ReplacementType, Value, ValueMapHelper};
@@ -19,13 +20,17 @@ use crate::errors::{InvalidVectorSizeError, ProtocolError};
 pub use crate::identity::key_type::KeyType;
 pub use crate::identity::purpose::Purpose;
 pub use crate::identity::security_level::SecurityLevel;
+#[cfg(feature = "cbor")]
+use crate::util::cbor_serializer;
+#[cfg(feature = "cbor")]
 use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
 use crate::util::hash::ripemd160_sha256;
-use crate::util::{serializer, vec};
 use crate::Convertible;
-use bincode::{Decode, Encode};
+use bincode::{config, Decode, Encode};
 
 use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
+use crate::util::vec;
+use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
 pub type KeyID = u32;
 pub type TimestampMillis = u64;
@@ -33,9 +38,24 @@ pub type TimestampMillis = u64;
 pub const BINARY_DATA_FIELDS: [&str; 1] = ["data"];
 
 #[derive(
-    Debug, Serialize, Deserialize, Encode, Decode, Clone, PartialEq, Eq, Ord, PartialOrd, Hash,
+    Debug,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    PlatformDeserialize,
+    PlatformSerialize,
+    Clone,
+    PartialEq,
+    Eq,
+    Ord,
+    PartialOrd,
+    Hash,
 )]
 #[serde(rename_all = "camelCase")]
+#[platform_error_type(ProtocolError)]
+#[platform_deserialize_limit(2000)]
+#[platform_serialize_limit(2000)]
 pub struct IdentityPublicKey {
     pub id: KeyID,
     pub purpose: Purpose,
@@ -93,14 +113,15 @@ impl Convertible for IdentityPublicKey {
             .map_err(ProtocolError::ValueError)
     }
 
-    fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
+    #[cfg(feature = "cbor")]
+    fn to_cbor_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
         let mut object = self.to_cleaned_object()?;
         object
             .to_map_mut()
             .unwrap()
             .sort_by_lexicographical_byte_ordering_keys_and_inner_maps();
 
-        serializer::serializable_value_to_cbor(&object, None)
+        cbor_serializer::serializable_value_to_cbor(&object, None)
     }
 }
 
@@ -171,6 +192,7 @@ impl IdentityPublicKey {
         Self::from_value(value)
     }
 
+    #[cfg(feature = "cbor")]
     pub fn from_cbor_value(cbor_value: &CborValue) -> Result<Self, ProtocolError> {
         let key_value_map = cbor_value.as_map().ok_or_else(|| {
             ProtocolError::DecodingError(String::from(
@@ -202,6 +224,7 @@ impl IdentityPublicKey {
         })
     }
 
+    #[cfg(feature = "cbor")]
     pub fn to_cbor_value(&self) -> CborValue {
         let mut pk_map = CborCanonicalMap::new();
 
@@ -219,6 +242,7 @@ impl IdentityPublicKey {
     }
 }
 
+#[cfg(feature = "cbor")]
 impl Into<CborValue> for &IdentityPublicKey {
     fn into(self) -> CborValue {
         self.to_cbor_value()
@@ -272,4 +296,19 @@ where
     S: Serializer,
 {
     serializer.serialize_str(&base64::encode(buffer))
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::identity::IdentityPublicKey;
+    use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+
+    #[test]
+    fn test_identity_key_serialization_deserialization() {
+        let key = IdentityPublicKey::random_key(1, Some(500));
+        let serialized = key.serialize().expect("expected to serialize key");
+        let unserialized = IdentityPublicKey::deserialize(serialized.as_slice())
+            .expect("expected to deserialize key");
+        assert_eq!(key, unserialized)
+    }
 }

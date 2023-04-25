@@ -1120,7 +1120,9 @@ dependencies = [
  "log",
  "mockall",
  "num_enum",
+ "platform-serialization",
  "platform-value",
+ "platform-value-convertible",
  "pretty_assertions",
  "rand",
  "regex",
@@ -2462,6 +2464,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ac9a59f73473f1b8d852421e59e64809f025994837ef743615c6d0c5b305160"
 
 [[package]]
+name = "platform-serialization"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.15",
+]
+
+[[package]]
 name = "platform-value"
 version = "0.1.0"
 dependencies = [
@@ -2478,6 +2489,15 @@ dependencies = [
  "serde_json",
  "thiserror",
  "treediff 4.0.2",
+]
+
+[[package]]
+name = "platform-value-convertible"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.15",
 ]
 
 [[package]]

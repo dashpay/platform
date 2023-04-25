@@ -1,4 +1,5 @@
 use std::ops::Deref;
+use std::sync::Arc;
 
 use dpp::data_contract::state_transition::data_contract_create_transition::apply_data_contract_create_transition_factory::ApplyDataContractCreateTransition;
 use wasm_bindgen::prelude::*;
@@ -28,7 +29,7 @@ impl ApplyDataContractCreateTransitionWasm {
         state_repository: ExternalStateRepositoryLike,
     ) -> ApplyDataContractCreateTransitionWasm {
         let pinned_js_state_repository = ExternalStateRepositoryLikeWrapper::new(state_repository);
-        ApplyDataContractCreateTransition::new(pinned_js_state_repository).into()
+        ApplyDataContractCreateTransition::new(Arc::new(pinned_js_state_repository)).into()
     }
 
     #[wasm_bindgen(js_name=applyDataContractCreateTransition)]

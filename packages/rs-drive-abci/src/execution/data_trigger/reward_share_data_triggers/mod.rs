@@ -1,4 +1,3 @@
-use dpp::data_contract::DriveContractExt;
 use dpp::document::document_transition::DocumentTransitionAction;
 
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -193,9 +192,7 @@ mod test {
     use dpp::tests::utils::generate_random_identifier_struct;
 
     use dpp::DataTriggerActionError;
-    use drive::drive::object_size_info::DocumentInfo::{
-        DocumentRefWithoutSerialization, DocumentWithoutSerialization,
-    };
+    use drive::drive::object_size_info::DocumentInfo::{DocumentOwnedInfo, DocumentRefInfo};
     use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use std::net::SocketAddr;
     use std::str::FromStr;
@@ -351,10 +348,7 @@ mod test {
                 .add_document_for_contract(
                     DocumentAndContractInfo {
                         owned_document_info: OwnedDocumentInfo {
-                            document_info: DocumentRefWithoutSerialization((
-                                &document.document,
-                                None,
-                            )),
+                            document_info: DocumentRefInfo((&document.document, None)),
                             owner_id: None,
                         },
                         contract: &document.data_contract,
@@ -594,7 +588,7 @@ mod test {
                 .add_document_for_contract(
                     DocumentAndContractInfo {
                         owned_document_info: OwnedDocumentInfo {
-                            document_info: DocumentWithoutSerialization((document, None)),
+                            document_info: DocumentOwnedInfo((document, None)),
                             owner_id: Some(top_level_identifier.to_buffer()),
                         },
                         contract: &data_contract,

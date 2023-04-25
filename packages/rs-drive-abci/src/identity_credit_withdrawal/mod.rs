@@ -14,7 +14,6 @@ use dpp::block::epoch::Epoch;
 use dpp::document::Document;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use drive::dpp::contracts::withdrawals_contract;
-use drive::dpp::data_contract::DriveContractExt;
 use drive::dpp::identifier::Identifier;
 use drive::dpp::identity::convert_credits_to_satoshi;
 use drive::dpp::util::hash;
@@ -502,7 +501,7 @@ where
 
             let state_transition_size = 190;
 
-            let output_script: Script = Script::from(output_script_bytes);
+            let output_script: Script = Script(output_script_bytes.into());
 
             let tx_out = TxOut {
                 value: convert_credits_to_satoshi(amount),
@@ -565,7 +564,7 @@ mod tests {
         use dpp::identity::core_script::CoreScript;
         use dpp::platform_value::platform_value;
         use dpp::{
-            data_contract::{DataContract, DriveContractExt},
+            data_contract::DataContract,
             prelude::Identifier,
             system_data_contracts::{load_system_data_contract, SystemDataContract},
         };
@@ -769,7 +768,7 @@ mod tests {
     }
 
     mod pool_withdrawals_into_transactions {
-        use dpp::data_contract::DriveContractExt;
+
         use dpp::identity::core_script::CoreScript;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
         use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -991,7 +990,7 @@ mod tests {
 
     mod build_withdrawal_transactions_from_documents {
         use dpp::block::block_info::BlockInfo;
-        use dpp::data_contract::DriveContractExt;
+
         use dpp::document::Document;
         use dpp::identity::core_script::CoreScript;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
@@ -1071,20 +1070,7 @@ mod tests {
                 Some(&transaction),
             );
 
-            let documents = vec![
-                Document::from_cbor(
-                    &document_1.to_cbor().expect("to convert document to cbor"),
-                    None,
-                    None,
-                )
-                .expect("to create document from cbor"),
-                Document::from_cbor(
-                    &document_2.to_cbor().expect("to convert document to cbor"),
-                    None,
-                    None,
-                )
-                .expect("to create document from cbor"),
-            ];
+            let documents = vec![document_1, document_2];
 
             let mut batch = vec![];
 

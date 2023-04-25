@@ -6,7 +6,7 @@ use crate::platform::PlatformStateRef;
 use dpp::consensus::basic::document::InvalidDocumentTypeError;
 use dpp::consensus::basic::BasicError;
 use dpp::data_contract::document_type::DocumentType;
-use dpp::data_contract::DriveContractExt;
+
 use dpp::document::Document;
 use dpp::get_from_transition;
 use dpp::platform_value::{Identifier, Value};

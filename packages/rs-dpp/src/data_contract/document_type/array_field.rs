@@ -10,6 +10,7 @@ pub enum ArrayFieldType {
     Number,
     String(Option<usize>, Option<usize>),
     ByteArray(Option<usize>, Option<usize>),
+    Identifier,
     Boolean,
     Date,
 }
@@ -44,22 +45,14 @@ impl ArrayFieldType {
                 Ok(value_bytes)
             }
             ArrayFieldType::ByteArray(_, _) => {
-                let mut bytes = match value {
-                    Value::Bytes(bytes) => Ok(bytes),
-                    Value::Text(text) => {
-                        let value_as_bytes = base64::decode(text).map_err(|_| {
-                            ProtocolError::DataContractError(DataContractError::ValueDecodingError(
-                                "bytearray: invalid base64 value",
-                            ))
-                        })?;
-                        Ok(value_as_bytes)
-                    }
-                    Value::Array(array) => array
-                        .into_iter()
-                        .map(|byte| byte.to_integer().map_err(ProtocolError::ValueError))
-                        .collect::<Result<Vec<u8>, ProtocolError>>(),
-                    _ => Err(get_field_type_matching_error()),
-                }?;
+                let mut bytes = value.into_binary_bytes()?;
+
+                let mut r_vec = bytes.len().encode_var_vec();
+                r_vec.append(&mut bytes);
+                Ok(r_vec)
+            }
+            ArrayFieldType::Identifier => {
+                let mut bytes = value.into_identifier_bytes()?;
 
                 let mut r_vec = bytes.len().encode_var_vec();
                 r_vec.append(&mut bytes);
@@ -101,20 +94,14 @@ impl ArrayFieldType {
                 Ok(value_bytes)
             }
             ArrayFieldType::ByteArray(_, _) => {
-                let mut bytes = match value {
-                    Value::Bytes(bytes) => Ok(bytes.clone()),
-                    Value::Text(text) => {
-                        let value_as_bytes = base64::decode(text).map_err(|_| {
-                            DataContractError::ValueDecodingError("bytearray: invalid base64 value")
-                        })?;
-                        Ok(value_as_bytes)
-                    }
-                    Value::Array(array) => array
-                        .iter()
-                        .map(|byte| byte.to_integer().map_err(ProtocolError::ValueError))
-                        .collect::<Result<Vec<u8>, ProtocolError>>(),
-                    _ => Err(get_field_type_matching_error()),
-                }?;
+                let mut bytes = value.to_binary_bytes()?;
+
+                let mut r_vec = bytes.len().encode_var_vec();
+                r_vec.append(&mut bytes);
+                Ok(r_vec)
+            }
+            ArrayFieldType::Identifier => {
+                let mut bytes = value.to_identifier_bytes()?;
 
                 let mut r_vec = bytes.len().encode_var_vec();
                 r_vec.append(&mut bytes);

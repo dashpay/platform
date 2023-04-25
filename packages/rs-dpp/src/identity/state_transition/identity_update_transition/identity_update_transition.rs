@@ -1,4 +1,6 @@
-use bincode::{Decode, Encode};
+use crate::platform_serialization::PlatformSignable;
+use crate::serialization_traits::{PlatformDeserializable, Signable};
+use bincode::{config, Decode, Encode};
 use platform_value::{BinaryData, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -13,6 +15,7 @@ use crate::consensus::ConsensusError;
 use crate::identity::signer::Signer;
 use crate::identity::{Identity, IdentityPublicKey};
 
+use crate::serialization_traits::PlatformSerializable;
 use crate::{
     identity::{KeyID, SecurityLevel},
     prelude::{Identifier, Revision, TimestampMillis},
@@ -23,6 +26,7 @@ use crate::{
     version::LATEST_VERSION,
     ProtocolError,
 };
+use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
 pub mod property_names {
     pub const PROTOCOL_VERSION: &str = "protocolVersion";
@@ -45,18 +49,24 @@ pub const BINARY_FIELDS: [&str; 3] = [
     property_names::SIGNATURE,
 ];
 
-#[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, PartialEq)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    PlatformDeserialize,
+    PlatformSerialize,
+    PlatformSignable,
+    Debug,
+    Clone,
+    PartialEq,
+)]
 #[serde(rename_all = "camelCase")]
+#[platform_error_type(ProtocolError)]
 pub struct IdentityUpdateTransition {
     pub protocol_version: u32,
     #[serde(rename = "type")]
     pub transition_type: StateTransitionType,
-
-    /// Cryptographic signature of the State Transition
-    pub signature: BinaryData,
-
-    /// The ID of the public key used to sing the State Transition
-    pub signature_public_key_id: KeyID,
 
     /// Unique identifier of the identity to be updated
     pub identity_id: Identifier,
@@ -75,6 +85,13 @@ pub struct IdentityUpdateTransition {
 
     /// Timestamp when keys were disabled
     pub public_keys_disabled_at: Option<TimestampMillis>,
+
+    /// The ID of the public key used to sing the State Transition
+    #[exclude_from_sig_hash]
+    pub signature_public_key_id: KeyID,
+    /// Cryptographic signature of the State Transition
+    #[exclude_from_sig_hash]
+    pub signature: BinaryData,
 }
 
 impl Default for IdentityUpdateTransition {
@@ -319,7 +336,6 @@ impl StateTransitionConvert for IdentityUpdateTransition {
 
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         let mut value: Value = platform_value::to_value(self)?;
-
         if skip_signature {
             value
                 .remove_values_matching_paths(Self::signature_property_paths())

@@ -30,7 +30,7 @@ where
     ) -> Result<ConsensusValidationResult<Self::ResultItem>, ProtocolError> {
         validate_identity_topup_transition_state(&self.state_repository, data, execution_context)
             .await
-            .map(|result| result.into())
+            .map(|result| result)
             .map_err(|err| err.into())
     }
 }

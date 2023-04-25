@@ -16,6 +16,7 @@ use drive::fee::result::FeeResult;
 use drive::grovedb::{Transaction, TransactionArg};
 use std::collections::BTreeMap;
 
+use dpp::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 

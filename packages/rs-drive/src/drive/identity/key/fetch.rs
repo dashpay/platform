@@ -35,6 +35,7 @@ use dpp::identity::IDENTITY_MAX_KEYS;
 use dpp::identity::{Purpose, SecurityLevel};
 #[cfg(feature = "full")]
 use dpp::prelude::IdentityPublicKey;
+use dpp::serialization_traits::PlatformDeserializable;
 #[cfg(feature = "full")]
 use grovedb::query_result_type::QueryResultType::QueryPathKeyElementTrioResultType;
 #[cfg(feature = "full")]

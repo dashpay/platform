@@ -18,5 +18,6 @@ pub trait Convertible {
     fn to_json(&self) -> Result<JsonValue, ProtocolError>;
     /// Returns the cbor-encoded bytes representation of the object. The data is prefixed by 4 bytes containing
     /// the Protocol Version
-    fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError>;
+    #[cfg(feature = "cbor")]
+    fn to_cbor_buffer(&self) -> Result<Vec<u8>, ProtocolError>;
 }

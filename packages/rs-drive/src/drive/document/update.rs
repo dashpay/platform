@@ -36,7 +36,7 @@ use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 
 use dpp::data_contract::document_type::DocumentType;
-use dpp::data_contract::DriveContractExt;
+
 use grovedb::batch::key_info::KeyInfo;
 use grovedb::batch::key_info::KeyInfo::KnownKey;
 use grovedb::batch::KeyInfoPath;
@@ -55,7 +55,7 @@ use crate::drive::document::{
 };
 use crate::drive::flags::StorageFlags;
 use crate::drive::object_size_info::DocumentInfo::{
-    DocumentRefAndSerialization, DocumentWithoutSerialization,
+    DocumentOwnedInfo, DocumentRefAndSerialization, DocumentRefInfo,
 };
 use dpp::document::Document;
 
@@ -87,22 +87,26 @@ impl Drive {
         &self,
         serialized_document: &[u8],
         contract_cbor: &[u8],
-        document_type: &str,
+        document_type_name: &str,
         owner_id: Option<[u8; 32]>,
         block_info: BlockInfo,
         apply: bool,
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
-        let contract = <Contract as DriveContractExt>::from_cbor(contract_cbor, None)?;
+        let contract = Contract::from_cbor(contract_cbor)?;
 
         let document = Document::from_cbor(serialized_document, None, owner_id)?;
 
-        self.update_document_for_contract(
+        let document_type = contract.document_type_for_name(document_type_name)?;
+
+        let reserialized_document = document.serialize(document_type)?;
+
+        self.update_document_with_serialization_for_contract(
             &document,
-            serialized_document,
+            reserialized_document.as_slice(),
             &contract,
-            document_type,
+            document_type_name,
             owner_id,
             block_info,
             apply,
@@ -183,7 +187,7 @@ impl Drive {
     ) -> Result<FeeResult, Error> {
         let document = Document::from_cbor(serialized_document, None, owner_id)?;
 
-        self.update_document_for_contract(
+        self.update_document_with_serialization_for_contract(
             &document,
             serialized_document,
             contract,
@@ -198,6 +202,45 @@ impl Drive {
 
     /// Updates a document and returns the associated fee.
     pub fn update_document_for_contract(
+        &self,
+        document: &Document,
+        contract: &Contract,
+        document_type: &DocumentType,
+        owner_id: Option<[u8; 32]>,
+        block_info: BlockInfo,
+        apply: bool,
+        storage_flags: Option<Cow<StorageFlags>>,
+        transaction: TransactionArg,
+    ) -> Result<FeeResult, Error> {
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+        let estimated_costs_only_with_layer_info = if apply {
+            None::<HashMap<KeyInfoPath, EstimatedLayerInformation>>
+        } else {
+            Some(HashMap::new())
+        };
+
+        let document_info = DocumentRefInfo((document, storage_flags));
+
+        self.update_document_for_contract_apply_and_add_to_operations(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info,
+                    owner_id,
+                },
+                contract,
+                document_type,
+            },
+            &block_info,
+            estimated_costs_only_with_layer_info,
+            transaction,
+            &mut drive_operations,
+        )?;
+        let fees = calculate_fee(None, Some(drive_operations), &block_info.epoch)?;
+        Ok(fees)
+    }
+
+    /// Updates a document and returns the associated fee.
+    pub fn update_document_with_serialization_for_contract(
         &self,
         document: &Document,
         serialized_document: &[u8],
@@ -368,10 +411,7 @@ impl Drive {
                 let document =
                     Document::from_bytes(old_serialized_document.as_slice(), document_type)?;
                 let storage_flags = StorageFlags::map_some_element_flags_ref(&element_flags)?;
-                Ok(DocumentWithoutSerialization((
-                    document,
-                    storage_flags.map(Cow::Owned),
-                )))
+                Ok(DocumentOwnedInfo((document, storage_flags.map(Cow::Owned))))
             } else {
                 Err(Error::Drive(DriveError::CorruptedDocumentNotItem(
                     "old document is not an item",
@@ -674,15 +714,14 @@ mod tests {
     use std::option::Option::None;
     use std::sync::Arc;
 
-    use dpp::data_contract::extra::common::json_document_to_cbor;
     use dpp::data_contract::validation::data_contract_validator::DataContractValidator;
     use dpp::data_contract::DataContractFactory;
     use dpp::document::document_factory::DocumentFactory;
     use dpp::document::document_validator::DocumentValidator;
 
-    use dpp::platform_value::{platform_value, Value};
+    use dpp::platform_value::{platform_value, Identifier, Value};
     use dpp::prelude::DataContract;
-    use dpp::util::serializer;
+    use dpp::util::cbor_serializer;
     use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
     use rand::Rng;
     use serde::{Deserialize, Serialize};
@@ -693,7 +732,9 @@ mod tests {
     use crate::drive::config::{DriveConfig, DriveEncoding};
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::DocumentAndContractInfo;
-    use crate::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
+    use crate::drive::object_size_info::DocumentInfo::{
+        DocumentRefAndSerialization, DocumentRefInfo,
+    };
     use crate::drive::{defaults, Drive};
     use crate::fee::credits::Creditable;
     use crate::fee::default_costs::EpochCosts;
@@ -701,6 +742,8 @@ mod tests {
     use crate::query::DriveQuery;
     use crate::{common::setup_contract, drive::test_utils::TestEntropyGenerator};
     use dpp::block::epoch::Epoch;
+    use dpp::data_contract::extra::common::json_document_to_document;
+    use dpp::platform_value;
 
     #[test]
     fn test_create_and_update_document_same_transaction() {
@@ -731,7 +774,7 @@ mod tests {
         let alice_profile_cbor = hex::decode("01a763246964582035edfec54aea574df968990abb47b39c206abe5c43a6157885f62958a1f1230c6524747970656770726f66696c656561626f75746a4920616d20416c69636568246f776e65724964582041d52f93f6f7c5af79ce994381c90df73cce2863d3850b9c05ef586ff0fe795f69247265766973696f6e016961766174617255726c7819687474703a2f2f746573742e636f6d2f616c6963652e6a70676f2464617461436f6e747261637449645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd71333").unwrap();
 
         drive
-            .add_serialized_document_for_serialized_contract(
+            .add_cbor_serialized_document_for_serialized_contract(
                 alice_profile_cbor.as_slice(),
                 contract_cbor.as_slice(),
                 "profile",
@@ -773,8 +816,8 @@ mod tests {
 
         let contract_cbor = hex::decode("01a5632469645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd713336724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e6572496458204c9bf0db6ae315c85465e9ef26e6a006de9673731d08d14881945ddef1b5c5f26776657273696f6e0169646f63756d656e7473a267636f6e74616374a56474797065666f626a65637467696e646963657381a3646e616d656f6f6e7765724964546f55736572496466756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a168746f557365724964636173636872657175697265648268746f557365724964697075626c69634b65796a70726f70657274696573a268746f557365724964a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572697075626c69634b6579a36474797065656172726179686d61784974656d73182169627974654172726179f5746164646974696f6e616c50726f70657274696573f46770726f66696c65a56474797065666f626a65637467696e646963657381a3646e616d65676f776e6572496466756e69717565f56a70726f7065727469657381a168246f776e6572496463617363687265717569726564826961766174617255726c6561626f75746a70726f70657274696573a26561626f7574a2647479706566737472696e67696d61784c656e67746818ff6961766174617255726ca3647479706566737472696e6766666f726d61746375726c696d61784c656e67746818ff746164646974696f6e616c50726f70657274696573f4").unwrap();
 
-        let contract = <Contract as DriveContractExt>::from_cbor(contract_cbor.as_slice(), None)
-            .expect("expected to create contract");
+        let contract =
+            Contract::from_cbor(contract_cbor.as_slice()).expect("expected to create contract");
         drive
             .apply_contract_cbor(
                 contract_cbor.clone(),
@@ -803,11 +846,7 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefAndSerialization((
-                            &alice_profile,
-                            alice_profile_cbor.as_slice(),
-                            storage_flags,
-                        )),
+                        document_info: DocumentRefInfo((&alice_profile, storage_flags)),
                         owner_id: None,
                     },
                     contract: &contract,
@@ -866,8 +905,8 @@ mod tests {
 
         let contract_cbor = hex::decode("01a5632469645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd713336724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e6572496458204c9bf0db6ae315c85465e9ef26e6a006de9673731d08d14881945ddef1b5c5f26776657273696f6e0169646f63756d656e7473a267636f6e74616374a56474797065666f626a65637467696e646963657381a3646e616d656f6f6e7765724964546f55736572496466756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a168746f557365724964636173636872657175697265648268746f557365724964697075626c69634b65796a70726f70657274696573a268746f557365724964a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572697075626c69634b6579a36474797065656172726179686d61784974656d73182169627974654172726179f5746164646974696f6e616c50726f70657274696573f46770726f66696c65a56474797065666f626a65637467696e646963657381a3646e616d65676f776e6572496466756e69717565f56a70726f7065727469657381a168246f776e6572496463617363687265717569726564826961766174617255726c6561626f75746a70726f70657274696573a26561626f7574a2647479706566737472696e67696d61784c656e67746818ff6961766174617255726ca3647479706566737472696e6766666f726d61746375726c696d61784c656e67746818ff746164646974696f6e616c50726f70657274696573f4").unwrap();
 
-        let contract = <Contract as DriveContractExt>::from_cbor(contract_cbor.as_slice(), None)
-            .expect("expected to create contract");
+        let contract =
+            Contract::from_cbor(contract_cbor.as_slice()).expect("expected to create contract");
         drive
             .apply_contract_cbor(
                 contract_cbor.clone(),
@@ -896,11 +935,7 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefAndSerialization((
-                            &alice_profile,
-                            alice_profile_cbor.as_slice(),
-                            storage_flags,
-                        )),
+                        document_info: DocumentRefInfo((&alice_profile, storage_flags)),
                         owner_id: None,
                     },
                     contract: &contract,
@@ -979,8 +1014,8 @@ mod tests {
 
         let contract_cbor = hex::decode("01a5632469645820b0248cd9a27f86d05badf475dd9ff574d63219cd60c52e2be1e540c2fdd713336724736368656d61783468747470733a2f2f736368656d612e646173682e6f72672f6470702d302d342d302f6d6574612f646174612d636f6e7472616374676f776e6572496458204c9bf0db6ae315c85465e9ef26e6a006de9673731d08d14881945ddef1b5c5f26776657273696f6e0169646f63756d656e7473a267636f6e74616374a56474797065666f626a65637467696e646963657381a3646e616d656f6f6e7765724964546f55736572496466756e69717565f56a70726f7065727469657382a168246f776e6572496463617363a168746f557365724964636173636872657175697265648268746f557365724964697075626c69634b65796a70726f70657274696573a268746f557365724964a56474797065656172726179686d61784974656d731820686d696e4974656d73182069627974654172726179f570636f6e74656e744d656469615479706578216170706c69636174696f6e2f782e646173682e6470702e6964656e746966696572697075626c69634b6579a36474797065656172726179686d61784974656d73182169627974654172726179f5746164646974696f6e616c50726f70657274696573f46770726f66696c65a56474797065666f626a65637467696e646963657381a3646e616d65676f776e6572496466756e69717565f56a70726f7065727469657381a168246f776e6572496463617363687265717569726564826961766174617255726c6561626f75746a70726f70657274696573a26561626f7574a2647479706566737472696e67696d61784c656e67746818ff6961766174617255726ca3647479706566737472696e6766666f726d61746375726c696d61784c656e67746818ff746164646974696f6e616c50726f70657274696573f4").unwrap();
 
-        let contract = <Contract as DriveContractExt>::from_cbor(contract_cbor.as_slice(), None)
-            .expect("expected to create contract");
+        let contract =
+            Contract::from_cbor(contract_cbor.as_slice()).expect("expected to create contract");
         drive
             .apply_contract_cbor(
                 contract_cbor.clone(),
@@ -1009,11 +1044,7 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefAndSerialization((
-                            &alice_profile,
-                            alice_profile_cbor.as_slice(),
-                            storage_flags,
-                        )),
+                        document_info: DocumentRefInfo((&alice_profile, storage_flags)),
                         owner_id: None,
                     },
                     contract: &contract,
@@ -1138,9 +1169,11 @@ mod tests {
             },
         });
 
-        let contract =
-            serializer::serializable_value_to_cbor(&contract, Some(defaults::PROTOCOL_VERSION))
-                .expect("expected to serialize to cbor");
+        let contract = cbor_serializer::serializable_value_to_cbor(
+            &contract,
+            Some(defaults::PROTOCOL_VERSION),
+        )
+        .expect("expected to serialize to cbor");
 
         drive
             .apply_contract_cbor(
@@ -1168,12 +1201,14 @@ mod tests {
            "$updatedAt":1647535750329_u64,
         });
 
-        let serialized_document =
-            serializer::serializable_value_to_cbor(&document, Some(defaults::PROTOCOL_VERSION))
-                .expect("expected to serialize to cbor");
+        let serialized_document = cbor_serializer::serializable_value_to_cbor(
+            &document,
+            Some(defaults::PROTOCOL_VERSION),
+        )
+        .expect("expected to serialize to cbor");
 
         drive
-            .add_serialized_document_for_serialized_contract(
+            .add_cbor_serialized_document_for_serialized_contract(
                 serialized_document.as_slice(),
                 contract.as_slice(),
                 "indexedDocument",
@@ -1201,9 +1236,11 @@ mod tests {
            "$updatedAt":1647535754556_u64,
         });
 
-        let serialized_document =
-            serializer::serializable_value_to_cbor(&document, Some(defaults::PROTOCOL_VERSION))
-                .expect("expected to serialize to cbor");
+        let serialized_document = cbor_serializer::serializable_value_to_cbor(
+            &document,
+            Some(defaults::PROTOCOL_VERSION),
+        )
+        .expect("expected to serialize to cbor");
 
         drive
             .update_document_for_contract_cbor(
@@ -1258,32 +1295,44 @@ mod tests {
             Some(&db_transaction),
         );
 
-        let dashpay_cr_serialized_document = json_document_to_cbor(
-            "tests/supporting_files/contract/dashpay/contact-request0.json",
-            Some(1),
-        )
-        .expect("expected to get cbor document");
+        let document_type = contract
+            .document_type_for_name("contactRequest")
+            .expect("expected to get document type");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+
+        let dashpay_cr_document = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/contact-request0.json",
+            Some(random_owner_id.into()),
+            document_type,
+        )
+        .expect("expected to get document");
+
         drive
-            .add_serialized_document_for_contract(
-                &dashpay_cr_serialized_document,
-                &contract,
-                "contactRequest",
-                Some(random_owner_id),
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            &dashpay_cr_document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
 
         drive
-            .update_serialized_document_for_contract(
-                &dashpay_cr_serialized_document,
+            .update_document_for_contract(
+                &dashpay_cr_document,
                 &contract,
-                "contactRequest",
+                document_type,
                 Some(random_owner_id),
                 BlockInfo::default(),
                 true,
@@ -1293,15 +1342,21 @@ mod tests {
             .expect_err("expected not to be able to update a non mutable document");
 
         drive
-            .add_serialized_document_for_contract(
-                &dashpay_cr_serialized_document,
-                &contract,
-                "contactRequest",
-                Some(random_owner_id),
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            &dashpay_cr_document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: Some(random_owner_id),
+                    },
+                    contract: &contract,
+                    document_type,
+                },
                 true,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect_err("expected not to be able to override a non mutable document");
@@ -1325,38 +1380,51 @@ mod tests {
             Some(&db_transaction),
         );
 
-        let dashpay_profile_serialized_document = json_document_to_cbor(
-            "tests/supporting_files/contract/dashpay/profile0.json",
-            Some(1),
-        )
-        .expect("expected to get cbor document");
-
-        let dashpay_profile_updated_public_message_serialized_document = json_document_to_cbor(
-            "tests/supporting_files/contract/dashpay/profile0-updated-public-message.json",
-            Some(1),
-        )
-        .expect("expected to get cbor document");
+        let document_type = contract
+            .document_type_for_name("profile")
+            .expect("expected to get document type");
 
         let random_owner_id = rand::thread_rng().gen::<[u8; 32]>();
+
+        let dashpay_profile_document = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/profile0.json",
+            Some(random_owner_id.into()),
+            document_type,
+        )
+        .expect("expected to get cbor document");
+
+        let dashpay_profile_updated_public_message_document = json_document_to_document(
+            "tests/supporting_files/contract/dashpay/profile0-updated-public-message.json",
+            Some(random_owner_id.into()),
+            document_type,
+        )
+        .expect("expected to get cbor document");
+
         drive
-            .add_serialized_document_for_contract(
-                &dashpay_profile_serialized_document,
-                &contract,
-                "profile",
-                Some(random_owner_id),
+            .add_document_for_contract(
+                DocumentAndContractInfo {
+                    owned_document_info: OwnedDocumentInfo {
+                        document_info: DocumentRefInfo((
+                            &dashpay_profile_document,
+                            StorageFlags::optional_default_as_cow(),
+                        )),
+                        owner_id: None,
+                    },
+                    contract: &contract,
+                    document_type,
+                },
                 false,
                 BlockInfo::default(),
                 true,
-                StorageFlags::optional_default_as_cow(),
                 Some(&db_transaction),
             )
             .expect("expected to insert a document successfully");
 
         drive
-            .update_serialized_document_for_contract(
-                &dashpay_profile_updated_public_message_serialized_document,
+            .update_document_for_contract(
+                &dashpay_profile_updated_public_message_document,
                 &contract,
-                "profile",
+                document_type,
                 Some(random_owner_id),
                 BlockInfo::default(),
                 true,
@@ -1371,7 +1439,6 @@ mod tests {
             batching_consistency_verification: true,
             has_raw_enabled: true,
             default_genesis_time: Some(0),
-            encoding: DriveEncoding::DriveCbor,
             ..Default::default()
         };
         let tmp_dir = TempDir::new().unwrap();
@@ -1398,8 +1465,8 @@ mod tests {
         // setup code
         let contract = setup_contract(&drive, path, None, transaction.as_ref());
 
-        let id = [1u8; 32];
-        let owner_id = [2u8; 32];
+        let id = Identifier::from([1u8; 32]);
+        let owner_id = Identifier::from([2u8; 32]);
         let person_0_original = Person {
             id,
             owner_id,
@@ -1420,6 +1487,19 @@ mod tests {
             age: 35,
         };
 
+        let document_type = contract
+            .document_type_for_name("person")
+            .expect("expected to get document type");
+
+        let value = platform_value::to_value(&person_0_original).expect("person into value");
+
+        let document: Document = platform_value::from_value(value).expect("value to document");
+
+        let document_serialized = document
+            .serialize_consume(document_type)
+            .expect("expected to serialize document");
+
+        assert_eq!(document_serialized.len(), 115);
         let original_fees = apply_person(
             &drive,
             &contract,
@@ -1433,32 +1513,32 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         let expected_added_bytes = if using_history {
-            //Explanation for 1290
+            //Explanation for 1235
 
             //todo
-            1287
+            1235
         } else {
-            //Explanation for 1014
+            //Explanation for 959
 
             // Document Storage
 
             //// Item
-            // = 412 Bytes
+            // = 356 Bytes
 
-            // Explanation for 412 storage_written_bytes
+            // Explanation for 354 storage_written_bytes
 
             // Key -> 65 bytes
             // 32 bytes for the key prefix
             // 32 bytes for the unique id
             // 1 byte for key_size (required space for 64)
 
-            // Value -> 276
+            // Value -> 221
             //   1 for the flag option with flags
             //   1 for the flags size
             //   35 for flags 32 + 1 + 2
             //   1 for the enum type
             //   1 for item
-            //   170 for item serialized bytes
+            //   117 for item serialized bytes (verified above)
             //   1 for Basic Merk
             // 32 for node hash
             // 32 for value hash
@@ -1471,11 +1551,11 @@ mod tests {
             // Child Heights 2
             // Basic Merk 1
 
-            // Total 65 + 276 + 68 = 409
+            // Total 65 + 221 + 68 = 354
 
             //// Tree 1 / <Person Contract> / 1 / person / message
             // Key: My apples are safe
-            // = 177 Bytes
+            // = 179 Bytes
 
             // Explanation for 179 storage_written_bytes
 
@@ -1506,9 +1586,9 @@ mod tests {
 
             //// Tree 1 / <Person Contract> / 1 / person / message / My apples are safe
             // Key: 0
-            // = 143 Bytes
+            // = 145 Bytes
 
-            // Explanation for 143 storage_written_bytes
+            // Explanation for 145 storage_written_bytes
 
             // Key -> 34 bytes
             // 32 bytes for the key prefix
@@ -1537,7 +1617,7 @@ mod tests {
 
             //// Ref 1 / <Person Contract> / 1 / person / message / My apples are safe
             // Reference to Serialized Item
-            // = 319 Bytes
+            // = 276 Bytes
 
             // Explanation for 276 storage_written_bytes
 
@@ -1567,9 +1647,11 @@ mod tests {
             // Child Heights 2
             // Basic Merk 1
 
-            // Total 65 + 145 + 68 = 275
+            // Total 65 + 145 + 68 = 278
 
-            1011
+            //// 356 + 179 + 145 + 278
+
+            959
         };
         assert_eq!(original_bytes, expected_added_bytes);
 
@@ -1586,19 +1668,19 @@ mod tests {
 
             let removed_credits = deletion_fees
                 .fee_refunds
-                .get(&owner_id)
+                .get(owner_id.as_bytes())
                 .unwrap()
                 .get(&0)
                 .unwrap();
 
-            assert_eq!(*removed_credits, 27228298);
+            assert_eq!(*removed_credits, 25827688);
             let refund_equivalent_bytes = removed_credits.to_unsigned()
                 / Epoch::new(0)
                     .unwrap()
                     .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
             assert!(expected_added_bytes > refund_equivalent_bytes);
-            assert_eq!(refund_equivalent_bytes, 1008); // we refunded 1008 instead of 1011
+            assert_eq!(refund_equivalent_bytes, 956); // we refunded 956 instead of 959
 
             // let's re-add it again
             let original_fees = apply_person(
@@ -1634,7 +1716,7 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
-        let expected_added_bytes = if using_history { 362 } else { 1 };
+        let expected_added_bytes = if using_history { 310 } else { 1 };
         assert_eq!(added_bytes, expected_added_bytes);
     }
 
@@ -1643,7 +1725,6 @@ mod tests {
             batching_consistency_verification: true,
             has_raw_enabled: true,
             default_genesis_time: Some(0),
-            encoding: DriveEncoding::DriveCbor,
             ..Default::default()
         };
         let tmp_dir = TempDir::new().unwrap();
@@ -1670,8 +1751,8 @@ mod tests {
         // setup code
         let contract = setup_contract(&drive, path, None, transaction.as_ref());
 
-        let id = [1u8; 32];
-        let owner_id = [2u8; 32];
+        let id = Identifier::from([1u8; 32]);
+        let owner_id = Identifier::from([2u8; 32]);
         let person_0_original = Person {
             id,
             owner_id,
@@ -1704,7 +1785,7 @@ mod tests {
             / Epoch::new(0)
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
-        let expected_added_bytes = if using_history { 1287 } else { 1011 };
+        let expected_added_bytes = if using_history { 1235 } else { 959 };
         assert_eq!(original_bytes, expected_added_bytes);
         if !using_history {
             // let's delete it, just to make sure everything is working.
@@ -1718,19 +1799,19 @@ mod tests {
 
             let removed_credits = deletion_fees
                 .fee_refunds
-                .get(&owner_id)
+                .get(owner_id.as_bytes())
                 .unwrap()
                 .get(&0)
                 .unwrap();
 
-            assert_eq!(*removed_credits, 27228298);
+            assert_eq!(*removed_credits, 25827688);
             let refund_equivalent_bytes = removed_credits.to_unsigned()
                 / Epoch::new(0)
                     .unwrap()
                     .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
             assert!(expected_added_bytes > refund_equivalent_bytes);
-            assert_eq!(refund_equivalent_bytes, 1008); // we refunded 1008 instead of 1011
+            assert_eq!(refund_equivalent_bytes, 956); // we refunded 1008 instead of 1011
 
             // let's re-add it again
             let original_fees = apply_person(
@@ -1768,7 +1849,7 @@ mod tests {
 
         let removed_credits = update_fees
             .fee_refunds
-            .get(&owner_id)
+            .get(owner_id.as_bytes())
             .unwrap()
             .get(&0)
             .unwrap();
@@ -1834,7 +1915,6 @@ mod tests {
             batching_consistency_verification: true,
             has_raw_enabled: true,
             default_genesis_time: Some(0),
-            encoding: DriveEncoding::DriveCbor,
             ..Default::default()
         };
         let tmp_dir = TempDir::new().unwrap();
@@ -1861,8 +1941,8 @@ mod tests {
         // setup code
         let contract = setup_contract(&drive, path, None, transaction.as_ref());
 
-        let id = [1u8; 32];
-        let owner_id = [2u8; 32];
+        let id = Identifier::from([1u8; 32]);
+        let owner_id = Identifier::from([2u8; 32]);
         let person_0_original = Person {
             id,
             owner_id,
@@ -1896,32 +1976,32 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         let expected_added_bytes = if using_history {
-            //Explanation for 1290
+            //Explanation for 1235
 
             //todo
-            1287
+            1235
         } else {
-            //Explanation for 1114
+            //Explanation for 959
 
             // Document Storage
 
             //// Item
-            // = 409 Bytes
+            // = 355 Bytes
 
-            // Explanation for 409 storage_written_bytes
+            // Explanation for 355 storage_written_bytes
 
             // Key -> 65 bytes
             // 32 bytes for the key prefix
             // 32 bytes for the unique id
             // 1 byte for key_size (required space for 64)
 
-            // Value -> 276
+            // Value -> 222
             //   1 for the flag option with flags
             //   1 for the flags size
             //   35 for flags 32 + 1 + 2
             //   1 for the enum type
             //   1 for item
-            //   170 for item serialized bytes
+            //   116 for item serialized bytes
             //   1 for Basic Merk
             // 32 for node hash
             // 32 for value hash
@@ -1934,7 +2014,7 @@ mod tests {
             // Child Heights 2
             // Feature Type Basic 1
 
-            // Total 65 + 279 + 68 = 412
+            // Total 65 + 222 + 68 = 355
 
             //// Tree 1 / <Person Contract> / 1 / person / message
             // Key: My apples are safe
@@ -2032,9 +2112,9 @@ mod tests {
 
             // Total 65 + 145 + 68 = 278
 
-            // 409 + 179 + 145 + 278 = 1011
+            // 357 + 179 + 145 + 278 = 959
 
-            1011
+            959
         };
         assert_eq!(original_bytes, expected_added_bytes);
 
@@ -2054,7 +2134,7 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
-        let expected_added_bytes = if using_history { 1288 } else { 1012 };
+        let expected_added_bytes = if using_history { 1236 } else { 960 };
         assert_eq!(added_bytes, expected_added_bytes);
     }
 
@@ -2082,9 +2162,9 @@ mod tests {
     #[serde(rename_all = "camelCase")]
     struct Person {
         #[serde(rename = "$id")]
-        id: [u8; 32],
+        id: Identifier,
         #[serde(rename = "$ownerId")]
-        owner_id: [u8; 32],
+        owner_id: Identifier,
         first_name: String,
         middle_name: String,
         last_name: String,
@@ -2100,32 +2180,24 @@ mod tests {
         apply: bool,
         transaction: TransactionArg,
     ) -> FeeResult {
-        let value = serde_json::to_value(person).expect("serialized person");
-        let document_cbor =
-            serializer::serializable_value_to_cbor(&value, Some(defaults::PROTOCOL_VERSION))
-                .expect("expected to serialize to cbor");
-        let document = Document::from_cbor(document_cbor.as_slice(), None, None)
-            .expect("document should be properly deserialized");
         let document_type = contract
             .document_type_for_name("person")
             .expect("expected to get document type");
+
+        let value = platform_value::to_value(person).expect("person into value");
+
+        let document = platform_value::from_value(value).expect("value to document");
+
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(
             0,
-            person
-                .owner_id
-                .try_into()
-                .expect("expected to get owner_id"),
+            person.owner_id.to_buffer(),
         )));
 
         drive
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefAndSerialization((
-                            &document,
-                            document_cbor.as_slice(),
-                            storage_flags,
-                        )),
+                        document_info: DocumentRefInfo((&document, storage_flags)),
                         owner_id: None,
                     },
                     contract,
@@ -2148,10 +2220,10 @@ mod tests {
     ) -> FeeResult {
         drive
             .delete_document_for_contract(
-                person.id,
+                person.id.to_buffer(),
                 contract,
                 "person",
-                Some(person.owner_id),
+                Some(person.owner_id.to_buffer()),
                 block_info,
                 true,
                 transaction,
@@ -2168,7 +2240,6 @@ mod tests {
             batching_consistency_verification: true,
             has_raw_enabled: using_has_raw,
             default_genesis_time: Some(0),
-            encoding: DriveEncoding::DriveCbor,
             ..Default::default()
         };
         let tmp_dir = TempDir::new().unwrap();
@@ -2196,8 +2267,8 @@ mod tests {
         let contract = setup_contract(&drive, path, None, transaction.as_ref());
 
         let person_0_original = Person {
-            id: [0u8; 32],
-            owner_id: [0u8; 32],
+            id: Identifier::from([0u8; 32]),
+            owner_id: Identifier::from([0u8; 32]),
             first_name: "Samuel".to_string(),
             middle_name: "Abraham".to_string(),
             last_name: "Westrich".to_string(),
@@ -2206,8 +2277,8 @@ mod tests {
         };
 
         let person_0_updated = Person {
-            id: [0u8; 32],
-            owner_id: [0u8; 32],
+            id: Identifier::from([0u8; 32]),
+            owner_id: Identifier::from([0u8; 32]),
             first_name: "Samuel".to_string(),
             middle_name: "Abraham".to_string(),
             last_name: "Westrich".to_string(),
@@ -2216,8 +2287,8 @@ mod tests {
         };
 
         let person_1_original = Person {
-            id: [1u8; 32],
-            owner_id: [1u8; 32],
+            id: Identifier::from([1u8; 32]),
+            owner_id: Identifier::from([1u8; 32]),
             first_name: "Wisdom".to_string(),
             middle_name: "Madabuchukwu".to_string(),
             last_name: "Ogwu".to_string(),
@@ -2226,8 +2297,8 @@ mod tests {
         };
 
         let person_1_updated = Person {
-            id: [1u8; 32],
-            owner_id: [1u8; 32],
+            id: Identifier::from([1u8; 32]),
+            owner_id: Identifier::from([1u8; 32]),
             first_name: "Wisdom".to_string(),
             middle_name: "Madabuchukwu".to_string(),
             last_name: "Ogwu".to_string(),
@@ -2405,7 +2476,7 @@ mod tests {
             )
             .expect("should create a document");
 
-        let document_cbor = document.to_buffer().expect("should encode to buffer");
+        let document_cbor = document.to_cbor_buffer().expect("should encode to buffer");
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(
             0,
@@ -2434,7 +2505,7 @@ mod tests {
             .set("name", Value::Text("Ivaaaaaaaaaan!".to_string()))
             .expect("should change name");
 
-        let document_cbor = document.to_buffer().expect("should encode to buffer");
+        let document_cbor = document.to_cbor_buffer().expect("should encode to buffer");
 
         let block_info = BlockInfo::default_with_time(10000);
 

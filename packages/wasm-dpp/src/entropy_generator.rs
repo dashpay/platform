@@ -6,6 +6,7 @@ use wasm_bindgen::JsValue;
 
 #[wasm_bindgen]
 extern "C" {
+    #[derive(Clone)]
     pub type ExternalEntropyGenerator;
 
     #[wasm_bindgen(catch, structural, method)]

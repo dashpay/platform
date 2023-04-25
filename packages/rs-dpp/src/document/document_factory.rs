@@ -12,7 +12,8 @@ use serde::{Deserialize, Serialize};
 use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::document::extended_document::{property_names, ExtendedDocument};
 
-use crate::data_contract::DriveContractExt;
+use crate::data_contract::document_type::DocumentType;
+
 use crate::document::document_transition::INITIAL_REVISION;
 use crate::document::Document;
 use crate::identity::TimestampMillis;
@@ -273,7 +274,8 @@ where
         buffer: impl AsRef<[u8]>,
         options: FactoryOptions,
     ) -> Result<ExtendedDocument, ProtocolError> {
-        let result = DecodeProtocolEntity::decode_protocol_entity(buffer);
+        let result =
+            DecodeProtocolEntity::decode_protocol_entity_to_value::<ExtendedDocument>(buffer);
 
         match result {
             Err(ProtocolError::AbstractConsensusError(err)) => {

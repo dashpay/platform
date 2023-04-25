@@ -17,7 +17,9 @@ use crate::identity::state_transition::identity_credit_withdrawal_transition::Id
 use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
 use crate::prelude::Identifier;
-use bincode::{Decode, Encode};
+use crate::serialization_traits::PlatformSerializable;
+use bincode::{config, Decode, Encode};
+use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
 mod abstract_state_transition;
 mod abstract_state_transition_identity_signed;
@@ -34,10 +36,12 @@ pub mod errors;
 pub mod fee;
 pub mod state_transition_execution_context;
 
-mod example;
+pub mod apply_state_transition;
 mod serialization;
 mod state_transition_action;
 
+use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::util::hash;
 pub use state_transition_action::StateTransitionAction;
 macro_rules! call_method {
     ($state_transition:expr, $method:ident, $args:tt ) => {
@@ -80,44 +84,32 @@ macro_rules! call_static_method {
     };
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, From, PartialEq)]
+#[derive(
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    From,
+    PartialEq,
+)]
+#[platform_error_type(ProtocolError)]
+#[platform_deserialize_limit(100000)]
+#[platform_serialize_limit(100000)]
 pub enum StateTransition {
     DataContractCreate(DataContractCreateTransition),
     DataContractUpdate(DataContractUpdateTransition),
     DocumentsBatch(DocumentsBatchTransition),
-    IdentityCreate(#[bincode(with_serde)] IdentityCreateTransition),
+    IdentityCreate(IdentityCreateTransition),
     IdentityTopUp(IdentityTopUpTransition),
     IdentityCreditWithdrawal(IdentityCreditWithdrawalTransition),
     IdentityUpdate(IdentityUpdateTransition),
 }
 
 impl StateTransition {
-    // pub fn from_value(value: Value) -> Result<Self, ProtocolError> {
-    //     let state_transition_type = value.get_integer("type")? as StateTransitionType;
-    //     Ok(match state_transition_type {
-    //         StateTransitionType::DataContractCreate => {
-    //             DataContractCreateTransition::from_raw_object(value)?.into()
-    //         }
-    //         StateTransitionType::DocumentsBatch => {
-    //             DocumentsBatchTransition::from_raw_object_with_contracts(value)?.into()
-    //         }
-    //         StateTransitionType::IdentityCreate => {
-    //             IdentityCreateTransition::from_raw_object(value)?.into()
-    //         }
-    //         StateTransitionType::IdentityTopUp => {
-    //             IdentityTopUpTransition::from_raw_object(value)?.into()
-    //         }
-    //         StateTransitionType::DataContractUpdate => {
-    //             DataContractUpdateTransition::from_raw_object(value)?.into()
-    //         }
-    //         StateTransitionType::IdentityUpdate => {
-    //             IdentityUpdateTransition::from_raw_object(value)?.into()
-    //         }
-    //         StateTransitionType::IdentityCreditWithdrawal => {
-    //             IdentityCreditWithdrawalTransition::from_raw_object(value)?.into()
-    //         }
-    //     })
-    // }
     fn signature_property_paths(&self) -> Vec<&'static str> {
         call_static_method!(self, signature_property_paths)
     }
@@ -136,10 +128,15 @@ impl StateTransition {
 }
 
 impl StateTransitionConvert for StateTransition {
-    fn hash(&self, skip_signature: bool) -> Result<Vec<u8>, crate::ProtocolError> {
-        call_method!(self, hash, skip_signature)
+    fn hash(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
+        if skip_signature {
+            Ok(hash::hash_to_vec(self.signable_bytes()?))
+        } else {
+            Ok(hash::hash_to_vec(PlatformSerializable::serialize(self)?))
+        }
     }
 
+    #[cfg(feature = "cbor")]
     fn to_cbor_buffer(&self, _skip_signature: bool) -> Result<Vec<u8>, crate::ProtocolError> {
         call_method!(self, to_cbor_buffer, true)
     }
@@ -169,6 +166,12 @@ impl StateTransitionConvert for StateTransition {
 
     fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         call_method!(self, to_cleaned_object, skip_signature)
+    }
+}
+
+impl Signable for StateTransition {
+    fn signable_bytes(&self) -> Result<Vec<u8>, ProtocolError> {
+        call_method!(self, signable_bytes)
     }
 }
 

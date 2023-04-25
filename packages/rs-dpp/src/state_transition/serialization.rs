@@ -1,31 +1,9 @@
+use crate::serialization_traits::PlatformDeserializable;
 use crate::state_transition::StateTransition;
 use crate::ProtocolError;
 use bincode::config;
 
 impl StateTransition {
-    pub fn serialize(&self) -> Result<Vec<u8>, ProtocolError> {
-        let config = config::standard().with_big_endian().with_no_limit();
-        bincode::encode_to_vec(self, config).map_err(|e| {
-            ProtocolError::EncodingError(format!("unable to serialize state transition {e}"))
-        })
-    }
-
-    pub fn serialized_size(&self) -> Result<usize, ProtocolError> {
-        self.serialize().map(|a| a.len())
-    }
-
-    pub fn deserialize(bytes: &[u8]) -> Result<Self, ProtocolError> {
-        let config = config::standard().with_big_endian().with_limit::<100000>();
-        bincode::decode_from_slice(bytes, config)
-            .map_err(|e| {
-                ProtocolError::EncodingError(format!(
-                    "unable to deserialize state transition {}",
-                    e
-                ))
-            })
-            .map(|(a, _)| a)
-    }
-
     pub fn deserialize_many(
         raw_state_transitions: &Vec<Vec<u8>>,
     ) -> Result<Vec<Self>, ProtocolError> {
@@ -52,6 +30,7 @@ mod tests {
     use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
     use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
     use crate::identity::Identity;
+    use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
     use crate::state_transition::{StateTransition, StateTransitionLike, StateTransitionType};
     use crate::tests::fixtures::{
         get_data_contract_fixture, get_document_transitions_fixture,

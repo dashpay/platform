@@ -36,7 +36,7 @@ use crate::drive::config::DriveConfig;
 use crate::drive::Drive;
 use dpp::block::block_info::BlockInfo;
 
-use crate::drive::object_size_info::DocumentInfo::DocumentRefWithoutSerialization;
+use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
 use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::DataContract;
@@ -87,14 +87,7 @@ pub fn setup_system_data_contract(
     transaction: TransactionArg,
 ) {
     drive
-        .apply_contract_cbor(
-            data_contract.to_cbor().unwrap(),
-            Some(data_contract.id.to_buffer()),
-            BlockInfo::default(),
-            true,
-            None,
-            transaction,
-        )
+        .apply_contract(data_contract, BlockInfo::default(), true, None, transaction)
         .unwrap();
 }
 
@@ -110,7 +103,7 @@ pub fn setup_document(
         .add_document_for_contract(
             DocumentAndContractInfo {
                 owned_document_info: OwnedDocumentInfo {
-                    document_info: DocumentRefWithoutSerialization((document, None)),
+                    document_info: DocumentRefInfo((document, None)),
                     owner_id: None,
                 },
                 contract: data_contract,

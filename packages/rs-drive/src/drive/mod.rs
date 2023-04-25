@@ -37,9 +37,6 @@ use std::path::Path;
 use std::sync::RwLock;
 
 #[cfg(feature = "full")]
-use dpp::data_contract::DriveContractExt;
-
-#[cfg(feature = "full")]
 use grovedb::batch::KeyInfoPath;
 use grovedb::batch::{GroveDbOp, OpsByLevelPath};
 #[cfg(any(feature = "full", feature = "verify"))]

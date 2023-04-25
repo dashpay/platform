@@ -17,7 +17,7 @@ use crate::document::BinaryType;
 use crate::errors::RustConversionError;
 use crate::identifier::{identifier_from_js_value, IdentifierWrapper};
 use crate::lodash::lodash_set;
-use crate::utils::{with_serde_to_platform_value, Inner, ToSerdeJSONExt, WithJsError};
+use crate::utils::{with_serde_to_platform_value, ToSerdeJSONExt, WithJsError};
 use crate::{with_js_error, ConversionOptions, DocumentWasm};
 use crate::{DataContractWasm, MetadataWasm};
 
@@ -77,7 +77,7 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=setId)]
     pub fn set_id(&mut self, js_id: IdentifierWrapper) {
-        self.0.document.id = js_id.into_inner();
+        self.0.document.id = js_id.into();
     }
 
     #[wasm_bindgen(js_name=getType)]
@@ -109,7 +109,7 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=setOwnerId)]
     pub fn set_owner_id(&mut self, owner_id: IdentifierWrapper) {
-        self.0.document.owner_id = owner_id.into_inner();
+        self.0.document.owner_id = owner_id.into();
     }
 
     #[wasm_bindgen(js_name=getOwnerId)]
@@ -273,7 +273,7 @@ impl ExtendedDocumentWasm {
                 if !options.skip_identifiers_conversion {
                     lodash_set(&js_value, path, buffer.into());
                 } else {
-                    let id = IdentifierWrapper::new(buffer.into())?;
+                    let id = IdentifierWrapper::new(buffer.into());
                     lodash_set(&js_value, path, id.into());
                 }
             }
@@ -299,7 +299,7 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
-        let bytes = self.0.to_buffer().with_js_error()?;
+        let bytes = self.0.to_cbor_buffer().with_js_error()?;
 
         Ok(Buffer::from_bytes(&bytes))
     }

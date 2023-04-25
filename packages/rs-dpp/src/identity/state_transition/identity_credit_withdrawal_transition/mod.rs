@@ -1,4 +1,6 @@
-use bincode::{Decode, Encode};
+use crate::platform_serialization::PlatformSignable;
+use crate::serialization_traits::{PlatformDeserializable, Signable};
+use bincode::{config, Decode, Encode};
 use platform_value::{BinaryData, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -20,6 +22,8 @@ use crate::{
 use super::properties::{
     PROPERTY_IDENTITY_ID, PROPERTY_SIGNATURE, PROPERTY_SIGNATURE_PUBLIC_KEY_ID,
 };
+use crate::serialization_traits::PlatformSerializable;
+use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
 mod action;
 pub mod apply_identity_credit_withdrawal_transition_factory;
@@ -45,8 +49,20 @@ impl std::default::Default for Pooling {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq)]
+#[derive(
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    PlatformDeserialize,
+    PlatformSerialize,
+    PlatformSignable,
+    PartialEq,
+)]
 #[serde(rename_all = "camelCase")]
+#[platform_error_type(ProtocolError)]
 pub struct IdentityCreditWithdrawalTransition {
     pub protocol_version: u32,
     #[serde(rename = "type")]
@@ -55,10 +71,11 @@ pub struct IdentityCreditWithdrawalTransition {
     pub amount: u64,
     pub core_fee_per_byte: u32,
     pub pooling: Pooling,
-    #[bincode(with_serde)]
     pub output_script: CoreScript,
     pub revision: Revision,
+    #[exclude_from_sig_hash]
     pub signature_public_key_id: KeyID,
+    #[exclude_from_sig_hash]
     pub signature: BinaryData,
 }
 
@@ -199,5 +216,281 @@ impl StateTransitionConvert for IdentityCreditWithdrawalTransition {
                 .map_err(ProtocolError::ValueError)?;
         }
         Ok(value)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::identity::core_script::CoreScript;
+    use crate::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
+    use crate::identity::KeyID;
+    use crate::prelude::Revision;
+    use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+    use crate::state_transition::StateTransitionType;
+    use crate::ProtocolError;
+    use bincode::{config, Decode, Encode};
+    use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+    use platform_value::{BinaryData, Identifier};
+    use rand::Rng;
+    use std::fmt::Debug;
+
+    // Structure with 1 property
+    #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
+    #[platform_error_type(ProtocolError)]
+    pub struct IdentityCreditWithdrawalTransition1 {
+        pub protocol_version: u32,
+    }
+
+    // Structure with 2 properties
+    #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
+    #[platform_error_type(ProtocolError)]
+    pub struct IdentityCreditWithdrawalTransition2 {
+        pub protocol_version: u32,
+        pub transition_type: StateTransitionType,
+    }
+
+    // Structure with 3 properties
+    #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
+    #[platform_error_type(ProtocolError)]
+    pub struct IdentityCreditWithdrawalTransition3 {
+        pub protocol_version: u32,
+        pub transition_type: StateTransitionType,
+        pub identity_id: Identifier,
+    }
+
+    // Structure with 4 properties
+    #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
+    #[platform_error_type(ProtocolError)]
+    pub struct IdentityCreditWithdrawalTransition4 {
+        pub protocol_version: u32,
+        pub transition_type: StateTransitionType,
+        pub identity_id: Identifier,
+        pub amount: u64,
+    }
+
+    // Structure with 5 properties
+    #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
+    #[platform_error_type(ProtocolError)]
+    pub struct IdentityCreditWithdrawalTransition5 {
+        pub protocol_version: u32,
+        pub transition_type: StateTransitionType,
+        pub identity_id: Identifier,
+        pub amount: u64,
+        pub core_fee_per_byte: u32,
+    }
+
+    // Structure with 6 properties
+    #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
+    #[platform_error_type(ProtocolError)]
+    pub struct IdentityCreditWithdrawalTransition6 {
+        pub protocol_version: u32,
+        pub transition_type: StateTransitionType,
+        pub identity_id: Identifier,
+        pub amount: u64,
+        pub core_fee_per_byte: u32,
+        pub pooling: Pooling,
+    }
+
+    // Structure with 7 properties
+    #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
+    #[platform_error_type(ProtocolError)]
+    pub struct IdentityCreditWithdrawalTransition7 {
+        pub protocol_version: u32,
+        pub transition_type: StateTransitionType,
+        pub identity_id: Identifier,
+        pub amount: u64,
+        pub core_fee_per_byte: u32,
+        pub pooling: Pooling,
+        pub output_script: CoreScript,
+    }
+
+    // Structure with 8 properties
+    #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
+    #[platform_error_type(ProtocolError)]
+    pub struct IdentityCreditWithdrawalTransition8 {
+        pub protocol_version: u32,
+        pub transition_type: StateTransitionType,
+        pub identity_id: Identifier,
+        pub amount: u64,
+        pub core_fee_per_byte: u32,
+        pub pooling: Pooling,
+        pub output_script: CoreScript,
+        pub revision: Revision,
+    }
+
+    // Structure with 9 properties
+    #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
+    #[platform_error_type(ProtocolError)]
+    pub struct IdentityCreditWithdrawalTransition9 {
+        pub protocol_version: u32,
+        pub transition_type: StateTransitionType,
+        pub identity_id: Identifier,
+        pub amount: u64,
+        pub core_fee_per_byte: u32,
+        pub pooling: Pooling,
+        pub output_script: CoreScript,
+        pub revision: Revision,
+        pub signature_public_key_id: KeyID,
+    }
+
+    // Structure with 10 properties
+    #[derive(Debug, Clone, Encode, Decode, PlatformDeserialize, PlatformSerialize, PartialEq)]
+    #[platform_error_type(ProtocolError)]
+    pub struct IdentityCreditWithdrawalTransition10 {
+        pub protocol_version: u32,
+        pub transition_type: StateTransitionType,
+        pub identity_id: Identifier,
+        pub amount: u64,
+        pub core_fee_per_byte: u32,
+        pub pooling: Pooling,
+        pub output_script: CoreScript,
+        pub revision: Revision,
+        pub signature_public_key_id: KeyID,
+        pub signature: BinaryData,
+    }
+
+    fn test_identity_credit_withdrawal_transition<
+        T: PlatformSerializable + PlatformDeserializable + Debug + PartialEq,
+    >(
+        transition: T,
+    ) {
+        let serialized = T::serialize(&transition).expect("expected to serialize");
+        let deserialized = T::deserialize(serialized.as_slice()).expect("expected to deserialize");
+        assert_eq!(transition, deserialized);
+    }
+
+    #[test]
+    fn test_identity_credit_withdrawal_transition_1() {
+        let mut rng = rand::thread_rng();
+        let transition = IdentityCreditWithdrawalTransition1 {
+            protocol_version: rng.gen(),
+        };
+        test_identity_credit_withdrawal_transition(transition);
+    }
+
+    #[test]
+    fn test_identity_credit_withdrawal_transition_2() {
+        let mut rng = rand::thread_rng();
+        let transition = IdentityCreditWithdrawalTransition2 {
+            protocol_version: rng.gen(),
+            transition_type: StateTransitionType::IdentityCreditWithdrawal, // Generate random value or choose from the available types
+        };
+        test_identity_credit_withdrawal_transition(transition);
+    }
+
+    #[test]
+    fn test_identity_credit_withdrawal_transition_3() {
+        let mut rng = rand::thread_rng();
+        let transition = IdentityCreditWithdrawalTransition3 {
+            protocol_version: rng.gen(),
+            transition_type: StateTransitionType::IdentityCreditWithdrawal, // Generate random value or choose from the available types
+            identity_id: Identifier::random(), // Generate a random Identifier
+        };
+        test_identity_credit_withdrawal_transition(transition);
+    }
+
+    #[test]
+    fn test_identity_credit_withdrawal_transition_4() {
+        let mut rng = rand::thread_rng();
+        let transition = IdentityCreditWithdrawalTransition4 {
+            protocol_version: rng.gen(),
+            transition_type: StateTransitionType::IdentityCreditWithdrawal, // Generate random value or choose from the available types
+            identity_id: Identifier::random(), // Generate a random Identifier
+            amount: rng.gen(),
+        };
+        test_identity_credit_withdrawal_transition(transition);
+    }
+
+    #[test]
+    fn test_identity_credit_withdrawal_transition_5() {
+        let mut rng = rand::thread_rng();
+        let transition = IdentityCreditWithdrawalTransition5 {
+            protocol_version: rng.gen(),
+            transition_type: StateTransitionType::IdentityCreditWithdrawal, // Generate random value or choose from the available types
+            identity_id: Identifier::random(), // Generate a random Identifier
+            amount: rng.gen(),
+            core_fee_per_byte: rng.gen(),
+        };
+        test_identity_credit_withdrawal_transition(transition);
+    }
+
+    #[test]
+    fn test_identity_credit_withdrawal_transition_6() {
+        let mut rng = rand::thread_rng();
+        let transition = IdentityCreditWithdrawalTransition6 {
+            protocol_version: rng.gen(),
+            transition_type: StateTransitionType::IdentityCreditWithdrawal, // Generate random value or choose from the available types
+            identity_id: Identifier::random(), // Generate a random Identifier
+            amount: rng.gen(),
+            core_fee_per_byte: rng.gen(),
+            pooling: Pooling::Standard, // Generate random value or choose from the available options
+        };
+        test_identity_credit_withdrawal_transition(transition);
+    }
+
+    #[test]
+    fn test_identity_credit_withdrawal_transition_7() {
+        let mut rng = rand::thread_rng();
+        let transition = IdentityCreditWithdrawalTransition7 {
+            protocol_version: rng.gen(),
+            transition_type: StateTransitionType::IdentityCreditWithdrawal,
+            identity_id: Identifier::random(),
+            amount: rng.gen(),
+            core_fee_per_byte: rng.gen(),
+            pooling: Pooling::Standard,
+            output_script: CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
+        };
+        test_identity_credit_withdrawal_transition(transition);
+    }
+
+    #[test]
+    fn test_identity_credit_withdrawal_transition_8() {
+        let mut rng = rand::thread_rng();
+        let transition = IdentityCreditWithdrawalTransition8 {
+            protocol_version: rng.gen(),
+            transition_type: StateTransitionType::IdentityCreditWithdrawal,
+            identity_id: Identifier::random(),
+            amount: rng.gen(),
+            core_fee_per_byte: rng.gen(),
+            pooling: Pooling::Standard,
+            output_script: CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
+            revision: rng.gen(),
+        };
+        test_identity_credit_withdrawal_transition(transition);
+    }
+
+    #[test]
+    fn test_identity_credit_withdrawal_transition_9() {
+        let mut rng = rand::thread_rng();
+        let transition = IdentityCreditWithdrawalTransition9 {
+            protocol_version: rng.gen(),
+            transition_type: StateTransitionType::IdentityCreditWithdrawal,
+            identity_id: Identifier::random(),
+            amount: rng.gen(),
+            core_fee_per_byte: rng.gen(),
+            pooling: Pooling::Standard,
+            output_script: CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
+            revision: rng.gen(),
+            signature_public_key_id: rng.gen(),
+        };
+        test_identity_credit_withdrawal_transition(transition);
+    }
+
+    #[test]
+    fn test_identity_credit_withdrawal_transition_10() {
+        let mut rng = rand::thread_rng();
+        let transition = IdentityCreditWithdrawalTransition10 {
+            protocol_version: rng.gen(),
+            transition_type: StateTransitionType::IdentityCreditWithdrawal,
+            identity_id: Identifier::random(),
+            amount: rng.gen(),
+            core_fee_per_byte: rng.gen(),
+            pooling: Pooling::Standard,
+            output_script: CoreScript::from_bytes((0..23).collect::<Vec<u8>>()),
+            revision: rng.gen(),
+            signature_public_key_id: rng.gen(),
+            signature: [0; 65].to_vec().into(),
+        };
+        test_identity_credit_withdrawal_transition(transition);
     }
 }

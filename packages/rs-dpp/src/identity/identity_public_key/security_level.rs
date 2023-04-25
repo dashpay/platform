@@ -1,6 +1,7 @@
 use super::purpose::Purpose;
 use anyhow::bail;
 use bincode::{Decode, Encode};
+#[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
 use lazy_static::lazy_static;
 use serde_repr::{Deserialize_repr, Serialize_repr};
@@ -29,6 +30,7 @@ pub enum SecurityLevel {
     MEDIUM = 3,
 }
 
+#[cfg(feature = "cbor")]
 impl Into<CborValue> for SecurityLevel {
     fn into(self) -> CborValue {
         CborValue::from(self as u128)

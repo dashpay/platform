@@ -223,11 +223,16 @@ impl DocumentType {
         let documents_mutable = rng.gen_bool(parameters.documents_mutable_chance);
 
         let index_structure = IndexLevel::from(indices.as_slice());
+        let (identifier_paths, binary_paths) =
+            DocumentType::find_identifier_and_binary_paths(&properties);
         Ok(DocumentType {
             name: format!("doc_type_{}", rng.gen::<u16>()),
             indices,
             index_structure,
+            flattened_properties: properties.clone(),
             properties,
+            identifier_paths,
+            binary_paths,
             required_fields,
             documents_keep_history,
             documents_mutable,

@@ -9,6 +9,7 @@ use crate::state_repository::StateRepositoryLike;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::state_transition::StateTransitionLike;
 
+#[derive(Clone)]
 pub struct ApplyIdentityCreateTransition<SR>
 where
     SR: StateRepositoryLike,

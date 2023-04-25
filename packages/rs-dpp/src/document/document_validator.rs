@@ -7,7 +7,7 @@ use serde_json::Value as JsonValue;
 
 use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::data_contract::document_type::DocumentType;
-use crate::data_contract::DriveContractExt;
+
 use crate::validation::SimpleConsensusValidationResult;
 use crate::{
     consensus::basic::BasicError,

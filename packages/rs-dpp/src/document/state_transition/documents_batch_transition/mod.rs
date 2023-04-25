@@ -1,8 +1,11 @@
-use bincode::{Decode, Encode};
+use crate::platform_serialization::PlatformSignable;
+use crate::serialization_traits::{PlatformDeserializable, Signable};
+use bincode::{config, Decode, Encode};
 use std::collections::{BTreeMap, HashMap};
 use std::convert::{TryFrom, TryInto};
 
 use anyhow::{anyhow, Context};
+#[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
 use integer_encoding::VarInt;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -16,6 +19,7 @@ use crate::data_contract::DataContract;
 use crate::document::document_transition::DocumentTransitionObjectLike;
 use crate::prelude::{DocumentTransition, Identifier};
 
+#[cfg(feature = "cbor")]
 use crate::util::cbor_value::{CborCanonicalMap, FieldType, ReplacePaths, ValuesCollection};
 use crate::util::json_value::JsonValueExt;
 use crate::version::LATEST_VERSION;
@@ -32,6 +36,8 @@ use platform_value::string_encoding::Encoding;
 use self::document_transition::{
     document_base_transition, document_create_transition, DocumentTransitionExt,
 };
+use crate::serialization_traits::PlatformSerializable;
+use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
 mod action;
 pub mod apply_documents_batch_transition_factory;
@@ -64,8 +70,20 @@ pub const U32_FIELDS: [&str; 1] = [property_names::PROTOCOL_VERSION];
 const DEFAULT_SECURITY_LEVEL: SecurityLevel = SecurityLevel::HIGH;
 const EMPTY_VEC: Vec<u8> = vec![];
 
-#[derive(Debug, Serialize, Deserialize, Encode, Decode, Clone, PartialEq)]
+#[derive(
+    Debug,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    Clone,
+    PartialEq,
+    PlatformDeserialize,
+    PlatformSerialize,
+    PlatformSignable,
+)]
 #[serde(rename_all = "camelCase")]
+#[platform_error_type(ProtocolError)]
 pub struct DocumentsBatchTransition {
     pub protocol_version: u32,
     #[serde(rename = "type")]
@@ -76,9 +94,11 @@ pub struct DocumentsBatchTransition {
     pub transitions: Vec<DocumentTransition>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[exclude_from_sig_hash]
     pub signature_public_key_id: Option<KeyID>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[exclude_from_sig_hash]
     pub signature: Option<BinaryData>,
 }
 
@@ -401,6 +421,7 @@ impl StateTransitionConvert for DocumentsBatchTransition {
         Ok(object)
     }
 
+    #[cfg(feature = "cbor")]
     fn to_cbor_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
         let mut result_buf = self.protocol_version.encode_var_vec();
         let value: CborValue = self.to_object(skip_signature)?.try_into()?;

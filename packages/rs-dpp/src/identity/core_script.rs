@@ -1,8 +1,13 @@
+use bincode::de::{BorrowDecoder, Decoder};
+use bincode::enc::Encoder;
+use bincode::error::{DecodeError, EncodeError};
+use bincode::{BorrowDecode, Decode, Encode};
 use dashcore::blockdata::opcodes;
 use std::fmt;
+use std::io::{Read, Write};
 use std::ops::Deref;
 
-use dashcore::Script as DashcoreScript;
+use dashcore::{Script as DashcoreScript, Script};
 use platform_value::string_encoding::{self, Encoding};
 use rand::rngs::StdRng;
 use rand::Rng;
@@ -11,6 +16,7 @@ use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
 
 use crate::ProtocolError;
+use bincode::de::read::Reader;
 
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct CoreScript(DashcoreScript);
@@ -68,6 +74,58 @@ impl Deref for CoreScript {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+// Implement the bincode::Encode trait for CoreScript
+impl Encode for CoreScript {
+    fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
+        self.0.as_bytes().encode(encoder)
+    }
+}
+
+// Implement the bincode::Decode trait for CoreScript
+impl Decode for CoreScript {
+    fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
+        let bytes = Vec::<u8>::decode(decoder)?;
+        // Create a CoreScript instance using the decoded DashCoreScript
+        Ok(CoreScript(Script(bytes.into_boxed_slice())))
+    }
+}
+
+impl<'de> BorrowDecode<'de> for CoreScript {
+    fn borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D) -> Result<Self, DecodeError> {
+        // Read the serialized bytes from the decoder into a Vec<u8>
+        let mut bytes = Vec::new();
+        loop {
+            let mut buf = [0u8; 1024]; // Adjust the buffer size as needed
+            let mut temp = Vec::from(buf);
+            match decoder.reader().read(&mut temp) {
+                Ok(()) => {
+                    let read_bytes = temp.iter().position(|&x| x == 0).unwrap_or(temp.len());
+                    bytes.extend_from_slice(&temp[..read_bytes]);
+                    if read_bytes < buf.len() {
+                        break;
+                    }
+                }
+                Err(DecodeError::Io { inner, additional })
+                    if inner.kind() == std::io::ErrorKind::UnexpectedEof =>
+                {
+                    if additional > 0 {
+                        return Err(DecodeError::Io { inner, additional });
+                    } else {
+                        break;
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+        }
+
+        // Convert Vec<u8> to Box<[u8]> and create a DashCoreScript instance
+        let dash_core_script = DashcoreScript(bytes.into_boxed_slice());
+
+        // Create a CoreScript instance using the decoded DashCoreScript
+        Ok(CoreScript(dash_core_script))
     }
 }
 

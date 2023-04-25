@@ -1,11 +1,11 @@
-mod serialize;
 use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
+#[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
 use dashcore::signer;
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 
-use bincode::{Decode, Encode};
+use bincode::{config, Decode, Encode};
 
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
@@ -17,7 +17,12 @@ use crate::consensus::signature::SignatureError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use crate::identity::signer::Signer;
+use crate::platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
+#[cfg(feature = "cbor")]
+use crate::util::cbor_serializer;
+#[cfg(feature = "cbor")]
 use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
 use crate::util::vec;
 use crate::validation::SimpleConsensusValidationResult;
@@ -39,7 +44,10 @@ pub struct IdentityPublicKeyInCreationWithWitness {
     pub signature: BinaryData,
 }
 
-#[derive(Debug, Encode, Decode, Clone, PartialEq, Eq)]
+#[derive(Debug, Encode, Decode, PlatformDeserialize, PlatformSerialize, Clone, PartialEq, Eq)]
+#[platform_error_type(ProtocolError)]
+#[platform_deserialize_limit(2000)]
+#[platform_serialize_limit(2000)]
 pub struct IdentityPublicKeyInCreationWithoutWitness {
     pub id: KeyID,
     pub key_type: KeyType,
@@ -95,14 +103,20 @@ impl Convertible for IdentityPublicKeyInCreationWithWitness {
             .try_into()
             .map_err(ProtocolError::ValueError)
     }
+    #[cfg(feature = "cbor")]
+    fn to_cbor_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
+        let mut object = self.to_object()?;
 
-    fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
-        let without_witness: IdentityPublicKeyInCreationWithoutWitness = self.clone().into();
-        without_witness.serialize()
+        cbor_serializer::serializable_value_to_cbor(&object, None)
     }
 }
 
 impl IdentityPublicKeyInCreationWithWitness {
+    fn serialize_without_witness(&self) -> Result<Vec<u8>, ProtocolError> {
+        let without_witness: IdentityPublicKeyInCreationWithoutWitness = self.clone().into();
+        without_witness.serialize()
+    }
+
     pub fn to_identity_public_key(self) -> IdentityPublicKey {
         let Self {
             id,
@@ -145,7 +159,7 @@ impl IdentityPublicKeyInCreationWithWitness {
     ) -> Result<Self, ProtocolError> {
         let mut public_key_with_witness: IdentityPublicKeyInCreationWithWitness =
             public_key.clone().into();
-        let data = public_key_with_witness.to_buffer()?;
+        let data = public_key_with_witness.serialize_without_witness()?;
         match public_key.key_type {
             KeyType::ECDSA_SECP256K1 | KeyType::BLS12_381 => {
                 public_key_with_witness.signature = signer.sign(&public_key, data.as_slice())?;
@@ -165,7 +179,7 @@ impl IdentityPublicKeyInCreationWithWitness {
         key_type: KeyType,
         bls: &impl BlsModule,
     ) -> Result<(), ProtocolError> {
-        let data = self.to_buffer()?;
+        let data = self.serialize_without_witness()?;
         match key_type {
             KeyType::BLS12_381 => self.signature = bls.sign(&data, private_key)?.into(),
 
@@ -292,6 +306,7 @@ impl IdentityPublicKeyInCreationWithWitness {
             })
     }
 
+    #[cfg(feature = "cbor")]
     pub fn from_cbor_value(cbor_value: &CborValue) -> Result<Self, ProtocolError> {
         let key_value_map = cbor_value.as_map().ok_or_else(|| {
             ProtocolError::DecodingError(String::from(
@@ -323,6 +338,7 @@ impl IdentityPublicKeyInCreationWithWitness {
         })
     }
 
+    #[cfg(feature = "cbor")]
     pub fn to_cbor_value(&self) -> CborValue {
         let mut pk_map = CborCanonicalMap::new();
 
@@ -343,7 +359,7 @@ impl IdentityPublicKeyInCreationWithWitness {
     pub fn verify_signature(&self) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         match self.key_type {
             KeyType::ECDSA_SECP256K1 => {
-                let signable_data = self.to_buffer()?;
+                let signable_data = self.serialize_without_witness()?;
                 if let Err(e) = signer::verify_data_signature(
                     &signable_data,
                     self.signature.as_slice(),
@@ -360,7 +376,7 @@ impl IdentityPublicKeyInCreationWithWitness {
                 }
             }
             KeyType::BLS12_381 => {
-                let signable_data = self.to_buffer()?;
+                let signable_data = self.serialize_without_witness()?;
                 let public_key = match bls_signatures::PublicKey::from_bytes(self.data.as_slice()) {
                     Ok(public_key) => public_key,
                     Err(e) => {

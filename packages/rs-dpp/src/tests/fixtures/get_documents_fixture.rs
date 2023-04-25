@@ -6,7 +6,7 @@ use std::sync::Arc;
 use platform_value::{platform_value, Value};
 
 use crate::contracts::withdrawals_contract::document_types;
-use crate::data_contract::DriveContractExt;
+
 use crate::document::Document;
 use crate::{
     document::{

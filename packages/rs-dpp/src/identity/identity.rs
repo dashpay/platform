@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::convert::{TryFrom, TryInto};
 use std::hash::{Hash, Hasher};
 
-use ciborium::value::Value as CborValue;
+use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use integer_encoding::VarInt;
 use platform_value::{ReplacementType, Value};
 use serde::{Deserialize, Serialize};
@@ -11,13 +11,17 @@ use serde_json::Value as JsonValue;
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::identity::{identity_public_key, KeyType, Purpose, SecurityLevel};
 use crate::prelude::Revision;
+#[cfg(feature = "cbor")]
 use crate::util::cbor_value::{CborBTreeMapHelper, CborCanonicalMap};
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::{
     errors::ProtocolError, identifier::Identifier, metadata::Metadata, util::hash, Convertible,
 };
-use bincode::{Decode, Encode};
+use bincode::{config, Decode, Encode};
+#[cfg(feature = "cbor")]
+use ciborium::value::Value as CborValue;
+use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
 use super::{IdentityPublicKey, KeyID};
 
@@ -34,7 +38,22 @@ pub const IDENTIFIER_FIELDS_RAW_OBJECT: [&str; 1] = [property_names::ID_RAW_OBJE
 
 /// Implement the Identity. Identity is a low-level construct that provides the foundation
 /// for user-facing functionality on the platform
-#[derive(Default, Debug, Serialize, Deserialize, Encode, Decode, Clone, Eq, PartialEq)]
+#[derive(
+    Default,
+    Debug,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    PlatformDeserialize,
+    PlatformSerialize,
+    Clone,
+    Eq,
+    PartialEq,
+)]
+#[platform_error_type(ProtocolError)]
+#[platform_deserialize_limit(15000)]
+#[platform_serialize_limit(15000)]
 #[serde(rename_all = "camelCase")]
 pub struct Identity {
     pub protocol_version: u32,
@@ -135,7 +154,8 @@ impl Convertible for Identity {
             .map_err(ProtocolError::ValueError)
     }
 
-    fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
+    #[cfg(feature = "cbor")]
+    fn to_cbor_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
         self.to_cbor()
     }
 }
@@ -266,6 +286,7 @@ impl Identity {
     }
 
     /// Converts the identity to a cbor buffer
+    #[cfg(feature = "cbor")]
     pub fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
         // Prepend protocol version to the result
         let mut buf = self.get_protocol_version().encode_var_vec();
@@ -291,10 +312,12 @@ impl Identity {
         Ok(buf)
     }
 
+    #[cfg(feature = "cbor")]
     pub fn from_buffer(b: impl AsRef<[u8]>) -> Result<Self, ProtocolError> {
         Self::from_cbor(b.as_ref())
     }
 
+    #[cfg(feature = "cbor")]
     pub fn from_cbor(identity_cbor: &[u8]) -> Result<Self, ProtocolError> {
         let SplitProtocolVersionOutcome {
             protocol_version,
@@ -367,7 +390,7 @@ impl Identity {
 
     /// Computes the hash of an identity
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash::hash_to_vec(self.to_buffer()?))
+        Ok(hash::hash_to_vec(PlatformSerializable::serialize(self)?))
     }
 
     /// Convenience method to get Partial Identity Info

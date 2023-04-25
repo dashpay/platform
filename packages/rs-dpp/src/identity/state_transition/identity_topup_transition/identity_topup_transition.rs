@@ -1,4 +1,6 @@
-use bincode::{Decode, Encode};
+use crate::platform_serialization::PlatformSignable;
+use crate::serialization_traits::{PlatformDeserializable, Signable};
+use bincode::{config, Decode, Encode};
 use std::convert::{TryFrom, TryInto};
 
 use platform_value::{BinaryData, Value};
@@ -11,9 +13,11 @@ use crate::identity::Identity;
 use crate::identity::KeyType::ECDSA_HASH160;
 use crate::prelude::Identifier;
 
+use crate::serialization_traits::PlatformSerializable;
 use crate::state_transition::{StateTransitionConvert, StateTransitionLike, StateTransitionType};
 use crate::version::LATEST_VERSION;
 use crate::{BlsModule, NonConsensusError, ProtocolError};
+use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
 mod property_names {
     pub const ASSET_LOCK_PROOF: &str = "assetLockProof";
@@ -23,8 +27,20 @@ mod property_names {
     pub const IDENTITY_ID: &str = "identityId";
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode, PartialEq)]
+#[derive(
+    Debug,
+    Clone,
+    Serialize,
+    Deserialize,
+    Encode,
+    Decode,
+    PlatformDeserialize,
+    PlatformSerialize,
+    PlatformSignable,
+    PartialEq,
+)]
 #[serde(rename_all = "camelCase")]
+#[platform_error_type(ProtocolError)]
 pub struct IdentityTopUpTransition {
     #[serde(rename = "type")]
     pub transition_type: StateTransitionType,
@@ -33,6 +49,7 @@ pub struct IdentityTopUpTransition {
     pub identity_id: Identifier,
     // Generic identity ST fields
     pub protocol_version: u32,
+    #[exclude_from_sig_hash]
     pub signature: BinaryData,
 }
 

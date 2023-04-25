@@ -3,7 +3,6 @@ use platform_value::{Value, ValueMap};
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 
-use crate::data_contract::DriveContractExt;
 use crate::{
     document::document_transition::DocumentTransition, prelude::DataContract,
     util::json_schema::Index, ProtocolError,

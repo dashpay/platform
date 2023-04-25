@@ -258,7 +258,7 @@ pub async fn fetch_asset_lock_public_key_hash(
         AssetLockTransactionOutputFetcher::new(state_repository_wrapper.clone());
 
     let public_key_hash_fetcher =
-        AssetLockPublicKeyHashFetcher::new(state_repository_wrapper, tx_output_fetcher);
+        AssetLockPublicKeyHashFetcher::new(state_repository_wrapper, Arc::new(tx_output_fetcher));
 
     let fetch_result = public_key_hash_fetcher
         .fetch_public_key_hash(asset_lock_proof, execution_context.into())
