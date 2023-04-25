@@ -26,7 +26,7 @@ impl DriveHighLevelOperationConverter for IdentityCreditWithdrawalTransitionActi
             }),
             DocumentOperation(DocumentOperationType::AddWithdrawalDocument {
                 owned_document_info: OwnedDocumentInfo {
-                    document_info: DocumentInfo::DocumentWithoutSerialization((
+                    document_info: DocumentInfo::DocumentOwnedInfo((
                         prepared_withdrawal_document,
                         None,
                     )),

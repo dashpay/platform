@@ -62,9 +62,6 @@ pub struct DriveConfig {
     /// Default genesis time
     pub default_genesis_time: Option<u64>,
 
-    /// Encoding
-    pub encoding: DriveEncoding,
-
     /// Maximum number of contracts in global cache
     pub data_contracts_global_cache_size: u64,
 
@@ -79,7 +76,6 @@ impl Default for DriveConfig {
                 DEFAULT_GROVE_BATCHING_CONSISTENCY_VERIFICATION_ENABLED,
             has_raw_enabled: DEFAULT_GROVE_HAS_RAW_ENABLED,
             default_genesis_time: None,
-            encoding: DriveCbor,
             data_contracts_global_cache_size: DEFAULT_DATA_CONTRACTS_CACHE_SIZE,
             data_contracts_block_cache_size: DEFAULT_DATA_CONTRACTS_CACHE_SIZE,
         }

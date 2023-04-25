@@ -41,7 +41,6 @@ use crate::drive::Drive;
 use crate::error::fee::FeeError;
 use crate::error::Error;
 
-use dpp::data_contract::DriveContractExt;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, PotentiallyAtMaxElements};
 use grovedb::EstimatedLayerSizes::{AllItems, AllSubtrees, Mix};
@@ -72,7 +71,7 @@ impl Drive {
         if document_type.documents_keep_history {
             // if we keep history this level has trees
             // we only keep flags if the contract can be deleted
-            let average_flags_size = if contract.can_be_deleted() {
+            let average_flags_size = if contract.config.can_be_deleted {
                 // the trees flags will never change
                 let flags_size = StorageFlags::approximate_size(true, None);
                 Some(flags_size)

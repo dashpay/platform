@@ -1,5 +1,11 @@
 use std::convert::{TryFrom, TryInto};
 
+use crate::platform_serialization::PlatformSignable;
+use crate::serialization_traits::PlatformSerializable;
+use crate::serialization_traits::{PlatformDeserializable, Signable};
+use bincode::{config, Decode, Encode};
+use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::{BinaryData, IntegerReplacementType, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
@@ -41,9 +47,21 @@ pub struct SerializationOptions {
     pub into_validating_json: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+#[derive(
+    Serialize,
+    Deserialize,
+    Debug,
+    Clone,
+    PartialEq,
+    Encode,
+    Decode,
+    PlatformDeserialize,
+    PlatformSerialize,
+    PlatformSignable,
+)]
 #[serde(rename_all = "camelCase")]
 #[serde(try_from = "IdentityCreateTransitionInner")]
+#[platform_error_type(ProtocolError)]
 pub struct IdentityCreateTransition {
     #[serde(rename = "type")]
     pub transition_type: StateTransitionType,
@@ -52,8 +70,10 @@ pub struct IdentityCreateTransition {
     pub asset_lock_proof: AssetLockProof,
     // Generic identity ST fields
     pub protocol_version: u32,
+    #[exclude_from_sig_hash]
     pub signature: BinaryData,
     #[serde(skip)]
+    #[exclude_from_sig_hash]
     pub identity_id: Identifier,
 }
 

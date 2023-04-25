@@ -63,9 +63,7 @@ use grovedb::batch::KeyInfoPath;
 #[cfg(feature = "full")]
 use grovedb::reference_path::ReferencePathType::SiblingReference;
 
-#[cfg(feature = "full")]
-use dpp::data_contract::DriveContractExt;
-use dpp::platform_value::{platform_value, Value};
+use dpp::platform_value::{platform_value, Identifier, Value};
 use dpp::Convertible;
 #[cfg(feature = "full")]
 use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
@@ -113,6 +111,8 @@ use crate::fee::result::FeeResult;
 use crate::query::QueryResultEncoding;
 #[cfg(feature = "full")]
 use dpp::block::epoch::Epoch;
+use dpp::prelude::DataContract;
+use dpp::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 
 #[cfg(feature = "full")]
 /// Adds operations to the op batch relevant to initializing the contract's structure.
@@ -151,7 +151,7 @@ impl Drive {
         insert_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
         let contract_root_path = paths::contract_root_path(contract.id.as_bytes());
-        if contract.keeps_history() {
+        if contract.config.keeps_history {
             let element_flags = contract_element.get_flags().clone();
             let storage_flags =
                 StorageFlags::map_cow_some_element_flags_ref(contract_element.get_flags())?;
@@ -215,20 +215,17 @@ impl Drive {
         Ok(())
     }
 
-    /// Insert a contract CBOR.
-    pub fn insert_contract_cbor(
+    /// Insert a contract.
+    pub fn insert_contract(
         &self,
-        contract_cbor: Vec<u8>,
-        contract_id: Option<[u8; 32]>,
+        contract: &DataContract,
         block_info: BlockInfo,
         apply: bool,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, contract_id)?;
-
-        let storage_flags = if contract.can_be_deleted() || !contract.readonly() {
+        let storage_flags = if contract.config.can_be_deleted || !contract.config.readonly {
             Some(StorageFlags::new_single_epoch(
                 block_info.epoch.index,
                 Some(contract.owner_id.to_buffer()),
@@ -238,13 +235,13 @@ impl Drive {
         };
 
         let contract_element = Element::Item(
-            contract_cbor,
+            contract.serialize()?,
             StorageFlags::map_to_some_element_flags(storage_flags.as_ref()),
         );
 
         self.insert_contract_element(
             contract_element,
-            &contract,
+            contract,
             &block_info,
             apply,
             transaction,
@@ -353,7 +350,7 @@ impl Drive {
         // toDo: change this to be a reference by index
         let contract_documents_path = contract_documents_path(contract.id.as_bytes());
 
-        for (type_key, document_type) in contract.document_types() {
+        for (type_key, document_type) in contract.document_types.iter() {
             self.batch_insert_empty_tree(
                 contract_documents_path,
                 KeyRef(type_key.as_bytes()),
@@ -404,29 +401,20 @@ impl Drive {
         Ok(batch_operations)
     }
 
-    /// Insert a contract CBOR.
-    pub fn update_contract_cbor(
+    /// Update a data contract
+    pub fn update_contract(
         &self,
-        contract_cbor: Vec<u8>,
-        contract_id: Option<[u8; 32]>,
+        contract: &DataContract,
         block_info: BlockInfo,
         apply: bool,
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         if !apply {
-            return self.insert_contract_cbor(
-                contract_cbor,
-                contract_id,
-                block_info,
-                false,
-                transaction,
-            );
+            return self.insert_contract(contract, block_info, false, transaction);
         }
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
 
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, contract_id)?;
-
-        let contract_id = contract_id.unwrap_or_else(|| *contract.id.as_bytes());
+        let contract_bytes = contract.serialize()?;
 
         // Since we can update the contract by definition it already has storage flags
         let storage_flags = Some(StorageFlags::new_single_epoch(
@@ -435,13 +423,13 @@ impl Drive {
         ));
 
         let contract_element = Element::Item(
-            contract_cbor,
+            contract_bytes,
             StorageFlags::map_to_some_element_flags(storage_flags.as_ref()),
         );
 
         let original_contract_fetch_info = self
             .get_contract_with_fetch_info_and_add_to_operations(
-                contract_id,
+                contract.id.to_buffer(),
                 Some(&block_info.epoch),
                 true,
                 transaction,
@@ -451,7 +439,7 @@ impl Drive {
                 "contract should exist",
             )))?;
 
-        if original_contract_fetch_info.contract.readonly() {
+        if original_contract_fetch_info.contract.config.readonly {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableContract(
                 "original contract is readonly",
             )));
@@ -469,7 +457,7 @@ impl Drive {
         // Update Data Contracts cache with the new contract
         let updated_contract_fetch_info = self
             .fetch_contract_and_add_operations(
-                contract_id,
+                contract.id.to_buffer(),
                 Some(&block_info.epoch),
                 transaction,
                 &mut drive_operations,
@@ -553,26 +541,28 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let mut batch_operations: Vec<LowLevelDriveOperation> = vec![];
-        if original_contract.readonly() {
+        if original_contract.config.readonly {
             return Err(Error::Drive(DriveError::UpdatingReadOnlyImmutableContract(
                 "contract is readonly",
             )));
         }
 
-        if contract.readonly() {
+        if contract.config.readonly {
             return Err(Error::Drive(DriveError::ChangingContractToReadOnly(
                 "contract can not be changed to readonly",
             )));
         }
 
-        if contract.keeps_history() ^ original_contract.keeps_history() {
+        if contract.config.keeps_history ^ original_contract.config.keeps_history {
             return Err(Error::Drive(DriveError::ChangingContractKeepsHistory(
                 "contract can not change whether it keeps history",
             )));
         }
 
-        if contract.documents_keep_history_contract_default()
-            ^ original_contract.documents_keep_history_contract_default()
+        if contract.config.documents_keep_history_contract_default
+            ^ original_contract
+                .config
+                .documents_keep_history_contract_default
         {
             return Err(Error::Drive(
                 DriveError::ChangingContractDocumentsKeepsHistoryDefault(
@@ -581,8 +571,8 @@ impl Drive {
             ));
         }
 
-        if contract.documents_mutable_contract_default()
-            ^ original_contract.documents_mutable_contract_default()
+        if contract.config.documents_mutable_contract_default
+            ^ original_contract.config.documents_mutable_contract_default
         {
             return Err(Error::Drive(
                 DriveError::ChangingContractDocumentsMutabilityDefault(
@@ -605,8 +595,8 @@ impl Drive {
         let storage_flags = StorageFlags::map_cow_some_element_flags_ref(&element_flags)?;
 
         let contract_documents_path = contract_documents_path(contract.id.as_bytes());
-        for (type_key, document_type) in contract.document_types() {
-            let original_document_type = &original_contract.document_types().get(type_key);
+        for (type_key, document_type) in contract.document_types.iter() {
+            let original_document_type = &original_contract.document_types.get(type_key);
             if let Some(original_document_type) = original_document_type {
                 if original_document_type.documents_mutable ^ document_type.documents_mutable {
                     return Err(Error::Drive(DriveError::ChangingDocumentTypeMutability(
@@ -713,16 +703,12 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         // first we need to deserialize the contract
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, contract_id)?;
+        let contract = DataContract::from_cbor_with_id(
+            &contract_cbor,
+            contract_id.map(|identifier| Identifier::from(identifier)),
+        )?;
 
-        self.apply_contract_with_serialization(
-            &contract,
-            contract_cbor,
-            block_info,
-            apply,
-            storage_flags,
-            transaction,
-        )
+        self.apply_contract(&contract, block_info, apply, storage_flags, transaction)
     }
 
     /// Returns the contract with fetch info and operations with the given ID.
@@ -914,7 +900,7 @@ impl Drive {
             Ok(Element::Item(stored_contract_bytes, element_flag)) => {
                 let contract = cost_return_on_error_no_add!(
                     &cost,
-                    <Contract as DriveContractExt>::from_cbor(&stored_contract_bytes, None,)
+                    DataContract::deserialize_no_limit(&stored_contract_bytes)
                         .map_err(Error::Protocol)
                 );
                 let drive_operation = CalculatedCostOperation(cost.clone());
@@ -1023,8 +1009,7 @@ impl Drive {
         storage_flags: Option<Cow<StorageFlags>>,
         transaction: TransactionArg,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
-        //todo: change this from cbor
-        let serialized_contract = contract.to_cbor().map_err(Error::Protocol)?;
+        let serialized_contract = contract.serialize().map_err(Error::Protocol)?;
         self.apply_contract_with_serialization_operations(
             contract,
             serialized_contract,
@@ -1095,10 +1080,7 @@ impl Drive {
 
         if already_exists {
             if !original_contract_stored_data.is_empty() {
-                let original_contract = <Contract as DriveContractExt>::from_cbor(
-                    &original_contract_stored_data,
-                    None,
-                )?;
+                let original_contract = Contract::deserialize(&original_contract_stored_data)?;
                 // if the contract is not mutable update_contract will return an error
                 self.update_contract_add_operations(
                     contract_element,
@@ -1138,11 +1120,11 @@ mod tests {
         DocumentAndContractInfo, DocumentInfo, OwnedDocumentInfo,
     };
     use crate::drive::Drive;
-    use dpp::data_contract::extra::common::json_document_to_cbor;
+    use dpp::data_contract::extra::common::json_document_to_contract;
 
     use crate::tests::helpers::setup::setup_drive_with_initial_state_structure;
 
-    fn setup_deep_nested_50_contract() -> (Drive, Contract, Vec<u8>) {
+    fn setup_deep_nested_50_contract() -> (Drive, DataContract) {
         // Todo: make TempDir based on _prefix
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
@@ -1153,15 +1135,11 @@ mod tests {
 
         let contract_path = "tests/supporting_files/contract/deepNested/deep-nested50.json";
         // let's construct the grovedb structure for the dashpay data contract
-        let contract_cbor =
-            json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
-
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("expected to deserialize the contract");
+        let contract =
+            json_document_to_contract(contract_path).expect("expected to get a contract");
         drive
-            .apply_contract_with_serialization(
+            .apply_contract(
                 &contract,
-                contract_cbor.clone(),
                 BlockInfo::default(),
                 true,
                 StorageFlags::optional_default_as_cow(),
@@ -1169,10 +1147,10 @@ mod tests {
             )
             .expect("expected to apply contract successfully");
 
-        (drive, contract, contract_cbor)
+        (drive, contract)
     }
 
-    fn setup_deep_nested_10_contract() -> (Drive, Contract, Vec<u8>) {
+    fn setup_deep_nested_10_contract() -> (Drive, DataContract) {
         // Todo: make TempDir based on _prefix
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
@@ -1183,14 +1161,11 @@ mod tests {
 
         let contract_path = "tests/supporting_files/contract/deepNested/deep-nested10.json";
         // let's construct the grovedb structure for the dashpay data contract
-        let contract_cbor =
-            json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("expected to deserialize the contract");
+        let contract =
+            json_document_to_contract(contract_path).expect("expected to get a contract");
         drive
-            .apply_contract_with_serialization(
+            .apply_contract(
                 &contract,
-                contract_cbor.clone(),
                 BlockInfo::default(),
                 true,
                 StorageFlags::optional_default_as_cow(),
@@ -1198,10 +1173,10 @@ mod tests {
             )
             .expect("expected to apply contract successfully");
 
-        (drive, contract, contract_cbor)
+        (drive, contract)
     }
 
-    fn setup_reference_contract() -> (Drive, Contract, Vec<u8>) {
+    fn setup_reference_contract() -> (Drive, Contract) {
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
 
@@ -1212,14 +1187,11 @@ mod tests {
         let contract_path = "tests/supporting_files/contract/references/references.json";
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract_cbor =
-            json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("expected to deserialize the contract");
+        let contract =
+            json_document_to_contract(contract_path).expect("expected to get a contract");
         drive
-            .apply_contract_with_serialization(
+            .apply_contract(
                 &contract,
-                contract_cbor.clone(),
                 BlockInfo::default(),
                 true,
                 StorageFlags::optional_default_as_cow(),
@@ -1227,7 +1199,7 @@ mod tests {
             )
             .expect("expected to apply contract successfully");
 
-        (drive, contract, contract_cbor)
+        (drive, contract)
     }
 
     #[test]
@@ -1268,7 +1240,7 @@ mod tests {
 
     #[test]
     fn test_create_deep_nested_contract_50() {
-        let (drive, contract, _contract_cbor) = setup_deep_nested_50_contract();
+        let (drive, contract) = setup_deep_nested_50_contract();
 
         let document_type = contract
             .document_type_for_name("nest")
@@ -1287,14 +1259,7 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentInfo::DocumentRefAndSerialization((
-                            &document,
-                            document
-                                .to_cbor()
-                                .expect("expected to encode to cbor")
-                                .as_slice(),
-                            storage_flags,
-                        )),
+                        document_info: DocumentInfo::DocumentRefInfo((&document, storage_flags)),
                         owner_id: Some(random_owner_id),
                     },
                     contract: &contract,
@@ -1310,7 +1275,7 @@ mod tests {
 
     #[test]
     fn test_create_reference_contract() {
-        let (drive, contract, _contract_cbor) = setup_reference_contract();
+        let (drive, contract) = setup_reference_contract();
 
         let document_type = contract
             .document_type_for_name("note")
@@ -1329,14 +1294,7 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentInfo::DocumentRefAndSerialization((
-                            &document,
-                            document
-                                .to_cbor()
-                                .expect("expected to encode to cbor")
-                                .as_slice(),
-                            storage_flags,
-                        )),
+                        document_info: DocumentInfo::DocumentRefInfo((&document, storage_flags)),
                         owner_id: Some(random_owner_id),
                     },
                     contract: &contract,
@@ -1362,14 +1320,11 @@ mod tests {
         let contract_path = "tests/supporting_files/contract/references/references.json";
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract_cbor =
-            json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("expected to deserialize the contract");
+        let contract =
+            json_document_to_contract(contract_path).expect("expected to get cbor document");
         drive
-            .apply_contract_with_serialization(
+            .apply_contract(
                 &contract,
-                contract_cbor,
                 BlockInfo::default(),
                 false,
                 StorageFlags::optional_default_as_cow(),
@@ -1391,14 +1346,10 @@ mod tests {
             "tests/supporting_files/contract/references/references_with_contract_history.json";
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract_cbor =
-            json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("expected to deserialize the contract");
+        let contract = json_document_to_contract(contract_path).expect("expected to get contract");
         drive
-            .apply_contract_with_serialization(
+            .apply_contract(
                 &contract,
-                contract_cbor,
                 BlockInfo::default(),
                 false,
                 StorageFlags::optional_default_as_cow(),
@@ -1419,16 +1370,13 @@ mod tests {
         let contract_path = "tests/supporting_files/contract/references/references.json";
 
         // let's construct the grovedb structure for the dashpay data contract
-        let contract_cbor =
-            json_document_to_cbor(contract_path, Some(1)).expect("expected to get cbor document");
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("expected to deserialize the contract");
+        let contract =
+            json_document_to_contract(contract_path).expect("expected to get cbor document");
 
         // Create a contract first
         drive
-            .apply_contract_with_serialization(
+            .apply_contract(
                 &contract,
-                contract_cbor.clone(),
                 BlockInfo::default(),
                 true,
                 StorageFlags::optional_default_as_cow(),
@@ -1438,13 +1386,7 @@ mod tests {
 
         // Update existing contract
         drive
-            .update_contract_cbor(
-                contract_cbor,
-                Some(contract.id.to_buffer()),
-                BlockInfo::default(),
-                false,
-                None,
-            )
+            .update_contract(&contract, BlockInfo::default(), false, None)
             .expect("expected to apply contract successfully");
     }
 
@@ -1455,22 +1397,14 @@ mod tests {
 
         #[test]
         fn should_get_contract_from_global_and_block_cache() {
-            let (drive, mut contract, _) = setup_reference_contract();
+            let (drive, mut contract) = setup_reference_contract();
 
             let transaction = drive.grove.start_transaction();
 
             contract.increment_version();
 
-            let updated_contract_cbor = contract.to_buffer().expect("should serialize a contract");
-
             drive
-                .update_contract_cbor(
-                    updated_contract_cbor,
-                    None,
-                    BlockInfo::default(),
-                    true,
-                    Some(&transaction),
-                )
+                .update_contract(&contract, BlockInfo::default(), true, Some(&transaction))
                 .expect("should update contract");
 
             let fetch_info_from_database = drive
@@ -1531,7 +1465,7 @@ mod tests {
             // Merk trees have own cache and depends on does contract node cached or not
             // we get could get different costs. To avoid of it we fetch contracts without tree caching
 
-            let (drive, mut ref_contract, _) = setup_reference_contract();
+            let (drive, mut ref_contract) = setup_reference_contract();
 
             /*
              * Firstly, we create multiple contracts during block processing (in transaction)
@@ -1545,12 +1479,9 @@ mod tests {
             for i in 0..150u8 {
                 ref_contract.id = Identifier::from([i; 32]);
 
-                let ref_contract_cbor = ref_contract.to_cbor().expect("should serialize contract");
-
                 drive
-                    .apply_contract_with_serialization(
+                    .apply_contract(
                         &ref_contract,
-                        ref_contract_cbor,
                         BlockInfo::default(),
                         true,
                         StorageFlags::optional_default_as_cow(),
@@ -1561,14 +1492,11 @@ mod tests {
 
             // Create a deep placed contract
             let contract_path = "tests/supporting_files/contract/deepNested/deep-nested10.json";
-            let contract_cbor = json_document_to_cbor(contract_path, Some(1))
-                .expect("expected to get cbor document");
-            let deep_contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-                .expect("expected to deserialize the contract");
+            let deep_contract =
+                json_document_to_contract(contract_path).expect("expected to get cbor document");
             drive
-                .apply_contract_with_serialization(
+                .apply_contract(
                     &deep_contract,
-                    contract_cbor,
                     BlockInfo::default(),
                     true,
                     StorageFlags::optional_default_as_cow(),
@@ -1695,12 +1623,9 @@ mod tests {
             for i in 150..200u8 {
                 ref_contract.id = Identifier::from([i; 32]);
 
-                let ref_contract_cbor = ref_contract.to_cbor().expect("should serialize contract");
-
                 drive
-                    .apply_contract_with_serialization(
+                    .apply_contract(
                         &ref_contract,
-                        ref_contract_cbor,
                         BlockInfo::default(),
                         true,
                         StorageFlags::optional_default_as_cow(),

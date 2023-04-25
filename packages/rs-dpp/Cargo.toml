@@ -2,7 +2,7 @@
 name = "dpp"
 version = "0.1.0"
 edition = "2018"
-authors = ["Anton Suprunchuk <anton.suprunchuk@gmail.com>"]
+authors = ["Anton Suprunchuk <anton.suprunchuk@gmail.com>", "Samuel Westrich <sam@dash.org>", "Ivan Shumkov <ivan@shumkov.ru>", "Djavid Gabibiyan <djavid@dash.org>"]
 
 [dependencies]
 anyhow = { version = "1.0.70" }
@@ -15,7 +15,7 @@ chrono = { version = "0.4.20", default-features = false, features = [
     "wasmbind",
     "clock",
 ] }
-ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" }
+ciborium = { git = "https://github.com/qrayven/ciborium", branch = "feat-ser-null-as-undefined" , optional = true}
 dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
     "std",
     "secp-recovery",
@@ -50,6 +50,8 @@ thiserror = { version = "1.0" }
 mockall = { version = "0.11.3", optional = true }
 data-contracts = { path = "../data-contracts" }
 platform-value = { path = "../rs-platform-value" }
+platform-value-convertible = { path = "../rs-platform-value-convertible" }
+platform-serialization = { path = "../rs-platform-serialization" }
 derive_more = "0.99.17"
 ed25519-dalek = {version = "2.0.0-rc.2", features = ["rand_core"] }
 
@@ -60,4 +62,5 @@ pretty_assertions = { version = "1.3.0" }
 
 [features]
 default = ["fixtures-and-mocks"]
+cbor = ["ciborium"]
 fixtures-and-mocks = ["mockall"]

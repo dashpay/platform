@@ -10,7 +10,7 @@ use crate::identity::validation::{IdentityValidator, PublicKeysValidator};
 use crate::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
 use crate::prelude::Identifier;
 
-use crate::{BlsModule, ProtocolError};
+use crate::{BlsModule, Convertible, ProtocolError};
 
 use dashcore::{InstantLock, Transaction};
 use rand::rngs::StdRng;
@@ -19,6 +19,12 @@ use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::iter::FromIterator;
 
+use crate::consensus::ConsensusError;
+use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+use crate::state_transition::StateTransition;
+use crate::util::deserializer;
+use crate::util::deserializer::SplitProtocolVersionOutcome;
+use anyhow::anyhow;
 use platform_value::Value;
 use std::sync::Arc;
 
@@ -203,15 +209,25 @@ where
         buffer: Vec<u8>,
         skip_validation: bool,
     ) -> Result<Identity, ProtocolError> {
-        let (protocol_version, mut raw_identity) =
-            DecodeProtocolEntity::decode_protocol_entity(buffer)?;
-        raw_identity
-            .set_value("protocolVersion", Value::U32(protocol_version))
-            .map_err(ProtocolError::ValueError)?;
+        let SplitProtocolVersionOutcome {
+            protocol_version,
+            main_message_bytes: document_bytes,
+            ..
+        } = deserializer::split_protocol_version(buffer.as_ref())?;
 
-        // TODO: the error originates here due to id having a wrong type - should be a base58 for the schema
+        let identity = Identity::deserialize(document_bytes).map_err(|e| {
+            ConsensusError::SerializedObjectParsingError {
+                parsing_error: anyhow!("Decode protocol entity: {:#?}", e),
+            }
+        })?;
 
-        self.create_from_object(raw_identity, skip_validation)
+        if skip_validation {
+            Ok(identity)
+        } else {
+            let mut value = identity.to_object()?;
+            value.set_value("protocolVersion", Value::U32(protocol_version))?;
+            self.create_from_object(value, false)
+        }
     }
 
     pub fn create_instant_lock_proof(

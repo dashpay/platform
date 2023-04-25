@@ -43,6 +43,7 @@ mod bls;
 pub mod tests;
 
 pub mod block;
+pub mod serialization_traits;
 pub mod system_data_contracts;
 
 pub use async_trait;
@@ -68,4 +69,5 @@ pub use bincode;
 pub use bls_signatures;
 pub use ed25519_dalek;
 pub use jsonschema;
+pub use platform_serialization;
 pub use platform_value;

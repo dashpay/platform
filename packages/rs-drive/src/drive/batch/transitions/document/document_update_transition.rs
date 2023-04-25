@@ -2,7 +2,7 @@ use crate::drive::batch::transitions::document::DriveHighLevelDocumentOperationC
 use crate::drive::batch::DriveOperation::DocumentOperation;
 use crate::drive::batch::{DocumentOperationType, DriveOperation};
 use crate::drive::flags::StorageFlags;
-use crate::drive::object_size_info::DocumentInfo::DocumentWithoutSerialization;
+use crate::drive::object_size_info::DocumentInfo::DocumentOwnedInfo;
 use crate::drive::object_size_info::OwnedDocumentInfo;
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
@@ -50,10 +50,7 @@ impl DriveHighLevelDocumentOperationConverter for DocumentReplaceTransitionActio
         let mut drive_operations = vec![];
         drive_operations.push(DocumentOperation(DocumentOperationType::UpdateDocument {
             owned_document_info: OwnedDocumentInfo {
-                document_info: DocumentWithoutSerialization((
-                    document,
-                    Some(Cow::Owned(storage_flags)),
-                )),
+                document_info: DocumentOwnedInfo((document, Some(Cow::Owned(storage_flags)))),
                 owner_id: Some(owner_id.into_buffer()),
             },
             contract_id: data_contract_id,

@@ -36,11 +36,9 @@ use std::borrow::Cow;
 use std::option::Option::None;
 
 #[cfg(feature = "full")]
-use dpp::data_contract::DriveContractExt;
-#[cfg(feature = "full")]
 use dpp::document::Document;
 #[cfg(feature = "full")]
-use dpp::util::serializer;
+use dpp::util::cbor_serializer;
 #[cfg(feature = "full")]
 use drive::common;
 
@@ -70,6 +68,9 @@ use drive::drive::{Drive, RootTree};
 
 #[cfg(feature = "full")]
 use dpp::block::block_info::BlockInfo;
+use dpp::identifier::Identifier;
+use dpp::platform_value::Bytes32;
+use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
 
 #[cfg(feature = "full")]
 /// Contains the unique ID for a Dash identity.
@@ -142,7 +143,7 @@ pub fn add_domains_to_contract(
     let domains = Domain::random_domains_in_parent(count, seed, "dash");
     for domain in domains {
         let value = serde_json::to_value(domain).expect("serialized domain");
-        let document_cbor = serializer::serializable_value_to_cbor(
+        let document_cbor = cbor_serializer::serializable_value_to_cbor(
             &value,
             Some(drive::drive::defaults::PROTOCOL_VERSION),
         )
@@ -159,11 +160,7 @@ pub fn add_domains_to_contract(
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefAndSerialization((
-                            &document,
-                            &document_cbor,
-                            storage_flags,
-                        )),
+                        document_info: DocumentRefInfo((&document, storage_flags)),
                         owner_id: None,
                     },
                     contract,
@@ -448,7 +445,7 @@ fn test_root_hash_with_batches(drive: &Drive, db_transaction: &Transaction) {
         .unwrap()
         .expect("should return app hash");
 
-    let expected_app_hash = "c0f7380e8608b068b149e29e238dbf0812d4c6a3c3f7e5b4af9ba620edd8f83e";
+    let expected_app_hash = "4b6ef295b084f2a81b5e1863fff1454784e1f8262800c90a9120faeb83c2753a";
 
     assert_eq!(hex::encode(app_hash), expected_app_hash);
 }

@@ -66,7 +66,7 @@
     ],
     "properties": {
       "transactionId": {
-        "description": "Hash of asset unlock transaction. Populated with untied transaction hash on “pooled” stage and with signed transaction on “broatcasted” stage",
+        "description": "Hash of asset unlock transaction. Populated with untied transaction hash on “pooled” stage and with signed transaction on “broadcasted” stage",
         "type": "array",
         "byteArray": true,
         "minItems": 32,
@@ -127,7 +127,6 @@
       "coreFeePerByte",
       "pooling",
       "outputScript",
-      "transactionIndex",
       "status"
     ]
   }

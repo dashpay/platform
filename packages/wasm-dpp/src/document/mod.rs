@@ -27,7 +27,7 @@ pub mod state_transition;
 mod validator;
 
 pub use document_batch_transition::DocumentsBatchTransitionWasm;
-use dpp::data_contract::DriveContractExt;
+
 use dpp::document::{Document, EXTENDED_DOCUMENT_IDENTIFIER_FIELDS, IDENTIFIER_FIELDS};
 
 pub use extended_document::ExtendedDocumentWasm;

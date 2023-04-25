@@ -4,6 +4,7 @@ use crate::data_contract::state_transition::data_contract_update_transition::Dat
 use crate::identity::signer::Signer;
 use crate::identity::{KeyID, PartialIdentity};
 use crate::prelude::DataContract;
+use crate::serialization_traits::{PlatformDeserializable, Signable};
 use crate::state_transition::StateTransitionConvert;
 use crate::state_transition::StateTransitionType::{DataContractCreate, DataContractUpdate};
 use crate::version::LATEST_VERSION;
@@ -26,7 +27,7 @@ impl DataContractCreateTransition {
             signature_public_key_id: key_id,
             signature: Default::default(),
         };
-        let value = transition.to_cbor_buffer(true)?;
+        let value = transition.signable_bytes()?;
         let public_key =
             identity
                 .loaded_public_keys
@@ -55,7 +56,7 @@ impl DataContractUpdateTransition {
             signature_public_key_id: key_id,
             signature: Default::default(),
         };
-        let value = transition.to_cbor_buffer(true)?;
+        let value = transition.signable_bytes()?;
         let public_key =
             identity
                 .loaded_public_keys

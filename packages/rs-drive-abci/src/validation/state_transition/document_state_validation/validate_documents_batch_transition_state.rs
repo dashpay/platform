@@ -8,7 +8,7 @@ use crate::validation::state_transition::document_state_validation::execute_data
 use crate::validation::state_transition::document_state_validation::fetch_documents::fetch_documents_for_transitions_knowing_contract_and_document_type;
 use dpp::consensus::basic::BasicError;
 use dpp::data_contract::document_type::DocumentType;
-use dpp::data_contract::{DataContract, DriveContractExt};
+use dpp::data_contract::DataContract;
 use dpp::document::document_transition::{
     DocumentCreateTransitionAction, DocumentDeleteTransitionAction, DocumentReplaceTransition,
     DocumentReplaceTransitionAction, DocumentTransitionAction,

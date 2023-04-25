@@ -95,6 +95,7 @@ use drive_abci::abci::AbciApplication;
 use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
 
 use dashcore_rpc::json::{MasternodeListDiff, RemovedMasternodeItem};
+use dpp::serialization_traits::PlatformSerializable;
 use drive_abci::abci::mimic::MimicExecuteBlockOutcome;
 use drive_abci::execution::test_quorum::TestQuorumInfo;
 use drive_abci::platform::Platform;
@@ -357,7 +358,7 @@ impl Strategy {
         for op in &self.operations {
             match &op.op_type {
                 OperationType::Document(doc_op) => {
-                    let serialize = doc_op.contract.to_cbor().expect("expected to serialize");
+                    let serialize = doc_op.contract.serialize().expect("expected to serialize");
                     drive
                         .apply_contract_with_serialization(
                             &doc_op.contract,
@@ -1665,8 +1666,7 @@ mod tests {
     use dashcore_rpc::dashcore_rpc_json::{
         Bip9SoftforkInfo, Bip9SoftforkStatus, ExtendedQuorumDetails,
     };
-    use drive::dpp::data_contract::extra::common::json_document_to_cbor;
-    use drive::dpp::data_contract::DriveContractExt;
+    use dpp::data_contract::extra::common::json_document_to_contract;
     use drive_abci::config::PlatformTestConfig;
     use drive_abci::rpc::core::QuorumListExtendedInfo;
     use tenderdash_abci::proto::types::CoreChainLock;
@@ -2296,13 +2296,10 @@ mod tests {
 
     #[test]
     fn run_chain_insert_one_new_identity_and_a_contract() {
-        let contract_cbor = json_document_to_cbor(
+        let contract = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
-            Some(PROTOCOL_VERSION),
         )
-        .expect("expected to get cbor from a json document");
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("contract should be deserialized");
+        .expect("expected to get contract from a json document");
 
         let strategy = Strategy {
             contracts_with_updates: vec![(contract, None)],
@@ -2369,34 +2366,23 @@ mod tests {
 
     #[test]
     fn run_chain_insert_one_new_identity_and_a_contract_with_updates() {
-        let contract_cbor = json_document_to_cbor(
+        let contract = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
-            Some(PROTOCOL_VERSION),
         )
-        .expect("expected to get cbor from a json document");
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("contract should be deserialized");
+        .expect("expected to get contract from a json document");
 
-        let contract_cbor_update_1 = json_document_to_cbor(
+        let mut contract_update_1 = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable-update-1.json",
-            Some(PROTOCOL_VERSION),
         )
-        .expect("expected to get cbor from a json document");
-        let mut contract_update_1 =
-            <Contract as DriveContractExt>::from_cbor(&contract_cbor_update_1, None)
-                .expect("contract should be deserialized");
+        .expect("expected to get contract from a json document");
 
         //todo: versions should start at 0 (so this should be 1)
         contract_update_1.version = 2;
 
-        let contract_cbor_update_2 = json_document_to_cbor(
+        let mut contract_update_2 = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable-update-2.json",
-            Some(PROTOCOL_VERSION),
         )
-        .expect("expected to get cbor from a json document");
-        let mut contract_update_2 =
-            <Contract as DriveContractExt>::from_cbor(&contract_cbor_update_2, None)
-                .expect("contract should be deserialized");
+        .expect("expected to get contract from a json document");
 
         contract_update_2.version = 3;
 
@@ -2471,13 +2457,10 @@ mod tests {
 
     #[test]
     fn run_chain_insert_one_new_identity_per_block_and_one_new_document() {
-        let contract_cbor = json_document_to_cbor(
+        let contract = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
-            Some(PROTOCOL_VERSION),
         )
-        .expect("expected to get cbor from a json document");
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("contract should be deserialized");
+        .expect("expected to get contract from a json document");
 
         let document_op = DocumentOp {
             contract: contract.clone(),
@@ -2539,13 +2522,10 @@ mod tests {
 
     #[test]
     fn run_chain_insert_one_new_identity_per_block_and_a_document_with_epoch_change() {
-        let contract_cbor = json_document_to_cbor(
+        let contract = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
-            Some(PROTOCOL_VERSION),
         )
-        .expect("expected to get cbor from a json document");
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("contract should be deserialized");
+        .expect("expected to get contract from a json document");
 
         let document_op = DocumentOp {
             contract: contract.clone(),
@@ -2617,13 +2597,10 @@ mod tests {
     #[test]
     fn run_chain_insert_one_new_identity_per_block_document_insertions_and_deletions_with_epoch_change(
     ) {
-        let contract_cbor = json_document_to_cbor(
+        let contract = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
-            Some(PROTOCOL_VERSION),
         )
-        .expect("expected to get cbor from a json document");
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("contract should be deserialized");
+        .expect("expected to get contract from a json document");
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
@@ -2713,13 +2690,10 @@ mod tests {
     #[test]
     fn run_chain_insert_one_new_identity_per_block_many_document_insertions_and_deletions_with_epoch_change(
     ) {
-        let contract_cbor = json_document_to_cbor(
+        let contract = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
-            Some(PROTOCOL_VERSION),
         )
-        .expect("expected to get cbor from a json document");
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("contract should be deserialized");
+        .expect("expected to get contract from a json document");
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
@@ -2810,13 +2784,10 @@ mod tests {
     #[test]
     fn run_chain_insert_many_new_identity_per_block_many_document_insertions_and_deletions_with_epoch_change(
     ) {
-        let contract_cbor = json_document_to_cbor(
+        let contract = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
-            Some(PROTOCOL_VERSION),
         )
-        .expect("expected to get cbor from a json document");
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("contract should be deserialized");
+        .expect("expected to get contract from a json document");
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
@@ -2909,13 +2880,10 @@ mod tests {
     #[test]
     fn run_chain_insert_many_new_identity_per_block_many_document_insertions_updates_and_deletions_with_epoch_change(
     ) {
-        let contract_cbor = json_document_to_cbor(
+        let contract = json_document_to_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
-            Some(PROTOCOL_VERSION),
         )
-        .expect("expected to get cbor from a json document");
-        let contract = <Contract as DriveContractExt>::from_cbor(&contract_cbor, None)
-            .expect("contract should be deserialized");
+        .expect("expected to get contract from a json document");
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),

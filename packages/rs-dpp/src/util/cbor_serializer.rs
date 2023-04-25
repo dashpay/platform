@@ -24,7 +24,7 @@ pub fn serializable_value_to_cbor<T: ?Sized + ser::Serialize>(
 
     if (buffer.len() - size_with_protocol) >= MAX_ENCODED_KBYTE_LENGTH * 1024 {
         return Err(ProtocolError::MaxEncodedBytesReachedError {
-            payload: buffer,
+            size_hit: buffer.len(),
             max_size_kbytes: MAX_ENCODED_KBYTE_LENGTH,
         });
     }

@@ -7,7 +7,8 @@ use crate::drive::document::contract_document_type_path;
 use crate::drive::flags::StorageFlags;
 use crate::drive::Drive;
 
-use dpp::data_contract::{DataContract, DriveContractExt};
+use dpp::data_contract::DataContract;
+use dpp::serialization_traits::PlatformSerializable;
 use grovedb::batch::KeyInfoPath;
 use grovedb::EstimatedLayerCount::{ApproximateElements, EstimatedLevel};
 use grovedb::EstimatedLayerInformation;
@@ -27,13 +28,13 @@ impl Drive {
         );
 
         // we only store the owner_id storage
-        let storage_flags = if contract.can_be_deleted() || !contract.readonly() {
+        let storage_flags = if contract.config.can_be_deleted || !contract.config.readonly {
             Some(StorageFlags::approximate_size(true, None))
         } else {
             None
         };
 
-        for document_type_name in contract.document_types().keys() {
+        for document_type_name in contract.document_types.keys() {
             estimated_costs_only_with_layer_info.insert(
                 KeyInfoPath::from_known_path(contract_document_type_path(
                     contract.id.as_bytes(),
@@ -51,7 +52,7 @@ impl Drive {
             );
         }
 
-        if contract.keeps_history() {
+        if contract.config.keeps_history {
             // we are dealing with a sibling reference
             // sibling reference serialized size is going to be the encoded time size
             // (DEFAULT_FLOAT_SIZE) plus 1 byte for reference type and 1 byte for the space of
@@ -69,7 +70,7 @@ impl Drive {
                         subtrees_size: None,
                         items_size: Some((
                             DEFAULT_FLOAT_SIZE_U8,
-                            contract.to_cbor().unwrap().len() as u32, //todo: fix this
+                            contract.serialize().unwrap().len() as u32, //todo: fix this
                             storage_flags,
                             AVERAGE_NUMBER_OF_UPDATES,
                         )),

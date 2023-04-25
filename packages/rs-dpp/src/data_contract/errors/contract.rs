@@ -19,7 +19,7 @@ pub enum DataContractError {
     InvalidDocumentTypeError(InvalidDocumentTypeError),
 
     #[error("missing required key: {0}")]
-    MissingRequiredKey(&'static str),
+    MissingRequiredKey(String),
 
     #[error("field requirement unmet: {0}")]
     FieldRequirementUnmet(&'static str),

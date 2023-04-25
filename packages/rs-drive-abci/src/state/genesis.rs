@@ -34,13 +34,13 @@ use crate::platform::Platform;
 use dpp::platform_value::{platform_value, BinaryData};
 use dpp::ProtocolError;
 use drive::contract::DataContract;
-use drive::dpp::data_contract::DriveContractExt;
 use drive::dpp::document::Document;
 use drive::dpp::identity::{
     Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel, TimestampMillis,
 };
 
 use dpp::block::block_info::BlockInfo;
+use dpp::serialization_traits::PlatformSerializable;
 use drive::dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use drive::drive::batch::{
     ContractOperationType, DocumentOperationType, DriveOperation, IdentityOperationType,
@@ -170,7 +170,7 @@ impl<C> Platform<C> {
         data_contract: DataContract,
         operations: &mut Vec<DriveOperation>,
     ) {
-        let serialization = data_contract.to_cbor().unwrap();
+        let serialization = data_contract.serialize().unwrap();
         operations.push(DriveOperation::ContractOperation(
             //todo: remove cbor
             ContractOperationType::ApplyContractWithSerialization {
@@ -230,7 +230,7 @@ impl<C> Platform<C> {
             DriveOperation::DocumentOperation(DocumentOperationType::AddDocumentForContract {
                 document_and_contract_info: DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentInfo::DocumentWithoutSerialization((document, None)),
+                        document_info: DocumentInfo::DocumentOwnedInfo((document, None)),
                         owner_id: None,
                     },
                     contract,
@@ -266,8 +266,8 @@ mod tests {
             assert_eq!(
                 root_hash,
                 [
-                    223, 137, 33, 5, 253, 177, 248, 37, 0, 40, 198, 213, 196, 196, 66, 200, 71, 85,
-                    103, 138, 52, 63, 102, 105, 27, 86, 102, 242, 79, 247, 217, 108
+                    101, 108, 71, 168, 227, 6, 77, 33, 150, 83, 197, 157, 128, 17, 109, 126, 144,
+                    69, 44, 137, 204, 33, 20, 166, 250, 181, 154, 106, 2, 170, 254, 238
                 ]
             )
         }

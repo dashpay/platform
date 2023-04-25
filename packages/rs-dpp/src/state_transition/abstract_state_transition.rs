@@ -8,15 +8,17 @@ use serde_json::Value as JsonValue;
 
 use crate::consensus::ConsensusError;
 use crate::errors::consensus::signature::SignatureError;
-use crate::identity::signer::Signer;
 
+use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable, Signable};
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, StateTransitionIsNotSignedError,
 };
+#[cfg(feature = "cbor")]
+use crate::util::cbor_serializer;
 use crate::{
     identity::KeyType,
     prelude::{Identifier, ProtocolError},
-    util::{hash, serializer},
+    util::hash,
     BlsModule,
 };
 
@@ -42,7 +44,7 @@ pub const DATA_CONTRACT_TRANSITION_TYPES: [StateTransitionType; 2] = [
 /// The StateTransitionLike represents set of methods that are shared for all types of State Transition.
 /// Every type of state transition should also implement Debug, Clone, and support conversion to compounded [`StateTransition`]
 pub trait StateTransitionLike:
-    StateTransitionConvert + Clone + Debug + Into<StateTransition>
+    StateTransitionConvert + Clone + Debug + Into<StateTransition> + Signable
 {
     /// returns the protocol version
     fn get_protocol_version(&self) -> u32;
@@ -62,7 +64,7 @@ pub trait StateTransitionLike:
         key_type: KeyType,
         bls: &impl BlsModule,
     ) -> Result<(), ProtocolError> {
-        let data = self.to_cbor_buffer(true)?;
+        let data = self.signable_bytes()?;
         match key_type {
             KeyType::BLS12_381 => self.set_signature(bls.sign(&data, private_key)?.into()),
 
@@ -129,7 +131,7 @@ pub trait StateTransitionLike:
                 StateTransitionIsNotSignedError::new(self.clone().into()),
             ));
         }
-        let data = self.to_cbor_buffer(true)?;
+        let data = self.signable_bytes()?;
         signer::verify_data_signature(&data, self.get_signature().as_slice(), public_key).map_err(
             |_| {
                 ProtocolError::from(ConsensusError::SignatureError(
@@ -151,7 +153,7 @@ pub trait StateTransitionLike:
             ));
         }
 
-        let data = self.to_cbor_buffer(true)?;
+        let data = self.signable_bytes()?;
 
         bls.verify_signature(self.get_signature().as_slice(), &data, public_key)
             .map(|_| ())
@@ -179,7 +181,7 @@ pub trait StateTransitionLike:
 }
 
 /// The trait contains methods related to conversion of StateTransition into different formats
-pub trait StateTransitionConvert: Serialize {
+pub trait StateTransitionConvert: Serialize + Signable + PlatformSerializable {
     // TODO remove this as it is not necessary and can be hardcoded
     fn signature_property_paths() -> Vec<&'static str>;
     fn identifiers_property_paths() -> Vec<&'static str>;
@@ -236,17 +238,22 @@ pub trait StateTransitionConvert: Serialize {
         state_transition_helpers::to_json(self, skip_signature_paths)
     }
 
+    #[cfg(feature = "cbor")]
     // Returns the cbor-encoded bytes representation of the object. The data is  prefixed by 4 bytes containing the Protocol Version
     fn to_cbor_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
         let mut value = self.to_canonical_cleaned_object(skip_signature)?;
         let protocol_version = value.remove_integer(PROPERTY_PROTOCOL_VERSION)?;
 
-        serializer::serializable_value_to_cbor(&value, Some(protocol_version))
+        cbor_serializer::serializable_value_to_cbor(&value, Some(protocol_version))
     }
 
     // Returns the hash of cibor-encoded bytes representation of the object
     fn hash(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash::hash_to_vec(self.to_cbor_buffer(skip_signature)?))
+        if skip_signature {
+            Ok(hash::hash_to_vec(self.signable_bytes()?))
+        } else {
+            Ok(hash::hash_to_vec(PlatformSerializable::serialize(self)?))
+        }
     }
 
     fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {

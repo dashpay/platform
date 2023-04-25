@@ -1,27 +1,35 @@
-use crate::data_contract::{DataContract, DriveContractExt};
+use crate::data_contract::DataContract;
 use crate::metadata::Metadata;
 use crate::prelude::Identifier;
 use crate::prelude::{Revision, TimestampMillis};
+#[cfg(feature = "cbor")]
 use crate::util::cbor_value::CborCanonicalMap;
 use crate::util::deserializer;
 use crate::util::deserializer::{ProtocolVersion, SplitProtocolVersionOutcome};
 use crate::util::hash::hash_to_vec;
 use crate::ProtocolError;
+#[cfg(feature = "cbor")]
 use ciborium::Value as CborValue;
 use integer_encoding::VarInt;
 
 use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::data_contract::document_type::DocumentType;
 use crate::document::Document;
+use crate::serialization_traits::ValueConvertible;
+use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+use bincode::{config, Decode, Encode};
+use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 use platform_value::btreemap_extensions::BTreeValueMapInsertionPathHelper;
 use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::converter::serde_json::BTreeValueJsonConverter;
 use platform_value::{Bytes32, ReplacementType, Value};
+use platform_value_convertible::PlatformValueConvert;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use std::collections::{BTreeMap, HashSet};
+use std::convert::TryFrom;
 use std::convert::TryInto;
 
 pub mod property_names {
@@ -261,7 +269,8 @@ impl ExtendedDocument {
         Ok(value)
     }
 
-    pub fn from_buffer(cbor_bytes: impl AsRef<[u8]>) -> Result<Self, ProtocolError> {
+    #[cfg(feature = "cbor")]
+    pub fn from_cbor_buffer(cbor_bytes: impl AsRef<[u8]>) -> Result<Self, ProtocolError> {
         let SplitProtocolVersionOutcome {
             protocol_version,
             main_message_bytes: document_cbor_bytes,
@@ -349,7 +358,8 @@ impl ExtendedDocument {
             .map_err(ProtocolError::ValueError)
     }
 
-    pub fn to_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
+    #[cfg(feature = "cbor")]
+    pub fn to_cbor_buffer(&self) -> Result<Vec<u8>, ProtocolError> {
         let mut result_buf = self.protocol_version.encode_var_vec();
 
         let mut cbor_value = self.document.to_cbor_value()?;
@@ -376,8 +386,9 @@ impl ExtendedDocument {
         Ok(result_buf)
     }
 
+    #[cfg(feature = "cbor")]
     pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
-        Ok(hash_to_vec(self.to_buffer()?))
+        Ok(hash_to_vec(self.to_cbor_buffer()?))
     }
 
     /// Set the value under given path.
@@ -419,19 +430,36 @@ impl ExtendedDocument {
     }
 }
 
-impl TryInto<Value> for ExtendedDocument {
-    type Error = ProtocolError;
-
-    fn try_into(self) -> Result<Value, Self::Error> {
-        self.into_value()
+impl PlatformDeserializable for ExtendedDocument {
+    fn deserialize(data: &[u8]) -> Result<Self, ProtocolError>
+    where
+        Self: Sized,
+    {
+        todo!()
     }
 }
 
-impl TryInto<Value> for &ExtendedDocument {
-    type Error = ProtocolError;
+impl ValueConvertible for ExtendedDocument {
+    fn to_object(&self) -> Result<Value, ProtocolError> {
+        todo!()
+    }
 
-    fn try_into(self) -> Result<Value, Self::Error> {
-        self.to_value()
+    fn into_object(self) -> Result<Value, ProtocolError> {
+        todo!()
+    }
+
+    fn from_object(value: Value) -> Result<Self, ProtocolError>
+    where
+        Self: Sized,
+    {
+        todo!()
+    }
+
+    fn from_object_ref(value: &Value) -> Result<Self, ProtocolError>
+    where
+        Self: Sized,
+    {
+        todo!()
     }
 }
 
@@ -572,9 +600,9 @@ mod test {
     fn test_buffer_serialize_deserialize() {
         init();
         let init_doc = new_example_document();
-        let buffer_document = init_doc.to_buffer().expect("no errors");
+        let buffer_document = init_doc.to_cbor_buffer().expect("no errors");
 
-        let doc = ExtendedDocument::from_buffer(buffer_document)
+        let doc = ExtendedDocument::from_cbor_buffer(buffer_document)
             .expect("document should be created from buffer");
 
         assert_eq!(init_doc.created_at(), doc.created_at());
@@ -631,7 +659,7 @@ mod test {
     fn deserialize_js_cpp_cbor() -> Result<()> {
         let document_cbor = document_cbor_bytes();
 
-        let document = ExtendedDocument::from_buffer(document_cbor)?;
+        let document = ExtendedDocument::from_cbor_buffer(document_cbor)?;
 
         assert_eq!(document.protocol_version, 1);
         assert_eq!(
@@ -666,9 +694,9 @@ mod test {
     #[test]
     fn to_buffer_serialize_to_the_same_format_as_js_dpp() -> Result<()> {
         let document_cbor = document_cbor_bytes();
-        let document = ExtendedDocument::from_buffer(&document_cbor)?;
+        let document = ExtendedDocument::from_cbor_buffer(&document_cbor)?;
 
-        let buffer = document.to_buffer()?;
+        let buffer = document.to_cbor_buffer()?;
 
         assert_eq!(hex::encode(document_cbor), hex::encode(buffer));
         Ok(())

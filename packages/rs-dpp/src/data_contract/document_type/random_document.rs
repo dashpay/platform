@@ -164,7 +164,7 @@ impl CreateRandomDocument for DocumentType {
         let mut created_at = None;
         let mut updated_at = None;
         let properties = self
-            .properties
+            .flattened_properties
             .iter()
             .filter_map(|(key, document_field)| {
                 if key == CREATED_AT {
@@ -225,7 +225,7 @@ impl CreateRandomDocument for DocumentType {
         let id = Identifier::random_with_rng(rng);
         let owner_id = Identifier::random_with_rng(rng);
         let properties = self
-            .properties
+            .flattened_properties
             .iter()
             .map(|(key, document_field)| {
                 (

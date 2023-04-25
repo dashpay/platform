@@ -299,7 +299,7 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
-        let bytes = self.0.to_buffer().with_js_error()?;
+        let bytes = self.0.to_cbor_buffer().with_js_error()?;
 
         Ok(Buffer::from_bytes(&bytes))
     }

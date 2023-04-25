@@ -1,7 +1,7 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use dpp::contracts::withdrawals_contract;
-use dpp::data_contract::DriveContractExt;
+
 use dpp::document::document_transition::DocumentTransitionAction;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::{Identifier, Value};
@@ -120,12 +120,13 @@ mod tests {
     use dpp::document::document_transition::{
         DocumentBaseTransitionAction, DocumentDeleteTransitionAction,
     };
+    use dpp::document::Document;
     use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
-    use dpp::platform_value::{platform_value, Bytes20};
+    use dpp::platform_value::{platform_value, Bytes20, Bytes32};
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dpp::tests::fixtures::{get_data_contract_fixture, get_withdrawal_document_fixture};
-    use drive::drive::object_size_info::DocumentInfo::DocumentRefWithoutSerialization;
+    use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
     use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 
     #[test]
@@ -164,6 +165,38 @@ mod tests {
     }
 
     #[test]
+    fn can_serialize_and_deserialize_withdrawal() {
+        let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
+            .expect("to load system data contract");
+        let owner_id = data_contract.owner_id;
+
+        let document_type = data_contract
+            .document_type_for_name(withdrawals_contract::document_types::WITHDRAWAL)
+            .expect("expected to get withdrawal document type");
+        let document = get_withdrawal_document_fixture(
+            &data_contract,
+            owner_id,
+            platform_value!({
+                "amount": 1000u64,
+                "coreFeePerByte": 1u32,
+                "pooling": Pooling::Never as u8,
+                "outputScript": (0..23).collect::<Vec<u8>>(),
+                "status": withdrawals_contract::WithdrawalStatus::BROADCASTED as u8,
+                "transactionIndex": 1u64,
+                "transactionSignHeight": 93u64,
+                "transactionId": Bytes32::new([1;32]),
+            }),
+            None,
+        )
+        .expect("expected withdrawal document");
+
+        let serialized = document
+            .serialize(document_type)
+            .expect("expected to serialize document");
+        Document::from_bytes(&serialized, document_type).expect("expected to deserialize document");
+    }
+
+    #[test]
     fn should_throw_error_if_withdrawal_has_wrong_status() {
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
@@ -197,7 +230,7 @@ mod tests {
                 "status": withdrawals_contract::WithdrawalStatus::BROADCASTED as u8,
                 "transactionIndex": 1u64,
                 "transactionSignHeight": 93u64,
-                "transactionId": Bytes20::new([1;20]),
+                "transactionId": Bytes32::new([1;32]),
             }),
             None,
         )
@@ -208,7 +241,7 @@ mod tests {
             .add_document_for_contract(
                 DocumentAndContractInfo {
                     owned_document_info: OwnedDocumentInfo {
-                        document_info: DocumentRefWithoutSerialization((&document, None)),
+                        document_info: DocumentRefInfo((&document, None)),
                         owner_id: Some(owner_id.to_buffer()),
                     },
                     contract: &data_contract,

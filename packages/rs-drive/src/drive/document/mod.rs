@@ -210,10 +210,11 @@ pub(crate) mod tests {
     use crate::drive::flags::StorageFlags;
     use crate::drive::Drive;
     use dpp::block::block_info::BlockInfo;
-    use dpp::data_contract::extra::common::json_document_to_cbor;
+    use dpp::data_contract::extra::common::json_document_to_contract;
+    use dpp::prelude::DataContract;
 
     /// Setup Dashpay
-    pub fn setup_dashpay(_prefix: &str, mutable_contact_requests: bool) -> (Drive, Vec<u8>) {
+    pub fn setup_dashpay(_prefix: &str, mutable_contact_requests: bool) -> (Drive, DataContract) {
         // Todo: make TempDir based on _prefix
         let tmp_dir = TempDir::new().unwrap();
         let drive: Drive = Drive::open(tmp_dir, None).expect("expected to open Drive successfully");
@@ -229,12 +230,11 @@ pub(crate) mod tests {
         };
 
         // let's construct the grovedb structure for the dashpay data contract
-        let dashpay_cbor =
-            json_document_to_cbor(dashpay_path, Some(1)).expect("expected to get cbor document");
+        let dashpay =
+            json_document_to_contract(dashpay_path).expect("expected to get cbor document");
         drive
-            .apply_contract_cbor(
-                dashpay_cbor.clone(),
-                None,
+            .apply_contract(
+                &dashpay,
                 BlockInfo::default(),
                 true,
                 StorageFlags::optional_default_as_cow(),
@@ -242,6 +242,6 @@ pub(crate) mod tests {
             )
             .expect("expected to apply contract successfully");
 
-        (drive, dashpay_cbor)
+        (drive, dashpay)
     }
 }
