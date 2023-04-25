@@ -7,10 +7,7 @@ use chrono::Utc;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::ProTxHash;
 use dashcore_rpc::dashcore_rpc_json::MasternodeListDiff;
-use dashcore_rpc::json::{
-    DMNStateDiff, MasternodeListDiffWithMasternodes, MasternodeListItem, RemovedMasternodeItem,
-    UpdatedMasternodeItem,
-};
+use dashcore_rpc::json::{DMNStateDiff, MasternodeListItem, RemovedMasternodeItem};
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 use dpp::identity::factory::IDENTITY_PROTOCOL_VERSION;
@@ -22,6 +19,7 @@ use drive::drive::batch::DriveOperation::IdentityOperation;
 use drive::drive::batch::IdentityOperationType::AddNewIdentity;
 use drive::grovedb::Transaction;
 use sha2::{Digest, Sha256};
+use std::backtrace::Backtrace;
 use std::collections::{BTreeMap, HashSet};
 
 impl<C> Platform<C>
@@ -269,12 +267,12 @@ where
                 purpose: Purpose::AUTHENTICATION, // todo: is this purpose correct??
                 security_level: SecurityLevel::CRITICAL,
                 read_only: true,
-                data: BinaryData::new(
-                    state_diff
+                data: BinaryData::new(maybe_hexdecode_key(
+                    &state_diff
                         .pub_key_operator
                         .clone()
                         .expect("confirmed is some"),
-                ),
+                )),
                 disabled_at: None,
             };
             keys_to_create.push(new_key);
@@ -452,7 +450,7 @@ where
         let operator_identifier = Self::get_operator_identifier(masternode)?;
         let mut identity = Self::create_basic_identity(operator_identifier);
         identity.add_public_keys(self.get_operator_identity_keys(
-            masternode.state.pub_key_operator.clone(),
+            maybe_hexdecode_key(&masternode.state.pub_key_operator.clone()),
             masternode.state.operator_payout_address,
             masternode.state.platform_node_id,
         )?);
@@ -574,6 +572,19 @@ where
     }
 }
 
+/// Decode key if it's not encoded
+///
+/// TODO: This is just a workaround, remove when not needed anymore
+fn maybe_hexdecode_key(key: &[u8]) -> Vec<u8> {
+    if key.len() == 96 {
+        let backtrace = Backtrace::force_capture();
+        tracing::error!(?backtrace, "non hex-decoded key found");
+
+        hex::decode(key).expect("cannot hex-decode received key")
+    } else {
+        Vec::from(key)
+    }
+}
 /*
 #[cfg(test)]
 mod tests {
