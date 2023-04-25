@@ -1,9 +1,8 @@
 const DashCoreLib = require('@dashevo/dashcore-lib');
-
-const getInstantAssetLockFixture = require('@dashevo/dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
-
 const { expect } = require('chai');
+
+const getInstantAssetLockFixture = require('../../../../../../lib/test/fixtures/js/getInstantAssetLockProofFixture');
+const createStateRepositoryMock = require('../../../../../../lib/test/mocks/createStateRepositoryMock');
 const { expectJsonSchemaError, expectValidationError } = require('../../../../../../lib/test/expect/expectError');
 
 const { default: loadWasmDpp } = require('../../../../../../dist');
