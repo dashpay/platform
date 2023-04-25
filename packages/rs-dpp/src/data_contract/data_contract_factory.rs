@@ -187,7 +187,7 @@ impl DataContractFactory {
         data_contract: DataContract,
     ) -> Result<DataContractCreateTransition, ProtocolError> {
         //todo: is this right for entropy?
-        let entropy = data_contract.entropy.clone();
+        let entropy = data_contract.entropy;
         Ok(DataContractCreateTransition {
             protocol_version: self.protocol_version,
             transition_type: StateTransitionType::DataContractCreate,

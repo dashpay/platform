@@ -107,6 +107,7 @@ where
         bls: &impl BlsModule,
     ) -> Result<(), ProtocolError> {
         self.verify_public_key_level_and_purpose(public_key)?;
+        self.verify_public_key_is_enabled(public_key)?;
 
         let signature = self.get_signature();
         if signature.is_empty() {

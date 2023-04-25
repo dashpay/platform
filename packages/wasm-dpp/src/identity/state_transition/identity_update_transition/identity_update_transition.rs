@@ -1,6 +1,7 @@
 use std::convert::TryInto;
 use std::default::Default;
 
+use dpp::consensus::signature::SignatureError;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::__rt::Ref;
 use wasm_bindgen::prelude::*;
@@ -17,6 +18,9 @@ use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 
 use crate::errors::from_dpp_err;
 use crate::utils::{generic_of_js_val, WithJsError};
+
+use dpp::consensus::ConsensusError::SignatureError as ConsensusSignatureErrorVariant;
+
 use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
 use dpp::identity::{KeyID, TimestampMillis};
 use dpp::platform_value::string_encoding::Encoding;
@@ -471,5 +475,32 @@ impl IdentityUpdateTransitionWasm {
                 &bls_adapter,
             )
             .with_js_error()
+    }
+
+    #[wasm_bindgen(js_name=verifySignature)]
+    pub fn verify_signature(
+        &self,
+        identity_public_key: &IdentityPublicKeyWasm,
+        bls: JsBlsAdapter,
+    ) -> Result<bool, JsValue> {
+        let bls_adapter = BlsAdapter(bls);
+
+        let verification_result = self
+            .0
+            .verify_signature(&identity_public_key.to_owned().into(), &bls_adapter);
+
+        match verification_result {
+            Ok(()) => Ok(true),
+            Err(protocol_error) => match &protocol_error {
+                ProtocolError::AbstractConsensusError(err) => match err.as_ref() {
+                    ConsensusSignatureErrorVariant(
+                        SignatureError::InvalidStateTransitionSignatureError,
+                    ) => Ok(false),
+                    _ => Err(protocol_error),
+                },
+                _ => Err(protocol_error),
+            },
+        }
+        .with_js_error()
     }
 }

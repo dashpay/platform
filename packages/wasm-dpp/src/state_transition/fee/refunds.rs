@@ -53,7 +53,7 @@ impl Inner for RefundsWasm {
 pub fn convert_hashmap_to_jsmap(map: &HashMap<String, u64>) -> js_sys::Map {
     let js_map = js_sys::Map::new();
     for (key, value) in map {
-        js_map.set(&JsValue::from_str(&key), &BigInt::from(*value));
+        js_map.set(&JsValue::from_str(key), &BigInt::from(*value));
     }
     js_map
 }

@@ -1,4 +1,5 @@
 const { PrivateKey } = require('@dashevo/dashcore-lib');
+const crypto = require('crypto');
 
 const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
 
@@ -113,7 +114,12 @@ describe('StateTransitionFacade', () => {
 
     const blsAdapter = await getBlsAdapterMock();
 
-    dpp = new DashPlatformProtocol(blsAdapter, stateRepositoryMock, 1);
+    dpp = new DashPlatformProtocol(
+      blsAdapter,
+      stateRepositoryMock,
+      { generate: () => crypto.randomBytes(32) },
+      1,
+    );
   });
 
   describe('createFromObject', () => {

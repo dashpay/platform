@@ -7,7 +7,6 @@ const DocumentCreateTransition = require(
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
-const lodash = require('lodash');
 
 const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
 const { default: loadWasmDpp } = require('../../../dist');
@@ -36,7 +35,7 @@ describe('Document', () => {
 
     const now = new Date().getTime();
     const id = await generateRandomIdentifierAsync();
-    const jsId = new JsIdentifier(Buffer.from(id.toBuffer()));
+    const jsId = new JsIdentifier(id.toBuffer());
 
     const ownerId = await generateRandomIdentifierAsync();
     const jsOwnerId = new JsIdentifier(Buffer.from(ownerId.toBuffer()));
@@ -77,7 +76,7 @@ describe('Document', () => {
       },
     };
 
-    dataContract = dataContractFactory.create(ownerId.clone(), rawDataContract);
+    dataContract = dataContractFactory.create(ownerId, rawDataContract);
     dataContractJs = jsDataContractFactory.create(jsOwnerId, rawDataContract);
 
     rawDocument = {
@@ -103,7 +102,7 @@ describe('Document', () => {
     };
 
     document = new ExtendedDocument(rawDocument, dataContract);
-    rawDocumentJs = lodash.cloneDeepWith(rawDocument);
+    rawDocumentJs = { ...rawDocument };
     rawDocumentJs.$id = jsId;
     rawDocumentJs.$ownerId = jsOwnerId;
 
@@ -307,7 +306,7 @@ describe('Document', () => {
     it('should return ID', async () => {
       const id = await generateRandomIdentifierAsync();
 
-      document.setId(id.clone());
+      document.setId(id);
 
       const actualId = document.getId();
 

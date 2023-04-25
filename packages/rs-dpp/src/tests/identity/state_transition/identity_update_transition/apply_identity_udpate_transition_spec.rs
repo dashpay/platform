@@ -77,7 +77,7 @@ async fn should_add_and_disable_public_keys() {
 
     let result = apply_identity_update_transition(
         &state_repository_mock,
-        state_transition,
+        &state_transition,
         &execution_context,
     )
     .await;
@@ -135,7 +135,7 @@ async fn should_add_and_disable_public_keys_on_dry_run() {
 
     let result = apply_identity_update_transition(
         &state_repository_mock,
-        state_transition,
+        &state_transition,
         &execution_context,
     )
     .await;

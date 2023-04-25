@@ -211,6 +211,12 @@ impl IdentityCreateTransition {
             state_transition.set_asset_lock_proof(AssetLockProof::try_from(proof)?)?;
         }
 
+        if let Some(signature) =
+            transition_map.get_optional_binary_data(property_names::SIGNATURE)?
+        {
+            state_transition.set_signature(signature);
+        }
+
         state_transition.protocol_version =
             transition_map.get_integer(property_names::PROTOCOL_VERSION)?;
 
