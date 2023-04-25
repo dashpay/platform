@@ -1,5 +1,4 @@
 use crate::errors::consensus::consensus_error::from_consensus_error_ref;
-use crate::errors::consensus_error::from_consensus_error_ref;
 use dpp::{consensus::ConsensusError, validation::ConsensusValidationResult};
 use js_sys::JsString;
 use wasm_bindgen::prelude::*;

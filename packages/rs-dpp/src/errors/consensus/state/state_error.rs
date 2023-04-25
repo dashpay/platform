@@ -2,7 +2,9 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
-use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
+use crate::consensus::state::data_trigger::data_trigger_error::{
+    DataTriggerActionError, DataTriggerError,
+};
 use crate::consensus::state::document::document_already_present_error::DocumentAlreadyPresentError;
 use crate::consensus::state::document::document_not_found_error::DocumentNotFoundError;
 use crate::consensus::state::document::document_owner_id_mismatch_error::DocumentOwnerIdMismatchError;
@@ -18,6 +20,7 @@ use crate::consensus::state::identity::identity_public_key_is_read_only_error::I
 use crate::consensus::state::identity::invalid_identity_public_key_id_error::InvalidIdentityPublicKeyIdError;
 use crate::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
 use crate::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
+use crate::consensus::state::identity::missing_identity_public_key_ids_error::MissingIdentityPublicKeyIdsError;
 use crate::consensus::state::identity::{
     IdentityAlreadyExistsError, IdentityInsufficientBalanceError,
 };
@@ -35,6 +38,9 @@ pub enum StateError {
 
     #[error(transparent)]
     DataTriggerError(DataTriggerError),
+
+    #[error(transparent)]
+    DataTriggerActionError(DataTriggerActionError),
 
     #[error(transparent)]
     DocumentAlreadyPresentError(DocumentAlreadyPresentError),
@@ -67,6 +73,9 @@ pub enum StateError {
 
     #[error(transparent)]
     IdentityPublicKeyIsReadOnlyError(IdentityPublicKeyIsReadOnlyError),
+
+    #[error(transparent)]
+    MissingIdentityPublicKeyIdsError(MissingIdentityPublicKeyIdsError),
 
     #[error(transparent)]
     InvalidIdentityPublicKeyIdError(InvalidIdentityPublicKeyIdError),

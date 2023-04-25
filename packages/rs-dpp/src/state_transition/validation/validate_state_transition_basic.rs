@@ -1,5 +1,6 @@
 use std::{convert::TryFrom, sync::Arc};
 
+use crate::serialization_traits::PlatformSerializable;
 use async_trait::async_trait;
 use platform_value::Value;
 

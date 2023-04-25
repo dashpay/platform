@@ -18,7 +18,7 @@ use crate::{
     identity::validation::{RequiredPurposeAndSecurityLevelValidator, TPublicKeysValidator},
     state_repository::StateRepositoryLike,
     validation::ConsensusValidationResult,
-    NonConsensusError, StateError,
+    NonConsensusError,
 };
 
 use super::identity_update_transition::{property_names, IdentityUpdateTransition};

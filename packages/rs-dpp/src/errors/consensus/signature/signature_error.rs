@@ -39,6 +39,15 @@ pub enum SignatureError {
 
     #[error(transparent)]
     PublicKeySecurityLevelNotMetError(PublicKeySecurityLevelNotMetError),
+
+    #[error("signature should be empty {0}")]
+    SignatureShouldNotBePresent(String),
+
+    #[error("ecdsa signing error {0}")]
+    BasicECDSAError(String),
+
+    #[error("bls signing error {0}")]
+    BasicBLSError(String),
 }
 
 impl From<SignatureError> for ConsensusError {

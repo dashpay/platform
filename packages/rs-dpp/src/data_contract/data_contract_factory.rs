@@ -12,6 +12,8 @@ use crate::data_contract::errors::InvalidDataContractError;
 
 use crate::data_contract::property_names::PROTOCOL_VERSION;
 
+use crate::consensus::basic::decode::SerializedObjectParsingError;
+use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use crate::state_transition::StateTransitionType;
@@ -169,9 +171,10 @@ impl DataContractFactory {
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
         let data_contract = DataContract::deserialize(buffer.as_slice()).map_err(|e| {
-            ConsensusError::SerializedObjectParsingError {
-                parsing_error: anyhow!("Decode protocol entity: {:#?}", e),
-            }
+            let error = ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
+                SerializedObjectParsingError::new(format!("Decode protocol entity: {:#?}", e)),
+            ));
+            error
         })?;
 
         if !skip_validation {

@@ -36,7 +36,7 @@ use crate::{
         StateTransitionIdentitySigned,
     },
     validation::ConsensusValidationResult,
-    ProtocolError, StateError,
+    ProtocolError,
 };
 
 use super::{

@@ -19,6 +19,8 @@ use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::iter::FromIterator;
 
+use crate::consensus::basic::decode::SerializedObjectParsingError;
+use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use crate::state_transition::StateTransition;
@@ -216,9 +218,9 @@ where
         } = deserializer::split_protocol_version(buffer.as_ref())?;
 
         let identity = Identity::deserialize(document_bytes).map_err(|e| {
-            ConsensusError::SerializedObjectParsingError {
-                parsing_error: anyhow!("Decode protocol entity: {:#?}", e),
-            }
+            ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
+                SerializedObjectParsingError::new(format!("Decode protocol entity: {:#?}", e)),
+            ))
         })?;
 
         if skip_validation {

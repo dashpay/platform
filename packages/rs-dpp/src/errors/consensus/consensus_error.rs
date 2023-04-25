@@ -1,4 +1,4 @@
-use bincode::Options;
+use bincode;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -22,6 +22,9 @@ pub enum ConsensusError {
     DO NOT CHANGE ORDER OF VARIANTS WITHOUT INTRODUCING OF NEW VERSION
 
     */
+    #[error("default error")]
+    DefaultError,
+
     #[error(transparent)]
     BasicError(BasicError),
 
@@ -48,26 +51,28 @@ impl From<TestConsensusError> for ConsensusError {
 
 impl ConsensusError {
     pub fn serialize(&self) -> Result<Vec<u8>, ProtocolError> {
-        bincode::DefaultOptions::default()
-            .with_varint_encoding()
-            .reject_trailing_bytes()
-            .with_big_endian()
-            .serialize(self)
-            .map_err(|_| {
-                ProtocolError::EncodingError(String::from(
-                    "unable to serialize identity public key",
-                ))
-            })
+        let config = bincode::config::legacy()
+            .with_variable_int_encoding()
+            .with_big_endian();
+
+        bincode::serde::encode_to_vec(self, config).map_err(|_| {
+            ProtocolError::EncodingError(String::from("unable to serialize identity public key"))
+        })
     }
 
-    pub fn deserialize(bytes: &[u8]) -> Result<Self, ProtocolError> {
-        bincode::DefaultOptions::default()
-            .with_varint_encoding()
-            .reject_trailing_bytes()
-            .with_big_endian()
-            .deserialize(bytes)
-            .map_err(|e| {
-                ProtocolError::EncodingError(format!("unable to deserialize consensus error {}", e))
-            })
+    pub fn deserialize(bytes: &[u8]) -> Result<ConsensusError, ProtocolError> {
+        let config = bincode::config::legacy()
+            .with_variable_int_encoding()
+            .with_big_endian();
+
+        bincode::serde::decode_borrowed_from_slice(bytes, config).map_err(|e| {
+            ProtocolError::EncodingError(format!("unable to deserialize consensus error {}", e))
+        })
+    }
+}
+
+impl Default for ConsensusError {
+    fn default() -> Self {
+        ConsensusError::DefaultError
     }
 }

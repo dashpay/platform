@@ -9,17 +9,18 @@ use crate::{
     consensus::{basic::BasicError, ConsensusError},
     data_trigger::DataTriggerExecutionResult,
 };
+use jsonptr::IndexError;
 
 pub fn get_schema_error(
     result: &SimpleConsensusValidationResult,
     number: usize,
 ) -> &JsonSchemaError {
-    result
-        .errors
-        .get(number)
-        .expect("the error should be returned in validation result")
-        .json_schema_error()
-        .expect("the error should be json schema error")
+    json_schema_error(
+        result
+            .errors
+            .get(number)
+            .expect("the error should be returned in validation result"),
+    )
 }
 
 pub fn get_basic_error(consensus_error: &ConsensusError) -> &BasicError {
@@ -43,16 +44,16 @@ pub fn value_error(consensus_error: &ConsensusError) -> &ValueError {
         _ => panic!("error '{:?}' isn't a value error", consensus_error),
     }
 }
-
-pub fn get_index_error(consensus_error: &ConsensusError) -> &IndexError {
-    match consensus_error {
-        ConsensusError::BasicError(basic_error) => match &**basic_error {
-            BasicError::IndexError(index_error) => index_error,
-            _ => panic!("error '{:?}' isn't a index error", consensus_error),
-        },
-        _ => panic!("error '{:?}' isn't a basic error", consensus_error),
-    }
-}
+// TODO(v0.24-merge): remove?
+// pub fn get_index_error(consensus_error: &ConsensusError) -> &IndexError {
+//     match consensus_error {
+//         ConsensusError::BasicError(basic_error) => match &**basic_error {
+//             BasicError::IndexError(index_error) => index_error,
+//             _ => panic!("error '{:?}' isn't a index error", consensus_error),
+//         },
+//         _ => panic!("error '{:?}' isn't a basic error", consensus_error),
+//     }
+// }
 
 pub fn get_state_error_from_result<TData: Clone>(
     result: &ConsensusValidationResult<TData>,

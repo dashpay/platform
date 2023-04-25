@@ -1,10 +1,10 @@
-use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
-use crate::consensus::{basic::IndexError, fee::FeeError, signature::SignatureError};
-use crate::DataTriggerActionError;
+use crate::consensus::signature::SignatureError;
+use crate::consensus::state::data_trigger::data_trigger_error::{
+    DataTriggerActionError, DataTriggerError,
+};
 
 use crate::errors::consensus::{
-    basic::BasicError, fee::fee_error::FeeError, signature::SignatureError,
-    state::state_error::StateError, ConsensusError,
+    basic::BasicError, fee::fee_error::FeeError, state::state_error::StateError, ConsensusError,
 };
 
 pub trait ErrorWithCode {
@@ -22,7 +22,8 @@ impl ErrorWithCode for ConsensusError {
 
             #[cfg(test)]
             ConsensusError::TestConsensusError(_) => 1000,
-            ConsensusError::ValueError(_) => 5000,
+            // TODO(v0.24-merge): remove?
+            // ConsensusError::ValueError(_) => 5000,
             ConsensusError::DefaultError => 1, // this should never happen
         }
     }
@@ -92,6 +93,7 @@ impl ErrorWithCode for BasicError {
             Self::InvalidInstantAssetLockProofError(_) => 1041,
             Self::InvalidInstantAssetLockProofSignatureError(_) => 1042,
             Self::InvalidIdentityAssetLockProofChainLockValidationError(_) => 1043,
+
             Self::MissingMasterPublicKeyError(_) => 1046,
             Self::InvalidIdentityPublicKeySecurityLevelError(_) => 1047,
             Self::InvalidIdentityKeySignatureError { .. } => 1056,
@@ -184,20 +186,6 @@ impl ErrorWithCode for DataTriggerActionError {
             Self::DataTriggerExecutionError { .. } => 4002,
             Self::DataTriggerInvalidResultError { .. } => 4003,
             Self::ValueError(_) => 4004,
-        }
-    }
-}
-
-impl ErrorWithCode for IndexError {
-    fn code(&self) -> u32 {
-        match *self {
-            Self::UniqueIndicesLimitReachedError { .. } => 1017,
-            Self::SystemPropertyIndexAlreadyPresentError { .. } => 1015,
-            Self::UndefinedIndexPropertyError { .. } => 1016,
-            Self::InvalidIndexPropertyTypeError { .. } => 1013,
-            Self::InvalidIndexedPropertyConstraintError { .. } => 1012,
-            Self::InvalidCompoundIndexError { .. } => 1010,
-            Self::DuplicateIndexError { .. } => 1008,
         }
     }
 }

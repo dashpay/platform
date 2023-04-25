@@ -47,9 +47,9 @@ impl DecodeProtocolEntity {
         } = deserializer::split_protocol_version(buffer.as_ref())?;
 
         let protocol_entity = T::deserialize(document_bytes).map_err(|e| {
-            ConsensusError::SerializedObjectParsingError {
-                parsing_error: anyhow!("Decode protocol entity: {:#?}", e),
-            }
+            ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
+                SerializedObjectParsingError::new(format!("Decode protocol entity: {:#?}", e)),
+            ))
         })?;
 
         Ok((protocol_version, protocol_entity.to_object()?))

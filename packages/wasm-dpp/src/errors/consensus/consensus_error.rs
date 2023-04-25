@@ -13,6 +13,7 @@ use crate::errors::consensus::basic::identity::{
     IdentityAssetLockTransactionOutputNotFoundErrorWasm, IdentityInsufficientBalanceErrorWasm,
     InvalidAssetLockProofCoreChainHeightErrorWasm, InvalidAssetLockProofTransactionHeightErrorWasm,
     InvalidAssetLockTransactionOutputReturnSizeErrorWasm,
+    InvalidIdentityAssetLockProofChainLockValidationErrorWasm,
     InvalidIdentityAssetLockTransactionErrorWasm,
     InvalidIdentityAssetLockTransactionOutputErrorWasm,
     InvalidIdentityCreditWithdrawalTransitionCoreFeeErrorWasm,
@@ -24,6 +25,7 @@ use crate::errors::consensus::basic::identity::{
 };
 use crate::errors::consensus::state::identity::{
     DuplicatedIdentityPublicKeyIdStateErrorWasm, DuplicatedIdentityPublicKeyStateErrorWasm,
+    MissingIdentityPublicKeyIdsErrorWasm,
 };
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::basic::BasicError::{
@@ -34,6 +36,7 @@ use dpp::consensus::basic::BasicError::{
     IdentityAssetLockTransactionOutputNotFoundError, IncompatibleProtocolVersionError,
     IncompatibleRe2PatternError, InvalidAssetLockProofCoreChainHeightError,
     InvalidAssetLockProofTransactionHeightError, InvalidAssetLockTransactionOutputReturnSizeError,
+    InvalidIdentityAssetLockProofChainLockValidationError,
     InvalidIdentityAssetLockTransactionError, InvalidIdentityAssetLockTransactionOutputError,
     InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
     InvalidIdentityCreditWithdrawalTransitionOutputScriptError, InvalidIdentityPublicKeyDataError,
@@ -47,7 +50,7 @@ use dpp::consensus::signature::SignatureError;
 use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::errors::consensus::codes::ErrorWithCode;
-use wasm_bindgen::JsValue;
+use wasm_bindgen::{JsError, JsValue};
 
 use crate::errors::consensus::basic::data_contract::{
     DataContractHaveNewUniqueIndexErrorWasm, DataContractImmutablePropertiesUpdateErrorWasm,
@@ -117,6 +120,7 @@ pub fn from_consensus_error_ref(e: &DPPConsensusError) -> JsValue {
         DPPConsensusError::SignatureError(e) => from_signature_error(e),
         DPPConsensusError::StateError(state_error) => from_state_error(state_error),
         DPPConsensusError::BasicError(basic_error) => from_basic_error(basic_error),
+        DPPConsensusError::DefaultError => JsError::new("DefaultError").into(),
     }
 }
 
@@ -166,6 +170,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         StateError::IdentityPublicKeyIsDisabledError(e) => {
             IdentityPublicKeyIsDisabledErrorWasm::from(e).into()
         }
+        StateError::MissingIdentityPublicKeyIdsError(e) => {
+            MissingIdentityPublicKeyIdsErrorWasm::from(e).into()
+        }
         StateError::DataTriggerError(data_trigger_error) => match data_trigger_error.deref() {
             DataTriggerError::DataTriggerConditionError(e) => {
                 DataTriggerConditionErrorWasm::from(e).into()
@@ -177,6 +184,8 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
                 DataTriggerInvalidResultErrorWasm::from(e).into()
             }
         },
+        // TODO(v0.24-backport): this error seems to be used only in drive executor. Do we need binding for it?
+        StateError::DataTriggerActionError(_) => JsError::new("Data Trigger action error").into(),
         StateError::IdentityAlreadyExistsError(e) => {
             let wasm_error: IdentityAlreadyExistsErrorWasm = e.into();
             wasm_error.into()
@@ -323,6 +332,9 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         InvalidInstantAssetLockProofSignatureError(e) => {
             InvalidInstantAssetLockProofSignatureErrorWasm::from(e).into()
         }
+        InvalidIdentityAssetLockProofChainLockValidationError(e) => {
+            InvalidIdentityAssetLockProofChainLockValidationErrorWasm::from(e).into()
+        }
         IdentityAssetLockProofLockedTransactionMismatchError(e) => {
             IdentityAssetLockProofLockedTransactionMismatchErrorWasm::from(e).into()
         }
@@ -370,6 +382,10 @@ fn from_signature_error(signature_error: &SignatureError) -> JsValue {
         SignatureError::WrongPublicKeyPurposeError(err) => {
             WrongPublicKeyPurposeErrorWasm::from(err).into()
         }
+        // TODO(v0.24-backport): create wasm errors?
+        SignatureError::SignatureShouldNotBePresent(err) => JsError::new(&err).into(),
+        SignatureError::BasicECDSAError(err) => JsError::new(&err).into(),
+        SignatureError::BasicBLSError(err) => JsError::new(&err).into(),
     }
 }
 

@@ -13,7 +13,7 @@ use crate::{
     prelude::IdentityPublicKey,
     util::json_value::JsonValueExt,
     validation::SimpleConsensusValidationResult,
-    ProtocolError, StateError,
+    ProtocolError,
 };
 
 lazy_static! {

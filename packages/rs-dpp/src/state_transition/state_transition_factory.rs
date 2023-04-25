@@ -121,9 +121,9 @@ where
         } = deserializer::split_protocol_version(state_transition_buffer.as_ref())?;
 
         let state_transition = StateTransition::deserialize(document_bytes).map_err(|e| {
-            ConsensusError::SerializedObjectParsingError {
-                parsing_error: anyhow!("Decode protocol entity: {:#?}", e),
-            }
+            ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
+                SerializedObjectParsingError::new(format!("Decode protocol entity: {:#?}", e)),
+            ))
         })?;
 
         if options

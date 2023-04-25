@@ -25,7 +25,7 @@ use crate::{
         utils::get_state_error_from_result,
     },
     validation::SimpleConsensusValidationResult,
-    NativeBlsModule, StateError,
+    NativeBlsModule,
 };
 
 struct TestData {
