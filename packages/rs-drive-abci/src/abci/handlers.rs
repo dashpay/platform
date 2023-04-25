@@ -43,7 +43,7 @@ use tenderdash_abci::proto::abci::{
     RequestProcessProposal, RequestQuery, ResponseCheckTx, ResponseFinalizeBlock,
     ResponseInitChain, ResponsePrepareProposal, ResponseProcessProposal, ResponseQuery, TxRecord,
 };
-use tenderdash_abci::proto::types::VoteExtensionType;
+use tenderdash_abci::proto::types::{CoreChainLock, VoteExtensionType};
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -152,18 +152,19 @@ where
         let tx_results = tx_results.into_iter().flatten().collect();
 
         // We should get the latest CoreChainLock from core
-        let latest_chain_lock = self
-            .platform
-            .core_rpc
-            .get_best_chain_lock()
-            .map_err(Error::CoreRpc)?;
+        // It is possible that we will not get a chain lock from core, in this case, just don't
+        // propose one
 
-        let core_chain_lock_update =
-            if request.core_chain_locked_height < latest_chain_lock.core_block_height {
-                Some(latest_chain_lock)
-            } else {
-                None
-            };
+        let core_chain_lock_update = match self.platform.core_rpc.get_best_chain_lock() {
+            Ok(latest_chain_lock) => {
+                if request.core_chain_locked_height < latest_chain_lock.core_block_height {
+                    Some(latest_chain_lock)
+                } else {
+                    None
+                }
+            }
+            Err(_) => None,
+        };
 
         // Next we should check for validator set updates
         // todo: validator set updates

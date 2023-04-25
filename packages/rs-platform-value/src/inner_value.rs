@@ -519,7 +519,12 @@ impl Value {
                     };
 
                     let prefix = format!("{prefix}{level_prefix}.");
-                    result.extend(Self::inner_recursive_optional_array_of_strings(level_map, prefix, recursive_key, key))
+                    result.extend(Self::inner_recursive_optional_array_of_strings(
+                        level_map,
+                        prefix,
+                        recursive_key,
+                        key,
+                    ))
                 }
             }
         }
