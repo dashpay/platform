@@ -1,7 +1,7 @@
 const { PrivateKey } = require('@dashevo/dashcore-lib');
 
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
-const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
+const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/createStateRepositoryMock');
+const getIdentityCreateTransitionFixture = require('../../../../../../../lib/test/fixtures/getIdentityCreateTransitionFixture');
 
 const { expectValidationError, expectJsonSchemaError } = require('../../../../../../../lib/test/expect/expectError');
 const { default: loadWasmDpp } = require('../../../../../../../dist');
@@ -54,9 +54,12 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
         ...opts,
       })
     );
+
+    console.log(1);
   });
 
   beforeEach(async function () {
+    this.timeout(20000);
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.verifyInstantLock.resolves(true);
     stateRepositoryMock.isAssetLockTransactionOutPointAlreadyUsed.resolves(false);
@@ -68,8 +71,7 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     const validator = new IdentityCreateTransitionBasicValidator(stateRepositoryMock, blsAdapter);
     validateIdentityCreateTransitionBasic = (st, context) => validator.validate(st, context);
 
-    const stateTransitionJS = getIdentityCreateTransitionFixture();
-    stateTransition = new IdentityCreateTransition(stateTransitionJS.toObject());
+    stateTransition = await getIdentityCreateTransitionFixture();
 
     const privateKey = new PrivateKey('9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2');
     const publicKey = privateKey.toPublicKey();
@@ -91,6 +93,8 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     stateTransition.setPublicKeys([identityPublicKey]);
 
     rawStateTransition = stateTransition.toObject();
+
+    console.log(2);
   });
 
   describe('protocolVersion', () => {
