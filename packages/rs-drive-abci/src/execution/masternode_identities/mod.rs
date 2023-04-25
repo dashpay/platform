@@ -267,11 +267,12 @@ where
                 purpose: Purpose::AUTHENTICATION, // todo: is this purpose correct??
                 security_level: SecurityLevel::CRITICAL,
                 read_only: true,
-                data: BinaryData::new(maybe_hexdecode_key(
+                data: BinaryData::new(maybe_hexdecode(
                     &state_diff
                         .pub_key_operator
                         .clone()
                         .expect("confirmed is some"),
+                    48,
                 )),
                 disabled_at: None,
             };
@@ -450,7 +451,7 @@ where
         let operator_identifier = Self::get_operator_identifier(masternode)?;
         let mut identity = Self::create_basic_identity(operator_identifier);
         identity.add_public_keys(self.get_operator_identity_keys(
-            maybe_hexdecode_key(&masternode.state.pub_key_operator.clone()),
+            maybe_hexdecode(&masternode.state.pub_key_operator.clone(), 48),
             masternode.state.operator_payout_address,
             masternode.state.platform_node_id,
         )?);
@@ -575,16 +576,23 @@ where
 /// Decode key if it's not encoded
 ///
 /// TODO: This is just a workaround, remove when not needed anymore
-fn maybe_hexdecode_key(key: &[u8]) -> Vec<u8> {
-    if key.len() == 96 {
+fn maybe_hexdecode(key: &[u8], expected_length: usize) -> Vec<u8> {
+    if key.len() == expected_length {
+        return Vec::from(key);
+    };
+    if key.len() == 2 * expected_length {
         let backtrace = Backtrace::force_capture();
         tracing::error!(?backtrace, "non hex-decoded key found");
 
-        hex::decode(key).expect("cannot hex-decode received key")
-    } else {
-        Vec::from(key)
-    }
+        return hex::decode(key).expect("cannot hex-decode received key");
+    };
+    panic!(
+        "unexpected key len: got {}, expected {}",
+        key.len(),
+        expected_length
+    )
 }
+
 /*
 #[cfg(test)]
 mod tests {
