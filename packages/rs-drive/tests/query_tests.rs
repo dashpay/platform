@@ -421,6 +421,13 @@ struct Records {
 }
 
 #[cfg(feature = "full")]
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SubdomainRules {
+    allow_subdomains: bool,
+}
+
+#[cfg(feature = "full")]
 /// DPNS domain info
 // In the real dpns, label is required. We make it optional here for a test.
 #[derive(Serialize, Deserialize)]
@@ -435,7 +442,7 @@ struct Domain {
     normalized_parent_domain_name: String,
     records: Records,
     preorder_salt: Bytes32,
-    subdomain_rules: bool,
+    subdomain_rules: SubdomainRules,
 }
 
 #[cfg(feature = "full")]
@@ -452,7 +459,6 @@ fn test_serialization_and_deserialization() {
     for domain in domains {
         let value = platform_value::to_value(domain).expect("expected value");
         let mut document = Document::from_platform_value(value).expect("expected value");
-        document.revision == Some(1);
         let serialized = document
             .serialize(document_type)
             .expect("expected to serialize domain document");
@@ -487,7 +493,9 @@ impl Domain {
                     dash_unique_identity_id: Identifier::random_with_rng(&mut rng),
                 },
                 preorder_salt: Bytes32::random_with_rng(&mut rng),
-                subdomain_rules: false,
+                subdomain_rules: SubdomainRules {
+                    allow_subdomains: false,
+                },
             };
             vec.push(domain);
         }
@@ -511,7 +519,6 @@ pub fn add_domains_to_contract(
     for domain in domains {
         let value = platform_value::to_value(domain).expect("expected value");
         let document = Document::from_platform_value(value).expect("expected value");
-        dbg!(&document);
 
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
 
@@ -3496,7 +3503,9 @@ fn test_dpns_query_start_at_with_null_id() {
             dash_unique_identity_id: Identifier::random_with_rng(&mut rng),
         },
         preorder_salt: Bytes32::random_with_rng(&mut rng),
-        subdomain_rules: false,
+        subdomain_rules: SubdomainRules {
+            allow_subdomains: false,
+        },
     };
 
     let value0 = serde_json::to_value(&domain0).expect("serialized domain");
@@ -3539,7 +3548,9 @@ fn test_dpns_query_start_at_with_null_id() {
             dash_unique_identity_id: Identifier::random_with_rng(&mut rng),
         },
         preorder_salt: Bytes32::random_with_rng(&mut rng),
-        subdomain_rules: false,
+        subdomain_rules: SubdomainRules {
+            allow_subdomains: false,
+        },
     };
 
     let value1 = serde_json::to_value(&domain1).expect("serialized domain");
@@ -3692,7 +3703,9 @@ fn test_dpns_query_start_after_with_null_id() {
             dash_unique_identity_id: Identifier::random_with_rng(&mut rng),
         },
         preorder_salt: Bytes32::random_with_rng(&mut rng),
-        subdomain_rules: false,
+        subdomain_rules: SubdomainRules {
+            allow_subdomains: false,
+        },
     };
 
     let value0 = serde_json::to_value(&domain0).expect("serialized domain");
@@ -3735,7 +3748,9 @@ fn test_dpns_query_start_after_with_null_id() {
             dash_unique_identity_id: Identifier::random_with_rng(&mut rng),
         },
         preorder_salt: Bytes32::random_with_rng(&mut rng),
-        subdomain_rules: false,
+        subdomain_rules: SubdomainRules {
+            allow_subdomains: false,
+        },
     };
 
     let value1 = serde_json::to_value(&domain1).expect("serialized domain");
@@ -3891,7 +3906,9 @@ fn test_dpns_query_start_after_with_null_id_desc() {
             dash_unique_identity_id: Identifier::random_with_rng(&mut rng),
         },
         preorder_salt: Bytes32::random_with_rng(&mut rng),
-        subdomain_rules: false,
+        subdomain_rules: SubdomainRules {
+            allow_subdomains: false,
+        },
     };
 
     let value0 = serde_json::to_value(&domain0).expect("serialized domain");
@@ -3934,7 +3951,9 @@ fn test_dpns_query_start_after_with_null_id_desc() {
             dash_unique_identity_id: Identifier::random_with_rng(&mut rng),
         },
         preorder_salt: Bytes32::random_with_rng(&mut rng),
-        subdomain_rules: false,
+        subdomain_rules: SubdomainRules {
+            allow_subdomains: false,
+        },
     };
 
     let value1 = serde_json::to_value(&domain1).expect("serialized domain");

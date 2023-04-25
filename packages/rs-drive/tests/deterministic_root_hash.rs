@@ -115,14 +115,14 @@ impl Domain {
             let label = first_names.choose(&mut rng).unwrap();
             let domain = Domain {
                 id: Vec::from(rng.gen::<[u8; 32]>()),
-                owner_id: Identifier::random_with_rng(&mut rng),
+                owner_id: Vec::from(rng.gen::<[u8; 32]>()),
                 label: Some(label.clone()),
                 normalized_label: Some(label.to_lowercase()),
                 normalized_parent_domain_name: normalized_parent_domain_name.to_string(),
                 records: Records {
-                    dash_unique_identity_id: Identifier::random_with_rng(&mut rng),
+                    dash_unique_identity_id: Vec::from(rng.gen::<[u8; 32]>()),
                 },
-                preorder_salt: Bytes32::random_with_rng(&mut rng),
+                preorder_salt: Vec::from(rng.gen::<[u8; 32]>()),
                 subdomain_rules: false,
             };
             vec.push(domain);

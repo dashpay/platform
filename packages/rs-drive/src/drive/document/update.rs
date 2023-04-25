@@ -1499,10 +1499,10 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
         let expected_added_bytes = if using_history {
-            //Explanation for 1234
+            //Explanation for 1233
 
             //todo
-            1234
+            1233
         } else {
             //Explanation for 1014
 
@@ -1635,7 +1635,7 @@ mod tests {
 
             // Total 65 + 145 + 68 = 275
 
-            958
+            957
         };
         assert_eq!(original_bytes, expected_added_bytes);
 
@@ -1657,14 +1657,14 @@ mod tests {
                 .get(&0)
                 .unwrap();
 
-            assert_eq!(*removed_credits, 25800855);
+            assert_eq!(*removed_credits, 25773863);
             let refund_equivalent_bytes = removed_credits.to_unsigned()
                 / Epoch::new(0)
                     .unwrap()
                     .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
             assert!(expected_added_bytes > refund_equivalent_bytes);
-            assert_eq!(refund_equivalent_bytes, 955); // we refunded 1008 instead of 1011
+            assert_eq!(refund_equivalent_bytes, 954); // we refunded 1008 instead of 1011
 
             // let's re-add it again
             let original_fees = apply_person(
@@ -1700,7 +1700,7 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
-        let expected_added_bytes = if using_history { 309 } else { 1 };
+        let expected_added_bytes = if using_history { 308 } else { 1 };
         assert_eq!(added_bytes, expected_added_bytes);
     }
 
@@ -1769,7 +1769,7 @@ mod tests {
             / Epoch::new(0)
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
-        let expected_added_bytes = if using_history { 1234 } else { 958 };
+        let expected_added_bytes = if using_history { 1233 } else { 957 };
         assert_eq!(original_bytes, expected_added_bytes);
         if !using_history {
             // let's delete it, just to make sure everything is working.
@@ -1788,14 +1788,14 @@ mod tests {
                 .get(&0)
                 .unwrap();
 
-            assert_eq!(*removed_credits, 25800855);
+            assert_eq!(*removed_credits, 25773863);
             let refund_equivalent_bytes = removed_credits.to_unsigned()
                 / Epoch::new(0)
                     .unwrap()
                     .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
             assert!(expected_added_bytes > refund_equivalent_bytes);
-            assert_eq!(refund_equivalent_bytes, 955); // we refunded 1008 instead of 1011
+            assert_eq!(refund_equivalent_bytes, 954); // we refunded 1008 instead of 1011
 
             // let's re-add it again
             let original_fees = apply_person(
@@ -1963,7 +1963,7 @@ mod tests {
             //Explanation for 1233
 
             //todo
-            1234
+            1233
         } else {
             //Explanation for 957
 
@@ -2098,7 +2098,7 @@ mod tests {
 
             // 355 + 179 + 145 + 278 = 957
 
-            958
+            957
         };
         assert_eq!(original_bytes, expected_added_bytes);
 
@@ -2118,7 +2118,7 @@ mod tests {
                 .unwrap()
                 .cost_for_known_cost_item(StorageDiskUsageCreditPerByte);
 
-        let expected_added_bytes = if using_history { 1235 } else { 959 };
+        let expected_added_bytes = if using_history { 1233 } else { 957 };
         assert_eq!(added_bytes, expected_added_bytes);
     }
 

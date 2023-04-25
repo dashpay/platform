@@ -937,7 +937,6 @@ mod test {
         let data_contract: DataContract = serde_json::from_str(&string_contract)?;
 
         let raw_data_contract = data_contract.to_json_object()?;
-        dbg!(&raw_data_contract);
         for path in IDENTIFIER_FIELDS {
             assert!(raw_data_contract
                 .get(path)
