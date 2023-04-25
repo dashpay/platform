@@ -37,7 +37,7 @@ module.exports = {
   },
   core: {
     docker: {
-      image: 'dashpay/dashd:20.0.0-alpha.assetlocks.2',
+      image: 'dashpay/dashd:20.0.0-alpha.assetlocks.3',
     },
     p2p: {
       port: 9999,
