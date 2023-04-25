@@ -1,13 +1,13 @@
 const crypto = require('crypto');
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const getIdentityFixture = require('../../../lib/test/fixtures/getIdentityFixture');
 
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
-const getInstantAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
-const getChainAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getChainAssetLockProofFixture');
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRepositoryMock');
+const getInstantAssetLockProofFixture = require('../../../lib/test/fixtures/getInstantAssetLockProofFixture');
+const getChainAssetLockProofFixture = require('../../../lib/test/fixtures/getChainAssetLockProofFixture');
 const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
 
-const { default: loadWasmDpp } = require('../../../dist');
+const { default: loadWasmDpp } = require('../../..');
+const { IdentityPublicKey } = require('../../..');
 
 describe('IdentityFacade', () => {
   let dpp;
@@ -52,11 +52,11 @@ describe('IdentityFacade', () => {
     );
 
     const chainAssetLockProofJS = getChainAssetLockProofFixture();
-    const instantAssetLockProofJS = getInstantAssetLockProofFixture();
+    const instantAssetLockProofJS = await getInstantAssetLockProofFixture();
     instantAssetLockProof = new InstantAssetLockProof(instantAssetLockProofJS.toObject());
     chainAssetLockProof = new ChainAssetLockProof(chainAssetLockProofJS.toObject());
 
-    const identityObject = getIdentityFixture().toObject();
+    const identityObject = (await getIdentityFixture()).toObject();
     identityObject.id = instantAssetLockProof.createIdentifier();
     identity = new Identity(identityObject);
     identity.setAssetLockProof(instantAssetLockProof);
