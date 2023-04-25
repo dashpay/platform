@@ -1,6 +1,9 @@
 use dpp::identity::PartialIdentity;
-use dpp::{identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition, state_transition::StateTransitionAction, StateError, validation::{ConsensusValidationResult, SimpleConsensusValidationResult}};
+use dpp::{identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition, state_transition::StateTransitionAction, validation::{ConsensusValidationResult, SimpleConsensusValidationResult}};
 use dpp::block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window;
+use dpp::consensus::state::identity::identity_public_key_disabled_at_window_violation_error::IdentityPublicKeyDisabledAtWindowViolationError;
+use dpp::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
+use dpp::consensus::state::state_error::StateError;
 use dpp::identity::state_transition::identity_update_transition::IdentityUpdateTransitionAction;
 use dpp::identity::state_transition::identity_update_transition::validate_identity_update_transition_basic::IDENTITY_UPDATE_JSON_SCHEMA_VALIDATOR;
 use drive::grovedb::TransactionArg;
@@ -70,10 +73,9 @@ impl StateTransitionValidation for IdentityUpdateTransition {
 
         // Check revision
         if revision + 1 != self.revision {
-            result.add_error(StateError::InvalidIdentityRevisionError {
-                identity_id: self.identity_id,
-                current_revision: revision,
-            });
+            result.add_error(StateError::InvalidIdentityRevisionError(
+                InvalidIdentityRevisionError::new(self.identity_id, revision),
+            ));
             return Ok(result);
         }
 
@@ -165,11 +167,13 @@ impl StateTransitionValidation for IdentityUpdateTransition {
 
                 if !window_validation_result.is_valid() {
                     validation_result.add_error(
-                        StateError::IdentityPublicKeyDisabledAtWindowViolationError {
-                            disabled_at: disabled_at_ms,
-                            time_window_start: window_validation_result.time_window_start,
-                            time_window_end: window_validation_result.time_window_end,
-                        },
+                        StateError::IdentityPublicKeyDisabledAtWindowViolationError(
+                            IdentityPublicKeyDisabledAtWindowViolationError::new(
+                                disabled_at_ms,
+                                window_validation_result.time_window_start,
+                                window_validation_result.time_window_end,
+                            ),
+                        ),
                     );
                     return Ok(validation_result);
                 }

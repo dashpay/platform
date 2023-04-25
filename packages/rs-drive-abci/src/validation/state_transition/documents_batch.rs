@@ -1,5 +1,6 @@
 use std::collections::{btree_map::Entry, BTreeMap};
 
+use dpp::consensus::basic::document::DataContractNotPresentError;
 use dpp::document::document_transition::{DocumentTransitionExt, DocumentTransitionObjectLike};
 use dpp::document::validation::basic::validate_documents_batch_transition_basic::DOCUMENTS_BATCH_TRANSITIONS_SCHEMA_VALIDATOR;
 use dpp::identity::PartialIdentity;
@@ -75,9 +76,9 @@ impl StateTransitionValidation for DocumentsBatchTransition {
                 .get_contract_with_fetch_info(data_contract_id.0.0, None, true, tx)?
                 .1
             else {
-                result.add_error(BasicError::DataContractNotPresent {
-                    data_contract_id: data_contract_id.0.0.into()
-                });
+                result.add_error(BasicError::DataContractNotPresentError(DataContractNotPresentError::new(
+                    data_contract_id.0.0.into()
+                )));
                 return Ok(result);
             };
 

@@ -4,7 +4,6 @@ use dpp::bls_signatures;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
-use dpp::consensus::basic::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::ConsensusError;
 use dpp::state_transition::StateTransition;
 use dpp::validation::{
@@ -16,6 +15,8 @@ use drive::fee::result::FeeResult;
 use drive::grovedb::{Transaction, TransactionArg};
 use std::collections::BTreeMap;
 
+use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
+use dpp::consensus::state::state_error::StateError;
 use dpp::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
@@ -101,12 +102,10 @@ where
                 } else {
                     Ok(ConsensusValidationResult::new_with_data_and_errors(
                         estimated_fee_result,
-                        vec![ConsensusError::IdentityInsufficientBalanceError(
-                            IdentityInsufficientBalanceError {
-                                identity_id: identity.id,
-                                balance,
-                            },
-                        )],
+                        vec![StateError::IdentityInsufficientBalanceError(
+                            IdentityInsufficientBalanceError::new(identity.id, balance),
+                        )
+                        .into()],
                     ))
                 }
             }

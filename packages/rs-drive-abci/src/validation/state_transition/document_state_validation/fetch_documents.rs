@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 
 use crate::error::Error;
 use crate::platform::PlatformStateRef;
-use dpp::consensus::basic::document::InvalidDocumentTypeError;
+use dpp::consensus::basic::document::{DataContractNotPresentError, InvalidDocumentTypeError};
 use dpp::consensus::basic::BasicError;
 use dpp::data_contract::document_type::DocumentType;
 
@@ -76,7 +76,7 @@ pub(super) fn fetch_documents_for_transitions_knowing_contract_id_and_document_t
     )?;
 
     let Some(contract_fetch_info) = contract_fetch_info else {
-        return Ok(ConsensusValidationResult::new_with_error(BasicError::DataContractNotPresent { data_contract_id: *contract_id}.into()));
+        return Ok(ConsensusValidationResult::new_with_error(BasicError::DataContractNotPresentError(DataContractNotPresentError::new(*contract_id)).into()));
     };
 
     let contract_fetch_info = contract_fetch_info;

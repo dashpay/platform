@@ -1,12 +1,16 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use dpp::consensus::basic::identity::{
-    DuplicatedIdentityPublicKeyError, DuplicatedIdentityPublicKeyIdError,
-    InvalidIdentityPublicKeySecurityLevelError,
+    DuplicatedIdentityPublicKeyIdBasicError, InvalidIdentityPublicKeySecurityLevelError,
 };
+use dpp::consensus::basic::BasicError;
 use dpp::consensus::signature::{
     IdentityNotFoundError, InvalidSignaturePublicKeySecurityLevelError,
 };
+use dpp::consensus::state::identity::duplicated_identity_public_key_state_error::DuplicatedIdentityPublicKeyStateError;
+use dpp::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
+use dpp::consensus::state::identity::missing_identity_public_key_ids_error::MissingIdentityPublicKeyIdsError;
+use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::ConsensusError;
 use dpp::identity::security_level::ALLOWED_SECURITY_LEVELS;
 use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
@@ -17,14 +21,13 @@ use dpp::platform_value::Identifier;
 use dpp::state_transition::StateTransitionIdentitySigned;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::ProtocolError;
-use dpp::StateError::MissingIdentityPublicKeyIdsError;
 use dpp::{
     consensus::signature::{
         InvalidIdentityPublicKeyTypeError, MissingPublicKeyError, PublicKeyIsDisabledError,
         SignatureError,
     },
     state_transition::validation::validate_state_transition_identity_signature::convert_to_consensus_signature_error,
-    NativeBlsModule, StateError,
+    NativeBlsModule,
 };
 use drive::dpp::identity::KeyType;
 use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyIDVec, KeyRequestType};
@@ -152,7 +155,10 @@ pub fn validate_identity_public_keys_structure(
 
     if identity_public_keys_with_witness.len() > max_items {
         return Ok(SimpleConsensusValidationResult::new_with_error(
-            StateError::MaxIdentityPublicKeyLimitReachedError { max_items }.into(),
+            StateError::MaxIdentityPublicKeyLimitReachedError(
+                MaxIdentityPublicKeyLimitReachedError::new(max_items),
+            )
+            .into(),
         ));
     }
 
@@ -160,7 +166,10 @@ pub fn validate_identity_public_keys_structure(
     let duplicated_ids = duplicated_key_ids_witness(identity_public_keys_with_witness);
     if !duplicated_ids.is_empty() {
         return Ok(SimpleConsensusValidationResult::new_with_error(
-            StateError::DuplicatedIdentityPublicKeyIdError { duplicated_ids }.into(),
+            BasicError::DuplicatedIdentityPublicKeyIdBasicError(
+                DuplicatedIdentityPublicKeyIdBasicError::new(duplicated_ids),
+            )
+            .into(),
         ));
     }
 
@@ -168,9 +177,9 @@ pub fn validate_identity_public_keys_structure(
     let duplicated_key_ids = duplicated_keys_witness(identity_public_keys_with_witness);
     if !duplicated_key_ids.is_empty() {
         return Ok(SimpleConsensusValidationResult::new_with_error(
-            StateError::DuplicatedIdentityPublicKeyError {
-                duplicated_public_key_ids: duplicated_key_ids,
-            }
+            StateError::DuplicatedIdentityPublicKeyStateError(
+                DuplicatedIdentityPublicKeyStateError::new(duplicated_key_ids),
+            )
             .into(),
         ));
     }
@@ -254,9 +263,10 @@ pub fn validate_identity_public_key_ids_dont_exist_in_state(
     if !keys.is_empty() {
         // keys should all be empty
         Ok(SimpleConsensusValidationResult::new_with_error(
-            ConsensusError::DuplicatedIdentityPublicKeyBasicIdError(
-                DuplicatedIdentityPublicKeyIdError::new(keys),
-            ),
+            BasicError::DuplicatedIdentityPublicKeyIdBasicError(
+                DuplicatedIdentityPublicKeyIdBasicError::new(keys),
+            )
+            .into(),
         ))
     } else {
         Ok(SimpleConsensusValidationResult::default())
@@ -283,7 +293,7 @@ pub fn validate_identity_public_key_ids_exist_in_state(
         key_ids.retain(|found_key| !to_remove.contains(found_key));
         // keys should all exist
         Ok(SimpleConsensusValidationResult::new_with_error(
-            MissingIdentityPublicKeyIdsError { ids: key_ids }.into(),
+            MissingIdentityPublicKeyIdsError::new(key_ids).into(),
         ))
     } else {
         Ok(SimpleConsensusValidationResult::default())
@@ -319,9 +329,10 @@ pub fn validate_unique_identity_public_key_hashes_state(
         .collect::<Result<Vec<KeyID>, Error>>()?;
     if !duplicate_ids.is_empty() {
         Ok(SimpleConsensusValidationResult::new_with_error(
-            ConsensusError::DuplicatedIdentityPublicKeyBasicError(
-                DuplicatedIdentityPublicKeyError::new(duplicate_ids),
-            ),
+            BasicError::DuplicatedIdentityPublicKeyIdBasicError(
+                DuplicatedIdentityPublicKeyIdBasicError::new(duplicate_ids),
+            )
+            .into(),
         ))
     } else {
         Ok(SimpleConsensusValidationResult::default())

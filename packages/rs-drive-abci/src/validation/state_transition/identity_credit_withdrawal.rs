@@ -1,7 +1,10 @@
 use dpp::identity::PartialIdentity;
-use dpp::{identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition, state_transition::StateTransitionAction, StateError, validation::{ConsensusValidationResult, SimpleConsensusValidationResult}};
-use dpp::consensus::basic::identity::{IdentityInsufficientBalanceError, InvalidIdentityCreditWithdrawalTransitionCoreFeeError, InvalidIdentityCreditWithdrawalTransitionOutputScriptError, NotImplementedIdentityCreditWithdrawalTransitionPoolingError};
+use dpp::{identity::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition, state_transition::StateTransitionAction, validation::{ConsensusValidationResult, SimpleConsensusValidationResult}};
+use dpp::consensus::basic::identity::{InvalidIdentityCreditWithdrawalTransitionCoreFeeError, InvalidIdentityCreditWithdrawalTransitionOutputScriptError, NotImplementedIdentityCreditWithdrawalTransitionPoolingError};
 use dpp::consensus::signature::IdentityNotFoundError;
+use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
+use dpp::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
+use dpp::consensus::state::state_error::StateError;
 use dpp::identity::state_transition::identity_credit_withdrawal_transition::{IdentityCreditWithdrawalTransitionAction, Pooling};
 use dpp::identity::state_transition::identity_credit_withdrawal_transition::validation::basic::validate_identity_credit_withdrawal_transition_basic::IDENTITY_CREDIT_WITHDRAWAL_TRANSITION_SCHEMA_VALIDATOR;
 use dpp::util::is_fibonacci_number::is_fibonacci_number;
@@ -94,11 +97,8 @@ impl StateTransitionValidation for IdentityCreditWithdrawalTransition {
 
         if existing_identity_balance < self.amount {
             return Ok(ConsensusValidationResult::new_with_error(
-                IdentityInsufficientBalanceError {
-                    identity_id: self.identity_id,
-                    balance: existing_identity_balance,
-                }
-                .into(),
+                IdentityInsufficientBalanceError::new(self.identity_id, existing_identity_balance)
+                    .into(),
             ));
         }
 
@@ -109,10 +109,10 @@ impl StateTransitionValidation for IdentityCreditWithdrawalTransition {
         // Check revision
         if revision + 1 != self.revision {
             return Ok(ConsensusValidationResult::new_with_error(
-                StateError::InvalidIdentityRevisionError {
-                    identity_id: self.identity_id,
-                    current_revision: revision,
-                }
+                StateError::InvalidIdentityRevisionError(InvalidIdentityRevisionError::new(
+                    self.identity_id,
+                    revision,
+                ))
                 .into(),
             ));
         }

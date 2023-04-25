@@ -2,10 +2,11 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use dpp::contracts::withdrawals_contract;
 
+use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
 use dpp::document::document_transition::DocumentTransitionAction;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::{Identifier, Value};
-use dpp::{get_from_transition_action, DataTriggerActionError, ProtocolError};
+use dpp::{get_from_transition_action, ProtocolError};
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
 use std::collections::BTreeMap;
 
