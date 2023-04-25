@@ -18,7 +18,6 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
   let validateIdentityCreateTransitionBasic;
 
   let StateTransitionExecutionContext;
-  let IdentityCreateTransition;
   let IdentityPublicKey;
   let UnsupportedProtocolVersionError;
   let InvalidInstantAssetLockProofSignatureError;
@@ -30,7 +29,6 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
 
   before(async () => {
     ({
-      IdentityCreateTransition,
       StateTransitionExecutionContext,
       UnsupportedProtocolVersionError,
       InvalidInstantAssetLockProofSignatureError,
@@ -54,8 +52,6 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
         ...opts,
       })
     );
-
-    console.log(1);
   });
 
   beforeEach(async function () {
@@ -93,8 +89,6 @@ describe('validateIdentityCreateTransitionBasicFactory', () => {
     stateTransition.setPublicKeys([identityPublicKey]);
 
     rawStateTransition = stateTransition.toObject();
-
-    console.log(2);
   });
 
   describe('protocolVersion', () => {
