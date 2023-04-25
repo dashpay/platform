@@ -719,7 +719,7 @@ mod tests {
     use dpp::document::document_factory::DocumentFactory;
     use dpp::document::document_validator::DocumentValidator;
 
-    use dpp::platform_value::{platform_value, Value};
+    use dpp::platform_value::{platform_value, Identifier, Value};
     use dpp::prelude::DataContract;
     use dpp::util::cbor_serializer;
     use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
@@ -743,6 +743,7 @@ mod tests {
     use crate::{common::setup_contract, drive::test_utils::TestEntropyGenerator};
     use dpp::block::epoch::Epoch;
     use dpp::data_contract::extra::common::json_document_to_document;
+    use dpp::platform_value;
 
     #[test]
     fn test_create_and_update_document_same_transaction() {
@@ -1464,8 +1465,8 @@ mod tests {
         // setup code
         let contract = setup_contract(&drive, path, None, transaction.as_ref());
 
-        let id = [1u8; 32];
-        let owner_id = [2u8; 32];
+        let id = Identifier::from([1u8; 32]);
+        let owner_id = Identifier::from([2u8; 32]);
         let person_0_original = Person {
             id,
             owner_id,
@@ -1652,7 +1653,7 @@ mod tests {
 
             let removed_credits = deletion_fees
                 .fee_refunds
-                .get(&owner_id)
+                .get(owner_id.as_bytes())
                 .unwrap()
                 .get(&0)
                 .unwrap();
@@ -1735,8 +1736,8 @@ mod tests {
         // setup code
         let contract = setup_contract(&drive, path, None, transaction.as_ref());
 
-        let id = [1u8; 32];
-        let owner_id = [2u8; 32];
+        let id = Identifier::from([1u8; 32]);
+        let owner_id = Identifier::from([2u8; 32]);
         let person_0_original = Person {
             id,
             owner_id,
@@ -1783,7 +1784,7 @@ mod tests {
 
             let removed_credits = deletion_fees
                 .fee_refunds
-                .get(&owner_id)
+                .get(owner_id.as_bytes())
                 .unwrap()
                 .get(&0)
                 .unwrap();
@@ -1833,7 +1834,7 @@ mod tests {
 
         let removed_credits = update_fees
             .fee_refunds
-            .get(&owner_id)
+            .get(owner_id.as_bytes())
             .unwrap()
             .get(&0)
             .unwrap();
@@ -1925,8 +1926,8 @@ mod tests {
         // setup code
         let contract = setup_contract(&drive, path, None, transaction.as_ref());
 
-        let id = [1u8; 32];
-        let owner_id = [2u8; 32];
+        let id = Identifier::from([1u8; 32]);
+        let owner_id = Identifier::from([2u8; 32]);
         let person_0_original = Person {
             id,
             owner_id,
@@ -2146,9 +2147,9 @@ mod tests {
     #[serde(rename_all = "camelCase")]
     struct Person {
         #[serde(rename = "$id")]
-        id: [u8; 32],
+        id: Identifier,
         #[serde(rename = "$ownerId")]
-        owner_id: [u8; 32],
+        owner_id: Identifier,
         first_name: String,
         middle_name: String,
         last_name: String,
@@ -2164,21 +2165,17 @@ mod tests {
         apply: bool,
         transaction: TransactionArg,
     ) -> FeeResult {
-        let value = serde_json::to_value(person).expect("serialized person");
-        let document_cbor =
-            cbor_serializer::serializable_value_to_cbor(&value, Some(defaults::PROTOCOL_VERSION))
-                .expect("expected to serialize to cbor");
-        let document = Document::from_cbor(document_cbor.as_slice(), None, None)
-            .expect("document should be properly deserialized");
         let document_type = contract
             .document_type_for_name("person")
             .expect("expected to get document type");
+
+        let value = platform_value::to_value(person).expect("person into value");
+
+        let document = platform_value::from_value(value).expect("value to document");
+
         let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpochOwned(
             0,
-            person
-                .owner_id
-                .try_into()
-                .expect("expected to get owner_id"),
+            person.owner_id.to_buffer(),
         )));
 
         drive
@@ -2208,10 +2205,10 @@ mod tests {
     ) -> FeeResult {
         drive
             .delete_document_for_contract(
-                person.id,
+                person.id.to_buffer(),
                 contract,
                 "person",
-                Some(person.owner_id),
+                Some(person.owner_id.to_buffer()),
                 block_info,
                 true,
                 transaction,
@@ -2255,8 +2252,8 @@ mod tests {
         let contract = setup_contract(&drive, path, None, transaction.as_ref());
 
         let person_0_original = Person {
-            id: [0u8; 32],
-            owner_id: [0u8; 32],
+            id: Identifier::from([0u8; 32]),
+            owner_id: Identifier::from([0u8; 32]),
             first_name: "Samuel".to_string(),
             middle_name: "Abraham".to_string(),
             last_name: "Westrich".to_string(),
@@ -2265,8 +2262,8 @@ mod tests {
         };
 
         let person_0_updated = Person {
-            id: [0u8; 32],
-            owner_id: [0u8; 32],
+            id: Identifier::from([0u8; 32]),
+            owner_id: Identifier::from([0u8; 32]),
             first_name: "Samuel".to_string(),
             middle_name: "Abraham".to_string(),
             last_name: "Westrich".to_string(),
@@ -2275,8 +2272,8 @@ mod tests {
         };
 
         let person_1_original = Person {
-            id: [1u8; 32],
-            owner_id: [1u8; 32],
+            id: Identifier::from([1u8; 32]),
+            owner_id: Identifier::from([1u8; 32]),
             first_name: "Wisdom".to_string(),
             middle_name: "Madabuchukwu".to_string(),
             last_name: "Ogwu".to_string(),
@@ -2285,8 +2282,8 @@ mod tests {
         };
 
         let person_1_updated = Person {
-            id: [1u8; 32],
-            owner_id: [1u8; 32],
+            id: Identifier::from([1u8; 32]),
+            owner_id: Identifier::from([1u8; 32]),
             first_name: "Wisdom".to_string(),
             middle_name: "Madabuchukwu".to_string(),
             last_name: "Ogwu".to_string(),
