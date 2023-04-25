@@ -11,7 +11,7 @@ use dpp::identity::TimestampMillis;
 use drive::error::Error::GroveDB;
 use drive::grovedb::Transaction;
 
-use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain};
+use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain, ValidatorSetUpdate};
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 
 impl<C> Platform<C>
@@ -64,13 +64,17 @@ where
             transaction,
         )?;
 
-        state_cache.current_validator_set_quorum_hash = state_cache
+        let validator_set = state_cache
             .validator_sets
-            .get_index(0)
+            .first()
             .ok_or(ExecutionError::InitializationError(
                 "we should have at least one quorum",
-            ))
-            .map(|(quorum_hash, _)| *quorum_hash)?;
+            ))?
+            .clone();
+        let quorum_hash = validator_set.0.clone();
+        let validator_set = ValidatorSetUpdate::from(validator_set.1);
+
+        state_cache.current_validator_set_quorum_hash = quorum_hash;
 
         state_cache.initialization_information = Some(PlatformInitializationState {
             core_initialization_height: core_height,
@@ -86,7 +90,7 @@ where
         Ok(ResponseInitChain {
             consensus_params: None, //todo
             app_hash: app_hash.to_vec(),
-            validator_set_update: None,
+            validator_set_update: Some(validator_set),
             next_core_chain_lock_update: None,
             initial_core_height: core_height, // we send back the core height when the fork happens
         })
