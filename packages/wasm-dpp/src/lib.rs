@@ -32,3 +32,4 @@ mod entropy_generator;
 mod generate_temporary_ecdsa_private_key;
 mod lodash;
 mod validation;
+mod protocol_version;
