@@ -112,7 +112,7 @@ async function createDIContainer() {
     migrateConfigFile: asValue(migrateConfigFile),
     isHelper: asValue(process.env.DASHMATE_HELPER === '1'),
     getConnectionHost: asClass(getConnectionHostFactory).singleton(),
-    ensureFileMountExists: asClass(ensureFileMountExistsFactory).singleton(),
+    ensureFileMountExists: asFunction(ensureFileMountExistsFactory).singleton(),
     // `configFile` and `config` are registering on command init
   });
 
