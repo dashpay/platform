@@ -275,17 +275,19 @@ impl TryFrom<BlockId> for CleanedBlockId {
             part_set_header,
             state_id,
         } = value;
-        let hash = hash.try_into().map_err(|_| {
+        let hash = hash_or_default(hash).map_err(|_| {
             Error::Abci(AbciError::BadRequestDataSize(
                 "hash is not 32 bytes long in block id".to_string(),
             ))
         })?;
+
         let Some(part_set_header) = part_set_header else {
             return Err(AbciError::BadRequest(
                 "block id is missing part set header".to_string(),
             ).into());
         };
-        let state_id = state_id.try_into().map_err(|_| {
+
+        let state_id = hash_or_default(state_id).map_err(|_| {
             Error::Abci(AbciError::BadRequestDataSize(
                 "state id is not 32 bytes long".to_string(),
             ))
@@ -446,5 +448,14 @@ impl TryFrom<RequestFinalizeBlock> for FinalizeBlockCleanedRequest {
             block: block.try_into()?,
             block_id: block_id.try_into()?,
         })
+    }
+}
+
+fn hash_or_default(hash: Vec<u8>) -> Result<[u8; 32], <Vec<u8> as TryInto<[u8; 32]>>::Error> {
+    if hash.is_empty() {
+        // hash is empty at genesis, we assume it is zeros
+        Ok([0u8; 32])
+    } else {
+        hash.try_into()
     }
 }

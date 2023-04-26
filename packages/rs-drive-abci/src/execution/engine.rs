@@ -1,9 +1,9 @@
+use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::{QuorumHash, Txid};
-use dpp::bls_signatures;
-
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
+use dpp::bls_signatures;
 use dpp::consensus::ConsensusError;
 use dpp::state_transition::StateTransition;
 use dpp::validation::{
@@ -674,12 +674,19 @@ where
             round,
             block_header.core_chain_locked_height,
             block_header.proposer_pro_tx_hash,
-            hash,
+            hash.clone(),
         )? {
             // we are on the wrong height or round
             validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
-                "received a block for h: {} r: {}, expected h: {} r: {}",
-                height, round, block_state_info.height, block_state_info.round
+                "received a block for h: {} r: {}, hash: {}, core height: {}, expected h: {} r: {}, hash: {}, core height: {}",
+                height,
+                round,
+                hash.to_hex(),
+                block_header.core_chain_locked_height,
+                block_state_info.height,
+                block_state_info.round,
+                block_state_info.block_hash.to_hex(),
+                block_state_info.core_chain_locked_height
             )));
             return Ok(validation_result.into());
         }

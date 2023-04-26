@@ -55,7 +55,15 @@ where
 
         let mut state_cache = self.state.write().unwrap();
 
-        let core_height = self.initial_core_height(request.initial_core_height, &fork_info)?;
+        // Determine initial core height.
+        // Use core height received from Tenderdash (from genesis.json) by default,
+        // otherwise we go with height of v20 fork.
+        let core_height = if request.initial_core_height != 0 {
+            request.initial_core_height
+        } else {
+            fork_info.since
+        };
+
         self.update_core_info(
             &mut state_cache,
             core_height,
@@ -94,24 +102,5 @@ where
             next_core_chain_lock_update: None,
             initial_core_height: core_height, // we send back the core height when the fork happens
         })
-    }
-
-    /// Determine initial core height.
-    ///
-    /// TODO: rewrite this, it is non-deterministic
-    /// We use either core height received from Tenderdash (from genesis file), OR the current tip of active core chain.
-    /// We use current tip as default because we need a fully functional, up-to-date validator set.
-    fn initial_core_height(
-        &self,
-        requested: u32,
-        fork_info: &Bip9SoftforkInfo,
-    ) -> Result<u32, Error> {
-        let core_height = if requested != 0 {
-            requested
-        } else {
-            fork_info.since
-        };
-
-        Ok(core_height)
     }
 }
