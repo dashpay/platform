@@ -1,3 +1,5 @@
+use dpp::consensus::basic::data_contract::InvalidDataContractVersionError;
+use dpp::consensus::basic::document::DataContractNotPresentError;
 use dpp::data_contract::state_transition::data_contract_update_transition::validation::basic::DATA_CONTRACT_UPDATE_SCHEMA_VALIDATOR;
 use dpp::identity::PartialIdentity;
 use dpp::{
@@ -5,7 +7,6 @@ use dpp::{
         data_contract::{
             DataContractImmutablePropertiesUpdateError, IncompatibleDataContractSchemaError,
         },
-        invalid_data_contract_version_error::InvalidDataContractVersionError,
         BasicError,
     },
     data_contract::{
@@ -94,9 +95,9 @@ impl StateTransitionValidation for DataContractUpdateTransition {
                 .1
             else {
                 validation_result
-                    .add_error(BasicError::DataContractNotPresent {
-                        data_contract_id: self.data_contract.id.0.0.into()
-                    });
+                    .add_error(BasicError::DataContractNotPresentError(
+                        DataContractNotPresentError::new(self.data_contract.id.0.0.into())
+                    ));
                 return Ok(validation_result);
             };
 

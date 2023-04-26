@@ -3,9 +3,10 @@ use crate::document::document_transition::DocumentReplaceTransition;
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
 use platform_value::Value;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DocumentReplaceTransitionAction {
     /// Document Base Transition
     pub base: DocumentBaseTransitionAction,

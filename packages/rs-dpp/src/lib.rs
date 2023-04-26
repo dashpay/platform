@@ -17,7 +17,6 @@ pub mod data_contract;
 
 mod convertible;
 pub mod data_trigger;
-pub mod decode_protocol_entity_factory;
 pub mod document;
 pub mod identifier;
 pub mod identity;
@@ -43,6 +42,7 @@ mod bls;
 pub mod tests;
 
 pub mod block;
+pub mod encoding;
 pub mod serialization_traits;
 pub mod system_data_contracts;
 

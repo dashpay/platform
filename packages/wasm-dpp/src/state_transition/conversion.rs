@@ -1,4 +1,4 @@
-use crate::errors::consensus_error::from_consensus_error;
+use crate::errors::consensus::consensus_error::from_consensus_error;
 use crate::utils::generic_of_js_val;
 use crate::{
     DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm,
@@ -65,11 +65,11 @@ pub fn create_state_transition_from_wasm_instance(
 
     let state_transition_type: StateTransitionType =
         raw_state_transition_type.try_into().map_err(|_| {
-            from_consensus_error(ConsensusError::BasicError(Box::new(
+            from_consensus_error(ConsensusError::BasicError(
                 BasicError::InvalidStateTransitionTypeError(InvalidStateTransitionTypeError::new(
                     raw_state_transition_type,
                 )),
-            )))
+            ))
         })?;
 
     match state_transition_type {

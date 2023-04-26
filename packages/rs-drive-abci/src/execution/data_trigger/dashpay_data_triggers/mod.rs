@@ -2,10 +2,11 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::data_trigger::dashpay_data_triggers::property_names::CORE_HEIGHT_CREATED_AT;
 use crate::execution::data_trigger::{DataTriggerExecutionContext, DataTriggerExecutionResult};
+use dpp::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
 use dpp::document::document_transition::DocumentTransitionAction;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::platform_value::Identifier;
-use dpp::{get_from_transition_action, DataTriggerActionError, ProtocolError};
+use dpp::{get_from_transition_action, ProtocolError};
 
 const BLOCKS_SIZE_WINDOW: u32 = 8;
 mod property_names {
@@ -131,6 +132,8 @@ mod test {
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::document::document_transition::{Action, DocumentCreateTransitionAction};
+    use dpp::errors::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
+    use dpp::platform_value;
     use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
     use dpp::platform_value::platform_value;
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
@@ -138,7 +141,6 @@ mod test {
         get_contact_request_document_fixture, get_dashpay_contract_fixture,
         get_document_transitions_fixture, identity_fixture,
     };
-    use dpp::{platform_value, DataTriggerActionError};
 
     #[test]
     fn should_successfully_execute_on_dry_run() {

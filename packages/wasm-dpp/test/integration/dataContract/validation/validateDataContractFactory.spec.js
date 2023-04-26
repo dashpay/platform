@@ -892,7 +892,7 @@ describe('validateDataContractFactory', () => {
         const [error] = result.getErrors();
 
         expect(error.getInstancePath()).to.equal('/documents/indexedDocument/properties/firstName/default');
-        expect(error.getKeyword()).to.equal('falseSchema');
+        expect(error.getKeyword()).to.equal('unevaluatedProperties');
       });
 
       it('should return invalid result if remote `$ref` is used', async () => {
@@ -933,7 +933,7 @@ describe('validateDataContractFactory', () => {
         const [error] = result.getErrors();
 
         expect(error.getInstancePath()).to.equal('/documents/indexedDocument/propertyNames');
-        expect(error.getKeyword()).to.equal('falseSchema');
+        expect(error.getKeyword()).to.equal('unevaluatedProperties');
       });
 
       it('should have `maxItems` if `uniqueItems` is used', async () => {
@@ -1292,7 +1292,7 @@ describe('validateDataContractFactory', () => {
       const [error] = result.getErrors();
 
       expect(error.getCode()).to.equal(1008);
-      expect(error.getIndexDefinition().toObject()).to.deep.equal(indexDefinition);
+      expect(error.getIndexName()).to.equal('otherIndexName');
       expect(error.getDocumentType()).to.deep.equal('indexedDocument');
     });
 
@@ -1623,7 +1623,7 @@ describe('validateDataContractFactory', () => {
         expect(error.getCode()).to.equal(1015);
         expect(error.getPropertyName()).to.equal('$id');
         expect(error.getDocumentType()).to.deep.equal('indexedDocument');
-        expect(error.getIndexDefinition().toObject()).to.deep.equal(indexDefinition);
+        expect(error.getIndexName()).to.deep.equal('index_1');
       });
 
       it('should return invalid result if indices has undefined property', async () => {
@@ -1643,7 +1643,7 @@ describe('validateDataContractFactory', () => {
         expect(error.getCode()).to.equal(1016);
         expect(error.getPropertyName()).to.equal('missingProperty');
         expect(error.getDocumentType()).to.deep.equal('indexedDocument');
-        expect(error.getIndexDefinition().toObject()).to.deep.equal(indexDefinition);
+        expect(error.getIndexName()).to.deep.equal('index1');
       });
 
       it('should return invalid result if index property is object', async () => {
@@ -1678,7 +1678,7 @@ describe('validateDataContractFactory', () => {
         expect(error.getPropertyName()).to.equal('objectProperty');
         expect(error.getPropertyType()).to.equal('object');
         expect(error.getDocumentType()).to.deep.equal('indexedDocument');
-        expect(error.getIndexDefinition().toObject()).to.deep.equal(indexDefinition);
+        expect(error.getIndexName()).to.deep.equal('index1');
       });
 
       it('should return invalid result if index property is an array', async () => {
@@ -1710,8 +1710,6 @@ describe('validateDataContractFactory', () => {
           additionalProperties: false,
         };
 
-        const indexDefinition = rawDataContract.documents.indexedArray.indices[0];
-
         const result = await validateDataContract(rawDataContract);
 
         expectValidationError(result, InvalidIndexPropertyTypeError);
@@ -1722,7 +1720,7 @@ describe('validateDataContractFactory', () => {
         expect(error.getPropertyName()).to.equal('mentions');
         expect(error.getPropertyType()).to.equal('array');
         expect(error.getDocumentType()).to.deep.equal('indexedArray');
-        expect(error.getIndexDefinition().toObject()).to.deep.equal(indexDefinition);
+        expect(error.getIndexName()).to.equal('index1');
       });
 
       it('should return invalid result if index property is array of objects', async () => {
@@ -1760,7 +1758,7 @@ describe('validateDataContractFactory', () => {
         expect(error.getPropertyName()).to.equal('arrayProperty');
         expect(error.getPropertyType()).to.equal('array');
         expect(error.getDocumentType()).to.deep.equal('indexedDocument');
-        expect(error.getIndexDefinition().toObject()).to.deep.equal(indexDefinition);
+        expect(error.getIndexName()).to.equal('index1');
       });
 
       // TODO: support indexed arrays
@@ -1888,7 +1886,7 @@ describe('validateDataContractFactory', () => {
         expect(error.getPropertyName()).to.equal('arrayProperty');
         expect(error.getPropertyType()).to.equal('array');
         expect(error.getDocumentType()).to.deep.equal('indexedDocument');
-        expect(error.getIndexDefinition().toObject()).to.deep.equal(indexDefinition);
+        expect(error.getIndexName()).to.equal('index1');
       });
 
       it('should return invalid result if index property is array with different item definitions', async () => {
@@ -1927,7 +1925,7 @@ describe('validateDataContractFactory', () => {
         expect(error.getPropertyName()).to.equal('arrayProperty');
         expect(error.getPropertyType()).to.equal('array');
         expect(error.getDocumentType()).to.deep.equal('indexedDocument');
-        expect(error.getIndexDefinition().toObject()).to.deep.equal(indexDefinition);
+        expect(error.getIndexName()).to.equal('index1');
       });
     });
   });

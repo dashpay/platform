@@ -1,67 +1,51 @@
 use crate::buffer::Buffer;
-use crate::document::state_transition::document_batch_transition::document_transition::from_document_transition_to_js_value;
 
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::state::data_trigger::data_trigger_invalid_result_error::DataTriggerInvalidResultError;
+use dpp::consensus::ConsensusError;
 use dpp::identifier::Identifier;
-use dpp::prelude::DocumentTransition;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=DataTriggerInvalidResultError)]
 pub struct DataTriggerInvalidResultErrorWasm {
-    data_contract_id: Identifier,
-    document_transition_id: Identifier,
-    document_transition: Option<DocumentTransition>,
-    owner_id: Option<Identifier>,
-    code: u32,
+    inner: DataTriggerInvalidResultError,
+}
+
+impl From<&DataTriggerInvalidResultError> for DataTriggerInvalidResultErrorWasm {
+    fn from(e: &DataTriggerInvalidResultError) -> Self {
+        Self { inner: e.clone() }
+    }
 }
 
 #[wasm_bindgen(js_class=DataTriggerInvalidResultError)]
 impl DataTriggerInvalidResultErrorWasm {
     #[wasm_bindgen(js_name=getDataContractId)]
     pub fn data_contract_id(&self) -> Buffer {
-        Buffer::from_bytes(self.data_contract_id.as_bytes())
+        Buffer::from_bytes(self.inner.data_contract_id().as_bytes())
     }
 
-    #[wasm_bindgen(js_name=getDocumentTransitionId)]
-    pub fn document_transition_id(&self) -> Buffer {
-        Buffer::from_bytes(self.document_transition_id.as_bytes())
-    }
-
-    #[wasm_bindgen(js_name=getTransition)]
-    pub fn document_transition(&self) -> JsValue {
-        if let Some(document_transition) = &self.document_transition {
-            from_document_transition_to_js_value(document_transition.clone())
-        } else {
-            JsValue::undefined()
-        }
-    }
-
-    #[wasm_bindgen(js_name=getOwnerId)]
-    pub fn owner_id(&self) -> Option<Buffer> {
-        let owner_id = self.owner_id.as_ref()?;
-        Some(Buffer::from_bytes(owner_id.as_bytes()))
+    #[wasm_bindgen(js_name=getDocumentId)]
+    pub fn document_id(&self) -> Buffer {
+        Buffer::from_bytes(self.inner.document_id().as_bytes())
     }
 
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {
-        self.code
+        ConsensusError::from(self.inner.clone()).code()
     }
-}
 
-impl DataTriggerInvalidResultErrorWasm {
-    pub fn new(
-        data_contract_id: Identifier,
-        document_transition_id: Identifier,
-        document_transition: Option<DocumentTransition>,
-        owner_id: Option<Identifier>,
-        code: u32,
-    ) -> Self {
-        Self {
-            data_contract_id,
-            document_transition_id,
-            document_transition,
-            owner_id,
-            code,
-        }
+    #[wasm_bindgen(getter)]
+    pub fn message(&self) -> String {
+        self.inner.to_string()
+    }
+
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+        let bytes = ConsensusError::from(self.inner.clone())
+            .serialize()
+            .map_err(|e| JsError::from(e))?;
+
+        Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }
 

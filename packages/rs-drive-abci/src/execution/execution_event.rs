@@ -4,6 +4,7 @@ use crate::execution::execution_event::ExecutionEvent::{
     PaidDriveEvent, PaidFromAssetLockDriveEvent,
 };
 use dpp::block::epoch::Epoch;
+use dpp::errors::consensus::codes::ErrorWithCode;
 use dpp::identity::PartialIdentity;
 use dpp::state_transition::StateTransitionAction;
 use dpp::validation::SimpleConsensusValidationResult;

@@ -3,12 +3,17 @@ use lazy_static::lazy_static;
 use platform_value::Value;
 use serde_json::Value as JsonValue;
 
+use crate::consensus::state::state_error::StateError;
+
+use crate::consensus::state::identity::duplicated_identity_public_key_id_state_error::DuplicatedIdentityPublicKeyIdStateError;
+use crate::consensus::state::identity::duplicated_identity_public_key_state_error::DuplicatedIdentityPublicKeyStateError;
+use crate::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
 use crate::{
     identity::validation::{duplicated_key_ids, duplicated_keys, TPublicKeysValidator},
     prelude::IdentityPublicKey,
     util::json_value::JsonValueExt,
     validation::SimpleConsensusValidationResult,
-    ProtocolError, StateError,
+    ProtocolError,
 };
 
 lazy_static! {
@@ -41,8 +46,9 @@ pub fn validate_public_keys(
         as usize;
 
     if raw_public_keys.len() > max_items {
-        validation_result
-            .add_error(StateError::MaxIdentityPublicKeyLimitReachedError { max_items });
+        validation_result.add_error(StateError::MaxIdentityPublicKeyLimitReachedError(
+            MaxIdentityPublicKeyLimitReachedError::new(max_items),
+        ));
         return Ok(validation_result);
     }
 
@@ -55,17 +61,18 @@ pub fn validate_public_keys(
     // Check that there's not duplicates key ids in the state transition
     let duplicated_ids = duplicated_key_ids(&public_keys);
     if !duplicated_ids.is_empty() {
-        validation_result
-            .add_error(StateError::DuplicatedIdentityPublicKeyIdError { duplicated_ids });
+        validation_result.add_error(StateError::DuplicatedIdentityPublicKeyIdStateError(
+            DuplicatedIdentityPublicKeyIdStateError::new(duplicated_ids),
+        ));
         return Ok(validation_result);
     }
 
     // Check that there's no duplicated keys
     let duplicated_key_ids = duplicated_keys(&public_keys);
     if !duplicated_key_ids.is_empty() {
-        validation_result.add_error(StateError::DuplicatedIdentityPublicKeyError {
-            duplicated_public_key_ids: duplicated_key_ids,
-        });
+        validation_result.add_error(StateError::DuplicatedIdentityPublicKeyStateError(
+            DuplicatedIdentityPublicKeyStateError::new(duplicated_key_ids),
+        ));
     }
 
     Ok(validation_result)

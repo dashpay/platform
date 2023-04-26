@@ -4,7 +4,9 @@ use crate::identity::TimestampMillis;
 use platform_value::Value;
 use std::collections::BTreeMap;
 
-#[derive(Debug, Clone, Default)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct DocumentCreateTransitionAction {
     /// Document Base Transition
     pub base: DocumentBaseTransitionAction,
