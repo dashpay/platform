@@ -48,6 +48,7 @@ use tenderdash_abci::proto::types::{CoreChainLock, VoteExtensionType};
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::block_proposal::BlockProposal;
 use crate::execution::engine::BlockExecutionOutcome;
 
 use super::withdrawal::WithdrawalTxs;
@@ -94,6 +95,28 @@ where
         &self,
         request: RequestPrepareProposal,
     ) -> Result<ResponsePrepareProposal, ResponseException> {
+        // We should get the latest CoreChainLock from core
+        // It is possible that we will not get a chain lock from core, in this case, just don't
+        // propose one
+        // This is done before all else
+
+        let core_chain_lock_update = match self.platform.core_rpc.get_best_chain_lock() {
+            Ok(latest_chain_lock) => {
+                if request.core_chain_locked_height < latest_chain_lock.core_block_height {
+                    Some(latest_chain_lock)
+                } else {
+                    None
+                }
+            }
+            Err(_) => None,
+        };
+
+        let mut block_proposal: BlockProposal = (&request).try_into()?;
+
+        if let Some(core_chain_lock_update) = core_chain_lock_update.as_ref() {
+            block_proposal.core_chain_locked_height = core_chain_lock_update.core_block_height;
+        }
+
         let transaction_guard = if request.height == self.platform.config.abci.genesis_height as i64
         {
             // special logic on init chain
@@ -111,7 +134,7 @@ where
         // Running the proposal executes all the state transitions for the block
         let run_result = self
             .platform
-            .run_block_proposal((&request).try_into()?, transaction)?;
+            .run_block_proposal(block_proposal, transaction)?;
 
         if !run_result.is_valid() {
             // This is a system error, because we are proposing
@@ -151,24 +174,6 @@ where
             .unzip();
 
         let tx_results = tx_results.into_iter().flatten().collect();
-
-        // We should get the latest CoreChainLock from core
-        // It is possible that we will not get a chain lock from core, in this case, just don't
-        // propose one
-
-        let core_chain_lock_update = match self.platform.core_rpc.get_best_chain_lock() {
-            Ok(latest_chain_lock) => {
-                if request.core_chain_locked_height < latest_chain_lock.core_block_height {
-                    Some(latest_chain_lock)
-                } else {
-                    None
-                }
-            }
-            Err(_) => None,
-        };
-
-        // Next we should check for validator set updates
-        // todo: validator set updates
 
         // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
         let response = ResponsePrepareProposal {
