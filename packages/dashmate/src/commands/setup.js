@@ -92,8 +92,6 @@ class SetupCommand extends BaseCommand {
             throw new Error(`Preset ${ctx.preset} already configured`);
           } else {
             // eslint-disable-next-line no-param-reassign
-
-            // eslint-disable-next-line no-param-reassign
             task.output = ctx.preset;
           }
         },
