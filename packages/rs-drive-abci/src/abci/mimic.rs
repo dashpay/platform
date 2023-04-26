@@ -46,7 +46,6 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         proposer_pro_tx_hash: [u8; 32],
         current_quorum: &TestQuorumInfo,
         proposed_version: ProtocolVersion,
-        _total_hpmns: u32,
         block_info: BlockInfo,
         expect_validation_errors: bool,
         state_transitions: Vec<StateTransition>,

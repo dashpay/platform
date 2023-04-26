@@ -166,9 +166,6 @@ where
             Err(_) => None,
         };
 
-        // Next we should check for validator set updates
-        // todo: validator set updates
-
         // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
         let response = ResponsePrepareProposal {
             tx_results,

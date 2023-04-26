@@ -103,6 +103,8 @@ use drive_abci::rpc::core::MockCoreRPCLike;
 use drive_abci::test::fixture::abci::static_init_chain_request;
 use drive_abci::test::helpers::setup::TestPlatformBuilder;
 use drive_abci::{config::PlatformConfig, test::helpers::setup::TempPlatform};
+use rand::distributions::Distribution;
+use rand::distributions::Uniform;
 use rand::prelude::IteratorRandom;
 use rand::rngs::StdRng;
 use rand::seq::SliceRandom;
@@ -159,6 +161,33 @@ impl Frequency {
         } else {
             (self.times_per_block_range.start + self.times_per_block_range.end) as f64 / 2.0
         }
+    }
+
+    pub fn pick_in_range(&self, rng: &mut impl Rng, range: Range<u16>) -> Vec<u16> {
+        if !self.is_set() {
+            return vec![];
+        }
+        let mut picked_numbers = Vec::new();
+        let chance_per_block_hit = self
+            .chance_per_block
+            .map_or(true, |chance| rng.gen_bool(chance));
+
+        if chance_per_block_hit {
+            let mut times_per_block_dist = Uniform::from(self.times_per_block_range.clone());
+
+            for number in range {
+                let times_to_pick = times_per_block_dist.sample(rng);
+
+                for _ in 0..times_to_pick {
+                    let num_u16 = number as u16;
+                    if !picked_numbers.contains(&num_u16) {
+                        picked_numbers.push(num_u16);
+                    }
+                }
+            }
+        }
+
+        picked_numbers
     }
 }
 
@@ -282,6 +311,65 @@ impl Signer for SimpleSigner {
 
 pub type BlockHeight = u64;
 
+#[derive(Clone, Debug, Default)]
+pub struct MasternodeListChangesStrategy {
+    /// How many new masternodes on average per core chain lock increase
+    new_hpmns: Frequency,
+    /// How many masternodes leave the system
+    removed_hpmns: Frequency,
+    /// How many masternodes update a key
+    updated_hpmns: Frequency,
+    /// How many masternodes are banned
+    banned_hpmns: Frequency,
+    /// How many masternodes are unbanned
+    unbanned_hpmns: Frequency,
+    /// How many new masternodes on average per core chain lock increase
+    new_masternodes: Frequency,
+    /// How many masternodes leave the system
+    removed_masternodes: Frequency,
+    /// How many masternodes update a key
+    updated_mastenodes: Frequency,
+    /// How many masternodes are banned
+    banned_masternodes: Frequency,
+    /// How many masternodes are unbanned
+    unbanned_masternodes: Frequency,
+}
+
+impl MasternodeListChangesStrategy {
+    fn any_is_set(&self) -> bool {
+        self.new_hpmns.is_set()
+            || self.removed_hpmns.is_set()
+            || self.updated_hpmns.is_set()
+            || self.banned_hpmns.is_set()
+            || self.unbanned_hpmns.is_set()
+            || self.new_masternodes.is_set()
+            || self.removed_masternodes.is_set()
+            || self.updated_mastenodes.is_set()
+            || self.banned_masternodes.is_set()
+            || self.unbanned_masternodes.is_set()
+    }
+
+    fn removed_any_masternode_types(&self) -> bool {
+        self.removed_masternodes.is_set() || self.removed_hpmns.is_set()
+    }
+
+    fn updated_any_masternode_types(&self) -> bool {
+        self.updated_mastenodes.is_set() || self.updated_hpmns.is_set()
+    }
+
+    fn added_any_masternode_types(&self) -> bool {
+        self.new_masternodes.is_set() || self.new_hpmns.is_set()
+    }
+
+    fn any_update_is_set(&self) -> bool {
+        self.updated_hpmns.is_set()
+            || self.banned_hpmns.is_set()
+            || self.unbanned_hpmns.is_set() | self.updated_mastenodes.is_set()
+            || self.banned_masternodes.is_set()
+            || self.unbanned_masternodes.is_set()
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Strategy {
     contracts_with_updates: Vec<(Contract, Option<BTreeMap<u64, Contract>>)>,
@@ -292,10 +380,7 @@ pub struct Strategy {
     quorum_count: u16,
     upgrading_info: Option<UpgradingInfo>,
     core_height_increase: Frequency,
-    /// how many new proposers on average per core chain lock increase
-    new_proposers: Frequency,
-    /// how many proposers leave the system
-    removed_proposers: Frequency,
+    proposer_strategy: MasternodeListChangesStrategy,
     rotate_quorums: bool,
 }
 
@@ -998,7 +1083,7 @@ pub struct ChainExecutionOutcome<'a> {
     pub abci_app: AbciApplication<'a, MockCoreRPCLike>,
     pub masternode_identity_balances: BTreeMap<[u8; 32], Credits>,
     pub identities: Vec<Identity>,
-    pub proposers: Vec<MasternodeListItem>,
+    pub proposers: Vec<MasternodeListItemWithUpdates>,
     pub quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
     pub current_quorum_hash: QuorumHash,
     pub current_proposer_versions: Option<HashMap<ProTxHash, ValidatorVersionMigration>>,
@@ -1012,7 +1097,7 @@ pub struct ChainExecutionParameters {
     pub block_start: u64,
     pub core_height_start: u32,
     pub block_count: u64,
-    pub proposers: Vec<MasternodeListItem>,
+    pub proposers: Vec<MasternodeListItemWithUpdates>,
     pub quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
     pub current_quorum_hash: QuorumHash,
     // the first option is if it is set
@@ -1026,14 +1111,81 @@ pub enum StrategyRandomness {
     RNGEntropy(StdRng),
 }
 
+pub struct GenerateTestMasternodeUpdates<'a> {
+    start_core_height: u32,
+    end_core_height: u32,
+    update_masternode_frequency: &'a Frequency,
+    update_hpmn_frequency: &'a Frequency,
+}
+
 /// Creates a list of test Masternode identities of size `count` with random data
 pub fn generate_test_masternodes(
     masternode_count: u16,
     hpmn_count: u16,
+    updates: Option<GenerateTestMasternodeUpdates>,
     rng: &mut StdRng,
-) -> Vec<MasternodeListItem> {
-    let mut masternodes: Vec<MasternodeListItem> =
-        Vec::with_capacity((masternode_count + hpmn_count) as usize);
+) -> (
+    Vec<MasternodeListItemWithUpdates>,
+    Vec<MasternodeListItemWithUpdates>,
+) {
+    let mut masternodes: Vec<MasternodeListItemWithUpdates> =
+        Vec::with_capacity(masternode_count as usize);
+    let mut hpmns: Vec<MasternodeListItemWithUpdates> = Vec::with_capacity(hpmn_count as usize);
+
+    let (block_height_to_list_masternode_updates, block_height_to_list_hpmns_updates): (
+        Option<HashMap<u32, Vec<u16>>>,
+        Option<HashMap<u32, Vec<u16>>>,
+    ) = updates
+        .map(
+            |GenerateTestMasternodeUpdates {
+                 start_core_height,
+                 end_core_height,
+                 update_masternode_frequency,
+                 update_hpmn_frequency,
+             }| {
+                (start_core_height..=end_core_height)
+                    .into_iter()
+                    .map(|height| {
+                        // we want to pick what nodes will have updated for that block
+                        (
+                            (
+                                height,
+                                update_masternode_frequency.pick_in_range(rng, 0..masternode_count),
+                            ),
+                            (
+                                height,
+                                update_hpmn_frequency.pick_in_range(rng, 0..hpmn_count),
+                            ),
+                        )
+                    })
+                    .unzip()
+            },
+        )
+        .unzip();
+
+    fn invert_hashmap(input: HashMap<u32, Vec<u16>>) -> HashMap<u16, Vec<u32>> {
+        let mut output = HashMap::new();
+
+        for (key, values) in input {
+            for value in values {
+                output.entry(value).or_insert_with(Vec::new).push(key);
+            }
+        }
+
+        output
+    }
+
+    let masternode_number_to_heights_updates = block_height_to_list_masternode_updates
+        .map(|block_height_to_list_masternode_updates| {
+            invert_hashmap(block_height_to_list_masternode_updates)
+        })
+        .unwrap_or_default();
+
+    let hpmn_number_to_heights_updates = block_height_to_list_hpmns_updates
+        .map(|block_height_to_list_hpmns_updates| {
+            invert_hashmap(block_height_to_list_hpmns_updates)
+        })
+        .unwrap_or_default();
 
     for i in 0..masternode_count {
         let private_key_operator =
@@ -1055,7 +1207,7 @@ pub fn generate_test_masternodes(
                 service: SocketAddr::from_str(format!("1.0.{}.{}:1234", i / 256, i % 256).as_str())
                     .unwrap(),
                 registered_height: 0,
-                pose_revived_height: 0,
+                pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
                 owner_address: rng.gen::<[u8; 20]>(),
@@ -1068,7 +1220,26 @@ pub fn generate_test_masternodes(
                 platform_http_port: None,
             },
         };
-        masternodes.push(masternode_list_item);
+
+        let masternode_updates = masternode_number_to_heights_updates
+            .get(&i)
+            .map(|heights| {
+                heights
+                    .into_iter()
+                    .map(|height| {
+                        let masternode_list_item_b = masternode_list_item.clone();
+                        (*height, masternode_list_item_b)
+                    })
+                    .collect::<BTreeMap<u32, MasternodeListItem>>()
+            })
+            .unwrap_or_default();
+
+        let masternode_with_update = MasternodeListItemWithUpdates {
+            masternode: masternode_list_item,
+            updates: masternode_updates,
+        };
+
+        masternodes.push(masternode_with_update);
     }
 
     for i in 0..hpmn_count {
@@ -1090,7 +1261,7 @@ pub fn generate_test_masternodes(
                 service: SocketAddr::from_str(format!("1.1.{}.{}:1234", i / 256, i % 256).as_str())
                     .unwrap(),
                 registered_height: 0,
-                pose_revived_height: 0,
+                pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
                 owner_address: rng.gen::<[u8; 20]>(),
@@ -1103,25 +1274,46 @@ pub fn generate_test_masternodes(
                 platform_http_port: Some(8080),
             },
         };
-        masternodes.push(masternode_list_item);
+        let masternode_updates = hpmn_number_to_heights_updates
+            .get(&i)
+            .map(|heights| {
+                heights
+                    .into_iter()
+                    .map(|height| {
+                        let masternode_list_item_b = masternode_list_item.clone();
+                        (*height, masternode_list_item_b)
+                    })
+                    .collect::<BTreeMap<u32, MasternodeListItem>>()
+            })
+            .unwrap_or_default();
+
+        let proposer_with_update = MasternodeListItemWithUpdates {
+            masternode: masternode_list_item,
+            updates: masternode_updates,
+        };
+
+        hpmns.push(proposer_with_update);
     }
 
-    masternodes
+    (masternodes, hpmns)
 }
 
-pub fn generate_test_quorums(
+pub fn generate_test_quorums<'a, I>(
     count: usize,
-    proposers: &Vec<MasternodeListItem>,
+    proposers: I,
     quorum_size: usize,
     rng: &mut StdRng,
-) -> BTreeMap<QuorumHash, TestQuorumInfo> {
+) -> BTreeMap<QuorumHash, TestQuorumInfo>
+where
+    I: Iterator<Item = &'a MasternodeListItem> + Clone,
+{
     (0..count)
         .into_iter()
         .enumerate()
         .map(|(index, _)| {
             let quorum_hash: QuorumHash = QuorumHash::from_inner(rng.gen());
             let validator_pro_tx_hashes = proposers
-                .iter()
+                .clone()
                 .filter(|m| m.node_type == MasternodeType::HighPerformance)
                 .choose_multiple(rng, quorum_size)
                 .iter()
@@ -1140,6 +1332,28 @@ pub fn generate_test_quorums(
         .collect()
 }
 
+#[derive(Clone, Debug)]
+pub struct MasternodeListItemWithUpdates {
+    masternode: MasternodeListItem,
+    updates: BTreeMap<u32, MasternodeListItem>,
+}
+
+impl MasternodeListItemWithUpdates {
+    pub(crate) fn pro_tx_hash(&self) -> ProTxHash {
+        self.masternode.pro_tx_hash
+    }
+
+    pub(crate) fn get_state_at_height(&self, height: u32) -> &MasternodeListItem {
+        // Find the closest height less than or equal to the given height
+        let closest_height = self.updates.range(..=height).rev().next().map(|(k, _)| *k);
+
+        match closest_height {
+            Some(h) => &self.updates[&h],
+            None => &self.masternode,
+        }
+    }
+}
+
 pub(crate) fn run_chain_for_strategy(
     platform: &mut Platform<MockCoreRPCLike>,
     block_count: u64,
@@ -1152,47 +1366,113 @@ pub(crate) fn run_chain_for_strategy(
 
     let mut rng = StdRng::seed_from_u64(seed);
 
-    let new_proposers_in_strategy = strategy.new_proposers.is_set();
-    let removed_proposers_in_strategy = strategy.removed_proposers.is_set();
-    let (initial_proposers, with_extra_proposers) = if new_proposers_in_strategy
-        || removed_proposers_in_strategy
-    {
-        let initial_proposers =
-            generate_test_masternodes(strategy.extra_normal_mns, strategy.total_hpmns, &mut rng);
-        let mut all_proposers = initial_proposers.clone();
+    let any_changes_in_strategy = strategy.proposer_strategy.any_is_set();
+    let updated_proposers_in_strategy = strategy.proposer_strategy.updated_any_masternode_types();
+    let any_update_of_proposers_in_strategy = strategy.proposer_strategy.any_update_is_set();
+
+    let (
+        initial_masternodes_with_updates,
+        initial_hpmns_with_updates,
+        with_extra_masternodes_with_updates,
+        with_extra_hpmns_with_updates,
+    ) = if any_changes_in_strategy {
         let approximate_end_core_height =
             ((block_count as f64) * strategy.core_height_increase.average_event_count()) as u32;
         let end_core_height = approximate_end_core_height * 2; //let's be safe
-        let extra_proposers_by_block = (config.abci.genesis_core_height..end_core_height)
-            .map(|height| {
-                let new_proposers = strategy.new_proposers.events_if_hit(&mut rng);
-                let removed_proposers_count = strategy.removed_proposers.events_if_hit(&mut rng);
-                let extra_proposers_by_block =
-                    generate_test_masternodes(0, new_proposers, &mut rng);
+        let generate_updates = if updated_proposers_in_strategy {
+            Some(GenerateTestMasternodeUpdates {
+                start_core_height: config.abci.genesis_core_height,
+                end_core_height,
+                update_masternode_frequency: &strategy.proposer_strategy.updated_mastenodes,
+                update_hpmn_frequency: &strategy.proposer_strategy.updated_hpmns,
+            })
+        } else {
+            None
+        };
 
-                if removed_proposers_in_strategy {
+        let (initial_masternodes, initial_hpmns) = generate_test_masternodes(
+            strategy.extra_normal_mns,
+            strategy.total_hpmns,
+            generate_updates,
+            &mut rng,
+        );
+        let mut all_masternodes = initial_masternodes.clone();
+        let mut all_hpmns = initial_hpmns.clone();
+
+        let (extra_masternodes_by_block, extra_hpmns_by_block): (
+            BTreeMap<u32, Vec<MasternodeListItemWithUpdates>>,
+            BTreeMap<u32, Vec<MasternodeListItemWithUpdates>>,
+        ) = (config.abci.genesis_core_height..end_core_height)
+            .map(|height| {
+                let new_proposers = strategy.proposer_strategy.new_hpmns.events_if_hit(&mut rng);
+                let generate_updates = if updated_proposers_in_strategy {
+                    Some(GenerateTestMasternodeUpdates {
+                        start_core_height: height + 1,
+                        end_core_height,
+                        update_masternode_frequency: &strategy.proposer_strategy.updated_mastenodes,
+                        update_hpmn_frequency: &strategy.proposer_strategy.updated_hpmns,
+                    })
+                } else {
+                    None
+                };
+
+                let (extra_masternodes_by_block, extra_hpmns_by_block) =
+                    generate_test_masternodes(0, new_proposers, generate_updates, &mut rng);
+
+                if strategy.proposer_strategy.removed_masternodes.is_set() {
+                    let removed_masternodes_count = strategy
+                        .proposer_strategy
+                        .removed_masternodes
+                        .events_if_hit(&mut rng);
                     let removed_count =
-                        std::cmp::min(removed_proposers_count as usize, all_proposers.len());
-                    all_proposers.drain(0..removed_count);
+                        std::cmp::min(removed_masternodes_count as usize, all_masternodes.len());
+                    all_masternodes.drain(0..removed_count);
                 }
 
-                all_proposers.extend(extra_proposers_by_block.clone());
-                (height, all_proposers.clone())
+                if strategy.proposer_strategy.removed_hpmns.is_set() {
+                    let removed_hpmns_count = strategy
+                        .proposer_strategy
+                        .removed_hpmns
+                        .events_if_hit(&mut rng);
+                    let removed_count =
+                        std::cmp::min(removed_hpmns_count as usize, all_hpmns.len());
+                    all_hpmns.drain(0..removed_count);
+                }
+
+                all_masternodes.extend(extra_masternodes_by_block.clone());
+                all_hpmns.extend(extra_hpmns_by_block.clone());
+                (
+                    (height, all_masternodes.clone()),
+                    (height, all_hpmns.clone()),
+                )
             })
-            .collect::<HashMap<u32, Vec<MasternodeListItem>>>();
-        (initial_proposers, extra_proposers_by_block)
-    } else {
+            .unzip();
         (
-            generate_test_masternodes(strategy.extra_normal_mns, strategy.total_hpmns, &mut rng),
-            HashMap::new(),
+            initial_masternodes,
+            initial_hpmns,
+            extra_masternodes_by_block,
+            extra_hpmns_by_block,
+        )
+    } else {
+        let (initial_masternodes, initial_hpmns) = generate_test_masternodes(
+            strategy.extra_normal_mns,
+            strategy.total_hpmns,
+            None,
+            &mut rng,
+        );
+        (
+            initial_masternodes,
+            initial_hpmns,
+            BTreeMap::new(),
+            BTreeMap::new(),
         )
     };
 
-    let mut all_proposers = with_extra_proposers
+    let mut all_hpmns_with_updates = with_extra_hpmns_with_updates
         .iter()
         .max_by_key(|(key, _)| *key)
         .map(|(_, v)| v.clone())
-        .unwrap_or(initial_proposers.clone());
+        .unwrap_or(initial_hpmns_with_updates.clone());
 
     let total_quorums = if strategy.rotate_quorums {
         quorum_count * 10
@@ -1202,7 +1482,9 @@ pub(crate) fn run_chain_for_strategy(
 
     let quorums = generate_test_quorums(
         total_quorums as usize,
-        &initial_proposers,
+        initial_hpmns_with_updates
+            .iter()
+            .map(|hpmn| &hpmn.masternode),
         quorum_size as usize,
         &mut rng,
     );
@@ -1298,6 +1580,12 @@ pub(crate) fn run_chain_for_strategy(
                 .clone())
         });
 
+    let initial_all_masternodes: Vec<_> = initial_masternodes_with_updates
+        .clone()
+        .into_iter()
+        .chain(initial_hpmns_with_updates.clone().into_iter())
+        .collect();
+
     platform
         .core_rpc
         .expect_get_protx_diff_with_masternodes()
@@ -1306,12 +1594,15 @@ pub(crate) fn run_chain_for_strategy(
                 MasternodeListDiff {
                     base_height: base_block,
                     block_height: block,
-                    added_mns: initial_proposers.clone(),
+                    added_mns: initial_all_masternodes
+                        .iter()
+                        .map(|masternode_list_item| masternode_list_item.masternode.clone())
+                        .collect(),
                     removed_mns: vec![],
                     updated_mns: vec![],
                 }
             } else {
-                if !new_proposers_in_strategy {
+                if !any_changes_in_strategy {
                     // no changes
                     MasternodeListDiff {
                         base_height: base_block,
@@ -1322,29 +1613,62 @@ pub(crate) fn run_chain_for_strategy(
                     }
                 } else {
                     // we need to figure out the difference of proposers between two heights
-                    let start_proposers = with_extra_proposers
+                    let start_masternodes = with_extra_masternodes_with_updates
                         .get(&base_block)
-                        .expect("expected start proposers");
-                    let end_proposers = with_extra_proposers
+                        .expect("expected start proposers")
+                        .iter()
+                        .map(|masternode| masternode.get_state_at_height(base_block))
+                        .collect::<Vec<_>>();
+                    let end_masternodes = with_extra_masternodes_with_updates
                         .get(&block)
-                        .expect("expected end proposers");
-                    let added_mns: Vec<_> = end_proposers
+                        .expect("expected end proposers")
                         .iter()
-                        .filter(|item| !start_proposers.contains(item))
-                        .map(|a| a.clone())
-                        .collect();
+                        .map(|masternode| masternode.get_state_at_height(block))
+                        .collect::<Vec<_>>();
+                    let mut added_masternodes = end_masternodes
+                        .iter()
+                        .filter(|item| !start_masternodes.contains(item))
+                        .map(|a| (*a).clone())
+                        .collect::<Vec<MasternodeListItem>>();
 
-                    let removed_mns: Vec<_> = start_proposers
+                    let mut removed_masternodes = start_masternodes
                         .iter()
-                        .filter(|item| !end_proposers.contains(item))
+                        .filter(|item| !end_masternodes.contains(item))
                         .map(|masternode_list_item| masternode_list_item.pro_tx_hash)
-                        .collect();
+                        .collect::<Vec<ProTxHash>>();
+
+                    let start_hpmns = with_extra_hpmns_with_updates
+                        .get(&base_block)
+                        .expect("expected start proposers")
+                        .iter()
+                        .map(|masternode| masternode.get_state_at_height(base_block))
+                        .collect::<Vec<_>>();
+                    let end_hpmns = with_extra_hpmns_with_updates
+                        .get(&block)
+                        .expect("expected end proposers")
+                        .iter()
+                        .map(|masternode| masternode.get_state_at_height(block))
+                        .collect::<Vec<_>>();
+                    let added_hpmns = end_hpmns
+                        .iter()
+                        .filter(|item| !start_hpmns.contains(item))
+                        .map(|a| (*a).clone())
+                        .collect::<Vec<MasternodeListItem>>();
+
+                    let removed_hpmns = start_hpmns
+                        .iter()
+                        .filter(|item| !end_hpmns.contains(item))
+                        .map(|masternode_list_item| masternode_list_item.pro_tx_hash)
+                        .collect::<Vec<ProTxHash>>();
+
+                    added_masternodes.extend(added_hpmns);
+                    removed_masternodes.extend(removed_hpmns);
 
                     MasternodeListDiff {
                         base_height: base_block,
                         block_height: block,
-                        added_mns,
-                        removed_mns,
+                        added_mns: added_masternodes,
+                        removed_mns: removed_masternodes,
                         updated_mns: vec![],
                     }
                 }
@@ -1356,7 +1680,7 @@ pub(crate) fn run_chain_for_strategy(
     start_chain_for_strategy(
         platform,
         block_count,
-        all_proposers,
+        all_hpmns_with_updates,
         quorums,
         strategy,
         config,
@@ -1367,7 +1691,7 @@ pub(crate) fn run_chain_for_strategy(
 pub(crate) fn start_chain_for_strategy(
     platform: &Platform<MockCoreRPCLike>,
     block_count: u64,
-    proposers: Vec<MasternodeListItem>,
+    proposers_with_updates: Vec<MasternodeListItemWithUpdates>,
     quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
     strategy: Strategy,
     config: PlatformConfig,
@@ -1442,7 +1766,7 @@ pub(crate) fn start_chain_for_strategy(
             block_start: 1,
             core_height_start: initial_core_height,
             block_count,
-            proposers,
+            proposers: proposers_with_updates,
             quorums,
             current_quorum_hash,
             current_proposer_versions: None,
@@ -1466,7 +1790,7 @@ pub(crate) fn continue_chain_for_strategy(
         block_start,
         core_height_start,
         block_count,
-        proposers,
+        proposers: proposers_with_updates,
         quorums,
         mut current_quorum_hash,
         current_proposer_versions,
@@ -1485,14 +1809,12 @@ pub(crate) fn continue_chain_for_strategy(
 
     let blocks_per_epoch = EPOCH_CHANGE_TIME_MS / config.block_spacing_ms;
 
-    let proposer_count = proposers.len() as u32;
-
     let proposer_versions = current_proposer_versions.unwrap_or(
         strategy.upgrading_info.as_ref().map(|upgrading_info| {
             upgrading_info.apply_to_proposers(
-                proposers
+                proposers_with_updates
                     .iter()
-                    .map(|masternode_list_item| masternode_list_item.pro_tx_hash)
+                    .map(|masternode_list_item| masternode_list_item.pro_tx_hash())
                     .collect(),
                 blocks_per_epoch,
                 &mut rng,
@@ -1507,8 +1829,6 @@ pub(crate) fn continue_chain_for_strategy(
     let mut current_quorum_with_test_info = quorums.get(&current_quorum_hash).unwrap();
 
     let mut next_quorum_hash = current_quorum_hash;
-
-    let mut next_quorum_with_test_info = quorums.get(&next_quorum_hash).unwrap();
 
     for block_height in block_start..(block_start + block_count) {
         let needs_rotation_on_next_block = block_height % quorum_rotation_block_count == 0;
@@ -1541,10 +1861,6 @@ pub(crate) fn continue_chain_for_strategy(
         if current_quorum_with_test_info.quorum_hash != current_quorum_hash {
             current_quorum_with_test_info = quorums.get(&current_quorum_hash).unwrap();
         }
-        //
-        // if next_quorum_with_test_info.quorum_hash != next_quorum_hash {
-        //     next_quorum_with_test_info = quorums.get(&next_quorum_hash).unwrap();
-        // }
 
         let proposer = current_quorum_with_test_info
             .validator_set
@@ -1585,7 +1901,6 @@ pub(crate) fn continue_chain_for_strategy(
                 proposer.pro_tx_hash.into_inner(),
                 current_quorum_with_test_info,
                 proposed_version,
-                proposer_count,
                 block_info,
                 false,
                 state_transitions,
@@ -1624,9 +1939,9 @@ pub(crate) fn continue_chain_for_strategy(
     let masternode_identity_balances = platform
         .drive
         .fetch_identities_balances(
-            &proposers
+            &proposers_with_updates
                 .iter()
-                .map(|proposer| proposer.pro_tx_hash.into_inner())
+                .map(|proposer| proposer.pro_tx_hash().into_inner())
                 .collect(),
             None,
         )
@@ -1646,7 +1961,7 @@ pub(crate) fn continue_chain_for_strategy(
         abci_app,
         masternode_identity_balances,
         identities: current_identities,
-        proposers,
+        proposers: proposers_with_updates,
         quorums,
         current_quorum_hash,
         current_proposer_versions: proposer_versions,
@@ -1711,8 +2026,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
-            new_proposers: Default::default(),
-            removed_proposers: Default::default(),
+            proposer_strategy: Default::default(),
             rotate_quorums: false,
         };
         let config = PlatformConfig {
@@ -1757,8 +2071,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
-            new_proposers: Default::default(),
-            removed_proposers: Default::default(),
+            proposer_strategy: Default::default(),
             rotate_quorums: false,
         };
         let config = PlatformConfig {
@@ -1803,8 +2116,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
-            new_proposers: Default::default(),
-            removed_proposers: Default::default(),
+            proposer_strategy: Default::default(),
             rotate_quorums: false,
         };
         let config = PlatformConfig {
@@ -1894,8 +2206,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
-            new_proposers: Default::default(),
-            removed_proposers: Default::default(),
+            proposer_strategy: Default::default(),
             rotate_quorums: false,
         };
         let config = PlatformConfig {
@@ -1949,8 +2260,7 @@ mod tests {
                 times_per_block_range: 1..3,
                 chance_per_block: Some(0.01),
             },
-            new_proposers: Default::default(),
-            removed_proposers: Default::default(),
+            proposer_strategy: Default::default(),
             rotate_quorums: false,
         };
         let config = PlatformConfig {
@@ -1995,8 +2305,7 @@ mod tests {
                 times_per_block_range: 5..6,
                 chance_per_block: Some(0.5),
             },
-            new_proposers: Default::default(),
-            removed_proposers: Default::default(),
+            proposer_strategy: Default::default(),
             rotate_quorums: true,
         };
         let config = PlatformConfig {
@@ -2078,11 +2387,13 @@ mod tests {
                 times_per_block_range: 1..2,
                 chance_per_block: Some(0.2),
             },
-            new_proposers: Frequency {
-                times_per_block_range: 1..3,
-                chance_per_block: Some(0.5),
+            proposer_strategy: MasternodeListChangesStrategy {
+                new_hpmns: Frequency {
+                    times_per_block_range: 1..3,
+                    chance_per_block: Some(0.5),
+                },
+                ..Default::default()
             },
-            removed_proposers: Default::default(),
             rotate_quorums: true,
         };
         let config = PlatformConfig {
@@ -2143,13 +2454,82 @@ mod tests {
                 times_per_block_range: 1..2,
                 chance_per_block: Some(0.2),
             },
-            new_proposers: Frequency {
-                times_per_block_range: 1..3,
-                chance_per_block: Some(0.5),
+            proposer_strategy: MasternodeListChangesStrategy {
+                new_hpmns: Frequency {
+                    times_per_block_range: 1..3,
+                    chance_per_block: Some(0.5),
+                },
+                removed_hpmns: Frequency {
+                    times_per_block_range: 1..3,
+                    chance_per_block: Some(0.5),
+                },
+                ..Default::default()
             },
-            removed_proposers: Frequency {
-                times_per_block_range: 1..3,
-                chance_per_block: Some(0.5),
+            rotate_quorums: true,
+        };
+        let config = PlatformConfig {
+            verify_sum_trees: true,
+            quorum_size: 10,
+            validator_set_quorum_rotation_block_count: 25,
+            block_spacing_ms: 300,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            quorums,
+            current_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            ..
+        } = run_chain_for_strategy(&mut platform, 300, strategy, config, 43);
+
+        // With these params if we add new mns the hpmn masternode list would be randomly different than 100.
+
+        let platform = abci_app.platform;
+        let platform_state = platform.state.read().unwrap();
+
+        assert_ne!(platform_state.hpmn_masternode_list.len(), 100);
+    }
+
+    #[test]
+    fn run_chain_core_height_randomly_increasing_with_quorum_updates_updating_proposers() {
+        let strategy = Strategy {
+            contracts_with_updates: vec![],
+            operations: vec![],
+            identities_inserts: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+            total_hpmns: 100,
+            extra_normal_mns: 0,
+            quorum_count: 24,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: 1..2,
+                chance_per_block: Some(0.2),
+            },
+            proposer_strategy: MasternodeListChangesStrategy {
+                updated_hpmns: Frequency {
+                    times_per_block_range: 1..3,
+                    chance_per_block: Some(0.5),
+                },
+                ..Default::default()
             },
             rotate_quorums: true,
         };
@@ -2210,8 +2590,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
-            new_proposers: Default::default(),
-            removed_proposers: Default::default(),
+            proposer_strategy: Default::default(),
             rotate_quorums: false,
         };
         let config = PlatformConfig {
@@ -2257,8 +2636,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
-            new_proposers: Default::default(),
-            removed_proposers: Default::default(),
+            proposer_strategy: Default::default(),
             rotate_quorums: false,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -2316,8 +2694,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
-            new_proposers: Default::default(),
-            removed_proposers: Default::default(),
+            proposer_strategy: Default::default(),
             rotate_quorums: false,
         };
         let config = PlatformConfig {
@@ -2407,8 +2784,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
-            new_proposers: Default::default(),
-            removed_proposers: Default::default(),
+            proposer_strategy: Default::default(),
             rotate_quorums: false,
         };
         let config = PlatformConfig {
@@ -2492,8 +2868,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
-            new_proposers: Default::default(),
-            removed_proposers: Default::default(),
+            proposer_strategy: Default::default(),
             rotate_quorums: false,
         };
         let config = PlatformConfig {
@@ -2557,8 +2932,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
-            new_proposers: Default::default(),
-            removed_proposers: Default::default(),
+            proposer_strategy: Default::default(),
             rotate_quorums: false,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -2650,8 +3024,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
-            new_proposers: Default::default(),
-            removed_proposers: Default::default(),
+            proposer_strategy: Default::default(),
             rotate_quorums: false,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -2743,8 +3116,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
-            new_proposers: Default::default(),
-            removed_proposers: Default::default(),
+            proposer_strategy: Default::default(),
             rotate_quorums: false,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -2837,8 +3209,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
-            new_proposers: Default::default(),
-            removed_proposers: Default::default(),
+            proposer_strategy: Default::default(),
             rotate_quorums: false,
         };
 
@@ -2949,8 +3320,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
-            new_proposers: Default::default(),
-            removed_proposers: Default::default(),
+            proposer_strategy: Default::default(),
             rotate_quorums: false,
         };
 
@@ -3012,8 +3382,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
-            new_proposers: Default::default(),
-            removed_proposers: Default::default(),
+            proposer_strategy: Default::default(),
             rotate_quorums: false,
         };
         let config = PlatformConfig {
@@ -3082,8 +3451,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
-            new_proposers: Default::default(),
-            removed_proposers: Default::default(),
+            proposer_strategy: Default::default(),
             rotate_quorums: false,
         };
         let config = PlatformConfig {
@@ -3153,8 +3521,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
-            new_proposers: Default::default(),
-            removed_proposers: Default::default(),
+            proposer_strategy: Default::default(),
             rotate_quorums: false,
         };
         let config = PlatformConfig {
@@ -3235,8 +3602,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
-            new_proposers: Default::default(),
-            removed_proposers: Default::default(),
+            proposer_strategy: Default::default(),
             rotate_quorums: false,
         };
         let config = PlatformConfig {
