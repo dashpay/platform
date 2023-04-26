@@ -175,7 +175,6 @@ where
 
         let tx_results = tx_results.into_iter().flatten().collect();
 
-
         // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
         let response = ResponsePrepareProposal {
             tx_results,
