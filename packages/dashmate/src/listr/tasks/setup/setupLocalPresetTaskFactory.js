@@ -9,6 +9,7 @@ const {
 } = require('../../../constants');
 const generateTenderdashNodeKey = require('../../../tenderdash/generateTenderdashNodeKey');
 const deriveTenderdashNodeId = require('../../../tenderdash/deriveTenderdashNodeId');
+const generateRandomString = require('../../../util/generateRandomString');
 
 /**
  * @param {ConfigFile} configFile
@@ -173,6 +174,8 @@ function setupLocalPresetTaskFactory(
                 config.set('group', 'local');
                 config.set('core.p2p.port', config.get('core.p2p.port') + (i * 100));
                 config.set('core.rpc.port', config.get('core.rpc.port') + (i * 100));
+                config.set('core.rpc.user', generateRandomString(8));
+                config.set('core.rpc.password', generateRandomString(12));
                 config.set('externalIp', hostDockerInternalIp);
 
                 config.set('docker.network.subnet', `172.24.${nodeIndex}.0/24`);
