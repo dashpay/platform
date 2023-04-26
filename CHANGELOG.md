@@ -17,6 +17,7 @@
 * **dashmate:** reward shares can be negative during HP masternode registration ([#960](https://github.com/dashpay/platform/issues/960))
 * **dashmate:** select number of masternodes during local setup freezes ([#957](https://github.com/dashpay/platform/issues/957))
 * **dashmate:** yaml package security vulnerability ([#975](https://github.com/dashpay/platform/issues/975))
+* **dashmate:** already configured preset is ignored ([#974](https://github.com/dashpay/platform/issues/974))
 * **test-suite:** expects identities for invalid mns ([#968](https://github.com/dashpay/platform/issues/968))
 
 
