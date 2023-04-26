@@ -1,6 +1,6 @@
 {
   "name": "dashmate",
-  "version": "0.24.0-dev.20",
+  "version": "0.24.0-dev.21",
   "description": "Distribution package for Dash node installation",
   "scripts": {
     "lint": "eslint .",
@@ -122,9 +122,6 @@
     "macos": {
       "identifier": "org.dash.dashmate",
       "sign": "'Developer ID Installer: The Dash Foundation, Inc.'"
-    },
-    "deb": {
-      "dependencies": "docker-ce (>= 20.10.0) | docker.io (>= 20.10.0)"
     },
     "plugins": [
       "@oclif/plugin-help"

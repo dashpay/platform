@@ -18,6 +18,13 @@ then
   exit 1
 fi
 
+FLAGS=""
+
+if [[ "$COMMAND" == "tarballs" ]]
+then
+  FLAGS="--no-xz --targets=linux-arm,linux-x64"
+fi
+
 FULL_PATH=$(realpath "$0")
 DIR_PATH=$(dirname "$FULL_PATH")
 ROOT_PATH=$(dirname "$DIR_PATH")
@@ -31,7 +38,7 @@ mkdir .yarn
 echo "nodeLinker: node-modules"  > .yarnrc.yml
 yarn install --no-immutable
 yarn oclif manifest
-yarn oclif pack $COMMAND
+yarn oclif pack $COMMAND $FLAGS
 cd ..  || exit 1
 rm package.tgz
 cp -R package/dist "$ROOT_PATH/packages/dashmate"
