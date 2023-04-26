@@ -119,17 +119,19 @@ describe('IdentityPublicKey', () => {
 
   describe('#setDisabledAt', () => {
     it('should set disabledAt', () => {
-      publicKey.setDisabledAt(123);
+      const now = new Date();
+      publicKey.setDisabledAt(now);
 
-      expect(publicKey.getDisabledAt()).to.equal(123);
+      expect(publicKey.getDisabledAt()).to.deep.equal(now);
     });
   });
 
   describe('#getDisabledAt', () => {
     it('should return disabledAt', () => {
-      publicKey.setDisabledAt(42);
+      const now = new Date();
+      publicKey.setDisabledAt(now);
 
-      expect(publicKey.getDisabledAt()).to.equal(42);
+      expect(publicKey.getDisabledAt()).to.deep.equal(now);
     });
   });
 
@@ -218,7 +220,8 @@ describe('IdentityPublicKey', () => {
     });
 
     it('should return JSON representation with optional properties', () => {
-      publicKey.setDisabledAt(42);
+      const now = new Date();
+      publicKey.setDisabledAt(now);
 
       const jsonPublicKey = publicKey.toJSON();
 
@@ -229,7 +232,7 @@ describe('IdentityPublicKey', () => {
         purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
         readOnly: false,
-        disabledAt: 42,
+        disabledAt: now.getTime(),
       });
     });
   });

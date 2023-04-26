@@ -17,6 +17,13 @@ impl From<&InvalidStateTransitionTypeError> for InvalidStateTransitionTypeErrorW
 
 #[wasm_bindgen(js_class=InvalidStateTransitionTypeError)]
 impl InvalidStateTransitionTypeErrorWasm {
+    #[wasm_bindgen(constructor)]
+    pub fn new(transition_type: u8) -> Self {
+        Self {
+            inner: InvalidStateTransitionTypeError::new(transition_type),
+        }
+    }
+
     #[wasm_bindgen(js_name=getType)]
     pub fn get_type(&self) -> u8 {
         self.inner.transition_type()

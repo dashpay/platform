@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 
-use crate::state_transition::fee::{Credits, DummyFeesResult, Refunds};
+use crate::{
+    state_transition::fee::{Credits, DummyFeesResult, Refunds},
+    NonConsensusError,
+};
 
 use super::OperationLike;
 
@@ -35,12 +38,12 @@ impl PreCalculatedOperation {
 }
 
 impl OperationLike for PreCalculatedOperation {
-    fn get_processing_cost(&self) -> Credits {
-        self.processing_cost
+    fn get_processing_cost(&self) -> Result<Credits, NonConsensusError> {
+        Ok(self.processing_cost)
     }
 
-    fn get_storage_cost(&self) -> Credits {
-        self.storage_cost
+    fn get_storage_cost(&self) -> Result<Credits, NonConsensusError> {
+        Ok(self.storage_cost)
     }
 
     fn get_refunds(&self) -> Option<&Vec<Refunds>> {

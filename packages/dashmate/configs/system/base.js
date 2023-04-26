@@ -235,6 +235,10 @@ module.exports = {
       docker: {
         image: 'dashpay/dashmate-helper:0.24-dev',
       },
+      api: {
+        enable: false,
+        port: 9000,
+      },
     },
   },
   externalIp: null,

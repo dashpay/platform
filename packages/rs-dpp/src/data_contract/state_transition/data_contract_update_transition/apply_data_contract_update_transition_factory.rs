@@ -30,7 +30,7 @@ where
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<()> {
         self.state_repository
-            .store_data_contract(
+            .update_data_contract(
                 state_transition.data_contract.clone(),
                 Some(execution_context),
             )

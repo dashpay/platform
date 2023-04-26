@@ -109,7 +109,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
 
   it('should return IdentityPublicKeyIsDisabledError if disabling public key is already disabled', async () => {
     const keys = identity.getPublicKeys();
-    keys[0].setDisabledAt(new Date().getTime());
+    keys[0].setDisabledAt(new Date());
     identity.setPublicKeys(keys);
     stateTransition.setPublicKeyIdsToDisable([0]);
 

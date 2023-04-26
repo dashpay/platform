@@ -39,6 +39,7 @@ use dpp::{
         StateTransitionIdentitySigned,
     },
     validation::ConsensusValidationResult,
+    NonConsensusError, ProtocolError,
 };
 use drive::grovedb::TransactionArg;
 
@@ -279,7 +280,7 @@ fn validate_transition(
                     transition,
                     latest_block_time_ms,
                     average_block_spacing_ms,
-                );
+                )?;
                 result.merge(validation_result);
 
                 if !result.is_valid() {
@@ -289,7 +290,7 @@ fn validate_transition(
                     transition,
                     latest_block_time_ms,
                     average_block_spacing_ms,
-                );
+                )?;
                 result.merge(validation_result);
 
                 if !result.is_valid() {
@@ -335,7 +336,7 @@ fn validate_transition(
                     transition,
                     latest_block_time_ms,
                     average_block_spacing_ms,
-                );
+                )?;
                 result.merge(validation_result);
 
                 if !result.is_valid() {
@@ -537,18 +538,19 @@ pub fn check_created_inside_time_window(
     document_transition: &DocumentTransition,
     last_block_ts_millis: TimestampMillis,
     average_block_spacing_ms: u64,
-) -> SimpleConsensusValidationResult {
+) -> Result<SimpleConsensusValidationResult, Error> {
     let mut result = SimpleConsensusValidationResult::default();
     let created_at = match document_transition.get_created_at() {
         Some(t) => t,
-        None => return result,
+        None => return Ok(result),
     };
 
     let window_validation = validate_time_in_block_time_window(
         last_block_ts_millis,
         created_at,
         average_block_spacing_ms,
-    );
+    )
+    .map_err(|e| Error::Protocol(ProtocolError::NonConsensusError(e)))?;
     if !window_validation.is_valid() {
         result.add_error(ConsensusError::StateError(
             StateError::DocumentTimestampWindowViolationError(
@@ -562,25 +564,26 @@ pub fn check_created_inside_time_window(
             ),
         ));
     }
-    result
+    Ok(result)
 }
 
 pub fn check_updated_inside_time_window(
     document_transition: &DocumentTransition,
     last_block_ts_millis: TimestampMillis,
     average_block_spacing_ms: u64,
-) -> SimpleConsensusValidationResult {
+) -> Result<SimpleConsensusValidationResult, Error> {
     let mut result = SimpleConsensusValidationResult::default();
     let updated_at = match document_transition.get_updated_at() {
         Some(t) => t,
-        None => return result,
+        None => return Ok(result),
     };
 
     let window_validation = validate_time_in_block_time_window(
         last_block_ts_millis,
         updated_at,
         average_block_spacing_ms,
-    );
+    )
+    .map_err(|e| Error::Protocol(ProtocolError::NonConsensusError(e)))?;
     if !window_validation.is_valid() {
         result.add_error(ConsensusError::StateError(
             StateError::DocumentTimestampWindowViolationError(
@@ -594,5 +597,5 @@ pub fn check_updated_inside_time_window(
             ),
         ));
     }
-    result
+    Ok(result)
 }
