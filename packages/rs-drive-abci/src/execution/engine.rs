@@ -252,7 +252,6 @@ where
         let is_initialization = state.initialization_information.is_some();
 
         let mut block_platform_state = state.clone();
-        drop(state);
 
         // Init block execution context
         let block_state_info =
@@ -295,6 +294,7 @@ where
         if !is_initialization {
             // Update the masternode list and create masternode identities and also update the active quorums
             self.update_core_info(
+                Some(&state),
                 &mut block_platform_state,
                 block_proposal.core_chain_locked_height,
                 false,
@@ -302,6 +302,7 @@ where
                 transaction,
             )?;
         }
+        drop(state);
 
         // Update the validator proposed app version
         self.drive

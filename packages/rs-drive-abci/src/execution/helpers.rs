@@ -247,28 +247,33 @@ where
     ///   there is a problem fetching the masternode list difference or updating the state.
     fn update_masternode_list(
         &self,
-        state: &mut PlatformState,
+        platform_state: Option<&PlatformState>,
+        block_platform_state: &mut PlatformState,
         core_block_height: u32,
         is_init_chain: bool,
         block_info: &BlockInfo,
         transaction: &Transaction,
     ) -> Result<(), Error> {
-        if let Some(last_commited_block_info) = state.last_committed_block_info.as_ref() {
+        if let Some(last_commited_block_info) =
+            block_platform_state.last_committed_block_info.as_ref()
+        {
             if core_block_height == last_commited_block_info.core_height {
                 return Ok(()); // no need to do anything
             }
         }
-        if state.last_committed_block_info.is_some() || is_init_chain {
+        if block_platform_state.last_committed_block_info.is_some() || is_init_chain {
             let UpdateStateMasternodeListOutcome {
                 masternode_list_diff,
                 removed_masternodes,
-            } = self.update_state_masternode_list(state, core_block_height, false)?;
+            } =
+                self.update_state_masternode_list(block_platform_state, core_block_height, false)?;
 
             self.update_masternode_identities(
                 masternode_list_diff,
                 &removed_masternodes,
                 block_info,
-                state,
+                platform_state,
+                block_platform_state,
                 transaction,
             )?;
 
@@ -305,20 +310,22 @@ where
     /// there is a problem updating the masternode list, quorum information, or the state.
     pub(crate) fn update_core_info(
         &self,
-        state: &mut PlatformState,
+        platform_state: Option<&PlatformState>,
+        block_platform_state: &mut PlatformState,
         core_block_height: u32,
         is_init_chain: bool,
         block_info: &BlockInfo,
         transaction: &Transaction,
     ) -> Result<(), Error> {
         self.update_masternode_list(
-            state,
+            platform_state,
+            block_platform_state,
             core_block_height,
             is_init_chain,
             block_info,
             transaction,
         )?;
 
-        self.update_quorum_info(state, core_block_height, false)
+        self.update_quorum_info(block_platform_state, core_block_height, false)
     }
 }

@@ -53,6 +53,7 @@ where
         let mut state_cache = self.state.write().unwrap();
 
         self.update_core_info(
+            None,
             &mut state_cache,
             fork_info.since,
             true,

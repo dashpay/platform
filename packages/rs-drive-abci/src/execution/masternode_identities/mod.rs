@@ -34,7 +34,8 @@ where
         masternode_diff: MasternodeListDiff,
         removed_masternodes: &BTreeMap<ProTxHash, MasternodeListItem>,
         block_info: &BlockInfo,
-        state: &PlatformState,
+        platform_state: Option<&PlatformState>,
+        block_platform_state: &PlatformState,
         transaction: &Transaction,
     ) -> Result<(), Error> {
         let MasternodeListDiff {
@@ -69,8 +70,18 @@ where
         //todo: batch updates as well
         for update in updated_mns.iter() {
             self.update_owner_identity(update, block_info, Some(transaction))?;
-            self.update_voter_identity(update, block_info, state, Some(transaction))?;
-            self.update_operator_identity(update, block_info, state, Some(transaction))?;
+            self.update_voter_identity(
+                update,
+                block_info,
+                block_platform_state,
+                Some(transaction),
+            )?;
+            self.update_operator_identity(
+                update,
+                block_info,
+                block_platform_state,
+                Some(transaction),
+            )?;
         }
 
         for (_, masternode) in removed_masternodes.iter() {
