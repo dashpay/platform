@@ -35,6 +35,7 @@
 use crate::abci::server::AbciApplication;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use crate::execution::block_proposal::BlockProposal;
 use crate::execution::engine::BlockExecutionOutcome;
 use crate::rpc::core::CoreRPCLike;
 use dashcore_rpc::dashcore::hashes::hex::ToHex;
@@ -49,12 +50,6 @@ use tenderdash_abci::proto::abci::{
     ResponseInitChain, ResponsePrepareProposal, ResponseProcessProposal, ResponseQuery, TxRecord,
 };
 use tenderdash_abci::proto::types::VoteExtensionType;
-use tenderdash_abci::proto::types::{CoreChainLock, VoteExtensionType};
-
-use crate::error::execution::ExecutionError;
-use crate::error::Error;
-use crate::execution::block_proposal::BlockProposal;
-use crate::execution::engine::BlockExecutionOutcome;
 
 use super::withdrawal::WithdrawalTxs;
 use super::AbciError;

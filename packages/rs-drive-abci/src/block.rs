@@ -136,7 +136,11 @@ impl BlockStateInfo {
             commit_hash = received_hash.to_hex(),
             "check if block info matches request"
         );
-        Ok(self.height == height && self.round == round && self.core_chain_locked_height == core_block_height && self.proposer_pro_tx_hash == proposer_pro_tx_hash && self.commit_hash.ok_or(Error::Abci(AbciError::FinalizeBlockReceivedBeforeProcessing(format!("we received a block with hash {}, but don't have a current block being processed", hex::encode(received_hash)))))? == received_hash)
+        Ok(self.height == height
+            && self.round == round
+            && self.core_chain_locked_height == core_block_height
+            && self.proposer_pro_tx_hash == proposer_pro_tx_hash
+            && self.block_hash == received_hash)
     }
 }
 /// Block execution context
