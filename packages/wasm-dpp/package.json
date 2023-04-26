@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/wasm-dpp",
-  "version": "0.24.0-dev.17",
+  "version": "0.24.0-dev.19",
   "description": "The JavaScript implementation of the Dash Platform Protocol",
   "main": "dist/index.js",
   "types": "dist/lib/index.d.ts",
@@ -9,6 +9,7 @@
     "test": "yarn run test:node && yarn run test:browsers",
     "test:browsers": "karma start ./karma.conf.js --single-run",
     "test:node": "NODE_ENV=test mocha",
+    "tsc": "tsc",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "clean": "yarn exec scripts/clean.sh"

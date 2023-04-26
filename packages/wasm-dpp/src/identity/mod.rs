@@ -15,12 +15,13 @@ use dpp::metadata::Metadata;
 use dpp::{Convertible, ProtocolError};
 
 use crate::identifier::IdentifierWrapper;
-use crate::utils::{to_vec_of_serde_values, WithJsError};
+use crate::utils::{to_vec_of_serde_values, IntoWasm, WithJsError};
 use crate::MetadataWasm;
 use crate::{utils, with_js_error};
 pub use identity_public_key::*;
 
 use crate::buffer::Buffer;
+use crate::errors::from_dpp_err;
 pub use state_transition::*;
 
 pub mod errors;
@@ -50,7 +51,7 @@ impl IdentityWasm {
         let raw_identity: Value =
             serde_json::from_str(&identity_json).map_err(|e| e.to_string())?;
 
-        let identity = Identity::from_json(raw_identity).unwrap();
+        let identity = Identity::from_json(raw_identity).map_err(from_dpp_err)?;
         Ok(IdentityWasm(identity))
     }
 
@@ -148,8 +149,13 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(js_name=setMetadata)]
-    pub fn set_metadata(&mut self, metadata: MetadataWasm) {
-        self.0.set_metadata(metadata.into());
+    pub fn set_metadata(&mut self, metadata: JsValue) -> Result<(), JsValue> {
+        if !metadata.is_falsy() {
+            let metadata = metadata.to_wasm::<MetadataWasm>("Metadata")?;
+            self.0.set_metadata(metadata.to_owned().into())
+        }
+
+        Ok(())
     }
 
     #[wasm_bindgen(js_name=getMetadata)]

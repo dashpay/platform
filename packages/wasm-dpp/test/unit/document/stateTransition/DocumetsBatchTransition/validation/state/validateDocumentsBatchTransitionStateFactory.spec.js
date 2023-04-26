@@ -234,7 +234,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
       transitions: documentTransitionsJs.map((t) => t.toObject()),
     }, [dataContract]);
 
-    documents[0].setCreatedAt(replaceDocument.getCreatedAt().getMilliseconds());
+    documents[0].setCreatedAt(replaceDocument.getCreatedAt());
     stateRepositoryMock.fetchDocuments.resolves([documents[0].getDocument()]);
 
     const result = await validateDocumentsBatchTransitionState(
@@ -354,7 +354,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
         const transitions = stateTransition.getTransitions();
         transitions.forEach((t) => {
           // eslint-disable-next-line no-param-reassign
-          t.setUpdatedAt(new Date().getMilliseconds());
+          t.setUpdatedAt(new Date());
         });
         stateTransition.setTransitions(transitions);
 
@@ -382,8 +382,8 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
         const transitions = stateTransition.getTransitions();
         transitions.forEach((t) => {
-          const createdAtMinus6Mins = t.getCreatedAt() - (6 * 60 * 1000);
-          t.setCreatedAt(createdAtMinus6Mins);
+          const createdAtMinus6Mins = t.getCreatedAt().getTime() - (6 * 60 * 1000);
+          t.setCreatedAt(new Date(createdAtMinus6Mins));
           t.setUpdatedAt(undefined);
         });
         stateTransition.setTransitions(transitions);
@@ -420,8 +420,8 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
         const transitions = stateTransition.getTransitions();
         transitions.forEach((t) => {
-          const createdAtMinus6Mins = t.getUpdatedAt() - (6 * 60 * 1000);
-          t.setUpdatedAt(createdAtMinus6Mins);
+          const createdAtMinus6Mins = t.getUpdatedAt().getTime() - (6 * 60 * 1000);
+          t.setUpdatedAt(new Date(createdAtMinus6Mins));
           t.setCreatedAt(undefined);
         });
         stateTransition.setTransitions(transitions);
@@ -468,8 +468,8 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
         const transitions = stateTransition.getTransitions();
         transitions.forEach((t) => {
-          const createdAtMinus6Mins = t.getUpdatedAt() - (6 * 60 * 1000);
-          t.setUpdatedAt(createdAtMinus6Mins);
+          const createdAtMinus6Mins = t.getUpdatedAt().getTime() - (6 * 60 * 1000);
+          t.setUpdatedAt(new Date(createdAtMinus6Mins));
           t.setCreatedAt(undefined);
         });
         stateTransition.setTransitions(transitions);
@@ -501,7 +501,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
         const transitions = stateTransition.getTransitions();
         transitions.forEach((t) => {
           // eslint-disable-next-line no-param-reassign
-          t.setUpdatedAt(new Date().getMilliseconds());
+          t.setUpdatedAt(new Date());
         });
         executionContext.enableDryRun();
 
@@ -536,8 +536,8 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
 
         const transitions = stateTransition.getTransitions();
         transitions.forEach((t) => {
-          const createdAtMinus6Mins = t.getUpdatedAt() - (6 * 60 * 1000);
-          t.setUpdatedAt(createdAtMinus6Mins);
+          const createdAtMinus6Mins = t.getUpdatedAt().getTime() - (6 * 60 * 1000);
+          t.setUpdatedAt(new Date(createdAtMinus6Mins));
         });
         stateTransition.setTransitions(transitions);
 
@@ -583,8 +583,8 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
         stateRepositoryMock.fetchExtendedDocuments.resolves([documentToReturn]);
 
         const transitions = stateTransition.getTransitions(); transitions.forEach((t) => {
-          const createdAtMinus6Mins = t.getUpdatedAt() - (6 * 60 * 1000);
-          t.setUpdatedAt(createdAtMinus6Mins);
+          const createdAtMinus6Mins = t.getUpdatedAt().getTime() - (6 * 60 * 1000);
+          t.setUpdatedAt(new Date(createdAtMinus6Mins));
         });
         stateTransition.setTransitions(transitions);
         executionContext.enableDryRun();

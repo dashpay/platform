@@ -79,7 +79,7 @@ class PlatformStatusCommand extends ConfigBaseCommand {
       if (tenderdash.version) {
         const {
           version: tenderdashVersion,
-          lastBlockHeight: platformBlockHeight,
+          latestBlockHeight: platformBlockHeight,
           latestAppHash: platformLatestAppHash,
           peers: platformPeers,
           network: tenderdashNetwork,

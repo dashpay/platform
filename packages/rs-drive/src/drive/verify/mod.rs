@@ -8,7 +8,7 @@ use crate::error::proof::ProofError;
 use crate::error::Error;
 use dpp::identifier::Identifier;
 use dpp::identity::{IdentityPublicKey, KeyID};
-use dpp::prelude::{Identity, Revision};
+pub use dpp::prelude::{AssetLockProof, Identity, Revision};
 
 use crate::fee::credits::Credits;
 use dpp::serialization_traits::PlatformDeserializable;

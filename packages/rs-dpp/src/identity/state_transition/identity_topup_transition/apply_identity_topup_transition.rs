@@ -41,7 +41,7 @@ where
             .fetch(state_transition.get_asset_lock_proof(), execution_context)
             .await?;
 
-        let mut credits_amount = convert_satoshi_to_credits(output.value);
+        let mut credits_amount = convert_satoshi_to_credits(output.value)?;
 
         let out_point = state_transition
             .get_asset_lock_proof()

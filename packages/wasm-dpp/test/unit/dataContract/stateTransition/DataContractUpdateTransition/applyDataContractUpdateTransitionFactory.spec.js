@@ -32,7 +32,7 @@ describe('applyDataContractUpdateTransitionFactory', () => {
     executionContext = new StateTransitionExecutionContext();
 
     const stateRepositoryLike = {
-      storeDataContract: async () => {
+      updateDataContract: async () => {
         dataContractStored = true;
       },
     };

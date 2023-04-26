@@ -10,6 +10,8 @@ use serde_json::Value;
 mod signature_verification_operation;
 pub use signature_verification_operation::*;
 
+use crate::NonConsensusError;
+
 use super::{Credits, Refunds};
 
 pub const STORAGE_CREDIT_PER_BYTE: i64 = 5000;
@@ -25,9 +27,9 @@ pub enum Operation {
 
 pub trait OperationLike {
     /// Get CPU cost of the operation
-    fn get_processing_cost(&self) -> Credits;
+    fn get_processing_cost(&self) -> Result<Credits, NonConsensusError>;
     /// Get storage cost of the operation
-    fn get_storage_cost(&self) -> Credits;
+    fn get_storage_cost(&self) -> Result<Credits, NonConsensusError>;
 
     /// Get refunds
     fn get_refunds(&self) -> Option<&Vec<Refunds>>;
@@ -44,11 +46,11 @@ macro_rules! call_method {
 }
 
 impl OperationLike for Operation {
-    fn get_processing_cost(&self) -> Credits {
+    fn get_processing_cost(&self) -> Result<Credits, NonConsensusError> {
         call_method!(self, get_processing_cost)
     }
 
-    fn get_storage_cost(&self) -> Credits {
+    fn get_storage_cost(&self) -> Result<Credits, NonConsensusError> {
         call_method!(self, get_storage_cost)
     }
 
