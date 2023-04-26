@@ -33,8 +33,10 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
     use anyhow::Error;
     use dashcore::{consensus, BlockHeader};
 
-    use crate::assert_consensus_errors;
+    use crate::assert_state_consensus_errors;
+    use crate::consensus::codes::ErrorWithCode;
     use crate::consensus::signature::SignatureError;
+    use crate::consensus::state::state_error::StateError;
     use crate::consensus::ConsensusError;
     use crate::prelude::{Identifier, Identity};
     use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
@@ -106,7 +108,7 @@ mod validate_identity_credit_withdrawal_transition_state_factory {
             .await
             .unwrap();
 
-        assert_consensus_errors!(result, ConsensusError::IdentityInsufficientBalanceError, 1);
+        assert_state_consensus_errors!(result, StateError::IdentityInsufficientBalanceError, 1);
 
         let error = result.first_error().unwrap();
 

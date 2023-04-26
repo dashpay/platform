@@ -1,26 +1,32 @@
 use crate::consensus::basic::BasicError;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
-#[error("Invalid JSON Schema $ref: {ref_error}")]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[error("Invalid JSON Schema $ref: {message}")]
 pub struct InvalidJsonSchemaRefError {
-    ref_error: String,
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
+    message: String,
 }
 
 impl InvalidJsonSchemaRefError {
-    pub fn new(ref_error: String) -> Self {
-        Self { ref_error }
+    pub fn new(message: String) -> Self {
+        Self { message }
     }
 
-    pub fn ref_error(&self) -> String {
-        self.ref_error.clone()
+    pub fn message(&self) -> String {
+        self.message.clone()
     }
 }
 
 impl From<InvalidJsonSchemaRefError> for ConsensusError {
     fn from(err: InvalidJsonSchemaRefError) -> Self {
-        Self::BasicError(Box::new(BasicError::InvalidJsonSchemaRefError(err)))
+        Self::BasicError(BasicError::InvalidJsonSchemaRefError(err))
     }
 }

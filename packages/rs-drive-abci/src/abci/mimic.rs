@@ -58,7 +58,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         let BlockInfo {
             time_ms,
             height,
-            core_height,
+            mut core_height,
             epoch: _,
         } = block_info;
 
@@ -94,9 +94,13 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             app_hash,
             tx_results,
             consensus_param_updates: _,
-            core_chain_lock_update: _,
+            core_chain_lock_update,
             validator_set_update,
         } = response_prepare_proposal;
+
+        if let Some(core_chain_lock_update) = core_chain_lock_update.as_ref() {
+            core_height = core_chain_lock_update.core_block_height;
+        }
 
         if !expect_validation_errors {
             if tx_results.len() != tx_records.len() {

@@ -12,6 +12,8 @@ use crate::data_contract::errors::InvalidDataContractError;
 
 use crate::data_contract::property_names::PROTOCOL_VERSION;
 
+use crate::consensus::basic::decode::SerializedObjectParsingError;
+use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use crate::state_transition::StateTransitionType;
@@ -20,7 +22,7 @@ use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
 use crate::{
     data_contract::{self, generate_data_contract_id},
-    decode_protocol_entity_factory::DecodeProtocolEntity,
+    encoding::decode_protocol_entity_factory::DecodeProtocolEntity,
     errors::ProtocolError,
     prelude::Identifier,
     Convertible,
@@ -169,9 +171,10 @@ impl DataContractFactory {
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
         let data_contract = DataContract::deserialize(buffer.as_slice()).map_err(|e| {
-            ConsensusError::SerializedObjectParsingError {
-                parsing_error: anyhow!("Decode protocol entity: {:#?}", e),
-            }
+            let error = ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
+                SerializedObjectParsingError::new(format!("Decode protocol entity: {:#?}", e)),
+            ));
+            error
         })?;
 
         if !skip_validation {

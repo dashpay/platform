@@ -10,9 +10,10 @@ use crate::consensus::basic::data_contract::{
     InvalidIndexedPropertyConstraintError, SystemPropertyIndexAlreadyPresentError,
     UndefinedIndexPropertyError, UniqueIndicesLimitReachedError,
 };
+use crate::consensus::ConsensusError;
 use crate::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use crate::{
-    consensus::basic::{BasicError, IndexError},
+    consensus::basic::BasicError,
     data_contract::{
         enrich_with_base_schema::PREFIX_BYTE_0,
         get_property_definition_by_path::get_property_definition_by_path, DataContract,
@@ -336,10 +337,10 @@ impl DataContract {
                 let indices_fingerprint = serde_json::to_string(&index_definition.properties)
                     .expect("fingerprint creation shouldn't fail");
                 if indices_fingerprints.contains(&indices_fingerprint) {
-                    result.add_error(BasicError::IndexError(IndexError::DuplicateIndexError(
+                    result.add_error(ConsensusError::BasicError(BasicError::DuplicateIndexError(
                         DuplicateIndexError::new(
                             document_type.to_owned(),
-                            index_definition.clone(),
+                            index_definition.name.to_owned(),
                         ),
                     )));
                 }
@@ -385,12 +386,12 @@ impl DataContract {
         }
 
         if !invalid_property_type.is_empty() {
-            result.add_error(BasicError::IndexError(
-                IndexError::InvalidIndexPropertyTypeError(InvalidIndexPropertyTypeError::new(
+            result.add_error(ConsensusError::BasicError(
+                BasicError::InvalidIndexPropertyTypeError(InvalidIndexPropertyTypeError::new(
                     document_type.to_owned(),
-                    index_definition.clone(),
+                    index_definition.name.to_owned(),
                     property_name.to_owned(),
-                    invalid_property_type.clone(),
+                    invalid_property_type.to_owned(),
                 )),
             ));
         }
@@ -432,11 +433,11 @@ impl DataContract {
             };
 
             if max_items.is_none() || max_items.unwrap() > max_limit as u64 {
-                result.add_error(BasicError::IndexError(
-                    IndexError::InvalidIndexedPropertyConstraintError(
+                result.add_error(ConsensusError::BasicError(
+                    BasicError::InvalidIndexedPropertyConstraintError(
                         InvalidIndexedPropertyConstraintError::new(
                             document_type.to_owned(),
-                            index_definition.clone(),
+                            index_definition.name.to_owned(),
                             property_name.to_owned(),
                             String::from("maxItems"),
                             format!("should be less or equal {}", max_limit),
@@ -452,11 +453,11 @@ impl DataContract {
             if max_length.is_none()
                 || max_length.unwrap() > MAX_INDEXED_STRING_PROPERTY_LENGTH as u64
             {
-                result.add_error(BasicError::IndexError(
-                    IndexError::InvalidIndexedPropertyConstraintError(
+                result.add_error(ConsensusError::BasicError(
+                    BasicError::InvalidIndexedPropertyConstraintError(
                         InvalidIndexedPropertyConstraintError::new(
                             document_type.to_owned(),
-                            index_definition.clone(),
+                            index_definition.name.to_owned(),
                             property_name.to_owned(),
                             String::from("maxLength"),
                             format!(
@@ -481,10 +482,10 @@ impl DataContract {
         let mut result = SimpleConsensusValidationResult::default();
         for (property_name, definition) in properties {
             if definition.is_none() {
-                result.add_error(BasicError::IndexError(
-                    IndexError::UndefinedIndexPropertyError(UndefinedIndexPropertyError::new(
+                result.add_error(ConsensusError::BasicError(
+                    BasicError::UndefinedIndexPropertyError(UndefinedIndexPropertyError::new(
                         document_type.to_owned(),
-                        index_definition.clone(),
+                        index_definition.name.to_owned(),
                         property_name.to_owned().to_owned(),
                     )),
                 ))
@@ -514,8 +515,8 @@ impl DataContract {
     ) -> SimpleConsensusValidationResult {
         let mut result = SimpleConsensusValidationResult::default();
         if indices.iter().filter(|i| i.unique).count() > UNIQUE_INDEX_LIMIT {
-            result.add_error(BasicError::IndexError(
-                IndexError::UniqueIndicesLimitReachedError(UniqueIndicesLimitReachedError::new(
+            result.add_error(ConsensusError::BasicError(
+                BasicError::UniqueIndicesLimitReachedError(UniqueIndicesLimitReachedError::new(
                     document_type.to_owned(),
                     UNIQUE_INDEX_LIMIT,
                 )),
@@ -534,11 +535,11 @@ impl DataContract {
 
         for property in index_definition.properties.iter() {
             if NOT_ALLOWED_SYSTEM_PROPERTIES.contains(&property.name.as_str()) {
-                result.add_error(BasicError::IndexError(
-                    IndexError::SystemPropertyIndexAlreadyPresentError(
+                result.add_error(ConsensusError::BasicError(
+                    BasicError::SystemPropertyIndexAlreadyPresentError(
                         SystemPropertyIndexAlreadyPresentError::new(
                             document_type.to_owned(),
-                            index_definition.clone(),
+                            index_definition.name.to_owned(),
                             property.name.to_owned(),
                         ),
                     ),

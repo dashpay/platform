@@ -1,26 +1,48 @@
+use crate::buffer::Buffer;
+use dpp::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
+use dpp::consensus::codes::ErrorWithCode;
+use dpp::consensus::ConsensusError;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=DataContractMaxDepthExceedError)]
 pub struct DataContractMaxDepthExceedErrorWasm {
-    depth: usize,
-    code: u32,
+    inner: DataContractMaxDepthExceedError,
 }
 
-impl DataContractMaxDepthExceedErrorWasm {
-    pub fn new(depth: usize, code: u32) -> Self {
-        DataContractMaxDepthExceedErrorWasm { depth, code }
+impl From<&DataContractMaxDepthExceedError> for DataContractMaxDepthExceedErrorWasm {
+    fn from(e: &DataContractMaxDepthExceedError) -> Self {
+        Self { inner: e.clone() }
     }
 }
 
 #[wasm_bindgen(js_class=DataContractMaxDepthError)]
 impl DataContractMaxDepthExceedErrorWasm {
-    #[wasm_bindgen(js_name=getDepth)]
-    pub fn get_expected_version(&self) -> usize {
-        self.depth
+    #[wasm_bindgen(js_name=getMaxDepth)]
+    pub fn get_max_depth(&self) -> usize {
+        self.inner.max_depth()
+    }
+
+    #[wasm_bindgen(js_name=getSchemaDepth)]
+    pub fn get_schema_depth(&self) -> usize {
+        self.inner.schema_depth()
     }
 
     #[wasm_bindgen(js_name=getCode)]
     pub fn get_code(&self) -> u32 {
-        self.code
+        ConsensusError::from(self.inner.clone()).code()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn message(&self) -> String {
+        self.inner.to_string()
+    }
+
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+        let bytes = ConsensusError::from(self.inner.clone())
+            .serialize()
+            .map_err(|e| JsError::from(e))?;
+
+        Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }

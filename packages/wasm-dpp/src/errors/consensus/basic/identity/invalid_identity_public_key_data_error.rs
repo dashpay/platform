@@ -1,7 +1,8 @@
-use crate::errors::PublicKeyValidationErrorWasm;
-use dpp::codes::ErrorWithCode;
 use dpp::consensus::basic::identity::InvalidIdentityPublicKeyDataError;
+use dpp::errors::consensus::codes::ErrorWithCode;
 
+use crate::buffer::Buffer;
+use dpp::consensus::ConsensusError;
 use dpp::errors::consensus::ConsensusError as DPPConsensusError;
 use wasm_bindgen::prelude::*;
 
@@ -25,15 +26,26 @@ impl InvalidIdentityPublicKeyDataErrorWasm {
     }
 
     #[wasm_bindgen(js_name=getValidationError)]
-    pub fn validation_error(&self) -> Option<PublicKeyValidationErrorWasm> {
-        self.inner
-            .validation_error()
-            .as_ref()
-            .map(|err| PublicKeyValidationErrorWasm::from(err.clone()))
+    pub fn validation_error(&self) -> String {
+        self.inner.validation_error().to_string()
     }
 
     #[wasm_bindgen(js_name=getCode)]
     pub fn code(&self) -> u32 {
-        DPPConsensusError::from(self.inner.clone()).get_code()
+        DPPConsensusError::from(self.inner.clone()).code()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn message(&self) -> String {
+        self.inner.to_string()
+    }
+
+    #[wasm_bindgen(js_name=serialize)]
+    pub fn serialize(&self) -> Result<Buffer, JsError> {
+        let bytes = ConsensusError::from(self.inner.clone())
+            .serialize()
+            .map_err(|e| JsError::from(e))?;
+
+        Ok(Buffer::from_bytes(bytes.as_slice()))
     }
 }

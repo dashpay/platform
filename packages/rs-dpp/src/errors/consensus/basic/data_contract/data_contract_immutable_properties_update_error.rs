@@ -1,12 +1,18 @@
 use crate::consensus::basic::BasicError;
 use platform_value::Value;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::consensus::ConsensusError;
 
-#[derive(Error, Debug, Clone)]
-#[error("only $defs, version and documents fields are allowed to be updated. Forbidden operation '{operation}' on '{field_path}' old value is '{old_value}', new value is '{new_value}'")]
+#[derive(Error, Debug, Clone, Serialize, Deserialize)]
+#[error("only $defs, version and documents fields are allowed to be updated. Forbidden operation '{operation}' on '{field_path}'")]
 pub struct DataContractImmutablePropertiesUpdateError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     operation: String,
     field_path: String,
     old_value: Value,
@@ -42,8 +48,6 @@ impl DataContractImmutablePropertiesUpdateError {
 
 impl From<DataContractImmutablePropertiesUpdateError> for ConsensusError {
     fn from(err: DataContractImmutablePropertiesUpdateError) -> Self {
-        Self::BasicError(Box::new(
-            BasicError::DataContractImmutablePropertiesUpdateError(err),
-        ))
+        Self::BasicError(BasicError::DataContractImmutablePropertiesUpdateError(err))
     }
 }

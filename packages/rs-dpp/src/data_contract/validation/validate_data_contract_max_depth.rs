@@ -1,6 +1,7 @@
 use platform_value::Value;
 use std::collections::BTreeSet;
 
+use crate::consensus::basic::data_contract::data_contract_max_depth_exceed_error::DataContractMaxDepthExceedError;
 use crate::consensus::basic::data_contract::InvalidJsonSchemaRefError;
 use crate::validation::SimpleConsensusValidationResult;
 use crate::{consensus::basic::BasicError, ProtocolError};
@@ -20,7 +21,9 @@ pub fn validate_data_contract_max_depth(
     };
 
     if schema_depth > MAX_DEPTH {
-        result.add_error(BasicError::DataContractMaxDepthExceedError(MAX_DEPTH));
+        result.add_error(BasicError::DataContractMaxDepthExceedError(
+            DataContractMaxDepthExceedError::new(schema_depth, MAX_DEPTH),
+        ));
     }
     result
 }
@@ -140,7 +143,7 @@ mod test {
 
         let err = get_ref_error(result);
         assert_eq!(
-            err.ref_error(),
+            err.message(),
             "the ref '#/$defs/object' contains cycles".to_string()
         );
     }
@@ -200,7 +203,7 @@ mod test {
 
         let err = get_ref_error(result);
         assert_eq!(
-            err.ref_error(),
+            err.message(),
             "invalid ref for max depth '#/$defs/object': value error: structure error: unable to get property $defs in $defs.object"
                 .to_string()
         );
@@ -230,7 +233,7 @@ mod test {
 
         let err = get_ref_error(result);
         assert_eq!(
-            err.ref_error(),
+            err.message(),
             "invalid ref for max depth 'https://json-schema.org/some': Generic Error: only local references are allowed"
                 .to_string()
         );
@@ -260,7 +263,7 @@ mod test {
 
         let err = get_ref_error(result);
         assert_eq!(
-            err.ref_error(),
+            err.message(),
             "invalid ref for max depth '': Generic Error: only local references are allowed"
                 .to_string()
         );

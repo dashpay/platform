@@ -19,8 +19,10 @@ pub fn setup_test() -> (Value, IdentityCreditWithdrawalTransitionBasicValidator)
 mod validate_identity_credit_withdrawal_transition_basic_factory {
     use super::*;
 
-    use crate::assert_consensus_errors;
-    use crate::consensus::ConsensusError;
+    use crate::assert_basic_consensus_errors;
+    use crate::consensus::basic::BasicError;
+    use crate::errors::consensus::ConsensusError;
+
     use crate::NonConsensusError;
     use jsonschema::error::ValidationErrorKind;
 
@@ -35,18 +37,13 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"protocolVersion\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.instance_path(), "");
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "protocolVersion");
         }
 
         #[tokio::test]
@@ -59,12 +56,12 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/protocolVersion");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.instance_path(), "/protocolVersion");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -95,6 +92,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
     mod type_property {
         use super::*;
+        use crate::consensus::ConsensusError;
 
         #[tokio::test]
         async fn should_be_present() {
@@ -104,19 +102,13 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"type\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.instance_path(), "");
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "type");
         }
 
         #[tokio::test]
@@ -127,12 +119,12 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 2);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 2);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/type");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.instance_path(), "/type");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -143,17 +135,19 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/type");
-            assert_eq!(error.keyword().unwrap(), "const");
+            assert_eq!(error.instance_path(), "/type");
+            assert_eq!(error.keyword(), "const");
         }
     }
 
     mod identity_id {
         use super::*;
+        use crate::assert_basic_consensus_errors;
+        use crate::consensus::ConsensusError;
 
         pub async fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test();
@@ -162,19 +156,13 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"identityId\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.instance_path(), "");
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "identityId");
         }
 
         #[tokio::test]
@@ -187,12 +175,12 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 32);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 32);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/identityId/0");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.instance_path(), "/identityId/0");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -205,12 +193,12 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/identityId");
-            assert_eq!(error.keyword().unwrap(), "minItems");
+            assert_eq!(error.instance_path(), "/identityId");
+            assert_eq!(error.keyword(), "minItems");
         }
 
         #[tokio::test]
@@ -223,17 +211,18 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/identityId");
-            assert_eq!(error.keyword().unwrap(), "maxItems");
+            assert_eq!(error.instance_path(), "/identityId");
+            assert_eq!(error.keyword(), "maxItems");
         }
     }
 
     mod amount {
         use super::*;
+        use crate::consensus::ConsensusError;
 
         #[tokio::test]
         async fn should_be_present() {
@@ -243,19 +232,13 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"amount\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.instance_path(), "");
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "amount");
         }
 
         #[tokio::test]
@@ -266,12 +249,12 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/amount");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.instance_path(), "/amount");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -282,12 +265,12 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/amount");
-            assert_eq!(error.keyword().unwrap(), "minimum");
+            assert_eq!(error.instance_path(), "/amount");
+            assert_eq!(error.keyword(), "minimum");
         }
     }
 
@@ -302,19 +285,13 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"coreFeePerByte\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.instance_path(), "");
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "coreFeePerByte");
         }
 
         #[tokio::test]
@@ -327,12 +304,12 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/coreFeePerByte");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.instance_path(), "/coreFeePerByte");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -345,12 +322,12 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/coreFeePerByte");
-            assert_eq!(error.keyword().unwrap(), "minimum");
+            assert_eq!(error.instance_path(), "/coreFeePerByte");
+            assert_eq!(error.keyword(), "minimum");
         }
 
         #[tokio::test]
@@ -363,12 +340,12 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "/coreFeePerByte");
-            assert_eq!(error.keyword().unwrap(), "maximum");
+            assert_eq!(error.instance_path(), "/coreFeePerByte");
+            assert_eq!(error.keyword(), "maximum");
         }
 
         #[tokio::test]
@@ -381,9 +358,9 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(
+            let errors = assert_basic_consensus_errors!(
                 result,
-                ConsensusError::InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
+                BasicError::InvalidIdentityCreditWithdrawalTransitionCoreFeeError,
                 1
             );
 
@@ -404,19 +381,13 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
-            assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"pooling\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.instance_path(), "");
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "pooling");
         }
 
         #[tokio::test]
@@ -427,12 +398,12 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 2);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 2);
 
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/pooling");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -443,12 +414,12 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/pooling");
-            assert_eq!(error.keyword().unwrap(), "enum");
+            assert_eq!(error.keyword(), "enum");
         }
 
         #[tokio::test]
@@ -459,9 +430,9 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(
+            let errors = assert_basic_consensus_errors!(
                 result,
-                ConsensusError::NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
+                BasicError::NotImplementedIdentityCreditWithdrawalTransitionPoolingError,
                 1
             );
 
@@ -472,6 +443,7 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
     }
 
     mod output_script {
+        use crate::consensus::ConsensusError;
         use crate::identity::core_script::CoreScript;
         use crate::identity::state_transition::properties::PROPERTY_OUTPUT_SCRIPT;
 
@@ -484,19 +456,13 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"outputScript\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "outputScript");
         }
 
         #[tokio::test]
@@ -509,12 +475,12 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 23);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 23);
 
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/outputScript/0");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -527,12 +493,12 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/outputScript");
-            assert_eq!(error.keyword().unwrap(), "minItems");
+            assert_eq!(error.keyword(), "minItems");
         }
 
         #[tokio::test]
@@ -545,12 +511,12 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/outputScript");
-            assert_eq!(error.keyword().unwrap(), "maxItems");
+            assert_eq!(error.keyword(), "maxItems");
         }
 
         #[tokio::test]
@@ -563,20 +529,17 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(
+            let errors = assert_basic_consensus_errors!(
                 result,
-                ConsensusError::InvalidIdentityCreditWithdrawalTransitionOutputScriptError,
+                BasicError::InvalidIdentityCreditWithdrawalTransitionOutputScriptError,
                 1
             );
-
-            let error = errors.first().unwrap();
-
-            assert_eq!(error.output_script(), CoreScript::from_bytes(vec![6; 23]));
         }
     }
 
     mod signature {
         use super::*;
+        use crate::assert_basic_consensus_errors;
 
         pub async fn should_be_present() {
             let (mut raw_state_transition, validator) = setup_test();
@@ -585,19 +548,13 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"signature\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "signature");
         }
 
         #[tokio::test]
@@ -610,12 +567,12 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 65);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 65);
 
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/signature/0");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -628,12 +585,12 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/signature");
-            assert_eq!(error.keyword().unwrap(), "minItems");
+            assert_eq!(error.keyword(), "minItems");
         }
 
         #[tokio::test]
@@ -646,12 +603,12 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/signature");
-            assert_eq!(error.keyword().unwrap(), "maxItems");
+            assert_eq!(error.keyword(), "maxItems");
         }
     }
 
@@ -666,19 +623,13 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "");
-            assert_eq!(error.keyword().unwrap(), "required");
-
-            match error.kind() {
-                ValidationErrorKind::Required { property } => {
-                    assert_eq!(property.to_string(), "\"signaturePublicKeyId\"");
-                }
-                _ => panic!("Expected to be missing property"),
-            }
+            assert_eq!(error.keyword(), "required");
+            assert_eq!(error.property_name(), "signaturePublicKeyId");
         }
 
         #[tokio::test]
@@ -691,12 +642,12 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/signaturePublicKeyId");
-            assert_eq!(error.keyword().unwrap(), "type");
+            assert_eq!(error.keyword(), "type");
         }
 
         #[tokio::test]
@@ -709,12 +660,12 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
             let result = validator.validate(&raw_state_transition).await.unwrap();
 
-            let errors = assert_consensus_errors!(result, ConsensusError::JsonSchemaError, 1);
+            let errors = assert_basic_consensus_errors!(result, BasicError::JsonSchemaError, 1);
 
             let error = errors.first().unwrap();
 
             assert_eq!(error.instance_path().to_string(), "/signaturePublicKeyId");
-            assert_eq!(error.keyword().unwrap(), "minimum");
+            assert_eq!(error.keyword(), "minimum");
         }
     }
 

@@ -1,4 +1,4 @@
-use crate::decode_protocol_entity_factory::DecodeProtocolEntity;
+use crate::encoding::decode_protocol_entity_factory::DecodeProtocolEntity;
 use crate::identity::identity_public_key::factory::KeyCount;
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
@@ -19,6 +19,8 @@ use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::iter::FromIterator;
 
+use crate::consensus::basic::decode::SerializedObjectParsingError;
+use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use crate::state_transition::StateTransition;
@@ -216,9 +218,9 @@ where
         } = deserializer::split_protocol_version(buffer.as_ref())?;
 
         let identity = Identity::deserialize(document_bytes).map_err(|e| {
-            ConsensusError::SerializedObjectParsingError {
-                parsing_error: anyhow!("Decode protocol entity: {:#?}", e),
-            }
+            ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
+                SerializedObjectParsingError::new(format!("Decode protocol entity: {:#?}", e)),
+            ))
         })?;
 
         if skip_validation {

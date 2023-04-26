@@ -39,6 +39,8 @@ use crate::drive::Drive;
 
 use crate::error::Error;
 use crate::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
+use dpp::consensus::state::document::duplicate_unique_index_error::DuplicateUniqueIndexError;
+use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::document::document_transition::{
     DocumentCreateTransitionAction, DocumentReplaceTransitionAction,
@@ -48,7 +50,6 @@ use dpp::identifier::Identifier;
 use dpp::platform_value::{platform_value, Value};
 use dpp::prelude::TimestampMillis;
 use dpp::validation::SimpleConsensusValidationResult;
-use dpp::StateError;
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 
@@ -232,10 +233,12 @@ impl Drive {
                                     Some(Ok(SimpleConsensusValidationResult::default()))
                                 } else {
                                     Some(Ok(SimpleConsensusValidationResult::new_with_error(
-                                        StateError::DuplicateUniqueIndexError {
-                                            document_id: *document_id,
-                                            duplicating_properties: index.fields(),
-                                        }
+                                        StateError::DuplicateUniqueIndexError(
+                                            DuplicateUniqueIndexError::new(
+                                                *document_id,
+                                                index.fields(),
+                                            ),
+                                        )
                                         .into(),
                                     )))
                                 }

@@ -5,12 +5,14 @@ use platform_value::string_encoding::Encoding;
 use crate::{consensus::ConsensusError, data_contract::DataContract, document::{
     document_transition::{Action, DocumentTransition},
     state_transition::documents_batch_transition::validation::state::validate_documents_uniqueness_by_indices::*,
-}, prelude::Identifier, state_repository::MockStateRepositoryLike, state_transition::state_transition_execution_context::StateTransitionExecutionContext, StateError, tests::{
+}, prelude::Identifier, state_repository::MockStateRepositoryLike, state_transition::state_transition_execution_context::StateTransitionExecutionContext, tests::{
     fixtures::{
         get_data_contract_fixture, get_document_transitions_fixture,
     },
     utils::generate_random_identifier_struct,
 }};
+use crate::consensus::codes::ErrorWithCode;
+use crate::consensus::state::state_error::StateError;
 use crate::document::{Document, ExtendedDocument};
 use crate::tests::fixtures::get_extended_documents_fixture;
 use crate::validation::ConsensusValidationResult;
@@ -227,12 +229,12 @@ async fn should_return_invalid_result_if_document_has_unique_indices_and_there_a
     let state_error_1 = get_state_error(&validation_result, 0);
     assert!(matches!(
         state_error_1,
-        StateError::DuplicateUniqueIndexError { document_id, .. } if  document_id == &document_transitions[0].base().id
+        StateError::DuplicateUniqueIndexError(e) if  e.document_id() == &document_transitions[0].base().id
     ));
     let state_error_3 = get_state_error(&validation_result, 2);
     assert!(matches!(
         state_error_3 ,
-        StateError::DuplicateUniqueIndexError { document_id, .. } if  document_id == &document_transitions[1].base().id
+        StateError::DuplicateUniqueIndexError(e) if  e.document_id() == &document_transitions[1].base().id
     ));
 }
 

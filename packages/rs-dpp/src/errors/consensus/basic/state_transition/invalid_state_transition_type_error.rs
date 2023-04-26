@@ -1,10 +1,16 @@
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::ProtocolError;
-
-#[derive(Error, Debug, Clone, PartialEq, Eq)]
+#[derive(Error, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[error("Invalid State Transition type {transition_type}")]
 pub struct InvalidStateTransitionTypeError {
+    /*
+
+    DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
+
+    */
     transition_type: u8,
 }
 
@@ -18,8 +24,8 @@ impl InvalidStateTransitionTypeError {
     }
 }
 
-impl From<InvalidStateTransitionTypeError> for ProtocolError {
+impl From<InvalidStateTransitionTypeError> for ConsensusError {
     fn from(err: InvalidStateTransitionTypeError) -> Self {
-        Self::InvalidStateTransitionTypeError(err)
+        Self::BasicError(BasicError::InvalidStateTransitionTypeError(err))
     }
 }

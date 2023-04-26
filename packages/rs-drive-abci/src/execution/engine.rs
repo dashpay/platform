@@ -4,7 +4,6 @@ use dpp::bls_signatures;
 
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
-use dpp::consensus::basic::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::ConsensusError;
 use dpp::state_transition::StateTransition;
 use dpp::validation::{
@@ -16,6 +15,8 @@ use drive::fee::result::FeeResult;
 use drive::grovedb::{Transaction, TransactionArg};
 use std::collections::BTreeMap;
 
+use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
+use dpp::consensus::state::state_error::StateError;
 use dpp::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
@@ -101,12 +102,10 @@ where
                 } else {
                     Ok(ConsensusValidationResult::new_with_data_and_errors(
                         estimated_fee_result,
-                        vec![ConsensusError::IdentityInsufficientBalanceError(
-                            IdentityInsufficientBalanceError {
-                                identity_id: identity.id,
-                                balance,
-                            },
-                        )],
+                        vec![StateError::IdentityInsufficientBalanceError(
+                            IdentityInsufficientBalanceError::new(identity.id, balance),
+                        )
+                        .into()],
                     ))
                 }
             }
@@ -260,7 +259,7 @@ where
         // First let's check that this is the follower to a previous block
         if !block_state_info.next_block_to(last_block_height, last_block_core_height)? {
             // we are on the wrong height or round
-            return Ok(ValidationResult::new_with_error(AbciError::WrongFinalizeBlockReceived(format!(
+            return Ok(ValidationResult::new_with_error(AbciError::WrongBlockReceived(format!(
                 "received a block proposal for height: {} core height: {}, current height: {} core height: {}",
                 block_state_info.height, block_state_info.core_chain_locked_height, last_block_height, last_block_core_height
             )).into()));
@@ -680,8 +679,13 @@ where
         )? {
             // we are on the wrong height or round
             validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
-                "received a block for h: {} r: {}, expected h: {} r: {}",
-                height, round, block_state_info.height, block_state_info.round
+                "received a block for h: {} r: {} c-h: {}, expected h: {} r: {} c-h: {}",
+                height,
+                round,
+                block_header.core_chain_locked_height,
+                block_state_info.height,
+                block_state_info.round,
+                block_state_info.core_chain_locked_height
             )));
             return Ok(validation_result.into());
         }

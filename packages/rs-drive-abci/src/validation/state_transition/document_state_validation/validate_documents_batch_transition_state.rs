@@ -6,7 +6,15 @@ use crate::execution::data_trigger::DataTriggerExecutionContext;
 use crate::platform::PlatformStateRef;
 use crate::validation::state_transition::document_state_validation::execute_data_triggers::execute_data_triggers;
 use crate::validation::state_transition::document_state_validation::fetch_documents::fetch_documents_for_transitions_knowing_contract_and_document_type;
+use dpp::consensus::basic::document::DataContractNotPresentError;
 use dpp::consensus::basic::BasicError;
+use dpp::consensus::state::document::document_already_present_error::DocumentAlreadyPresentError;
+use dpp::consensus::state::document::document_not_found_error::DocumentNotFoundError;
+use dpp::consensus::state::document::document_owner_id_mismatch_error::DocumentOwnerIdMismatchError;
+use dpp::consensus::state::document::document_timestamp_window_violation_error::DocumentTimestampWindowViolationError;
+use dpp::consensus::state::document::document_timestamps_mismatch_error::DocumentTimestampsMismatchError;
+use dpp::consensus::state::document::invalid_document_revision_error::InvalidDocumentRevisionError;
+use dpp::consensus::state::state_error::StateError;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::data_contract::DataContract;
 use dpp::document::document_transition::{
@@ -31,7 +39,6 @@ use dpp::{
         StateTransitionIdentitySigned,
     },
     validation::ConsensusValidationResult,
-    StateError,
 };
 use drive::grovedb::TransactionArg;
 
@@ -118,7 +125,7 @@ fn validate_document_transitions_within_contract(
             .get_contract_with_fetch_info(data_contract_id.0 .0, None, false, transaction)?
             .1
         else {
-            return Ok(ConsensusValidationResult::new_with_error(BasicError::DataContractNotPresent { data_contract_id: *data_contract_id }.into()));
+            return Ok(ConsensusValidationResult::new_with_error(BasicError::DataContractNotPresentError(DataContractNotPresentError::new(*data_contract_id)).into()));
         };
 
     let data_contract = &contract_fetch_info.contract;
@@ -233,7 +240,7 @@ fn validate_document_transitions_within_document_type(
                 execution_result
                     .errors
                     .into_iter()
-                    .map(|e| ConsensusError::StateError(Box::new(e.into())))
+                    .map(|e| ConsensusError::StateError(e.into()))
                     .collect(),
             ));
         }
@@ -424,13 +431,13 @@ pub fn check_ownership(
 ) -> SimpleConsensusValidationResult {
     let mut result = SimpleConsensusValidationResult::default();
     if fetched_document.owner_id != owner_id {
-        result.add_error(ConsensusError::StateError(Box::new(
-            StateError::DocumentOwnerIdMismatchError {
-                document_id: document_transition.base().id,
-                document_owner_id: owner_id.to_owned(),
-                existing_document_owner_id: fetched_document.owner_id,
-            },
-        )));
+        result.add_error(ConsensusError::StateError(
+            StateError::DocumentOwnerIdMismatchError(DocumentOwnerIdMismatchError::new(
+                document_transition.base().id,
+                owner_id.to_owned(),
+                fetched_document.owner_id,
+            )),
+        ));
     }
     result
 }
@@ -446,23 +453,25 @@ pub fn check_revision_is_bumped_by_one(
     // If there was no previous revision this means that the document_type is not update-able
     // However this should have been caught earlier
     let Some(previous_revision) =  original_document.revision else {
-        result.add_error(ConsensusError::StateError(Box::new(
-            StateError::InvalidDocumentRevisionError {
-                document_id: document_transition.base.id,
-                current_revision: None,
-            },
-        )));
+        result.add_error(ConsensusError::StateError(
+            StateError::InvalidDocumentRevisionError(
+                InvalidDocumentRevisionError::new(
+                    document_transition.base.id,
+                    None,
+                )
+            )
+        ));
         return result;
     };
     // no need to check bounds here, because it would be impossible to hit the end on a u64
     let expected_revision = previous_revision + 1;
     if revision != expected_revision {
-        result.add_error(ConsensusError::StateError(Box::new(
-            StateError::InvalidDocumentRevisionError {
-                document_id: document_transition.base.id,
-                current_revision: Some(previous_revision),
-            },
-        )))
+        result.add_error(ConsensusError::StateError(
+            StateError::InvalidDocumentRevisionError(InvalidDocumentRevisionError::new(
+                document_transition.base.id,
+                Some(previous_revision),
+            )),
+        ))
     }
     result
 }
@@ -478,11 +487,11 @@ pub fn check_if_document_is_not_already_present(
         .find(|d| d.id == document_transition.base().id);
 
     if maybe_fetched_document.is_some() {
-        result.add_error(ConsensusError::StateError(Box::new(
-            StateError::DocumentAlreadyPresentError {
-                document_id: document_transition.base().id,
-            },
-        )))
+        result.add_error(ConsensusError::StateError(
+            StateError::DocumentAlreadyPresentError(DocumentAlreadyPresentError::new(
+                document_transition.base().id,
+            )),
+        ))
     }
     result
 }
@@ -498,11 +507,11 @@ pub fn check_if_document_can_be_found<'a>(
     if let Some(document) = maybe_fetched_document {
         ConsensusValidationResult::new_with_data(document)
     } else {
-        ConsensusValidationResult::new_with_error(ConsensusError::StateError(Box::new(
-            StateError::DocumentNotFoundError {
-                document_id: document_transition.base().id,
-            },
-        )))
+        ConsensusValidationResult::new_with_error(ConsensusError::StateError(
+            StateError::DocumentNotFoundError(DocumentNotFoundError::new(
+                document_transition.base().id,
+            )),
+        ))
     }
 }
 
@@ -514,11 +523,11 @@ pub fn check_if_timestamps_are_equal(
     let updated_at = document_transition.get_updated_at();
 
     if created_at.is_some() && updated_at.is_some() && updated_at.unwrap() != created_at.unwrap() {
-        result.add_error(ConsensusError::StateError(Box::new(
-            StateError::DocumentTimestampsMismatchError {
-                document_id: document_transition.base().id,
-            },
-        )));
+        result.add_error(ConsensusError::StateError(
+            StateError::DocumentTimestampsMismatchError(DocumentTimestampsMismatchError::new(
+                document_transition.base().id,
+            )),
+        ));
     }
 
     result
@@ -541,15 +550,17 @@ pub fn check_created_inside_time_window(
         average_block_spacing_ms,
     );
     if !window_validation.is_valid() {
-        result.add_error(ConsensusError::StateError(Box::new(
-            StateError::DocumentTimestampWindowViolationError {
-                timestamp_name: String::from("createdAt"),
-                document_id: document_transition.base().id,
-                timestamp: created_at as i64,
-                time_window_start: window_validation.time_window_start as i64,
-                time_window_end: window_validation.time_window_end as i64,
-            },
-        )));
+        result.add_error(ConsensusError::StateError(
+            StateError::DocumentTimestampWindowViolationError(
+                DocumentTimestampWindowViolationError::new(
+                    String::from("createdAt"),
+                    document_transition.base().id,
+                    created_at as i64,
+                    window_validation.time_window_start as i64,
+                    window_validation.time_window_end as i64,
+                ),
+            ),
+        ));
     }
     result
 }
@@ -571,15 +582,17 @@ pub fn check_updated_inside_time_window(
         average_block_spacing_ms,
     );
     if !window_validation.is_valid() {
-        result.add_error(ConsensusError::StateError(Box::new(
-            StateError::DocumentTimestampWindowViolationError {
-                timestamp_name: String::from("updatedAt"),
-                document_id: document_transition.base().id,
-                timestamp: updated_at as i64,
-                time_window_start: window_validation.time_window_start as i64,
-                time_window_end: window_validation.time_window_end as i64,
-            },
-        )));
+        result.add_error(ConsensusError::StateError(
+            StateError::DocumentTimestampWindowViolationError(
+                DocumentTimestampWindowViolationError::new(
+                    String::from("updatedAt"),
+                    document_transition.base().id,
+                    updated_at as i64,
+                    window_validation.time_window_start as i64,
+                    window_validation.time_window_end as i64,
+                ),
+            ),
+        ));
     }
     result
 }

@@ -24,6 +24,9 @@ pub enum AbciError {
     #[error("finalize block received before processing from Tenderdash: {0}")]
     FinalizeBlockReceivedBeforeProcessing(String),
     /// Wrong finalize block received
+    #[error("wrong block from Tenderdash: {0}")]
+    WrongBlockReceived(String),
+    /// Wrong finalize block received
     #[error("wrong finalize block from Tenderdash: {0}")]
     WrongFinalizeBlockReceived(String),
     /// Bad request received from Tenderdash that can't be translated to the correct size

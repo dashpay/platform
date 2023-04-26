@@ -13,7 +13,9 @@ use platform_value::{BinaryData, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-use crate::consensus::signature::SignatureError;
+use crate::consensus::signature::{
+    BasicBLSError, BasicECDSAError, SignatureError, SignatureShouldNotBePresentError,
+};
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use crate::identity::signer::Signer;
@@ -367,9 +369,7 @@ impl IdentityPublicKeyInCreationWithWitness {
                 ) {
                     // dbg!(format!("error with signature {} data {} public key {}",hex::encode(self.signature.as_slice()),  hex::encode(signable_data), hex::encode(self.data.as_slice())));
                     Ok(SimpleConsensusValidationResult::new_with_error(
-                        ConsensusError::SignatureError(SignatureError::BasicECDSAError(
-                            e.to_string(),
-                        )),
+                        SignatureError::BasicECDSAError(BasicECDSAError::new(e.to_string())).into(),
                     ))
                 } else {
                     Ok(SimpleConsensusValidationResult::default())
@@ -382,9 +382,7 @@ impl IdentityPublicKeyInCreationWithWitness {
                     Err(e) => {
                         // dbg!(format!("bls public_key could not be recovered"));
                         return Ok(SimpleConsensusValidationResult::new_with_error(
-                            ConsensusError::SignatureError(SignatureError::BasicBLSError(
-                                e.to_string(),
-                            )),
+                            SignatureError::BasicBLSError(BasicBLSError::new(e.to_string())).into(),
                         ));
                     }
                 };
@@ -394,9 +392,8 @@ impl IdentityPublicKeyInCreationWithWitness {
                         Err(e) => {
                             // dbg!(format!("bls signature could not be recovered"));
                             return Ok(SimpleConsensusValidationResult::new_with_error(
-                                ConsensusError::SignatureError(SignatureError::BasicBLSError(
-                                    e.to_string(),
-                                )),
+                                SignatureError::BasicBLSError(BasicBLSError::new(e.to_string()))
+                                    .into(),
                             ));
                         }
                     };
@@ -408,9 +405,10 @@ impl IdentityPublicKeyInCreationWithWitness {
                     //     hex::encode(self.data.as_slice())
                     // ));
                     Ok(SimpleConsensusValidationResult::new_with_error(
-                        ConsensusError::SignatureError(SignatureError::BasicBLSError(
+                        SignatureError::BasicBLSError(BasicBLSError::new(
                             "bls signature was incorrect".to_string(),
-                        )),
+                        ))
+                        .into(),
                     ))
                 } else {
                     Ok(SimpleConsensusValidationResult::default())
@@ -418,27 +416,32 @@ impl IdentityPublicKeyInCreationWithWitness {
             }
             KeyType::ECDSA_HASH160 => {
                 if !self.signature.is_empty() {
-                    Ok(SimpleConsensusValidationResult::new_with_error(ConsensusError::SignatureError(
-                        SignatureError::SignatureShouldNotBePresent("ecdsa_hash160 keys should not have a signature as that would reveal the public key".to_string()),
-                    )))
+                    Ok(SimpleConsensusValidationResult::new_with_error(
+                        SignatureError::SignatureShouldNotBePresentError(
+                            SignatureShouldNotBePresentError::new("ecdsa_hash160 keys should not have a signature as that would reveal the public key".to_string()),
+                        ).into()
+                    ))
                 } else {
                     Ok(SimpleConsensusValidationResult::default())
                 }
             }
             KeyType::BIP13_SCRIPT_HASH => {
                 if !self.signature.is_empty() {
-                    Ok(SimpleConsensusValidationResult::new_with_error(ConsensusError::SignatureError(
-                        SignatureError::SignatureShouldNotBePresent("script hash keys should not have a signature as that would reveal the script".to_string()),
-                    )))
+                    Ok(SimpleConsensusValidationResult::new_with_error(
+                        SignatureError::SignatureShouldNotBePresentError(
+                            SignatureShouldNotBePresentError::new("script hash keys should not have a signature as that would reveal the script".to_string())
+                    ).into()))
                 } else {
                     Ok(SimpleConsensusValidationResult::default())
                 }
             }
             KeyType::EDDSA_25519_HASH160 => {
                 if !self.signature.is_empty() {
-                    Ok(SimpleConsensusValidationResult::new_with_error(ConsensusError::SignatureError(
-                        SignatureError::SignatureShouldNotBePresent("eddsa hash 160 keys should not have a signature as that would reveal the script".to_string()),
-                    )))
+                    Ok(SimpleConsensusValidationResult::new_with_error(
+                        SignatureError::SignatureShouldNotBePresentError(
+                            SignatureShouldNotBePresentError::new("eddsa hash 160 keys should not have a signature as that would reveal the script".to_string())
+                        ).into()
+                    ))
                 } else {
                     Ok(SimpleConsensusValidationResult::default())
                 }
