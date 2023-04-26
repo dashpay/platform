@@ -1,3 +1,30 @@
+## [0.24.0-dev.25](https://github.com/dashpay/platform/compare/v0.24.0-dev.24...v0.24.0-dev.25) (2023-04-26)
+
+
+### Features
+
+* **dashamte:** better ZeroSSL error messages ([#950](https://github.com/dashpay/platform/issues/950))
+* **dashmate:** set random core rpc usename and password on setup ([#973](https://github.com/dashpay/platform/issues/973))
+* **dashmate:** verbose `connect ENOENT /var/run/docker.sock` error ([#951](https://github.com/dashpay/platform/issues/951))
+
+
+### Bug Fixes
+
+* **dashmate:** ability to work with non-default docker socket path ([#967](https://github.com/dashpay/platform/issues/967))
+* **dashmate:** empty masternode status while syncing ([#970](https://github.com/dashpay/platform/issues/970))
+* **dashmate:** form accepts invalid BLS key ([#961](https://github.com/dashpay/platform/issues/961))
+* **dashmate:** invalid mn register command in output of dashmate setup ([#959](https://github.com/dashpay/platform/issues/959))
+* **dashmate:** reward shares can be negative during HP masternode registration ([#960](https://github.com/dashpay/platform/issues/960))
+* **dashmate:** select number of masternodes during local setup freezes ([#957](https://github.com/dashpay/platform/issues/957))
+* **dashmate:** yaml package security vulnerability ([#975](https://github.com/dashpay/platform/issues/975))
+* **dashmate:** already configured preset is ignored ([#974](https://github.com/dashpay/platform/issues/974))
+* **test-suite:** expects identities for invalid mns ([#968](https://github.com/dashpay/platform/issues/968))
+
+
+### Build System
+
+* **dashmate:** remove MacOs malicious software warning ([#977](https://github.com/dashpay/platform/issues/977))
+
 ## [0.24.0-dev.24](https://github.com/dashpay/platform/compare/v0.24.0-dev.23...v0.24.0-dev.24) (2023-04-24)
 
 
