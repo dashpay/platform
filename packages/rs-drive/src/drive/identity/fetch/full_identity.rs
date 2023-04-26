@@ -84,7 +84,6 @@ impl Drive {
     // }
 
     /// Fetches identities with all its information from storage.
-    #[deprecated(since = "0.24.0", note = "please use exact fetching")]
     pub fn fetch_full_identities(
         &self,
         identity_ids: Vec<[u8; 32]>,

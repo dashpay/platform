@@ -35,7 +35,7 @@ extern crate core;
 use anyhow::anyhow;
 use dashcore::{signer, Network, PrivateKey, ProTxHash, QuorumHash, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
-    Bip9SoftforkInfo, Bip9SoftforkStatus, DMNState, ExtendedQuorumDetails,
+    Bip9SoftforkInfo, Bip9SoftforkStatus, DMNState, DMNStateDiff, ExtendedQuorumDetails,
     MasternodeListDiffWithMasternodes, MasternodeListItem, MasternodeType, QuorumInfoResult,
     QuorumType,
 };
@@ -94,6 +94,7 @@ use drive::query::DriveQuery;
 use drive_abci::abci::AbciApplication;
 use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
 
+use crate::masternode_list_item_helpers::UpdateMasternodeListItem;
 use dashcore_rpc::json::{MasternodeListDiff, RemovedMasternodeItem};
 use dpp::serialization_traits::PlatformSerializable;
 use drive_abci::abci::mimic::MimicExecuteBlockOutcome;
@@ -117,6 +118,7 @@ use std::str::FromStr;
 use tenderdash_abci::proto::abci::{ResponseInitChain, ValidatorSetUpdate};
 use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
 
+mod masternode_list_item_helpers;
 mod upgrade_fork_tests;
 
 #[derive(Clone, Debug, Default)]
@@ -164,7 +166,7 @@ impl Frequency {
     }
 
     pub fn pick_in_range(&self, rng: &mut impl Rng, range: Range<u16>) -> Vec<u16> {
-        if !self.is_set() {
+        if !self.is_set() || range.is_empty() {
             return vec![];
         }
         let mut picked_numbers = Vec::new();
@@ -173,18 +175,14 @@ impl Frequency {
             .map_or(true, |chance| rng.gen_bool(chance));
 
         if chance_per_block_hit {
-            let mut times_per_block_dist = Uniform::from(self.times_per_block_range.clone());
+            let times_per_block_dist = Uniform::from(self.times_per_block_range.clone());
+            let num_elements_to_pick = times_per_block_dist.sample(rng);
+            let range_dist = Uniform::from(range);
 
-            for number in range {
-                let times_to_pick = times_per_block_dist.sample(rng);
-
-                for _ in 0..times_to_pick {
-                    let num_u16 = number as u16;
-                    if !picked_numbers.contains(&num_u16) {
-                        picked_numbers.push(num_u16);
-                    }
-                }
-            }
+            picked_numbers = rng
+                .sample_iter(&range_dist)
+                .take(num_elements_to_pick as usize)
+                .collect();
         }
 
         picked_numbers
@@ -1221,13 +1219,17 @@ pub fn generate_test_masternodes(
             },
         };
 
+        let mut latest_masternode_list_item = masternode_list_item.clone();
+
         let masternode_updates = masternode_number_to_heights_updates
             .get(&i)
             .map(|heights| {
                 heights
                     .into_iter()
                     .map(|height| {
-                        let masternode_list_item_b = masternode_list_item.clone();
+                        let mut masternode_list_item_b = latest_masternode_list_item.clone();
+                        masternode_list_item_b.random_keys_update(None, rng);
+                        latest_masternode_list_item = masternode_list_item_b.clone();
                         (*height, masternode_list_item_b)
                     })
                     .collect::<BTreeMap<u32, MasternodeListItem>>()
@@ -1274,13 +1276,18 @@ pub fn generate_test_masternodes(
                 platform_http_port: Some(8080),
             },
         };
+
+        let mut latest_masternode_list_item = masternode_list_item.clone();
+
         let masternode_updates = hpmn_number_to_heights_updates
             .get(&i)
             .map(|heights| {
                 heights
                     .into_iter()
                     .map(|height| {
-                        let masternode_list_item_b = masternode_list_item.clone();
+                        let mut masternode_list_item_b = latest_masternode_list_item.clone();
+                        masternode_list_item_b.random_keys_update(None, rng);
+                        latest_masternode_list_item = masternode_list_item_b.clone();
                         (*height, masternode_list_item_b)
                     })
                     .collect::<BTreeMap<u32, MasternodeListItem>>()
@@ -1368,7 +1375,6 @@ pub(crate) fn run_chain_for_strategy(
 
     let any_changes_in_strategy = strategy.proposer_strategy.any_is_set();
     let updated_proposers_in_strategy = strategy.proposer_strategy.updated_any_masternode_types();
-    let any_update_of_proposers_in_strategy = strategy.proposer_strategy.any_update_is_set();
 
     let (
         initial_masternodes_with_updates,
@@ -1404,7 +1410,11 @@ pub(crate) fn run_chain_for_strategy(
             BTreeMap<u32, Vec<MasternodeListItemWithUpdates>>,
         ) = (config.abci.genesis_core_height..end_core_height)
             .map(|height| {
-                let new_proposers = strategy.proposer_strategy.new_hpmns.events_if_hit(&mut rng);
+                let new_masternodes = strategy
+                    .proposer_strategy
+                    .new_masternodes
+                    .events_if_hit(&mut rng);
+                let new_hpmns = strategy.proposer_strategy.new_hpmns.events_if_hit(&mut rng);
                 let generate_updates = if updated_proposers_in_strategy {
                     Some(GenerateTestMasternodeUpdates {
                         start_core_height: height + 1,
@@ -1416,8 +1426,12 @@ pub(crate) fn run_chain_for_strategy(
                     None
                 };
 
-                let (extra_masternodes_by_block, extra_hpmns_by_block) =
-                    generate_test_masternodes(0, new_proposers, generate_updates, &mut rng);
+                let (extra_masternodes_by_block, extra_hpmns_by_block) = generate_test_masternodes(
+                    new_masternodes,
+                    new_hpmns,
+                    generate_updates,
+                    &mut rng,
+                );
 
                 if strategy.proposer_strategy.removed_masternodes.is_set() {
                     let removed_masternodes_count = strategy
@@ -1613,6 +1627,7 @@ pub(crate) fn run_chain_for_strategy(
                     }
                 } else {
                     // we need to figure out the difference of proposers between two heights
+                    // we need to figure out the difference of proposers between two heights
                     let start_masternodes = with_extra_masternodes_with_updates
                         .get(&base_block)
                         .expect("expected start proposers")
@@ -1625,17 +1640,44 @@ pub(crate) fn run_chain_for_strategy(
                         .iter()
                         .map(|masternode| masternode.get_state_at_height(block))
                         .collect::<Vec<_>>();
+
+                    let start_pro_tx_hashes: Vec<&ProTxHash> = start_masternodes
+                        .iter()
+                        .map(|item| &item.pro_tx_hash)
+                        .collect();
+                    let end_pro_tx_hashes: Vec<&ProTxHash> = end_masternodes
+                        .iter()
+                        .map(|item| &item.pro_tx_hash)
+                        .collect();
+
                     let mut added_masternodes = end_masternodes
                         .iter()
-                        .filter(|item| !start_masternodes.contains(item))
+                        .filter(|item| !start_pro_tx_hashes.contains(&&item.pro_tx_hash))
                         .map(|a| (*a).clone())
                         .collect::<Vec<MasternodeListItem>>();
 
                     let mut removed_masternodes = start_masternodes
                         .iter()
-                        .filter(|item| !end_masternodes.contains(item))
-                        .map(|masternode_list_item| masternode_list_item.pro_tx_hash)
+                        .filter(|item| !end_pro_tx_hashes.contains(&&item.pro_tx_hash))
+                        .map(|masternode_list_item| masternode_list_item.pro_tx_hash.clone())
                         .collect::<Vec<ProTxHash>>();
+
+                    let mut updated_masternodes: Vec<(ProTxHash, DMNStateDiff)> = start_masternodes
+                        .iter()
+                        .filter_map(|start_masternode| {
+                            end_masternodes
+                                .iter()
+                                .find(|end_masternode| {
+                                    start_masternode.pro_tx_hash == end_masternode.pro_tx_hash
+                                })
+                                .and_then(|end_masternode| {
+                                    start_masternode
+                                        .state
+                                        .compare_to_newer_dmn_state(&end_masternode.state)
+                                        .map(|diff| (end_masternode.pro_tx_hash.clone(), diff))
+                                })
+                        })
+                        .collect();
 
                     let start_hpmns = with_extra_hpmns_with_updates
                         .get(&base_block)
@@ -1649,27 +1691,50 @@ pub(crate) fn run_chain_for_strategy(
                         .iter()
                         .map(|masternode| masternode.get_state_at_height(block))
                         .collect::<Vec<_>>();
-                    let added_hpmns = end_hpmns
+                    let start_pro_tx_hashes: Vec<&ProTxHash> =
+                        start_hpmns.iter().map(|item| &item.pro_tx_hash).collect();
+                    let end_pro_tx_hashes: Vec<&ProTxHash> =
+                        end_hpmns.iter().map(|item| &item.pro_tx_hash).collect();
+
+                    let mut added_hpmns = end_hpmns
                         .iter()
-                        .filter(|item| !start_hpmns.contains(item))
+                        .filter(|item| !start_pro_tx_hashes.contains(&&item.pro_tx_hash))
                         .map(|a| (*a).clone())
                         .collect::<Vec<MasternodeListItem>>();
 
-                    let removed_hpmns = start_hpmns
+                    let mut removed_hpmns = start_hpmns
                         .iter()
-                        .filter(|item| !end_hpmns.contains(item))
-                        .map(|masternode_list_item| masternode_list_item.pro_tx_hash)
+                        .filter(|item| !end_pro_tx_hashes.contains(&&item.pro_tx_hash))
+                        .map(|masternode_list_item| masternode_list_item.pro_tx_hash.clone())
                         .collect::<Vec<ProTxHash>>();
+
+                    let mut updated_hpmns: Vec<(ProTxHash, DMNStateDiff)> = start_hpmns
+                        .iter()
+                        .filter_map(|start_masternode| {
+                            end_hpmns
+                                .iter()
+                                .find(|end_masternode| {
+                                    start_masternode.pro_tx_hash == end_masternode.pro_tx_hash
+                                })
+                                .and_then(|end_masternode| {
+                                    start_masternode
+                                        .state
+                                        .compare_to_newer_dmn_state(&end_masternode.state)
+                                        .map(|diff| (end_masternode.pro_tx_hash.clone(), diff))
+                                })
+                        })
+                        .collect();
 
                     added_masternodes.extend(added_hpmns);
                     removed_masternodes.extend(removed_hpmns);
+                    updated_masternodes.extend(updated_hpmns);
 
                     MasternodeListDiff {
                         base_height: base_block,
                         block_height: block,
                         added_mns: added_masternodes,
                         removed_mns: removed_masternodes,
-                        updated_mns: vec![],
+                        updated_mns: updated_masternodes,
                     }
                 }
             };
@@ -2570,7 +2635,31 @@ mod tests {
         let platform = abci_app.platform;
         let platform_state = platform.state.read().unwrap();
 
-        assert_ne!(platform_state.hpmn_masternode_list.len(), 100);
+        // We need to find if any masternode has ever had their keys disabled.
+
+        let hpmns = platform
+            .drive
+            .fetch_full_identities(
+                proposers
+                    .into_iter()
+                    .map(|proposer| proposer.masternode.pro_tx_hash.into_inner())
+                    .collect(),
+                None,
+            )
+            .expect("expected to fetch identities");
+
+        let has_disabled_keys = hpmns.values().any(|identity| {
+            identity
+                .as_ref()
+                .map(|identity| {
+                    identity
+                        .public_keys
+                        .values()
+                        .any(|key| key.disabled_at.is_some())
+                })
+                .unwrap_or_default()
+        });
+        assert!(has_disabled_keys);
     }
 
     #[test]
