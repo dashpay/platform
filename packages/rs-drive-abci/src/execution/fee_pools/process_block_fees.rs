@@ -318,7 +318,7 @@ mod tests {
                     proposer_pro_tx_hash,
                     core_chain_locked_height: 1,
                     block_hash,
-                    commit_hash: None,
+                    app_hash: None,
                 };
 
                 let epoch_info =
@@ -500,7 +500,7 @@ mod tests {
                     proposer_pro_tx_hash,
                     core_chain_locked_height: 1,
                     block_hash: [0; 32],
-                    commit_hash: None,
+                    app_hash: None,
                 };
 
                 let epoch_info =

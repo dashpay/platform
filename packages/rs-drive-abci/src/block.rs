@@ -55,8 +55,8 @@ pub struct BlockStateInfo {
     pub core_chain_locked_height: u32,
     /// Block hash
     pub block_hash: [u8; 32],
-    /// Block commit hash after processing
-    pub commit_hash: Option<[u8; 32]>,
+    /// Application hash
+    pub app_hash: Option<[u8; 32]>,
 }
 
 impl BlockStateInfo {
@@ -82,7 +82,7 @@ impl BlockStateInfo {
             proposer_pro_tx_hash: proposal.proposer_pro_tx_hash,
             core_chain_locked_height: proposal.core_chain_locked_height,
             block_hash: proposal.block_hash.unwrap_or_default(), // we will set it later
-            commit_hash: None,
+            app_hash: None,
         }
     }
 

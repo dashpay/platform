@@ -381,7 +381,7 @@ where
             .unwrap()
             .map_err(|e| Error::Drive(GroveDB(e)))?; //GroveDb errors are system errors
 
-        block_execution_context.block_state_info.commit_hash = Some(root_hash);
+        block_execution_context.block_state_info.app_hash = Some(root_hash);
 
         let state = self.state.read().unwrap();
         let validator_set_update =
@@ -691,7 +691,7 @@ where
             return Ok(validation_result.into());
         }
 
-        let mut state_cache = self.state.read().unwrap();
+        let state_cache = self.state.read().unwrap();
         if state_cache.current_validator_set_quorum_hash.as_inner() != &commit_info.quorum_hash {
             validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
                 "received a block for h: {} r: {} with validator set quorum hash {} expected current validator set quorum hash is {}",
