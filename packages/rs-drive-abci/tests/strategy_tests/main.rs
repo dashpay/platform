@@ -1055,7 +1055,7 @@ pub fn generate_test_masternodes(
                 service: SocketAddr::from_str(format!("1.0.{}.{}:1234", i / 256, i % 256).as_str())
                     .unwrap(),
                 registered_height: 0,
-                pose_revived_height: 0,
+                pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
                 owner_address: rng.gen::<[u8; 20]>(),
@@ -1090,7 +1090,7 @@ pub fn generate_test_masternodes(
                 service: SocketAddr::from_str(format!("1.1.{}.{}:1234", i / 256, i % 256).as_str())
                     .unwrap(),
                 registered_height: 0,
-                pose_revived_height: 0,
+                pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
                 owner_address: rng.gen::<[u8; 20]>(),

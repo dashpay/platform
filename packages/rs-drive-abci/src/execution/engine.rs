@@ -260,7 +260,7 @@ where
         // First let's check that this is the follower to a previous block
         if !block_state_info.next_block_to(last_block_height, last_block_core_height)? {
             // we are on the wrong height or round
-            return Ok(ValidationResult::new_with_error(AbciError::WrongFinalizeBlockReceived(format!(
+            return Ok(ValidationResult::new_with_error(AbciError::WrongBlockReceived(format!(
                 "received a block proposal for height: {} core height: {}, current height: {} core height: {}",
                 block_state_info.height, block_state_info.core_chain_locked_height, last_block_height, last_block_core_height
             )).into()));
