@@ -1,4 +1,4 @@
-import { Identity, IdentityPublicKey } from '@dashevo/wasm-dpp';
+import { Identity, IdentityPublicKey, StateTransitionExecutionContext } from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
 import { signStateTransition } from '../../signStateTransition';
 
@@ -75,7 +75,12 @@ export async function update(
   await signStateTransition(this, identityUpdateTransition, identity, signerKeyIndex);
   this.logger.silly('[Identity#update] Signed IdentityUpdateTransition');
 
-  const result = await dpp.stateTransition.validateBasic(identityUpdateTransition);
+  const result = await dpp.stateTransition.validateBasic(
+    identityUpdateTransition,
+    // TODO(v0.24-backport): get rid of this once decided
+    //  whether we need execution context in wasm bindings
+    new StateTransitionExecutionContext(),
+  );
 
   if (!result.isValid()) {
     const messages = result.getErrors().map((error) => error.message);
