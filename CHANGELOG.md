@@ -3,7 +3,7 @@
 
 ### ⚠ BREAKING CHANGES
 
-* **drive:** non-unique masternode voting keys (#986)
+* **drive:** Testnet uses non unique keys for owners and voting but the current implementation of synchronize masternode identities doesn't support it (#986)
 
 ### Bug Fixes
 
@@ -21,7 +21,7 @@
 ### Features
 
 * **dashamte:** better ZeroSSL error messages ([#950](https://github.com/dashpay/platform/issues/950))
-* **dashmate:** set random core rpc usename and password on setup ([#973](https://github.com/dashpay/platform/issues/973))
+* **dashmate:** set random core rpc username and password on setup ([#973](https://github.com/dashpay/platform/issues/973))
 * **dashmate:** verbose `connect ENOENT /var/run/docker.sock` error ([#951](https://github.com/dashpay/platform/issues/951))
 
 
