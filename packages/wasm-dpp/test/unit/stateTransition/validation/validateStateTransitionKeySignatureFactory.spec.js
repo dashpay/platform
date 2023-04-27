@@ -1,7 +1,7 @@
 const { Transaction, PrivateKey, Script } = require('@dashevo/dashcore-lib');
 
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
-const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
+const createStateRepositoryMock = require('../../../../lib/test/mocks/createStateRepositoryMock');
+const getIdentityCreateTransitionFixture = require('../../../../lib/test/fixtures/getIdentityCreateTransitionFixture');
 const getIdentityTopUpTransitionFixture = require('../../../../lib/test/fixtures/getIdentityTopUpTransitionFixture');
 const { expectValidationError } = require('../../../../lib/test/expect/expectError');
 
@@ -32,11 +32,8 @@ describe('validateStateTransitionKeySignatureFactory', () => {
     } = await loadWasmDpp());
   });
 
-  beforeEach(function beforeEach() {
-    const stateTransitionJS = getIdentityCreateTransitionFixture();
-    const rawStateTransition = stateTransitionJS.toObject();
-
-    stateTransition = new IdentityCreateTransition(rawStateTransition);
+  beforeEach(async function beforeEach() {
+    stateTransition = await getIdentityCreateTransitionFixture();
 
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 
