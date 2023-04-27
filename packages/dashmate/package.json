@@ -9,6 +9,7 @@
     "version": "oclif readme && git add README.md",
     "test": "yarn run test:unit",
     "test:unit": "mocha --recursive test/unit",
+    "test:e2e": "mocha --recursive test/e2e",
     "helper": "node scripts/helper.js"
   },
   "repository": {
