@@ -76,9 +76,5 @@
     "engine.io": "^6.2.1",
     "ua-parser-js": "^1.0.33",
     "dns-packet": "^5.4.0"
-  },
-  "dependencies": {
-    "es-abstract": "^1.21.2",
-    "foreach": "^2.0.6"
   }
 }
