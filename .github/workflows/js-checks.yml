@@ -48,8 +48,7 @@ jobs:
           node-version: "16"
 
       - name: Setup Rust
-        # TODO(v0.24-backport): use `uses: ./.github/actions/rust`?
-        uses: dtolnay/rust-toolchain@master
+        uses: ./.github/actions/rust
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
@@ -121,8 +120,7 @@ jobs:
           node-version: "16"
 
       - name: Setup Rust
-        # TODO(v0.24-backport): use `uses: ./.github/actions/rust`?
-        uses: dtolnay/rust-toolchain@master
+        uses: ./.github/actions/rust
         with:
           toolchain: stable
           target: wasm32-unknown-unknown

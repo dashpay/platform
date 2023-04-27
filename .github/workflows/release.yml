@@ -35,8 +35,7 @@ jobs:
           TAG_PREFIX: v
 
       - name: Setup Rust
-        # TODO(v0.24-backport): use `uses: ./.github/actions/rust`?
-        uses: dtolnay/rust-toolchain@master
+        uses: ./.github/actions/rust
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
@@ -915,8 +914,7 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: '16'
-      # TODO(v0.24-backport): use `uses: ./.github/actions/rust`?
-      - uses: dtolnay/rust-toolchain@master
+      - uses: ./.github/actions/rust
         with:
           toolchain: stable
           target: wasm32-unknown-unknown
