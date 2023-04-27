@@ -27,10 +27,6 @@ impl Commit {
         quorum_type: QuorumType,
         chain_id: &str,
     ) -> Self {
-        // we need to "un-reverse" quorum hash, as it was reversed in [CleanedCommitInfo::try_from]
-        let mut quorum_hash = ci.quorum_hash.to_vec();
-        quorum_hash.reverse();
-
         Self {
             chain_id: String::from(chain_id),
             quorum_type,
@@ -39,7 +35,8 @@ impl Commit {
                 block_id: Some(block_id.try_into().expect("cannot convert block id")),
                 height: height as i64,
                 round: ci.round as i32,
-                quorum_hash: quorum_hash,
+                // we need to "un-reverse" quorum hash, as it was reversed in [CleanedCommitInfo::try_from]
+                quorum_hash: ci.quorum_hash.iter().rev().cloned().collect(),
                 threshold_block_signature: ci.block_signature.to_vec(),
                 threshold_vote_extensions: ci.threshold_vote_extensions.to_vec(),
             },

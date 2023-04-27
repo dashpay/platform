@@ -673,7 +673,7 @@ where
             round,
             block_header.core_chain_locked_height,
             block_header.proposer_pro_tx_hash,
-            hash.clone(),
+            hash,
         )? {
             // we are on the wrong height or round
             validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
