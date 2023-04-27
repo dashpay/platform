@@ -74,7 +74,7 @@ where
         let quorum_hash = validator_set.0;
         let validator_set = ValidatorSetUpdate::from(validator_set.1);
 
-        state_cache.current_validator_set_quorum_hash = quorum_hash.to_owned();
+        state_cache.current_validator_set_quorum_hash = *quorum_hash;
 
         state_cache.initialization_information = Some(PlatformInitializationState {
             core_initialization_height: core_height,
