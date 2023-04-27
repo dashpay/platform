@@ -1,9 +1,8 @@
-const getIdentityTopUpTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityTopUpTransitionFixture');
-const getChainAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getChainAssetLockProofFixture');
+const getIdentityTopUpTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityTopUpTransitionFixture');
+const getChainAssetLockProofFixture = require('../../../../../lib/test/fixtures/getChainAssetLockProofFixture');
 
-const stateTransitionTypes = require('@dashevo/dpp/lib/stateTransition/stateTransitionTypes');
-const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
-const { default: loadWasmDpp } = require('../../../../../dist');
+const { default: loadWasmDpp } = require('../../../../..');
+const { getLatestProtocolVersion, StateTransitionTypes } = require('../../../../..');
 
 describe('IdentityTopUpTransition', () => {
   let rawStateTransition;
@@ -47,7 +46,7 @@ describe('IdentityTopUpTransition', () => {
 
   describe('#getType', () => {
     it('should return IDENTITY_TOP_UP type', () => {
-      expect(stateTransition.getType()).to.equal(stateTransitionTypes.IDENTITY_TOP_UP);
+      expect(stateTransition.getType()).to.equal(StateTransitionTypes.IdentityTopUp);
     });
   });
 
@@ -91,8 +90,8 @@ describe('IdentityTopUpTransition', () => {
       rawStateTransition = stateTransition.toObject();
 
       expect(rawStateTransition).to.deep.equal({
-        protocolVersion: protocolVersion.latestVersion,
-        type: stateTransitionTypes.IDENTITY_TOP_UP,
+        protocolVersion: getLatestProtocolVersion(),
+        type: StateTransitionTypes.IdentityTopUp,
         assetLockProof: rawStateTransition.assetLockProof,
         identityId: rawStateTransition.identityId,
         signature: undefined,
@@ -103,8 +102,8 @@ describe('IdentityTopUpTransition', () => {
       rawStateTransition = stateTransition.toObject({ skipSignature: true });
 
       expect(rawStateTransition).to.deep.equal({
-        protocolVersion: protocolVersion.latestVersion,
-        type: stateTransitionTypes.IDENTITY_TOP_UP,
+        protocolVersion: getLatestProtocolVersion(),
+        type: StateTransitionTypes.IdentityTopUp,
         assetLockProof: rawStateTransition.assetLockProof,
         identityId: rawStateTransition.identityId,
       });
@@ -116,8 +115,8 @@ describe('IdentityTopUpTransition', () => {
       const jsonStateTransition = stateTransition.toJSON();
 
       expect(jsonStateTransition).to.deep.equal({
-        protocolVersion: protocolVersion.latestVersion,
-        type: stateTransitionTypes.IDENTITY_TOP_UP,
+        protocolVersion: getLatestProtocolVersion(),
+        type: StateTransitionTypes.IdentityTopUp,
         assetLockProof: stateTransition.getAssetLockProof().toJSON(),
         identityId: new Identifier(rawStateTransition.identityId).toString(),
         signature: undefined,
