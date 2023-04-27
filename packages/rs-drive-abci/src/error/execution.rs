@@ -33,6 +33,17 @@ pub enum ExecutionError {
     #[error("initialization fork not active: {0}")]
     InitializationForkNotActive(String),
 
+    /// Invalid core chain locked height
+    #[error("core chain locked height {requested} is invalid: {v20_fork} <=  {requested} <= {best} is not true")]
+    InitializationBadCoreLockedHeight {
+        /// v20 fork height
+        v20_fork: u32,
+        /// requested core height
+        requested: u32,
+        /// best core lock height
+        best: u32,
+    },
+
     /// An error occurred during initialization.
     #[error("initialization error: {0}")]
     InitializationError(&'static str),
