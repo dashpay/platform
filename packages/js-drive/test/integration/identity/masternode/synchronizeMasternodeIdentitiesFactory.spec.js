@@ -333,7 +333,7 @@ function expectDeterministicAppHashFactory(groveDBStore) {
 
     expect(actualAppHashHex).to.deep.equal(appHash);
   }
-
+g
   return expectDeterministicAppHash;
 }
 
