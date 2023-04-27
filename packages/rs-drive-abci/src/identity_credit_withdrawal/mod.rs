@@ -991,7 +991,6 @@ mod tests {
     mod build_withdrawal_transactions_from_documents {
         use dpp::block::block_info::BlockInfo;
 
-        use dpp::document::Document;
         use dpp::identity::core_script::CoreScript;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
         use dpp::platform_value::platform_value;

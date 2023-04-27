@@ -33,11 +33,10 @@
 extern crate core;
 
 use anyhow::anyhow;
-use dashcore_rpc::dashcore::{signer, Network, PrivateKey, ProTxHash, QuorumHash};
+use dashcore_rpc::dashcore::{signer, Network, PrivateKey, ProTxHash, QuorumHash, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
-    Bip9SoftforkInfo, Bip9SoftforkStatus, DMNState, ExtendedQuorumDetails,
-    MasternodeListDiffWithMasternodes, MasternodeListItem, MasternodeType, QuorumInfoResult,
-    QuorumType,
+    Bip9SoftforkInfo, Bip9SoftforkStatus, DMNState, ExtendedQuorumDetails, MasternodeListItem,
+    MasternodeType, QuorumInfoResult, QuorumType,
 };
 use dpp::bls_signatures::PrivateKey as BlsPrivateKey;
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
@@ -1005,7 +1004,7 @@ pub struct ChainExecutionOutcome<'a> {
     pub end_epoch_index: u16,
     pub end_time_ms: u64,
     pub strategy: Strategy,
-    pub withdrawals: Vec<dashcore::Transaction>,
+    pub withdrawals: Vec<dashcore_rpc::dashcore::Transaction>,
 }
 
 pub struct ChainExecutionParameters {
