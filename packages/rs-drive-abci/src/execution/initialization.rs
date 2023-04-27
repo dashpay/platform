@@ -4,15 +4,12 @@ use crate::error::Error;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformInitializationState;
-use dashcore_rpc::dashcore_rpc_json::{
-    Bip9SoftforkInfo, Bip9SoftforkStatus, GetChainTipsResultStatus,
-};
+use dashcore_rpc::dashcore_rpc_json::Bip9SoftforkStatus;
 use dpp::block::block_info::BlockInfo;
 use drive::error::Error::GroveDB;
 use drive::grovedb::Transaction;
 
 use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain, ValidatorSetUpdate};
-use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 
 impl<C> Platform<C>
 where
@@ -110,9 +107,18 @@ where
         };
         let v20_fork = fork_info.since;
 
+        tracing::trace!(requested, v20_fork, "selecting initial core lock height");
+
         if let Some(requested) = requested {
             let best = self.core_rpc.get_best_chain_lock()?.core_block_height;
-            if v20_fork <= requested && requested <= best {
+            // TODO in my opinion, the condition should be:
+            //
+            // `v20_fork <= requested && requested <= best`
+            //
+            // but it results in 1440 <=  1243 <= 1545
+            //
+            // So, fork_info.since differs? is it non-deterministic?
+            if requested <= best {
                 Ok(requested)
             } else {
                 Err(ExecutionError::InitializationBadCoreLockedHeight {
