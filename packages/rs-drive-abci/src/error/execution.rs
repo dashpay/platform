@@ -1,4 +1,4 @@
-use dashcore::consensus::encode::Error as DashCoreConsensusEncodeError;
+use dashcore_rpc::dashcore::consensus::encode::Error as DashCoreConsensusEncodeError;
 use dpp::bls_signatures::BlsError;
 use drive::error::Error as DriveError;
 

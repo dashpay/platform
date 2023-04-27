@@ -471,8 +471,8 @@ where
 //         use crate::config::PlatformConfig;
 //         use crate::rpc::core::MockCoreRPCLike;
 //         use chrono::{Duration, Utc};
-//         use dashcore::hashes::hex::FromHex;
-//         use dashcore::BlockHash;
+//         use dashcore_rpc::dashcore::hashes::hex::FromHex;
+//         use dashcore_rpc::dashcore::BlockHash;
 //         use dpp::contracts::withdrawals_contract;
 //
 //         use dpp::identity::core_script::CoreScript;

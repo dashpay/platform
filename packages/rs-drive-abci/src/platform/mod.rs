@@ -43,9 +43,9 @@ use std::path::Path;
 use std::sync::RwLock;
 
 use crate::rpc::core::MockCoreRPCLike;
-use dashcore::hashes::hex::FromHex;
-use dashcore::hashes::Hash;
-use dashcore::{BlockHash, QuorumHash};
+use dashcore_rpc::dashcore::hashes::hex::FromHex;
+use dashcore_rpc::dashcore::hashes::Hash;
+use dashcore_rpc::dashcore::{BlockHash, QuorumHash};
 
 use dpp::block::block_info::BlockInfo;
 use dpp::serialization_traits::PlatformDeserializable;

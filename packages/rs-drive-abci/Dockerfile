@@ -72,14 +72,14 @@ RUN curl -Ls \
         /opt/emsdk/emsdk install latest && \
         /opt/emsdk/emsdk activate latest
 
+
+# Switch to clang
+RUN rm /usr/bin/cc && ln -s /usr/bin/clang /usr/bin/cc
+
 #
 # EXECUTE BUILD
 #
 FROM deps as build
-
-WORKDIR /usr/src/dash-platform
-
-COPY . .
 
 #
 # Configure sccache
@@ -90,6 +90,8 @@ ENV RUSTC_WRAPPER=/usr/bin/sccache
 ARG SCCACHE_GHA_ENABLED
 ARG ACTIONS_CACHE_URL
 ARG ACTIONS_RUNTIME_TOKEN
+# Alternative solution is to use memcache
+ARG SCCACHE_MEMCACHED
 
 # Disable incremental buildings, not supported by sccache
 ENV CARGO_INCREMENTAL=false
@@ -109,14 +111,17 @@ ARG CARGO_BUILD_PROFILE=dev
 # SCCACHE_SERVER_PORT port to avoid conflicts in case of parallel compilation
 # 5. We also set RUSTC to include exact toolchain name in compilation command, and
 # include this in cache key
-# 6. We build `dashcore-rpc` first, as arm64 builder on github hangs if we don't do this.
-RUN rm /usr/bin/cc && ln -s /usr/bin/clang /usr/bin/cc
+
+WORKDIR /usr/src/dash-platform
+
+COPY . .
 
 RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
+    if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     cargo build \
         --package dashcore-rpc \
        --config net.git-fetch-with-cli=true && \
@@ -245,8 +250,9 @@ RUN addgroup -g $USER_GID $USERNAME && \
 
 USER $USERNAME
 
+ENV RUST_BACKTRACE=1
 WORKDIR /var/lib/dash/rs-drive-abci
 ENTRYPOINT ["/usr/bin/drive-abci"]
-CMD ["-vv", "start"]
+CMD ["-vvvv", "start"]
 
 EXPOSE 26658

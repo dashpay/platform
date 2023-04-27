@@ -5,12 +5,13 @@ use crate::error::Error;
 
 use crate::execution::test_quorum::TestQuorumInfo;
 use crate::rpc::core::CoreRPCLike;
-use dashcore::blockdata::transaction::special_transaction::asset_unlock::qualified_asset_unlock::AssetUnlockPayload;
-use dashcore::blockdata::transaction::special_transaction::asset_unlock::request_info::AssetUnlockRequestInfo;
-use dashcore::blockdata::transaction::special_transaction::asset_unlock::unqualified_asset_unlock::AssetUnlockBaseTransactionInfo;
-use dashcore::blockdata::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
-use dashcore::bls_sig_utils::BLSSignature;
-use dashcore::consensus::Decodable;
+use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::asset_unlock::qualified_asset_unlock::AssetUnlockPayload;
+use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::asset_unlock::request_info::AssetUnlockRequestInfo;
+use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::asset_unlock::unqualified_asset_unlock::AssetUnlockBaseTransactionInfo;
+use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
+use dashcore_rpc::dashcore::bls_sig_utils::BLSSignature;
+use dashcore_rpc::dashcore::consensus::Decodable;
+use dashcore_rpc::dashcore;
 use dpp::block::block_info::BlockInfo;
 use dpp::serialization_traits::PlatformSerializable;
 use dpp::state_transition::StateTransition;
@@ -33,7 +34,7 @@ use tenderdash_abci::{
 /// The outcome struct when mimicking block execution
 pub struct MimicExecuteBlockOutcome {
     /// withdrawal transactions
-    pub withdrawal_transactions: Vec<dashcore::Transaction>,
+    pub withdrawal_transactions: Vec<dashcore_rpc::dashcore::Transaction>,
     /// The next validators hash
     pub next_validator_set_hash: Vec<u8>,
 }

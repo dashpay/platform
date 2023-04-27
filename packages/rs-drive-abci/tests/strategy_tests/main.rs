@@ -33,7 +33,7 @@
 extern crate core;
 
 use anyhow::anyhow;
-use dashcore::{signer, Network, PrivateKey, ProTxHash, QuorumHash, Txid};
+use dashcore_rpc::dashcore::{signer, Network, PrivateKey, ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{
     Bip9SoftforkInfo, Bip9SoftforkStatus, DMNState, ExtendedQuorumDetails,
     MasternodeListDiffWithMasternodes, MasternodeListItem, MasternodeType, QuorumInfoResult,
@@ -70,9 +70,9 @@ use drive::drive::defaults::PROTOCOL_VERSION;
 use drive::drive::flags::StorageFlags::SingleEpoch;
 
 use crate::FinalizeBlockOperation::IdentityAddKeys;
-use dashcore::hashes::hex::ToHex;
-use dashcore::hashes::Hash;
-use dashcore::secp256k1::SecretKey;
+use dashcore_rpc::dashcore::hashes::hex::ToHex;
+use dashcore_rpc::dashcore::hashes::Hash;
+use dashcore_rpc::dashcore::secp256k1::SecretKey;
 
 use dpp::block::epoch::Epoch;
 use dpp::data_contract::document_type::random_document_type::RandomDocumentTypeParameters;
@@ -1661,8 +1661,9 @@ pub(crate) fn continue_chain_for_strategy(
 mod tests {
     use super::*;
     use crate::DocumentAction::DocumentActionReplace;
-    use dashcore::hashes::Hash;
-    use dashcore::BlockHash;
+
+    use dashcore_rpc::dashcore::hashes::Hash;
+    use dashcore_rpc::dashcore::BlockHash;
     use dashcore_rpc::dashcore_rpc_json::{
         Bip9SoftforkInfo, Bip9SoftforkStatus, ExtendedQuorumDetails,
     };

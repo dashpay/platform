@@ -1,5 +1,5 @@
-use dashcore::hashes::Hash;
-use dashcore::{QuorumHash, Txid};
+use dashcore_rpc::dashcore::hashes::Hash;
+use dashcore_rpc::dashcore::{QuorumHash, Txid};
 use dpp::bls_signatures;
 
 use dpp::block::block_info::BlockInfo;
@@ -617,7 +617,7 @@ where
             )?
             .quorum_public_key;
 
-        bls_signatures::PublicKey::from_bytes(public_key.as_slice())
+        bls_signatures::PublicKey::from_bytes(&public_key)
             .map_err(|e| Error::Execution(ExecutionError::BlsErrorFromDashCoreResponse(e)))
     }
 

@@ -1,6 +1,6 @@
 use crate::execution::quorum::{Quorum, Validator};
-use dashcore::hashes::Hash;
-use dashcore::{ProTxHash, PubkeyHash, QuorumHash};
+use dashcore_rpc::dashcore::hashes::Hash;
+use dashcore_rpc::dashcore::{ProTxHash, PubkeyHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{QuorumInfoResult, QuorumMember, QuorumType};
 use dpp::bls_signatures;
 use dpp::bls_signatures::{PrivateKey as BlsPrivateKey, PublicKey as BlsPublicKey};
