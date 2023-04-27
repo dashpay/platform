@@ -1793,9 +1793,9 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@dashevo/oclif@npm:^1.0.3":
-  version: 1.0.3
-  resolution: "@dashevo/oclif@npm:1.0.3"
+"@dashevo/oclif@npm:^1.0.4":
+  version: 1.0.4
+  resolution: "@dashevo/oclif@npm:1.0.4"
   dependencies:
     "@oclif/core": ^1.20.4
     "@oclif/plugin-help": ^5.1.19
@@ -1817,7 +1817,7 @@ __metadata:
     yosay: ^2.0.2
   bin:
     oclif: bin/run
-  checksum: 9f0cb1e050f8202f864d46e2b2022f7508aab968a2729d55c05057e83c45448a43a09cb6a2fea4ada7eca2204ff553f83e57b8c8a8b630eaa7e5f90706ff45ef
+  checksum: 239edbbb304ddfed4a11064491e10b1d283b4480cda31a50e8c9d08591d10ead6b4cd8803ba41915f10b12401346b646af874ca303729dc7b5362d7903129ee0
   languageName: node
   linkType: hard
 
@@ -6372,7 +6372,7 @@ __metadata:
     "@dashevo/dpp": "workspace:*"
     "@dashevo/feature-flags-contract": "workspace:*"
     "@dashevo/masternode-reward-shares-contract": "workspace:*"
-    "@dashevo/oclif": ^1.0.3
+    "@dashevo/oclif": ^1.0.4
     "@dashevo/wallet-lib": "workspace:*"
     "@dashevo/withdrawals-contract": "workspace:*"
     "@oclif/core": ^1.25.0
