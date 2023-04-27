@@ -200,6 +200,68 @@ impl Drive {
         Ok(drive_operations)
     }
 
+    pub(crate) fn re_enable_identity_keys_operations(
+        &self,
+        identity_id: [u8; 32],
+        key_ids: Vec<KeyID>,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        let mut drive_operations = vec![];
+
+        let key_ids_len = key_ids.len();
+
+        let keys: KeyIDIdentityPublicKeyPairVec = if let Some(
+            estimated_costs_only_with_layer_info,
+        ) = estimated_costs_only_with_layer_info
+        {
+            Self::add_estimation_costs_for_keys_for_identity_id(
+                identity_id,
+                estimated_costs_only_with_layer_info,
+            );
+            key_ids
+                .into_iter()
+                .map(|key_id| (key_id, IdentityPublicKey::max_possible_size_key(key_id)))
+                .collect()
+        } else {
+            let key_request = IdentityKeysRequest {
+                identity_id,
+                request_type: KeyRequestType::SpecificKeys(key_ids),
+                limit: Some(key_ids_len as u16),
+                offset: None,
+            };
+
+            self.fetch_identity_keys_operations(key_request, transaction, &mut drive_operations)?
+        };
+
+        if keys.len() != key_ids_len {
+            // TODO Choose / add an appropriate error
+            return Err(Error::Drive(DriveError::UpdatingDocumentThatDoesNotExist(
+                "key to re-enable with specified ID is not found",
+            )));
+        }
+
+        const RE_ENABLE_KEY_TIME_BYTE_COST: i32 = 9;
+
+        for (_, mut key) in keys {
+            key.disabled_at = None;
+
+            let key_id_bytes = key.id.encode_var_vec();
+
+            self.replace_key_in_storage_operations(
+                identity_id.as_slice(),
+                &key,
+                &key_id_bytes,
+                RE_ENABLE_KEY_TIME_BYTE_COST,
+                &mut drive_operations,
+            )?;
+        }
+
+        Ok(drive_operations)
+    }
+
     /// Add new non unique keys to an identity
     pub fn add_new_non_unique_keys_to_identity(
         &self,
@@ -216,6 +278,7 @@ impl Drive {
         };
         let batch_operations = self.add_new_keys_to_identity_operations(
             identity_id,
+            vec![],
             keys_to_add,
             true,
             &mut estimated_costs_only_with_layer_info,
@@ -233,7 +296,7 @@ impl Drive {
     }
 
     /// Add new keys to an identity
-    pub fn add_new_keys_to_identity(
+    pub fn add_new_unique_keys_to_identity(
         &self,
         identity_id: [u8; 32],
         keys_to_add: Vec<IdentityPublicKey>,
@@ -249,6 +312,7 @@ impl Drive {
         let batch_operations = self.add_new_keys_to_identity_operations(
             identity_id,
             keys_to_add,
+            vec![],
             true,
             &mut estimated_costs_only_with_layer_info,
             transaction,
@@ -268,7 +332,8 @@ impl Drive {
     pub(crate) fn add_new_keys_to_identity_operations(
         &self,
         identity_id: [u8; 32],
-        keys_to_add: Vec<IdentityPublicKey>,
+        unique_keys_to_add: Vec<IdentityPublicKey>,
+        non_unique_keys_to_add: Vec<IdentityPublicKey>,
         with_references: bool,
         estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
@@ -283,8 +348,19 @@ impl Drive {
             );
         }
 
-        for key in keys_to_add {
+        for key in unique_keys_to_add {
             self.insert_new_unique_key_operations(
+                identity_id,
+                key,
+                with_references,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                &mut drive_operations,
+            )?;
+        }
+
+        for key in non_unique_keys_to_add {
+            self.insert_new_non_unique_key_operations(
                 identity_id,
                 key,
                 with_references,
@@ -325,7 +401,7 @@ mod tests {
             let db_transaction = drive.grove.start_transaction();
 
             let fee_result = drive
-                .add_new_keys_to_identity(
+                .add_new_unique_keys_to_identity(
                     identity.id.to_buffer(),
                     new_keys_to_add,
                     &block,
@@ -373,7 +449,7 @@ mod tests {
             let db_transaction = drive.grove.start_transaction();
 
             let fee_result = drive
-                .add_new_keys_to_identity(
+                .add_new_unique_keys_to_identity(
                     identity.id.to_buffer(),
                     new_keys_to_add,
                     &block,
@@ -421,7 +497,7 @@ mod tests {
                 .expect("should return app hash");
 
             let fee_result = drive
-                .add_new_keys_to_identity(
+                .add_new_unique_keys_to_identity(
                     identity.id.to_buffer(),
                     new_keys_to_add,
                     &block,
@@ -469,7 +545,7 @@ mod tests {
             let new_keys_to_add = IdentityPublicKey::random_keys(5, 2, Some(15));
 
             drive
-                .add_new_keys_to_identity(
+                .add_new_unique_keys_to_identity(
                     identity.id.to_buffer(),
                     new_keys_to_add.clone(),
                     &block_info,

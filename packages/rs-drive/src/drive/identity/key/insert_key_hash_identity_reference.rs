@@ -27,7 +27,7 @@ impl Drive {
     /// Insert a public key hash reference that contains an identity id
     /// Contrary to the name this is not a reference but an Item containing the identity
     /// identifier
-    pub(crate) fn insert_reference_to_key_operations(
+    pub(crate) fn insert_reference_to_unique_key_operations(
         &self,
         identity_id: [u8; 32],
         identity_key: &IdentityPublicKey,
@@ -51,6 +51,40 @@ impl Drive {
         //todo: check if key is unique
 
         self.insert_unique_public_key_hash_reference_to_identity_operations(
+            identity_id,
+            key_hash,
+            estimated_costs_only_with_layer_info,
+            transaction,
+        )
+    }
+
+    /// Insert a public key hash reference that contains an identity id
+    /// Contrary to the name this is not a reference but an Item containing the identity
+    /// identifier
+    pub(crate) fn insert_reference_to_non_unique_key_operations(
+        &self,
+        identity_id: [u8; 32],
+        identity_key: &IdentityPublicKey,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+    ) -> Result<Vec<LowLevelDriveOperation>, Error> {
+        let mut drive_operations = vec![];
+        let hash_vec = identity_key.hash()?;
+        let key_hash = hash_vec.as_slice().try_into().map_err(|_| {
+            Error::Drive(DriveError::CorruptedCodeExecution("key hash not 20 bytes"))
+        })?;
+
+        let key_len = identity_key.data.len();
+        drive_operations.push(FunctionOperation(FunctionOp::new_with_byte_count(
+            HashFunction::Sha256RipeMD160,
+            key_len as u16,
+        )));
+
+        //todo: check if key is unique
+
+        self.insert_non_unique_public_key_hash_reference_to_identity_operations(
             identity_id,
             key_hash,
             estimated_costs_only_with_layer_info,

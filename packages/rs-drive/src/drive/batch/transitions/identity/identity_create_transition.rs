@@ -6,6 +6,7 @@ use crate::drive::defaults::PROTOCOL_VERSION;
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
 use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransitionAction;
+use dpp::identity::IdentityPublicKey;
 use dpp::prelude::Identity;
 
 impl DriveHighLevelOperationConverter for IdentityCreateTransitionAction {

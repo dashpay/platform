@@ -273,7 +273,6 @@ where
                 &removed_masternodes,
                 block_info,
                 platform_state,
-                block_platform_state,
                 transaction,
             )?;
 
