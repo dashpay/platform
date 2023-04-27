@@ -1,10 +1,27 @@
+## [0.24.0-dev.26](https://github.com/dashpay/platform/compare/v0.24.0-dev.25...v0.24.0-dev.26) (2023-04-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* Previous state won't be valid due to changes in the sync identities logic
+
+### Bug Fixes
+
+* **drive:** non-unique masternode voting keys ([#986](https://github.com/dashpay/platform/issues/986))
+
+
+### Build System
+
+* **dashmate:** better versioning ([#988](https://github.com/dashpay/platform/issues/988))
+* **dashmate:** prepare MacOs build for notarization ([#985](https://github.com/dashpay/platform/issues/985))
+
 ## [0.24.0-dev.25](https://github.com/dashpay/platform/compare/v0.24.0-dev.24...v0.24.0-dev.25) (2023-04-26)
 
 
 ### Features
 
 * **dashamte:** better ZeroSSL error messages ([#950](https://github.com/dashpay/platform/issues/950))
-* **dashmate:** set random core rpc usename and password on setup ([#973](https://github.com/dashpay/platform/issues/973))
+* **dashmate:** set random core rpc username and password on setup ([#973](https://github.com/dashpay/platform/issues/973))
 * **dashmate:** verbose `connect ENOENT /var/run/docker.sock` error ([#951](https://github.com/dashpay/platform/issues/951))
 
 
