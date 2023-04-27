@@ -28,6 +28,8 @@ RUN yarn config set enableInlineBuilds true
 COPY packages/dapi packages/dapi
 COPY packages/dapi-grpc packages/dapi-grpc
 COPY packages/js-dpp packages/js-dpp
+COPY packages/rs-platform-serialization packages/rs-platform-serialization
+COPY packages/rs-platform-value-convertible packages/rs-platform-value-convertible
 COPY packages/rs-dpp packages/rs-dpp
 COPY packages/wasm-dpp packages/wasm-dpp
 COPY packages/js-grpc-common packages/js-grpc-common

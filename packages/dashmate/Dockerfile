@@ -40,6 +40,8 @@ COPY packages/masternode-reward-shares-contract packages/masternode-reward-share
 COPY packages/feature-flags-contract packages/feature-flags-contract
 COPY packages/dpns-contract packages/dpns-contract
 COPY packages/data-contracts packages/data-contracts
+COPY packages/rs-platform-serialization packages/rs-platform-serialization
+COPY packages/rs-platform-value-convertible packages/rs-platform-value-convertible
 COPY packages/rs-dpp packages/rs-dpp
 COPY packages/wasm-dpp packages/wasm-dpp
 
