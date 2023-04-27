@@ -640,7 +640,7 @@ mod tests {
                     ],
                     core_chain_locked_height: 96,
                     block_hash: [0; 32],
-                    commit_hash: None,
+                    app_hash: None,
                 },
                 epoch_info: EpochInfo {
                     current_epoch_index: 1,
@@ -807,7 +807,7 @@ mod tests {
                         ],
                         core_chain_locked_height: 96,
                         block_hash: [0; 32],
-                        commit_hash: None,
+                        app_hash: None,
                     },
                     epoch_info: EpochInfo {
                         current_epoch_index: 1,
@@ -991,7 +991,6 @@ mod tests {
     mod build_withdrawal_transactions_from_documents {
         use dpp::block::block_info::BlockInfo;
 
-        use dpp::document::Document;
         use dpp::identity::core_script::CoreScript;
         use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
         use dpp::platform_value::platform_value;

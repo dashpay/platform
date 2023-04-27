@@ -1,9 +1,8 @@
-use dashcore_rpc::dashcore::hashes::Hash;
+use dashcore_rpc::dashcore::hashes::{hex::ToHex, Hash};
 use dashcore_rpc::dashcore::{QuorumHash, Txid};
-use dpp::bls_signatures;
-
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
+use dpp::bls_signatures;
 use dpp::consensus::ConsensusError;
 use dpp::state_transition::StateTransition;
 use dpp::validation::{
@@ -381,7 +380,7 @@ where
             .unwrap()
             .map_err(|e| Error::Drive(GroveDB(e)))?; //GroveDb errors are system errors
 
-        block_execution_context.block_state_info.commit_hash = Some(root_hash);
+        block_execution_context.block_state_info.app_hash = Some(root_hash);
 
         let state = self.state.read().unwrap();
         let validator_set_update =
@@ -678,18 +677,20 @@ where
         )? {
             // we are on the wrong height or round
             validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
-                "received a block for h: {} r: {} c-h: {}, expected h: {} r: {} c-h: {}",
+                "received a block for h: {} r: {}, hash: {}, core height: {}, expected h: {} r: {}, hash: {}, core height: {}",
                 height,
                 round,
+                hash.to_hex(),
                 block_header.core_chain_locked_height,
                 block_state_info.height,
                 block_state_info.round,
+                block_state_info.block_hash.to_hex(),
                 block_state_info.core_chain_locked_height
             )));
             return Ok(validation_result.into());
         }
 
-        let mut state_cache = self.state.read().unwrap();
+        let state_cache = self.state.read().unwrap();
         if state_cache.current_validator_set_quorum_hash.as_inner() != &commit_info.quorum_hash {
             validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
                 "received a block for h: {} r: {} with validator set quorum hash {} expected current validator set quorum hash is {}",

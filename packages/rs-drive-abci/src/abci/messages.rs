@@ -45,22 +45,47 @@ use drive::fee::result::FeeResult;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use tenderdash_abci::proto::abci::RequestInitChain;
 use tenderdash_abci::proto::google::protobuf::Timestamp;
+use tenderdash_abci::proto::serializers::timestamp::ToMilis;
+
+use super::AbciError;
 
 /// A struct for handling chain initialization requests
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InitChainRequest {
     /// The genesis time in milliseconds
-    pub genesis_time_ms: TimestampMillis,
-    /// The system identity public keys
-    pub system_identity_public_keys: SystemIdentityPublicKeys,
+    pub genesis_time: TimestampMillis,
+
+    /// Initial core chain lock height.
+    pub initial_core_height: Option<u32>,
+}
+
+impl TryFrom<RequestInitChain> for InitChainRequest {
+    type Error = AbciError;
+    fn try_from(request: RequestInitChain) -> Result<Self, Self::Error> {
+        let genesis_time = request
+            .time
+            .ok_or(AbciError::BadRequest(
+                "genesis time is required in init chain".to_string(),
+            ))?
+            .to_milis() as TimestampMillis;
+        let initial_core_height = match request.initial_core_height {
+            0 => None,
+            h => Some(h),
+        };
+
+        Ok(Self {
+            genesis_time,
+            initial_core_height,
+        })
+    }
 }
 
 impl From<InitChainRequest> for RequestInitChain {
     fn from(value: InitChainRequest) -> Self {
         let InitChainRequest {
-            genesis_time_ms,
-            system_identity_public_keys: _,
+            genesis_time: genesis_time_ms,
+            initial_core_height,
         } = value;
         RequestInitChain {
             time: Some(Timestamp {
@@ -72,7 +97,7 @@ impl From<InitChainRequest> for RequestInitChain {
             validator_set: None,
             app_state_bytes: vec![],
             initial_height: 0,
-            initial_core_height: 0,
+            initial_core_height: initial_core_height.unwrap_or_default(),
         }
     }
 }

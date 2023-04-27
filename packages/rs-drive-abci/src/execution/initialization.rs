@@ -1,18 +1,15 @@
+use crate::abci::messages::InitChainRequest;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformInitializationState;
-use dashcore_rpc::dashcore_rpc_json::{
-    Bip9SoftforkInfo, Bip9SoftforkStatus, GetChainTipsResultStatus,
-};
+use dashcore_rpc::dashcore_rpc_json::Bip9SoftforkStatus;
 use dpp::block::block_info::BlockInfo;
-use dpp::identity::TimestampMillis;
 use drive::error::Error::GroveDB;
 use drive::grovedb::Transaction;
 
 use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain, ValidatorSetUpdate};
-use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 
 impl<C> Platform<C>
 where
@@ -24,28 +21,11 @@ where
         request: RequestInitChain,
         transaction: &Transaction,
     ) -> Result<ResponseInitChain, Error> {
-        // We receive the activation height, if core is not yet at this height
+        let request = InitChainRequest::try_from(request)?;
+        // We get core height early, as this also verifies v20 fork
+        let core_height = self.initial_core_height(request.initial_core_height)?;
 
-        let fork_info = self.core_rpc.get_fork_info("v20")?.ok_or(
-            ExecutionError::InitializationForkNotActive("fork is not yet known".to_string()),
-        )?;
-        if fork_info.status != Bip9SoftforkStatus::Active {
-            // fork is not good yet
-            return Err(ExecutionError::InitializationForkNotActive(format!(
-                "fork is not yet known (currently {:?})",
-                fork_info.status
-            ))
-            .into());
-        } else {
-            tracing::debug!(?fork_info, "core fork v20 is active");
-        };
-
-        let genesis_time = request
-            .time
-            .ok_or(Error::Execution(ExecutionError::InitializationError(
-                "genesis time is required in init chain",
-            )))?
-            .to_milis() as TimestampMillis;
+        let genesis_time = request.genesis_time;
 
         self.create_genesis_state(
             genesis_time,
@@ -55,7 +35,6 @@ where
 
         let mut state_cache = self.state.write().unwrap();
 
-        let core_height = self.initial_core_height(request.initial_core_height, &fork_info)?;
         self.update_core_info(
             &mut state_cache,
             core_height,
@@ -98,20 +77,59 @@ where
 
     /// Determine initial core height.
     ///
-    /// TODO: rewrite this, it is non-deterministic
-    /// We use either core height received from Tenderdash (from genesis file), OR the current tip of active core chain.
-    /// We use current tip as default because we need a fully functional, up-to-date validator set.
-    fn initial_core_height(
-        &self,
-        requested: u32,
-        fork_info: &Bip9SoftforkInfo,
-    ) -> Result<u32, Error> {
-        let core_height = if requested != 0 {
-            requested
+    /// Use core height received from Tenderdash (from genesis.json) by default,
+    /// otherwise we go with height of v20 fork.
+    ///
+    /// Core height is verified to ensure that it is both at or after v20 fork, and
+    /// before or at last chain lock.
+    ///
+    /// ## Error handling
+    ///
+    /// This function will fail if:
+    ///
+    /// * v20 fork is not yet active
+    /// * `requested` core height is before v20 fork
+    /// * `requested` core height is after current best chain lock
+    ///
+    fn initial_core_height(&self, requested: Option<u32>) -> Result<u32, Error> {
+        let fork_info = self.core_rpc.get_fork_info("v20")?.ok_or(
+            ExecutionError::InitializationForkNotActive("fork is not yet known".to_string()),
+        )?;
+        if fork_info.status != Bip9SoftforkStatus::Active {
+            // fork is not good yet
+            return Err(ExecutionError::InitializationForkNotActive(format!(
+                "fork is not yet known (currently {:?})",
+                fork_info.status
+            ))
+            .into());
         } else {
-            fork_info.since
+            tracing::debug!(?fork_info, "core fork v20 is active");
         };
+        let v20_fork = fork_info.since;
 
-        Ok(core_height)
+        tracing::trace!(requested, v20_fork, "selecting initial core lock height");
+
+        if let Some(requested) = requested {
+            let best = self.core_rpc.get_best_chain_lock()?.core_block_height;
+            // TODO in my opinion, the condition should be:
+            //
+            // `v20_fork <= requested && requested <= best`
+            //
+            // but it results in 1440 <=  1243 <= 1545
+            //
+            // So, fork_info.since differs? is it non-deterministic?
+            if requested <= best {
+                Ok(requested)
+            } else {
+                Err(ExecutionError::InitializationBadCoreLockedHeight {
+                    requested,
+                    best,
+                    v20_fork,
+                }
+                .into())
+            }
+        } else {
+            Ok(v20_fork)
+        }
     }
 }

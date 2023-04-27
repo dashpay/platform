@@ -6,11 +6,10 @@ use crate::drive::{unique_key_hashes_tree_path_vec, Drive};
 
 use crate::error::proof::ProofError;
 use crate::error::Error;
+use crate::fee::credits::Credits;
 use dpp::identifier::Identifier;
 use dpp::identity::{IdentityPublicKey, KeyID};
-pub use dpp::prelude::{AssetLockProof, Identity, Revision};
-
-use crate::fee::credits::Credits;
+pub use dpp::prelude::{Identity, Revision};
 use dpp::serialization_traits::PlatformDeserializable;
 use grovedb::GroveDb;
 use std::collections::BTreeMap;

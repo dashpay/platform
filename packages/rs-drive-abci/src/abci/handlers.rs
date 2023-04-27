@@ -33,7 +33,12 @@
 //!
 
 use crate::abci::server::AbciApplication;
+use crate::error::execution::ExecutionError;
+use crate::error::Error;
+use crate::execution::block_proposal::BlockProposal;
+use crate::execution::engine::BlockExecutionOutcome;
 use crate::rpc::core::CoreRPCLike;
+use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dpp::errors::consensus::codes::ErrorWithCode;
 use drive::fee::credits::SignedCredits;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
@@ -44,12 +49,7 @@ use tenderdash_abci::proto::abci::{
     RequestProcessProposal, RequestQuery, ResponseCheckTx, ResponseFinalizeBlock,
     ResponseInitChain, ResponsePrepareProposal, ResponseProcessProposal, ResponseQuery, TxRecord,
 };
-use tenderdash_abci::proto::types::{CoreChainLock, VoteExtensionType};
-
-use crate::error::execution::ExecutionError;
-use crate::error::Error;
-use crate::execution::block_proposal::BlockProposal;
-use crate::execution::engine::BlockExecutionOutcome;
+use tenderdash_abci::proto::types::VoteExtensionType;
 
 use super::withdrawal::WithdrawalTxs;
 use super::AbciError;
@@ -261,10 +261,15 @@ where
 
         let block_state_info = &block_execution_context.block_state_info;
 
-        if !block_state_info.matches_current_block(height as u64, round as u32, block_hash)? {
+        if !block_state_info.matches_current_block(
+            height as u64,
+            round as u32,
+            block_hash.clone(),
+        )? {
             return Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
-                "received request for height: {} round: {}, expected height: {} round: {}",
-                height, round, block_state_info.height, block_state_info.round
+                "received request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
+                height, round, block_hash.to_hex(),
+                block_state_info.height, block_state_info.round, block_state_info.block_hash.to_hex()
             )))
             .into());
         } else {
@@ -306,10 +311,15 @@ where
 
         let block_state_info = &block_execution_context.block_state_info;
 
-        if !block_state_info.matches_current_block(height as u64, round as u32, block_hash)? {
+        if !block_state_info.matches_current_block(
+            height as u64,
+            round as u32,
+            block_hash.clone(),
+        )? {
             return Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
-                "received request for height: {} round: {}, expected height: {} round: {}",
-                height, round, block_state_info.height, block_state_info.round
+                "received request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
+                height, round,block_hash.to_hex(),
+                block_state_info.height, block_state_info.round, block_state_info.block_hash.to_hex()
             )))
             .into());
         }

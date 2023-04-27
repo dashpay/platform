@@ -25,10 +25,10 @@ use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::types::{
     Block, BlockId, Data, EvidenceList, Header, PartSetHeader, VoteExtension, VoteExtensionType,
 };
-use tenderdash_abci::proto::version::Consensus;
 use tenderdash_abci::{
-    proto::{self, signatures::SignDigest},
-    Application,
+    signatures::SignDigest,
+    proto::{self, version::Consensus},
+    Application  
 };
 
 /// The outcome struct when mimicking block execution
@@ -243,11 +243,12 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
 
         //if not in testing this will default to true
         if self.platform.config.testing_configs.block_signing {
+            let quorum_hash:[u8;32] = current_quorum.quorum_hash[..].try_into().expect("wrong quorum hash len");
             let digest = commit
                 .sign_digest(
                     &chain_id,
                     quorum_type as u8,
-                    &current_quorum.quorum_hash,
+                    &quorum_hash,
                     height as i64,
                     0,
                 )

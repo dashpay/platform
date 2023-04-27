@@ -40,6 +40,10 @@ struct Cli {
     ///
     #[arg(short, long, action = clap::ArgAction::Count)]
     verbose: u8,
+
+    /// Display colorful logs
+    #[arg(long)]
+    color: Option<bool>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -126,7 +130,8 @@ fn configure_logging(cli: &Cli) {
         _ => panic!("max verbosity level is 5"),
     };
 
-    let layer = fmt::layer().with_ansi(atty::is(atty::Stream::Stdout));
+    let ansi = cli.color.unwrap_or(atty::is(atty::Stream::Stdout));
+    let layer = fmt::layer().with_ansi(ansi);
 
     registry().with(layer).with(env_filter).init();
 
