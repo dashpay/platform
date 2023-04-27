@@ -1677,9 +1677,9 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@dashevo/oclif@npm:^1.0.1":
-  version: 1.0.1
-  resolution: "@dashevo/oclif@npm:1.0.1"
+"@dashevo/oclif@npm:^1.0.2":
+  version: 1.0.2
+  resolution: "@dashevo/oclif@npm:1.0.2"
   dependencies:
     "@oclif/core": ^1.20.4
     "@oclif/plugin-help": ^5.1.19
@@ -1701,7 +1701,7 @@ __metadata:
     yosay: ^2.0.2
   bin:
     oclif: bin/run
-  checksum: 1a9b7871f83f97cd377c5037c67c0527241e13b917c63dd5da102755003eb36ec155326075f93fa0ba6de35e9f5f7dbf24fa6cc73f54caa7a75ae10f500500b9
+  checksum: b421acd414231e2691e1dbc31dc40f83245fddd19bba0bd3a269979a9a62e80e12366b88301dda6be3e1a117be901f0c59dff3c48ee870a19f770a8468ee0b87
   languageName: node
   linkType: hard
 
@@ -2407,6 +2407,42 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@oclif/core@npm:^1.25.0":
+  version: 1.26.2
+  resolution: "@oclif/core@npm:1.26.2"
+  dependencies:
+    "@oclif/linewrap": ^1.0.0
+    "@oclif/screen": ^3.0.4
+    ansi-escapes: ^4.3.2
+    ansi-styles: ^4.3.0
+    cardinal: ^2.1.1
+    chalk: ^4.1.2
+    clean-stack: ^3.0.1
+    cli-progress: ^3.10.0
+    debug: ^4.3.4
+    ejs: ^3.1.6
+    fs-extra: ^9.1.0
+    get-package-type: ^0.1.0
+    globby: ^11.1.0
+    hyperlinker: ^1.0.0
+    indent-string: ^4.0.0
+    is-wsl: ^2.2.0
+    js-yaml: ^3.14.1
+    natural-orderby: ^2.0.3
+    object-treeify: ^1.1.33
+    password-prompt: ^1.1.2
+    semver: ^7.3.7
+    string-width: ^4.2.3
+    strip-ansi: ^6.0.1
+    supports-color: ^8.1.1
+    supports-hyperlinks: ^2.2.0
+    tslib: ^2.4.1
+    widest-line: ^3.1.0
+    wrap-ansi: ^7.0.0
+  checksum: 1da7f22fff1eb4bba10f17f07a97bad308d317a0b591561be7f1171edff2f40bf84830295965b26cfcb80d3c5df7958df35bbbba4ce030e14a68bbc8e3cedc82
+  languageName: node
+  linkType: hard
+
 "@oclif/linewrap@npm:^1.0.0":
   version: 1.0.0
   resolution: "@oclif/linewrap@npm:1.0.0"
@@ -2454,6 +2490,13 @@ __metadata:
   version: 3.0.3
   resolution: "@oclif/screen@npm:3.0.3"
   checksum: c40650869b1c0c5c16e6ac4a82e10ee7a2879c85bdbddcb10b342dac84b62f6a6b69ec484d485b8ce0970b6383e87535a18737cca077e646818f240afc2a7c26
+  languageName: node
+  linkType: hard
+
+"@oclif/screen@npm:^3.0.4":
+  version: 3.0.4
+  resolution: "@oclif/screen@npm:3.0.4"
+  checksum: 6d662c81edfbc8acb50a30001e3c2261171e8baffcd6010603c331de375c5d0c9ce6b3230f6b0ce24961bfa3531f99e771265ea74d9d7a0ee37fb9357fb436a7
   languageName: node
   linkType: hard
 
@@ -5747,10 +5790,10 @@ __metadata:
     "@dashevo/dpp": "workspace:*"
     "@dashevo/feature-flags-contract": "workspace:*"
     "@dashevo/masternode-reward-shares-contract": "workspace:*"
-    "@dashevo/oclif": ^1.0.1
+    "@dashevo/oclif": ^1.0.2
     "@dashevo/wallet-lib": "workspace:*"
     "@dashevo/withdrawals-contract": "workspace:*"
-    "@oclif/core": ^1.21.0
+    "@oclif/core": ^1.25.0
     "@oclif/plugin-help": ^5.1.20
     ajv: ^8.6.0
     ajv-formats: ^2.1.1

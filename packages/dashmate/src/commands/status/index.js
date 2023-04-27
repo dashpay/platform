@@ -24,7 +24,11 @@ class StatusCommand extends ConfigBaseCommand {
     config,
   ) {
     if (!(await dockerCompose.isServiceRunning(config.toEnvs()))) {
-      throw new Error('Node is not running, start it with `dashmate start`');
+      const error = new Error('Node is not running, start it with `dashmate start`');
+
+      error.exitCode = 2;
+
+      throw error;
     }
 
     const scope = await getOverviewScope(config);
@@ -85,7 +89,7 @@ class StatusCommand extends ConfigBaseCommand {
 
         if (platform.tenderdash.serviceStatus === ServiceStatusEnum.up) {
           plain['Platform Version'] = platform.tenderdash.version;
-          plain['Platform Block Height'] = platform.tenderdash.lastBlockHeight;
+          plain['Platform Block Height'] = platform.tenderdash.latestBlockHeight;
           plain['Platform Peers'] = platform.tenderdash.peers;
           plain['Platform Network'] = platform.tenderdash.network;
         }

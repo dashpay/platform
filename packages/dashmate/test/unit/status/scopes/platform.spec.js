@@ -128,7 +128,8 @@ describe('getPlatformScopeFactory', () => {
       expect(scope.tenderdash.serviceStatus).to.be.equal(ServiceStatusEnum.error);
       expect(scope.tenderdash.version).to.be.equal(null);
       expect(scope.tenderdash.catchingUp).to.be.equal(null);
-      expect(scope.tenderdash.lastBlockHeight).to.be.equal(null);
+      expect(scope.tenderdash.latestBlockHeight).to.be.equal(null);
+      expect(scope.tenderdash.latestBlockTime).to.be.equal(null);
       expect(scope.tenderdash.latestAppHash).to.be.equal(null);
     });
   });

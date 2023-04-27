@@ -36,6 +36,8 @@ function printArrayOfObjects(array, format) {
 
   // eslint-disable-next-line no-console
   console.log(output);
+
+  return output;
 }
 
 module.exports = printArrayOfObjects;

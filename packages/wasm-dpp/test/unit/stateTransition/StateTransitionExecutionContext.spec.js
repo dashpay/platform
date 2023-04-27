@@ -36,7 +36,10 @@ describe('StateTransitionExecutionContext', () => {
     });
 
     it('should add PreCalculatedOperation', () => {
-      executionContext.addOperation(new PreCalculatedOperation(1, 1, []));
+      executionContext.addOperation(new PreCalculatedOperation(1, 1, [{
+        identifier: Buffer.alloc(32).fill(32),
+        creditsPerEpoch: { 0: 9991498 },
+      }]));
       const operations = executionContext.getOperations();
       expect(operations[0]).to.be.instanceOf(PreCalculatedOperation);
     });

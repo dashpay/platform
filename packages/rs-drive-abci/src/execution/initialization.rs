@@ -4,11 +4,15 @@ use crate::error::Error;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformInitializationState;
-use dashcore_rpc::dashcore_rpc_json::Bip9SoftforkStatus;
+use dashcore_rpc::dashcore_rpc_json::{
+    Bip9SoftforkInfo, Bip9SoftforkStatus, GetChainTipsResultStatus,
+};
 use dpp::block::block_info::BlockInfo;
 use drive::error::Error::GroveDB;
 use drive::grovedb::Transaction;
+
 use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain, ValidatorSetUpdate};
+use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 
 impl<C> Platform<C>
 where
@@ -42,17 +46,17 @@ where
             transaction,
         )?;
 
-        let validator_set = state_cache
-            .validator_sets
-            .first()
-            .ok_or(ExecutionError::InitializationError(
-                "we should have at least one quorum",
-            ))?
-            .clone();
-        let quorum_hash = validator_set.0.clone();
+        let validator_set =
+            state_cache
+                .validator_sets
+                .first()
+                .ok_or(ExecutionError::InitializationError(
+                    "we should have at least one quorum",
+                ))?;
+        let quorum_hash = validator_set.0;
         let validator_set = ValidatorSetUpdate::from(validator_set.1);
 
-        state_cache.current_validator_set_quorum_hash = quorum_hash;
+        state_cache.current_validator_set_quorum_hash = *quorum_hash;
 
         state_cache.initialization_information = Some(PlatformInitializationState {
             core_initialization_height: core_height,

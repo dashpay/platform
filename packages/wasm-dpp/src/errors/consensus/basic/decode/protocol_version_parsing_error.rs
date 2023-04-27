@@ -17,6 +17,13 @@ impl From<&ProtocolVersionParsingError> for ProtocolVersionParsingErrorWasm {
 
 #[wasm_bindgen(js_class=ProtocolVersionParsingError)]
 impl ProtocolVersionParsingErrorWasm {
+    #[wasm_bindgen(constructor)]
+    pub fn new(parsing_error: String) -> Self {
+        Self {
+            inner: ProtocolVersionParsingError::new(parsing_error),
+        }
+    }
+
     #[wasm_bindgen(js_name = getParsingError)]
     pub fn get_parsing_error(&self) -> String {
         self.inner.parsing_error().to_string()

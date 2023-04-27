@@ -1,5 +1,5 @@
 use dpp::identity::PartialIdentity;
-use dpp::{identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition, state_transition::StateTransitionAction, validation::{ConsensusValidationResult, SimpleConsensusValidationResult}};
+use dpp::{identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition, ProtocolError, state_transition::StateTransitionAction, validation::{ConsensusValidationResult, SimpleConsensusValidationResult}};
 use dpp::block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window;
 use dpp::consensus::state::identity::identity_public_key_disabled_at_window_violation_error::IdentityPublicKeyDisabledAtWindowViolationError;
 use dpp::consensus::state::identity::invalid_identity_revision_error::InvalidIdentityRevisionError;
@@ -163,7 +163,8 @@ impl StateTransitionValidation for IdentityUpdateTransition {
                     last_block_time,
                     disabled_at_ms,
                     platform.config.block_spacing_ms,
-                );
+                )
+                .map_err(|e| Error::Protocol(ProtocolError::NonConsensusError(e)))?;
 
                 if !window_validation_result.is_valid() {
                     validation_result.add_error(

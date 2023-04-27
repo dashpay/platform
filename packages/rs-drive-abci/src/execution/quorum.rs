@@ -82,7 +82,45 @@ fn reverse(data: &[u8]) -> Vec<u8> {
 
 impl From<&Quorum> for ValidatorSetUpdate {
     fn from(value: &Quorum) -> Self {
-        value.clone().into()
+        let Quorum {
+            quorum_hash,
+            validator_set,
+            threshold_public_key,
+            ..
+        } = value;
+        ValidatorSetUpdate {
+            validator_updates: validator_set
+                .iter()
+                .map(|(_, validator)| {
+                    let Validator {
+                        pro_tx_hash,
+                        public_key,
+                        node_ip,
+                        node_id,
+                        platform_p2p_port,
+                        ..
+                    } = validator;
+                    let node_address = format!(
+                        "tcp://{}@{}:{}",
+                        hex::encode(node_id.into_inner()),
+                        node_ip,
+                        platform_p2p_port
+                    );
+                    abci::ValidatorUpdate {
+                        pub_key: Some(crypto::PublicKey {
+                            sum: Some(Bls12381(public_key.to_bytes().to_vec())),
+                        }),
+                        power: 100,
+                        pro_tx_hash: reverse(pro_tx_hash),
+                        node_address: node_address.clone(),
+                    }
+                })
+                .collect(),
+            threshold_public_key: Some(crypto::PublicKey {
+                sum: Some(Bls12381(threshold_public_key.to_bytes().to_vec())),
+            }),
+            quorum_hash: reverse(quorum_hash),
+        }
     }
 }
 

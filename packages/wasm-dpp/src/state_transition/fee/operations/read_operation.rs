@@ -1,4 +1,7 @@
-use dpp::state_transition::fee::operations::{OperationLike, ReadOperation};
+use dpp::{
+    state_transition::fee::operations::{OperationLike, ReadOperation},
+    ProtocolError,
+};
 use js_sys::{Array, BigInt};
 use wasm_bindgen::prelude::*;
 
@@ -32,13 +35,23 @@ impl ReadOperationWasm {
     }
 
     #[wasm_bindgen(getter,js_name = processingCost)]
-    pub fn processing_cost(&self) -> BigInt {
-        BigInt::from(self.0.get_processing_cost())
+    pub fn processing_cost(&self) -> Result<BigInt, JsValue> {
+        Ok(BigInt::from(
+            self.0
+                .get_processing_cost()
+                .map_err(ProtocolError::from)
+                .with_js_error()?,
+        ))
     }
 
     #[wasm_bindgen(getter, js_name=storageCost)]
-    pub fn storage_cost(&self) -> BigInt {
-        BigInt::from(self.0.get_storage_cost())
+    pub fn storage_cost(&self) -> Result<BigInt, JsValue> {
+        Ok(BigInt::from(
+            self.0
+                .get_storage_cost()
+                .map_err(ProtocolError::from)
+                .with_js_error()?,
+        ))
     }
 
     #[wasm_bindgen(getter)]
@@ -53,6 +66,25 @@ impl ReadOperationWasm {
         } else {
             None
         }
+    }
+
+    #[wasm_bindgen(js_name = toJSON)]
+    pub fn to_json(&self) -> Result<JsValue, JsValue> {
+        let json = js_sys::Object::new();
+
+        js_sys::Reflect::set(
+            &json,
+            &JsValue::from_str("type"),
+            &JsValue::from_str("read"),
+        )?;
+
+        js_sys::Reflect::set(
+            &json,
+            &JsValue::from_str("valueSize"),
+            &JsValue::from(self.0.value_size),
+        )?;
+
+        Ok(json.into())
     }
 }
 

@@ -175,7 +175,7 @@ mod test {
     use crate::state::PlatformState;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dashcore_rpc::dashcore::hashes::Hash;
-    use dashcore_rpc::dashcore::ProTxHash;
+    use dashcore_rpc::dashcore::{ProTxHash, Txid};
     use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem, MasternodeType};
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;
@@ -220,7 +220,7 @@ mod test {
             state: DMNState {
                 service: SocketAddr::from_str("1.2.3.4:1234").unwrap(),
                 registered_height: 0,
-                pose_revived_height: 0,
+                pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
                 owner_address: [1;20],
@@ -251,7 +251,7 @@ mod test {
             state: DMNState {
                 service: SocketAddr::from_str("1.2.3.5:1234").unwrap(),
                 registered_height: 0,
-                pose_revived_height: 0,
+                pose_revived_height: None,
                 pose_ban_height: None,
                 revocation_reason: 0,
                 owner_address: [1;20],

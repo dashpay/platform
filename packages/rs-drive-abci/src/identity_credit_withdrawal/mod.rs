@@ -504,7 +504,7 @@ where
             let output_script: Script = Script(output_script_bytes.into());
 
             let tx_out = TxOut {
-                value: convert_credits_to_satoshi(amount),
+                value: convert_credits_to_satoshi(amount)?,
                 script_pubkey: output_script,
             };
 

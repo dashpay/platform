@@ -73,6 +73,11 @@ impl StateTransitionExecutionContextWasm {
         self.0.disable_dry_run();
     }
 
+    #[wasm_bindgen(js_name=isDryRun)]
+    pub fn is_dry_run(&self) -> bool {
+        self.0.is_dry_run()
+    }
+
     #[wasm_bindgen(js_name=addOperation)]
     pub fn add_operation(&self, operation: JsValue) -> Result<(), JsValue> {
         let operation = create_operation_from_wasm_instance(&operation)?;
@@ -95,6 +100,11 @@ impl StateTransitionExecutionContextWasm {
                 }
             })
             .collect()
+    }
+
+    #[wasm_bindgen(js_name=clearDryOperations)]
+    pub fn clear_dry_run_operations(&self) {
+        self.0.clear_dry_run_operations();
     }
 }
 

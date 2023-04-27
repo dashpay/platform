@@ -1,5 +1,4 @@
-use dashcore_rpc::dashcore::hashes::hex::ToHex;
-use dashcore_rpc::dashcore::hashes::Hash;
+use dashcore_rpc::dashcore::hashes::{hex::ToHex, Hash};
 use dashcore_rpc::dashcore::{QuorumHash, Txid};
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
