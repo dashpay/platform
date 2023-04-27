@@ -1,3 +1,20 @@
+## [0.24.0-dev.26](https://github.com/dashpay/platform/compare/v0.24.0-dev.25...v0.24.0-dev.26) (2023-04-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* **drive:** non-unique masternode voting keys (#986)
+
+### Bug Fixes
+
+* **drive:** non-unique masternode voting keys ([#986](https://github.com/dashpay/platform/issues/986))
+
+
+### Build System
+
+* **dashmate:** better versioning ([#988](https://github.com/dashpay/platform/issues/988))
+* **dashmate:** prepare MacOs build for notarization ([#985](https://github.com/dashpay/platform/issues/985))
+
 ## [0.24.0-dev.25](https://github.com/dashpay/platform/compare/v0.24.0-dev.24...v0.24.0-dev.25) (2023-04-26)
 
 
