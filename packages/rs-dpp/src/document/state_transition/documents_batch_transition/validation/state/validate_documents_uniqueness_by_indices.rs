@@ -22,7 +22,7 @@ use crate::{
 
 struct QueryDefinition<'a> {
     document_type: &'a str,
-    where_query: Vec<JsonValue>,
+    where_query: Vec<Value>,
     index_definition: &'a Index,
     document_transition: &'a DocumentTransition,
 }
@@ -103,7 +103,7 @@ fn build_query_for_index_definition(
     index_definition: &Index,
     transition: &DocumentTransition,
     owner_id: &Identifier,
-) -> Vec<JsonValue> {
+) -> Vec<Value> {
     let mut query = vec![];
     for index_property in index_definition.properties.iter() {
         let property_name = &index_property.name;
@@ -111,13 +111,13 @@ fn build_query_for_index_definition(
         match property_name.as_str() {
             "$ownerId" => {
                 let id = owner_id.to_buffer();
-                query.push(json!([property_name, "==", id]))
+                query.push(platform_value!([property_name, "==", id]))
             }
             "$createdAt" => {
                 if transition.base().action == Action::Create {
                     if let Some(transition_create) = transition.as_transition_create() {
                         if let Some(created_at) = transition_create.created_at.map(|v| json!(v)) {
-                            query.push(json!([property_name, "==", created_at]));
+                            query.push(platform_value!([property_name, "==", created_at]));
                         }
                     }
                 }
@@ -125,7 +125,7 @@ fn build_query_for_index_definition(
             "$updatedAt" => {
                 if transition.base().action == Action::Create {
                     if let Some(updated_at) = transition.get_created_at().map(|v| json!(v)) {
-                        query.push(json!([property_name, "==", updated_at]))
+                        query.push(platform_value!([property_name, "==", updated_at]))
                     }
                 }
             }
@@ -134,9 +134,9 @@ fn build_query_for_index_definition(
                 if let Some(value) = transition.get_dynamic_property(property_name) {
                     match value {
                         Value::Identifier(internal) => {
-                            query.push(json!([property_name, "==", internal]))
+                            query.push(platform_value!([property_name, "==", internal]))
                         }
-                        _ => query.push(json!([property_name, "==", value])),
+                        _ => query.push(platform_value!([property_name, "==", value])),
                     }
                 }
             }
