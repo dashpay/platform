@@ -3,7 +3,7 @@
 
 ### ⚠ BREAKING CHANGES
 
-* **drive:** Testnet uses non unique keys for owners and voting but the current implementation of synchronize masternode identities doesn't support it (#986)
+* Previous state won't be valid due to changes in the sync identities logic
 
 ### Bug Fixes
 
