@@ -4,9 +4,10 @@ use crate::execution::finalize_block_cleaned_request::{CleanedBlockId, CleanedCo
 use dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::bls_signatures;
 use dpp::validation::{SimpleValidationResult, ValidationResult};
+use tenderdash_abci::proto;
 use tenderdash_abci::proto::abci::CommitInfo;
 use tenderdash_abci::proto::types::BlockId;
-use tenderdash_abci::proto::{self, signatures::SignDigest};
+use tenderdash_abci::signatures::SignDigest;
 
 use super::AbciError;
 
@@ -103,7 +104,7 @@ impl Commit {
                 self.inner.height,
                 self.inner.round,
             )
-            .map_err(AbciError::TenderdashProto)
+            .map_err(AbciError::Tenderdash)
         {
             Ok(hash) => hash,
             Err(e) => return ValidationResult::new_with_error(e),
@@ -128,10 +129,8 @@ mod test {
         dashcore::hashes::sha256, dashcore::hashes::Hash, dashcore_rpc_json::QuorumType,
     };
     use dpp::bls_signatures::PublicKey;
-    use tenderdash_abci::proto::{
-        signatures::{SignBytes, SignDigest},
-        types::{BlockId, PartSetHeader, StateId},
-    };
+    use tenderdash_abci::proto::types::{BlockId, PartSetHeader, StateId};
+    use tenderdash_abci::signatures::{SignBytes, SignDigest};
 
     /// Given a commit info and a signature, check that the signature is verified correctly
     #[test]

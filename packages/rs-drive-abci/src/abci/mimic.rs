@@ -25,10 +25,10 @@ use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::types::{
     Block, BlockId, Data, EvidenceList, Header, PartSetHeader, VoteExtension, VoteExtensionType,
 };
-use tenderdash_abci::proto::version::Consensus;
 use tenderdash_abci::{
-    proto::{self, signatures::SignDigest},
-    Application,
+    signatures::SignDigest,
+    proto::{self, version::Consensus},
+    Application  
 };
 
 /// The outcome struct when mimicking block execution

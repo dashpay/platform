@@ -12,9 +12,9 @@ use drive::{
 use std::fmt::Display;
 use tenderdash_abci::proto::{
     abci::ExtendVoteExtension,
-    signatures::SignDigest,
     types::{VoteExtension, VoteExtensionType},
 };
+use tenderdash_abci::signatures::SignDigest;
 
 use super::AbciError;
 
@@ -136,7 +136,7 @@ impl<'a> WithdrawalTxs<'a> {
             ) {
                 Ok(h) => h,
                 Err(e) => {
-                    return SimpleValidationResult::new_with_error(AbciError::TenderdashProto(e))
+                    return SimpleValidationResult::new_with_error(AbciError::Tenderdash(e))
                 }
             };
 
