@@ -3,7 +3,7 @@
 
 ### ⚠ BREAKING CHANGES
 
-* **dashmate:** multiple issues in the reset command (#991)
+* The --platfrom-only flag is renamed to --platform (#991)
 
 ### Bug Fixes
 
