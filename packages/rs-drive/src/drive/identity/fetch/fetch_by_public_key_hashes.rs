@@ -438,11 +438,18 @@ mod tests {
                 .expect("expected to get hash")
                 .try_into()
                 .expect("expected 20 bytes");
-            let identity_id = drive
-                .fetch_identity_id_by_unique_public_key_hash(hash, Some(&transaction))
-                .expect("expected to fetch identity_id")
-                .expect("expected to get an identity id");
-            assert_eq!(identity_id, identity.id.to_buffer());
+            if key.key_type.is_unique_key_type() {
+                let identity_id = drive
+                    .fetch_identity_id_by_unique_public_key_hash(hash, Some(&transaction))
+                    .expect("expected to fetch identity_id")
+                    .expect("expected to get an identity id");
+                assert_eq!(identity_id, identity.id.to_buffer());
+            } else {
+                let identity_ids = drive
+                    .fetch_identity_ids_by_non_unique_public_key_hash(hash, Some(&transaction))
+                    .expect("expected to get identity ids");
+                assert!(identity_ids.contains(&identity.id.to_buffer()));
+            }
         }
     }
 }
