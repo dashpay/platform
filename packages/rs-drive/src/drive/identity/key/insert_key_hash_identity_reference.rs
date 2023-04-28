@@ -231,7 +231,7 @@ impl Drive {
 
             if already_exists_in_unique {
                 return Err(Error::Identity(IdentityError::UniqueKeyAlreadyExists(
-                    "the key already exists in the unique set",
+                    "the key already exists in the unique set while we are inserting it to the non unique set",
                 )));
             }
 

@@ -99,13 +99,13 @@ where
                     transaction,
                     &mut drive_operations,
                 )?;
-                // self.update_operator_identity(
-                //     update,
-                //     block_info,
-                //     platform_state,
-                //     transaction,
-                //     &mut drive_operations,
-                // )?;
+                self.update_operator_identity(
+                    update,
+                    block_info,
+                    platform_state,
+                    transaction,
+                    &mut drive_operations,
+                )?;
             }
 
             for masternode in removed_masternodes.values() {
@@ -246,7 +246,7 @@ where
 
         // Let's check if the voting identity already exists
         let key_request = IdentityKeysRequest {
-            identity_id: pro_tx_hash.into_inner(),
+            identity_id: new_voter_identity.id.to_buffer(),
             request_type: KeyRequestType::AllKeys,
             limit: None,
             offset: None,
@@ -296,7 +296,6 @@ where
             return Ok(());
         }
 
-        let needs_change_operator = state_diff.pub_key_operator.is_some();
         let needs_change_operator_payout_address = state_diff.operator_payout_address.is_some();
         let needs_change_platform_node_id = state_diff.platform_node_id.is_some();
 
@@ -414,7 +413,7 @@ where
                     ),
                     disabled_at: None,
                 };
-                unique_keys_to_add.push(key);
+                non_unique_keys_to_add.push(key);
                 new_key_id += 1;
             }
 
@@ -503,6 +502,7 @@ where
                     new_platform_node_id,
                 )?,
             );
+            drive_operations.push(IdentityOperation(AddNewIdentity { identity }));
         }
         Ok(())
     }

@@ -406,7 +406,7 @@ pub(crate) fn run_chain_for_strategy(
                         removed_mns: removed_masternodes,
                         updated_mns: updated_masternodes,
                     };
-                    dbg!(&diff);
+                    // dbg!(&diff);
                     diff
                 }
             };
