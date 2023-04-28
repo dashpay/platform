@@ -37,8 +37,6 @@ class GroupResetCommand extends GroupBaseCommand {
   ) {
     const groupName = configGroup[0].get('group');
 
-    const amount = 100;
-
     const tasks = new Listr(
       [
         {
