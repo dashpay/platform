@@ -1011,7 +1011,7 @@ dependencies = [
 [[package]]
 name = "dashcore"
 version = "0.29.1"
-source = "git+https://github.com/dashpay/rust-dashcore?branch=feat/addons#8a36b955c3c05beb66622795ae2c42e399aef6ef"
+source = "git+https://github.com/dashpay/rust-dashcore?branch=feat/addons#555b71c17f05988c9d8446f0842f1a25ebcce8c2"
 dependencies = [
  "anyhow",
  "bech32",
@@ -2046,9 +2046,9 @@ dependencies = [
 
 [[package]]
 name = "linux-raw-sys"
-version = "0.3.5"
+version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e8776872cdc2f073ccaab02e336fa321328c1e02646ebcb9d2108d0baab480d"
+checksum = "b64f40e5e03e0d54f03845c8197d0291253cdbedfb1cb46b13c2c117554a9f4c"
 
 [[package]]
 name = "lock_api"
