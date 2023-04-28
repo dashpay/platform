@@ -68,7 +68,7 @@ function resetNodeTaskFactory(
           await Promise.all(
             projectVolumeNames
               .map((volumeName) => `${composeProjectName}_${volumeName}`)
-              .map(async (volumeName) => docker.getVolume(volumeName).remove()),
+              .map(async (volumeName) => docker.getVolume(volumeName).remove({ force: true })),
           );
         },
       },
@@ -87,7 +87,7 @@ function resetNodeTaskFactory(
           const baseConfigName = config.get('group') || config.getName();
 
           if (systemConfigs[baseConfigName]) {
-            // Reset config if has a base config
+            // Reset config if the corresponding base config exists
             if (ctx.isPlatformOnlyReset) {
               const { platform: systemPlatformConfig } = systemConfigs[baseConfigName];
               config.set('platform', systemPlatformConfig);
