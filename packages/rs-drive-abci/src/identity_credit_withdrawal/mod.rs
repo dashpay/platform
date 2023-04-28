@@ -639,7 +639,7 @@ mod tests {
                         0, 0, 0, 0, 0, 0, 0,
                     ],
                     core_chain_locked_height: 96,
-                    block_hash: [0; 32],
+                    block_hash: None,
                     app_hash: None,
                 },
                 epoch_info: EpochInfo {
@@ -660,6 +660,7 @@ mod tests {
                     hpmn_masternode_list: Default::default(),
                     initialization_information: None,
                 },
+                proposer_results: None,
             };
 
             let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
@@ -806,7 +807,7 @@ mod tests {
                             0, 0, 0, 0, 0, 0, 0, 0,
                         ],
                         core_chain_locked_height: 96,
-                        block_hash: [0; 32],
+                        block_hash: None,
                         app_hash: None,
                     },
                     epoch_info: EpochInfo {
@@ -827,6 +828,7 @@ mod tests {
                         hpmn_masternode_list: Default::default(),
                         initialization_information: None,
                     },
+                    proposer_results: None,
                 });
 
             let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)

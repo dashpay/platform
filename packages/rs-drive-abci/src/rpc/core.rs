@@ -63,7 +63,7 @@ pub trait CoreRPCLike {
     /// Get the difference in masternode list, return masternodes as diff elements
     fn get_protx_diff_with_masternodes(
         &self,
-        base_block: u32,
+        base_block: Option<u32>,
         block: u32,
     ) -> Result<MasternodeListDiff, Error>;
 
@@ -151,9 +151,10 @@ impl CoreRPCLike for DefaultCoreRPC {
 
     fn get_protx_diff_with_masternodes(
         &self,
-        base_block: u32,
+        base_block: Option<u32>,
         block: u32,
     ) -> Result<MasternodeListDiff, Error> {
-        self.inner.get_protx_listdiff(base_block, block)
+        self.inner
+            .get_protx_listdiff(base_block.unwrap_or(1), block)
     }
 }

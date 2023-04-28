@@ -317,7 +317,7 @@ mod tests {
                     previous_block_time_ms,
                     proposer_pro_tx_hash,
                     core_chain_locked_height: 1,
-                    block_hash,
+                    block_hash: None,
                     app_hash: None,
                 };
 
@@ -499,7 +499,7 @@ mod tests {
                     previous_block_time_ms,
                     proposer_pro_tx_hash,
                     core_chain_locked_height: 1,
-                    block_hash: [0; 32],
+                    block_hash: None,
                     app_hash: None,
                 };
 

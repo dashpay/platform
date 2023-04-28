@@ -43,7 +43,6 @@ impl TryFrom<CommitInfo> for CleanedCommitInfo {
                 "commit info quorum hash is not 32 bytes long".to_string(),
             ))
         })?;
-        quorum_hash.reverse();
 
         let block_signature: [u8; 96] = block_signature.try_into().map_err(|_| {
             Error::Abci(AbciError::BadRequestDataSize(

@@ -36,7 +36,7 @@ impl Commit {
                 height: height as i64,
                 round: ci.round as i32,
                 // we need to "un-reverse" quorum hash, as it was reversed in [CleanedCommitInfo::try_from]
-                quorum_hash: ci.quorum_hash.iter().rev().cloned().collect(),
+                quorum_hash: ci.quorum_hash.to_vec(),
                 threshold_block_signature: ci.block_signature.to_vec(),
                 threshold_vote_extensions: ci.threshold_vote_extensions.to_vec(),
             },

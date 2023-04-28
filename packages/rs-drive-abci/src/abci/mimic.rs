@@ -256,9 +256,12 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             state_id: [0; 32].to_vec(),                      //todo
         };
 
+        let mut quorum_hash = current_quorum.quorum_hash.to_vec();
+        // quorum_hash.reverse();
+
         let mut commit_info = CommitInfo {
             round: 0,
-            quorum_hash: current_quorum.quorum_hash.to_vec(),
+            quorum_hash: quorum_hash.clone(),
             block_signature: Default::default(),
             threshold_vote_extensions: extensions,
         };
@@ -267,16 +270,14 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             block_id: Some(block_id.clone()),
             height: height as i64,
             round: 0,
-            quorum_hash: current_quorum.quorum_hash.to_vec(),
+            quorum_hash: quorum_hash.clone(),
             threshold_block_signature: Default::default(),
             threshold_vote_extensions: Default::default(),
         };
 
         //if not in testing this will default to true
         if self.platform.config.testing_configs.block_signing {
-            let quorum_hash: [u8; 32] = current_quorum.quorum_hash[..]
-                .try_into()
-                .expect("wrong quorum hash len");
+            let quorum_hash: [u8; 32] = quorum_hash.try_into().expect("wrong quorum hash len");
             let digest = commit
                 .sign_digest(&chain_id, quorum_type as u8, &quorum_hash, height as i64, 0)
                 .expect("expected to sign digest");

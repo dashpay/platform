@@ -274,9 +274,9 @@ pub(crate) fn run_chain_for_strategy(
         .core_rpc
         .expect_get_protx_diff_with_masternodes()
         .returning(move |base_block, block| {
-            let diff = if base_block == 0 {
+            let diff = if base_block == None {
                 MasternodeListDiff {
-                    base_height: base_block,
+                    base_height: 0,
                     block_height: block,
                     added_mns: initial_all_masternodes
                         .iter()
@@ -286,6 +286,7 @@ pub(crate) fn run_chain_for_strategy(
                     updated_mns: vec![],
                 }
             } else {
+                let base_block = base_block.unwrap();
                 if !any_changes_in_strategy {
                     // no changes
                     MasternodeListDiff {

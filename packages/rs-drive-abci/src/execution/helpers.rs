@@ -150,13 +150,14 @@ where
     ) -> Result<UpdateStateMasternodeListOutcome, Error> {
         let previous_core_height = if start_from_scratch {
             // baseBlock must be a chain height and not 0
-            1
+            None
         } else {
-            state.core_height()
+            let state_core_height = state.core_height();
+            if core_block_height == state_core_height {
+                return Ok(UpdateStateMasternodeListOutcome::default()); // no need to do anything
+            }
+            Some(state_core_height)
         };
-        if core_block_height == previous_core_height {
-            return Ok(UpdateStateMasternodeListOutcome::default()); // no need to do anything
-        }
 
         let masternode_diff = self
             .core_rpc
