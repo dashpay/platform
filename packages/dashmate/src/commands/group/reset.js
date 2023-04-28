@@ -72,13 +72,6 @@ class GroupResetCommand extends GroupBaseCommand {
           title: 'Configure Tenderdash nodes',
           task: () => configureTenderdashTask(configGroup),
         },
-        {
-          // in case we don't need to register masternodes
-          title: `Generate ${amount} dash to local wallet`,
-          enabled: (ctx) => !ctx.isHardReset && groupName === PRESET_LOCAL,
-          skip: (ctx) => !!ctx.fundingPrivateKeyString,
-          task: () => generateToAddressTask(configGroup[0], amount),
-        },
       ],
       {
         renderer: isVerbose ? 'verbose' : 'default',
