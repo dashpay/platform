@@ -1,5 +1,6 @@
 const fetch = require('node-fetch');
 const wait = require('../../util/wait');
+const errorDescriptions = require('./errors/errorDescriptions');
 
 /**
  * Download the certificate specified by id
@@ -40,7 +41,9 @@ async function downloadCertificate(id, apiKey) {
   }
 
   if (data.error) {
-    throw new Error(data.error.type);
+    const errorMessage = errorDescriptions[data.error.code];
+
+    throw new Error(errorMessage || JSON.stringify(data.error));
   }
 
   return `${data['certificate.crt']}\n${data['ca_bundle.crt']}`;
