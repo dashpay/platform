@@ -16,7 +16,7 @@ function validateBLSPrivateKeyFactory(blsSignatures) {
     }
 
     if (!validateHex(value)) {
-      return 'invalid key';
+      return 'invalid key format';
     }
 
     const operatorPrivateKeyBuffer = Buffer.from(value, 'hex');
