@@ -119,7 +119,7 @@ describe('getMasternodeScopeFactory', () => {
       expect(scope.syncAsset).to.be.equal(MasternodeSyncAssetEnum.MASTERNODE_SYNC_BLOCKCHAIN);
 
       expect(scope.proTxHash).to.be.equal(null);
-      expect(scope.state).to.be.equal(null);
+      expect(scope.state).to.be.equal(MasternodeStateEnum.UNKNOWN);
       expect(scope.status).to.be.equal(null);
 
       expect(scope.nodeState.poSePenalty).to.be.equal(null);
