@@ -53,7 +53,7 @@ function initChainHandlerFactory(
   async function initChainHandler(request) {
     // Reset the state and fail with error if it's not empty
     const initialAppHash = await groveDBStore.getRootHash();
-    const emptyHash = Buffer.alloc(32).fill(0);
+    const emptyHash = Buffer.alloc(32);
 
     if (emptyHash < initialAppHash) {
       await rsDrive.close();
