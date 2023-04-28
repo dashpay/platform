@@ -73,6 +73,14 @@ function resetNodeTaskFactory(
         },
       },
       {
+        title: 'Reset dashmate\'s ephemeral data',
+        task: (ctx) => {
+          if (!ctx.isPlatformOnlyReset) {
+            config.set('core.miner.mediantime', null);
+          }
+        },
+      },
+      {
         title: `Reset config ${config.getName()}`,
         enabled: (ctx) => ctx.isHardReset,
         task: (ctx) => {
