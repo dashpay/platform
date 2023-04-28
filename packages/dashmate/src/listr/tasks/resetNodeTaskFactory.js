@@ -6,6 +6,7 @@ const { Listr } = require('listr2');
  * @param {startNodeTask} startNodeTask
  * @param {generateToAddressTask} generateToAddressTask
  * @param {systemConfigs} systemConfigs
+ * @param {ConfigFile} configFile
  * @return {resetNodeTask}
  */
 function resetNodeTaskFactory(
@@ -14,6 +15,7 @@ function resetNodeTaskFactory(
   startNodeTask,
   generateToAddressTask,
   systemConfigs,
+  configFile,
 ) {
   /**
    * @typedef {resetNodeTask}
@@ -21,6 +23,13 @@ function resetNodeTaskFactory(
    */
   function resetNodeTask(config) {
     return new Listr([
+      {
+        task: (ctx) => {
+          if (!config.get('platform.enable') && ctx.isPlatformOnlyReset) {
+            throw new Error('Cannot reset platform only if platform services are not enabled in config');
+          }
+        },
+      },
       {
         title: 'Check services are not running',
         skip: (ctx) => ctx.isForce,
@@ -37,26 +46,27 @@ function resetNodeTaskFactory(
       },
       {
         title: 'Remove platform services and associated data',
-        enabled: (ctx) => ctx.isPlatformOnlyReset && config.get('platform.enable'),
+        enabled: (ctx) => ctx.isPlatformOnlyReset,
         task: async () => {
           // Remove containers
-          const coreContainerNames = ['core', 'sentinel'];
-          const containerNames = await dockerCompose
-            .getContainersList(config.toEnvs(), undefined, true);
-          const platformContainerNames = containerNames
-            .filter((containerName) => !coreContainerNames.includes(containerName));
+          const serviceNames = await dockerCompose
+            .getContainersList(
+              config.toEnvs({ platformOnly: true }),
+              undefined,
+              true,
+            );
 
-          await dockerCompose.rm(config.toEnvs(), platformContainerNames);
+          await dockerCompose.rm(config.toEnvs(), serviceNames);
 
           // Remove volumes
-          const coreVolumeNames = ['core_data'];
           const { COMPOSE_PROJECT_NAME: composeProjectName } = config.toEnvs();
 
-          const projectVolumeNames = await dockerCompose.getVolumeNames(config.toEnvs());
+          const projectVolumeNames = await dockerCompose.getVolumeNames(
+            config.toEnvs({ platformOnly: true }),
+          );
 
           await Promise.all(
             projectVolumeNames
-              .filter((volumeName) => !coreVolumeNames.includes(volumeName))
               .map((volumeName) => `${composeProjectName}_${volumeName}`)
               .map(async (volumeName) => docker.getVolume(volumeName).remove()),
           );
@@ -66,14 +76,19 @@ function resetNodeTaskFactory(
         title: `Reset config ${config.getName()}`,
         enabled: (ctx) => ctx.isHardReset,
         task: (ctx) => {
-          const name = config.get('group') || config.getName();
+          const baseConfigName = config.get('group') || config.getName();
 
-          if (ctx.isPlatformOnlyReset) {
-            // TODO: This won't work for user created configs
-            const { platform: systemPlatformConfig } = systemConfigs[name];
-            config.set('platform', systemPlatformConfig);
+          if (systemConfigs[baseConfigName]) {
+            // Reset config if has a base config
+            if (ctx.isPlatformOnlyReset) {
+              const { platform: systemPlatformConfig } = systemConfigs[baseConfigName];
+              config.set('platform', systemPlatformConfig);
+            } else {
+              config.setOptions(systemConfigs[baseConfigName]);
+            }
           } else {
-            config.setOptions(systemConfigs[name]);
+            // Delete config if no base config
+            configFile.removeConfig(config.getName());
           }
         },
       },
