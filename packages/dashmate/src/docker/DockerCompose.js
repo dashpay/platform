@@ -235,7 +235,7 @@ class DockerCompose {
    * @param {Object} envs
    * @param {string} [filterServiceNames]
    * @param {boolean} returnServiceNames
-   * @return {string[]}
+   * @return {Promise<string[]>}
    */
   async getContainersList(
     envs,
@@ -324,7 +324,7 @@ class DockerCompose {
     try {
       await dockerCompose.rm({
         ...this.getOptions(envs),
-        commandOptions: ['--stop', '-v'],
+        commandOptions: ['--stop'],
       }, ...serviceNames);
     } catch (e) {
       throw new DockerComposeError(e);
