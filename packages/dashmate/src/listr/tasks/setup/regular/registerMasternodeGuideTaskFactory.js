@@ -1,4 +1,5 @@
 const { Listr } = require('listr2');
+const wrapAnsi = require('wrap-ansi');
 
 const chalk = require('chalk');
 
@@ -220,27 +221,34 @@ function registerMasternodeGuideTaskFactory() {
             let command;
             if (ctx.isHP) {
               command = `dash-cli protx register_hpmn \\
-                    ${state.collateral.txId} \\
-                    ${state.collateral.outputIndex} \\
-                    ${state.ipAndPorts.ip}:${state.ipAndPorts.coreP2PPort} \\
-                    ${state.keys.ownerAddress} \\
-                    ${operatorPublicKeyHex} \\
-                    ${state.keys.votingAddress} \\
-                    ${state.operator.rewardShare} \\
-                    ${state.keys.payoutAddress} \\
-                    ${deriveTenderdashNodeId(state.platformNodeKey)} \\
-                    ${platformP2PPort} \\
-                    ${platformHTTPPort}`;
+  ${state.collateral.txId} \\
+  ${state.collateral.outputIndex} \\
+  ${state.ipAndPorts.ip}:${state.ipAndPorts.coreP2PPort} \\
+  ${state.keys.ownerAddress} \\
+  ${operatorPublicKeyHex} \\
+  ${state.keys.votingAddress} \\
+  ${state.operator.rewardShare} \\
+  ${state.keys.payoutAddress} \\
+  ${deriveTenderdashNodeId(state.platformNodeKey)} \\
+  ${platformP2PPort} \\
+  ${platformHTTPPort}`;
             } else {
               command = `dash-cli protx register \\
-                    ${state.collateral.txId} \\
-                    ${state.collateral.outputIndex} \\
-                    ${state.ipAndPorts.ip}:${state.ipAndPorts.coreP2PPort} \\
-                    ${state.keys.ownerAddress} \\
-                    ${operatorPublicKeyHex} \\
-                    ${state.keys.votingAddress} \\
-                    ${state.operator.rewardShare} \\
-                    ${state.keys.payoutAddress}`;
+  ${state.collateral.txId} \\
+  ${state.collateral.outputIndex} \\
+  ${state.ipAndPorts.ip}:${state.ipAndPorts.coreP2PPort} \\
+  ${state.keys.ownerAddress} \\
+  ${operatorPublicKeyHex} \\
+  ${state.keys.votingAddress} \\
+  ${state.operator.rewardShare} \\
+  ${state.keys.payoutAddress}`;
+            }
+
+            // Wrap the command to fit the terminal width (listr uses new lines to wrap the text)
+            if (!ctx.isVerbose) {
+              command = command.replace(/\\/g, '');
+              command = wrapAnsi(command, process.stdout.columns - 3, { hard: true, trim: false });
+              command = command.replace(/\n/g, '\\\n');
             }
 
             // TODO: We need to give more info on how to run this command
@@ -250,7 +258,7 @@ function registerMasternodeGuideTaskFactory() {
               name: 'confirm',
               header: chalk`  Now run the following command to create the registration transaction:
 
-              {bold.cyanBright ${command}}
+  {bold.cyanBright ${command}}
 
   Select "No" to modify the command by amending your previous input.\n`,
               message: 'Was the masternode registration transaction successful?',
