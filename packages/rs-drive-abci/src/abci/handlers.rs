@@ -269,7 +269,7 @@ where
             return Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
                 "received request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
                 height, round, block_hash.to_hex(),
-                block_state_info.height, block_state_info.round, block_state_info.block_hash.to_hex()
+                block_state_info.height, block_state_info.round, block_state_info.block_hash.map(|block_hash| block_hash.to_hex()).unwrap_or("None".to_string())
             )))
             .into());
         } else {
@@ -319,7 +319,7 @@ where
             return Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
                 "received request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
                 height, round,block_hash.to_hex(),
-                block_state_info.height, block_state_info.round, block_state_info.block_hash.to_hex()
+                block_state_info.height, block_state_info.round, block_state_info.block_hash.map(|block_hash| block_hash.to_hex()).unwrap_or("None".to_string())
             )))
             .into());
         }

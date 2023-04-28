@@ -12,6 +12,8 @@ use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::Transac
 use dashcore_rpc::dashcore::bls_sig_utils::BLSSignature;
 use dashcore_rpc::dashcore::consensus::Decodable;
 use dashcore_rpc::dashcore;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use dpp::block::block_info::BlockInfo;
 use dpp::serialization_traits::PlatformSerializable;
 use dpp::state_transition::StateTransition;
@@ -51,6 +53,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         expect_validation_errors: bool,
         state_transitions: Vec<StateTransition>,
     ) -> Result<MimicExecuteBlockOutcome, Error> {
+        let mut rng = StdRng::seed_from_u64(block_info.height);
         let serialized_state_transitions = state_transitions
             .into_iter()
             .map(|st| st.serialize().map_err(Error::Protocol))
@@ -214,7 +217,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
 
         // We need to sign the block hash
 
-        let block_hash = [0; 32]; //todo
+        let block_hash : [u8;32] = rng.gen(); //todo
         let chain_id = "strategy_tests".to_string();
         let quorum_type = self.platform.config.quorum_type();
 
@@ -267,7 +270,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         let request_finalize_block = RequestFinalizeBlock {
             commit: Some(commit_info),
             misbehavior: vec![],
-            hash: app_hash.clone(), //todo: change this to block hash
+            hash: block_hash.to_vec(),
             height: height as i64,
             round: 0,
             block: Some(Block {

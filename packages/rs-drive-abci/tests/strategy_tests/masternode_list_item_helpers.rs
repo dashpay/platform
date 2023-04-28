@@ -70,8 +70,8 @@ impl UpdateMasternodeListItem for MasternodeListItem {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dashcore::hashes::Hash;
-    use dashcore::{ProTxHash, Txid};
+    use dashcore_rpc::dashcore::hashes::Hash;
+    use dashcore_rpc::dashcore::{ProTxHash, Txid};
     use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeType};
     use rand::prelude::*;
     use rand::SeedableRng;

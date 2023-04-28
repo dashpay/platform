@@ -1,6 +1,6 @@
 use crate::signer::SimpleSigner;
-use dashcore::secp256k1::SecretKey;
-use dashcore::{Network, PrivateKey};
+use dashcore_rpc::dashcore::secp256k1::SecretKey;
+use dashcore_rpc::dashcore::{Network, PrivateKey};
 use dpp::identifier::Identifier;
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransition;

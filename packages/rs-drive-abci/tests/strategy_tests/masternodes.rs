@@ -1,7 +1,7 @@
 use crate::frequency::Frequency;
 use crate::masternode_list_item_helpers::UpdateMasternodeListItem;
-use dashcore::hashes::Hash;
-use dashcore::{ProTxHash, QuorumHash, Txid};
+use dashcore_rpc::dashcore::hashes::Hash;
+use dashcore_rpc::dashcore::{ProTxHash, QuorumHash, Txid};
 use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem, MasternodeType};
 use dpp::bls_signatures::PrivateKey as BlsPrivateKey;
 use drive_abci::execution::test_quorum::TestQuorumInfo;

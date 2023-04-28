@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use dashcore::signer;
+use dashcore_rpc::dashcore::signer;
 use dpp::ed25519_dalek::Signer as BlsSigner;
 use dpp::identity::signer::Signer;
 use dpp::identity::{IdentityPublicKey, KeyType};

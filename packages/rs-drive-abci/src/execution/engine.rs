@@ -678,14 +678,14 @@ where
         )? {
             // we are on the wrong height or round
             validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
-                "received a block for h: {} r: {}, hash: {}, core height: {}, expected h: {} r: {}, hash: {}, core height: {}",
+                "received a block for h: {} r: {}, block hash: {}, core height: {}, expected h: {} r: {}, block hash: {}, core height: {}",
                 height,
                 round,
                 hash.to_hex(),
                 block_header.core_chain_locked_height,
                 block_state_info.height,
                 block_state_info.round,
-                block_state_info.block_hash.to_hex(),
+                block_state_info.block_hash.map(|a| a.to_hex()).unwrap_or("None".to_string()),
                 block_state_info.core_chain_locked_height
             )));
             return Ok(validation_result.into());

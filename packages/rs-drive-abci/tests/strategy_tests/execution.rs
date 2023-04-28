@@ -6,9 +6,9 @@ use crate::strategy::{
     ChainExecutionOutcome, ChainExecutionParameters, Strategy, StrategyRandomness,
     ValidatorVersionMigration,
 };
-use dashcore::hashes::hex::ToHex;
-use dashcore::hashes::Hash;
-use dashcore::{ProTxHash, QuorumHash};
+use dashcore_rpc::dashcore::hashes::hex::ToHex;
+use dashcore_rpc::dashcore::hashes::Hash;
+use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{
     Bip9SoftforkInfo, Bip9SoftforkStatus, DMNStateDiff, ExtendedQuorumDetails, MasternodeListDiff,
     MasternodeListItem, QuorumInfoResult, QuorumType,

@@ -6,7 +6,7 @@ use crate::operations::{
 };
 use crate::signer::SimpleSigner;
 use crate::BlockHeight;
-use dashcore::{ProTxHash, QuorumHash};
+use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
@@ -35,6 +35,7 @@ use rand::prelude::{IteratorRandom, SliceRandom, StdRng};
 use rand::Rng;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, HashMap, HashSet};
+use dashcore_rpc::dashcore;
 
 #[derive(Clone, Debug, Default)]
 pub struct MasternodeListChangesStrategy {
