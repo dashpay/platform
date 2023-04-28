@@ -32,6 +32,7 @@ use drive::drive::identity::key::fetch::{
 };
 use drive::grovedb::Transaction;
 use sha2::{Digest, Sha256};
+use std::backtrace::Backtrace;
 use std::collections::{BTreeMap, HashSet};
 
 impl<C> Platform<C>
@@ -452,7 +453,10 @@ where
             let old_operator_identity_key_ids_to_disable: Vec<KeyID> = old_identity_keys
                 .into_iter()
                 .filter_map(|(key_id, key)| {
-                    if key.data.as_slice() == old_masternode.state.pub_key_operator {
+                    if old_masternode.state.pub_key_operator.is_some()
+                        && key.data.as_slice()
+                            == old_masternode.state.pub_key_operator.as_ref().unwrap()
+                    {
                         //the old key
                         return Some(key_id);
                     }
@@ -615,11 +619,20 @@ where
         let operator_identifier =
             Self::get_operator_identifier_from_masternode_list_item(masternode)?;
         let mut identity = Self::create_basic_identity(operator_identifier);
-        identity.add_public_keys(self.get_operator_identity_keys(
-            masternode.state.pub_key_operator.clone(),
-            masternode.state.operator_payout_address,
-            masternode.state.platform_node_id,
-        )?);
+        identity.add_public_keys(
+            self.get_operator_identity_keys(
+                masternode
+                    .state
+                    .pub_key_operator
+                    .as_ref()
+                    .ok_or(Error::from(ExecutionError::DashCoreBadResponseError(
+                        "operator public key must be set".to_string(),
+                    )))?
+                    .clone(),
+                masternode.state.operator_payout_address,
+                masternode.state.platform_node_id,
+            )?,
+        );
 
         Ok(identity)
     }
@@ -712,7 +725,17 @@ where
         masternode: &MasternodeListItem,
     ) -> Result<[u8; 32], Error> {
         let pro_tx_hash = &masternode.pro_tx_hash.into_inner();
-        Self::get_operator_identifier(pro_tx_hash, masternode.state.pub_key_operator.as_slice())
+        Self::get_operator_identifier(
+            pro_tx_hash,
+            masternode
+                .state
+                .pub_key_operator
+                .as_ref()
+                .ok_or(Error::from(ExecutionError::DashCoreBadResponseError(
+                    "operator public key must be set".to_string(),
+                )))?
+                .as_slice(),
+        )
     }
 
     fn get_voter_identifier(

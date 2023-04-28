@@ -21,7 +21,7 @@ use dpp::util::deserializer::ProtocolVersion;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::{
     CommitInfo, RequestExtendVote, RequestFinalizeBlock, RequestPrepareProposal,
-    RequestVerifyVoteExtension, ResponsePrepareProposal
+    RequestVerifyVoteExtension, ResponsePrepareProposal, RequestProcessProposal
 };
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::types::{
