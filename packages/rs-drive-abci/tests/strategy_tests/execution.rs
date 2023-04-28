@@ -70,6 +70,7 @@ pub(crate) fn run_chain_for_strategy(
             generate_updates,
             &mut rng,
         );
+
         let mut all_masternodes = initial_masternodes.clone();
         let mut all_hpmns = initial_hpmns.clone();
 
@@ -398,13 +399,15 @@ pub(crate) fn run_chain_for_strategy(
                     removed_masternodes.extend(removed_hpmns);
                     updated_masternodes.extend(updated_hpmns);
 
-                    MasternodeListDiff {
+                    let diff = MasternodeListDiff {
                         base_height: base_block,
                         block_height: block,
                         added_mns: added_masternodes,
                         removed_mns: removed_masternodes,
                         updated_mns: updated_masternodes,
-                    }
+                    };
+                    dbg!(&diff);
+                    diff
                 }
             };
 

@@ -48,10 +48,18 @@ where
         transaction: &Transaction,
     ) -> Result<(), Error> {
         let MasternodeListDiff {
-            added_mns,
-            updated_mns,
+            mut added_mns,
+            mut updated_mns,
             ..
         } = masternode_diff;
+
+        // We should don't trust the order of added mns or updated mns
+
+        // Sort added_mns based on pro_tx_hash
+        added_mns.sort_by(|a, b| a.pro_tx_hash.cmp(&b.pro_tx_hash));
+
+        // Sort updated_mns based on pro_tx_hash (the first element of the tuple)
+        updated_mns.sort_by(|a, b| a.0.cmp(&b.0));
 
         let mut drive_operations = vec![];
 
@@ -91,13 +99,13 @@ where
                     transaction,
                     &mut drive_operations,
                 )?;
-                self.update_operator_identity(
-                    update,
-                    block_info,
-                    platform_state,
-                    transaction,
-                    &mut drive_operations,
-                )?;
+                // self.update_operator_identity(
+                //     update,
+                //     block_info,
+                //     platform_state,
+                //     transaction,
+                //     &mut drive_operations,
+                // )?;
             }
 
             for masternode in removed_masternodes.values() {
@@ -146,7 +154,7 @@ where
 
         if old_withdrawal_identity_keys.is_empty() {
             return Err(Error::Execution(ExecutionError::DriveMissingData(
-                "expected masternode owner identity to be in state",
+                "expected masternode owner identity to be in state".to_string(),
             )));
         }
 
@@ -222,7 +230,7 @@ where
 
         if old_voter_identity_key_ids.is_empty() {
             return Err(Error::Execution(ExecutionError::DriveMissingData(
-                "expected masternode voter identity to be in state",
+                "expected masternode voter identity to be in state".to_string(),
             )));
         }
 

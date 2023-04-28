@@ -7,10 +7,11 @@ use dpp::bls_signatures::PrivateKey as BlsPrivateKey;
 use drive_abci::execution::test_quorum::TestQuorumInfo;
 use rand::prelude::{IteratorRandom, StdRng};
 use rand::Rng;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::str::FromStr;
 
+#[derive(Clone, Debug)]
 pub struct GenerateTestMasternodeUpdates<'a> {
     pub start_core_height: u32,
     pub end_core_height: u32,
@@ -33,8 +34,8 @@ pub fn generate_test_masternodes(
     let mut hpmns: Vec<MasternodeListItemWithUpdates> = Vec::with_capacity(hpmn_count as usize);
 
     let (block_height_to_list_masternode_updates, block_height_to_list_hpmns_updates): (
-        Option<HashMap<u32, Vec<u16>>>,
-        Option<HashMap<u32, Vec<u16>>>,
+        Option<BTreeMap<u32, Vec<u16>>>,
+        Option<BTreeMap<u32, Vec<u16>>>,
     ) = updates
         .map(
             |GenerateTestMasternodeUpdates {
@@ -63,8 +64,8 @@ pub fn generate_test_masternodes(
         )
         .unzip();
 
-    fn invert_hashmap(input: HashMap<u32, Vec<u16>>) -> HashMap<u16, Vec<u32>> {
-        let mut output = HashMap::new();
+    fn invert_btreemap(input: BTreeMap<u32, Vec<u16>>) -> BTreeMap<u16, Vec<u32>> {
+        let mut output = BTreeMap::new();
 
         for (key, values) in input {
             for value in values {
@@ -77,13 +78,13 @@ pub fn generate_test_masternodes(
 
     let masternode_number_to_heights_updates = block_height_to_list_masternode_updates
         .map(|block_height_to_list_masternode_updates| {
-            invert_hashmap(block_height_to_list_masternode_updates)
+            invert_btreemap(block_height_to_list_masternode_updates)
         })
         .unwrap_or_default();
 
     let hpmn_number_to_heights_updates = block_height_to_list_hpmns_updates
         .map(|block_height_to_list_hpmns_updates| {
-            invert_hashmap(block_height_to_list_hpmns_updates)
+            invert_btreemap(block_height_to_list_hpmns_updates)
         })
         .unwrap_or_default();
 
@@ -241,7 +242,7 @@ where
         .collect()
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct MasternodeListItemWithUpdates {
     pub masternode: MasternodeListItem,
     pub updates: BTreeMap<u32, MasternodeListItem>,
@@ -259,6 +260,122 @@ impl MasternodeListItemWithUpdates {
         match closest_height {
             Some(h) => &self.updates[&h],
             None => &self.masternode,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::SeedableRng;
+    use std::ops::Range;
+
+    #[test]
+    fn verify_generate_test_masternodes_is_deterministic_no_updates() {
+        let masternode_count = 100;
+        let hpmn_count = 50;
+        let mut rng1 = StdRng::seed_from_u64(12345);
+        let mut rng2 = StdRng::seed_from_u64(12345);
+
+        let (masternodes1, hpmn1) =
+            generate_test_masternodes(masternode_count, hpmn_count, None, &mut rng1);
+        let (masternodes2, hpmn2) =
+            generate_test_masternodes(masternode_count, hpmn_count, None, &mut rng2);
+
+        assert_eq!(masternodes1, masternodes2);
+        assert_eq!(hpmn1, hpmn2);
+    }
+
+    #[test]
+    fn verify_generate_test_masternodes_is_deterministic_with_updates() {
+        let masternode_count = 100;
+        let hpmn_count = 50;
+        let updates = Some(GenerateTestMasternodeUpdates {
+            start_core_height: 10,
+            end_core_height: 20,
+            update_masternode_frequency: &Frequency {
+                times_per_block_range: Range { start: 1, end: 3 },
+                chance_per_block: Some(0.5),
+            },
+            update_hpmn_frequency: &Frequency {
+                times_per_block_range: Range { start: 1, end: 3 },
+                chance_per_block: Some(0.5),
+            },
+        });
+        let mut rng1 = StdRng::seed_from_u64(12345);
+        let mut rng2 = StdRng::seed_from_u64(12345);
+
+        let (masternodes1, hpmn1) =
+            generate_test_masternodes(masternode_count, hpmn_count, updates.clone(), &mut rng1);
+        let (masternodes2, hpmn2) =
+            generate_test_masternodes(masternode_count, hpmn_count, updates.clone(), &mut rng2);
+
+        assert_eq!(masternodes1, masternodes2);
+        assert_eq!(hpmn1, hpmn2);
+    }
+
+    #[test]
+    fn verify_generate_test_masternodes_is_deterministic_no_updates_with_random_seeds() {
+        for _ in 0..20 {
+            let mut rng = StdRng::seed_from_u64(0);
+            let seed = rng.gen();
+
+            let mut rng1 = StdRng::seed_from_u64(seed);
+            let mut rng2 = StdRng::seed_from_u64(seed);
+
+            let masternode_count = if rng.gen::<bool>() {
+                0
+            } else {
+                rng.gen_range(25..=100)
+            };
+            let hpmn_count = rng.gen_range(50..=150);
+
+            let (masternodes1, hpmn1) =
+                generate_test_masternodes(masternode_count, hpmn_count, None, &mut rng1);
+            let (masternodes2, hpmn2) =
+                generate_test_masternodes(masternode_count, hpmn_count, None, &mut rng2);
+
+            assert_eq!(masternodes1, masternodes2);
+            assert_eq!(hpmn1, hpmn2);
+        }
+    }
+
+    #[test]
+    fn verify_generate_test_masternodes_is_deterministic_with_updates_with_random_seeds() {
+        for _ in 0..20 {
+            let mut rng = StdRng::seed_from_u64(0);
+            let seed = rng.gen();
+
+            let mut rng1 = StdRng::seed_from_u64(seed);
+            let mut rng2 = StdRng::seed_from_u64(seed);
+
+            let masternode_count = if rng.gen::<bool>() {
+                0
+            } else {
+                rng.gen_range(25..=100)
+            };
+            let hpmn_count = rng.gen_range(50..=150);
+
+            let updates = Some(GenerateTestMasternodeUpdates {
+                start_core_height: 10,
+                end_core_height: 20,
+                update_masternode_frequency: &Frequency {
+                    times_per_block_range: Range { start: 1, end: 3 },
+                    chance_per_block: Some(0.5),
+                },
+                update_hpmn_frequency: &Frequency {
+                    times_per_block_range: Range { start: 1, end: 3 },
+                    chance_per_block: Some(0.5),
+                },
+            });
+
+            let (masternodes1, hpmn1) =
+                generate_test_masternodes(masternode_count, hpmn_count, updates.clone(), &mut rng1);
+            let (masternodes2, hpmn2) =
+                generate_test_masternodes(masternode_count, hpmn_count, updates.clone(), &mut rng2);
+
+            assert_eq!(masternodes1, masternodes2);
+            assert_eq!(hpmn1, hpmn2);
         }
     }
 }

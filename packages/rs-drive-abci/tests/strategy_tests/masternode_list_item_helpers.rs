@@ -66,3 +66,67 @@ impl UpdateMasternodeListItem for MasternodeListItem {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dashcore::hashes::Hash;
+    use dashcore::{ProTxHash, Txid};
+    use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeType};
+    use rand::prelude::*;
+    use rand::SeedableRng;
+    use std::net::SocketAddr;
+    use std::str::FromStr;
+
+    #[test]
+    fn test_random_keys_update_determinism() {
+        let mut rng = StdRng::seed_from_u64(0);
+        let i = 0;
+        let pro_tx_hash = ProTxHash::from_inner(rng.gen::<[u8; 32]>());
+        let private_key_operator =
+            BlsPrivateKey::generate_dash(&mut rng).expect("expected to generate a private key");
+        let pub_key_operator = private_key_operator
+            .g1_element()
+            .expect("expected to get public key")
+            .to_bytes()
+            .to_vec();
+        let masternode_list_item = MasternodeListItem {
+            node_type: MasternodeType::Regular,
+            pro_tx_hash,
+            collateral_hash: Txid::from_inner(rng.gen::<[u8; 32]>()),
+            collateral_index: 0,
+            collateral_address: [0; 20],
+            operator_reward: 0,
+            state: DMNState {
+                service: SocketAddr::from_str(format!("1.0.{}.{}:1234", i / 256, i % 256).as_str())
+                    .unwrap(),
+                registered_height: 0,
+                pose_revived_height: None,
+                pose_ban_height: None,
+                revocation_reason: 0,
+                owner_address: rng.gen::<[u8; 20]>(),
+                voting_address: rng.gen::<[u8; 20]>(),
+                payout_address: rng.gen::<[u8; 20]>(),
+                pub_key_operator,
+                operator_payout_address: None,
+                platform_node_id: None,
+                platform_p2p_port: None,
+                platform_http_port: None,
+            },
+        };
+
+        for _ in 0..100 {
+            let rng_seed = rng.gen();
+            let mut rng1 = StdRng::seed_from_u64(rng_seed);
+            let mut rng2 = StdRng::seed_from_u64(rng_seed);
+
+            let mut masternode_list_item1 = masternode_list_item.clone(); // Add a constructor for creating a new instance
+            let mut masternode_list_item2 = masternode_list_item.clone();
+
+            masternode_list_item1.random_keys_update(None, &mut rng1);
+            masternode_list_item2.random_keys_update(None, &mut rng2);
+
+            assert_eq!(masternode_list_item1, masternode_list_item2);
+        }
+    }
+}

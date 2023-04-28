@@ -47,7 +47,7 @@ pub enum ExecutionError {
 
     /// Data is missing from the drive.
     #[error("drive missing data error: {0}")]
-    DriveMissingData(&'static str),
+    DriveMissingData(String),
 
     /// Corrupted credits are not balanced.
     #[error("corrupted credits not balanced error: {0}")]
