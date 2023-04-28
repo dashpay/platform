@@ -6,9 +6,10 @@ const {
   },
 } = require('@dashevo/abci/types');
 
+const fs = require('fs');
+
 const BlockInfo = require('../../blockExecution/BlockInfo');
 const protoTimestampToMillis = require('../../util/protoTimestampToMillis');
-const fs = require('fs');
 
 /**
  * Init Chain ABCI handler
@@ -57,9 +58,7 @@ function initChainHandlerFactory(
     if (emptyHash < initialAppHash) {
       await rsDrive.close();
 
-      if (process.env.NODE_ENV === 'test') {
-        fs.rmSync(groveDBLatestFile, { recursive: true });
-      }
+      fs.rmSync(groveDBLatestFile, { recursive: true });
 
       throw new Error('The state is not empty. Potential double init chain call. The state is reset.');
     }
