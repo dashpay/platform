@@ -859,6 +859,11 @@ jobs:
           name: dashmate
           path: packages/dashmate/dist/**
 
+      - name: Notarize MacOS Release Build
+        if: runner.os == 'macOS'
+        run: |
+          find packages/dashmate/dist/ -name '*.pkg' -exec sh -c 'xcrun notarytool submit "{}" --apple-id "${{ secrets.MACOS_APPLE_ID }}" --team-id "${{ secrets.MACOS_TEAM_ID }}" --password "${{ secrets.MACOS_NOTARIZING_PASSWORD }}" --wait;' \;
+
       - name: Upload artifacts to release
         uses: softprops/action-gh-release@v0.1.15
         if: github.event_name == 'release'

@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/platform",
-  "version": "0.24.0-dev.23",
+  "version": "0.24.0-dev.26",
   "private": true,
   "scripts": {
     "setup": "yarn install && yarn run build && yarn run configure",
@@ -77,7 +77,8 @@
     "qs": "^6.7.3",
     "engine.io": "^6.2.1",
     "ua-parser-js": "^1.0.33",
-    "dns-packet": "^5.4.0"
+    "dns-packet": "^5.4.0",
+    "cpu-features": "https://registry.yarnpkg.com/@favware/skip-dependency/-/skip-dependency-1.2.1.tgz"
   },
   "dependencies": {
     "node-gyp": "^9.3.1"

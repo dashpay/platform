@@ -1,6 +1,6 @@
 {
   "name": "dashmate",
-  "version": "0.24.0-dev.23",
+  "version": "0.24.0-dev.26",
   "description": "Distribution package for Dash node installation",
   "scripts": {
     "lint": "eslint .",
@@ -51,7 +51,7 @@
     "@dashevo/dashcore-lib": "~0.20.3",
     "@dashevo/dashd-rpc": "^18.2.0",
     "@dashevo/dashpay-contract": "workspace:*",
-    "@dashevo/docker-compose": "^0.24.1",
+    "@dashevo/docker-compose": "^0.24.2",
     "@dashevo/dpns-contract": "workspace:*",
     "@dashevo/dpp": "workspace:*",
     "@dashevo/feature-flags-contract": "workspace:*",
@@ -90,7 +90,7 @@
     "table": "^5.4.6"
   },
   "devDependencies": {
-    "@dashevo/oclif": "^1.0.3",
+    "@dashevo/oclif": "^1.0.4",
     "chai": "^4.3.4",
     "chai-as-promised": "^7.1.1",
     "dirty-chai": "^2.0.1",
@@ -102,6 +102,9 @@
     "mocha-sinon": "^2.1.2",
     "sinon": "^11.1.2",
     "sinon-chai": "^3.7.0"
+  },
+  "resolutions": {
+    "cpu-features": "https://registry.yarnpkg.com/@favware/skip-dependency/-/skip-dependency-1.2.1.tgz"
   },
   "files": [
     "bin",

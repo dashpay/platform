@@ -595,6 +595,11 @@ describe('Platform', () => {
         );
 
         for (const masternodeEntry of mnList) {
+          if (!masternodeEntry.isValid) {
+            // eslint-disable-next-line no-continue
+            continue;
+          }
+
           const masternodeIdentityId = Identifier.from(
             Buffer.from(masternodeEntry.proRegTxHash, 'hex'),
           );
