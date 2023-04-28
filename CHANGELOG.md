@@ -1,3 +1,94 @@
+## [0.24.0-dev.27](https://github.com/dashpay/platform/compare/v0.24.0-dev.26...v0.24.0-dev.27) (2023-04-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* The --platfrom-only flag is renamed to --platform (#991)
+
+### Bug Fixes
+
+* **dashmate:** multiple issues in the reset command ([#991](https://github.com/dashpay/platform/issues/991))
+
+## [0.24.0-dev.26](https://github.com/dashpay/platform/compare/v0.24.0-dev.25...v0.24.0-dev.26) (2023-04-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* Previous state won't be valid due to changes in the sync identities logic
+
+### Bug Fixes
+
+* **drive:** non-unique masternode voting keys ([#986](https://github.com/dashpay/platform/issues/986))
+
+
+### Build System
+
+* **dashmate:** better versioning ([#988](https://github.com/dashpay/platform/issues/988))
+* **dashmate:** prepare MacOs build for notarization ([#985](https://github.com/dashpay/platform/issues/985))
+
+## [0.24.0-dev.25](https://github.com/dashpay/platform/compare/v0.24.0-dev.24...v0.24.0-dev.25) (2023-04-26)
+
+
+### Features
+
+* **dashamte:** better ZeroSSL error messages ([#950](https://github.com/dashpay/platform/issues/950))
+* **dashmate:** set random core rpc username and password on setup ([#973](https://github.com/dashpay/platform/issues/973))
+* **dashmate:** verbose `connect ENOENT /var/run/docker.sock` error ([#951](https://github.com/dashpay/platform/issues/951))
+
+
+### Bug Fixes
+
+* **dashmate:** ability to work with non-default docker socket path ([#967](https://github.com/dashpay/platform/issues/967))
+* **dashmate:** empty masternode status while syncing ([#970](https://github.com/dashpay/platform/issues/970))
+* **dashmate:** form accepts invalid BLS key ([#961](https://github.com/dashpay/platform/issues/961))
+* **dashmate:** invalid mn register command in output of dashmate setup ([#959](https://github.com/dashpay/platform/issues/959))
+* **dashmate:** reward shares can be negative during HP masternode registration ([#960](https://github.com/dashpay/platform/issues/960))
+* **dashmate:** select number of masternodes during local setup freezes ([#957](https://github.com/dashpay/platform/issues/957))
+* **dashmate:** yaml package security vulnerability ([#975](https://github.com/dashpay/platform/issues/975))
+* **dashmate:** already configured preset is ignored ([#974](https://github.com/dashpay/platform/issues/974))
+* **test-suite:** expects identities for invalid mns ([#968](https://github.com/dashpay/platform/issues/968))
+
+
+### Build System
+
+* **dashmate:** remove MacOs malicious software warning ([#977](https://github.com/dashpay/platform/issues/977))
+
+## [0.24.0-dev.24](https://github.com/dashpay/platform/compare/v0.24.0-dev.23...v0.24.0-dev.24) (2023-04-24)
+
+
+### ⚠ BREAKING CHANGES
+
+* Previous state might be invalid since to new sync mn identities logic (#965)
+
+### Features
+
+* **wasm-dpp:** state_transition_fee_validator binding and tests ([#874](https://github.com/dashpay/platform/issues/874))
+
+
+### Bug Fixes
+
+* **dashamte:** wrong envoy config path on windows ([#949](https://github.com/dashpay/platform/issues/949))
+* **drive:** updating a masternode identity with invalid entry from SML ([#965](https://github.com/dashpay/platform/issues/965))
+
+## [0.24.0-dev.23](https://github.com/dashpay/platform/compare/v0.24.0-dev.22...v0.24.0-dev.23) (2023-04-20)
+
+
+### Build System
+
+* **dashmate:** fix removing unnecessary packages
+
+## [0.24.0-dev.22](https://github.com/dashpay/platform/compare/v0.24.0-dev.21...v0.24.0-dev.22) (2023-04-20)
+
+
+### Continuous Integration
+
+* remove drive node.js binding release
+
+
+### Build System
+
+* **dashamte:** build arm64 deb file instead of armel ([#943](https://github.com/dashpay/platform/issues/943))
+
 ## [0.24.0-dev.21](https://github.com/dashpay/platform/compare/v0.24.0-dev.20...v0.24.0-dev.21) (2023-04-19)
 
 

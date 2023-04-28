@@ -2280,6 +2280,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD"\
         }]\
       ]],\
+      ["@balena/dockerignore", [\
+        ["npm:1.0.2", {\
+          "packageLocation": "./.yarn/cache/@balena-dockerignore-npm-1.0.2-1128560642-0d39f8fbcf.zip/node_modules/@balena/dockerignore/",\
+          "packageDependencies": [\
+            ["@balena/dockerignore", "npm:1.0.2"]\
+          ],\
+          "linkType": "HARD"\
+        }]\
+      ]],\
       ["@colors/colors", [\
         ["npm:1.5.0", {\
           "packageLocation": "./.yarn/cache/@colors-colors-npm-1.5.0-875af3a8b4-d64d5260be.zip/node_modules/@colors/colors/",\
@@ -2589,11 +2598,11 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["@dashevo/docker-compose", [\
-        ["npm:0.24.1", {\
-          "packageLocation": "./.yarn/cache/@dashevo-docker-compose-npm-0.24.1-e4dc7f3c5e-7792e09b5d.zip/node_modules/@dashevo/docker-compose/",\
+        ["npm:0.24.2", {\
+          "packageLocation": "./.yarn/cache/@dashevo-docker-compose-npm-0.24.2-73c929613f-f8803c8ab5.zip/node_modules/@dashevo/docker-compose/",\
           "packageDependencies": [\
-            ["@dashevo/docker-compose", "npm:0.24.1"],\
-            ["yaml", "npm:1.10.2"]\
+            ["@dashevo/docker-compose", "npm:0.24.2"],\
+            ["yaml", "npm:2.2.2"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -2604,7 +2613,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageDependencies": [\
             ["@dashevo/dp-services-ctl", "https://github.com/dashevo/js-dp-services-ctl.git#commit=3976076b0018c5b4632ceda4c752fc597f27a640"],\
             ["@dashevo/dashd-rpc", "npm:2.4.2"],\
-            ["dockerode", "npm:3.3.1"],\
+            ["dockerode", "npm:3.3.5"],\
             ["jayson", "npm:2.1.2"],\
             ["lodash", "npm:4.17.21"],\
             ["mongodb", "virtual:a39316770159f0a8e3f370c1c3a56eb433794f8d2beaf0837a3349497b1cf2188cea77a97e39f187d7b9f59864fa6d9d57b4c49a9871c8de6a876e77cba350c7#npm:3.7.3"]\
@@ -2822,10 +2831,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["@dashevo/oclif", [\
-        ["npm:1.0.2", {\
-          "packageLocation": "./.yarn/cache/@dashevo-oclif-npm-1.0.2-838469dc60-b421acd414.zip/node_modules/@dashevo/oclif/",\
+        ["npm:1.0.4", {\
+          "packageLocation": "./.yarn/cache/@dashevo-oclif-npm-1.0.4-12e05d2d04-239edbbb30.zip/node_modules/@dashevo/oclif/",\
           "packageDependencies": [\
-            ["@dashevo/oclif", "npm:1.0.2"],\
+            ["@dashevo/oclif", "npm:1.0.4"],\
             ["@oclif/core", "npm:1.22.0"],\
             ["@oclif/plugin-help", "npm:5.1.20"],\
             ["@oclif/plugin-not-found", "npm:2.3.11"],\
@@ -2841,8 +2850,8 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["normalize-package-data", "npm:3.0.3"],\
             ["semver", "npm:7.3.8"],\
             ["tslib", "npm:2.4.1"],\
-            ["yeoman-environment", "virtual:838469dc6055e1f2cba01fd72be9fbca6706b01748bd0e84ae73ecebec5159ccf815131e67deb9faaa4a6ec339ab1a43a8cfcd7805ad0d0047211e293bb5941b#npm:3.13.0"],\
-            ["yeoman-generator", "virtual:838469dc6055e1f2cba01fd72be9fbca6706b01748bd0e84ae73ecebec5159ccf815131e67deb9faaa4a6ec339ab1a43a8cfcd7805ad0d0047211e293bb5941b#npm:5.6.1"],\
+            ["yeoman-environment", "virtual:12e05d2d0406d57afb53e47af3d99313314e8d57b677797e1248b1a39b8acad186368c8deb20c4b097a9b7de3c4a502dbdf7b3d6ee54bdb9d04559fa41a92253#npm:3.13.0"],\
+            ["yeoman-generator", "virtual:12e05d2d0406d57afb53e47af3d99313314e8d57b677797e1248b1a39b8acad186368c8deb20c4b097a9b7de3c4a502dbdf7b3d6ee54bdb9d04559fa41a92253#npm:5.6.1"],\
             ["yosay", "npm:2.0.2"]\
           ],\
           "linkType": "HARD"\
@@ -8221,12 +8230,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["cpu-features", [\
-        ["npm:0.0.2", {\
-          "packageLocation": "./.yarn/unplugged/cpu-features-npm-0.0.2-b27e7998ec/node_modules/cpu-features/",\
+        ["https://registry.yarnpkg.com/@favware/skip-dependency/-/skip-dependency-1.2.1.tgz", {\
+          "packageLocation": "./.yarn/cache/cpu-features-https-6daecc18e1-ee452163db.zip/node_modules/cpu-features/",\
           "packageDependencies": [\
-            ["cpu-features", "npm:0.0.2"],\
-            ["nan", "npm:2.15.0"],\
-            ["node-gyp", "npm:8.4.0"]\
+            ["cpu-features", "https://registry.yarnpkg.com/@favware/skip-dependency/-/skip-dependency-1.2.1.tgz"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -8444,12 +8451,12 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["@dashevo/dashcore-lib", "npm:0.20.3"],\
             ["@dashevo/dashd-rpc", "npm:18.2.0"],\
             ["@dashevo/dashpay-contract", "workspace:packages/dashpay-contract"],\
-            ["@dashevo/docker-compose", "npm:0.24.1"],\
+            ["@dashevo/docker-compose", "npm:0.24.2"],\
             ["@dashevo/dpns-contract", "workspace:packages/dpns-contract"],\
             ["@dashevo/dpp", "workspace:packages/js-dpp"],\
             ["@dashevo/feature-flags-contract", "workspace:packages/feature-flags-contract"],\
             ["@dashevo/masternode-reward-shares-contract", "workspace:packages/masternode-reward-shares-contract"],\
-            ["@dashevo/oclif", "npm:1.0.2"],\
+            ["@dashevo/oclif", "npm:1.0.4"],\
             ["@dashevo/wallet-lib", "workspace:packages/wallet-lib"],\
             ["@dashevo/withdrawals-contract", "workspace:packages/withdrawals-contract"],\
             ["@oclif/core", "npm:1.26.2"],\
@@ -8464,7 +8471,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["cron", "npm:2.1.0"],\
             ["dash", "workspace:packages/js-dash-sdk"],\
             ["dirty-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.0.1"],\
-            ["dockerode", "npm:3.3.1"],\
+            ["dockerode", "npm:3.3.5"],\
             ["dot", "npm:1.1.3"],\
             ["dotenv", "npm:8.6.0"],\
             ["enquirer", "https://github.com/dashpay/enquirer.git#commit=86aaef0b1c82dfaa3436775e6b37de310eeb94f5"],\
@@ -9001,24 +9008,25 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["docker-modem", [\
-        ["npm:3.0.3", {\
-          "packageLocation": "./.yarn/cache/docker-modem-npm-3.0.3-5736be136e-4ad495d17a.zip/node_modules/docker-modem/",\
+        ["npm:3.0.8", {\
+          "packageLocation": "./.yarn/cache/docker-modem-npm-3.0.8-9923fc0db1-e3675c9b1a.zip/node_modules/docker-modem/",\
           "packageDependencies": [\
-            ["docker-modem", "npm:3.0.3"],\
+            ["docker-modem", "npm:3.0.8"],\
             ["debug", "virtual:ac3d8e680759ce54399273724d44e041d6c9b73454d191d411a8c44bb27e22f02aaf6ed9d3ad0ac1c298eac4833cff369c9c7b84c573016112c4f84be2cd8543#npm:4.3.4"],\
             ["readable-stream", "npm:3.6.0"],\
             ["split-ca", "npm:1.0.1"],\
-            ["ssh2", "npm:1.5.0"]\
+            ["ssh2", "npm:1.11.0"]\
           ],\
           "linkType": "HARD"\
         }]\
       ]],\
       ["dockerode", [\
-        ["npm:3.3.1", {\
-          "packageLocation": "./.yarn/cache/dockerode-npm-3.3.1-77efbe3384-930162ae2d.zip/node_modules/dockerode/",\
+        ["npm:3.3.5", {\
+          "packageLocation": "./.yarn/cache/dockerode-npm-3.3.5-2ec31bdac6-7f6650422b.zip/node_modules/dockerode/",\
           "packageDependencies": [\
-            ["dockerode", "npm:3.3.1"],\
-            ["docker-modem", "npm:3.0.3"],\
+            ["dockerode", "npm:3.3.5"],\
+            ["@balena/dockerignore", "npm:1.0.2"],\
+            ["docker-modem", "npm:3.0.8"],\
             ["tar-fs", "npm:2.0.1"]\
           ],\
           "linkType": "HARD"\
@@ -13694,10 +13702,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],\
           "linkType": "SOFT"\
         }],\
-        ["virtual:29cd966a3bf4a1d402f9cda58cb039a316be3657f4e6b8ac58634c33284e2ea8a4372e13f710cd2a2d785a107d9d65ea8ec3877ffec3f4046f107c19d1df875e#npm:9.4.0", {\
-          "packageLocation": "./.yarn/__virtual__/mem-fs-editor-virtual-1238782479/0/cache/mem-fs-editor-npm-9.4.0-97c608fb01-427b71d59a.zip/node_modules/mem-fs-editor/",\
+        ["virtual:315d4b6fa1eb918f97df32e9960138831950e2b5bcafb64239fe48c23801b53c29942afdcac3132a4944de8d35e3a216612976ea45841a2969048e6d377bfe81#npm:9.4.0", {\
+          "packageLocation": "./.yarn/__virtual__/mem-fs-editor-virtual-5ce38edc7b/0/cache/mem-fs-editor-npm-9.4.0-97c608fb01-427b71d59a.zip/node_modules/mem-fs-editor/",\
           "packageDependencies": [\
-            ["mem-fs-editor", "virtual:29cd966a3bf4a1d402f9cda58cb039a316be3657f4e6b8ac58634c33284e2ea8a4372e13f710cd2a2d785a107d9d65ea8ec3877ffec3f4046f107c19d1df875e#npm:9.4.0"],\
+            ["mem-fs-editor", "virtual:315d4b6fa1eb918f97df32e9960138831950e2b5bcafb64239fe48c23801b53c29942afdcac3132a4944de8d35e3a216612976ea45841a2969048e6d377bfe81#npm:9.4.0"],\
             ["@types/mem-fs", null],\
             ["binaryextensions", "npm:4.18.0"],\
             ["commondir", "npm:1.0.1"],\
@@ -14316,10 +14324,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],\
           "linkType": "HARD"\
         }],\
-        ["npm:2.15.0", {\
-          "packageLocation": "./.yarn/unplugged/nan-npm-2.15.0-505c98ef4d/node_modules/nan/",\
+        ["npm:2.17.0", {\
+          "packageLocation": "./.yarn/unplugged/nan-npm-2.17.0-bf36a21d6f/node_modules/nan/",\
           "packageDependencies": [\
-            ["nan", "npm:2.15.0"],\
+            ["nan", "npm:2.17.0"],\
             ["node-gyp", "npm:8.4.0"]\
           ],\
           "linkType": "HARD"\
@@ -17427,14 +17435,14 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["ssh2", [\
-        ["npm:1.5.0", {\
-          "packageLocation": "./.yarn/unplugged/ssh2-npm-1.5.0-8a0e3032ea/node_modules/ssh2/",\
+        ["npm:1.11.0", {\
+          "packageLocation": "./.yarn/unplugged/ssh2-npm-1.11.0-ba52882820/node_modules/ssh2/",\
           "packageDependencies": [\
-            ["ssh2", "npm:1.5.0"],\
+            ["ssh2", "npm:1.11.0"],\
             ["asn1", "npm:0.2.6"],\
             ["bcrypt-pbkdf", "npm:1.0.2"],\
-            ["cpu-features", "npm:0.0.2"],\
-            ["nan", "npm:2.15.0"]\
+            ["cpu-features", "https://registry.yarnpkg.com/@favware/skip-dependency/-/skip-dependency-1.2.1.tgz"],\
+            ["nan", "npm:2.17.0"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -20175,10 +20183,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
         }]\
       ]],\
       ["yaml", [\
-        ["npm:1.10.2", {\
-          "packageLocation": "./.yarn/cache/yaml-npm-1.10.2-0e780aebdf-ce4ada136e.zip/node_modules/yaml/",\
+        ["npm:2.2.2", {\
+          "packageLocation": "./.yarn/cache/yaml-npm-2.2.2-6e3cddb343-d90c235e09.zip/node_modules/yaml/",\
           "packageDependencies": [\
-            ["yaml", "npm:1.10.2"]\
+            ["yaml", "npm:2.2.2"]\
           ],\
           "linkType": "HARD"\
         }]\
@@ -20295,10 +20303,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],\
           "linkType": "SOFT"\
         }],\
-        ["virtual:838469dc6055e1f2cba01fd72be9fbca6706b01748bd0e84ae73ecebec5159ccf815131e67deb9faaa4a6ec339ab1a43a8cfcd7805ad0d0047211e293bb5941b#npm:3.13.0", {\
-          "packageLocation": "./.yarn/__virtual__/yeoman-environment-virtual-29cd966a3b/0/cache/yeoman-environment-npm-3.13.0-f7ad653f8e-2d622d18d2.zip/node_modules/yeoman-environment/",\
+        ["virtual:12e05d2d0406d57afb53e47af3d99313314e8d57b677797e1248b1a39b8acad186368c8deb20c4b097a9b7de3c4a502dbdf7b3d6ee54bdb9d04559fa41a92253#npm:3.13.0", {\
+          "packageLocation": "./.yarn/__virtual__/yeoman-environment-virtual-315d4b6fa1/0/cache/yeoman-environment-npm-3.13.0-f7ad653f8e-2d622d18d2.zip/node_modules/yeoman-environment/",\
           "packageDependencies": [\
-            ["yeoman-environment", "virtual:838469dc6055e1f2cba01fd72be9fbca6706b01748bd0e84ae73ecebec5159ccf815131e67deb9faaa4a6ec339ab1a43a8cfcd7805ad0d0047211e293bb5941b#npm:3.13.0"],\
+            ["yeoman-environment", "virtual:12e05d2d0406d57afb53e47af3d99313314e8d57b677797e1248b1a39b8acad186368c8deb20c4b097a9b7de3c4a502dbdf7b3d6ee54bdb9d04559fa41a92253#npm:3.13.0"],\
             ["@npmcli/arborist", "npm:4.3.1"],\
             ["@types/mem-fs", null],\
             ["@types/mem-fs-editor", null],\
@@ -20323,7 +20331,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["lodash", "npm:4.17.21"],\
             ["log-symbols", "npm:4.1.0"],\
             ["mem-fs", "npm:2.2.1"],\
-            ["mem-fs-editor", "virtual:29cd966a3bf4a1d402f9cda58cb039a316be3657f4e6b8ac58634c33284e2ea8a4372e13f710cd2a2d785a107d9d65ea8ec3877ffec3f4046f107c19d1df875e#npm:9.4.0"],\
+            ["mem-fs-editor", "virtual:315d4b6fa1eb918f97df32e9960138831950e2b5bcafb64239fe48c23801b53c29942afdcac3132a4944de8d35e3a216612976ea45841a2969048e6d377bfe81#npm:9.4.0"],\
             ["minimatch", "npm:3.1.2"],\
             ["npmlog", "npm:5.0.1"],\
             ["p-queue", "npm:6.6.2"],\
@@ -20353,10 +20361,10 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           ],\
           "linkType": "SOFT"\
         }],\
-        ["virtual:838469dc6055e1f2cba01fd72be9fbca6706b01748bd0e84ae73ecebec5159ccf815131e67deb9faaa4a6ec339ab1a43a8cfcd7805ad0d0047211e293bb5941b#npm:5.6.1", {\
-          "packageLocation": "./.yarn/__virtual__/yeoman-generator-virtual-4147e1a57f/0/cache/yeoman-generator-npm-5.6.1-a49b7654c4-ef036210b6.zip/node_modules/yeoman-generator/",\
+        ["virtual:12e05d2d0406d57afb53e47af3d99313314e8d57b677797e1248b1a39b8acad186368c8deb20c4b097a9b7de3c4a502dbdf7b3d6ee54bdb9d04559fa41a92253#npm:5.6.1", {\
+          "packageLocation": "./.yarn/__virtual__/yeoman-generator-virtual-b452ec6b92/0/cache/yeoman-generator-npm-5.6.1-a49b7654c4-ef036210b6.zip/node_modules/yeoman-generator/",\
           "packageDependencies": [\
-            ["yeoman-generator", "virtual:838469dc6055e1f2cba01fd72be9fbca6706b01748bd0e84ae73ecebec5159ccf815131e67deb9faaa4a6ec339ab1a43a8cfcd7805ad0d0047211e293bb5941b#npm:5.6.1"],\
+            ["yeoman-generator", "virtual:12e05d2d0406d57afb53e47af3d99313314e8d57b677797e1248b1a39b8acad186368c8deb20c4b097a9b7de3c4a502dbdf7b3d6ee54bdb9d04559fa41a92253#npm:5.6.1"],\
             ["@types/yeoman-environment", null],\
             ["chalk", "npm:4.1.2"],\
             ["dargs", "npm:7.0.0"],\
@@ -20371,7 +20379,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["shelljs", "npm:0.8.5"],\
             ["sort-keys", "npm:4.2.0"],\
             ["text-table", "npm:0.2.0"],\
-            ["yeoman-environment", "virtual:838469dc6055e1f2cba01fd72be9fbca6706b01748bd0e84ae73ecebec5159ccf815131e67deb9faaa4a6ec339ab1a43a8cfcd7805ad0d0047211e293bb5941b#npm:3.13.0"]\
+            ["yeoman-environment", "virtual:12e05d2d0406d57afb53e47af3d99313314e8d57b677797e1248b1a39b8acad186368c8deb20c4b097a9b7de3c4a502dbdf7b3d6ee54bdb9d04559fa41a92253#npm:3.13.0"]\
           ],\
           "packagePeers": [\
             "@types/yeoman-environment",\

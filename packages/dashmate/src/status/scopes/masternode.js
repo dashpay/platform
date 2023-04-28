@@ -79,7 +79,7 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
 
       masternode.proTxHash = proTxHash;
       masternode.status = status;
-      masternode.state = state;
+      masternode.state = state || MasternodeStateEnum.UNKNOWN;
 
       if (state === MasternodeStateEnum.READY) {
         const { dmnState } = masternodeStatus.result;
