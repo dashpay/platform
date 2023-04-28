@@ -1,3 +1,5 @@
+const validateHex = require('./validateHex');
+
 /**
  * @param blsSignatures
  * @returns {validateBLSPrivateKey}
@@ -11,6 +13,10 @@ function validateBLSPrivateKeyFactory(blsSignatures) {
   function validateBLSPrivateKey(value) {
     if (value.length === 0) {
       return 'should not be empty';
+    }
+
+    if (!validateHex(value)) {
+      return 'invalid key format';
     }
 
     const operatorPrivateKeyBuffer = Buffer.from(value, 'hex');
