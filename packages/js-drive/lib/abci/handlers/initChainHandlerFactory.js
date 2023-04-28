@@ -8,6 +8,7 @@ const {
 
 const BlockInfo = require('../../blockExecution/BlockInfo');
 const protoTimestampToMillis = require('../../util/protoTimestampToMillis');
+const fs = require('fs');
 
 /**
  * Init Chain ABCI handler
@@ -23,6 +24,8 @@ const protoTimestampToMillis = require('../../util/protoTimestampToMillis');
  * @param {createCoreChainLockUpdate} createCoreChainLockUpdate
  * @param {createContextLogger} createContextLogger
  * @param {SystemIdentityPublicKeys} systemIdentityPublicKeys
+ * @param {RSDrive} rsDrive
+ * @param {String} groveDBLatestFile
  * @return {initChainHandler}
  */
 function initChainHandlerFactory(
@@ -37,6 +40,8 @@ function initChainHandlerFactory(
   createCoreChainLockUpdate,
   createContextLogger,
   systemIdentityPublicKeys,
+  rsDrive,
+  groveDBLatestFile,
 ) {
   /**
    * @typedef initChainHandler
@@ -45,6 +50,20 @@ function initChainHandlerFactory(
    * @return {Promise<abci.ResponseInitChain>}
    */
   async function initChainHandler(request) {
+    // Reset the state and fail with error if it's not empty
+    const initialAppHash = await groveDBStore.getRootHash();
+    const emptyHash = Buffer.alloc(32).fill(0);
+
+    if (emptyHash < initialAppHash) {
+      await rsDrive.close();
+
+      if (process.env.NODE_ENV === 'test') {
+        fs.rmSync(groveDBLatestFile, { recursive: true });
+      }
+
+      throw new Error('The state is not empty. Potential double init chain call. The state is reset.');
+    }
+
     const { time } = request;
     const timeMs = protoTimestampToMillis(time);
 
@@ -63,7 +82,6 @@ function initChainHandlerFactory(
     );
 
     // Create initial state
-
     await groveDBStore.startTransaction();
 
     // Call RS ABCI
