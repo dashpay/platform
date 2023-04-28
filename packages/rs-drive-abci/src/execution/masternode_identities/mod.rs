@@ -764,8 +764,8 @@ fn maybe_hexdecode(key: &[u8], expected_length: usize) -> Vec<u8> {
         return Vec::from(key);
     };
     if key.len() == 2 * expected_length {
-        // let backtrace = Backtrace::force_capture();
-        // tracing::error!(?backtrace, "non hex-decoded key found");
+        let backtrace = Backtrace::force_capture();
+        tracing::warn!(?backtrace, "non hex-decoded key found");
 
         return hex::decode(key).expect("cannot hex-decode received key");
     };

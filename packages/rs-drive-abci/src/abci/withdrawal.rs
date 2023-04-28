@@ -126,11 +126,20 @@ impl<'a> WithdrawalTxs<'a> {
         round: u32,
         public_key: &bls_signatures::PublicKey,
     ) -> SimpleValidationResult<AbciError> {
+        let quorum_hash = match quorum_hash.try_into() {
+            Ok(h) => h,
+            Err(e) => {
+                return SimpleValidationResult::new_with_error(AbciError::BadRequestDataSize(
+                    format! {"invalid quorum hash: {}",e},
+                ))
+            }
+        };
+
         for s in &self.inner {
             let hash = match s.sign_digest(
                 chain_id,
                 quorum_type as u8,
-                quorum_hash.try_into().expect("invalid quorum hash length"),
+                &quorum_hash,
                 height as i64,
                 round as i32,
             ) {

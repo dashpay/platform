@@ -64,7 +64,7 @@ impl From<Quorum> for ValidatorSetUpdate {
             threshold_public_key: Some(crypto::PublicKey {
                 sum: Some(Bls12381(threshold_public_key.to_bytes().to_vec())),
             }),
-            quorum_hash: reverse(&quorum_hash),
+            quorum_hash: quorum_hash.to_vec(),
         }
     }
 }
@@ -119,7 +119,7 @@ impl From<&Quorum> for ValidatorSetUpdate {
             threshold_public_key: Some(crypto::PublicKey {
                 sum: Some(Bls12381(threshold_public_key.to_bytes().to_vec())),
             }),
-            quorum_hash: reverse(quorum_hash),
+            quorum_hash: quorum_hash.to_vec(),
         }
     }
 }
