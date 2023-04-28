@@ -157,7 +157,8 @@
                     "type": "array",
                     "byteArray": true,
                     "minItems": 32,
-                    "maxItems": 32
+                    "maxItems": 32,
+                    "contentMediaType": "application/x.dash.dpp.identifier"
                 },
                 "encryptedPublicKey": {
                     "type": "array",

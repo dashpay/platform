@@ -12,15 +12,14 @@ use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::Transac
 use dashcore_rpc::dashcore::bls_sig_utils::BLSSignature;
 use dashcore_rpc::dashcore::consensus::Decodable;
 use dashcore_rpc::dashcore;
+use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use dpp::block::block_info::BlockInfo;
 use dpp::serialization_traits::PlatformSerializable;
 use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
-use tenderdash_abci::proto::abci::{
-    CommitInfo, RequestExtendVote, RequestFinalizeBlock, RequestPrepareProposal,
-    RequestVerifyVoteExtension, ResponsePrepareProposal, ValidatorSetUpdate,
-};
+use tenderdash_abci::proto::abci::{CommitInfo, RequestExtendVote, RequestFinalizeBlock, RequestPrepareProposal, RequestProcessProposal, RequestVerifyVoteExtension, ResponsePrepareProposal, ResponseProcessProposal, ValidatorSetUpdate};
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::types::{
     Block, BlockId, Data, EvidenceList, Header, PartSetHeader, VoteExtension, VoteExtensionType,
@@ -28,7 +27,7 @@ use tenderdash_abci::proto::types::{
 use tenderdash_abci::{
     signatures::SignDigest,
     proto::{self, version::Consensus},
-    Application  
+    Application,
 };
 
 /// The outcome struct when mimicking block execution
@@ -47,11 +46,13 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         proposer_pro_tx_hash: [u8; 32],
         current_quorum: &TestQuorumInfo,
         proposed_version: ProtocolVersion,
-        _total_hpmns: u32,
         block_info: BlockInfo,
         expect_validation_errors: bool,
         state_transitions: Vec<StateTransition>,
     ) -> Result<MimicExecuteBlockOutcome, Error> {
+        let mut rng = StdRng::seed_from_u64(block_info.height);
+        let block_hash: [u8; 32] = rng.gen(); // We fake a block hash for the test
+        let next_validators_hash: [u8; 32] = rng.gen(); // We fake a block hash for the test
         let serialized_state_transitions = state_transitions
             .into_iter()
             .map(|st| st.serialize().map_err(Error::Protocol))
@@ -64,9 +65,11 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             epoch: _,
         } = block_info;
 
+        // PREPARE (also processes internally)
+
         let request_prepare_proposal = RequestPrepareProposal {
             max_tx_bytes: 0,
-            txs: serialized_state_transitions,
+            txs: serialized_state_transitions.clone(),
             local_last_commit: None,
             misbehavior: vec![],
             height: height as i64,
@@ -74,7 +77,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                 seconds: (time_ms / 1000) as i64,
                 nanos: ((time_ms % 1000) * 1000) as i32,
             }),
-            next_validators_hash: vec![],
+            next_validators_hash: next_validators_hash.to_vec(),
             round: 0,
             core_chain_locked_height: core_height,
             proposer_pro_tx_hash: proposer_pro_tx_hash.to_vec(),
@@ -117,10 +120,41 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             })?;
         }
 
+        // PROCESS
+
+        let request_process_proposal = RequestProcessProposal {
+            txs: serialized_state_transitions,
+            proposed_last_commit: None,
+            misbehavior: vec![],
+            hash: block_hash.to_vec(),
+            height: height as i64,
+            time: Some(Timestamp {
+                seconds: (time_ms / 1000) as i64,
+                nanos: ((time_ms % 1000) * 1000) as i32,
+            }),
+            next_validators_hash: next_validators_hash.to_vec(),
+            round: 0,
+            core_chain_locked_height: core_height,
+            core_chain_lock_update,
+            proposer_pro_tx_hash: proposer_pro_tx_hash.to_vec(),
+            proposed_app_version: proposed_version as u64,
+            version: Some(Consensus { block: 0, app: 0 }),
+            quorum_hash: current_quorum.quorum_hash.to_vec(),
+        };
+
+        //we must call process proposal so the app hash is set
+        self.process_proposal(request_process_proposal)
+            .unwrap_or_else(|e| {
+                panic!(
+                    "should skip processing (because we prepared it) block #{} at time #{} : {:?}",
+                    block_info.height, block_info.time_ms, e
+                )
+            });
+
         let tx_order_for_finalize_block = tx_records.into_iter().map(|record| record.tx).collect();
 
         let request_extend_vote = RequestExtendVote {
-            hash: [0; 32].to_vec(), //todo
+            hash: block_hash.to_vec(),
             height: height as i64,
             round: 0,
         };
@@ -138,7 +172,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
 
         for validator in current_quorum.validator_set.iter() {
             let request_verify_vote_extension = RequestVerifyVoteExtension {
-                hash: [0; 32].to_vec(), //todo
+                hash: block_hash.to_vec(),
                 validator_pro_tx_hash: validator.pro_tx_hash.to_vec(),
                 height: height as i64,
                 round: 0,
@@ -214,8 +248,6 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         drop(guarded_block_execution_context);
 
         // We need to sign the block hash
-
-        let block_hash = [0; 32]; //todo
         let chain_id = "strategy_tests".to_string();
         let quorum_type = self.platform.config.quorum_type();
 
@@ -225,9 +257,12 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             state_id: [0; 32].to_vec(),                      //todo
         };
 
+        let mut quorum_hash = current_quorum.quorum_hash.to_vec();
+        // quorum_hash.reverse();
+
         let mut commit_info = CommitInfo {
             round: 0,
-            quorum_hash: current_quorum.quorum_hash.to_vec(),
+            quorum_hash: quorum_hash.clone(),
             block_signature: Default::default(),
             threshold_vote_extensions: extensions,
         };
@@ -236,22 +271,16 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             block_id: Some(block_id.clone()),
             height: height as i64,
             round: 0,
-            quorum_hash: current_quorum.quorum_hash.to_vec(),
+            quorum_hash: quorum_hash.clone(),
             threshold_block_signature: Default::default(),
             threshold_vote_extensions: Default::default(),
         };
 
         //if not in testing this will default to true
         if self.platform.config.testing_configs.block_signing {
-            let quorum_hash:[u8;32] = current_quorum.quorum_hash[..].try_into().expect("wrong quorum hash len");
+            let quorum_hash: [u8; 32] = quorum_hash.try_into().expect("wrong quorum hash len");
             let digest = commit
-                .sign_digest(
-                    &chain_id,
-                    quorum_type as u8,
-                    &quorum_hash,
-                    height as i64,
-                    0,
-                )
+                .sign_digest(&chain_id, quorum_type as u8, &quorum_hash, height as i64, 0)
                 .expect("expected to sign digest");
 
             let block_signature = current_quorum.private_key.sign(digest.as_slice());
@@ -268,7 +297,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         let request_finalize_block = RequestFinalizeBlock {
             commit: Some(commit_info),
             misbehavior: vec![],
-            hash: app_hash.clone(), //todo: change this to block hash
+            hash: block_hash.to_vec(),
             height: height as i64,
             round: 0,
             block: Some(Block {

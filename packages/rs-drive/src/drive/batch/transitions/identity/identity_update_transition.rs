@@ -4,6 +4,7 @@ use crate::drive::batch::{DriveOperation, IdentityOperationType};
 
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
+use dpp::identity::IdentityPublicKey;
 
 use dpp::identity::state_transition::identity_update_transition::IdentityUpdateTransitionAction;
 
@@ -21,6 +22,11 @@ impl DriveHighLevelOperationConverter for IdentityUpdateTransitionAction {
             ..
         } = self;
 
+        let (unique_keys, non_unique_keys): (Vec<IdentityPublicKey>, Vec<IdentityPublicKey>) =
+            add_public_keys
+                .into_iter()
+                .partition(|key| key.key_type.is_unique_key_type());
+
         let mut drive_operations = vec![];
 
         drive_operations.push(IdentityOperation(
@@ -30,11 +36,12 @@ impl DriveHighLevelOperationConverter for IdentityUpdateTransitionAction {
             },
         ));
 
-        if !add_public_keys.is_empty() {
+        if !unique_keys.is_empty() || !non_unique_keys.is_empty() {
             drive_operations.push(IdentityOperation(
                 IdentityOperationType::AddNewKeysToIdentity {
                     identity_id: identity_id.to_buffer(),
-                    keys_to_add: add_public_keys,
+                    unique_keys_to_add: unique_keys,
+                    non_unique_keys_to_add: non_unique_keys,
                 },
             ));
         }

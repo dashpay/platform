@@ -64,6 +64,17 @@ impl KeyType {
         KEY_TYPE_SIZES[self]
     }
 
+    /// Are keys of this type unique?
+    pub fn is_unique_key_type(&self) -> bool {
+        match self {
+            KeyType::ECDSA_SECP256K1 => true,
+            KeyType::BLS12_381 => true,
+            KeyType::ECDSA_HASH160 => false,
+            KeyType::BIP13_SCRIPT_HASH => false,
+            KeyType::EDDSA_25519_HASH160 => false,
+        }
+    }
+
     //todo: put this in a specific feature
     /// Gets the default size of the public key
     pub fn random_public_key_data(&self, rng: &mut StdRng) -> Vec<u8> {

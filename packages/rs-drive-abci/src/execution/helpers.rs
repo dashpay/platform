@@ -150,13 +150,14 @@ where
     ) -> Result<UpdateStateMasternodeListOutcome, Error> {
         let previous_core_height = if start_from_scratch {
             // baseBlock must be a chain height and not 0
-            1
+            None
         } else {
-            state.core_height()
+            let state_core_height = state.core_height();
+            if core_block_height == state_core_height {
+                return Ok(UpdateStateMasternodeListOutcome::default()); // no need to do anything
+            }
+            Some(state_core_height)
         };
-        if core_block_height == previous_core_height {
-            return Ok(UpdateStateMasternodeListOutcome::default()); // no need to do anything
-        }
 
         let masternode_diff = self
             .core_rpc
@@ -246,28 +247,35 @@ where
     ///   there is a problem fetching the masternode list difference or updating the state.
     fn update_masternode_list(
         &self,
-        state: &mut PlatformState,
+        platform_state: Option<&PlatformState>,
+        block_platform_state: &mut PlatformState,
         core_block_height: u32,
         is_init_chain: bool,
         block_info: &BlockInfo,
         transaction: &Transaction,
     ) -> Result<(), Error> {
-        if let Some(last_commited_block_info) = state.last_committed_block_info.as_ref() {
+        if let Some(last_commited_block_info) =
+            block_platform_state.last_committed_block_info.as_ref()
+        {
             if core_block_height == last_commited_block_info.core_height {
                 return Ok(()); // no need to do anything
             }
         }
-        if state.last_committed_block_info.is_some() || is_init_chain {
+        if block_platform_state.last_committed_block_info.is_some() || is_init_chain {
             let UpdateStateMasternodeListOutcome {
                 masternode_list_diff,
                 removed_masternodes,
-            } = self.update_state_masternode_list(state, core_block_height, is_init_chain)?;
+            } = self.update_state_masternode_list(
+                block_platform_state,
+                core_block_height,
+                is_init_chain,
+            )?;
 
             self.update_masternode_identities(
                 masternode_list_diff,
                 &removed_masternodes,
                 block_info,
-                state,
+                platform_state,
                 transaction,
             )?;
 
@@ -292,7 +300,9 @@ where
     ///
     /// # Arguments
     ///
-    /// * state - A mutable reference to the platform state to be updated.
+    /// * platform_state - A reference to the platform state before execution of current block.
+    /// * block_platform_state - A mutable reference to the current platform state in the block
+    /// execution context to be updated.
     /// * core_block_height - The current block height in the Dash Core.
     /// * is_init_chain - A boolean indicating if the chain is being initialized.
     /// * block_info - A reference to the block information.
@@ -304,20 +314,22 @@ where
     /// there is a problem updating the masternode list, quorum information, or the state.
     pub(crate) fn update_core_info(
         &self,
-        state: &mut PlatformState,
+        platform_state: Option<&PlatformState>,
+        block_platform_state: &mut PlatformState,
         core_block_height: u32,
         is_init_chain: bool,
         block_info: &BlockInfo,
         transaction: &Transaction,
     ) -> Result<(), Error> {
         self.update_masternode_list(
-            state,
+            platform_state,
+            block_platform_state,
             core_block_height,
             is_init_chain,
             block_info,
             transaction,
         )?;
 
-        self.update_quorum_info(state, core_block_height, false)
+        self.update_quorum_info(block_platform_state, core_block_height, false)
     }
 }

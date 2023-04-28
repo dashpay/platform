@@ -75,7 +75,7 @@ impl From<Quorum> for ValidatorSetUpdate {
 /// We need to decide on a consistent approach to endianness and follow it.
 fn reverse(data: &[u8]) -> Vec<u8> {
     let mut data = data.to_vec();
-    data.reverse();
+    // data.reverse();
 
     data
 }

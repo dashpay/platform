@@ -60,6 +60,7 @@ impl Drive {
                     self.add_new_keys_to_identity_operations(
                         identity_id,
                         keys,
+                        vec![],
                         false,
                         estimated_costs_only_with_layer_info,
                         transaction,

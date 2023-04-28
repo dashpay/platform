@@ -185,6 +185,14 @@ where
             ..Default::default()
         };
 
+        let mut block_execution_context_guard =
+            self.platform.block_execution_context.write().unwrap();
+
+        let block_execution_context = block_execution_context_guard
+            .as_mut()
+            .expect("expected that a block execution context was set");
+        block_execution_context.proposer_results = Some(response.clone());
+
         Ok(response)
     }
 
@@ -192,6 +200,33 @@ where
         &self,
         mut request: RequestProcessProposal,
     ) -> Result<ResponseProcessProposal, ResponseException> {
+        let mut block_execution_context_guard =
+            self.platform.block_execution_context.write().unwrap();
+
+        if let Some(block_execution_context) = block_execution_context_guard.as_mut() {
+            // We are already in a block
+            // This only makes sense if we were the proposer
+            let Some(proposal_info) = block_execution_context.proposer_results.as_ref() else {
+                return Err(Error::Abci(AbciError::BadRequest(
+                    "received a process proposal request twice".to_string(),
+                )))?;
+            };
+            // We need to set the block hash
+            block_execution_context.block_state_info.block_hash =
+                Some(request.hash.clone().try_into().map_err(|_| {
+                    Error::Abci(AbciError::BadRequestDataSize(
+                        "block hash is not 32 bytes in process proposal".to_string(),
+                    ))
+                })?);
+            return Ok(ResponseProcessProposal {
+                status: proto::response_process_proposal::ProposalStatus::Accept.into(),
+                app_hash: proposal_info.app_hash.clone(),
+                tx_results: proposal_info.tx_results.clone(),
+                consensus_param_updates: proposal_info.consensus_param_updates.clone(),
+                validator_set_update: proposal_info.validator_set_update.clone(),
+            });
+        }
+
         let transaction_guard = if request.height == self.platform.config.abci.genesis_height as i64
         {
             // special logic on init chain
@@ -267,9 +302,9 @@ where
             block_hash.clone(),
         )? {
             return Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
-                "received request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
+                "received extend vote request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
                 height, round, block_hash.to_hex(),
-                block_state_info.height, block_state_info.round, block_state_info.block_hash.to_hex()
+                block_state_info.height, block_state_info.round, block_state_info.block_hash.map(|block_hash| block_hash.to_hex()).unwrap_or("None".to_string())
             )))
             .into());
         } else {
@@ -317,9 +352,9 @@ where
             block_hash.clone(),
         )? {
             return Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
-                "received request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
+                "received verify vote request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
                 height, round,block_hash.to_hex(),
-                block_state_info.height, block_state_info.round, block_state_info.block_hash.to_hex()
+                block_state_info.height, block_state_info.round, block_state_info.block_hash.map(|block_hash| block_hash.to_hex()).unwrap_or("None".to_string())
             )))
             .into());
         }

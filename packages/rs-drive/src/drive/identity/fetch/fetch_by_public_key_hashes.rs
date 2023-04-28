@@ -1,12 +1,13 @@
 use crate::drive::grove_operations::DirectQueryType::StatefulDirectQuery;
 use crate::drive::{
-    non_unique_key_hashes_sub_tree_path, non_unique_key_hashes_tree_path,
-    unique_key_hashes_tree_path, unique_key_hashes_tree_path_vec, Drive,
+    non_unique_key_hashes_sub_tree_path, non_unique_key_hashes_sub_tree_path_vec,
+    non_unique_key_hashes_tree_path, unique_key_hashes_tree_path, unique_key_hashes_tree_path_vec,
+    Drive,
 };
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fee::op::LowLevelDriveOperation;
-use crate::query::QueryResultEncoding;
+use crate::query::{QueryItem, QueryResultEncoding};
 use dpp::identity::Identity;
 use dpp::platform_value::Value;
 use dpp::Convertible;
@@ -15,6 +16,7 @@ use grovedb::query_result_type::QueryResultType;
 use grovedb::Element::Item;
 use grovedb::{PathQuery, Query, SizedQuery, TransactionArg};
 use std::collections::BTreeMap;
+use std::ops::RangeFull;
 
 impl Drive {
     /// Fetches an identity id with all its information from storage.
@@ -25,6 +27,20 @@ impl Drive {
     ) -> Result<Option<[u8; 32]>, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.fetch_identity_id_by_unique_public_key_hash_operations(
+            public_key_hash,
+            transaction,
+            &mut drive_operations,
+        )
+    }
+
+    /// Fetches identity ids from storage.
+    pub fn fetch_identity_ids_by_non_unique_public_key_hash(
+        &self,
+        public_key_hash: [u8; 20],
+        transaction: TransactionArg,
+    ) -> Result<Vec<[u8; 32]>, Error> {
+        let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
+        self.fetch_identity_ids_by_non_unique_public_key_hash_operations(
             public_key_hash,
             transaction,
             &mut drive_operations,
@@ -64,6 +80,38 @@ impl Drive {
 
             Err(e) => Err(e),
         }
+    }
+
+    /// Gets identity ids from non unique public key hashes.
+    pub(crate) fn fetch_identity_ids_by_non_unique_public_key_hash_operations(
+        &self,
+        public_key_hash: [u8; 20],
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+    ) -> Result<Vec<[u8; 32]>, Error> {
+        let non_unique_key_hashes = non_unique_key_hashes_sub_tree_path_vec(public_key_hash);
+        let path_query = PathQuery::new_single_query_item(
+            non_unique_key_hashes,
+            QueryItem::RangeFull(RangeFull),
+        );
+        let (results, _) = self.grove_get_path_query(
+            &path_query,
+            transaction,
+            QueryResultType::QueryKeyElementPairResultType,
+            drive_operations,
+        )?;
+        results
+            .to_keys()
+            .into_iter()
+            .map(|key| {
+                key.try_into().map_err(|_| {
+                    Error::Drive(DriveError::CorruptedDriveState(
+                        "non unique public key hashes should point to identity ids of 32 bytes"
+                            .to_string(),
+                    ))
+                })
+            })
+            .collect()
     }
 
     /// Fetches identity ids with all its information from storage.
@@ -390,11 +438,18 @@ mod tests {
                 .expect("expected to get hash")
                 .try_into()
                 .expect("expected 20 bytes");
-            let identity_id = drive
-                .fetch_identity_id_by_unique_public_key_hash(hash, Some(&transaction))
-                .expect("expected to fetch identity_id")
-                .expect("expected to get an identity id");
-            assert_eq!(identity_id, identity.id.to_buffer());
+            if key.key_type.is_unique_key_type() {
+                let identity_id = drive
+                    .fetch_identity_id_by_unique_public_key_hash(hash, Some(&transaction))
+                    .expect("expected to fetch identity_id")
+                    .expect("expected to get an identity id");
+                assert_eq!(identity_id, identity.id.to_buffer());
+            } else {
+                let identity_ids = drive
+                    .fetch_identity_ids_by_non_unique_public_key_hash(hash, Some(&transaction))
+                    .expect("expected to get identity ids");
+                assert!(identity_ids.contains(&identity.id.to_buffer()));
+            }
         }
     }
 }

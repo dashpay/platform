@@ -338,16 +338,16 @@ impl Value {
     /// assert_eq!(value.into_bytes_20(), Ok(Bytes20([104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108])));    ///
     ///
     /// let value = Value::Text("WRdZY72e8yUfNJ5VC9ckzga7ysE=".to_string());
-    /// assert_eq!(value.into_bytes_20(), Ok(Bytes20([104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108])));
+    /// assert_eq!(value.into_bytes_20(), Ok(Bytes20([89, 23, 89, 99, 189, 158, 243, 37, 31, 52, 158, 85, 11, 215, 36, 206, 6, 187, 202, 193])));
     ///
     /// let value = Value::Text("a811".to_string());
-    /// assert_eq!(value.into_bytes_20(), Err(Error::ByteLengthNot36BytesError("buffer was not 36 bytes long".to_string())));
+    /// assert_eq!(value.into_bytes_20(), Err(Error::ByteLengthNot20BytesError("buffer was not 20 bytes long".to_string())));
     ///
     /// let value = Value::Text("a811Ii".to_string());
     /// assert_eq!(value.into_bytes_20(), Err(Error::StructureError("value was a string, but could not be decoded from base 64".to_string())));
     ///
     /// let value = Value::Array(vec![Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104)]);
-    /// assert_eq!(value.into_bytes_20(), Ok(Bytes20([104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101])));
+    /// assert_eq!(value.into_bytes_20(), Ok(Bytes20([104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104])));
     ///
     /// let value = Value::Bool(true);
     /// assert_eq!(value.into_bytes_20(), Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())));
@@ -386,16 +386,16 @@ impl Value {
     /// assert_eq!(value.to_bytes_20(), Ok(Bytes20([104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108])));    ///
     ///
     /// let value = Value::Text("WRdZY72e8yUfNJ5VC9ckzga7ysE=".to_string());
-    /// assert_eq!(value.to_bytes_20(), Ok(Bytes20([104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108, 111, 32, 12, 50, 104, 101, 108, 108])));
+    /// assert_eq!(value.to_bytes_20(), Ok(Bytes20([89, 23, 89, 99, 189, 158, 243, 37, 31, 52, 158, 85, 11, 215, 36, 206, 6, 187, 202, 193])));
     ///
     /// let value = Value::Text("a811".to_string());
-    /// assert_eq!(value.to_bytes_20(), Err(Error::ByteLengthNot36BytesError("buffer was not 36 bytes long".to_string())));
+    /// assert_eq!(value.to_bytes_20(), Err(Error::ByteLengthNot20BytesError("buffer was not 20 bytes long".to_string())));
     ///
     /// let value = Value::Text("a811Ii".to_string());
     /// assert_eq!(value.to_bytes_20(), Err(Error::StructureError("value was a string, but could not be decoded from base 64".to_string())));
     ///
     /// let value = Value::Array(vec![Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104), Value::U8(101), Value::U8(108),Value::U8(104)]);
-    /// assert_eq!(value.to_bytes_20(), Ok(Bytes20([104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 101])));
+    /// assert_eq!(value.to_bytes_20(), Ok(Bytes20([104, 101, 108, 104, 101, 108, 104, 101, 108, 104, 104, 101, 108, 104, 101, 108, 104, 101, 108, 104])));
     ///
     /// let value = Value::Bool(true);
     /// assert_eq!(value.to_bytes_20(), Err(Error::StructureError("value are not bytes, a string, or an array of values representing bytes".to_string())));
