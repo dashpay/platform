@@ -5,8 +5,8 @@ use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformState;
 use chrono::Utc;
-use dashcore::hashes::Hash;
-use dashcore::ProTxHash;
+use dashcore_rpc::dashcore::hashes::Hash;
+use dashcore_rpc::dashcore::ProTxHash;
 use dashcore_rpc::dashcore_rpc_json::MasternodeType::{HighPerformance, Regular};
 use dashcore_rpc::dashcore_rpc_json::{MasternodeListDiff, MasternodeType};
 use dashcore_rpc::json::{
@@ -32,7 +32,7 @@ use drive::drive::identity::key::fetch::{
 };
 use drive::grovedb::Transaction;
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, HashSet};
 
 impl<C> Platform<C>
 where
@@ -616,7 +616,7 @@ where
             Self::get_operator_identifier_from_masternode_list_item(masternode)?;
         let mut identity = Self::create_basic_identity(operator_identifier);
         identity.add_public_keys(self.get_operator_identity_keys(
-            masternode.state.pub_key_operator.clone(),
+            maybe_hexdecode(&masternode.state.pub_key_operator.clone(), 48),
             masternode.state.operator_payout_address,
             masternode.state.platform_node_id,
         )?);
@@ -756,12 +756,32 @@ where
     }
 }
 
+/// Decode key if it's not encoded
+///
+/// TODO: This is just a workaround, remove when not needed anymore
+fn maybe_hexdecode(key: &[u8], expected_length: usize) -> Vec<u8> {
+    if key.len() == expected_length {
+        return Vec::from(key);
+    };
+    if key.len() == 2 * expected_length {
+        // let backtrace = Backtrace::force_capture();
+        // tracing::error!(?backtrace, "non hex-decoded key found");
+
+        return hex::decode(key).expect("cannot hex-decode received key");
+    };
+    panic!(
+        "unexpected key len: got {}, expected {}",
+        key.len(),
+        expected_length
+    )
+}
+
 /*
 #[cfg(test)]
 mod tests {
     use crate::config::PlatformConfig;
     use crate::test::helpers::setup::TestPlatformBuilder;
-    use dashcore::ProTxHash;
+    use dashcore_rpc::dashcore::ProTxHash;
     use dashcore_rpc::dashcore_rpc_json::MasternodeListDiffWithMasternodes;
     use dashcore_rpc::json::MasternodeType::Regular;
     use dashcore_rpc::json::{DMNState, MasternodeListItem};

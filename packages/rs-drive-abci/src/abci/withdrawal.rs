@@ -12,9 +12,9 @@ use drive::{
 use std::fmt::Display;
 use tenderdash_abci::proto::{
     abci::ExtendVoteExtension,
-    signatures::SignDigest,
     types::{VoteExtension, VoteExtensionType},
 };
+use tenderdash_abci::signatures::SignDigest;
 
 use super::AbciError;
 
@@ -130,14 +130,12 @@ impl<'a> WithdrawalTxs<'a> {
             let hash = match s.sign_digest(
                 chain_id,
                 quorum_type as u8,
-                quorum_hash,
+                quorum_hash.try_into().expect("invalid quorum hash length"),
                 height as i64,
                 round as i32,
             ) {
                 Ok(h) => h,
-                Err(e) => {
-                    return SimpleValidationResult::new_with_error(AbciError::TenderdashProto(e))
-                }
+                Err(e) => return SimpleValidationResult::new_with_error(AbciError::Tenderdash(e)),
             };
 
             let signature = match bls_signatures::Signature::from_bytes(&s.signature) {

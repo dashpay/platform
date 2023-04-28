@@ -1,4 +1,4 @@
-use dashcore::consensus::encode::Error as DashCoreConsensusEncodeError;
+use dashcore_rpc::dashcore::consensus::encode::Error as DashCoreConsensusEncodeError;
 use dpp::bls_signatures::BlsError;
 use drive::error::Error as DriveError;
 
@@ -32,6 +32,17 @@ pub enum ExecutionError {
     /// The fork is not yet active for core.
     #[error("initialization fork not active: {0}")]
     InitializationForkNotActive(String),
+
+    /// Invalid core chain locked height
+    #[error("core chain locked height {requested} is invalid: {v20_fork} <=  {requested} <= {best} is not true")]
+    InitializationBadCoreLockedHeight {
+        /// v20 fork height
+        v20_fork: u32,
+        /// requested core height
+        requested: u32,
+        /// best core lock height
+        best: u32,
+    },
 
     /// An error occurred during initialization.
     #[error("initialization error: {0}")]

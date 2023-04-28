@@ -174,8 +174,8 @@ mod test {
     use crate::platform::PlatformStateRef;
     use crate::state::PlatformState;
     use crate::test::helpers::setup::TestPlatformBuilder;
-    use dashcore::hashes::Hash;
-    use dashcore::{ProTxHash, Txid};
+    use dashcore_rpc::dashcore::hashes::Hash;
+    use dashcore_rpc::dashcore::{ProTxHash, Txid};
     use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem, MasternodeType};
     use dpp::block::block_info::BlockInfo;
     use dpp::data_contract::document_type::random_document::CreateRandomDocument;

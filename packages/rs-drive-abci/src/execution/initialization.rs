@@ -1,17 +1,15 @@
+use crate::abci::messages::InitChainRequest;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformInitializationState;
-
 use dashcore_rpc::dashcore_rpc_json::Bip9SoftforkStatus;
 use dpp::block::block_info::BlockInfo;
-use dpp::identity::TimestampMillis;
 use drive::error::Error::GroveDB;
 use drive::grovedb::Transaction;
 
-use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain};
-use tenderdash_abci::proto::serializers::timestamp::ToMilis;
+use tenderdash_abci::proto::abci::{RequestInitChain, ResponseInitChain, ValidatorSetUpdate};
 
 impl<C> Platform<C>
 where
@@ -23,26 +21,11 @@ where
         request: RequestInitChain,
         transaction: &Transaction,
     ) -> Result<ResponseInitChain, Error> {
-        // We receive the activation height, if core is not yet at this height
+        let request = InitChainRequest::try_from(request)?;
+        // We get core height early, as this also verifies v20 fork
+        let core_height = self.initial_core_height(request.initial_core_height)?;
 
-        let fork_info = self.core_rpc.get_fork_info("DEPLOYMENT_V20")?.ok_or(
-            ExecutionError::InitializationForkNotActive("fork is not yet known".to_string()),
-        )?;
-        if fork_info.status != Bip9SoftforkStatus::Active {
-            // fork is not good yet
-            return Err(ExecutionError::InitializationForkNotActive(format!(
-                "fork is not yet known (currently {:?})",
-                fork_info.status
-            ))
-            .into());
-        }
-
-        let genesis_time = request
-            .time
-            .ok_or(Error::Execution(ExecutionError::InitializationError(
-                "genesis time is required in init chain",
-            )))?
-            .to_milis() as TimestampMillis;
+        let genesis_time = request.genesis_time;
 
         self.create_genesis_state(
             genesis_time,
@@ -55,22 +38,26 @@ where
         self.update_core_info(
             None,
             &mut state_cache,
-            fork_info.since,
+            core_height,
             true,
             &BlockInfo::genesis(),
             transaction,
         )?;
 
-        state_cache.current_validator_set_quorum_hash = state_cache
-            .validator_sets
-            .get_index(0)
-            .ok_or(ExecutionError::InitializationError(
-                "we should have at least one quorum",
-            ))
-            .map(|(quorum_hash, _)| *quorum_hash)?;
+        let validator_set =
+            state_cache
+                .validator_sets
+                .first()
+                .ok_or(ExecutionError::InitializationError(
+                    "we should have at least one quorum",
+                ))?;
+        let quorum_hash = validator_set.0;
+        let validator_set = ValidatorSetUpdate::from(validator_set.1);
+
+        state_cache.current_validator_set_quorum_hash = *quorum_hash;
 
         state_cache.initialization_information = Some(PlatformInitializationState {
-            core_initialization_height: fork_info.since,
+            core_initialization_height: core_height,
         });
 
         let app_hash = self
@@ -83,9 +70,67 @@ where
         Ok(ResponseInitChain {
             consensus_params: None, //todo
             app_hash: app_hash.to_vec(),
-            validator_set_update: None,
+            validator_set_update: Some(validator_set),
             next_core_chain_lock_update: None,
-            initial_core_height: fork_info.since, // we send back the core height when the fork happens
+            initial_core_height: core_height, // we send back the core height when the fork happens
         })
+    }
+
+    /// Determine initial core height.
+    ///
+    /// Use core height received from Tenderdash (from genesis.json) by default,
+    /// otherwise we go with height of v20 fork.
+    ///
+    /// Core height is verified to ensure that it is both at or after v20 fork, and
+    /// before or at last chain lock.
+    ///
+    /// ## Error handling
+    ///
+    /// This function will fail if:
+    ///
+    /// * v20 fork is not yet active
+    /// * `requested` core height is before v20 fork
+    /// * `requested` core height is after current best chain lock
+    ///
+    fn initial_core_height(&self, requested: Option<u32>) -> Result<u32, Error> {
+        let fork_info = self.core_rpc.get_fork_info("v20")?.ok_or(
+            ExecutionError::InitializationForkNotActive("fork is not yet known".to_string()),
+        )?;
+        if fork_info.status != Bip9SoftforkStatus::Active {
+            // fork is not good yet
+            return Err(ExecutionError::InitializationForkNotActive(format!(
+                "fork is not yet known (currently {:?})",
+                fork_info.status
+            ))
+            .into());
+        } else {
+            tracing::debug!(?fork_info, "core fork v20 is active");
+        };
+        let v20_fork = fork_info.since;
+
+        tracing::trace!(requested, v20_fork, "selecting initial core lock height");
+
+        if let Some(requested) = requested {
+            let best = self.core_rpc.get_best_chain_lock()?.core_block_height;
+            // TODO in my opinion, the condition should be:
+            //
+            // `v20_fork <= requested && requested <= best`
+            //
+            // but it results in 1440 <=  1243 <= 1545
+            //
+            // So, fork_info.since differs? is it non-deterministic?
+            if requested <= best {
+                Ok(requested)
+            } else {
+                Err(ExecutionError::InitializationBadCoreLockedHeight {
+                    requested,
+                    best,
+                    v20_fork,
+                }
+                .into())
+            }
+        } else {
+            Ok(v20_fork)
+        }
     }
 }

@@ -5,12 +5,13 @@ use crate::error::Error;
 
 use crate::execution::test_quorum::TestQuorumInfo;
 use crate::rpc::core::CoreRPCLike;
-use dashcore::blockdata::transaction::special_transaction::asset_unlock::qualified_asset_unlock::AssetUnlockPayload;
-use dashcore::blockdata::transaction::special_transaction::asset_unlock::request_info::AssetUnlockRequestInfo;
-use dashcore::blockdata::transaction::special_transaction::asset_unlock::unqualified_asset_unlock::AssetUnlockBaseTransactionInfo;
-use dashcore::blockdata::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
-use dashcore::bls_sig_utils::BLSSignature;
-use dashcore::consensus::Decodable;
+use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::asset_unlock::qualified_asset_unlock::AssetUnlockPayload;
+use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::asset_unlock::request_info::AssetUnlockRequestInfo;
+use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::asset_unlock::unqualified_asset_unlock::AssetUnlockBaseTransactionInfo;
+use dashcore_rpc::dashcore::blockdata::transaction::special_transaction::TransactionPayload::AssetUnlockPayloadType;
+use dashcore_rpc::dashcore::bls_sig_utils::BLSSignature;
+use dashcore_rpc::dashcore::consensus::Decodable;
+use dashcore_rpc::dashcore;
 use dpp::block::block_info::BlockInfo;
 use dpp::serialization_traits::PlatformSerializable;
 use dpp::state_transition::StateTransition;
@@ -24,16 +25,16 @@ use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::types::{
     Block, BlockId, Data, EvidenceList, Header, PartSetHeader, VoteExtension, VoteExtensionType,
 };
-use tenderdash_abci::proto::version::Consensus;
 use tenderdash_abci::{
-    proto::{self, signatures::SignDigest},
-    Application,
+    signatures::SignDigest,
+    proto::{self, version::Consensus},
+    Application  
 };
 
 /// The outcome struct when mimicking block execution
 pub struct MimicExecuteBlockOutcome {
     /// withdrawal transactions
-    pub withdrawal_transactions: Vec<dashcore::Transaction>,
+    pub withdrawal_transactions: Vec<dashcore_rpc::dashcore::Transaction>,
     /// The next validators hash
     pub next_validator_set_hash: Vec<u8>,
 }
@@ -241,11 +242,12 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
 
         //if not in testing this will default to true
         if self.platform.config.testing_configs.block_signing {
+            let quorum_hash:[u8;32] = current_quorum.quorum_hash[..].try_into().expect("wrong quorum hash len");
             let digest = commit
                 .sign_digest(
                     &chain_id,
                     quorum_type as u8,
-                    &current_quorum.quorum_hash,
+                    &quorum_hash,
                     height as i64,
                     0,
                 )

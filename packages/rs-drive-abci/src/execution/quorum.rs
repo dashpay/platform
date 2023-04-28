@@ -1,8 +1,8 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::state::PlatformState;
-use dashcore::hashes::Hash;
-use dashcore::{ProTxHash, PubkeyHash, QuorumHash};
+use dashcore_rpc::dashcore::hashes::Hash;
+use dashcore_rpc::dashcore::{ProTxHash, PubkeyHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem};
 use dashcore_rpc::json::QuorumInfoResult;
 use dpp::bls_signatures::PublicKey as BlsPublicKey;
@@ -50,12 +50,13 @@ impl From<Quorum> for ValidatorSetUpdate {
                         node_ip,
                         platform_p2p_port
                     );
+
                     abci::ValidatorUpdate {
                         pub_key: Some(crypto::PublicKey {
                             sum: Some(Bls12381(public_key.to_bytes().to_vec())),
                         }),
                         power: 100,
-                        pro_tx_hash: pro_tx_hash.to_vec(),
+                        pro_tx_hash: reverse(&pro_tx_hash),
                         node_address,
                     }
                 })
@@ -63,9 +64,20 @@ impl From<Quorum> for ValidatorSetUpdate {
             threshold_public_key: Some(crypto::PublicKey {
                 sum: Some(Bls12381(threshold_public_key.to_bytes().to_vec())),
             }),
-            quorum_hash: quorum_hash.to_vec(),
+            quorum_hash: reverse(&quorum_hash),
         }
     }
+}
+
+/// Reverse bytes
+///
+/// TODO: This is a workaround for reversed data returned by dashcore_rpc (little endian / big endian handling issue).
+/// We need to decide on a consistent approach to endianness and follow it.
+fn reverse(data: &[u8]) -> Vec<u8> {
+    let mut data = data.to_vec();
+    data.reverse();
+
+    data
 }
 
 impl From<&Quorum> for ValidatorSetUpdate {
@@ -99,7 +111,7 @@ impl From<&Quorum> for ValidatorSetUpdate {
                             sum: Some(Bls12381(public_key.to_bytes().to_vec())),
                         }),
                         power: 100,
-                        pro_tx_hash: pro_tx_hash.to_vec(),
+                        pro_tx_hash: reverse(pro_tx_hash),
                         node_address: node_address.clone(),
                     }
                 })
@@ -107,7 +119,7 @@ impl From<&Quorum> for ValidatorSetUpdate {
             threshold_public_key: Some(crypto::PublicKey {
                 sum: Some(Bls12381(threshold_public_key.to_bytes().to_vec())),
             }),
-            quorum_hash: quorum_hash.to_vec(),
+            quorum_hash: reverse(quorum_hash),
         }
     }
 }
@@ -141,12 +153,14 @@ impl Quorum {
             Some(Ok((quorum_member.pro_tx_hash, validator)))
         }).collect::<Result<BTreeMap<ProTxHash, Validator>, Error>>()?;
 
+        let threshold_public_key = BlsPublicKey::from_bytes(quorum_public_key.as_slice())
+            .map_err(ExecutionError::BlsErrorFromDashCoreResponse)?;
+
         Ok(Quorum {
             quorum_hash,
             core_height: height as u32,
             validator_set,
-            threshold_public_key: BlsPublicKey::from_bytes(quorum_public_key.as_slice())
-                .map_err(ExecutionError::BlsErrorFromDashCoreResponse)?,
+            threshold_public_key,
         })
     }
 }

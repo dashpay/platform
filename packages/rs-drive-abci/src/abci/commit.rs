@@ -4,9 +4,10 @@ use crate::execution::finalize_block_cleaned_request::{CleanedBlockId, CleanedCo
 use dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::bls_signatures;
 use dpp::validation::{SimpleValidationResult, ValidationResult};
+use tenderdash_abci::proto;
 use tenderdash_abci::proto::abci::CommitInfo;
 use tenderdash_abci::proto::types::BlockId;
-use tenderdash_abci::proto::{self, signatures::SignDigest};
+use tenderdash_abci::signatures::SignDigest;
 
 use super::AbciError;
 
@@ -34,7 +35,8 @@ impl Commit {
                 block_id: Some(block_id.try_into().expect("cannot convert block id")),
                 height: height as i64,
                 round: ci.round as i32,
-                quorum_hash: ci.quorum_hash.to_vec(),
+                // we need to "un-reverse" quorum hash, as it was reversed in [CleanedCommitInfo::try_from]
+                quorum_hash: ci.quorum_hash.iter().rev().cloned().collect(),
                 threshold_block_signature: ci.block_signature.to_vec(),
                 threshold_vote_extensions: ci.threshold_vote_extensions.to_vec(),
             },
@@ -94,16 +96,20 @@ impl Commit {
 
         //todo: maybe cache this to lower the chance of a hashing based attack (forcing the
         // same calculation each time)
+        let quorum_hash = &self.inner.quorum_hash[..]
+            .try_into()
+            .expect("invalid quorum hash length");
+
         let hash = match self
             .inner
             .sign_digest(
                 &self.chain_id,
                 self.quorum_type as u8,
-                &self.inner.quorum_hash,
+                quorum_hash,
                 self.inner.height,
                 self.inner.round,
             )
-            .map_err(AbciError::TenderdashProto)
+            .map_err(AbciError::Tenderdash)
         {
             Ok(hash) => hash,
             Err(e) => return ValidationResult::new_with_error(e),
@@ -128,10 +134,8 @@ mod test {
         dashcore::hashes::sha256, dashcore::hashes::Hash, dashcore_rpc_json::QuorumType,
     };
     use dpp::bls_signatures::PublicKey;
-    use tenderdash_abci::proto::{
-        signatures::{SignBytes, SignDigest},
-        types::{BlockId, PartSetHeader, StateId},
-    };
+    use tenderdash_abci::proto::types::{BlockId, PartSetHeader, StateId};
+    use tenderdash_abci::signatures::{SignBytes, SignDigest};
 
     /// Given a commit info and a signature, check that the signature is verified correctly
     #[test]

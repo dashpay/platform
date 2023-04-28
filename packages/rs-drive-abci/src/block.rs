@@ -32,13 +32,14 @@ use crate::error::Error;
 use crate::execution::block_proposal::BlockProposal;
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::state::PlatformState;
-use dashcore::Txid;
+use dashcore_rpc::dashcore::hashes::hex::ToHex;
+use dashcore_rpc::dashcore::Txid;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
-
 use std::collections::BTreeMap;
 
 /// Block info
+#[derive(Debug)]
 pub struct BlockStateInfo {
     /// Block height
     pub height: u64,
@@ -54,8 +55,8 @@ pub struct BlockStateInfo {
     pub core_chain_locked_height: u32,
     /// Block hash
     pub block_hash: [u8; 32],
-    /// Block commit hash after processing
-    pub commit_hash: Option<[u8; 32]>,
+    /// Application hash
+    pub app_hash: Option<[u8; 32]>,
 }
 
 impl BlockStateInfo {
@@ -81,7 +82,7 @@ impl BlockStateInfo {
             proposer_pro_tx_hash: proposal.proposer_pro_tx_hash,
             core_chain_locked_height: proposal.core_chain_locked_height,
             block_hash: proposal.block_hash.unwrap_or_default(), // we will set it later
-            commit_hash: None,
+            app_hash: None,
         }
     }
 
@@ -126,7 +127,20 @@ impl BlockStateInfo {
             ))
         })?;
         // the order is important here, don't verify commit hash before height and round
-        Ok(self.height == height && self.round == round && self.core_chain_locked_height == core_block_height && self.proposer_pro_tx_hash == proposer_pro_tx_hash && self.commit_hash.ok_or(Error::Abci(AbciError::FinalizeBlockReceivedBeforeProcessing(format!("we received a block with hash {}, but don't have a current block being processed", hex::encode(received_hash)))))? == received_hash)
+        tracing::trace!(
+            self=?self,
+            ?height,
+            ?round,
+            ?core_block_height,
+            proposer_pro_tx_hash = proposer_pro_tx_hash.to_hex(),
+            commit_hash = received_hash.to_hex(),
+            "check if block info matches request"
+        );
+        Ok(self.height == height
+            && self.round == round
+            && self.core_chain_locked_height == core_block_height
+            && self.proposer_pro_tx_hash == proposer_pro_tx_hash
+            && self.block_hash == received_hash)
     }
 }
 /// Block execution context

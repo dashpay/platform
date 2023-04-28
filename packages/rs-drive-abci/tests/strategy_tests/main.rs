@@ -33,7 +33,7 @@
 extern crate core;
 
 use anyhow::anyhow;
-use dashcore::{Network, PrivateKey, ProTxHash, QuorumHash, Txid};
+use dashcore_rpc::dashcore::{Network, PrivateKey, ProTxHash, QuorumHash, Txid};
 use dashcore_rpc::dashcore_rpc_json::{
     Bip9SoftforkInfo, Bip9SoftforkStatus, DMNState, DMNStateDiff, ExtendedQuorumDetails,
     MasternodeListDiffWithMasternodes, MasternodeListItem, MasternodeType, QuorumInfoResult,
@@ -68,9 +68,9 @@ use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::drive::defaults::PROTOCOL_VERSION;
 use drive::drive::flags::StorageFlags::SingleEpoch;
 
-use dashcore::hashes::hex::ToHex;
-use dashcore::hashes::Hash;
-use dashcore::secp256k1::SecretKey;
+use dashcore_rpc::dashcore::hashes::hex::ToHex;
+use dashcore_rpc::dashcore::hashes::Hash;
+use dashcore_rpc::dashcore::secp256k1::SecretKey;
 use operations::FinalizeBlockOperation::IdentityAddKeys;
 
 use dpp::block::epoch::Epoch;
@@ -145,8 +145,8 @@ mod tests {
         DocumentAction, DocumentOp, IdentityUpdateOp, Operation, OperationType,
     };
     use crate::strategy::MasternodeListChangesStrategy;
-    use dashcore::hashes::Hash;
-    use dashcore::BlockHash;
+    use dashcore_rpc::dashcore::hashes::Hash;
+    use dashcore_rpc::dashcore::BlockHash;
     use dashcore_rpc::dashcore_rpc_json::{
         Bip9SoftforkInfo, Bip9SoftforkStatus, ExtendedQuorumDetails,
     };

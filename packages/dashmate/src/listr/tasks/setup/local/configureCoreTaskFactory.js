@@ -364,6 +364,46 @@ function configureCoreTaskFactory(
               },
             },
             {
+              title: 'Activating V20 fork',
+              task: () => new Observable(async (observer) => {
+                let isV20Activated = false;
+                let blockchainInfo;
+
+                let blocksGenerated = 0;
+
+                const blocksToGenerateInOneStep = 10;
+
+                do {
+                  ({
+                    result: blockchainInfo,
+                  } = await ctx.seedCoreService.getRpcClient().getBlockchainInfo());
+
+                  isV20Activated = blockchainInfo.bip9_softforks.v20.status === 'active';
+                  if (isV20Activated) {
+                    break;
+                  }
+
+                  await generateBlocks(
+                    ctx.seedCoreService,
+                    blocksToGenerateInOneStep,
+                    NETWORK_LOCAL,
+                    // eslint-disable-next-line no-loop-func
+                    (blocks) => {
+                      blocksGenerated += blocks;
+
+                      observer.next(`${blocksGenerated} blocks generated`);
+                    },
+                  );
+                } while (!isV20Activated);
+
+                observer.next(`V20 fork has been activated at height ${blockchainInfo.bip9_softforks.v20.since}`);
+
+                observer.complete();
+
+                return this;
+              }),
+            },
+            {
               title: 'Stopping nodes',
               task: async () => (Promise.all(
                 ctx.coreServices.map((coreService) => coreService.stop()),
