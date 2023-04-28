@@ -48,18 +48,22 @@ function resetNodeTaskFactory(
         title: 'Remove platform services and associated data',
         enabled: (ctx) => ctx.isPlatformOnlyReset,
         task: async () => {
+          const nonPlatformServices = ['core', 'sentinel'];
+          const envs = config.toEnvs();
+
           // Remove containers
-          const serviceNames = await dockerCompose
+          const serviceNames = (await dockerCompose
             .getContainersList(
-              config.toEnvs({ platformOnly: true }),
+              envs,
               undefined,
               true,
-            );
+            ))
+            .filter((serviceName) => !nonPlatformServices.includes(serviceName));
 
           await dockerCompose.rm(config.toEnvs(), serviceNames);
 
           // Remove volumes
-          const { COMPOSE_PROJECT_NAME: composeProjectName } = config.toEnvs();
+          const { COMPOSE_PROJECT_NAME: composeProjectName } = envs;
 
           const projectVolumeNames = await dockerCompose.getVolumeNames(
             config.toEnvs({ platformOnly: true }),
