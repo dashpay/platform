@@ -1,9 +1,6 @@
-const Identity = require('@dashevo/dpp/lib/identity/Identity');
-const decodeProtocolEntityFactory = require('@dashevo/dpp/lib/decodeProtocolEntityFactory');
+const { default: loadDpp, Identity, decodeProtocolEntity } = require('@dashevo/wasm-dpp');
 
 const Worker = require('../Worker');
-
-const decodeProtocolEntity = decodeProtocolEntityFactory();
 
 /**
  * @property {number} gapLimit
@@ -25,6 +22,12 @@ class IdentitySyncWorker extends Worker {
       ],
       ...options,
     });
+  }
+
+  // eslint-disable-next-line
+  async onStart() {
+    // Load DPP to make sure Identity and decodeProtocolEntity are available
+    await loadDpp();
   }
 
   async execute() {

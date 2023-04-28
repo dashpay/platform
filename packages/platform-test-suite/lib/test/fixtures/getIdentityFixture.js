@@ -3,21 +3,20 @@ const Dash = require('dash');
 const generateRandomIdentifier = require('../utils/generateRandomIdentifier');
 
 const {
-  PlatformProtocol: {
-    Identity,
-    IdentityPublicKey,
-    version,
-  },
+  Platform,
 } = Dash;
-
-const id = generateRandomIdentifier();
 
 /**
  * @return {Identity}
  */
-module.exports = function getIdentityFixture() {
+module.exports = async function getIdentityFixture() {
+  const { Identity, IdentityPublicKey } = await Platform
+    .initializeDppModule();
+
+  const id = await generateRandomIdentifier();
+
   const rawIdentity = {
-    protocolVersion: version,
+    protocolVersion: 1,
     id: id.toBuffer(),
     balance: 10,
     revision: 0,

@@ -85,6 +85,11 @@ impl ExtendedDocumentWasm {
         self.0.document_type_name.clone()
     }
 
+    #[wasm_bindgen(js_name=setType)]
+    pub fn set_type(&mut self, document_type_name: String) {
+        self.0.document_type_name = document_type_name;
+    }
+
     #[wasm_bindgen(js_name=getDataContractId)]
     pub fn get_data_contract_id(&self) -> IdentifierWrapper {
         self.0.data_contract_id.into()

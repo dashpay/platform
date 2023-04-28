@@ -103,6 +103,11 @@ impl IdentityWasm {
             .map(Into::into)
     }
 
+    #[wasm_bindgen(getter)]
+    pub fn balance(&self) -> f64 {
+        self.0.get_balance() as f64
+    }
+
     #[wasm_bindgen(js_name=getBalance)]
     pub fn get_balance(&self) -> f64 {
         self.0.get_balance() as f64

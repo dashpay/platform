@@ -1,5 +1,5 @@
 import { PrivateKey } from '@dashevo/dashcore-lib';
-import IdentityPublicKey from '@dashevo/dpp/lib/identity/IdentityPublicKey';
+import { IdentityPublicKey, StateTransitionExecutionContext } from '@dashevo/wasm-dpp';
 import { Platform } from '../../../Platform';
 
 /**
@@ -39,14 +39,20 @@ export async function createIdentityCreateTransition(
   // @ts-ignore
   const identity = dpp.identity.create(
     assetLockProof, [{
-      key: identityMasterPublicKey,
+      id: 0,
+      data: identityMasterPublicKey.toBuffer(),
+      type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
       purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
       securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+      readOnly: false,
     },
     {
-      key: identitySecondPublicKey,
+      id: 1,
+      data: identitySecondPublicKey.toBuffer(),
+      type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
       purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
       securityLevel: IdentityPublicKey.SECURITY_LEVELS.HIGH,
+      readOnly: false,
     },
     ],
   );
@@ -59,28 +65,37 @@ export async function createIdentityCreateTransition(
   const [masterKey, secondKey] = identityCreateTransition.getPublicKeys();
 
   await identityCreateTransition
-    .signByPrivateKey(identityMasterPrivateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
+    .signByPrivateKey(identityMasterPrivateKey.toBuffer(), IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
   masterKey.setSignature(identityCreateTransition.getSignature());
 
   identityCreateTransition.setSignature(undefined);
 
   await identityCreateTransition
-    .signByPrivateKey(identitySecondPrivateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
+    .signByPrivateKey(identitySecondPrivateKey.toBuffer(), IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
   secondKey.setSignature(identityCreateTransition.getSignature());
 
   identityCreateTransition.setSignature(undefined);
 
+  // Set public keys back after updating their signatures
+  identityCreateTransition.setPublicKeys([masterKey, secondKey]);
+
   // Sign and validate state transition
 
   await identityCreateTransition
-    .signByPrivateKey(assetLockPrivateKey, IdentityPublicKey.TYPES.ECDSA_SECP256K1);
+    .signByPrivateKey(assetLockPrivateKey.toBuffer(), IdentityPublicKey.TYPES.ECDSA_SECP256K1);
 
-  const result = await dpp.stateTransition.validateBasic(identityCreateTransition);
+  const result = await dpp.stateTransition.validateBasic(
+    identityCreateTransition,
+    // TODO(v0.24-backport): get rid of this once decided
+    //  whether we need execution context in wasm bindings
+    new StateTransitionExecutionContext(),
+  );
 
   if (!result.isValid()) {
-    throw new Error(`StateTransition is invalid - ${JSON.stringify(result.getErrors())}`);
+    const messages = result.getErrors().map((error) => error.message);
+    throw new Error(`StateTransition is invalid - ${JSON.stringify(messages)}`);
   }
 
   return { identity, identityCreateTransition, identityIndex };

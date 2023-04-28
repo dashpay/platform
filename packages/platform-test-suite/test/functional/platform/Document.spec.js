@@ -14,9 +14,7 @@ const {
     StateTransitionBroadcastError,
   },
   PlatformProtocol: {
-    ConsensusErrors: {
-      InvalidDocumentTypeError,
-    },
+    InvalidDocumentTypeError,
   },
 } = Dash;
 
@@ -37,7 +35,7 @@ describe('Platform', () => {
       // Additional wait time to mitigate testnet latency
       await waitForSTPropagated();
 
-      dataContractFixture = getDataContractFixture(identity.getId());
+      dataContractFixture = await getDataContractFixture(identity.getId());
 
       await client.platform.contracts.publish(dataContractFixture, identity);
 
@@ -50,8 +48,8 @@ describe('Platform', () => {
       });
     });
 
-    beforeEach(() => {
-      dataContractFixture = getDataContractFixture(identity.getId());
+    beforeEach(async () => {
+      dataContractFixture = await getDataContractFixture(identity.getId());
     });
 
     after(async () => {
@@ -60,9 +58,9 @@ describe('Platform', () => {
       }
     });
 
-    it('should fail to create new document with an unknown type', async function it() {
+    it('should fail to create new document with an unknown type', async () => {
       // Add undefined document type for
-      client.getApps().get('customContracts').contract.documents.undefinedType = {
+      client.getApps().get('customContracts').contract.setDocumentSchema('undefinedType', {
         type: 'object',
         properties: {
           name: {
@@ -70,7 +68,7 @@ describe('Platform', () => {
           },
         },
         additionalProperties: false,
-      };
+      });
 
       const newDocument = await client.platform.documents.create(
         'customContracts.undefinedType',
@@ -79,13 +77,6 @@ describe('Platform', () => {
           name: 'anotherName',
         },
       );
-
-      // mock validateBasic to skip validation in SDK
-      this.sinon.stub(client.platform.dpp.stateTransition, 'validateBasic');
-
-      client.platform.dpp.stateTransition.validateBasic.returns({
-        isValid: () => true,
-      });
 
       let broadcastError;
 
@@ -102,7 +93,7 @@ describe('Platform', () => {
     });
 
     it('should fail to create a new document with an unknown owner', async () => {
-      const unknownIdentity = getIdentityFixture();
+      const unknownIdentity = await getIdentityFixture();
 
       document = await client.platform.documents.create(
         'customContracts.niceDocument',
@@ -170,7 +161,7 @@ describe('Platform', () => {
 
       expect(broadcastError).to.exist();
       expect(broadcastError.code).to.be.equal(4009);
-      expect(broadcastError.message).to.match(/Document \w* has duplicate unique properties \$ownerId, firstName with other documents/);
+      expect(broadcastError.message).to.match(/Document \w* has duplicate unique properties \["\$ownerId", "firstName"] with other documents/);
     });
 
     it('should be able to create new document', async () => {
@@ -199,8 +190,8 @@ describe('Platform', () => {
 
       expect(fetchedDocument).to.exist();
       expect(document.toObject()).to.deep.equal(fetchedDocument.toObject());
-      expect(fetchedDocument.getUpdatedAt().getTime())
-        .to.be.equal(fetchedDocument.getCreatedAt().getTime());
+      expect(fetchedDocument.getUpdatedAt())
+        .to.be.deep.equal(fetchedDocument.getCreatedAt());
     });
 
     it('should be able to fetch created document by created timestamp', async () => {
@@ -234,8 +225,8 @@ describe('Platform', () => {
       );
 
       expect(fetchedDocument.get('firstName')).to.equal('updatedName');
-      expect(fetchedDocument.getUpdatedAt().getTime())
-        .to.be.greaterThan(fetchedDocument.getCreatedAt().getTime());
+      expect(fetchedDocument.getUpdatedAt())
+        .to.be.greaterThan(fetchedDocument.getCreatedAt());
     });
 
     it.skip('should be able to prove that a document was updated', async () => {
@@ -301,8 +292,10 @@ describe('Platform', () => {
       // Additional wait time to mitigate testnet latency
       await waitForSTPropagated();
 
-      documentsBatchTransition.transitions[0].updatedAt = updatedAt;
-      documentsBatchTransition.transitions[0].revision += 1;
+      const transitions = documentsBatchTransition.getTransitions();
+      transitions[0].setUpdatedAt(updatedAt);
+
+      documentsBatchTransition.setTransitions(transitions);
       const signedTransition = await signStateTransition(
         client.platform, documentsBatchTransition, identity, 1,
       );
@@ -343,11 +336,12 @@ describe('Platform', () => {
         },
       );
 
-      const createdAt = document.getCreatedAt();
+      const timestamp = document.getCreatedAt();
 
-      createdAt.setMinutes(createdAt.getMinutes() - 10);
+      timestamp.setMinutes(timestamp.getMinutes() - 10);
 
-      document.setUpdatedAt(createdAt);
+      document.setCreatedAt(timestamp);
+      document.setUpdatedAt(timestamp);
 
       let broadcastError;
 

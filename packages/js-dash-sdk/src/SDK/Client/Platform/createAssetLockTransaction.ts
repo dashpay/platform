@@ -21,7 +21,6 @@ export async function createAssetLockTransaction(
   const platform = this;
   const account = await platform.client.getWalletAccount();
 
-  // @ts-ignore
   const assetLockOneTimePrivateKey = new PrivateKey();
   const assetLockOneTimePublicKey = assetLockOneTimePrivateKey.toPublicKey();
 

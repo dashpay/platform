@@ -42,8 +42,11 @@ function waitForStateTransitionResultHandlerFactory(
    * @param {Object} txDeliverResult
    * @return {StateTransitionBroadcastError}
    */
-  function createStateTransitionDeliverError(txDeliverResult) {
-    const grpcError = createGrpcErrorFromDriveResponse(txDeliverResult.code, txDeliverResult.info);
+  async function createStateTransitionDeliverError(txDeliverResult) {
+    const grpcError = await createGrpcErrorFromDriveResponse(
+      txDeliverResult.code,
+      txDeliverResult.info,
+    );
 
     const error = new StateTransitionBroadcastError();
 
@@ -95,7 +98,9 @@ function waitForStateTransitionResultHandlerFactory(
     const response = new WaitForStateTransitionResultResponse();
 
     if (result instanceof TransactionErrorResult) {
-      const error = createStateTransitionDeliverError(result.getResult());
+      const error = await createStateTransitionDeliverError(
+        result.getResult(),
+      );
 
       response.setError(error);
 

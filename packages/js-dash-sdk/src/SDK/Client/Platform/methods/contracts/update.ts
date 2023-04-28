@@ -15,12 +15,13 @@ export default async function update(
   dataContract: any,
   identity: any,
 ): Promise<any> {
+  this.logger.debug(`[DataContract#update] Update data contract ${dataContract.getId()}`);
   await this.initialize();
 
   const { dpp } = this;
 
   // Clone contract
-  const updatedDataContract = await this.dpp.dataContract.createFromObject(
+  const updatedDataContract = await dpp.dataContract.createFromObject(
     dataContract.toObject(),
   );
 
@@ -29,9 +30,12 @@ export default async function update(
   const dataContractUpdateTransition = dpp.dataContract
     .createDataContractUpdateTransition(updatedDataContract);
 
+  this.logger.silly(`[DataContract#update] Created data contract update transition ${dataContract.getId()}`);
+
   await signStateTransition(this, dataContractUpdateTransition, identity, 1);
   await broadcastStateTransition(this, dataContractUpdateTransition);
 
+  this.logger.silly(`[DataContract#update] Broadcasted data contract update transition ${dataContract.getId()}`);
   // Update app with updated data contract if available
   // eslint-disable-next-line
   for (const appName of this.client.getApps().getNames()) {
@@ -41,5 +45,6 @@ export default async function update(
     }
   }
 
+  this.logger.debug(`[DataContract#updated] Update data contract ${dataContract.getId()}`);
   return dataContractUpdateTransition;
 }

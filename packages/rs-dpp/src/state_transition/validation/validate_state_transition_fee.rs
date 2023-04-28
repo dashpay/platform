@@ -192,18 +192,19 @@ where
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<u64, ProtocolError> {
         let identity_id = st.get_owner_id();
-        let identity = self
+
+        let balance = self
             .state_repository
-            .fetch_identity(identity_id, Some(execution_context))
+            .fetch_identity_balance(identity_id, Some(execution_context))
             .await?
-            .map(TryInto::try_into)
-            .transpose()
-            .map_err(Into::into)?
             .ok_or_else(|| {
-                ProtocolError::IdentityNotPresentError(IdentityNotPresentError::new(*identity_id))
+                NonConsensusError::StateRepositoryFetchError(format!(
+                    "state repository fetch identity balance error: {}",
+                    *identity_id
+                ))
             })?;
 
-        Ok(identity.get_balance())
+        Ok(balance)
     }
 }
 
@@ -276,8 +277,8 @@ mod test {
 
         identity.balance = 1;
         state_repository_mock
-            .expect_fetch_identity()
-            .returning(move |_, _| Ok(Some(identity.clone())));
+            .expect_fetch_identity_balance()
+            .returning(move |_, _| Ok(Some(identity.balance)));
 
         let data_contract = get_data_contract_fixture(None);
         let execution_context = execution_context_with_cost(40, 5);
@@ -304,8 +305,8 @@ mod test {
 
         identity.balance = 52;
         state_repository_mock
-            .expect_fetch_identity()
-            .returning(move |_, _| Ok(Some(identity.clone())));
+            .expect_fetch_identity_balance()
+            .returning(move |_, _| Ok(Some(identity.balance)));
 
         let data_contract = get_data_contract_fixture(None);
         let execution_context = execution_context_with_cost(40, 5);
@@ -330,8 +331,8 @@ mod test {
 
         identity.balance = 1;
         state_repository_mock
-            .expect_fetch_identity()
-            .returning(move |_, _| Ok(Some(identity.clone())));
+            .expect_fetch_identity_balance()
+            .returning(move |_, _| Ok(Some(identity.balance)));
 
         let data_contract = get_data_contract_fixture(None);
         let documents =
@@ -361,8 +362,8 @@ mod test {
 
         identity.balance = 90;
         state_repository_mock
-            .expect_fetch_identity()
-            .returning(move |_, _| Ok(Some(identity.clone())));
+            .expect_fetch_identity_balance()
+            .returning(move |_, _| Ok(Some(identity.balance)));
 
         let data_contract = get_data_contract_fixture(None);
         let documents =
@@ -390,8 +391,8 @@ mod test {
 
         identity.balance = 1;
         state_repository_mock
-            .expect_fetch_identity()
-            .returning(move |_, _| Ok(Some(identity.clone())));
+            .expect_fetch_identity_balance()
+            .returning(move |_, _| Ok(Some(identity.balance)));
 
         let data_contract = get_data_contract_fixture(None);
         let documents =

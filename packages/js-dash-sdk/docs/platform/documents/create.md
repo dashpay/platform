@@ -1,5 +1,5 @@
 **Usage**: `client.platform.documents.create(typeLocator, identity, documentOpts)`    
-**Description**: This method will return a Document object initialized with the parameters defined and apply to the used identity. 
+**Description**: This method will return a ExtendedDocument object initialized with the parameters defined and apply to the used identity. 
 
 Parameters: 
 
@@ -23,4 +23,4 @@ const helloWorldDocument = await client.platform.documents.create(
 ```
 **Note**: When your document is created, it will only exist locally, use the [broadcast](../documents/broadcast.md) method to register it.  
 
-Returns: Document
+Returns: ExtendedDocument

@@ -9,4 +9,4 @@ Parameters:
 
 **Example**: `await client.platform.names.resolve('alice.dash')`
 
-Returns : Document (or `null` if do not exist).
+Returns : ExtendedDocument (or `null` if do not exist).

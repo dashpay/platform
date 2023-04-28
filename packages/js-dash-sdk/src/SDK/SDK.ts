@@ -19,7 +19,6 @@ export namespace SDK {
   export const Client = _Client;
 
   export const Core = _Core;
-  // TODO: consider marking as DEPRECATED and use PlatformProtocol below instead
   export const Platform = _Platform;
 
   // Wallet-lib primitives

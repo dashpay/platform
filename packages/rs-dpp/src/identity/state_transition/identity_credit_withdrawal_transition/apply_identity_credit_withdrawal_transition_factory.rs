@@ -109,7 +109,7 @@ where
                     withdrawals_contract::document_types::WITHDRAWAL,
                     platform_value!({
                         "where": [
-                            ["$id", "==", document_id],
+                            ["$id", "==", document_id.to_buffer()],
                         ],
                     }),
                     Some(&execution_context),
