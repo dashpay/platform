@@ -50,8 +50,12 @@ zmqpubrawtxlocksig=tcp://0.0.0.0:29998
 masternodeblsprivkey={{=it.core.masternode.operator.privateKey}}
 {{?}}
 
-{{? it.network === 'testnet'}}testnet=1
+{{? it.network !== 'mainnet'}}
 fallbackfee=0.00001
+{{?}}
+
+{{? it.network === 'testnet'}}testnet=1
+
 [test]
 {{?? it.network === 'local'}}
 regtest=1
