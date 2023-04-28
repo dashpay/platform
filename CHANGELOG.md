@@ -1,3 +1,14 @@
+## [0.24.0-dev.27](https://github.com/dashpay/platform/compare/v0.24.0-dev.26...v0.24.0-dev.27) (2023-04-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dashmate:** multiple issues in the reset command (#991)
+
+### Bug Fixes
+
+* **dashmate:** multiple issues in the reset command ([#991](https://github.com/dashpay/platform/issues/991))
+
 ## [0.24.0-dev.26](https://github.com/dashpay/platform/compare/v0.24.0-dev.25...v0.24.0-dev.26) (2023-04-27)
 
 
