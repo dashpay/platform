@@ -270,7 +270,7 @@ where
             block_hash: _,
             height,
             round: _,
-            core_chain_locked_height: _,
+            core_chain_locked_height,
             proposed_app_version,
             proposer_pro_tx_hash,
             validator_set_quorum_hash,
@@ -294,7 +294,7 @@ where
             self.update_core_info(
                 Some(&state),
                 &mut block_platform_state,
-                block_proposal.core_chain_locked_height,
+                core_chain_locked_height,
                 false,
                 &block_info,
                 transaction,
