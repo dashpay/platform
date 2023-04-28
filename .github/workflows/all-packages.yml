@@ -67,8 +67,7 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 30
     env:
-      SCCACHE_BUCKET: "dashdev-infra-2023"
-      SCCACHE_S3_KEY_PREFIX: "platform-sccache"
+      SCCACHE_BUCKET: "sccache-platform"
       RUSTC_WRAPPER: "sccache"
       CARGO_INCREMENTAL: "false"
     steps:
