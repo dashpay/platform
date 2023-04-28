@@ -52,6 +52,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
     ) -> Result<MimicExecuteBlockOutcome, Error> {
         let mut rng = StdRng::seed_from_u64(block_info.height);
         let block_hash: [u8; 32] = rng.gen(); // We fake a block hash for the test
+        let next_validators_hash: [u8; 32] = rng.gen(); // We fake a block hash for the test
         let serialized_state_transitions = state_transitions
             .into_iter()
             .map(|st| st.serialize().map_err(Error::Protocol))
@@ -76,7 +77,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                 seconds: (time_ms / 1000) as i64,
                 nanos: ((time_ms % 1000) * 1000) as i32,
             }),
-            next_validators_hash: vec![],
+            next_validators_hash: next_validators_hash.to_vec(),
             round: 0,
             core_chain_locked_height: core_height,
             proposer_pro_tx_hash: proposer_pro_tx_hash.to_vec(),
@@ -131,7 +132,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                 seconds: (time_ms / 1000) as i64,
                 nanos: ((time_ms % 1000) * 1000) as i32,
             }),
-            next_validators_hash: vec![],
+            next_validators_hash: next_validators_hash.to_vec(),
             round: 0,
             core_chain_locked_height: core_height,
             core_chain_lock_update,

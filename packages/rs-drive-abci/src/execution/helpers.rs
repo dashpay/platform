@@ -300,7 +300,9 @@ where
     ///
     /// # Arguments
     ///
-    /// * state - A mutable reference to the platform state to be updated.
+    /// * platform_state - A reference to the platform state before execution of current block.
+    /// * block_platform_state - A mutable reference to the current platform state in the block
+    /// execution context to be updated.
     /// * core_block_height - The current block height in the Dash Core.
     /// * is_init_chain - A boolean indicating if the chain is being initialized.
     /// * block_info - A reference to the block information.
