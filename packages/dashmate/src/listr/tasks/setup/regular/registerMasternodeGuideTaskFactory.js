@@ -186,8 +186,8 @@ function registerMasternodeGuideTaskFactory() {
                     result: (value) => Number(value).toFixed(2),
                   },
                 ],
-                validate: ({ privateKey, rewardShare }) => validateBLSPrivateKey(privateKey)
-                  && validatePercentage(rewardShare),
+                validate: ({ privateKey, rewardShare }) => (
+                  validateBLSPrivateKey(privateKey) === true && validatePercentage(rewardShare)),
               },
             ];
 
@@ -219,27 +219,27 @@ function registerMasternodeGuideTaskFactory() {
 
             let command;
             if (ctx.isHP) {
-              command = `dash-cli register_hpmn
-                    ${state.collateral.txId}
-                    ${state.collateral.outputIndex}
-                    ${state.ipAndPorts.ip}:${state.ipAndPorts.coreP2PPort}
-                    ${state.keys.ownerAddress}
-                    ${operatorPublicKeyHex}
-                    ${state.keys.votingAddress}
-                    ${state.operator.rewardShare}
-                    ${state.keys.payoutAddress}
-                    ${deriveTenderdashNodeId(state.platformNodeKey)}
-                    ${platformP2PPort}
+              command = `dash-cli protx register_hpmn \\
+                    ${state.collateral.txId} \\
+                    ${state.collateral.outputIndex} \\
+                    ${state.ipAndPorts.ip}:${state.ipAndPorts.coreP2PPort} \\
+                    ${state.keys.ownerAddress} \\
+                    ${operatorPublicKeyHex} \\
+                    ${state.keys.votingAddress} \\
+                    ${state.operator.rewardShare} \\
+                    ${state.keys.payoutAddress} \\
+                    ${deriveTenderdashNodeId(state.platformNodeKey)} \\
+                    ${platformP2PPort} \\
                     ${platformHTTPPort}`;
             } else {
-              command = `dash-cli register
-                    ${state.collateral.txId}
-                    ${state.collateral.outputIndex}
-                    ${state.ipAndPorts.ip}:${state.ipAndPorts.coreP2PPort}
-                    ${state.keys.ownerAddress}
-                    ${operatorPublicKeyHex}
-                    ${state.keys.votingAddress}
-                    ${state.operator.rewardShare}
+              command = `dash-cli protx register \\
+                    ${state.collateral.txId} \\
+                    ${state.collateral.outputIndex} \\
+                    ${state.ipAndPorts.ip}:${state.ipAndPorts.coreP2PPort} \\
+                    ${state.keys.ownerAddress} \\
+                    ${operatorPublicKeyHex} \\
+                    ${state.keys.votingAddress} \\
+                    ${state.operator.rewardShare} \\
                     ${state.keys.payoutAddress}`;
             }
 

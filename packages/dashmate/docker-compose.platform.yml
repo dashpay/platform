@@ -4,8 +4,6 @@ services:
   drive_abci:
     image: ${PLATFORM_DRIVE_ABCI_DOCKER_IMAGE:?err}
     restart: unless-stopped
-    depends_on:
-      - core
     volumes:
       - drive_abci_data:/var/lib/dash/rs-drive-abci
     environment:
@@ -51,7 +49,6 @@ services:
     restart: unless-stopped
     depends_on:
       - drive_tenderdash
-      - core
     environment:
       - API_JSON_RPC_PORT=3004
       - API_GRPC_PORT=3005
@@ -74,8 +71,6 @@ services:
   dapi_tx_filter_stream:
     image: ${PLATFORM_DAPI_API_DOCKER_IMAGE:?err}
     restart: unless-stopped
-    depends_on:
-      - core
     environment:
       - TX_FILTER_STREAM_GRPC_PORT=3006
       - DASHCORE_RPC_HOST=core

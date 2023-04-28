@@ -24,6 +24,7 @@ use crate::buffer::Buffer;
 use crate::errors::from_dpp_err;
 pub use state_transition::*;
 
+pub mod credits_converter;
 pub mod errors;
 pub mod state_transition;
 
