@@ -319,6 +319,7 @@ where
             hpmn_count: hpmn_list_len as u32,
             withdrawal_transactions: BTreeMap::new(),
             block_platform_state,
+            proposer_results: None,
         };
 
         // If last synced Core block height is not set instead of scanning

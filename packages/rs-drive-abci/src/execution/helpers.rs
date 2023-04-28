@@ -264,8 +264,11 @@ where
             let UpdateStateMasternodeListOutcome {
                 masternode_list_diff,
                 removed_masternodes,
-            } =
-                self.update_state_masternode_list(block_platform_state, core_block_height, is_init_chain)?;
+            } = self.update_state_masternode_list(
+                block_platform_state,
+                core_block_height,
+                is_init_chain,
+            )?;
 
             self.update_masternode_identities(
                 masternode_list_diff,
