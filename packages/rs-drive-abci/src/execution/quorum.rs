@@ -33,7 +33,9 @@ impl From<Quorum> for ValidatorSetUpdate {
             ..
         } = value;
         ValidatorSetUpdate {
-            validator_updates: validator_set.into_values().map(|validator| {
+            validator_updates: validator_set
+                .into_values()
+                .map(|validator| {
                     let Validator {
                         pro_tx_hash,
                         public_key,
@@ -72,7 +74,6 @@ impl From<Quorum> for ValidatorSetUpdate {
 /// TODO: This is a workaround for reversed data returned by dashcore_rpc (little endian / big endian handling issue).
 /// We need to decide on a consistent approach to endianness and follow it.
 fn reverse(data: &[u8]) -> Vec<u8> {
-    
     // data.reverse();
 
     data.to_vec()

@@ -237,14 +237,20 @@ impl TryFrom<&Value> for AssetLockProof {
                 AssetLockProofType::Chain => Ok(Self::Chain(value.clone().try_into()?)),
             }
         } else {
-            let map = value.as_map().ok_or(ProtocolError::DecodingError("error decoding asset lock proof".to_string()))?;
+            let map = value.as_map().ok_or(ProtocolError::DecodingError(
+                "error decoding asset lock proof".to_string(),
+            ))?;
             let (key, asset_lock_value) = map.first().ok_or(ProtocolError::DecodingError(
                 "error decoding asset lock proof as it was empty".to_string(),
             ))?;
-            match key.as_str().ok_or(ProtocolError::DecodingError("error decoding asset lock proof".to_string()))? {
+            match key.as_str().ok_or(ProtocolError::DecodingError(
+                "error decoding asset lock proof".to_string(),
+            ))? {
                 "Instant" => Ok(Self::Instant(asset_lock_value.clone().try_into()?)),
                 "Chain" => Ok(Self::Chain(asset_lock_value.clone().try_into()?)),
-                _ => Err(ProtocolError::DecodingError("error decoding asset lock proof".to_string())),
+                _ => Err(ProtocolError::DecodingError(
+                    "error decoding asset lock proof".to_string(),
+                )),
             }
         }
     }
@@ -265,14 +271,20 @@ impl TryFrom<Value> for AssetLockProof {
                 AssetLockProofType::Chain => Ok(Self::Chain(value.try_into()?)),
             }
         } else {
-            let map = value.as_map().ok_or(ProtocolError::DecodingError("error decoding asset lock proof".to_string()))?;
+            let map = value.as_map().ok_or(ProtocolError::DecodingError(
+                "error decoding asset lock proof".to_string(),
+            ))?;
             let (key, asset_lock_value) = map.first().ok_or(ProtocolError::DecodingError(
                 "error decoding asset lock proof as it was empty".to_string(),
             ))?;
-            match key.as_str().ok_or(ProtocolError::DecodingError("error decoding asset lock proof".to_string()))? {
+            match key.as_str().ok_or(ProtocolError::DecodingError(
+                "error decoding asset lock proof".to_string(),
+            ))? {
                 "Instant" => Ok(Self::Instant(asset_lock_value.clone().try_into()?)),
                 "Chain" => Ok(Self::Chain(asset_lock_value.clone().try_into()?)),
-                _ => Err(ProtocolError::DecodingError("error decoding asset lock proof".to_string())),
+                _ => Err(ProtocolError::DecodingError(
+                    "error decoding asset lock proof".to_string(),
+                )),
             }
         }
     }

@@ -703,10 +703,8 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         // first we need to deserialize the contract
-        let contract = DataContract::from_cbor_with_id(
-            contract_cbor,
-            contract_id.map(Identifier::from),
-        )?;
+        let contract =
+            DataContract::from_cbor_with_id(contract_cbor, contract_id.map(Identifier::from))?;
 
         self.apply_contract(&contract, block_info, apply, storage_flags, transaction)
     }

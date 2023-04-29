@@ -114,9 +114,7 @@ impl CoreRPCLike for DefaultCoreRPC {
 
     fn get_fork_info(&self, name: &str) -> Result<Option<Bip9SoftforkInfo>, Error> {
         let blockchain_info = self.inner.get_blockchain_info()?;
-        Ok(blockchain_info
-            .bip9_softforks
-            .get(name).cloned())
+        Ok(blockchain_info.bip9_softforks.get(name).cloned())
     }
 
     fn get_block(&self, block_hash: &BlockHash) -> Result<Block, Error> {

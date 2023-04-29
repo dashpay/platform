@@ -450,7 +450,10 @@ where
                         //the old key
                         return Some(key_id);
                     }
-                    if old_masternode.state.platform_node_id.is_some() && key.data.as_slice() == old_masternode.state.platform_node_id.as_ref().unwrap() {
+                    if old_masternode.state.platform_node_id.is_some()
+                        && key.data.as_slice()
+                            == old_masternode.state.platform_node_id.as_ref().unwrap()
+                    {
                         return Some(key_id);
                     }
                     None

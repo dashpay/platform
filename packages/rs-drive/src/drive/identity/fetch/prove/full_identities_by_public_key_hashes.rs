@@ -75,7 +75,8 @@ mod tests {
 
             let first_key_hash = identity
                 .public_keys
-                .values().find(|public_key| public_key.key_type.is_unique_key_type())
+                .values()
+                .find(|public_key| public_key.key_type.is_unique_key_type())
                 .expect("expected a unique key")
                 .hash()
                 .expect("expected to hash data")

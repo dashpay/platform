@@ -265,7 +265,6 @@ pub(crate) fn run_chain_for_strategy(
         });
 
     let initial_all_masternodes: Vec<_> = initial_masternodes_with_updates
-        
         .into_iter()
         .chain(initial_hpmns_with_updates.clone().into_iter())
         .collect();
@@ -400,7 +399,6 @@ pub(crate) fn run_chain_for_strategy(
                     removed_masternodes.extend(removed_hpmns);
                     updated_masternodes.extend(updated_hpmns);
 
-                    
                     // dbg!(&diff);
                     MasternodeListDiff {
                         base_height: base_block,
