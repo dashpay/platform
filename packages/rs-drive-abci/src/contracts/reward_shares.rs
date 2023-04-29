@@ -65,7 +65,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
     /// A function to retrieve a list of the masternode reward shares documents for a list of masternode IDs.
     pub(crate) fn get_reward_shares_list_for_masternode(
         &self,
-        masternode_owner_id: &Vec<u8>,
+        masternode_owner_id: &[u8],
         transaction: TransactionArg,
     ) -> Result<Vec<Document>, Error> {
         let document_type = self

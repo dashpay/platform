@@ -431,7 +431,7 @@ where
                         disabled_at: None,
                     };
                     non_unique_keys_to_add.push(key);
-                    new_key_id += 1;
+                    // new_key_id += 1;
                 }
             }
 

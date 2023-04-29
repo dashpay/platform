@@ -44,6 +44,7 @@ use crate::error::fee::FeeError;
 use crate::error::Error;
 #[cfg(feature = "full")]
 use crate::fee::credits::Credits;
+#[cfg(feature = "full")]
 use crate::fee::default_costs::EpochCosts;
 #[cfg(feature = "full")]
 use crate::fee::default_costs::KnownCostItem::StorageDiskUsageCreditPerByte;

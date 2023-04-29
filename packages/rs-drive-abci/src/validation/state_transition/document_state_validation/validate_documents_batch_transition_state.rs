@@ -152,7 +152,7 @@ fn validate_document_transitions_within_contract(
 fn validate_document_transitions_within_document_type(
     platform: &PlatformStateRef,
     data_contract: &DataContract,
-    document_type_name: &String,
+    document_type_name: &str,
     owner_id: Identifier,
     document_transitions: &[&DocumentTransition],
     execution_context: &StateTransitionExecutionContext,

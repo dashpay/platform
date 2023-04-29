@@ -38,6 +38,7 @@ use std::sync::RwLock;
 
 #[cfg(feature = "full")]
 use grovedb::batch::KeyInfoPath;
+#[cfg(feature = "full")]
 use grovedb::batch::{GroveDbOp, OpsByLevelPath};
 #[cfg(any(feature = "full", feature = "verify"))]
 use grovedb::GroveDb;
@@ -116,7 +117,7 @@ pub mod verify;
 
 #[cfg(feature = "full")]
 use crate::drive::cache::DataContractCache;
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(feature = "full")]
 use crate::drive::cache::DriveCache;
 #[cfg(feature = "full")]
 use crate::drive::object_size_info::OwnedDocumentInfo;
@@ -124,6 +125,7 @@ use crate::drive::object_size_info::OwnedDocumentInfo;
 use crate::drive::system_contracts_cache::SystemContracts;
 #[cfg(feature = "full")]
 use crate::fee::result::FeeResult;
+#[cfg(feature = "full")]
 use crate::query::GroveError;
 #[cfg(feature = "full")]
 use dpp::block::block_info::BlockInfo;
@@ -141,6 +143,7 @@ pub struct Drive {
     #[cfg(feature = "full")]
     pub system_contracts: SystemContracts,
     /// Drive Cache
+    #[cfg(feature = "full")]
     pub cache: RwLock<DriveCache>,
 }
 

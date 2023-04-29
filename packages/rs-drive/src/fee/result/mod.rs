@@ -69,6 +69,7 @@ pub struct FeeResult {
     pub removed_bytes_from_system: u32,
 }
 
+#[cfg(feature = "full")]
 impl TryFrom<Vec<FeeResult>> for FeeResult {
     type Error = Error;
     fn try_from(value: Vec<FeeResult>) -> Result<Self, Self::Error> {
@@ -80,6 +81,7 @@ impl TryFrom<Vec<FeeResult>> for FeeResult {
     }
 }
 
+#[cfg(feature = "full")]
 impl TryFrom<Vec<Option<FeeResult>>> for FeeResult {
     type Error = Error;
     fn try_from(value: Vec<Option<FeeResult>>) -> Result<Self, Self::Error> {
