@@ -7,7 +7,7 @@ use crate::state::PlatformState;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::ProTxHash;
 use dashcore_rpc::dashcore_rpc_json::MasternodeListDiff;
-use dashcore_rpc::json::{MasternodeListDiffWithMasternodes, MasternodeListItem, MasternodeType};
+use dashcore_rpc::json::{MasternodeListItem, MasternodeType};
 use dpp::block::block_info::BlockInfo;
 use drive::grovedb::Transaction;
 use std::cmp::Ordering;

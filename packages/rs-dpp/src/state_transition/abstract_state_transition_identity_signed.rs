@@ -204,7 +204,7 @@ mod test {
     use std::vec;
 
     use crate::document::DocumentsBatchTransition;
-    use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
+
     use crate::ProtocolError::InvalidSignaturePublicKeySecurityLevelError;
     use crate::{
         assert_error_contains,

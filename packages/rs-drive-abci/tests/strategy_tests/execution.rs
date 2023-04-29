@@ -152,7 +152,7 @@ pub(crate) fn run_chain_for_strategy(
         )
     };
 
-    let mut all_hpmns_with_updates = with_extra_hpmns_with_updates
+    let all_hpmns_with_updates = with_extra_hpmns_with_updates
         .iter()
         .max_by_key(|(key, _)| *key)
         .map(|(_, v)| v.clone())
@@ -367,19 +367,19 @@ pub(crate) fn run_chain_for_strategy(
                     let end_pro_tx_hashes: Vec<&ProTxHash> =
                         end_hpmns.iter().map(|item| &item.pro_tx_hash).collect();
 
-                    let mut added_hpmns = end_hpmns
+                    let added_hpmns = end_hpmns
                         .iter()
                         .filter(|item| !start_pro_tx_hashes.contains(&&item.pro_tx_hash))
                         .map(|a| (*a).clone())
                         .collect::<Vec<MasternodeListItem>>();
 
-                    let mut removed_hpmns = start_hpmns
+                    let removed_hpmns = start_hpmns
                         .iter()
                         .filter(|item| !end_pro_tx_hashes.contains(&&item.pro_tx_hash))
                         .map(|masternode_list_item| masternode_list_item.pro_tx_hash.clone())
                         .collect::<Vec<ProTxHash>>();
 
-                    let mut updated_hpmns: Vec<(ProTxHash, DMNStateDiff)> = start_hpmns
+                    let updated_hpmns: Vec<(ProTxHash, DMNStateDiff)> = start_hpmns
                         .iter()
                         .filter_map(|start_masternode| {
                             end_hpmns

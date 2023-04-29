@@ -36,7 +36,7 @@ use criterion::{criterion_group, criterion_main, BatchSize, Criterion};
 use dpp::data_contract::extra::common::json_document_to_contract;
 
 use dpp::document::Document;
-use drive::contract::Contract;
+
 use drive::contract::CreateRandomDocument;
 
 criterion_main!(serialization, deserialization);

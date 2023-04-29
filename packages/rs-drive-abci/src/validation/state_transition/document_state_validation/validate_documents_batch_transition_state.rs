@@ -39,7 +39,7 @@ use dpp::{
         StateTransitionIdentitySigned,
     },
     validation::ConsensusValidationResult,
-    NonConsensusError, ProtocolError,
+    ProtocolError,
 };
 use drive::grovedb::TransactionArg;
 

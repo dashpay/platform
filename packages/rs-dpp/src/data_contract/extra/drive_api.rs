@@ -6,8 +6,6 @@ mod test {
     use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
     use crate::{data_contract::DataContract, util::json_schema::JsonSchemaExt};
 
-    use super::*;
-
     type IndexName = &'static str;
     type IsIndexUnique = bool;
     type IndexPropertyName = &'static str;

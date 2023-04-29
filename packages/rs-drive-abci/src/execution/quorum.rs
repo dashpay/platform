@@ -74,7 +74,7 @@ impl From<Quorum> for ValidatorSetUpdate {
 /// TODO: This is a workaround for reversed data returned by dashcore_rpc (little endian / big endian handling issue).
 /// We need to decide on a consistent approach to endianness and follow it.
 fn reverse(data: &[u8]) -> Vec<u8> {
-    let mut data = data.to_vec();
+    let data = data.to_vec();
     // data.reverse();
 
     data

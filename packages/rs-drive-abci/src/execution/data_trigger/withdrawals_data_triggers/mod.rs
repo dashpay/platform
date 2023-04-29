@@ -123,7 +123,7 @@ mod tests {
     };
     use dpp::document::Document;
     use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
-    use dpp::platform_value::{platform_value, Bytes20, Bytes32};
+    use dpp::platform_value::{platform_value, Bytes32};
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dpp::tests::fixtures::{get_data_contract_fixture, get_withdrawal_document_fixture};

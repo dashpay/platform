@@ -32,97 +32,19 @@
 
 extern crate core;
 
-use anyhow::anyhow;
-use dashcore_rpc::dashcore::{Network, PrivateKey, ProTxHash, QuorumHash, Txid};
-use dashcore_rpc::dashcore_rpc_json::{
-    Bip9SoftforkInfo, Bip9SoftforkStatus, DMNState, DMNStateDiff, ExtendedQuorumDetails,
-    MasternodeListDiffWithMasternodes, MasternodeListItem, MasternodeType, QuorumInfoResult,
-    QuorumType,
-};
+use dashcore_rpc::dashcore::QuorumHash;
+
 use dpp::bls_signatures::PrivateKey as BlsPrivateKey;
-use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
-use dpp::document::document_transition::document_base_transition::DocumentBaseTransition;
-use dpp::document::document_transition::{
-    Action, DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
-};
-use dpp::document::DocumentsBatchTransition;
 
-use dpp::block::block_info::BlockInfo;
-use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransition;
-use dpp::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
-use dpp::identity::KeyType::ECDSA_SECP256K1;
-use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
-use dpp::platform_value::BinaryData;
-use dpp::state_transition::errors::{
-    InvalidIdentityPublicKeyTypeError, InvalidSignaturePublicKeyError,
-};
-use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionType};
-use dpp::tests::fixtures::instant_asset_lock_proof_fixture;
-use dpp::version::LATEST_VERSION;
-use dpp::{bls_signatures, ed25519_dalek, NativeBlsModule, ProtocolError};
-
-use drive::contract::{Contract, CreateRandomDocument, DocumentType};
-use drive::dpp::document::Document;
-use drive::dpp::identity::{Identity, KeyID};
-use drive::dpp::util::deserializer::ProtocolVersion;
-use drive::drive::defaults::PROTOCOL_VERSION;
-use drive::drive::flags::StorageFlags::SingleEpoch;
-
-use dashcore_rpc::dashcore::hashes::hex::ToHex;
-use dashcore_rpc::dashcore::hashes::Hash;
-use dashcore_rpc::dashcore::secp256k1::SecretKey;
-use operations::FinalizeBlockOperation::IdentityAddKeys;
-
-use dpp::block::epoch::Epoch;
-use dpp::data_contract::document_type::random_document_type::RandomDocumentTypeParameters;
-use dpp::data_contract::generate_data_contract_id;
-use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::ed25519_dalek::Signer as EddsaSigner;
-use dpp::identity::core_script::CoreScript;
-use dpp::identity::state_transition::identity_credit_withdrawal_transition::{
-    IdentityCreditWithdrawalTransition, Pooling,
-};
-use dpp::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
-use dpp::identity::Purpose::AUTHENTICATION;
-use dpp::identity::SecurityLevel::{CRITICAL, MASTER};
-use dpp::prelude::Identifier;
-use drive::drive::identity::key::fetch::{IdentityKeysRequest, KeyRequestType};
-use drive::drive::Drive;
-use drive::fee::credits::Credits;
-use drive::query::DriveQuery;
-use drive_abci::abci::AbciApplication;
-use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
-
-use crate::masternode_list_item_helpers::UpdateMasternodeListItem;
-use dashcore_rpc::json::{MasternodeListDiff, RemovedMasternodeItem};
-use dpp::serialization_traits::PlatformSerializable;
-use drive_abci::abci::mimic::MimicExecuteBlockOutcome;
-use drive_abci::execution::test_quorum::TestQuorumInfo;
-use drive_abci::platform::Platform;
-use drive_abci::rpc::core::MockCoreRPCLike;
-use drive_abci::test::fixture::abci::static_init_chain_request;
 use drive_abci::test::helpers::setup::TestPlatformBuilder;
 use drive_abci::{config::PlatformConfig, test::helpers::setup::TempPlatform};
 use frequency::Frequency;
-use masternodes::GenerateTestMasternodeUpdates;
+
 use rand::distributions::Distribution;
-use rand::distributions::Uniform;
-use rand::prelude::IteratorRandom;
-use rand::rngs::StdRng;
-use rand::seq::SliceRandom;
-use rand::{Rng, SeedableRng};
-use signer::SimpleSigner;
-use std::borrow::Cow;
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::net::SocketAddr;
-use std::ops::Range;
-use std::str::FromStr;
-use strategy::{
-    ChainExecutionOutcome, ChainExecutionParameters, Strategy, StrategyRandomness,
-    ValidatorVersionMigration,
-};
-use tenderdash_abci::proto::abci::{ResponseInitChain, ValidatorSetUpdate};
-use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
+
+use std::collections::BTreeMap;
+
+use strategy::{ChainExecutionOutcome, ChainExecutionParameters, Strategy, StrategyRandomness};
 
 mod execution;
 mod frequency;
@@ -147,9 +69,7 @@ mod tests {
     use crate::strategy::MasternodeListChangesStrategy;
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::BlockHash;
-    use dashcore_rpc::dashcore_rpc_json::{
-        Bip9SoftforkInfo, Bip9SoftforkStatus, ExtendedQuorumDetails,
-    };
+    use dashcore_rpc::dashcore_rpc_json::ExtendedQuorumDetails;
     use dpp::data_contract::extra::common::json_document_to_contract;
     use drive_abci::config::PlatformTestConfig;
     use drive_abci::rpc::core::QuorumListExtendedInfo;
@@ -499,15 +419,8 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
-        let ChainExecutionOutcome {
-            abci_app,
-            proposers,
-            quorums,
-            current_quorum_hash,
-            current_proposer_versions,
-            end_time_ms,
-            ..
-        } = run_chain_for_strategy(&mut platform, 2000, strategy, config, 40);
+        let ChainExecutionOutcome { abci_app, .. } =
+            run_chain_for_strategy(&mut platform, 2000, strategy, config, 40);
 
         // With these params if we didn't rotate we would have at most 240
         // of the 500 hpmns that could get paid, however we are expecting that most
@@ -587,15 +500,8 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
-        let ChainExecutionOutcome {
-            abci_app,
-            proposers,
-            quorums,
-            current_quorum_hash,
-            current_proposer_versions,
-            end_time_ms,
-            ..
-        } = run_chain_for_strategy(&mut platform, 300, strategy, config, 43);
+        let ChainExecutionOutcome { abci_app, .. } =
+            run_chain_for_strategy(&mut platform, 300, strategy, config, 43);
 
         // With these params if we add new mns the hpmn masternode list would be 100, but we
         // can expect it to be much higher.
@@ -658,15 +564,8 @@ mod tests {
                     signature: [2; 96].to_vec(),
                 })
             });
-        let ChainExecutionOutcome {
-            abci_app,
-            proposers,
-            quorums,
-            current_quorum_hash,
-            current_proposer_versions,
-            end_time_ms,
-            ..
-        } = run_chain_for_strategy(&mut platform, 300, strategy, config, 43);
+        let ChainExecutionOutcome { abci_app, .. } =
+            run_chain_for_strategy(&mut platform, 300, strategy, config, 43);
 
         // With these params if we add new mns the hpmn masternode list would be randomly different than 100.
 
@@ -727,17 +626,13 @@ mod tests {
         let ChainExecutionOutcome {
             abci_app,
             proposers,
-            quorums,
-            current_quorum_hash,
-            current_proposer_versions,
-            end_time_ms,
             ..
         } = run_chain_for_strategy(&mut platform, 300, strategy, config, 43);
 
         // With these params if we add new mns the hpmn masternode list would be randomly different than 100.
 
         let platform = abci_app.platform;
-        let platform_state = platform.state.read().unwrap();
+        let _platform_state = platform.state.read().unwrap();
 
         // We need to find if any masternode has ever had their keys disabled.
 

@@ -89,14 +89,13 @@ use dpp::data_contract::validation::data_contract_validator::DataContractValidat
 use dpp::document::Document;
 #[cfg(feature = "full")]
 use dpp::platform_value::Value;
-use dpp::platform_value::{platform_value, BinaryData, Bytes32, Identifier};
+use dpp::platform_value::{platform_value, Bytes32, Identifier};
 
 #[cfg(feature = "full")]
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::extra::common::json_document_to_contract;
 use dpp::platform_value;
-use dpp::platform_value::btreemap_extensions::BTreeValueMapInsertionPathHelper;
-use dpp::platform_value::Value::Null;
+
 #[cfg(feature = "full")]
 use dpp::prelude::DataContract;
 use dpp::prelude::Revision;
@@ -465,7 +464,7 @@ fn test_serialization_and_deserialization() {
         let serialized = document
             .serialize(document_type)
             .expect("expected to serialize domain document");
-        let deserialized = Document::from_bytes(&serialized, document_type)
+        let _deserialized = Document::from_bytes(&serialized, document_type)
             .expect("expected to deserialize domain document");
     }
 }

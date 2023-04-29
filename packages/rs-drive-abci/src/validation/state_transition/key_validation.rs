@@ -11,7 +11,7 @@ use dpp::consensus::state::identity::duplicated_identity_public_key_state_error:
 use dpp::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
 use dpp::consensus::state::identity::missing_identity_public_key_ids_error::MissingIdentityPublicKeyIdsError;
 use dpp::consensus::state::state_error::StateError;
-use dpp::consensus::ConsensusError;
+
 use dpp::identity::security_level::ALLOWED_SECURITY_LEVELS;
 use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
 use dpp::identity::state_transition::identity_update_transition::validate_public_keys::IDENTITY_PLATFORM_VALUE_SCHEMA;

@@ -2,13 +2,12 @@ use std::sync::Arc;
 
 use log::trace;
 use platform_value::{platform_value, Value};
-use serde_json::Value as JsonValue;
+
 use test_case::test_case;
 
-use crate::consensus::basic::value_error::ValueError;
 use crate::consensus::basic::BasicError;
 use crate::errors::consensus::codes::ErrorWithCode;
-use crate::tests::utils::{json_schema_error, value_error};
+use crate::tests::utils::json_schema_error;
 use crate::{
     consensus::{basic::json_schema_error::JsonSchemaError, ConsensusError},
     data_contract::validation::data_contract_validator::DataContractValidator,

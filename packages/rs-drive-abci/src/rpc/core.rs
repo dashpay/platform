@@ -3,7 +3,7 @@ use dashcore_rpc::dashcore_rpc_json::{
     Bip9SoftforkInfo, ExtendedQuorumDetails, ExtendedQuorumListResult, GetBestChainLockResult,
     GetChainTipsResult, MasternodeListDiff, QuorumInfoResult, QuorumType,
 };
-use dashcore_rpc::json::{GetTransactionResult, MasternodeListDiffWithMasternodes};
+use dashcore_rpc::json::GetTransactionResult;
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
 use mockall::{automock, predicate::*};
 use serde_json::Value;

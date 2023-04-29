@@ -43,12 +43,12 @@ use dpp::block::block_info::BlockInfo;
 use dpp::platform_value::Value;
 use drive::contract::Contract;
 use drive::dpp::document::Document;
-use drive::dpp::util::cbor_serializer;
+
 use drive::drive::flags::StorageFlags;
-use drive::drive::query::{QueryDocumentsOutcome, QuerySerializedDocumentsOutcome};
+use drive::drive::query::QueryDocumentsOutcome;
 use drive::grovedb::TransactionArg;
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
-use serde_json::json;
+
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
