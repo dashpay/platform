@@ -128,7 +128,7 @@ pub fn generate_test_masternodes(
             .get(&i)
             .map(|heights| {
                 heights
-                    .into_iter()
+                    .iter()
                     .map(|height| {
                         let mut masternode_list_item_b = latest_masternode_list_item.clone();
                         masternode_list_item_b.random_keys_update(None, rng);
@@ -186,7 +186,7 @@ pub fn generate_test_masternodes(
             .get(&i)
             .map(|heights| {
                 heights
-                    .into_iter()
+                    .iter()
                     .map(|height| {
                         let mut masternode_list_item_b = latest_masternode_list_item.clone();
                         masternode_list_item_b.random_keys_update(None, rng);

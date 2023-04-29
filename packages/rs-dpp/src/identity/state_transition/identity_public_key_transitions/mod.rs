@@ -472,7 +472,7 @@ impl From<IdentityPublicKey> for IdentityPublicKeyInCreationWithWitness {
             security_level: val.security_level,
             key_type: val.key_type,
             read_only: val.read_only,
-            data: val.data.clone(),
+            data: val.data,
             signature: Default::default(),
         }
     }

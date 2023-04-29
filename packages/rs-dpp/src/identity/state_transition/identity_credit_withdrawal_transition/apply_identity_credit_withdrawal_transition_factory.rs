@@ -112,7 +112,7 @@ where
                             ["$id", "==", document_id.to_buffer()],
                         ],
                     }),
-                    Some(&execution_context),
+                    Some(execution_context),
                 )
                 .await?;
 

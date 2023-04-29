@@ -59,7 +59,7 @@ impl From<&IdentityUpdateTransition> for IdentityUpdateTransitionAction {
                 .map(|key| key.clone().to_identity_public_key())
                 .collect(),
             disable_public_keys: disable_public_keys.clone(),
-            public_keys_disabled_at: public_keys_disabled_at.clone(),
+            public_keys_disabled_at: *public_keys_disabled_at,
             identity_id: *identity_id,
             revision: *revision,
         }

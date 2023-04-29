@@ -74,7 +74,7 @@ pub fn setup_contract(
     transaction: TransactionArg,
 ) -> Contract {
     let contract =
-        json_document_to_contract_with_ids(path, contract_id.map(|i| Identifier::from(i)), None)
+        json_document_to_contract_with_ids(path, contract_id.map(Identifier::from), None)
             .expect("expected to get cbor contract");
 
     drive

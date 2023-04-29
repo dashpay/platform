@@ -3610,7 +3610,7 @@ fn test_dpns_query_start_at_with_null_id() {
 
     let domain0_id = Identifier::random_with_rng(&mut rng);
     let domain0 = Domain {
-        id: domain0_id.clone(),
+        id: domain0_id,
         owner_id: Identifier::random_with_rng(&mut rng),
         label: None,
         normalized_label: None,
@@ -3805,7 +3805,7 @@ fn test_dpns_query_start_after_with_null_id() {
 
     let domain0_id = Identifier::random_with_rng(&mut rng);
     let domain0 = Domain {
-        id: domain0_id.clone(),
+        id: domain0_id,
         owner_id: Identifier::random_with_rng(&mut rng),
         label: None,
         normalized_label: None,
@@ -4008,7 +4008,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
 
     let domain0_id = Identifier::random_with_rng(&mut rng);
     let domain0 = Domain {
-        id: domain0_id.clone(),
+        id: domain0_id,
         owner_id: Identifier::random_with_rng(&mut rng),
         label: None,
         normalized_label: None,
@@ -4053,7 +4053,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     let domain1_id = Identifier::random_with_rng(&mut rng);
 
     let domain1 = Domain {
-        id: domain1_id.clone(),
+        id: domain1_id,
         owner_id: Identifier::random_with_rng(&mut rng),
         label: None,
         normalized_label: None,
@@ -4142,7 +4142,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     // A query getting two elements starting with domain0
     // We should get domain0 only because we have an ascending order on the ids always
     // And also because there is nothing below ""
-    let encoded_start_at = bs58::encode(domain0_id.clone()).into_string();
+    let encoded_start_at = bs58::encode(domain0_id).into_string();
 
     let query_value = json!({
         "where": [
@@ -4191,7 +4191,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
 
     // A query getting two elements starting with domain1
     // We should get domain1, domain0 only because we have an ascending order on the ids always
-    let encoded_start_at = bs58::encode(domain1_id.clone()).into_string();
+    let encoded_start_at = bs58::encode(domain1_id).into_string();
 
     let query_value = json!({
         "where": [
@@ -4531,7 +4531,7 @@ fn test_query_documents_by_created_at() {
         Some(&WhereClause {
             field: "$createdAt".to_string(),
             operator: WhereOperator::Equal,
-            value: Value::U64(created_at as u64)
+            value: Value::U64(created_at)
         })
     );
 

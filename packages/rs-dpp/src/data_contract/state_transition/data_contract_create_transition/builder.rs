@@ -37,7 +37,7 @@ impl DataContractCreateTransition {
                         "public key did not exist".to_string(),
                     ),
                 ))?;
-        transition.signature = signer.sign(public_key, &value)?.into();
+        transition.signature = signer.sign(public_key, &value)?;
         Ok(transition)
     }
 }
@@ -66,7 +66,7 @@ impl DataContractUpdateTransition {
                         "public key did not exist".to_string(),
                     ),
                 ))?;
-        transition.signature = signer.sign(public_key, &value)?.into();
+        transition.signature = signer.sign(public_key, &value)?;
         Ok(transition)
     }
 }

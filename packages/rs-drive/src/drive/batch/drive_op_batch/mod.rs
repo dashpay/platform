@@ -393,7 +393,7 @@ mod tests {
                     owner_id: None,
                 },
                 contract: &contract,
-                document_type: &contract
+                document_type: contract
                     .document_type_for_name("contactRequest")
                     .expect("expected to get document type"),
             },
@@ -416,7 +416,7 @@ mod tests {
                     owner_id: None,
                 },
                 contract: &contract,
-                document_type: &contract
+                document_type: contract
                     .document_type_for_name("contactRequest")
                     .expect("expected to get document type"),
             },

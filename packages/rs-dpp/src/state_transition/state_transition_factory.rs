@@ -116,7 +116,7 @@ where
             protocol_version,
             main_message_bytes: document_bytes,
             ..
-        } = deserializer::split_protocol_version(state_transition_buffer.as_ref())?;
+        } = deserializer::split_protocol_version(state_transition_buffer)?;
 
         let state_transition = StateTransition::deserialize(document_bytes).map_err(|e| {
             ConsensusError::BasicError(BasicError::SerializedObjectParsingError(

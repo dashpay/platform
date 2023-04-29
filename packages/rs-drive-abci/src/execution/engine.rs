@@ -475,7 +475,7 @@ where
                             );
                             block_execution_context
                                 .block_platform_state
-                                .next_validator_set_quorum_hash = Some(quorum_hash.clone());
+                                .next_validator_set_quorum_hash = Some(*quorum_hash);
                             return Ok(Some(new_quorum.into()));
                         }
                         index = (index + 1) % count;
@@ -488,7 +488,7 @@ where
                     {
                         block_execution_context
                             .block_platform_state
-                            .next_validator_set_quorum_hash = Some(quorum_hash.clone());
+                            .next_validator_set_quorum_hash = Some(*quorum_hash);
                         tracing::debug!(
                             method = "validator_set_update",
                             "rotation: all quorums changed, rotation to new quorum: {}",

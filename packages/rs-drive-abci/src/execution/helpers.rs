@@ -243,8 +243,7 @@ where
         });
 
         let deleted_masternodes = removed_mns
-            .iter()
-            .map(|pro_tx_hash| *pro_tx_hash)
+            .iter().copied()
             .collect::<BTreeSet<ProTxHash>>();
 
         state
@@ -328,9 +327,7 @@ where
 
             if !removed_masternodes.is_empty() {
                 self.drive.remove_validators_proposed_app_versions(
-                    removed_masternodes
-                        .into_iter()
-                        .map(|(pro_tx_hash, _)| pro_tx_hash.into_inner()),
+                    removed_masternodes.into_keys().map(|pro_tx_hash| pro_tx_hash.into_inner()),
                     Some(transaction),
                 )?;
             }

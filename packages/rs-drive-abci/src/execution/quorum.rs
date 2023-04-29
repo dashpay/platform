@@ -33,9 +33,7 @@ impl From<Quorum> for ValidatorSetUpdate {
             ..
         } = value;
         ValidatorSetUpdate {
-            validator_updates: validator_set
-                .into_iter()
-                .map(|(_, validator)| {
+            validator_updates: validator_set.into_values().map(|validator| {
                     let Validator {
                         pro_tx_hash,
                         public_key,
@@ -74,10 +72,10 @@ impl From<Quorum> for ValidatorSetUpdate {
 /// TODO: This is a workaround for reversed data returned by dashcore_rpc (little endian / big endian handling issue).
 /// We need to decide on a consistent approach to endianness and follow it.
 fn reverse(data: &[u8]) -> Vec<u8> {
-    let data = data.to_vec();
+    
     // data.reverse();
 
-    data
+    data.to_vec()
 }
 
 impl From<&Quorum> for ValidatorSetUpdate {
@@ -112,7 +110,7 @@ impl From<&Quorum> for ValidatorSetUpdate {
                         }),
                         power: 100,
                         pro_tx_hash: reverse(pro_tx_hash),
-                        node_address: node_address.clone(),
+                        node_address,
                     }
                 })
                 .collect(),
@@ -158,7 +156,7 @@ impl Quorum {
 
         Ok(Quorum {
             quorum_hash,
-            core_height: height as u32,
+            core_height: height,
             validator_set,
             threshold_public_key,
         })
@@ -211,7 +209,7 @@ impl Validator {
         let Some(platform_p2p_port) = platform_p2p_port else {
             return None;
         };
-        let platform_node_id = platform_node_id.clone()?;
+        let platform_node_id = (*platform_node_id)?;
         Some(Validator {
             pro_tx_hash,
             public_key,

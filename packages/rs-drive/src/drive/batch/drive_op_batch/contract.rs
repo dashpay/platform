@@ -66,7 +66,7 @@ impl DriveLowLevelOperationConverter for ContractOperationType<'_> {
                 // first we need to deserialize the contract
                 let contract = Contract::from_cbor_with_id(
                     &contract_cbor,
-                    contract_id.map(|bytes| Identifier::from(bytes)),
+                    contract_id.map(Identifier::from),
                 )?;
 
                 drive.apply_contract_with_serialization_operations(

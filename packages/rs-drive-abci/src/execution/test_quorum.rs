@@ -47,7 +47,7 @@ impl From<&ValidatorInQuorum> for Validator {
             pro_tx_hash: *pro_tx_hash,
             public_key: public_key.clone(),
             node_ip: node_ip.to_string(),
-            node_id: node_id.clone(),
+            node_id: *node_id,
             core_port: *core_port,
             platform_http_port: *platform_http_port,
             platform_p2p_port: *platform_p2p_port,

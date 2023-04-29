@@ -24,7 +24,7 @@ impl DocumentTimestampWindowViolationErrorWasm {
 
     #[wasm_bindgen(js_name=getTimestampName)]
     pub fn timestamp_name(&self) -> String {
-        self.inner.timestamp_name().to_string()
+        self.inner.timestamp_name()
     }
 
     #[wasm_bindgen(js_name=getTimestamp)]
@@ -62,7 +62,7 @@ impl DocumentTimestampWindowViolationErrorWasm {
     pub fn serialize(&self) -> Result<Buffer, JsError> {
         let bytes = ConsensusError::from(self.inner.clone())
             .serialize()
-            .map_err(|e| JsError::from(e))?;
+            .map_err(JsError::from)?;
 
         Ok(Buffer::from_bytes(bytes.as_slice()))
     }

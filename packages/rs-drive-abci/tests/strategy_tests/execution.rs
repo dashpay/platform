@@ -123,8 +123,8 @@ pub(crate) fn run_chain_for_strategy(
                     all_hpmns.drain(0..removed_count);
                 }
 
-                all_masternodes.extend(extra_masternodes_by_block.clone());
-                all_hpmns.extend(extra_hpmns_by_block.clone());
+                all_masternodes.extend(extra_masternodes_by_block);
+                all_hpmns.extend(extra_hpmns_by_block);
                 (
                     (height, all_masternodes.clone()),
                     (height, all_hpmns.clone()),
@@ -229,7 +229,7 @@ pub(crate) fn run_chain_for_strategy(
                         .iter()
                         .skip(start_range as usize)
                         .take((end_range - start_range) as usize)
-                        .map(|(quorum_hash, quorum)| (quorum_hash.clone(), quorum.clone()))
+                        .map(|(quorum_hash, quorum)| (*quorum_hash, quorum.clone()))
                         .collect()
                 } else {
                     let first_range = quorums_clone
@@ -239,7 +239,7 @@ pub(crate) fn run_chain_for_strategy(
                     let second_range = quorums_clone.iter().take(end_range as usize);
                     first_range
                         .chain(second_range)
-                        .map(|(quorum_hash, quorum)| (quorum_hash.clone(), quorum.clone()))
+                        .map(|(quorum_hash, quorum)| (*quorum_hash, quorum.clone()))
                         .collect()
                 };
 
@@ -265,7 +265,7 @@ pub(crate) fn run_chain_for_strategy(
         });
 
     let initial_all_masternodes: Vec<_> = initial_masternodes_with_updates
-        .clone()
+        
         .into_iter()
         .chain(initial_hpmns_with_updates.clone().into_iter())
         .collect();
@@ -274,7 +274,7 @@ pub(crate) fn run_chain_for_strategy(
         .core_rpc
         .expect_get_protx_diff_with_masternodes()
         .returning(move |base_block, block| {
-            let diff = if base_block == None {
+            let diff = if base_block.is_none() {
                 MasternodeListDiff {
                     base_height: 0,
                     block_height: block,
@@ -330,7 +330,7 @@ pub(crate) fn run_chain_for_strategy(
                     let mut removed_masternodes = start_masternodes
                         .iter()
                         .filter(|item| !end_pro_tx_hashes.contains(&&item.pro_tx_hash))
-                        .map(|masternode_list_item| masternode_list_item.pro_tx_hash.clone())
+                        .map(|masternode_list_item| masternode_list_item.pro_tx_hash)
                         .collect::<Vec<ProTxHash>>();
 
                     let mut updated_masternodes: Vec<(ProTxHash, DMNStateDiff)> = start_masternodes
@@ -345,7 +345,7 @@ pub(crate) fn run_chain_for_strategy(
                                     start_masternode
                                         .state
                                         .compare_to_newer_dmn_state(&end_masternode.state)
-                                        .map(|diff| (end_masternode.pro_tx_hash.clone(), diff))
+                                        .map(|diff| (end_masternode.pro_tx_hash, diff))
                                 })
                         })
                         .collect();
@@ -376,7 +376,7 @@ pub(crate) fn run_chain_for_strategy(
                     let removed_hpmns = start_hpmns
                         .iter()
                         .filter(|item| !end_pro_tx_hashes.contains(&&item.pro_tx_hash))
-                        .map(|masternode_list_item| masternode_list_item.pro_tx_hash.clone())
+                        .map(|masternode_list_item| masternode_list_item.pro_tx_hash)
                         .collect::<Vec<ProTxHash>>();
 
                     let updated_hpmns: Vec<(ProTxHash, DMNStateDiff)> = start_hpmns
@@ -391,7 +391,7 @@ pub(crate) fn run_chain_for_strategy(
                                     start_masternode
                                         .state
                                         .compare_to_newer_dmn_state(&end_masternode.state)
-                                        .map(|diff| (end_masternode.pro_tx_hash.clone(), diff))
+                                        .map(|diff| (end_masternode.pro_tx_hash, diff))
                                 })
                         })
                         .collect();
@@ -400,15 +400,15 @@ pub(crate) fn run_chain_for_strategy(
                     removed_masternodes.extend(removed_hpmns);
                     updated_masternodes.extend(updated_hpmns);
 
-                    let diff = MasternodeListDiff {
+                    
+                    // dbg!(&diff);
+                    MasternodeListDiff {
                         base_height: base_block,
                         block_height: block,
                         added_mns: added_masternodes,
                         removed_mns: removed_masternodes,
                         updated_mns: updated_masternodes,
-                    };
-                    // dbg!(&diff);
-                    diff
+                    }
                 }
             };
 

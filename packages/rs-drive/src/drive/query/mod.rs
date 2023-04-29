@@ -152,7 +152,7 @@ impl Drive {
                 let document_type =
                     contract_ref.document_type_for_name(document_type_name.as_str())?;
                 let drive_query =
-                    DriveQuery::from_btree_map_value(query, &contract_ref, document_type)?;
+                    DriveQuery::from_btree_map_value(query, contract_ref, document_type)?;
                 if prove {
                     drive_query.execute_with_proof_internal(self, None, &mut vec![])
                 } else {

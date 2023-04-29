@@ -447,7 +447,7 @@ impl Drive {
 
         self.update_contract_element(
             contract_element,
-            &contract,
+            contract,
             &original_contract_fetch_info.contract,
             &block_info,
             transaction,
@@ -704,8 +704,8 @@ impl Drive {
     ) -> Result<FeeResult, Error> {
         // first we need to deserialize the contract
         let contract = DataContract::from_cbor_with_id(
-            &contract_cbor,
-            contract_id.map(|identifier| Identifier::from(identifier)),
+            contract_cbor,
+            contract_id.map(Identifier::from),
         )?;
 
         self.apply_contract(&contract, block_info, apply, storage_flags, transaction)

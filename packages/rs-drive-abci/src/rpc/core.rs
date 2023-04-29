@@ -116,8 +116,7 @@ impl CoreRPCLike for DefaultCoreRPC {
         let blockchain_info = self.inner.get_blockchain_info()?;
         Ok(blockchain_info
             .bip9_softforks
-            .get(name)
-            .map(|info| info.clone()))
+            .get(name).cloned())
     }
 
     fn get_block(&self, block_hash: &BlockHash) -> Result<Block, Error> {
@@ -136,7 +135,7 @@ impl CoreRPCLike for DefaultCoreRPC {
         &self,
         height: Option<CoreHeight>,
     ) -> Result<ExtendedQuorumListResult, Error> {
-        self.inner.get_quorum_listextended(height.map(|i| i))
+        self.inner.get_quorum_listextended(height)
     }
 
     fn get_quorum_info(

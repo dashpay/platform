@@ -1043,10 +1043,10 @@ mod tests {
         .expect("expected to get document");
 
         let serialized = person_document0
-            .serialize(&document_type)
+            .serialize(document_type)
             .expect("expected to serialize");
         let _deserialized =
-            Document::from_bytes(&serialized, &document_type).expect("expected to deserialize");
+            Document::from_bytes(&serialized, document_type).expect("expected to deserialize");
     }
 
     #[test]
