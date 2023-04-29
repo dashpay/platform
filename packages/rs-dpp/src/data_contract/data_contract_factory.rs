@@ -225,6 +225,7 @@ mod tests {
     use crate::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
     use crate::Convertible;
     use std::sync::Arc;
+    use crate::serialization_traits::PlatformSerializable;
 
     pub struct TestData {
         data_contract: DataContract,
