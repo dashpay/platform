@@ -1,3 +1,11 @@
+## [0.24.0-dev.29](https://github.com/dashpay/platform/compare/v0.24.0-dev.28...v0.24.0-dev.29) (2023-04-29)
+
+
+### Bug Fixes
+
+* **dashmate:** reset platform affects core ([#1001](https://github.com/dashpay/platform/issues/1001))
+* **drive:** double init chain leads to side bugs ([#1002](https://github.com/dashpay/platform/issues/1002))
+
 ## [0.24.0-dev.28](https://github.com/dashpay/platform/compare/v0.24.0-dev.27...v0.24.0-dev.28) (2023-04-28)
 
 
