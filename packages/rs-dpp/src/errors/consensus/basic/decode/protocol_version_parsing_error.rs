@@ -32,7 +32,7 @@ impl From<ProtocolVersionParsingError> for ConsensusError {
 }
 
 impl From<ProtocolVersionParsingError> for u32 {
-    fn from(val: ProtocolVersionParsingError) -> Self {
+    fn from(_val: ProtocolVersionParsingError) -> Self {
         0
     }
 }
