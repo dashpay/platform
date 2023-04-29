@@ -410,6 +410,10 @@ where
             % self.config.validator_set_quorum_rotation_block_count as u64
             == 0
         {
+            tracing::debug!(
+                method = "validator_set_update",
+                "rotation: previous quorum finished members"
+            );
             perform_rotation = true;
         }
         // we also need to perform a rotation if the validator set is being removed
@@ -419,6 +423,16 @@ where
             .get(&platform_state.current_validator_set_quorum_hash)
             .is_none()
         {
+            tracing::debug!(
+                method = "validator_set_update",
+                "rotation: new quorums not containing current quorum current {:?}, {}",
+                block_execution_context
+                    .block_platform_state
+                    .validator_sets
+                    .keys()
+                    .map(|quorum_hash| format!("{}", quorum_hash)),
+                &platform_state.current_validator_set_quorum_hash
+            );
             perform_rotation = true;
         }
 
@@ -454,9 +468,14 @@ where
                             .validator_sets
                             .contains_key(quorum_hash)
                         {
+                            tracing::debug!(
+                                method = "validator_set_update",
+                                "rotation: to new quorum: {}",
+                                &quorum_hash
+                            );
                             block_execution_context
                                 .block_platform_state
-                                .current_validator_set_quorum_hash = quorum_hash.clone();
+                                .next_validator_set_quorum_hash = Some(quorum_hash.clone());
                             return Ok(Some(new_quorum.into()));
                         }
                         index = (index + 1) % count;
@@ -467,10 +486,14 @@ where
                         .validator_sets
                         .first()
                     {
-                        tracing::debug!("all quorums changed");
                         block_execution_context
                             .block_platform_state
-                            .current_validator_set_quorum_hash = quorum_hash.clone();
+                            .next_validator_set_quorum_hash = Some(quorum_hash.clone());
+                        tracing::debug!(
+                            method = "validator_set_update",
+                            "rotation: all quorums changed, rotation to new quorum: {}",
+                            &quorum_hash
+                        );
                         return Ok(Some(new_quorum.into()));
                     }
                     tracing::debug!("no new quorums to choose from");
@@ -478,6 +501,7 @@ where
                 }
             }
         } else {
+            tracing::debug!(method = "validator_set_update", "no validator set update");
             Ok(None)
         }
     }
@@ -522,7 +546,6 @@ where
     pub fn update_state_cache_and_quorums(
         &self,
         block_info: BlockInfo,
-        updated_validator_hash: QuorumHash,
         transaction: &Transaction,
     ) -> Result<(), Error> {
         let mut block_execution_context = self.block_execution_context.write().unwrap();
@@ -558,14 +581,22 @@ where
             }
         }
 
-        state_cache.current_validator_set_quorum_hash = updated_validator_hash;
+        if let Some(next_validator_set_quorum_hash) =
+            state_cache.next_validator_set_quorum_hash.take()
+        {
+            state_cache.current_validator_set_quorum_hash = next_validator_set_quorum_hash;
+        }
 
         state_cache.last_committed_block_info = Some(block_info.clone());
 
         state_cache.initialization_information = None;
 
         // Persist ephemeral data
-        self.store_ephemeral_data(&block_info, &updated_validator_hash, transaction)?;
+        self.store_ephemeral_data(
+            &block_info,
+            &state_cache.current_validator_set_quorum_hash,
+            transaction,
+        )?;
 
         Ok(())
     }
@@ -775,11 +806,7 @@ where
         // At the end we update the state cache
 
         drop(guarded_block_execution_context);
-        self.update_state_cache_and_quorums(
-            to_commit_block_info,
-            QuorumHash::from_inner(block_header.next_validators_hash),
-            transaction,
-        )?;
+        self.update_state_cache_and_quorums(to_commit_block_info, transaction)?;
 
         let mut drive_cache = self.drive.cache.write().unwrap();
 

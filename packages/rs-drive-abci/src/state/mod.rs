@@ -27,6 +27,8 @@ pub struct PlatformState {
     pub quorums_extended_info: HashMap<QuorumType, QuorumListExtendedInfo>,
     /// current quorum
     pub current_validator_set_quorum_hash: QuorumHash,
+    /// next quorum
+    pub next_validator_set_quorum_hash: Option<QuorumHash>,
     /// current validator set quorums
     /// The validator set quorums are a subset of the quorums, but they also contain the list of
     /// all members

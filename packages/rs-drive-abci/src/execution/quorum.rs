@@ -12,7 +12,7 @@ use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
 use tenderdash_abci::proto::{abci, crypto};
 
 /// Quorum information
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Quorum {
     /// The quorum hash
     pub quorum_hash: QuorumHash,
@@ -166,7 +166,7 @@ impl Quorum {
 }
 
 /// A validator in the context of a quorum
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Validator {
     /// The proTxHash
     pub pro_tx_hash: ProTxHash,
