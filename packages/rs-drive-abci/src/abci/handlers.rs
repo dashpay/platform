@@ -81,7 +81,6 @@ where
         &self,
         request: RequestInitChain,
     ) -> Result<ResponseInitChain, ResponseException> {
-        //todo: check to see if the chain is already initialized
         self.start_transaction();
         let transaction_guard = self.transaction.read().unwrap();
         let transaction = transaction_guard.as_ref().unwrap();
@@ -116,6 +115,12 @@ where
         let mut block_proposal: BlockProposal = (&request).try_into()?;
 
         if let Some(core_chain_lock_update) = core_chain_lock_update.as_ref() {
+            tracing::info!(
+                method = "prepare_proposal",
+                "chain lock update to height {} at block {}",
+                core_chain_lock_update.core_block_height,
+                request.height
+            );
             block_proposal.core_chain_locked_height = core_chain_lock_update.core_block_height;
         }
 

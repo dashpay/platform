@@ -154,6 +154,12 @@ impl CoreRPCLike for DefaultCoreRPC {
         base_block: Option<u32>,
         block: u32,
     ) -> Result<MasternodeListDiff, Error> {
+        tracing::debug!(
+            method = "get_protx_diff_with_masternodes",
+            "base block {:?} block {}",
+            base_block,
+            block
+        );
         self.inner
             .get_protx_listdiff(base_block.unwrap_or(1), block)
     }

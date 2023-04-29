@@ -90,9 +90,18 @@ where
         start_from_scratch: bool,
     ) -> Result<(), Error> {
         if !start_from_scratch && core_block_height == state.core_height() {
+            tracing::debug!(
+                method = "update_quorum_info",
+                "no update quorum at height {}",
+                core_block_height
+            );
             return Ok(()); // no need to do anything
         }
-
+        tracing::debug!(
+            method = "update_quorum_info",
+            "update of quorums for height {}",
+            core_block_height
+        );
         let quorum_list = self
             .core_rpc
             .get_quorum_listextended(Some(core_block_height))?;
@@ -258,9 +267,20 @@ where
             block_platform_state.last_committed_block_info.as_ref()
         {
             if core_block_height == last_commited_block_info.core_height {
+                tracing::debug!(
+                    method = "update_masternode_list",
+                    "no update mnl at height {}",
+                    core_block_height
+                );
                 return Ok(()); // no need to do anything
             }
         }
+        tracing::debug!(
+            method = "update_masternode_list",
+            "update mnl to height {} at block {}",
+            core_block_height,
+            block_platform_state.core_height()
+        );
         if block_platform_state.last_committed_block_info.is_some() || is_init_chain {
             let UpdateStateMasternodeListOutcome {
                 masternode_list_diff,

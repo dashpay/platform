@@ -247,7 +247,6 @@ where
             state.known_core_height_or(self.config.abci.genesis_core_height);
         let hpmn_list_len = state.hpmn_list_len();
         let _quorum_hash = state.current_validator_set_quorum_hash;
-        let is_initialization = state.initialization_information.is_some();
 
         let mut block_platform_state = state.clone();
 
@@ -289,17 +288,15 @@ where
                 .expect("current epoch index should be in range"),
         );
 
-        if !is_initialization {
-            // Update the masternode list and create masternode identities and also update the active quorums
-            self.update_core_info(
-                Some(&state),
-                &mut block_platform_state,
-                core_chain_locked_height,
-                false,
-                &block_info,
-                transaction,
-            )?;
-        }
+        // Update the masternode list and create masternode identities and also update the active quorums
+        self.update_core_info(
+            Some(&state),
+            &mut block_platform_state,
+            core_chain_locked_height,
+            false,
+            &block_info,
+            transaction,
+        )?;
         drop(state);
 
         // Update the validator proposed app version
@@ -464,6 +461,19 @@ where
                         }
                         index = (index + 1) % count;
                     }
+                    // All quorums changed
+                    if let Some((quorum_hash, new_quorum)) = block_execution_context
+                        .block_platform_state
+                        .validator_sets
+                        .first()
+                    {
+                        tracing::debug!("all quorums changed");
+                        block_execution_context
+                            .block_platform_state
+                            .current_validator_set_quorum_hash = quorum_hash.clone();
+                        return Ok(Some(new_quorum.into()));
+                    }
+                    tracing::debug!("no new quorums to choose from");
                     Ok(None)
                 }
             }
