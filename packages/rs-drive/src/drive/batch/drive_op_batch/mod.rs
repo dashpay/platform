@@ -214,7 +214,6 @@ mod tests {
 
     use dpp::data_contract::extra::common::{json_document_to_contract, json_document_to_document};
 
-    use dpp::document::Document;
     use dpp::serialization_traits::PlatformSerializable;
     use dpp::util::cbor_serializer;
     use rand::Rng;
@@ -222,14 +221,11 @@ mod tests {
     use tempfile::TempDir;
 
     use crate::common::setup_contract;
-    use crate::contract::Contract;
-    use crate::drive::batch::drive_op_batch::contract::ContractOperationType::ApplyContractWithSerialization;
+
     use crate::drive::batch::drive_op_batch::document::DocumentOperation::{
         AddOperation, UpdateOperation,
     };
-    use crate::drive::batch::drive_op_batch::document::DocumentOperationType::{
-        AddSerializedDocumentForContract, MultipleDocumentOperationsForSameContractDocumentType,
-    };
+    use crate::drive::batch::drive_op_batch::document::DocumentOperationType::MultipleDocumentOperationsForSameContractDocumentType;
     use crate::drive::batch::drive_op_batch::document::{
         DocumentOperationsForContractDocumentType, UpdateOperationInfo,
     };
@@ -239,9 +235,7 @@ mod tests {
     use crate::drive::config::DriveConfig;
     use crate::drive::contract::paths::contract_root_path;
     use crate::drive::flags::StorageFlags;
-    use crate::drive::object_size_info::DocumentInfo::{
-        DocumentRefAndSerialization, DocumentRefInfo,
-    };
+    use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
     use crate::drive::Drive;
 
@@ -262,7 +256,7 @@ mod tests {
         )
         .expect("expected to get contract");
 
-        let document_type = contract
+        let _document_type = contract
             .document_type_for_name("contactRequest")
             .expect("expected to get document type");
 

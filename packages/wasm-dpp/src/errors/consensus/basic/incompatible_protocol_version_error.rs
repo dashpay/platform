@@ -2,7 +2,7 @@ use crate::buffer::Buffer;
 use dpp::consensus::basic::IncompatibleProtocolVersionError;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
-use dpp::errors::ProtocolError;
+
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=IncompatibleProtocolVersionError)]

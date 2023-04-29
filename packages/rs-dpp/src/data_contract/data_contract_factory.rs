@@ -1,4 +1,3 @@
-use anyhow::anyhow;
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
@@ -15,14 +14,12 @@ use crate::data_contract::property_names::PROTOCOL_VERSION;
 use crate::consensus::basic::decode::SerializedObjectParsingError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
-use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+use crate::serialization_traits::PlatformDeserializable;
 use crate::state_transition::StateTransitionType;
-use crate::util::deserializer;
-use crate::util::deserializer::SplitProtocolVersionOutcome;
+
 use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
 use crate::{
     data_contract::{self, generate_data_contract_id},
-    encoding::decode_protocol_entity_factory::DecodeProtocolEntity,
     errors::ProtocolError,
     prelude::Identifier,
     Convertible,
@@ -178,7 +175,7 @@ impl DataContractFactory {
         })?;
 
         if !skip_validation {
-            let mut value = data_contract.to_object()?;
+            let value = data_contract.to_object()?;
             self.create_from_object(value, skip_validation).await
         } else {
             Ok(data_contract)

@@ -1,5 +1,4 @@
 use anyhow::Context;
-use std::convert::TryInto;
 
 use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
 use crate::consensus::fee::balance_is_not_enough_error::BalanceIsNotEnoughError;

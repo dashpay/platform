@@ -10,7 +10,7 @@ use crate::consensus::signature::InvalidStateTransitionSignatureError;
 use crate::consensus::signature::SignatureError;
 use crate::consensus::ConsensusError;
 
-use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable, Signable};
+use crate::serialization_traits::{PlatformSerializable, Signable};
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, StateTransitionIsNotSignedError,
 };

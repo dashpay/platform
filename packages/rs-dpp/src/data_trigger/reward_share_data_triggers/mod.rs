@@ -4,13 +4,11 @@ use anyhow::{anyhow, bail};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 
 use platform_value::platform_value;
-use platform_value::string_encoding::Encoding;
 
 use crate::document::Document;
 use crate::{
     data_trigger::create_error, document::document_transition::DocumentTransition,
-    get_from_transition, mocks::SMLStore, prelude::Identifier,
-    state_repository::StateRepositoryLike, ProtocolError,
+    get_from_transition, prelude::Identifier, state_repository::StateRepositoryLike, ProtocolError,
 };
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};

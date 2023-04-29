@@ -1,10 +1,6 @@
-use crate::buffer::Buffer;
 use dpp::dashcore::secp256k1::rand::thread_rng;
-use dpp::dashcore::secp256k1::Secp256k1;
-use dpp::dashcore::{
-    secp256k1::SecretKey, InstantLock, Network, OutPoint, PrivateKey, Script, Transaction, TxIn,
-    TxOut, Txid,
-};
+
+use dpp::dashcore::{secp256k1::SecretKey, Network, PrivateKey};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 

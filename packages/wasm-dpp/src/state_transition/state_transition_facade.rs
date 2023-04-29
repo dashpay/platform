@@ -8,8 +8,7 @@ use crate::validation::ValidationResultWasm;
 use crate::{with_js_error, StateTransitionExecutionContextWasm};
 use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use dpp::state_transition::{
-    StateTransitionConvert, StateTransitionFacade, StateTransitionLike, StateTransitionType,
-    ValidateOptions,
+    StateTransitionConvert, StateTransitionFacade, StateTransitionType, ValidateOptions,
 };
 use dpp::version::ProtocolVersionValidator;
 use serde::Deserialize;
@@ -17,8 +16,7 @@ use serde::Deserialize;
 use crate::errors::protocol_error::from_protocol_error;
 use crate::errors::value_error::PlatformValueErrorWasm;
 use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::document::DocumentsBatchTransition;
-use dpp::ProtocolError;
+
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;

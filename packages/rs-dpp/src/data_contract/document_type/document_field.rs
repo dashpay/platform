@@ -275,7 +275,7 @@ impl DocumentFieldType {
             Ok(vec![])
         } else {
             let mut value: Vec<u8> = vec![0u8; bytes];
-            buf.read_exact(&mut value).map_err(|e| {
+            buf.read_exact(&mut value).map_err(|_e| {
                 ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
                     "error reading varint from serialized document",
                 ))

@@ -1393,7 +1393,6 @@ mod tests {
     mod get_contract_with_fetch_info {
         use super::*;
         use dpp::prelude::Identifier;
-        use dpp::Convertible;
 
         #[test]
         fn should_get_contract_from_global_and_block_cache() {
