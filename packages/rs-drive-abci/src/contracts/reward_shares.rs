@@ -87,7 +87,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
                     WhereClause {
                         field: "$ownerId".to_string(),
                         operator: WhereOperator::Equal,
-                        value: Value::Bytes(masternode_owner_id.clone()),
+                        value: Value::Bytes(masternode_owner_id.to_vec()),
                     },
                 )]),
             },
