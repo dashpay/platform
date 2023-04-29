@@ -393,11 +393,8 @@ where
             &mut drive_operations,
         );
 
-        let withdrawal_transactions: Vec<WithdrawalTransactionIdAndBytes> = withdrawal_transactions
-            .values()
-            .into_iter()
-            .cloned()
-            .collect();
+        let withdrawal_transactions: Vec<WithdrawalTransactionIdAndBytes> =
+            withdrawal_transactions.values().cloned().collect();
 
         self.drive.add_enqueue_withdrawal_transaction_operations(
             &withdrawal_transactions,

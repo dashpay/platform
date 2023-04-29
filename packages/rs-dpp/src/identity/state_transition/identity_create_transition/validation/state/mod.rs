@@ -31,7 +31,6 @@ where
     ) -> Result<ConsensusValidationResult<Self::ResultItem>, ProtocolError> {
         validate_identity_create_transition_state(&self.state_repository, data, execution_context)
             .await
-            .map_err(|err| err)
     }
 }
 

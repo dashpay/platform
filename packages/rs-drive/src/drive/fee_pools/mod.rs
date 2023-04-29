@@ -224,7 +224,6 @@ mod tests {
 
             // Store initial epoch storage pool values
             let operations = (GENESIS_EPOCH_INDEX..TO_EPOCH_INDEX)
-                .into_iter()
                 .enumerate()
                 .map(|(i, epoch_index)| {
                     let credits = 10 - i as Credits;
@@ -284,7 +283,6 @@ mod tests {
 
             // Store initial epoch storage pool values
             let operations = (GENESIS_EPOCH_INDEX..TO_EPOCH_INDEX)
-                .into_iter()
                 .enumerate()
                 .map(|(i, epoch_index)| {
                     let credits = 10 - i as Credits;

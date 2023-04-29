@@ -325,12 +325,12 @@ where
             round as u32,
             block_hash.clone(),
         )? {
-            return Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
+            Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
                 "received extend vote request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
                 height, round, block_hash.to_hex(),
                 block_state_info.height, block_state_info.round, block_state_info.block_hash.map(|block_hash| block_hash.to_hex()).unwrap_or("None".to_string())
             )))
-            .into());
+            .into())
         } else {
             // we only want to sign the hash of the transaction
             let extensions = block_execution_context

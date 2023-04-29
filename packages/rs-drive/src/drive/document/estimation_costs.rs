@@ -171,7 +171,6 @@ impl Drive {
             }),
             |layer_info| {
                 let mut layer_map = (CONTRACT_DOCUMENTS_PATH_HEIGHT..(key_info_path.len() as u16))
-                    .into_iter()
                     .map(|s| {
                         let subpath =
                             KeyInfoPath::from_vec(key_info_path.0[..(s as usize)].to_vec());

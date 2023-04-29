@@ -197,9 +197,7 @@ fn get_wrongly_constructed_new_index<'a>(
 fn get_all_possible_sequences_of_properties(
     index: &Index,
 ) -> impl Iterator<Item = &[IndexProperty]> {
-    (0..index.properties.len())
-        .into_iter()
-        .map(move |i| &index.properties[..i + 1])
+    (0..index.properties.len()).map(move |i| &index.properties[..i + 1])
 }
 
 fn get_new_unique_index<'a>(

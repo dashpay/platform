@@ -36,17 +36,14 @@ pub use action::{
 };
 
 #[repr(u8)]
-#[derive(Serialize_repr, Deserialize_repr, PartialEq, Eq, Clone, Copy, Debug, Encode, Decode)]
+#[derive(
+    Serialize_repr, Deserialize_repr, PartialEq, Eq, Clone, Copy, Debug, Encode, Decode, Default,
+)]
 pub enum Pooling {
+    #[default]
     Never = 0,
     IfAvailable = 1,
     Standard = 2,
-}
-
-impl std::default::Default for Pooling {
-    fn default() -> Self {
-        Pooling::Never
-    }
 }
 
 #[derive(

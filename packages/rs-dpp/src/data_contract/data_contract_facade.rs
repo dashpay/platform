@@ -64,12 +64,9 @@ impl DataContractFacade {
         raw_data_contract: Value,
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
-        let res = self
-            .factory
+        self.factory
             .create_from_object(raw_data_contract, skip_validation)
-            .await;
-
-        res
+            .await
     }
 
     /// Create Data Contract from buffer

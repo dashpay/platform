@@ -84,9 +84,9 @@ pub fn pattern_is_valid_regex_validator(
     }
 }
 
-fn unwrap_error_to_result<'a, 'b>(
+fn unwrap_error_to_result<'a>(
     v: Result<Option<&'a Value>, ConsensusError>,
-    result: &'b mut SimpleConsensusValidationResult,
+    result: &mut SimpleConsensusValidationResult,
 ) -> Option<&'a Value> {
     match v {
         Ok(v) => v,

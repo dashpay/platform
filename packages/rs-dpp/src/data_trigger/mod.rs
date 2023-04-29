@@ -26,12 +26,13 @@ pub mod withdrawals_data_triggers;
 mod data_trigger_execution_result;
 mod reject_data_trigger;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub enum DataTriggerKind {
     CreateDataContractRequest,
     DataTriggerCreateDomain,
     DataTriggerRewardShare,
     DataTriggerReject,
+    #[default]
     CrateFeatureFlag,
     DeleteWithdrawal,
 }
@@ -46,12 +47,6 @@ impl From<DataTriggerKind> for &str {
             DataTriggerKind::CreateDataContractRequest => "createDataContractRequest",
             DataTriggerKind::DeleteWithdrawal => "deleteWithdrawal",
         }
-    }
-}
-
-impl Default for DataTriggerKind {
-    fn default() -> Self {
-        DataTriggerKind::CrateFeatureFlag
     }
 }
 

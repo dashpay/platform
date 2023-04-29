@@ -355,12 +355,12 @@ mod test {
 
     #[tokio::test]
     async fn should_return_invalid_state_transition_type_if_type_is_invalid() {
-        let state_repostiory_mock = MockStateRepositoryLike::new();
+        let state_repository_mock = MockStateRepositoryLike::new();
         let raw_state_transition = platform_value!( {
             "type" : 110u8
         });
 
-        let result = create_state_transition(&state_repostiory_mock, raw_state_transition).await;
+        let result = create_state_transition(&state_repository_mock, raw_state_transition).await;
         let err = get_protocol_error(result);
 
         match err {

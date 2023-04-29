@@ -1697,7 +1697,7 @@ fn test_family_basic_queries() {
         last_name: String::from("Ogwu"),
         age: rng.gen_range(0..85),
     };
-    let serialized_person = serde_json::to_value(&fixed_person).expect("serialized person");
+    let serialized_person = serde_json::to_value(fixed_person).expect("serialized person");
     let person_cbor = cbor_serializer::serializable_value_to_cbor(
         &serialized_person,
         Some(drive::drive::defaults::PROTOCOL_VERSION),
@@ -1743,7 +1743,7 @@ fn test_family_basic_queries() {
         last_name: String::from("dkfjghfdk"),
         age: rng.gen_range(0..85),
     };
-    let serialized_person = serde_json::to_value(&next_person).expect("serialized person");
+    let serialized_person = serde_json::to_value(next_person).expect("serialized person");
     let person_cbor = cbor_serializer::serializable_value_to_cbor(
         &serialized_person,
         Some(drive::drive::defaults::PROTOCOL_VERSION),
@@ -3624,7 +3624,7 @@ fn test_dpns_query_start_at_with_null_id() {
         },
     };
 
-    let value0 = platform_value::to_value(&domain0).expect("serialized domain");
+    let value0 = platform_value::to_value(domain0).expect("serialized domain");
     let document0 =
         platform_value::from_value(value0).expect("document should be properly deserialized");
 
@@ -3664,7 +3664,7 @@ fn test_dpns_query_start_at_with_null_id() {
         },
     };
 
-    let value1 = serde_json::to_value(&domain1).expect("serialized domain");
+    let value1 = serde_json::to_value(domain1).expect("serialized domain");
     let document_cbor1 = cbor_serializer::serializable_value_to_cbor(
         &value1,
         Some(drive::drive::defaults::PROTOCOL_VERSION),
@@ -3819,7 +3819,7 @@ fn test_dpns_query_start_after_with_null_id() {
         },
     };
 
-    let value0 = serde_json::to_value(&domain0).expect("serialized domain");
+    let value0 = serde_json::to_value(domain0).expect("serialized domain");
     let document_cbor0 = cbor_serializer::serializable_value_to_cbor(
         &value0,
         Some(drive::drive::defaults::PROTOCOL_VERSION),
@@ -3864,7 +3864,7 @@ fn test_dpns_query_start_after_with_null_id() {
         },
     };
 
-    let value1 = serde_json::to_value(&domain1).expect("serialized domain");
+    let value1 = serde_json::to_value(domain1).expect("serialized domain");
     let document_cbor1 = cbor_serializer::serializable_value_to_cbor(
         &value1,
         Some(drive::drive::defaults::PROTOCOL_VERSION),
@@ -4022,7 +4022,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
         },
     };
 
-    let value0 = serde_json::to_value(&domain0).expect("serialized domain");
+    let value0 = serde_json::to_value(domain0).expect("serialized domain");
     let document_cbor0 = cbor_serializer::serializable_value_to_cbor(
         &value0,
         Some(drive::drive::defaults::PROTOCOL_VERSION),
@@ -4067,7 +4067,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
         },
     };
 
-    let value1 = serde_json::to_value(&domain1).expect("serialized domain");
+    let value1 = serde_json::to_value(domain1).expect("serialized domain");
     let document_cbor1 = cbor_serializer::serializable_value_to_cbor(
         &value1,
         Some(drive::drive::defaults::PROTOCOL_VERSION),

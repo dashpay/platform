@@ -152,11 +152,7 @@ impl Person {
                     if quote.len() > 128 {
                         let quote_str = quote.as_str();
                         let mut end: usize = 0;
-                        quote
-                            .chars()
-                            .into_iter()
-                            .take(128)
-                            .for_each(|x| end += x.len_utf8());
+                        quote.chars().take(128).for_each(|x| end += x.len_utf8());
                         let sub_quote = &quote_str[..end];
                         quote = String::from(sub_quote);
                     }
@@ -1053,7 +1049,7 @@ fn test_query_historical() {
         message: Some(String::from("Oh no")),
         age: rng.gen_range(0..85),
     };
-    let serialized_person = serde_json::to_value(&fixed_person).expect("serialized person");
+    let serialized_person = serde_json::to_value(fixed_person).expect("serialized person");
     let person_cbor = cbor_serializer::serializable_value_to_cbor(
         &serialized_person,
         Some(drive::drive::defaults::PROTOCOL_VERSION),
@@ -1100,7 +1096,7 @@ fn test_query_historical() {
         message: Some(String::from("Bad name")),
         age: rng.gen_range(0..85),
     };
-    let serialized_person = serde_json::to_value(&next_person).expect("serialized person");
+    let serialized_person = serde_json::to_value(next_person).expect("serialized person");
     let person_cbor = cbor_serializer::serializable_value_to_cbor(
         &serialized_person,
         Some(drive::drive::defaults::PROTOCOL_VERSION),

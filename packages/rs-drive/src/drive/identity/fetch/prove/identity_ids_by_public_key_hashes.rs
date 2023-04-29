@@ -93,7 +93,6 @@ mod tests {
 
             let key_hashes_to_identity_ids = identities
                 .values()
-                .into_iter()
                 .flat_map(|identity| {
                     identity
                         .public_keys

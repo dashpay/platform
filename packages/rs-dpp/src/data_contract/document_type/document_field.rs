@@ -696,7 +696,7 @@ impl DocumentFieldType {
 
     // Given a field type and a value this function chooses and executes the right encoding method
     pub fn value_from_string(&self, str: &str) -> Result<Value, ProtocolError> {
-        return match self {
+        match self {
             DocumentFieldType::String(min, max) => {
                 if let Some(min) = min {
                     if str.len() < *min as usize {
@@ -775,7 +775,7 @@ impl DocumentFieldType {
                     ),
                 ))
             }
-        };
+        }
     }
 }
 
