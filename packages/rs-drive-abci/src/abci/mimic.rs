@@ -19,7 +19,7 @@ use dpp::serialization_traits::PlatformSerializable;
 use dpp::state_transition::StateTransition;
 use dpp::util::deserializer::ProtocolVersion;
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
-use tenderdash_abci::proto::abci::{CommitInfo, RequestExtendVote, RequestFinalizeBlock, RequestPrepareProposal, RequestProcessProposal, RequestVerifyVoteExtension, ResponsePrepareProposal, ResponseProcessProposal, ValidatorSetUpdate};
+use tenderdash_abci::proto::abci::{CommitInfo, RequestExtendVote, RequestFinalizeBlock, RequestPrepareProposal, RequestProcessProposal, RequestVerifyVoteExtension, ResponsePrepareProposal};
 use tenderdash_abci::proto::google::protobuf::Timestamp;
 use tenderdash_abci::proto::types::{
     Block, BlockId, Data, EvidenceList, Header, PartSetHeader, VoteExtension, VoteExtensionType,
@@ -257,7 +257,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             state_id: [0; 32].to_vec(),                      //todo
         };
 
-        let mut quorum_hash = current_quorum.quorum_hash.to_vec();
+        let quorum_hash = current_quorum.quorum_hash.to_vec();
         // quorum_hash.reverse();
 
         let mut commit_info = CommitInfo {

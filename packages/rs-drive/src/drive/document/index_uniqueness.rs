@@ -204,8 +204,8 @@ impl Drive {
                         None
                     } else {
                         let query = DriveQuery {
-                            contract: &contract,
-                            document_type: &document_type,
+                            contract,
+                            document_type,
                             internal_clauses: InternalClauses {
                                 primary_key_in_clause: None,
                                 primary_key_equal_clause: None,

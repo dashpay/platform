@@ -45,7 +45,6 @@ pub fn generate_test_masternodes(
                  update_hpmn_frequency,
              }| {
                 (start_core_height..=end_core_height)
-                    .into_iter()
                     .map(|height| {
                         // we want to pick what nodes will have updated for that block
                         (
@@ -128,7 +127,7 @@ pub fn generate_test_masternodes(
             .get(&i)
             .map(|heights| {
                 heights
-                    .into_iter()
+                    .iter()
                     .map(|height| {
                         let mut masternode_list_item_b = latest_masternode_list_item.clone();
                         masternode_list_item_b.random_keys_update(None, rng);
@@ -186,7 +185,7 @@ pub fn generate_test_masternodes(
             .get(&i)
             .map(|heights| {
                 heights
-                    .into_iter()
+                    .iter()
                     .map(|height| {
                         let mut masternode_list_item_b = latest_masternode_list_item.clone();
                         masternode_list_item_b.random_keys_update(None, rng);
@@ -218,7 +217,6 @@ where
     I: Iterator<Item = &'a MasternodeListItem> + Clone,
 {
     (0..count)
-        .into_iter()
         .enumerate()
         .map(|(index, _)| {
             let quorum_hash: QuorumHash = QuorumHash::from_inner(rng.gen());

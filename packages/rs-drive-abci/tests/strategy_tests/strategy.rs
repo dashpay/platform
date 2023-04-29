@@ -96,6 +96,12 @@ impl MasternodeListChangesStrategy {
     }
 }
 
+pub enum StrategyMode {
+    ProposerOnly,
+    ProposerAndValidatorHashValidationOnly,
+    //ProposerAndValidatorSigning, todo
+}
+
 #[derive(Clone, Debug)]
 pub struct Strategy {
     pub contracts_with_updates: Vec<(Contract, Option<BTreeMap<u64, Contract>>)>,

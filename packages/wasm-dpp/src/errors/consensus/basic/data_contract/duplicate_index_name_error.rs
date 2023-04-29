@@ -19,12 +19,12 @@ impl From<&DuplicateIndexNameError> for DuplicateIndexNameErrorWasm {
 impl DuplicateIndexNameErrorWasm {
     #[wasm_bindgen(js_name=getDocumentType)]
     pub fn get_document_type(&self) -> String {
-        self.inner.document_type().to_string()
+        self.inner.document_type()
     }
 
     #[wasm_bindgen(js_name=getDuplicateIndexName)]
     pub fn get_duplicate_index_name(&self) -> String {
-        self.inner.duplicate_index_name().to_string()
+        self.inner.duplicate_index_name()
     }
 
     #[wasm_bindgen(js_name=getCode)]
@@ -41,7 +41,7 @@ impl DuplicateIndexNameErrorWasm {
     pub fn serialize(&self) -> Result<Buffer, JsError> {
         let bytes = ConsensusError::from(self.inner.clone())
             .serialize()
-            .map_err(|e| JsError::from(e))?;
+            .map_err(JsError::from)?;
 
         Ok(Buffer::from_bytes(bytes.as_slice()))
     }

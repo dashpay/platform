@@ -63,8 +63,7 @@ impl<E: Debug> SimpleValidationResult<E> {
     ) -> SimpleValidationResult<E> {
         let errors = items
             .into_iter()
-            .map(|single_validation_result| single_validation_result.errors)
-            .flatten()
+            .flat_map(|single_validation_result| single_validation_result.errors)
             .collect();
         SimpleValidationResult::new_with_errors(errors)
     }

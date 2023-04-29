@@ -39,17 +39,13 @@ pub const IDENTIFIER_FIELDS: [&str; 2] = [property_names::ID, property_names::DA
     Decode,
 )]
 #[repr(u8)]
+#[derive(Default)]
 pub enum Action {
+    #[default]
     Create = 0,
     Replace = 1,
     // 2 - reserved for update
     Delete = 3,
-}
-
-impl Default for Action {
-    fn default() -> Action {
-        Action::Create
-    }
 }
 
 impl std::fmt::Display for Action {

@@ -10,7 +10,7 @@ use std::convert::{TryFrom, TryInto};
 use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable, ValueConvertible};
 use itertools::{Either, Itertools};
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
-use platform_value::{platform_value, Bytes32, Identifier};
+use platform_value::{Bytes32, Identifier};
 use platform_value::{ReplacementType, Value, ValueMapHelper};
 use serde::de::Error;
 use serde::{Deserialize, Serialize};

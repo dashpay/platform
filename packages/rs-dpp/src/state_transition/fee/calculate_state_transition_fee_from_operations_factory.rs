@@ -66,7 +66,7 @@ fn calculate_state_transition_fee_from_operations_with_custom_calculator(
 
 #[cfg(test)]
 mod test {
-    use dashcore::blockdata::script::Instruction::Op;
+
     use platform_value::Identifier;
     use std::collections::HashMap;
 

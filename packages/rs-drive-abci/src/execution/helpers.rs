@@ -7,7 +7,7 @@ use crate::state::PlatformState;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::ProTxHash;
 use dashcore_rpc::dashcore_rpc_json::MasternodeListDiff;
-use dashcore_rpc::json::{MasternodeListDiffWithMasternodes, MasternodeListItem, MasternodeType};
+use dashcore_rpc::json::{MasternodeListItem, MasternodeType};
 use dpp::block::block_info::BlockInfo;
 use drive::grovedb::Transaction;
 use std::cmp::Ordering;
@@ -85,14 +85,23 @@ where
     ///   on success, or an `Error` on failure.
     pub(crate) fn update_quorum_info(
         &self,
-        state: &mut PlatformState,
+        block_platform_state: &mut PlatformState,
         core_block_height: u32,
         start_from_scratch: bool,
     ) -> Result<(), Error> {
-        if !start_from_scratch && core_block_height == state.core_height() {
+        if !start_from_scratch && core_block_height == block_platform_state.core_height() {
+            tracing::debug!(
+                method = "update_quorum_info",
+                "no update quorum at height {}",
+                core_block_height
+            );
             return Ok(()); // no need to do anything
         }
-
+        tracing::debug!(
+            method = "update_quorum_info",
+            "update of quorums for height {}",
+            core_block_height
+        );
         let quorum_list = self
             .core_rpc
             .get_quorum_listextended(Some(core_block_height))?;
@@ -106,39 +115,66 @@ where
                 ),
             )))?;
 
+        tracing::debug!(
+            method = "update_quorum_info",
+            "old {:?}",
+            block_platform_state.validator_sets
+        );
+
+        tracing::debug!(
+            method = "update_quorum_info",
+            "new quorum_info {:?}",
+            quorum_info
+        );
+
         // Remove validator_sets entries that are no longer valid for the core block height
-        state
+        block_platform_state
             .validator_sets
             .retain(|key, _| quorum_info.contains_key(key));
 
         let new_quorums = quorum_info
             .iter()
-            .filter(|(key, _)| !state.validator_sets.contains_key(key.as_ref()))
+            .filter(|(key, _)| {
+                !block_platform_state
+                    .validator_sets
+                    .contains_key(key.as_ref())
+            })
             .map(|(key, _)| {
                 let quorum_info_result =
                     self.core_rpc
                         .get_quorum_info(self.config.quorum_type(), key, None)?;
-                let quorum = Quorum::try_from_info_result(quorum_info_result, state)?;
+                let quorum =
+                    Quorum::try_from_info_result(quorum_info_result, block_platform_state)?;
                 Ok((*key, quorum))
             })
             .collect::<Result<Vec<_>, Error>>()?;
 
         // Add new validator_sets entries
-        state.validator_sets.extend(new_quorums.into_iter());
+        block_platform_state
+            .validator_sets
+            .extend(new_quorums.into_iter());
 
-        state.validator_sets.sort_by(|_, quorum_a, _, quorum_b| {
-            let primary_comparison = quorum_b.core_height.cmp(&quorum_a.core_height);
-            if primary_comparison == Ordering::Equal {
-                quorum_b
-                    .quorum_hash
-                    .cmp(&quorum_a.quorum_hash)
-                    .then_with(|| quorum_b.core_height.cmp(&quorum_a.core_height))
-            } else {
-                primary_comparison
-            }
-        });
+        block_platform_state
+            .validator_sets
+            .sort_by(|_, quorum_a, _, quorum_b| {
+                let primary_comparison = quorum_b.core_height.cmp(&quorum_a.core_height);
+                if primary_comparison == Ordering::Equal {
+                    quorum_b
+                        .quorum_hash
+                        .cmp(&quorum_a.quorum_hash)
+                        .then_with(|| quorum_b.core_height.cmp(&quorum_a.core_height))
+                } else {
+                    primary_comparison
+                }
+            });
 
-        state.quorums_extended_info = quorum_list.quorums_by_type;
+        tracing::debug!(
+            method = "update_quorum_info",
+            "new {:?}",
+            block_platform_state.validator_sets
+        );
+
+        block_platform_state.quorums_extended_info = quorum_list.quorums_by_type;
         Ok(())
     }
 
@@ -206,10 +242,7 @@ where
             }
         });
 
-        let deleted_masternodes = removed_mns
-            .iter()
-            .map(|pro_tx_hash| *pro_tx_hash)
-            .collect::<BTreeSet<ProTxHash>>();
+        let deleted_masternodes = removed_mns.iter().copied().collect::<BTreeSet<ProTxHash>>();
 
         state
             .hpmn_masternode_list
@@ -258,9 +291,20 @@ where
             block_platform_state.last_committed_block_info.as_ref()
         {
             if core_block_height == last_commited_block_info.core_height {
+                tracing::debug!(
+                    method = "update_masternode_list",
+                    "no update mnl at height {}",
+                    core_block_height
+                );
                 return Ok(()); // no need to do anything
             }
         }
+        tracing::debug!(
+            method = "update_masternode_list",
+            "update mnl to height {} at block {}",
+            core_block_height,
+            block_platform_state.core_height()
+        );
         if block_platform_state.last_committed_block_info.is_some() || is_init_chain {
             let UpdateStateMasternodeListOutcome {
                 masternode_list_diff,
@@ -282,8 +326,8 @@ where
             if !removed_masternodes.is_empty() {
                 self.drive.remove_validators_proposed_app_versions(
                     removed_masternodes
-                        .into_iter()
-                        .map(|(pro_tx_hash, _)| pro_tx_hash.into_inner()),
+                        .into_keys()
+                        .map(|pro_tx_hash| pro_tx_hash.into_inner()),
                     Some(transaction),
                 )?;
             }

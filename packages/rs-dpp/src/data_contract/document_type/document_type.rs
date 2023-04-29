@@ -273,7 +273,7 @@ impl DocumentType {
             Value::inner_optional_btree_map(document_type_value_map, property_names::PROPERTIES)?
                 .unwrap_or_default();
 
-        let mut required_fields = Value::inner_recursive_optional_array_of_strings(
+        let required_fields = Value::inner_recursive_optional_array_of_strings(
             document_type_value_map,
             "".to_string(),
             property_names::PROPERTIES,

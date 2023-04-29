@@ -25,8 +25,7 @@ use crate::{
 use super::property_names::*;
 
 use crate::serialization_traits::{PlatformDeserializable, Signable};
-use bincode::enc::Encoder;
-use bincode::error::EncodeError;
+
 use bincode::{config, Decode, Encode};
 
 mod action;
@@ -38,7 +37,6 @@ pub mod validation;
 pub use action::{
     DataContractCreateTransitionAction, DATA_CONTRACT_CREATE_TRANSITION_ACTION_VERSION,
 };
-use crate::data_contract::state_transition::data_contract_create_transition::serialize_for_signing::TempDataContractCreateTransitionWithoutWitness;
 
 pub mod property_names {
     pub const PROTOCOL_VERSION: &str = "protocolVersion";

@@ -38,9 +38,9 @@ const PROPERTY_DASH_ALIAS_IDENTITY_ID: &str = "dashAliasIdentityId";
 /// # Returns
 ///
 /// A `DataTriggerExecutionResult` indicating the success or failure of the trigger execution.
-pub fn create_domain_data_trigger<'a>(
+pub fn create_domain_data_trigger(
     document_transition: &DocumentTransitionAction,
-    context: &DataTriggerExecutionContext<'a>,
+    context: &DataTriggerExecutionContext<'_>,
     top_level_identity: Option<&Identifier>,
 ) -> Result<DataTriggerExecutionResult, Error> {
     let is_dry_run = context.state_transition_execution_context.is_dry_run();

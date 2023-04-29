@@ -103,7 +103,7 @@ impl<'de> Deserialize<'de> for IdentifierBytes32 {
                         return Err(E::invalid_length(v.len(), &self));
                     }
                     let mut array = [0u8; 32];
-                    array.copy_from_slice(&v);
+                    array.copy_from_slice(v);
 
                     Ok(IdentifierBytes32(array))
                 }

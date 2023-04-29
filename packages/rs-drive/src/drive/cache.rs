@@ -12,7 +12,7 @@ use nohash_hasher::IntMap;
 use std::sync::Arc;
 
 /// Drive cache struct
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(feature = "full")]
 pub struct DriveCache {
     /// Cached contracts
     pub cached_contracts: DataContractCache,
@@ -23,7 +23,7 @@ pub struct DriveCache {
 }
 
 /// Data Contract cache that handle both non global and block data
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(feature = "full")]
 pub struct DataContractCache {
     global_cache: Cache<[u8; 32], Arc<ContractFetchInfo>>,
     block_cache: Cache<[u8; 32], Arc<ContractFetchInfo>>,

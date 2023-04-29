@@ -29,7 +29,7 @@ impl InconsistentCompoundIndexDataErrorWasm {
 
     #[wasm_bindgen(js_name=getDocumentType)]
     pub fn get_document_type(&self) -> String {
-        self.inner.document_type().to_string()
+        self.inner.document_type()
     }
 
     #[wasm_bindgen(js_name=getCode)]
@@ -46,7 +46,7 @@ impl InconsistentCompoundIndexDataErrorWasm {
     pub fn serialize(&self) -> Result<Buffer, JsError> {
         let bytes = ConsensusError::from(self.inner.clone())
             .serialize()
-            .map_err(|e| JsError::from(e))?;
+            .map_err(JsError::from)?;
 
         Ok(Buffer::from_bytes(bytes.as_slice()))
     }

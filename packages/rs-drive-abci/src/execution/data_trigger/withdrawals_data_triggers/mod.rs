@@ -27,9 +27,9 @@ use crate::execution::data_trigger::{DataTriggerExecutionContext, DataTriggerExe
 /// # Returns
 ///
 /// A `DataTriggerExecutionResult` indicating the success or failure of the trigger execution.
-pub fn delete_withdrawal_data_trigger<'a>(
+pub fn delete_withdrawal_data_trigger(
     document_transition: &DocumentTransitionAction,
-    context: &DataTriggerExecutionContext<'a>,
+    context: &DataTriggerExecutionContext<'_>,
     _top_level_identity: Option<&Identifier>,
 ) -> Result<DataTriggerExecutionResult, Error> {
     let mut result = DataTriggerExecutionResult::default();
@@ -123,7 +123,7 @@ mod tests {
     };
     use dpp::document::Document;
     use dpp::identity::state_transition::identity_credit_withdrawal_transition::Pooling;
-    use dpp::platform_value::{platform_value, Bytes20, Bytes32};
+    use dpp::platform_value::{platform_value, Bytes32};
     use dpp::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
     use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
     use dpp::tests::fixtures::{get_data_contract_fixture, get_withdrawal_document_fixture};

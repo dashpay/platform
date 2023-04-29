@@ -73,7 +73,7 @@ mod tests {
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::{ProTxHash, Txid};
     use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeType};
-    use rand::prelude::*;
+
     use rand::SeedableRng;
     use std::net::SocketAddr;
     use std::str::FromStr;

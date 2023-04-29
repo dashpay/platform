@@ -22,9 +22,9 @@ use super::DataTriggerExecutionContext;
 ///
 /// A `SimpleValidationResult` containing either a `DataTriggerActionError` indicating the failure of the trigger
 /// or an empty result indicating the success of the trigger.
-pub fn reject_data_trigger<'a>(
+pub fn reject_data_trigger(
     document_transition: &DocumentTransitionAction,
-    context: &DataTriggerExecutionContext<'a>,
+    context: &DataTriggerExecutionContext<'_>,
     _top_level_identity: Option<&Identifier>,
 ) -> Result<SimpleValidationResult<DataTriggerActionError>, Error> {
     let mut result = SimpleValidationResult::<DataTriggerActionError>::default();

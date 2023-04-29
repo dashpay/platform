@@ -2,7 +2,7 @@ use crate::state_transition::state_transition_execution_context::StateTransition
 use crate::{
     state_transition::{
         fee::calculate_state_transition_fee_from_operations_factory::calculate_state_transition_fee_from_operations,
-        StateTransition, StateTransitionLike,
+        StateTransition,
     },
     NonConsensusError,
 };

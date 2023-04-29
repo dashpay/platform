@@ -393,11 +393,8 @@ where
             &mut drive_operations,
         );
 
-        let withdrawal_transactions: Vec<WithdrawalTransactionIdAndBytes> = withdrawal_transactions
-            .values()
-            .into_iter()
-            .cloned()
-            .collect();
+        let withdrawal_transactions: Vec<WithdrawalTransactionIdAndBytes> =
+            withdrawal_transactions.values().cloned().collect();
 
         self.drive.add_enqueue_withdrawal_transaction_operations(
             &withdrawal_transactions,
@@ -655,6 +652,7 @@ mod tests {
                     next_epoch_protocol_version: 0,
                     quorums_extended_info: Default::default(),
                     current_validator_set_quorum_hash: Default::default(),
+                    next_validator_set_quorum_hash: None,
                     validator_sets: Default::default(),
                     full_masternode_list: Default::default(),
                     hpmn_masternode_list: Default::default(),
@@ -823,6 +821,7 @@ mod tests {
                         next_epoch_protocol_version: 0,
                         quorums_extended_info: Default::default(),
                         current_validator_set_quorum_hash: Default::default(),
+                        next_validator_set_quorum_hash: None,
                         validator_sets: Default::default(),
                         full_masternode_list: Default::default(),
                         hpmn_masternode_list: Default::default(),

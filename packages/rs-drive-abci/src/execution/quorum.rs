@@ -12,7 +12,7 @@ use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
 use tenderdash_abci::proto::{abci, crypto};
 
 /// Quorum information
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Quorum {
     /// The quorum hash
     pub quorum_hash: QuorumHash,
@@ -34,8 +34,8 @@ impl From<Quorum> for ValidatorSetUpdate {
         } = value;
         ValidatorSetUpdate {
             validator_updates: validator_set
-                .into_iter()
-                .map(|(_, validator)| {
+                .into_values()
+                .map(|validator| {
                     let Validator {
                         pro_tx_hash,
                         public_key,
@@ -74,10 +74,9 @@ impl From<Quorum> for ValidatorSetUpdate {
 /// TODO: This is a workaround for reversed data returned by dashcore_rpc (little endian / big endian handling issue).
 /// We need to decide on a consistent approach to endianness and follow it.
 fn reverse(data: &[u8]) -> Vec<u8> {
-    let mut data = data.to_vec();
     // data.reverse();
 
-    data
+    data.to_vec()
 }
 
 impl From<&Quorum> for ValidatorSetUpdate {
@@ -112,7 +111,7 @@ impl From<&Quorum> for ValidatorSetUpdate {
                         }),
                         power: 100,
                         pro_tx_hash: reverse(pro_tx_hash),
-                        node_address: node_address.clone(),
+                        node_address,
                     }
                 })
                 .collect(),
@@ -158,7 +157,7 @@ impl Quorum {
 
         Ok(Quorum {
             quorum_hash,
-            core_height: height as u32,
+            core_height: height,
             validator_set,
             threshold_public_key,
         })
@@ -166,7 +165,7 @@ impl Quorum {
 }
 
 /// A validator in the context of a quorum
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Validator {
     /// The proTxHash
     pub pro_tx_hash: ProTxHash,
@@ -211,7 +210,7 @@ impl Validator {
         let Some(platform_p2p_port) = platform_p2p_port else {
             return None;
         };
-        let platform_node_id = platform_node_id.clone()?;
+        let platform_node_id = (*platform_node_id)?;
         Some(Validator {
             pro_tx_hash,
             public_key,

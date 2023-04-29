@@ -15,13 +15,11 @@ pub async fn apply_documents_batch_transition_wasm(
 ) -> Result<(), JsValue> {
     let wrapped_state_repository = ExternalStateRepositoryLikeWrapper::new(state_repository);
 
-    let result = apply_documents_batch_transition(
+    apply_documents_batch_transition(
         &wrapped_state_repository,
         &transition.0,
         &execution_context.to_owned().into(),
     )
     .await
-    .with_js_error();
-
-    result
+    .with_js_error()
 }

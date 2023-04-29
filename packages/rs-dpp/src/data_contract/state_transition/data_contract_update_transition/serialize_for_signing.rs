@@ -1,14 +1,12 @@
-use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use crate::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use crate::data_contract::{DataContract, DataContractInner};
+use crate::data_contract::DataContract;
 use crate::serialization_traits::PlatformSerializable;
 use crate::state_transition::StateTransitionType;
-use crate::util::hash::{hash, hash_to_vec};
+
 use crate::ProtocolError;
 use bincode::config;
 use bincode::Encode;
 use platform_serialization::PlatformSerialize;
-use platform_value::Bytes32;
 
 #[derive(Debug, Clone, PartialEq, Encode, PlatformSerialize)]
 #[platform_error_type(ProtocolError)]

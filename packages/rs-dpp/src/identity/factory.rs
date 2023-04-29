@@ -1,4 +1,3 @@
-use crate::encoding::decode_protocol_entity_factory::DecodeProtocolEntity;
 use crate::identity::identity_public_key::factory::KeyCount;
 use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
@@ -22,11 +21,11 @@ use std::iter::FromIterator;
 use crate::consensus::basic::decode::SerializedObjectParsingError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
-use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
-use crate::state_transition::StateTransition;
+use crate::serialization_traits::PlatformDeserializable;
+
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
-use anyhow::anyhow;
+
 use platform_value::Value;
 use std::sync::Arc;
 

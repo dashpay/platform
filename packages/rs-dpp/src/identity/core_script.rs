@@ -98,7 +98,7 @@ impl<'de> BorrowDecode<'de> for CoreScript {
         // Read the serialized bytes from the decoder into a Vec<u8>
         let mut bytes = Vec::new();
         loop {
-            let mut buf = [0u8; 1024]; // Adjust the buffer size as needed
+            let buf = [0u8; 1024]; // Adjust the buffer size as needed
             let mut temp = Vec::from(buf);
             match decoder.reader().read(&mut temp) {
                 Ok(()) => {

@@ -1,10 +1,9 @@
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
-use proc_macro2::Span;
+
 use quote::quote;
-use syn::spanned::Spanned;
-use syn::Error;
+
 use syn::{parse_macro_input, DeriveInput};
 
 #[proc_macro_derive(
@@ -16,7 +15,7 @@ pub fn derive_platform_convert(input: TokenStream) -> TokenStream {
     let name = &input.ident;
 
     // Extract the error type from the attribute.
-    let error_type = input
+    let _error_type = input
         .attrs
         .iter()
         .find_map(|attr| {

@@ -237,20 +237,20 @@ impl TryFrom<&Value> for AssetLockProof {
                 AssetLockProofType::Chain => Ok(Self::Chain(value.clone().try_into()?)),
             }
         } else {
-            let map = value.as_map().ok_or(ProtocolError::DecodingError(format!(
-                "error decoding asset lock proof"
-            )))?;
-            let (key, asset_lock_value) = map.first().ok_or(ProtocolError::DecodingError(
-                format!("error decoding asset lock proof as it was empty"),
+            let map = value.as_map().ok_or(ProtocolError::DecodingError(
+                "error decoding asset lock proof".to_string(),
             ))?;
-            match key.as_str().ok_or(ProtocolError::DecodingError(format!(
-                "error decoding asset lock proof"
-            )))? {
+            let (key, asset_lock_value) = map.first().ok_or(ProtocolError::DecodingError(
+                "error decoding asset lock proof as it was empty".to_string(),
+            ))?;
+            match key.as_str().ok_or(ProtocolError::DecodingError(
+                "error decoding asset lock proof".to_string(),
+            ))? {
                 "Instant" => Ok(Self::Instant(asset_lock_value.clone().try_into()?)),
                 "Chain" => Ok(Self::Chain(asset_lock_value.clone().try_into()?)),
-                _ => Err(ProtocolError::DecodingError(format!(
-                    "error decoding asset lock proof"
-                ))),
+                _ => Err(ProtocolError::DecodingError(
+                    "error decoding asset lock proof".to_string(),
+                )),
             }
         }
     }
@@ -267,24 +267,24 @@ impl TryFrom<Value> for AssetLockProof {
             let proof_type = AssetLockProofType::try_from(proof_type_int)?;
 
             match proof_type {
-                AssetLockProofType::Instant => Ok(Self::Instant(value.clone().try_into()?)),
-                AssetLockProofType::Chain => Ok(Self::Chain(value.clone().try_into()?)),
+                AssetLockProofType::Instant => Ok(Self::Instant(value.try_into()?)),
+                AssetLockProofType::Chain => Ok(Self::Chain(value.try_into()?)),
             }
         } else {
-            let map = value.as_map().ok_or(ProtocolError::DecodingError(format!(
-                "error decoding asset lock proof"
-            )))?;
-            let (key, asset_lock_value) = map.first().ok_or(ProtocolError::DecodingError(
-                format!("error decoding asset lock proof as it was empty"),
+            let map = value.as_map().ok_or(ProtocolError::DecodingError(
+                "error decoding asset lock proof".to_string(),
             ))?;
-            match key.as_str().ok_or(ProtocolError::DecodingError(format!(
-                "error decoding asset lock proof"
-            )))? {
+            let (key, asset_lock_value) = map.first().ok_or(ProtocolError::DecodingError(
+                "error decoding asset lock proof as it was empty".to_string(),
+            ))?;
+            match key.as_str().ok_or(ProtocolError::DecodingError(
+                "error decoding asset lock proof".to_string(),
+            ))? {
                 "Instant" => Ok(Self::Instant(asset_lock_value.clone().try_into()?)),
                 "Chain" => Ok(Self::Chain(asset_lock_value.clone().try_into()?)),
-                _ => Err(ProtocolError::DecodingError(format!(
-                    "error decoding asset lock proof"
-                ))),
+                _ => Err(ProtocolError::DecodingError(
+                    "error decoding asset lock proof".to_string(),
+                )),
             }
         }
     }

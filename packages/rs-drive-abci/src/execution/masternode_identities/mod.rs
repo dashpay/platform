@@ -1,25 +1,19 @@
-use crate::abci::AbciError;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformState;
-use chrono::Utc;
+
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::ProTxHash;
-use dashcore_rpc::dashcore_rpc_json::MasternodeType::{HighPerformance, Regular};
-use dashcore_rpc::dashcore_rpc_json::{MasternodeListDiff, MasternodeType};
-use dashcore_rpc::json::{
-    DMNStateDiff, MasternodeListDiffWithMasternodes, MasternodeListItem, RemovedMasternodeItem,
-    UpdatedMasternodeItem,
-};
+
+use dashcore_rpc::dashcore_rpc_json::MasternodeListDiff;
+use dashcore_rpc::json::{DMNStateDiff, MasternodeListItem};
 use dpp::block::block_info::BlockInfo;
 use dpp::identifier::Identifier;
 use dpp::identity::factory::IDENTITY_PROTOCOL_VERSION;
 use dpp::identity::Purpose::WITHDRAW;
-use dpp::identity::{
-    Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel, TimestampMillis,
-};
+use dpp::identity::{Identity, IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 use dpp::platform_value::BinaryData;
 use drive::drive::batch::DriveOperation;
 use drive::drive::batch::DriveOperation::IdentityOperation;
@@ -32,7 +26,7 @@ use drive::drive::identity::key::fetch::{
 };
 use drive::grovedb::Transaction;
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 impl<C> Platform<C>
 where
@@ -299,7 +293,7 @@ where
         let needs_change_operator_payout_address = state_diff.operator_payout_address.is_some();
         let needs_change_platform_node_id = state_diff.platform_node_id.is_some();
 
-        let mut old_masternode = platform_state
+        let old_masternode = platform_state
             .full_masternode_list
             .get(pro_tx_hash)
             .ok_or_else(|| {
@@ -390,7 +384,7 @@ where
             }
 
             let mut keys_to_re_enable = vec![];
-            let mut unique_keys_to_add = vec![];
+            let unique_keys_to_add = vec![];
             let mut non_unique_keys_to_add = vec![];
 
             let mut new_key_id = last_key_id + 1;
@@ -437,7 +431,7 @@ where
                         disabled_at: None,
                     };
                     non_unique_keys_to_add.push(key);
-                    new_key_id += 1;
+                    // new_key_id += 1;
                 }
             }
 
@@ -456,12 +450,11 @@ where
                         //the old key
                         return Some(key_id);
                     }
-                    if old_masternode.state.platform_node_id.is_some() {
-                        if key.data.as_slice()
+                    if old_masternode.state.platform_node_id.is_some()
+                        && key.data.as_slice()
                             == old_masternode.state.platform_node_id.as_ref().unwrap()
-                        {
-                            return Some(key_id);
-                        }
+                    {
+                        return Some(key_id);
                     }
                     None
                 })
@@ -541,10 +534,8 @@ where
             )?
             .into_iter()
             .filter_map(|(key_id, key)| {
-                if key.is_disabled() {
-                    None //No need to disable it again
-                } else if key.purpose == WITHDRAW {
-                    None //Don't disable withdrawal keys
+                if key.is_disabled() || key.purpose == WITHDRAW {
+                    None // Don't disable withdrawal keys
                 } else {
                     Some(key_id)
                 }

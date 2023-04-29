@@ -1,14 +1,10 @@
-use crate::errors::protocol_error::from_protocol_error;
-use core::iter::FromIterator;
-use dpp::encoding::decode_protocol_entity_factory::DecodeProtocolEntity;
-use dpp::ProtocolError;
 use js_sys::Array;
-use serde::Serialize;
+
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(js_name=decodeProtocolEntity)]
-pub fn decode_protocol_entity(buffer: Vec<u8>) -> Result<Array, JsValue> {
+pub fn decode_protocol_entity(_buffer: Vec<u8>) -> Result<Array, JsValue> {
     // TODO(v0.24-backport): revisit.
     //   This code was not used anywhere but js-drive and wallet-lib.
     //   In wallet-lib it is replaceable.

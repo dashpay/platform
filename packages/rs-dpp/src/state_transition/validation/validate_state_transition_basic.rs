@@ -13,8 +13,7 @@ use crate::{
     state_repository::StateRepositoryLike,
     state_transition::{
         create_state_transition,
-        state_transition_execution_context::StateTransitionExecutionContext,
-        StateTransitionConvert, StateTransitionType,
+        state_transition_execution_context::StateTransitionExecutionContext, StateTransitionType,
     },
     validation::{AsyncDataValidatorWithContext, SimpleConsensusValidationResult},
     ProtocolError,

@@ -19,6 +19,7 @@ use crate::error::identity::IdentityError;
 use crate::error::Error;
 #[cfg(feature = "full")]
 use crate::fee::credits::Credits;
+#[cfg(feature = "full")]
 use crate::fee::default_costs::EpochCosts;
 #[cfg(feature = "full")]
 use crate::fee::default_costs::KnownCostItem::FetchSingleIdentityKeyProcessingCost;
@@ -230,7 +231,7 @@ impl IdentityPublicKeyResult for SingleIdentityPublicKeyOutcome {
             .map(element_to_identity_public_key)
             .collect::<Result<Vec<_>, Error>>()?;
 
-        if keys.len() < 1 {
+        if keys.is_empty() {
             return Err(Error::Identity(IdentityError::IdentityPublicKeyNotFound(
                 "no result found".to_string(),
             )));
@@ -252,7 +253,7 @@ impl IdentityPublicKeyResult for SingleIdentityPublicKeyOutcome {
             .map(supported_query_result_element_to_identity_public_key)
             .collect::<Result<Vec<_>, Error>>()?;
 
-        if keys.len() < 1 {
+        if keys.is_empty() {
             return Err(Error::Identity(IdentityError::IdentityPublicKeyNotFound(
                 "no result found".to_string(),
             )));
@@ -278,7 +279,7 @@ impl IdentityPublicKeyResult for OptionalSingleIdentityPublicKeyOutcome {
             .map(element_to_identity_public_key)
             .collect::<Result<Vec<_>, Error>>()?;
 
-        if keys.len() < 1 {
+        if keys.is_empty() {
             return Ok(None);
         }
 
@@ -298,7 +299,7 @@ impl IdentityPublicKeyResult for OptionalSingleIdentityPublicKeyOutcome {
             .map(supported_query_result_element_to_identity_public_key)
             .collect::<Result<Vec<_>, Error>>()?;
 
-        if keys.len() < 1 {
+        if keys.is_empty() {
             return Ok(None);
         }
 

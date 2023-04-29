@@ -32,7 +32,6 @@ impl IdentityPublicKey {
         };
         let end_id = first_id + count;
         (first_id..end_id)
-            .into_iter()
             .map(|key_id| Self::random_key_with_rng(key_id, &mut rng, None).unwrap())
             .collect()
     }
@@ -49,7 +48,6 @@ impl IdentityPublicKey {
         };
         let end_id = first_id + count;
         (first_id..end_id)
-            .into_iter()
             .map(|key_id| Self::random_authentication_key_with_rng(key_id, &mut rng, None).unwrap())
             .collect()
     }

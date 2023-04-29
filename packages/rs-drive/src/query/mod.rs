@@ -1529,7 +1529,7 @@ mod tests {
     use crate::drive::Drive;
     use crate::query::DriveQuery;
     use dpp::data_contract::document_type::DocumentType;
-    use dpp::data_contract::extra::common::{json_document_to_cbor, json_document_to_contract};
+    use dpp::data_contract::extra::common::json_document_to_contract;
 
     use dpp::util::cbor_serializer;
     use serde_json::Value::Null;

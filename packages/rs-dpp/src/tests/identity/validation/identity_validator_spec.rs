@@ -26,7 +26,6 @@ fn setup_test() -> (
 }
 
 pub mod protocol_version {
-    use super::*;
 
     use crate::assert_basic_consensus_errors;
     use crate::consensus::basic::BasicError;
@@ -348,8 +347,6 @@ pub mod public_keys {
 
 pub mod revision {
     use super::*;
-
-    use jsonschema::error::ValidationErrorKind;
 
     use crate::assert_basic_consensus_errors;
     use crate::errors::consensus::ConsensusError;

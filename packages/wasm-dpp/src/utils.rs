@@ -240,7 +240,7 @@ pub fn get_class_name(value: &JsValue) -> String {
 }
 
 pub fn try_to_u64(value: JsValue) -> Result<u64, anyhow::Error> {
-    let result = if value.is_bigint() {
+    if value.is_bigint() {
         js_sys::BigInt::new(&value)
             .map_err(|e| anyhow!("unable to create bigInt: {}", e.to_string()))?
             .try_into()
@@ -250,9 +250,7 @@ pub fn try_to_u64(value: JsValue) -> Result<u64, anyhow::Error> {
         convert_number_to_u64(number)
     } else {
         bail!("supported types are Number or BigInt")
-    };
-
-    result
+    }
 }
 
 pub fn convert_number_to_u64(js_number: js_sys::Number) -> Result<u64, anyhow::Error> {

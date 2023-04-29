@@ -47,7 +47,7 @@ pub type DataTriggerExecutionResult = SimpleValidationResult<DataTriggerActionEr
 ///
 /// Each variant of the enum corresponds to a specific type of data trigger that can be executed. The enum is used
 /// throughout the data trigger system to identify the type of trigger that is being executed.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub enum DataTriggerKind {
     /// A data trigger that handles the creation of data contract requests.
     CreateDataContractRequest,
@@ -58,6 +58,7 @@ pub enum DataTriggerKind {
     /// A data trigger that handles the rejection of documents.
     DataTriggerReject,
     /// A data trigger that handles the creation of feature flag documents.
+    #[default]
     CrateFeatureFlag,
     /// A data trigger that handles the deletion of withdrawal documents.
     DeleteWithdrawal,
@@ -73,12 +74,6 @@ impl From<DataTriggerKind> for &str {
             DataTriggerKind::CreateDataContractRequest => "createDataContractRequest",
             DataTriggerKind::DeleteWithdrawal => "deleteWithdrawal",
         }
-    }
-}
-
-impl Default for DataTriggerKind {
-    fn default() -> Self {
-        DataTriggerKind::CrateFeatureFlag
     }
 }
 
@@ -144,10 +139,10 @@ impl DataTrigger {
     ///
     /// A `DataTriggerExecutionResult` containing either a successful result or a `DataTriggerActionError`,
     /// indicating the failure of the trigger.
-    pub fn execute<'a>(
+    pub fn execute(
         &self,
         document_transition: &DocumentTransitionAction,
-        context: &DataTriggerExecutionContext<'a>,
+        context: &DataTriggerExecutionContext<'_>,
     ) -> DataTriggerExecutionResult {
         let mut result = DataTriggerExecutionResult::default();
         // TODO remove the clone
@@ -179,10 +174,10 @@ impl DataTrigger {
     }
 }
 
-fn execute_trigger<'a>(
+fn execute_trigger(
     trigger_kind: DataTriggerKind,
     document_transition: &DocumentTransitionAction,
-    context: &DataTriggerExecutionContext<'a>,
+    context: &DataTriggerExecutionContext<'_>,
     identifier: Option<&Identifier>,
 ) -> Result<DataTriggerExecutionResult, Error> {
     match trigger_kind {

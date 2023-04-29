@@ -76,8 +76,7 @@ mod tests {
             let first_key_hash = identity
                 .public_keys
                 .values()
-                .filter(|public_key| public_key.key_type.is_unique_key_type())
-                .next()
+                .find(|public_key| public_key.key_type.is_unique_key_type())
                 .expect("expected a unique key")
                 .hash()
                 .expect("expected to hash data")
@@ -117,7 +116,6 @@ mod tests {
 
             let key_hashes_to_identities = identities
                 .values()
-                .into_iter()
                 .flat_map(|identity| {
                     identity
                         .public_keys
@@ -138,7 +136,6 @@ mod tests {
 
             let key_hashes_to_identity_ids = identities
                 .values()
-                .into_iter()
                 .flat_map(|identity| {
                     identity
                         .public_keys

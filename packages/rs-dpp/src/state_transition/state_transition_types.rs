@@ -33,7 +33,7 @@ impl std::fmt::Display for StateTransitionType {
     }
 }
 
-impl std::default::Default for StateTransitionType {
+impl Default for StateTransitionType {
     fn default() -> Self {
         StateTransitionType::DataContractCreate
     }

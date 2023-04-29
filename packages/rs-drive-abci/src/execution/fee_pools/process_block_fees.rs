@@ -274,7 +274,7 @@ mod tests {
                 genesis_time_ms: u64,
                 epoch_index: u16,
                 block_height: u64,
-                block_hash: [u8; 32],
+                _block_hash: [u8; 32],
                 previous_block_time_ms: Option<u64>,
                 should_distribute: bool,
                 transaction: &Transaction,

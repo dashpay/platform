@@ -1,4 +1,3 @@
-use dpp::dashcore::anyhow::Context;
 use dpp::prelude::{DataContract, Identifier};
 use dpp::util::json_schema::JsonSchemaExt;
 
@@ -11,7 +10,7 @@ use crate::buffer::Buffer;
 
 use crate::identifier::IdentifierWrapper;
 use crate::lodash::lodash_set;
-use crate::utils::{try_to_u64, WithJsError};
+use crate::utils::WithJsError;
 use crate::utils::{with_serde_to_json_value, ToSerdeJSONExt};
 use crate::with_js_error;
 use crate::DataContractWasm;

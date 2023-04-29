@@ -1,5 +1,3 @@
-use dpp::identity::KeyID;
-
 use dpp::consensus::state::identity::missing_identity_public_key_ids_error::MissingIdentityPublicKeyIdsError;
 use wasm_bindgen::prelude::*;
 

@@ -59,8 +59,7 @@ use tempfile::TempDir;
 use drive::drive::config::DriveConfig;
 #[cfg(feature = "full")]
 use drive::drive::flags::StorageFlags;
-#[cfg(feature = "full")]
-use drive::drive::object_size_info::DocumentInfo::DocumentRefAndSerialization;
+
 #[cfg(feature = "full")]
 use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo};
 #[cfg(feature = "full")]
@@ -68,8 +67,7 @@ use drive::drive::{Drive, RootTree};
 
 #[cfg(feature = "full")]
 use dpp::block::block_info::BlockInfo;
-use dpp::identifier::Identifier;
-use dpp::platform_value::Bytes32;
+
 use drive::drive::object_size_info::DocumentInfo::DocumentRefInfo;
 
 #[cfg(feature = "full")]

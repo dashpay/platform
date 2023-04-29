@@ -485,7 +485,7 @@ impl Drive {
 
         for validator_pro_tx_hash in validator_pro_tx_hashes {
             let removed_element = self.batch_remove_raw(
-                path.clone(),
+                path,
                 validator_pro_tx_hash.as_slice(),
                 StatefulBatchDelete {
                     is_known_to_be_subtree_with_sum: Some((false, false)),
