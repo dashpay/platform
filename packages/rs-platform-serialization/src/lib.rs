@@ -3,7 +3,7 @@ extern crate proc_macro;
 use proc_macro::TokenStream;
 
 use quote::quote;
-use syn::{parse_macro_input, DeriveInput};
+use syn::{parse_macro_input, Data, DeriveInput};
 #[proc_macro_derive(
     PlatformSerialize,
     attributes(platform_error_type, platform_serialize_limit, platform_serialize_into)
@@ -282,76 +282,120 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
         })
         .expect("Missing platform_error_type attribute");
 
-    let fields = match &input.data {
-        syn::Data::Struct(data) => &data.fields,
-        _ => panic!("PlatformSignable can only be derived for structs"),
-    };
-
-    let filtered_fields: Vec<&syn::Field> = fields
-        .iter()
-        .filter(|field| {
-            !field
-                .attrs
+    let expanded = match &input.data {
+        Data::Struct(data) => {
+            let fields = &data.fields;
+            let filtered_fields: Vec<&syn::Field> = fields
                 .iter()
-                .any(|attr| attr.path().is_ident("exclude_from_sig_hash"))
-        })
-        .collect();
+                .filter(|field| {
+                    !field
+                        .attrs
+                        .iter()
+                        .any(|attr| attr.path().is_ident("exclude_from_sig_hash"))
+                })
+                .collect();
 
-    let intermediate_name = syn::Ident::new(&format!("{}Intermediate", name), name.span());
-    let intermediate_fields: Vec<_> = filtered_fields
-        .iter()
-        .map(|field| {
-            let ident = &field.ident;
-            let ty = &field.ty;
-            quote! { #ident: std::borrow::Cow<'a, #ty> }
-        })
-        .collect();
+            let intermediate_name = syn::Ident::new(&format!("{}Intermediate", name), name.span());
+            let intermediate_fields: Vec<_> = filtered_fields
+                .iter()
+                .map(|field| {
+                    let ident = &field.ident;
+                    let ty = &field.ty;
+                    quote! { #ident: std::borrow::Cow<'a, #ty> }
+                })
+                .collect();
 
-    let generics = &input.generics;
-    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+            let generics = &input.generics;
+            let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
-    let field_mapping = filtered_fields.iter().map(|field| {
-        let ident = field.ident.as_ref().expect("Expected named field");
-        quote! { #ident }
-    });
+            let field_mapping = filtered_fields.iter().map(|field| {
+                let ident = field.ident.as_ref().expect("Expected named field");
+                quote! { #ident }
+            });
 
-    let cloned_field_mapping = field_mapping.clone();
+            let cloned_field_mapping = field_mapping.clone();
 
-    let expanded = quote! {
-        struct #intermediate_name<'a> #impl_generics {
-            #( #intermediate_fields, )*
-        }
+            quote! {
+                struct #intermediate_name<'a> #impl_generics {
+                    #( #intermediate_fields, )*
+                }
 
-        impl #impl_generics <'a> bincode::Encode for #intermediate_name<'a> #ty_generics #where_clause {
-            fn encode<E>(&self, encoder: &mut E) -> Result<(), bincode::error::EncodeError>
-            where
-                E: bincode::enc::Encoder,
-            {
+                impl #impl_generics <'a> bincode::Encode for #intermediate_name<'a> #ty_generics #where_clause {
+                    fn encode<E>(&self, encoder: &mut E) -> Result<(), bincode::error::EncodeError>
+                    where
+                        E: bincode::enc::Encoder,
+                    {
 
-                #(self.#field_mapping.encode(encoder)?; )*
-                Ok(())
-            }
-        }
+                        #(self.#field_mapping.encode(encoder)?; )*
+                        Ok(())
+                    }
+                }
 
-        impl #impl_generics <'a> From<&'a #name #ty_generics> for #intermediate_name<'a> #ty_generics #where_clause {
-            fn from(original: &'a #name #ty_generics) -> Self {
-                #intermediate_name {
-                    #( #cloned_field_mapping: std::borrow::Cow::Borrowed(&original.#cloned_field_mapping), )*
+                impl #impl_generics <'a> From<&'a #name #ty_generics> for #intermediate_name<'a> #ty_generics #where_clause {
+                    fn from(original: &'a #name #ty_generics) -> Self {
+                        #intermediate_name {
+                            #( #cloned_field_mapping: std::borrow::Cow::Borrowed(&original.#cloned_field_mapping), )*
+                        }
+                    }
+                }
+
+                impl #impl_generics Signable for #name #ty_generics #where_clause {
+                    fn signable_bytes(&self) -> Result<Vec<u8>, #error_type> {
+                        let config = config::standard().with_big_endian();
+
+                        let intermediate : #intermediate_name = self.into();
+
+                        bincode::encode_to_vec(intermediate, config).map_err(|e| {
+                            #error_type::PlatformSerializationError(format!("unable to serialize to produce sig hash {}: {}", stringify!(#name), e))
+                        })
+                    }
                 }
             }
         }
+        Data::Enum(data) => {
+            let variants = &data.variants;
 
-        impl #impl_generics Signable for #name #ty_generics #where_clause {
-            fn signable_bytes(&self) -> Result<Vec<u8>, #error_type> {
-                let config = config::standard().with_big_endian();
+            let variant_arms = variants.iter().enumerate().map(|(i, variant)| {
+                let variant_ident = &variant.ident;
+                let variant_fields = match &variant.fields {
+                    syn::Fields::Unnamed(fields) => fields.unnamed.iter().collect::<Vec<_>>(),
+                    _ => panic!("Only tuple-style enum variants are supported"),
+                };
 
-                let intermediate : #intermediate_name = self.into();
+                if variant_fields.len() != 1 {
+                    panic!("Each enum variant must contain exactly one field");
+                }
 
-                bincode::encode_to_vec(intermediate, config).map_err(|e| {
-                    #error_type::PlatformSerializationError(format!("unable to serialize to produce sig hash {}: {}", stringify!(#name), e))
-                })
+                let field = &variant_fields[0];
+                let field_ty = &field.ty;
+                quote! {
+                    #name::#variant_ident(ref inner) => {
+                        let mut buf = bincode::encode_to_vec(&(#i as u16), config).unwrap();
+                        let inner_signable_bytes = inner.signable_bytes()?;
+                        buf.extend(inner_signable_bytes);
+                        buf
+                    }
+                }
+            });
+
+            let generics = &input.generics;
+            let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
+            quote! {
+                impl #impl_generics Signable for #name #ty_generics #where_clause {
+                    fn signable_bytes(&self) -> Result<Vec<u8>, #error_type> {
+                        let config = config::standard().with_big_endian();
+
+                        let signable_bytes = match self {
+                            #( #variant_arms, )*
+                        };
+
+                        Ok(signable_bytes)
+                    }
+                }
             }
         }
+        Data::Union(_) => panic!("PlatformSignable cannot be derived for unions"),
     };
     TokenStream::from(expanded)
 }
