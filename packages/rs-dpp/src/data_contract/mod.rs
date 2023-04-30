@@ -5,6 +5,7 @@ pub use data_contract_factory::*;
 use derive_more::From;
 pub use generate_data_contract::*;
 use platform_serialization::{PlatformDeserialize, PlatformDeserializeNoLimit, PlatformSerialize};
+mod data_contract_facade;
 
 pub mod errors;
 pub mod extra;
@@ -12,6 +13,7 @@ pub mod extra;
 mod generate_data_contract;
 pub mod state_transition;
 
+mod factory;
 mod v0;
 
 pub use v0::*;

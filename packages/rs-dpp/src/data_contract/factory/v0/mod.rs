@@ -14,10 +14,13 @@ use crate::data_contract::property_names::PROTOCOL_VERSION;
 use crate::consensus::basic::decode::SerializedObjectParsingError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
+use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
+use crate::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+use crate::data_contract::validation::data_contract_validator::DataContractValidator;
 use crate::serialization_traits::PlatformDeserializable;
 use crate::state_transition::StateTransitionType;
 use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
-use crate::version::LATEST_PLATFORM_VERSION;
+use crate::version::{FeatureVersion, LATEST_PLATFORM_VERSION};
 use crate::{
     data_contract::{self, generate_data_contract_id},
     errors::ProtocolError,
@@ -29,28 +32,40 @@ use super::state_transition::data_contract_create_transition::DataContractCreate
 use super::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use super::{validation::data_contract_validator::DataContractValidator, DataContract};
 
-pub struct DataContractFactory {
-    protocol_version: u32,
+/// The version 0 implementation of the data contract factory.
+///
+/// This implementation manages the creation, validation, and serialization of data contracts.
+/// It uses a protocol_version, a DataContractValidator, and an EntropyGenerator for its operations.
+pub struct DataContractFactoryV0 {
+    /// The feature version used by this factory.
+    data_contract_feature_version: FeatureVersion,
+
+    /// A DataContractValidator for validating data contracts.
     validate_data_contract: Arc<DataContractValidator>,
+
+    /// An EntropyGenerator for generating entropy during data contract creation.
     entropy_generator: Box<dyn EntropyGenerator>,
 }
 
-impl DataContractFactory {
-    pub fn new(protocol_version: u32, validate_data_contract: Arc<DataContractValidator>) -> Self {
+impl DataContractFactoryV0 {
+    pub fn new(
+        data_contract_feature_version: FeatureVersion,
+        validate_data_contract: Arc<DataContractValidator>,
+    ) -> Self {
         Self {
-            protocol_version,
+            data_contract_feature_version,
             validate_data_contract,
             entropy_generator: Box::new(DefaultEntropyGenerator),
         }
     }
 
     pub fn new_with_entropy_generator(
-        protocol_version: u32,
+        data_contract_feature_version: FeatureVersion,
         validate_data_contract: Arc<DataContractValidator>,
         entropy_generator: Box<dyn EntropyGenerator>,
     ) -> Self {
         Self {
-            protocol_version,
+            data_contract_feature_version,
             validate_data_contract,
             entropy_generator,
         }
@@ -226,7 +241,7 @@ mod tests {
     pub struct TestData {
         data_contract: DataContract,
         raw_data_contract: Value,
-        factory: DataContractFactory,
+        factory: DataContractFactoryV0,
     }
 
     fn get_test_data() -> TestData {
@@ -241,7 +256,7 @@ mod tests {
             protocol_version_validator,
         )));
 
-        let factory = DataContractFactory::new(1, data_contract_validator);
+        let factory = DataContractFactoryV0::new(1, data_contract_validator);
         TestData {
             data_contract,
             raw_data_contract,
