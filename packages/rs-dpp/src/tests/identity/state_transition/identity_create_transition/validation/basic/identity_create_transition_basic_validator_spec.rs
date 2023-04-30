@@ -333,8 +333,8 @@ mod validate_identity_create_transition_basic_factory {
     mod public_keys {
         use super::*;
 
-        use std::sync::Arc;
         use platform_value::Value;
+        use std::sync::Arc;
 
         use crate::consensus::test_consensus_error::TestConsensusError;
         use crate::consensus::ConsensusError;

@@ -1,9 +1,9 @@
+use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+use bincode::{BorrowDecode, Decode, Encode};
 pub use data_contract::*;
 pub use data_contract_factory::*;
-pub use generate_data_contract::*;
-use bincode::{BorrowDecode, Decode, Encode};
 use derive_more::From;
-use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+pub use generate_data_contract::*;
 use platform_serialization::{PlatformDeserialize, PlatformDeserializeNoLimit, PlatformSerialize};
 
 pub mod errors;
@@ -28,26 +28,26 @@ pub mod property_names {
 }
 
 use crate::data_contract::v0::data_contract::DataContractV0;
-use platform_versioning::PlatformVersioned;
 use crate::version::LATEST_PLATFORM_VERSION;
+use platform_versioning::PlatformVersioned;
 
 #[derive(
-Debug,
-Clone,
-PartialEq,
-Encode,
-Decode,
-PlatformVersioned,
-PlatformSerialize,
-PlatformDeserialize,
-PlatformDeserializeNoLimit,
-From,
+    Debug,
+    Clone,
+    PartialEq,
+    Encode,
+    Decode,
+    PlatformVersioned,
+    PlatformSerialize,
+    PlatformDeserialize,
+    PlatformDeserializeNoLimit,
+    From,
 )]
 #[platform_error_type(ProtocolError)]
 #[platform_deserialize_limit(15000)]
 #[platform_serialize_limit(15000)]
 pub enum DataContract {
-    V0(DataContractV0)
+    V0(DataContractV0),
 }
 
 impl Default for DataContract {

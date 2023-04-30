@@ -8,8 +8,10 @@ use crate::errors::ProtocolError;
 use crate::util::{json_schema::JsonSchemaExt, json_value::JsonValueExt};
 
 lazy_static! {
-    static ref EXTENDED_DOCUMENT_SCHEMA: JsonValue =
-        serde_json::from_str(include_str!("../../../schema/document/documentExtended.json")).unwrap();
+    static ref EXTENDED_DOCUMENT_SCHEMA: JsonValue = serde_json::from_str(include_str!(
+        "../../../schema/document/documentExtended.json"
+    ))
+    .unwrap();
 }
 // Get user property definition
 pub fn get_property_definition_by_path<'a>(

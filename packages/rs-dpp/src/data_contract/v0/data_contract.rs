@@ -31,9 +31,9 @@ use crate::{errors::ProtocolError, metadata::Metadata, util::hash::hash_to_vec};
 use crate::{identifier, Convertible};
 use platform_value::string_encoding::Encoding;
 
+use crate::data_contract::errors::DataContractError;
 use crate::version::LATEST_VERSION;
 use platform_serialization::{PlatformDeserialize, PlatformDeserializeNoLimit, PlatformSerialize};
-use crate::data_contract::errors::DataContractError;
 
 use super::document_type::DocumentType;
 use super::errors::*;
@@ -107,12 +107,7 @@ impl Convertible for DataContractV0 {
 ///
 /// Additionally, `DataContractV0` holds definitions for JSON schemas, entropy, and binary properties
 /// of the documents.
-#[derive(
-Debug,
-Clone,
-Default,
-PartialEq,
-)]
+#[derive(Debug, Clone, Default, PartialEq)]
 #[serde(try_from = "DataContractV0Inner")]
 #[serde(rename_all = "camelCase")]
 pub struct DataContractV0 {
@@ -517,7 +512,7 @@ impl DataContractV0 {
                         doc_type
                     )
                 }
-                    .into()
+                .into()
             })
             .map(Some)
     }

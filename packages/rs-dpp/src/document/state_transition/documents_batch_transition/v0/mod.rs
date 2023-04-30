@@ -1,31 +1,33 @@
-use std::collections::{BTreeMap, HashMap};
-use anyhow::{anyhow, Context};
-use platform_value::{BinaryData, Identifier, Value};
-use crate::identity::KeyID;
-use crate::prelude::DocumentTransition;
-use crate::state_transition::StateTransitionType;
-use crate::version::FeatureVersion;
-use bincode::{config, Decode, Encode};
-use crate::platform_serialization::PlatformSignable;
-use crate::serialization_traits::{PlatformDeserializable, Signable};
-use crate::serialization_traits::PlatformSerializable;
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
-use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueMapReplacementPathHelper};
-use platform_value::string_encoding::Encoding;
 use crate::data_contract::DataContract;
 use crate::document::document_transition::document_base_transition::JsonValue;
 use crate::document::document_transition::DocumentTransitionObjectLike;
+use crate::identity::KeyID;
+use crate::platform_serialization::PlatformSignable;
+use crate::prelude::DocumentTransition;
+use crate::serialization_traits::PlatformSerializable;
+use crate::serialization_traits::{PlatformDeserializable, Signable};
+use crate::state_transition::StateTransitionType;
+use crate::version::FeatureVersion;
 use crate::ProtocolError;
+use anyhow::{anyhow, Context};
+use bincode::{config, Decode, Encode};
+use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use platform_value::btreemap_extensions::{
+    BTreeValueMapHelper, BTreeValueMapReplacementPathHelper,
+};
+use platform_value::string_encoding::Encoding;
+use platform_value::{BinaryData, Identifier, Value};
+use std::collections::{BTreeMap, HashMap};
 
 #[derive(
-Debug,
-Encode,
-Decode,
-Clone,
-PartialEq,
-PlatformDeserialize,
-PlatformSerialize,
-PlatformSignable,
+    Debug,
+    Encode,
+    Decode,
+    Clone,
+    PartialEq,
+    PlatformDeserialize,
+    PlatformSerialize,
+    PlatformSignable,
 )]
 #[platform_error_type(ProtocolError)]
 pub struct DocumentsBatchTransitionV0 {
@@ -47,7 +49,6 @@ impl Default for DocumentsBatchTransitionV0 {
         }
     }
 }
-
 
 impl DocumentsBatchTransitionV0 {
     pub fn from_json_object(
@@ -160,9 +161,10 @@ impl DocumentsBatchTransitionV0 {
                 let mut raw_transition_map = raw_transition
                     .into_btree_string_map()
                     .map_err(ProtocolError::ValueError)?;
-                let data_contract_id =
-                    raw_transition_map.get_hash256_bytes(super::property_names::DATA_CONTRACT_ID)?;
-                let document_type = raw_transition_map.get_str(super::property_names::DOCUMENT_TYPE)?;
+                let data_contract_id = raw_transition_map
+                    .get_hash256_bytes(super::property_names::DATA_CONTRACT_ID)?;
+                let document_type =
+                    raw_transition_map.get_str(super::property_names::DOCUMENT_TYPE)?;
                 let data_contract = data_contracts_map
                     .get(data_contract_id.as_slice())
                     .ok_or_else(|| {
@@ -367,9 +369,9 @@ impl StateTransitionConvert for DocumentsBatchTransition {
         canonical_map.remove(super::property_names::PROTOCOL_VERSION);
 
         // Replace binary fields individually for every transition using respective data contract
-        if let Some(CborValue::Array(ref mut transitions)) =
-            canonical_map.get_mut(&CborValue::Text(super::property_names::TRANSITIONS.to_string()))
-        {
+        if let Some(CborValue::Array(ref mut transitions)) = canonical_map.get_mut(
+            &CborValue::Text(super::property_names::TRANSITIONS.to_string()),
+        ) {
             for (i, cbor_transition) in transitions.iter_mut().enumerate() {
                 let transition = self
                     .transitions
@@ -412,7 +414,10 @@ impl StateTransitionConvert for DocumentsBatchTransition {
                 canonical_map.insert(super::property_names::SIGNATURE, CborValue::Null)
             }
             if self.signature_public_key_id.is_none() {
-                canonical_map.insert(super::property_names::SIGNATURE_PUBLIC_KEY_ID, CborValue::Null)
+                canonical_map.insert(
+                    super::property_names::SIGNATURE_PUBLIC_KEY_ID,
+                    CborValue::Null,
+                )
             }
         }
 

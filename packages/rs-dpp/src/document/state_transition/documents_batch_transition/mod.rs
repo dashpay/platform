@@ -23,7 +23,9 @@ use crate::prelude::{DocumentTransition, Identifier};
 #[cfg(feature = "cbor")]
 use crate::util::cbor_value::{CborCanonicalMap, FieldType, ReplacePaths, ValuesCollection};
 use crate::util::json_value::JsonValueExt;
-use crate::version::{FeatureVersion, FeatureVersionBounds, LATEST_PLATFORM_VERSION, LATEST_VERSION};
+use crate::version::{
+    FeatureVersion, FeatureVersionBounds, LATEST_PLATFORM_VERSION, LATEST_VERSION,
+};
 use crate::ProtocolError;
 use crate::{
     identity::{KeyID, SecurityLevel},
@@ -43,9 +45,9 @@ use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 mod action;
 pub mod apply_documents_batch_transition_factory;
 pub mod document_transition;
-pub mod validation;
-mod v0_action;
 mod v0;
+mod v0_action;
+pub mod validation;
 
 pub use v0::*;
 pub use v0_action::*;
@@ -76,25 +78,28 @@ pub const U32_FIELDS: [&str; 1] = [property_names::PROTOCOL_VERSION];
 const DEFAULT_SECURITY_LEVEL: SecurityLevel = SecurityLevel::HIGH;
 
 #[derive(
-Debug,
-Encode,
-Decode,
-Clone,
-PartialEq,
-PlatformDeserialize,
-PlatformSerialize,
-PlatformSignable,
-From
+    Debug,
+    Encode,
+    Decode,
+    Clone,
+    PartialEq,
+    PlatformDeserialize,
+    PlatformSerialize,
+    PlatformSignable,
+    From,
 )]
 #[platform_error_type(ProtocolError)]
 pub enum DocumentsBatchTransition {
-    V0(DocumentsBatchTransitionV0)
+    V0(DocumentsBatchTransitionV0),
 }
-
 
 impl Default for DocumentsBatchTransition {
     fn default() -> Self {
-        match LATEST_PLATFORM_VERSION.state_transitions.documents_batch_state_transition.default_current_version {
+        match LATEST_PLATFORM_VERSION
+            .state_transitions
+            .documents_batch_state_transition
+            .default_current_version
+        {
             0 => DocumentsBatchTransitionV0::default().into(),
             _ => DocumentsBatchTransitionV0::default().into(), //for now
         }
