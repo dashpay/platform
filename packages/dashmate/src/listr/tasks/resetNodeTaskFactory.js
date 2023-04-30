@@ -1,4 +1,5 @@
 const { Listr } = require('listr2');
+const wait = require('../../util/wait');
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -72,7 +73,30 @@ function resetNodeTaskFactory(
           await Promise.all(
             projectVolumeNames
               .map((volumeName) => `${composeProjectName}_${volumeName}`)
-              .map(async (volumeName) => docker.getVolume(volumeName).remove({ force: true })),
+              .map(async (volumeName) => {
+                const volume = await docker.getVolume(volumeName);
+
+                do {
+                  try {
+                    await volume.remove({ force: true });
+                  } catch (e) {
+                    // volume is in use
+                    if (e.statusCode === 409) {
+                      await wait(1000);
+
+                      continue;
+                    }
+
+                    // volume does not exist
+                    if (e.statusCode === 404) {
+                      break;
+                    }
+
+                    throw e;
+                  }
+                  // eslint-disable-next-line no-constant-condition
+                } while (false);
+              }),
           );
         },
       },
