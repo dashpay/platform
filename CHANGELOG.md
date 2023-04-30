@@ -1,3 +1,10 @@
+## [0.24.0-dev.30](https://github.com/dashpay/platform/compare/v0.24.0-dev.29...v0.24.0-dev.30) (2023-04-30)
+
+
+### Bug Fixes
+
+* **dashmate:** "volume is in use" and "no such volume" ([#1005](https://github.com/dashpay/platform/issues/1005))
+
 ## [0.24.0-dev.29](https://github.com/dashpay/platform/compare/v0.24.0-dev.28...v0.24.0-dev.29) (2023-04-29)
 
 
