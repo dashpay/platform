@@ -109,7 +109,7 @@ where
         self.verify_public_key_level_and_purpose(public_key)?;
         self.verify_public_key_is_enabled(public_key)?;
 
-        let signature = self.get_signature();
+        let signature = self.signature();
         if signature.is_empty() {
             return Err(ProtocolError::StateTransitionIsNotSignedError(
                 StateTransitionIsNotSignedError::new(self.clone().into()),
@@ -222,6 +222,7 @@ mod test {
     use crate::serialization_traits::PlatformDeserializable;
     use crate::serialization_traits::PlatformSerializable;
     use crate::serialization_traits::Signable;
+    use crate::version::FeatureVersion;
     use bincode::{config, Decode, Encode};
     use platform_serialization::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 
@@ -272,13 +273,13 @@ mod test {
     }
 
     impl StateTransitionLike for ExampleStateTransition {
-        fn get_protocol_version(&self) -> u32 {
+        fn state_transition_protocol_version(&self) -> FeatureVersion {
             1
         }
-        fn get_type(&self) -> StateTransitionType {
+        fn state_transition_type(&self) -> StateTransitionType {
             StateTransitionType::DocumentsBatch
         }
-        fn get_signature(&self) -> &BinaryData {
+        fn signature(&self) -> &BinaryData {
             &self.signature
         }
         fn set_signature(&mut self, signature: BinaryData) {
@@ -289,7 +290,7 @@ mod test {
             self.signature = BinaryData::new(signature)
         }
 
-        fn get_modified_data_ids(&self) -> Vec<Identifier> {
+        fn modified_data_ids(&self) -> Vec<Identifier> {
             vec![]
         }
     }
@@ -592,7 +593,7 @@ mod test {
         let mut st = get_mock_state_transition();
         let signature = "some_signature";
         st.set_signature(BinaryData::new(signature.as_bytes().to_owned()));
-        assert_eq!(signature.as_bytes(), st.get_signature().as_slice());
+        assert_eq!(signature.as_bytes(), st.signature().as_slice());
     }
 
     #[test]

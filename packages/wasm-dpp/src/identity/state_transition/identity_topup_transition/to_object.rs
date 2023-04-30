@@ -27,15 +27,15 @@ pub fn to_object_struct(
     options: ToObjectOptions,
 ) -> ToObject {
     let mut to_object = ToObject {
-        transition_type: transition.get_type() as u8,
-        protocol_version: transition.get_protocol_version(),
+        transition_type: transition.state_transition_type() as u8,
+        protocol_version: transition.state_transition_protocol_version(),
         identity_id: *transition.get_identity_id(),
         asset_lock_proof: transition.get_asset_lock_proof().to_owned(),
         signature: None,
     };
 
     if !options.skip_signature.unwrap_or(false) {
-        to_object.signature = Some(transition.get_signature().to_vec());
+        to_object.signature = Some(transition.signature().to_vec());
     }
 
     to_object

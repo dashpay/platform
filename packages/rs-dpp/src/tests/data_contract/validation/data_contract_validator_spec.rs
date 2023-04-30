@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use log::trace;
 use platform_value::{platform_value, Value};
-
 use test_case::test_case;
 
 use crate::consensus::basic::BasicError;

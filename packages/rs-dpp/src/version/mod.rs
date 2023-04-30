@@ -5,6 +5,7 @@ use lazy_static::lazy_static;
 pub use protocol_version_validator::ProtocolVersionValidator;
 
 mod protocol_version;
+pub use protocol_version::*;
 mod protocol_version_validator;
 mod v0;
 

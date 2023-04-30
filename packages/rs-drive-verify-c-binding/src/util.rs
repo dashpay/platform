@@ -6,7 +6,7 @@ pub(crate) fn build_c_identity_struct(maybe_identity: Option<DppIdentity>) -> *m
     maybe_identity
         .map(|identity| {
             Box::into_raw(Box::from(Identity {
-                protocol_version: identity.protocol_version,
+                protocol_version: identity.feature_version,
                 id: Box::into_raw(Box::from(identity.id.0 .0)),
                 public_keys_count: identity.public_keys.len(),
                 public_keys: build_c_public_keys_struct(&identity),

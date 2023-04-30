@@ -15,6 +15,7 @@ use crate::prelude::Revision;
 use crate::util::cbor_value::{CborBTreeMapHelper, CborCanonicalMap};
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
+use crate::version::FeatureVersion;
 use crate::{
     errors::ProtocolError, identifier::Identifier, metadata::Metadata, util::hash, Convertible,
 };
@@ -56,14 +57,11 @@ pub const IDENTIFIER_FIELDS_RAW_OBJECT: [&str; 1] = [property_names::ID_RAW_OBJE
 #[platform_serialize_limit(15000)]
 #[serde(rename_all = "camelCase")]
 pub struct Identity {
-    pub protocol_version: u32,
-    #[bincode(with_serde)]
+    pub feature_version: FeatureVersion,
     pub id: Identifier,
-    #[bincode(with_serde)]
     #[serde(with = "public_key_serialization")]
     pub public_keys: BTreeMap<KeyID, IdentityPublicKey>,
     pub balance: u64,
-    #[bincode(with_serde)]
     pub revision: Revision,
     #[bincode(with_serde)]
     #[serde(skip)]
@@ -162,8 +160,8 @@ impl Convertible for Identity {
 
 impl Identity {
     /// Get Identity protocol version
-    pub fn get_protocol_version(&self) -> u32 {
-        self.protocol_version
+    pub fn get_feature_version(&self) -> u16 {
+        self.feature_version
     }
 
     /// Returns Identity id
@@ -289,7 +287,7 @@ impl Identity {
     #[cfg(feature = "cbor")]
     pub fn to_cbor(&self) -> Result<Vec<u8>, ProtocolError> {
         // Prepend protocol version to the result
-        let mut buf = self.get_protocol_version().encode_var_vec();
+        let mut buf = self.get_feature_version().encode_var_vec();
 
         let mut identity_map = CborCanonicalMap::new();
 
@@ -352,7 +350,7 @@ impl Identity {
             .collect::<Result<BTreeMap<KeyID, IdentityPublicKey>, ProtocolError>>()?;
 
         Ok(Self {
-            protocol_version,
+            feature_version: protocol_version as u16,
             id: identity_id.into(),
             public_keys,
             balance,

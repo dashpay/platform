@@ -22,10 +22,9 @@ use crate::consensus::basic::decode::SerializedObjectParsingError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::serialization_traits::PlatformDeserializable;
-
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
-
+use crate::version::LATEST_PLATFORM_VERSION;
 use platform_value::Value;
 use std::sync::Arc;
 
@@ -45,7 +44,7 @@ impl Identity {
             .collect();
 
         Identity {
-            protocol_version: IDENTITY_PROTOCOL_VERSION,
+            feature_version: LATEST_PLATFORM_VERSION.identity.default_current_version,
             id,
             revision,
             asset_lock_proof: Default::default(),
@@ -80,7 +79,7 @@ impl Identity {
 
         Ok((
             Identity {
-                protocol_version: IDENTITY_PROTOCOL_VERSION,
+                feature_version: LATEST_PLATFORM_VERSION.identity.default_current_version,
                 id,
                 revision,
                 asset_lock_proof: Some(AssetLockProof::Instant(InstantAssetLockProof::default())),
@@ -172,7 +171,7 @@ where
         public_keys: BTreeMap<KeyID, IdentityPublicKey>,
     ) -> Result<Identity, ProtocolError> {
         let identity = Identity {
-            protocol_version: self.protocol_version,
+            feature_version: LATEST_PLATFORM_VERSION.identity.default_current_version,
             id: asset_lock_proof.create_identifier()?,
             balance: 0,
             public_keys,

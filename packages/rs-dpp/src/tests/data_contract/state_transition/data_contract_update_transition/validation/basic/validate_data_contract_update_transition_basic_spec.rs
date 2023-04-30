@@ -24,6 +24,7 @@ use crate::{
     version::{ProtocolVersionValidator, LATEST_VERSION},
 };
 
+use crate::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
 use platform_value::{platform_value, BinaryData, Value};
 
 struct TestData {
@@ -37,13 +38,11 @@ fn setup_test() -> TestData {
     let mut updated_data_contract = data_contract.clone();
     updated_data_contract.increment_version();
 
-    let state_transition = DataContractUpdateTransition {
-        protocol_version: LATEST_VERSION,
+    let state_transition = DataContractUpdateTransition::V0(DataContractUpdateTransitionV0 {
         data_contract: updated_data_contract,
         signature: BinaryData::new(vec![0; 65]),
         signature_public_key_id: 0,
-        transition_type: StateTransitionType::DataContractUpdate,
-    };
+    });
 
     let raw_state_transition = state_transition.to_object(false).unwrap();
     let version_validator = get_protocol_version_validator_fixture();
@@ -60,7 +59,7 @@ fn setup_test() -> TestData {
     }
 }
 
-#[test_case(property_names::PROTOCOL_VERSION)]
+#[test_case(property_names::STATE_TRANSITION_PROTOCOL_VERSION)]
 #[test_case(property_names::DATA_CONTRACT)]
 #[test_case(property_names::SIGNATURE)]
 #[tokio::test]
@@ -90,7 +89,7 @@ async fn should_be_present(property: &str) {
     assert_eq!(schema_error.property_name(), property);
 }
 
-#[test_case(property_names::PROTOCOL_VERSION)]
+#[test_case(property_names::STATE_TRANSITION_PROTOCOL_VERSION)]
 #[test_case(property_names::SIGNATURE_PUBLIC_KEY_ID)]
 #[tokio::test]
 async fn should_be_integer(property: &str) {
@@ -133,7 +132,7 @@ async fn protocol_version_should_be_valid() {
     )
     .expect("validator should be created");
 
-    raw_state_transition[property_names::PROTOCOL_VERSION] = platform_value!(-1);
+    raw_state_transition[property_names::STATE_TRANSITION_PROTOCOL_VERSION] = platform_value!(-1);
 
     let result = validator
         .validate(&raw_state_transition, &Default::default())

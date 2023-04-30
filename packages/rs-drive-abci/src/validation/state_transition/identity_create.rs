@@ -31,11 +31,15 @@ impl StateTransitionValidation for IdentityCreateTransition {
         &self,
         _drive: &Drive,
         _tx: TransactionArg,
+        active_protocol_version: u32,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let result = validate_schema(&IDENTITY_CREATE_TRANSITION_SCHEMA_VALIDATOR, self);
         if !result.is_valid() {
             return Ok(result);
         }
+
+        // PlatformVersion::get(active_protocol_version)?
+        //     .validate_identity_create_state_transition_version(self.state_transition_version());
 
         let result = validate_protocol_version(self.protocol_version);
         if !result.is_valid() {

@@ -23,9 +23,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use crate::consensus::codes::ErrorWithCode;
-
 use crate::tests::utils::generate_random_identifier_struct;
-
 use platform_value::{platform_value, Value};
 use test_case::test_case;
 

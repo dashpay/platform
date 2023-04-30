@@ -294,7 +294,7 @@ mod test {
 
         assert!(
             matches!(result, StateTransition::DataContractCreate(transition) if  {
-                transition.get_data_contract().to_json_object().unwrap() == data_contract.to_json_object().unwrap()
+                transition.data_contract().to_json_object().unwrap() == data_contract.to_json_object().unwrap()
             })
         )
     }

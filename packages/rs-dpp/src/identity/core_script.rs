@@ -4,7 +4,6 @@ use bincode::error::{DecodeError, EncodeError};
 use bincode::{BorrowDecode, Decode, Encode};
 use dashcore::blockdata::opcodes;
 use std::fmt;
-use std::io::{Read, Write};
 use std::ops::Deref;
 
 use dashcore::{Script as DashcoreScript, Script};
@@ -98,13 +97,13 @@ impl<'de> BorrowDecode<'de> for CoreScript {
         // Read the serialized bytes from the decoder into a Vec<u8>
         let mut bytes = Vec::new();
         loop {
-            let buf = [0u8; 1024]; // Adjust the buffer size as needed
-            let mut temp = Vec::from(buf);
+            let buf_len = 1024; // Adjust the buffer size as needed
+            let mut temp = Vec::with_capacity(buf_len);
             match decoder.reader().read(&mut temp) {
                 Ok(()) => {
                     let read_bytes = temp.iter().position(|&x| x == 0).unwrap_or(temp.len());
                     bytes.extend_from_slice(&temp[..read_bytes]);
-                    if read_bytes < buf.len() {
+                    if read_bytes < buf_len {
                         break;
                     }
                 }

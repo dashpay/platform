@@ -15,8 +15,12 @@ impl StateTransition {
 
 #[cfg(test)]
 mod tests {
-    use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
-    use crate::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
+    use crate::data_contract::state_transition::data_contract_create_transition::{
+        DataContractCreateTransition, DataContractCreateTransitionV0,
+    };
+    use crate::data_contract::state_transition::data_contract_update_transition::{
+        DataContractUpdateTransition, DataContractUpdateTransitionV0,
+    };
     use crate::document::document_transition::Action;
     use crate::document::DocumentsBatchTransition;
     use crate::identity::core_script::CoreScript;
@@ -197,14 +201,13 @@ mod tests {
         let identity = Identity::random_identity(5, Some(5));
         let mut data_contract = get_data_contract_fixture(Some(identity.id));
         data_contract.entropy = Default::default();
-        let data_contract_create_transition = DataContractCreateTransition {
-            protocol_version: LATEST_VERSION,
-            transition_type: StateTransitionType::DataContractCreate,
-            data_contract,
-            entropy: Default::default(),
-            signature_public_key_id: 0,
-            signature: [1u8; 65].to_vec().into(),
-        };
+        let data_contract_create_transition =
+            DataContractCreateTransition::V0(DataContractCreateTransitionV0 {
+                data_contract,
+                entropy: Default::default(),
+                signature_public_key_id: 0,
+                signature: [1u8; 65].to_vec().into(),
+            });
         let state_transition: StateTransition = data_contract_create_transition.into();
         let bytes = state_transition.serialize().expect("expected to serialize");
         let recovered_state_transition =
@@ -217,13 +220,12 @@ mod tests {
         let identity = Identity::random_identity(5, Some(5));
         let mut data_contract = get_data_contract_fixture(Some(identity.id));
         data_contract.entropy = Default::default();
-        let data_contract_update_transition = DataContractUpdateTransition {
-            protocol_version: LATEST_VERSION,
-            transition_type: StateTransitionType::DataContractCreate,
-            data_contract,
-            signature_public_key_id: 0,
-            signature: [1u8; 65].to_vec().into(),
-        };
+        let data_contract_update_transition =
+            DataContractUpdateTransition::V0(DataContractUpdateTransitionV0 {
+                data_contract,
+                signature_public_key_id: 0,
+                signature: [1u8; 65].to_vec().into(),
+            });
         let state_transition: StateTransition = data_contract_update_transition.into();
         let bytes = state_transition.serialize().expect("expected to serialize");
         let recovered_state_transition =

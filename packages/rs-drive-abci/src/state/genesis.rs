@@ -139,7 +139,7 @@ impl<C> Platform<C> {
             ]);
 
             let identity = Identity {
-                protocol_version: PROTOCOL_VERSION,
+                feature_version: PROTOCOL_VERSION,
                 id: data_contract.owner_id,
                 // TODO: It super inconvenient to have this boilerplate everywhere and there is no
                 //  way to control consistency. BTreeMap must be internal structure of IdentityPublicKey

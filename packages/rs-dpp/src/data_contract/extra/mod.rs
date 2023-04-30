@@ -1,3 +1,4 @@
 pub mod common;
 
-pub mod drive_api;
+#[cfg(test)]
+pub mod drive_api_tests;

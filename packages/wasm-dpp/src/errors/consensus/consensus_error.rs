@@ -1,6 +1,6 @@
 use crate::errors::consensus::basic::{
     IncompatibleProtocolVersionErrorWasm, InvalidIdentifierErrorWasm, JsonSchemaErrorWasm,
-    UnsupportedProtocolVersionErrorWasm,
+    UnsupportedProtocolVersionErrorWasm, UnsupportedVersionErrorWasm,
 };
 use dpp::consensus::ConsensusError as DPPConsensusError;
 use std::ops::Deref;
@@ -43,7 +43,7 @@ use dpp::consensus::basic::BasicError::{
     InvalidIdentityPublicKeySecurityLevelError, InvalidInstantAssetLockProofError,
     InvalidInstantAssetLockProofSignatureError, JsonSchemaError, MissingMasterPublicKeyError,
     NotImplementedIdentityCreditWithdrawalTransitionPoolingError, ProtocolVersionParsingError,
-    SerializedObjectParsingError, UnsupportedProtocolVersionError,
+    SerializedObjectParsingError, UnsupportedProtocolVersionError, UnsupportedVersionError,
 };
 use dpp::consensus::fee::fee_error::FeeError;
 use dpp::consensus::signature::SignatureError;
@@ -300,6 +300,7 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         SerializedObjectParsingError(e) => SerializedObjectParsingErrorWasm::from(e).into(),
         JsonSchemaError(e) => JsonSchemaErrorWasm::from(e).into(),
         UnsupportedProtocolVersionError(e) => UnsupportedProtocolVersionErrorWasm::from(e).into(),
+        UnsupportedVersionError(e) => UnsupportedVersionErrorWasm::from(e).into(),
         IncompatibleProtocolVersionError(e) => IncompatibleProtocolVersionErrorWasm::from(e).into(),
         DuplicatedIdentityPublicKeyIdBasicError(e) => {
             DuplicatedIdentityPublicKeyIdErrorWasm::from(e).into()

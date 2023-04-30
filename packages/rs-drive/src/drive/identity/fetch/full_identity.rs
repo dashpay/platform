@@ -137,7 +137,7 @@ impl Drive {
         let public_keys =
             self.fetch_all_identity_keys_operations(identity_id, transaction, drive_operations)?;
         Ok(Some(Identity {
-            protocol_version: PROTOCOL_VERSION,
+            feature_version: PROTOCOL_VERSION,
             id: Identifier::new(identity_id),
             public_keys,
             balance,

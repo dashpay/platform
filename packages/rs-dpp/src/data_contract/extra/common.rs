@@ -4,7 +4,6 @@ use crate::prelude::DataContract;
 #[cfg(feature = "cbor")]
 use crate::util::cbor_serializer::serializable_value_to_cbor;
 use crate::ProtocolError;
-
 use platform_value::Identifier;
 use std::convert::TryInto;
 use std::fs::File;
@@ -101,12 +100,6 @@ pub fn json_document_to_document(
         )?;
     }
     document_type.convert_value_to_document(value)
-}
-
-/// Make sure the protocol version is correct.
-pub const fn check_protocol_version(_version: u32) -> bool {
-    // Temporary disabled due protocol version is dynamic and goes from consensus params
-    true
 }
 
 /// Makes sure the protocol version is correct given the version as a u8.

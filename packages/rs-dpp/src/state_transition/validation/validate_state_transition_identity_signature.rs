@@ -155,6 +155,7 @@ mod test {
     use crate::serialization_traits::PlatformSerializable;
     use crate::serialization_traits::Signable;
     use crate::state_transition::errors::{PublicKeyMismatchError, WrongPublicKeyPurposeError};
+    use crate::version::FeatureVersion;
     use crate::{
         document::DocumentsBatchTransition,
         identity::{KeyID, Purpose, SecurityLevel},
@@ -221,13 +222,13 @@ mod test {
     }
 
     impl StateTransitionLike for ExampleStateTransition {
-        fn get_protocol_version(&self) -> u32 {
+        fn state_transition_protocol_version(&self) -> FeatureVersion {
             1
         }
-        fn get_type(&self) -> StateTransitionType {
+        fn state_transition_type(&self) -> StateTransitionType {
             StateTransitionType::DocumentsBatch
         }
-        fn get_signature(&self) -> &BinaryData {
+        fn signature(&self) -> &BinaryData {
             &self.signature
         }
         fn set_signature(&mut self, signature: BinaryData) {
@@ -238,7 +239,7 @@ mod test {
             self.signature = BinaryData::new(signature)
         }
 
-        fn get_modified_data_ids(&self) -> Vec<Identifier> {
+        fn modified_data_ids(&self) -> Vec<Identifier> {
             vec![]
         }
     }

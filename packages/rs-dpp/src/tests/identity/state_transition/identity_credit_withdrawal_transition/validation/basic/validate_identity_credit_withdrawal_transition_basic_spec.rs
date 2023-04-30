@@ -443,7 +443,6 @@ mod validate_identity_credit_withdrawal_transition_basic_factory {
 
     mod output_script {
         use crate::consensus::ConsensusError;
-
         use crate::identity::state_transition::properties::PROPERTY_OUTPUT_SCRIPT;
 
         use super::*;

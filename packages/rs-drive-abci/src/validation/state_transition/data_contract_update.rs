@@ -1,7 +1,10 @@
 use dpp::consensus::basic::data_contract::InvalidDataContractVersionError;
 use dpp::consensus::basic::document::DataContractNotPresentError;
 use dpp::data_contract::state_transition::data_contract_update_transition::validation::basic::DATA_CONTRACT_UPDATE_SCHEMA_VALIDATOR;
+use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransitionAction;
 use dpp::identity::PartialIdentity;
+use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
+use dpp::version::PlatformVersion;
 use dpp::{
     consensus::basic::{
         data_contract::{
@@ -26,10 +29,6 @@ use dpp::{
     state_transition::StateTransitionAction,
     Convertible, ProtocolError,
 };
-use dpp::{
-    data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransitionAction,
-    validation::{ConsensusValidationResult, SimpleConsensusValidationResult},
-};
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use serde_json::Value as JsonValue;
@@ -46,23 +45,20 @@ impl StateTransitionValidation for DataContractUpdateTransition {
         &self,
         _drive: &Drive,
         _tx: TransactionArg,
+        active_protocol_version: u32,
     ) -> Result<SimpleConsensusValidationResult, Error> {
+        let result = PlatformVersion::get(active_protocol_version)?
+            .validate_contract_update_state_transition_version(self.state_transition_version());
+        if !result.is_valid() {
+            return Ok(result);
+        }
+
         let result = validate_schema(&DATA_CONTRACT_UPDATE_SCHEMA_VALIDATOR, self);
         if !result.is_valid() {
             return Ok(result);
         }
 
-        // Validate protocol version
-        //todo: redo versioning
-        // let protocol_version_validator = ProtocolVersionValidator::default();
-        // let result = protocol_version_validator
-        //     .validate(self.protocol_version)
-        //     .expect("TODO: again, how this will ever fail, why do we even need a validator trait");
-        // if !result.is_valid() {
-        //     return Ok(result);
-        // }
-
-        self.data_contract
+        self.data_contract()
             .validate_structure()
             .map_err(Error::Protocol)
     }
@@ -91,19 +87,19 @@ impl StateTransitionValidation for DataContractUpdateTransition {
         // Data contract should exist
         let Some(contract_fetch_info) =
             drive
-                .get_contract_with_fetch_info(self.data_contract.id.0 .0, None, add_to_cache_if_pulled, tx)?
+                .get_contract_with_fetch_info(self.data_contract().id.0 .0, None, add_to_cache_if_pulled, tx)?
                 .1
             else {
                 validation_result
                     .add_error(BasicError::DataContractNotPresentError(
-                        DataContractNotPresentError::new(self.data_contract.id.0.0.into())
+                        DataContractNotPresentError::new(self.data_contract().id.0.0.into())
                     ));
                 return Ok(validation_result);
             };
 
         let existing_data_contract = &contract_fetch_info.contract;
 
-        let new_version = self.data_contract.version;
+        let new_version = self.data_contract().version;
         let old_version = existing_data_contract.version;
         if new_version < old_version || new_version - old_version != 1 {
             validation_result.add_error(BasicError::InvalidDataContractVersionError(
@@ -112,7 +108,7 @@ impl StateTransitionValidation for DataContractUpdateTransition {
         }
 
         let mut existing_data_contract_object = existing_data_contract.to_object()?;
-        let new_data_contract_object = self.data_contract.to_object()?;
+        let new_data_contract_object = self.data_contract().to_object()?;
 
         existing_data_contract_object
             .remove_many(&vec![

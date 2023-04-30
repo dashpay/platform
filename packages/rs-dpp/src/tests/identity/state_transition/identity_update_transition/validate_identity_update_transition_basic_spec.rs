@@ -25,9 +25,7 @@ use crate::{
     version::ProtocolVersionValidator,
     NativeBlsModule, NonConsensusError,
 };
-
 use platform_value::{platform_value, BinaryData, Value};
-
 use std::{convert::TryInto, sync::Arc};
 use test_case::test_case;
 

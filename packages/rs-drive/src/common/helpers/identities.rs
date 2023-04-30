@@ -109,7 +109,7 @@ pub fn create_test_identity_with_rng(
         id: Identifier::new(id),
         revision: 1,
         balance: 0,
-        protocol_version: 0,
+        feature_version: 0,
         public_keys,
         asset_lock_proof: None,
         metadata: None,

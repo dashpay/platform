@@ -216,7 +216,7 @@ mod test {
     };
     use std::sync::Arc;
 
-    use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
+    use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransitionV0;
     use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
     use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;
     use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
@@ -282,7 +282,7 @@ mod test {
 
         let data_contract = get_data_contract_fixture(None);
         let execution_context = execution_context_with_cost(40, 5);
-        let data_contract_create_transition = DataContractCreateTransition {
+        let data_contract_create_transition = DataContractCreateTransitionV0 {
             entropy: data_contract.entropy,
             data_contract,
             ..Default::default()
@@ -310,7 +310,7 @@ mod test {
 
         let data_contract = get_data_contract_fixture(None);
         let execution_context = execution_context_with_cost(40, 5);
-        let data_contract_create_transition = DataContractCreateTransition {
+        let data_contract_create_transition = DataContractCreateTransitionV0 {
             entropy: data_contract.entropy,
             data_contract,
             ..Default::default()

@@ -334,7 +334,6 @@ mod validate_identity_create_transition_basic_factory {
         use super::*;
 
         use std::sync::Arc;
-
         use platform_value::Value;
 
         use crate::consensus::test_consensus_error::TestConsensusError;

@@ -11,6 +11,7 @@ use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::document::ExtendedDocument;
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::util::entropy_generator::DefaultEntropyGenerator;
+use crate::version::LATEST_PLATFORM_VERSION;
 use crate::{
     contracts::withdrawals_contract, data_contract::DataContract, document::generate_document_id,
     document::Document, identity::state_transition::identity_credit_withdrawal_transition::Pooling,
@@ -131,7 +132,9 @@ where
         };
 
         let extended_withdrawal_document = ExtendedDocument {
-            protocol_version: PROTOCOL_VERSION,
+            feature_version: LATEST_PLATFORM_VERSION
+                .extended_document
+                .default_current_version,
             document_type_name: document_type,
             data_contract_id: withdrawals_data_contract.id,
             document: withdrawal_document,

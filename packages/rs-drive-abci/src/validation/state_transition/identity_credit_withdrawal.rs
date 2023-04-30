@@ -23,8 +23,9 @@ use super::StateTransitionValidation;
 impl StateTransitionValidation for IdentityCreditWithdrawalTransition {
     fn validate_structure(
         &self,
-        _drive: &Drive,
-        _tx: TransactionArg,
+        drive: &Drive,
+        tx: TransactionArg,
+        active_protocol_version: u32,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let mut result = validate_schema(
             &IDENTITY_CREDIT_WITHDRAWAL_TRANSITION_SCHEMA_VALIDATOR,

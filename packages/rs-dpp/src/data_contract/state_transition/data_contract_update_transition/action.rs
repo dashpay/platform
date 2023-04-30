@@ -1,30 +1,43 @@
+use crate::data_contract::state_transition::data_contract_update_transition::v0_action::DataContractUpdateTransitionActionV0;
 use crate::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use crate::data_contract::DataContract;
-use serde::{Deserialize, Serialize};
+use crate::prelude::DataContract;
+use derive_more::From;
 
-pub const DATA_CONTRACT_UPDATE_TRANSITION_ACTION_VERSION: u32 = 0;
+#[derive(Debug, Clone, From)]
+pub enum DataContractUpdateTransitionAction {
+    V0(DataContractUpdateTransitionActionV0),
+}
 
-#[derive(Default, Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DataContractUpdateTransitionAction {
-    pub version: u32,
-    pub data_contract: DataContract,
+impl DataContractUpdateTransitionAction {
+    pub fn data_contract(self) -> DataContract {
+        match self {
+            DataContractUpdateTransitionAction::V0(transition) => transition.data_contract,
+        }
+    }
+
+    pub fn data_contract_ref(&self) -> &DataContract {
+        match self {
+            DataContractUpdateTransitionAction::V0(transition) => &transition.data_contract,
+        }
+    }
 }
 
 impl From<DataContractUpdateTransition> for DataContractUpdateTransitionAction {
     fn from(value: DataContractUpdateTransition) -> Self {
-        DataContractUpdateTransitionAction {
-            version: DATA_CONTRACT_UPDATE_TRANSITION_ACTION_VERSION,
-            data_contract: value.data_contract,
+        match value {
+            DataContractUpdateTransition::V0(v0) => {
+                DataContractUpdateTransitionActionV0::from(v0).into()
+            }
         }
     }
 }
 
 impl From<&DataContractUpdateTransition> for DataContractUpdateTransitionAction {
     fn from(value: &DataContractUpdateTransition) -> Self {
-        DataContractUpdateTransitionAction {
-            version: DATA_CONTRACT_UPDATE_TRANSITION_ACTION_VERSION,
-            data_contract: value.data_contract.clone(),
+        match value {
+            DataContractUpdateTransition::V0(v0) => {
+                DataContractUpdateTransitionActionV0::from(v0).into()
+            }
         }
     }
 }

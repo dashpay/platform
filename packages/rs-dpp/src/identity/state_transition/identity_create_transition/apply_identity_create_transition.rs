@@ -46,7 +46,7 @@ where
         let credits_amount = convert_satoshi_to_credits(output.value)?;
 
         let identity = Identity {
-            protocol_version: state_transition.get_protocol_version(),
+            feature_version: state_transition.state_transition_protocol_version(),
             id: *state_transition.get_identity_id(),
             public_keys: state_transition
                 .get_public_keys()

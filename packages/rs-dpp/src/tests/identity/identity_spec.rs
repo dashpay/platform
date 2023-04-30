@@ -81,7 +81,7 @@ mod from_buffer {
         let identity_cbor = hex::decode(identity_cbor_hex()).unwrap();
 
         let identity = Identity::from_buffer(identity_cbor).unwrap();
-        assert_eq!(identity.get_protocol_version(), 1);
+        assert_eq!(identity.get_feature_version(), 1);
         assert_eq!(
             identity.get_id().to_buffer(),
             [

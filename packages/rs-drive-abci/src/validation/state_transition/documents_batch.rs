@@ -37,13 +37,14 @@ impl StateTransitionValidation for DocumentsBatchTransition {
         &self,
         drive: &Drive,
         tx: TransactionArg,
+        active_protocol_version: u32,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let result = validate_schema(&DOCUMENTS_BATCH_TRANSITIONS_SCHEMA_VALIDATOR, self);
         if !result.is_valid() {
             return Ok(result);
         }
 
-        let result = validate_protocol_version(self.protocol_version);
+        let result = validate_protocol_version(self.feature_version);
         if !result.is_valid() {
             return Ok(result);
         }

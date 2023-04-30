@@ -39,7 +39,11 @@ pub fn process_state_transition<'a, C: CoreRPCLike>(
     transaction: TransactionArg,
 ) -> Result<ConsensusValidationResult<ExecutionEvent<'a>>, Error> {
     // Validating structure
-    let result = state_transition.validate_structure(platform.drive, transaction)?;
+    let result = state_transition.validate_structure(
+        platform.drive,
+        transaction,
+        platform.state.current_protocol_version_in_consensus,
+    )?;
     if !result.is_valid() {
         return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
     }
@@ -62,6 +66,7 @@ pub trait StateTransitionValidation {
         &self,
         drive: &Drive,
         tx: TransactionArg,
+        active_protocol_version: u32,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 
     fn validate_identity_and_signatures(
@@ -82,15 +87,30 @@ impl StateTransitionValidation for StateTransition {
         &self,
         drive: &Drive,
         tx: TransactionArg,
+        active_protocol_version: u32,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match self {
-            StateTransition::DataContractCreate(st) => st.validate_structure(drive, tx),
-            StateTransition::DataContractUpdate(st) => st.validate_structure(drive, tx),
-            StateTransition::IdentityCreate(st) => st.validate_structure(drive, tx),
-            StateTransition::IdentityUpdate(st) => st.validate_structure(drive, tx),
-            StateTransition::IdentityTopUp(st) => st.validate_structure(drive, tx),
-            StateTransition::IdentityCreditWithdrawal(st) => st.validate_structure(drive, tx),
-            StateTransition::DocumentsBatch(st) => st.validate_structure(drive, tx),
+            StateTransition::DataContractCreate(st) => {
+                st.validate_structure(drive, tx, active_protocol_version)
+            }
+            StateTransition::DataContractUpdate(st) => {
+                st.validate_structure(drive, tx, active_protocol_version)
+            }
+            StateTransition::IdentityCreate(st) => {
+                st.validate_structure(drive, tx, active_protocol_version)
+            }
+            StateTransition::IdentityUpdate(st) => {
+                st.validate_structure(drive, tx, active_protocol_version)
+            }
+            StateTransition::IdentityTopUp(st) => {
+                st.validate_structure(drive, tx, active_protocol_version)
+            }
+            StateTransition::IdentityCreditWithdrawal(st) => {
+                st.validate_structure(drive, tx, active_protocol_version)
+            }
+            StateTransition::DocumentsBatch(st) => {
+                st.validate_structure(drive, tx, active_protocol_version)
+            }
         }
     }
 

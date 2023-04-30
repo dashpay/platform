@@ -6,7 +6,7 @@ use crate::serialization_traits::{PlatformDeserializable, ValueConvertible};
 use crate::state_transition::StateTransitionConvert;
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
-use crate::{errors::consensus::ConsensusError, errors::ProtocolError, Convertible};
+use crate::{errors::consensus::ConsensusError, errors::ProtocolError};
 
 #[derive(Default, Clone, Copy)]
 pub struct DecodeProtocolEntity {}

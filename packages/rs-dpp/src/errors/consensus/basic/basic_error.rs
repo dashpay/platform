@@ -46,6 +46,7 @@ use crate::consensus::ConsensusError;
 
 use crate::consensus::basic::json_schema_compilation_error::JsonSchemaCompilationError;
 use crate::consensus::basic::json_schema_error::JsonSchemaError;
+use crate::consensus::basic::unsupported_version_error::UnsupportedVersionError;
 use crate::consensus::basic::value_error::ValueError;
 
 #[derive(Error, Debug, Serialize, Deserialize)]
@@ -64,6 +65,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     UnsupportedProtocolVersionError(UnsupportedProtocolVersionError),
+
+    #[error(transparent)]
+    UnsupportedVersionError(UnsupportedVersionError),
 
     #[error(transparent)]
     IncompatibleProtocolVersionError(IncompatibleProtocolVersionError),

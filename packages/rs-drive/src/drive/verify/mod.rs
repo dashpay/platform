@@ -151,7 +151,7 @@ impl Drive {
             )))
         } else {
             Ok(Some(Identity {
-                protocol_version: PROTOCOL_VERSION,
+                feature_version: PROTOCOL_VERSION,
                 id: Identifier::from(identity_id),
                 public_keys: keys,
                 balance: balance.unwrap(),

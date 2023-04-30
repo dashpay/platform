@@ -16,6 +16,7 @@ use crate::state_transition::errors::{
 };
 #[cfg(feature = "cbor")]
 use crate::util::cbor_serializer;
+use crate::version::FeatureVersion;
 use crate::{
     identity::KeyType,
     prelude::{Identifier, ProtocolError},
@@ -48,15 +49,15 @@ pub trait StateTransitionLike:
     StateTransitionConvert + Clone + Debug + Into<StateTransition> + Signable
 {
     /// returns the protocol version
-    fn get_protocol_version(&self) -> u32;
+    fn state_transition_protocol_version(&self) -> FeatureVersion;
     /// returns the type of State Transition
-    fn get_type(&self) -> StateTransitionType;
+    fn state_transition_type(&self) -> StateTransitionType;
     /// returns the signature as a byte-array
-    fn get_signature(&self) -> &BinaryData;
+    fn signature(&self) -> &BinaryData;
     /// set a new signature
     fn set_signature(&mut self, signature: BinaryData);
     /// get modified ids list
-    fn get_modified_data_ids(&self) -> Vec<Identifier>;
+    fn modified_data_ids(&self) -> Vec<Identifier>;
 
     /// Signs data with the private key
     fn sign_by_private_key(
@@ -111,13 +112,13 @@ pub trait StateTransitionLike:
         &self,
         public_key_hash: &[u8],
     ) -> Result<(), ProtocolError> {
-        if self.get_signature().is_empty() {
+        if self.signature().is_empty() {
             return Err(ProtocolError::StateTransitionIsNotSignedError(
                 StateTransitionIsNotSignedError::new(self.clone().into()),
             ));
         }
         let data_hash = self.hash(true)?;
-        signer::verify_hash_signature(&data_hash, self.get_signature().as_slice(), public_key_hash)
+        signer::verify_hash_signature(&data_hash, self.signature().as_slice(), public_key_hash)
             .map_err(|_| {
                 ProtocolError::from(ConsensusError::SignatureError(
                     SignatureError::InvalidStateTransitionSignatureError(
@@ -129,13 +130,13 @@ pub trait StateTransitionLike:
 
     /// Verifies an ECDSA signature with the public key
     fn verify_ecdsa_signature_by_public_key(&self, public_key: &[u8]) -> Result<(), ProtocolError> {
-        if self.get_signature().is_empty() {
+        if self.signature().is_empty() {
             return Err(ProtocolError::StateTransitionIsNotSignedError(
                 StateTransitionIsNotSignedError::new(self.clone().into()),
             ));
         }
         let data = self.signable_bytes()?;
-        signer::verify_data_signature(&data, self.get_signature().as_slice(), public_key).map_err(
+        signer::verify_data_signature(&data, self.signature().as_slice(), public_key).map_err(
             |_| {
                 // TODO: it shouldn't respond with consensus error
 
@@ -154,7 +155,7 @@ pub trait StateTransitionLike:
         public_key: &[u8],
         bls: &T,
     ) -> Result<(), ProtocolError> {
-        if self.get_signature().is_empty() {
+        if self.signature().is_empty() {
             return Err(ProtocolError::StateTransitionIsNotSignedError(
                 StateTransitionIsNotSignedError::new(self.clone().into()),
             ));
@@ -162,7 +163,7 @@ pub trait StateTransitionLike:
 
         let data = self.signable_bytes()?;
 
-        bls.verify_signature(self.get_signature().as_slice(), &data, public_key)
+        bls.verify_signature(self.signature().as_slice(), &data, public_key)
             .map(|_| ())
             .map_err(|_| {
                 // TODO: it shouldn't respond with consensus error
@@ -176,15 +177,15 @@ pub trait StateTransitionLike:
 
     /// returns true if state transition is a document state transition
     fn is_document_state_transition(&self) -> bool {
-        DOCUMENT_TRANSITION_TYPES.contains(&self.get_type())
+        DOCUMENT_TRANSITION_TYPES.contains(&self.state_transition_type())
     }
     /// returns true if state transition is a data contract state transition
     fn is_data_contract_state_transition(&self) -> bool {
-        DATA_CONTRACT_TRANSITION_TYPES.contains(&self.get_type())
+        DATA_CONTRACT_TRANSITION_TYPES.contains(&self.state_transition_type())
     }
     /// return true if state transition is an identity state transition
     fn is_identity_state_transition(&self) -> bool {
-        IDENTITY_TRANSITION_TYPE.contains(&self.get_type())
+        IDENTITY_TRANSITION_TYPE.contains(&self.state_transition_type())
     }
 
     fn set_signature_bytes(&mut self, signature: Vec<u8>);

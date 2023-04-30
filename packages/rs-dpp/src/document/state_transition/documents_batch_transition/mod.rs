@@ -7,6 +7,7 @@ use std::convert::{TryFrom, TryInto};
 use anyhow::{anyhow, Context};
 #[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
+use derive_more::From;
 use integer_encoding::VarInt;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
@@ -22,7 +23,7 @@ use crate::prelude::{DocumentTransition, Identifier};
 #[cfg(feature = "cbor")]
 use crate::util::cbor_value::{CborCanonicalMap, FieldType, ReplacePaths, ValuesCollection};
 use crate::util::json_value::JsonValueExt;
-use crate::version::LATEST_VERSION;
+use crate::version::{FeatureVersion, FeatureVersionBounds, LATEST_PLATFORM_VERSION, LATEST_VERSION};
 use crate::ProtocolError;
 use crate::{
     identity::{KeyID, SecurityLevel},
@@ -43,10 +44,16 @@ mod action;
 pub mod apply_documents_batch_transition_factory;
 pub mod document_transition;
 pub mod validation;
+mod v0_action;
+mod v0;
+
+pub use v0::*;
+pub use v0_action::*;
 
 pub use action::{DocumentsBatchTransitionAction, DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION};
 
 pub mod property_names {
+    pub const STATE_TRANSITION_PROTOCOL_VERSION: &str = "$version";
     pub const TRANSITION_TYPE: &str = "type";
     pub const DATA_CONTRACT_ID: &str = "$dataContractId";
     pub const DOCUMENT_TYPE: &str = "$type";
@@ -56,7 +63,6 @@ pub mod property_names {
     pub const OWNER_ID: &str = "ownerId";
     pub const SIGNATURE_PUBLIC_KEY_ID: &str = "signaturePublicKeyId";
     pub const SIGNATURE: &str = "signature";
-    pub const PROTOCOL_VERSION: &str = "protocolVersion";
     pub const SECURITY_LEVEL_REQUIREMENT: &str = "signatureSecurityLevelRequirement";
 }
 
@@ -68,49 +74,29 @@ pub const IDENTIFIER_FIELDS: [&str; 3] = [
 pub const U32_FIELDS: [&str; 1] = [property_names::PROTOCOL_VERSION];
 
 const DEFAULT_SECURITY_LEVEL: SecurityLevel = SecurityLevel::HIGH;
-const EMPTY_VEC: Vec<u8> = vec![];
 
 #[derive(
-    Debug,
-    Serialize,
-    Deserialize,
-    Encode,
-    Decode,
-    Clone,
-    PartialEq,
-    PlatformDeserialize,
-    PlatformSerialize,
-    PlatformSignable,
+Debug,
+Encode,
+Decode,
+Clone,
+PartialEq,
+PlatformDeserialize,
+PlatformSerialize,
+PlatformSignable,
+From
 )]
-#[serde(rename_all = "camelCase")]
 #[platform_error_type(ProtocolError)]
-pub struct DocumentsBatchTransition {
-    pub protocol_version: u32,
-    #[serde(rename = "type")]
-    pub transition_type: StateTransitionType,
-    pub owner_id: Identifier,
-    // we want to skip serialization of transitions, as we does it manually in `to_object()`  and `to_json()`
-    #[serde(skip_serializing)]
-    pub transitions: Vec<DocumentTransition>,
-
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[exclude_from_sig_hash]
-    pub signature_public_key_id: Option<KeyID>,
-
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[exclude_from_sig_hash]
-    pub signature: Option<BinaryData>,
+pub enum DocumentsBatchTransition {
+    V0(DocumentsBatchTransitionV0)
 }
 
-impl std::default::Default for DocumentsBatchTransition {
+
+impl Default for DocumentsBatchTransition {
     fn default() -> Self {
-        DocumentsBatchTransition {
-            protocol_version: Default::default(),
-            transition_type: StateTransitionType::DocumentsBatch,
-            owner_id: Identifier::default(),
-            transitions: vec![],
-            signature_public_key_id: None,
-            signature: None,
+        match LATEST_PLATFORM_VERSION.state_transitions.documents_batch_state_transition.default_current_version {
+            0 => DocumentsBatchTransitionV0::default().into(),
+            _ => DocumentsBatchTransitionV0::default().into(), //for now
         }
     }
 }
@@ -132,10 +118,10 @@ impl DocumentsBatchTransition {
         };
 
         let mut batch_transitions = DocumentsBatchTransition {
-            protocol_version: json_value
+            feature_version: json_value
                 .get_u64(property_names::PROTOCOL_VERSION)
                 // js-dpp allows `protocolVersion` to be undefined
-                .unwrap_or(LATEST_VERSION as u64) as u32,
+                .unwrap_or(LATEST_VERSION as u64) as u16,
             signature,
             signature_public_key_id: json_value
                 .get_u64(property_names::SIGNATURE_PUBLIC_KEY_ID)
@@ -197,10 +183,10 @@ impl DocumentsBatchTransition {
         data_contracts: Vec<DataContract>,
     ) -> Result<Self, ProtocolError> {
         let mut batch_transitions = DocumentsBatchTransition {
-            protocol_version: map
+            feature_version: map
                 .get_integer(property_names::PROTOCOL_VERSION)
                 // js-dpp allows `protocolVersion` to be undefined
-                .unwrap_or(LATEST_VERSION as u64) as u32,
+                .unwrap_or(LATEST_VERSION as u64) as u16,
             signature: map
                 .get_optional_binary_data(property_names::SIGNATURE)
                 .map_err(ProtocolError::ValueError)?,
@@ -343,7 +329,7 @@ impl DocumentsBatchTransition {
         let mut map = BTreeMap::new();
         map.insert(
             property_names::PROTOCOL_VERSION.to_string(),
-            Value::U32(self.protocol_version),
+            Value::U16(self.feature_version),
         );
         map.insert(
             property_names::TRANSITION_TYPE.to_string(),
@@ -423,7 +409,7 @@ impl StateTransitionConvert for DocumentsBatchTransition {
 
     #[cfg(feature = "cbor")]
     fn to_cbor_buffer(&self, skip_signature: bool) -> Result<Vec<u8>, ProtocolError> {
-        let mut result_buf = self.protocol_version.encode_var_vec();
+        let mut result_buf = self.feature_version.encode_var_vec();
         let value: CborValue = self.to_object(skip_signature)?.try_into()?;
 
         let map = CborValue::serialized(&value)
@@ -513,15 +499,15 @@ impl StateTransitionConvert for DocumentsBatchTransition {
 }
 
 impl StateTransitionLike for DocumentsBatchTransition {
-    fn get_modified_data_ids(&self) -> Vec<Identifier> {
+    fn modified_data_ids(&self) -> Vec<Identifier> {
         self.transitions.iter().map(|t| t.base().id).collect()
     }
 
-    fn get_protocol_version(&self) -> u32 {
-        self.protocol_version
+    fn state_transition_protocol_version(&self) -> FeatureVersion {
+        self.feature_version
     }
 
-    fn get_signature(&self) -> &BinaryData {
+    fn signature(&self) -> &BinaryData {
         if let Some(ref signature) = self.signature {
             signature
         } else {
@@ -531,7 +517,7 @@ impl StateTransitionLike for DocumentsBatchTransition {
         }
     }
 
-    fn get_type(&self) -> StateTransitionType {
+    fn state_transition_type(&self) -> StateTransitionType {
         self.transition_type
     }
 

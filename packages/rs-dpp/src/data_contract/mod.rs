@@ -1,24 +1,20 @@
 pub use data_contract::*;
 pub use data_contract_factory::*;
 pub use generate_data_contract::*;
+use bincode::{BorrowDecode, Decode, Encode};
+use derive_more::From;
+use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+use platform_serialization::{PlatformDeserialize, PlatformDeserializeNoLimit, PlatformSerialize};
 
-mod data_contract;
 pub mod errors;
 pub mod extra;
 
-mod data_contract_facade;
-
-pub mod contract_config;
-mod data_contract_factory;
-pub mod document_type;
-pub mod enrich_with_base_schema;
 mod generate_data_contract;
-pub mod get_binary_properties_from_schema;
-pub mod get_property_definition_by_path;
-pub mod serialization;
 pub mod state_transition;
-pub mod structure_validation;
-pub mod validation;
+
+mod v0;
+
+pub use v0::*;
 
 pub mod property_names {
     pub const PROTOCOL_VERSION: &str = "protocolVersion";
@@ -31,4 +27,31 @@ pub mod property_names {
     pub const ENTROPY: &str = "entropy"; // not a data contract field actually but at some point it can be there for some time
 }
 
-pub use data_contract_facade::DataContractFacade;
+use crate::data_contract::v0::data_contract::DataContractV0;
+use platform_versioning::PlatformVersioned;
+use crate::version::LATEST_PLATFORM_VERSION;
+
+#[derive(
+Debug,
+Clone,
+PartialEq,
+Encode,
+Decode,
+PlatformVersioned,
+PlatformSerialize,
+PlatformDeserialize,
+PlatformDeserializeNoLimit,
+From,
+)]
+#[platform_error_type(ProtocolError)]
+#[platform_deserialize_limit(15000)]
+#[platform_serialize_limit(15000)]
+pub enum DataContract {
+    V0(DataContractV0)
+}
+
+impl Default for DataContract {
+    fn default() -> Self {
+        DataContract::V0(DataContractV0::default())
+    }
+}

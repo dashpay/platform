@@ -27,8 +27,9 @@ use super::StateTransitionValidation;
 impl StateTransitionValidation for IdentityUpdateTransition {
     fn validate_structure(
         &self,
-        _drive: &Drive,
-        _tx: TransactionArg,
+        drive: &Drive,
+        tx: TransactionArg,
+        active_protocol_version: u32,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let result = validate_schema(&IDENTITY_UPDATE_JSON_SCHEMA_VALIDATOR, self);
         if !result.is_valid() {

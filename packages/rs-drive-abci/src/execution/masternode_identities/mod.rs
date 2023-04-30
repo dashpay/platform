@@ -3,10 +3,8 @@ use crate::error::Error;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformState;
-
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::ProTxHash;
-
 use dashcore_rpc::dashcore_rpc_json::MasternodeListDiff;
 use dashcore_rpc::json::{DMNStateDiff, MasternodeListItem};
 use dpp::block::block_info::BlockInfo;
@@ -736,7 +734,7 @@ where
 
     fn create_basic_identity(id: [u8; 32]) -> Identity {
         Identity {
-            protocol_version: IDENTITY_PROTOCOL_VERSION,
+            feature_version: IDENTITY_PROTOCOL_VERSION,
             id: Identifier::new(id),
             revision: 1,
             balance: 0,

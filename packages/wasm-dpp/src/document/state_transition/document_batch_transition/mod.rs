@@ -246,7 +246,7 @@ impl DocumentsBatchTransitionWasm {
     pub fn get_modified_ids(&self) -> Array {
         let array = Array::new();
 
-        for id in self.0.get_modified_data_ids() {
+        for id in self.0.modified_data_ids() {
             let id = <IdentifierWrapper as From<Identifier>>::from(id.to_owned());
             array.push(&id.into());
         }
@@ -340,12 +340,12 @@ impl DocumentsBatchTransitionWasm {
     // AbstractStateTransition methods
     #[wasm_bindgen(js_name=getProtocolVersion)]
     pub fn get_protocol_version(&self) -> u32 {
-        self.0.get_protocol_version()
+        self.0.state_transition_protocol_version()
     }
 
     #[wasm_bindgen(js_name=getSignature)]
     pub fn get_signature(&self) -> Vec<u8> {
-        self.0.get_signature().to_vec()
+        self.0.signature().to_vec()
     }
 
     #[wasm_bindgen(js_name=setSignature)]

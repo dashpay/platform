@@ -4,7 +4,7 @@ use rand::Rng;
 use std::convert::{TryFrom, TryInto};
 use std::fmt;
 
-use serde::de::{Error as SerdeDeError, Visitor};
+use serde::de::Visitor;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 

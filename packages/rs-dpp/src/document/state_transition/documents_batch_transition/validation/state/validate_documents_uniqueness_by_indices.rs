@@ -3,7 +3,6 @@ use std::convert::TryInto;
 use futures::future::join_all;
 use itertools::Itertools;
 use platform_value::platform_value;
-
 use platform_value::Value;
 use serde_json::json;
 

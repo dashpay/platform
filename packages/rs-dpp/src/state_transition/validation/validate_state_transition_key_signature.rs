@@ -113,7 +113,7 @@ pub async fn validate_state_transition_key_signature<SR: StateRepositoryLike>(
 
     let verification_result = verify_hash_signature(
         &state_transition_hash,
-        state_transition.get_signature().as_slice(),
+        state_transition.signature().as_slice(),
         &public_key_hash,
     );
     if verification_result.is_err() {
@@ -134,7 +134,7 @@ fn get_asset_lock_proof(
         _ => {
             bail!(
                 "key signature validation isn't supported for {}. Asset lock proof is required",
-                state_transition.get_type()
+                state_transition.state_transition_type()
             )
         }
     }

@@ -6,7 +6,6 @@ use crate::drive::defaults::PROTOCOL_VERSION;
 use crate::error::Error;
 use dpp::block::epoch::Epoch;
 use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransitionAction;
-
 use dpp::prelude::Identity;
 
 impl DriveHighLevelOperationConverter for IdentityCreateTransitionAction {
@@ -25,7 +24,7 @@ impl DriveHighLevelOperationConverter for IdentityCreateTransitionAction {
             IdentityOperation(IdentityOperationType::AddNewIdentity {
                 identity: Identity {
                     //todo: deal with protocol version
-                    protocol_version: PROTOCOL_VERSION,
+                    feature_version: PROTOCOL_VERSION as u16,
                     id: identity_id,
                     public_keys: public_keys.into_iter().map(|key| (key.id, key)).collect(),
                     balance: initial_balance_amount,

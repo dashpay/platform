@@ -30,6 +30,8 @@ impl ErrorWithCode for ConsensusError {
 impl ErrorWithCode for BasicError {
     fn code(&self) -> u32 {
         match self {
+            // Versioning
+            Self::UnsupportedVersionError(_) => 1100,
             // Decoding
             Self::ProtocolVersionParsingError { .. } => 1000,
             Self::SerializedObjectParsingError { .. } => 1001,

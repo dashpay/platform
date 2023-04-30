@@ -16,6 +16,7 @@ use crate::identity::signer::Signer;
 use crate::identity::{Identity, IdentityPublicKey};
 
 use crate::serialization_traits::PlatformSerializable;
+use crate::version::FeatureVersion;
 use crate::{
     identity::{KeyID, SecurityLevel},
     prelude::{Identifier, Revision, TimestampMillis},
@@ -400,19 +401,19 @@ impl StateTransitionConvert for IdentityUpdateTransition {
 
 impl StateTransitionLike for IdentityUpdateTransition {
     /// Returns ids of created identities
-    fn get_modified_data_ids(&self) -> Vec<Identifier> {
+    fn modified_data_ids(&self) -> Vec<Identifier> {
         vec![*self.get_identity_id()]
     }
 
-    fn get_protocol_version(&self) -> u32 {
-        self.protocol_version
+    fn state_transition_protocol_version(&self) -> FeatureVersion {
+        self.protocol_version as FeatureVersion
     }
 
-    fn get_signature(&self) -> &BinaryData {
+    fn signature(&self) -> &BinaryData {
         &self.signature
     }
 
-    fn get_type(&self) -> StateTransitionType {
+    fn state_transition_type(&self) -> StateTransitionType {
         self.transition_type
     }
 

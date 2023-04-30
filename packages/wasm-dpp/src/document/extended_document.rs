@@ -67,7 +67,7 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=getProtocolVersion)]
     pub fn get_protocol_version(&self) -> u32 {
-        self.0.protocol_version
+        self.0.feature_version
     }
 
     #[wasm_bindgen(js_name=getId)]

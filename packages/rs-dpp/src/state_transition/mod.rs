@@ -42,6 +42,7 @@ mod state_transition_action;
 
 use crate::serialization_traits::{PlatformDeserializable, Signable};
 use crate::util::hash;
+use crate::version::FeatureVersion;
 pub use state_transition_action::StateTransitionAction;
 macro_rules! call_method {
     ($state_transition:expr, $method:ident, $args:tt ) => {
@@ -171,16 +172,16 @@ impl StateTransitionConvert for StateTransition {
 }
 
 impl StateTransitionLike for StateTransition {
-    fn get_protocol_version(&self) -> u32 {
-        call_method!(self, get_protocol_version)
+    fn state_transition_protocol_version(&self) -> FeatureVersion {
+        call_method!(self, state_transition_protocol_version)
     }
     /// returns the type of State Transition
-    fn get_type(&self) -> StateTransitionType {
-        call_method!(self, get_type)
+    fn state_transition_type(&self) -> StateTransitionType {
+        call_method!(self, state_transition_type)
     }
     /// returns the signature as a byte-array
-    fn get_signature(&self) -> &BinaryData {
-        call_method!(self, get_signature)
+    fn signature(&self) -> &BinaryData {
+        call_method!(self, signature)
     }
 
     /// set a new signature
@@ -192,7 +193,7 @@ impl StateTransitionLike for StateTransition {
         call_method!(self, set_signature_bytes, signature)
     }
 
-    fn get_modified_data_ids(&self) -> Vec<crate::prelude::Identifier> {
-        call_method!(self, get_modified_data_ids)
+    fn modified_data_ids(&self) -> Vec<crate::prelude::Identifier> {
+        call_method!(self, modified_data_ids)
     }
 }

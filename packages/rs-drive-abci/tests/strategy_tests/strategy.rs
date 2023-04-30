@@ -337,7 +337,7 @@ impl Strategy {
                                 };
 
                                 let mut document_batch_transition = DocumentsBatchTransition {
-                                    protocol_version: LATEST_VERSION,
+                                    feature_version: LATEST_VERSION,
                                     transition_type: StateTransitionType::DocumentsBatch,
                                     owner_id: identity.id,
                                     transitions: vec![document_create_transition.into()],
@@ -413,7 +413,7 @@ impl Strategy {
                             };
 
                             let mut document_batch_transition = DocumentsBatchTransition {
-                                protocol_version: LATEST_VERSION,
+                                feature_version: LATEST_VERSION,
                                 transition_type: StateTransitionType::DocumentsBatch,
                                 owner_id: identity.id,
                                 transitions: vec![document_delete_transition.into()],
@@ -486,7 +486,7 @@ impl Strategy {
                             };
 
                             let mut document_batch_transition = DocumentsBatchTransition {
-                                protocol_version: LATEST_VERSION,
+                                feature_version: LATEST_VERSION,
                                 transition_type: StateTransitionType::DocumentsBatch,
                                 owner_id: identity.id,
                                 transitions: vec![document_replace_transition.into()],

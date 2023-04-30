@@ -124,7 +124,7 @@ fn document_from_transition_replace(
 ) -> Result<ExtendedDocument, ProtocolError> {
     // TODO cloning is costly. Probably the [`Document`] should have properties of type `Cow<'a, K>`
     Ok(ExtendedDocument {
-        protocol_version: state_transition.protocol_version,
+        feature_version: state_transition.feature_version,
         document_type_name: document_replace_transition.base.document_type_name.clone(),
         data_contract_id: document_replace_transition.base.data_contract_id,
         metadata: None,

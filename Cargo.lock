@@ -1166,6 +1166,7 @@ dependencies = [
  "platform-serialization",
  "platform-value",
  "platform-value-convertible",
+ "platform-versioning",
  "pretty_assertions",
  "rand",
  "regex",
@@ -2551,6 +2552,15 @@ dependencies = [
 
 [[package]]
 name = "platform-value-convertible"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.15",
+]
+
+[[package]]
+name = "platform-versioning"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",
