@@ -76,13 +76,18 @@ function resetNodeTaskFactory(
               .map(async (volumeName) => {
                 const volume = await docker.getVolume(volumeName);
 
+                let isRetry;
                 do {
+                  isRetry = false;
+
                   try {
                     await volume.remove({ force: true });
                   } catch (e) {
                     // volume is in use
                     if (e.statusCode === 409) {
                       await wait(1000);
+
+                      isRetry = true;
 
                       continue;
                     }
@@ -94,8 +99,7 @@ function resetNodeTaskFactory(
 
                     throw e;
                   }
-                  // eslint-disable-next-line no-constant-condition
-                } while (false);
+                } while (isRetry);
               }),
           );
         },
