@@ -1,5 +1,12 @@
+const validateHex = require('./validateHex');
+
+/**
+ *
+ * @param {string} value
+ * @returns {boolean}
+ */
 function validateTxHex(value) {
-  return Boolean(value.match(/^[0-9A-Fa-f]{64}$/));
+  return validateHex(value) && value.length === 64;
 }
 
 module.exports = validateTxHex;
