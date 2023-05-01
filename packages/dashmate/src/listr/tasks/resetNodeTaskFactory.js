@@ -1,4 +1,5 @@
 const { Listr } = require('listr2');
+const wait = require('../../util/wait');
 
 /**
  * @param {DockerCompose} dockerCompose
@@ -48,18 +49,22 @@ function resetNodeTaskFactory(
         title: 'Remove platform services and associated data',
         enabled: (ctx) => ctx.isPlatformOnlyReset,
         task: async () => {
+          const nonPlatformServices = ['core', 'sentinel'];
+          const envs = config.toEnvs();
+
           // Remove containers
-          const serviceNames = await dockerCompose
+          const serviceNames = (await dockerCompose
             .getContainersList(
-              config.toEnvs({ platformOnly: true }),
+              envs,
               undefined,
               true,
-            );
+            ))
+            .filter((serviceName) => !nonPlatformServices.includes(serviceName));
 
           await dockerCompose.rm(config.toEnvs(), serviceNames);
 
           // Remove volumes
-          const { COMPOSE_PROJECT_NAME: composeProjectName } = config.toEnvs();
+          const { COMPOSE_PROJECT_NAME: composeProjectName } = envs;
 
           const projectVolumeNames = await dockerCompose.getVolumeNames(
             config.toEnvs({ platformOnly: true }),
@@ -68,7 +73,30 @@ function resetNodeTaskFactory(
           await Promise.all(
             projectVolumeNames
               .map((volumeName) => `${composeProjectName}_${volumeName}`)
-              .map(async (volumeName) => docker.getVolume(volumeName).remove()),
+              .map(async (volumeName) => {
+                const volume = await docker.getVolume(volumeName);
+
+                do {
+                  try {
+                    await volume.remove({ force: true });
+                  } catch (e) {
+                    // volume is in use
+                    if (e.statusCode === 409) {
+                      await wait(1000);
+
+                      continue;
+                    }
+
+                    // volume does not exist
+                    if (e.statusCode === 404) {
+                      break;
+                    }
+
+                    throw e;
+                  }
+                  // eslint-disable-next-line no-constant-condition
+                } while (false);
+              }),
           );
         },
       },
@@ -87,7 +115,7 @@ function resetNodeTaskFactory(
           const baseConfigName = config.get('group') || config.getName();
 
           if (systemConfigs[baseConfigName]) {
-            // Reset config if has a base config
+            // Reset config if the corresponding base config exists
             if (ctx.isPlatformOnlyReset) {
               const { platform: systemPlatformConfig } = systemConfigs[baseConfigName];
               config.set('platform', systemPlatformConfig);
