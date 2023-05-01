@@ -58,6 +58,7 @@ function setupLocalPresetTaskFactory(
 
               return true;
             },
+            result: (value) => Number(value),
           });
         },
       },
