@@ -48,11 +48,11 @@ pub fn execute_data_triggers_with_custom_list<'a>(
     Ok(execution_results)
 }
 
-fn execute_data_triggers_sequentially<'a, 'b>(
+fn execute_data_triggers_sequentially<'a>(
     document_transition: &'a DocumentTransitionAction,
     data_triggers: &[&DataTrigger],
     context: &DataTriggerExecutionContext<'a>,
-    results: &'b mut Vec<DataTriggerExecutionResult>,
+    results: &mut Vec<DataTriggerExecutionResult>,
 ) {
     results.extend(
         data_triggers

@@ -275,7 +275,7 @@ impl DocumentFieldType {
             Ok(vec![])
         } else {
             let mut value: Vec<u8> = vec![0u8; bytes];
-            buf.read_exact(&mut value).map_err(|e| {
+            buf.read_exact(&mut value).map_err(|_e| {
                 ProtocolError::DataContractError(DataContractError::CorruptedSerialization(
                     "error reading varint from serialized document",
                 ))
@@ -696,7 +696,7 @@ impl DocumentFieldType {
 
     // Given a field type and a value this function chooses and executes the right encoding method
     pub fn value_from_string(&self, str: &str) -> Result<Value, ProtocolError> {
-        return match self {
+        match self {
             DocumentFieldType::String(min, max) => {
                 if let Some(min) = min {
                     if str.len() < *min as usize {
@@ -775,7 +775,7 @@ impl DocumentFieldType {
                     ),
                 ))
             }
-        };
+        }
     }
 }
 

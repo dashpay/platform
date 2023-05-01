@@ -37,6 +37,7 @@ use dashcore_rpc::dashcore::Txid;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
 use std::collections::BTreeMap;
+use tenderdash_abci::proto::abci::ResponsePrepareProposal;
 
 /// Block info
 #[derive(Debug)]
@@ -53,8 +54,8 @@ pub struct BlockStateInfo {
     pub proposer_pro_tx_hash: [u8; 32],
     /// Core chain locked height
     pub core_chain_locked_height: u32,
-    /// Block hash
-    pub block_hash: [u8; 32],
+    /// Block hash, The block hash need not be known in the case for finalize block on the proposer
+    pub block_hash: Option<[u8; 32]>,
     /// Application hash
     pub app_hash: Option<[u8; 32]>,
 }
@@ -81,7 +82,7 @@ impl BlockStateInfo {
             previous_block_time_ms,
             proposer_pro_tx_hash: proposal.proposer_pro_tx_hash,
             core_chain_locked_height: proposal.core_chain_locked_height,
-            block_hash: proposal.block_hash.unwrap_or_default(), // we will set it later
+            block_hash: proposal.block_hash,
             app_hash: None,
         }
     }
@@ -109,7 +110,10 @@ impl BlockStateInfo {
             ))
         })?;
         // the order is important here, don't verify commit hash before height and round
-        Ok(self.height == height && self.round == round && self.block_hash == received_hash)
+        Ok(self.height == height
+            && self.round == round
+            && self.block_hash.is_some()
+            && self.block_hash.unwrap() == received_hash)
     }
 
     /// Does this match a height and round?
@@ -140,7 +144,8 @@ impl BlockStateInfo {
             && self.round == round
             && self.core_chain_locked_height == core_block_height
             && self.proposer_pro_tx_hash == proposer_pro_tx_hash
-            && self.block_hash == received_hash)
+            && self.block_hash.is_some()
+            && self.block_hash.unwrap() == received_hash)
     }
 }
 /// Block execution context
@@ -155,4 +160,6 @@ pub struct BlockExecutionContext {
     pub withdrawal_transactions: BTreeMap<Txid, Vec<u8>>,
     /// Block state
     pub block_platform_state: PlatformState,
+    /// The response prepare proposal if proposed by us
+    pub proposer_results: Option<ResponsePrepareProposal>,
 }

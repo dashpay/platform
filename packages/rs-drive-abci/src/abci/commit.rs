@@ -36,7 +36,7 @@ impl Commit {
                 height: height as i64,
                 round: ci.round as i32,
                 // we need to "un-reverse" quorum hash, as it was reversed in [CleanedCommitInfo::try_from]
-                quorum_hash: ci.quorum_hash.iter().rev().cloned().collect(),
+                quorum_hash: ci.quorum_hash.to_vec(),
                 threshold_block_signature: ci.block_signature.to_vec(),
                 threshold_vote_extensions: ci.threshold_vote_extensions.to_vec(),
             },
@@ -115,13 +115,13 @@ impl Commit {
             Err(e) => return ValidationResult::new_with_error(e),
         };
 
-        return match public_key.verify(&signature, &hash) {
+        match public_key.verify(&signature, &hash) {
             true => ValidationResult::default(),
             false => ValidationResult::new_with_error(AbciError::BadCommitSignature(format!(
                 "commit signature {} is wrong",
                 hex::encode(signature.to_bytes().as_slice())
             ))),
-        };
+        }
     }
 }
 

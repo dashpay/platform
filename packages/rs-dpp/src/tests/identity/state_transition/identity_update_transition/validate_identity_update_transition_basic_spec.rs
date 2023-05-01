@@ -25,9 +25,9 @@ use crate::{
     version::ProtocolVersionValidator,
     NativeBlsModule, NonConsensusError,
 };
-use jsonschema::error::ValidationErrorKind;
+
 use platform_value::{platform_value, BinaryData, Value};
-use serde_json::Value as JsonValue;
+
 use std::{convert::TryInto, sync::Arc};
 use test_case::test_case;
 

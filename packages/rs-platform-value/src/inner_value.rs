@@ -3,7 +3,6 @@ use crate::{BinaryData, Bytes32, Identifier};
 use crate::{Error, Value};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::format;
 
 impl Value {
     pub fn has(&self, key: &str) -> Result<bool, Error> {

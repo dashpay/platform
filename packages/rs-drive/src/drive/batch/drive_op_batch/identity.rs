@@ -36,8 +36,10 @@ pub enum IdentityOperationType {
     AddNewKeysToIdentity {
         /// The identity id of the identity
         identity_id: [u8; 32],
-        /// The keys to be added
-        keys_to_add: Vec<IdentityPublicKey>,
+        /// The unique keys to be added
+        unique_keys_to_add: Vec<IdentityPublicKey>,
+        /// The non unique keys to be added
+        non_unique_keys_to_add: Vec<IdentityPublicKey>,
     },
     /// Disable Identity Keys
     DisableIdentityKeys {
@@ -47,6 +49,14 @@ pub enum IdentityOperationType {
         keys_ids: Vec<KeyID>,
         /// The time at which they were disabled
         disable_at: TimestampMillis,
+    },
+
+    /// Re-Enable Identity Keys
+    ReEnableIdentityKeys {
+        /// The identity id of the identity
+        identity_id: [u8; 32],
+        /// The keys to be added
+        keys_ids: Vec<KeyID>,
     },
 
     /// Updates an identities revision.
@@ -97,10 +107,12 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
             ),
             IdentityOperationType::AddNewKeysToIdentity {
                 identity_id,
-                keys_to_add,
+                unique_keys_to_add,
+                non_unique_keys_to_add,
             } => drive.add_new_keys_to_identity_operations(
                 identity_id,
-                keys_to_add,
+                unique_keys_to_add,
+                non_unique_keys_to_add,
                 true,
                 estimated_costs_only_with_layer_info,
                 transaction,
@@ -113,6 +125,15 @@ impl DriveLowLevelOperationConverter for IdentityOperationType {
                 identity_id,
                 keys_ids,
                 disable_at,
+                estimated_costs_only_with_layer_info,
+                transaction,
+            ),
+            IdentityOperationType::ReEnableIdentityKeys {
+                identity_id,
+                keys_ids,
+            } => drive.re_enable_identity_keys_operations(
+                identity_id,
+                keys_ids,
                 estimated_costs_only_with_layer_info,
                 transaction,
             ),

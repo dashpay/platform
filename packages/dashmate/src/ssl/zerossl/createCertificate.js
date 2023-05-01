@@ -1,5 +1,6 @@
 const fetch = require('node-fetch');
 const qs = require('qs');
+const errorDescriptions = require('./errors/errorDescriptions');
 
 /**
  * Create a ZeroSSL Certificate
@@ -36,7 +37,9 @@ async function createCertificate(
   const data = await response.json();
 
   if (data.error) {
-    throw new Error(JSON.stringify(data.error));
+    const errorMessage = errorDescriptions[data.error.code];
+
+    throw new Error(errorMessage || JSON.stringify(data.error));
   }
 
   return data;

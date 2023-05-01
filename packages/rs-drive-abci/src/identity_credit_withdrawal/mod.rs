@@ -393,11 +393,8 @@ where
             &mut drive_operations,
         );
 
-        let withdrawal_transactions: Vec<WithdrawalTransactionIdAndBytes> = withdrawal_transactions
-            .values()
-            .into_iter()
-            .cloned()
-            .collect();
+        let withdrawal_transactions: Vec<WithdrawalTransactionIdAndBytes> =
+            withdrawal_transactions.values().cloned().collect();
 
         self.drive.add_enqueue_withdrawal_transaction_operations(
             &withdrawal_transactions,
@@ -639,7 +636,7 @@ mod tests {
                         0, 0, 0, 0, 0, 0, 0,
                     ],
                     core_chain_locked_height: 96,
-                    block_hash: [0; 32],
+                    block_hash: None,
                     app_hash: None,
                 },
                 epoch_info: EpochInfo {
@@ -655,11 +652,13 @@ mod tests {
                     next_epoch_protocol_version: 0,
                     quorums_extended_info: Default::default(),
                     current_validator_set_quorum_hash: Default::default(),
+                    next_validator_set_quorum_hash: None,
                     validator_sets: Default::default(),
                     full_masternode_list: Default::default(),
                     hpmn_masternode_list: Default::default(),
                     initialization_information: None,
                 },
+                proposer_results: None,
             };
 
             let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)
@@ -806,7 +805,7 @@ mod tests {
                             0, 0, 0, 0, 0, 0, 0, 0,
                         ],
                         core_chain_locked_height: 96,
-                        block_hash: [0; 32],
+                        block_hash: None,
                         app_hash: None,
                     },
                     epoch_info: EpochInfo {
@@ -822,11 +821,13 @@ mod tests {
                         next_epoch_protocol_version: 0,
                         quorums_extended_info: Default::default(),
                         current_validator_set_quorum_hash: Default::default(),
+                        next_validator_set_quorum_hash: None,
                         validator_sets: Default::default(),
                         full_masternode_list: Default::default(),
                         hpmn_masternode_list: Default::default(),
                         initialization_information: None,
                     },
+                    proposer_results: None,
                 });
 
             let data_contract = load_system_data_contract(SystemDataContract::Withdrawals)

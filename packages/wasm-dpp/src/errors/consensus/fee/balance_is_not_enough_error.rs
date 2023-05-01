@@ -26,13 +26,13 @@ impl BalanceIsNotEnoughErrorWasm {
     }
 
     #[wasm_bindgen(js_name=getBalance)]
-    pub fn get_balance(&self) -> Credits {
-        self.inner.balance()
+    pub fn get_balance(&self) -> f64 {
+        self.inner.balance() as f64
     }
 
     #[wasm_bindgen(js_name=getFee)]
-    pub fn get_fee(&self) -> Credits {
-        self.inner.fee()
+    pub fn get_fee(&self) -> f64 {
+        self.inner.fee() as f64
     }
 
     #[wasm_bindgen(js_name=getCode)]
@@ -49,7 +49,7 @@ impl BalanceIsNotEnoughErrorWasm {
     pub fn serialize(&self) -> Result<Buffer, JsError> {
         let bytes = ConsensusError::from(self.inner.clone())
             .serialize()
-            .map_err(|e| JsError::from(e))?;
+            .map_err(JsError::from)?;
 
         Ok(Buffer::from_bytes(bytes.as_slice()))
     }

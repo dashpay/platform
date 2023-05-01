@@ -1,14 +1,3 @@
-use integer_encoding::VarInt;
-use platform_value::Identifier;
-use std::collections::BTreeMap;
-
-use crate::data_contract::document_type::DocumentType;
-use crate::data_contract::DataContract;
-use crate::ProtocolError;
-
-use crate::data_contract::contract_config;
-use crate::data_contract::errors::DataContractError;
-
 #[cfg(test)]
 mod test {
     use crate::data_contract::contract_config::ContractConfig;
@@ -16,8 +5,6 @@ mod test {
     use crate::data_contract::extra::common::json_document_to_contract;
     use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
     use crate::{data_contract::DataContract, util::json_schema::JsonSchemaExt};
-
-    use super::*;
 
     type IndexName = &'static str;
     type IsIndexUnique = bool;

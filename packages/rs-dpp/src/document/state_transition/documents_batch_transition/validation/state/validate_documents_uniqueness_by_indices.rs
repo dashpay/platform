@@ -3,9 +3,9 @@ use std::convert::TryInto;
 use futures::future::join_all;
 use itertools::Itertools;
 use platform_value::platform_value;
-use platform_value::string_encoding::Encoding;
+
 use platform_value::Value;
-use serde_json::{json, Value as JsonValue};
+use serde_json::json;
 
 use crate::consensus::state::document::duplicate_unique_index_error::DuplicateUniqueIndexError;
 use crate::consensus::state::state_error::StateError;
@@ -45,7 +45,7 @@ where
 
     // 1. Prepare fetchDocuments queries from indexed properties
     for t in document_transitions {
-        let transition = t.as_ref();
+        let transition = t;
         let document_schema =
             data_contract.get_document_schema(&transition.base().document_type_name)?;
         let document_indices = document_schema.get_indices::<Vec<_>>()?;

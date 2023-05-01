@@ -1,12 +1,8 @@
 use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
-use crate::data_contract::{DataContract, DataContractInner};
+use crate::data_contract::DataContract;
 use crate::state_transition::StateTransitionType;
-use crate::util::hash::{hash, hash_to_vec};
-use crate::ProtocolError;
-use bincode::config;
-use platform_value::Bytes32;
 
-use bincode::{Decode, Encode};
+use platform_value::Bytes32;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct TempDataContractCreateTransitionWithoutWitness<'a> {

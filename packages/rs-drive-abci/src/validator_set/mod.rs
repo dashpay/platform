@@ -87,11 +87,7 @@ impl ValidatorSet {
                     quorum_type.to_owned(),
                 ))?;
 
-        let entropy = if seed.is_none() {
-            Vec::new()
-        } else {
-            seed.unwrap()
-        };
+        let entropy = if let Some(seed) = seed { seed } else { vec![] };
 
         let quorum =
             Self::choose_random_quorum(config, core_height, quorum_type, quorums, &entropy)?;

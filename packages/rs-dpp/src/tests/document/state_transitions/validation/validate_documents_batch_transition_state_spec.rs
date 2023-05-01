@@ -14,7 +14,6 @@ use crate::{
     prelude::Identifier,
     prelude::ProtocolError,
     state_repository::MockStateRepositoryLike,
-    state_transition::StateTransitionLike,
     tests::{
         fixtures::{
             get_data_contract_fixture, get_document_transitions_fixture,

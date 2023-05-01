@@ -43,12 +43,12 @@ use dpp::block::block_info::BlockInfo;
 use dpp::platform_value::Value;
 use drive::contract::Contract;
 use drive::dpp::document::Document;
-use drive::dpp::util::cbor_serializer;
+
 use drive::drive::flags::StorageFlags;
-use drive::drive::query::{QueryDocumentsOutcome, QuerySerializedDocumentsOutcome};
+use drive::drive::query::QueryDocumentsOutcome;
 use drive::grovedb::TransactionArg;
 use drive::query::{DriveQuery, InternalClauses, WhereClause, WhereOperator};
-use serde_json::json;
+
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
@@ -65,7 +65,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
     /// A function to retrieve a list of the masternode reward shares documents for a list of masternode IDs.
     pub(crate) fn get_reward_shares_list_for_masternode(
         &self,
-        masternode_owner_id: &Vec<u8>,
+        masternode_owner_id: &[u8],
         transaction: TransactionArg,
     ) -> Result<Vec<Document>, Error> {
         let document_type = self
@@ -87,7 +87,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
                     WhereClause {
                         field: "$ownerId".to_string(),
                         operator: WhereOperator::Equal,
-                        value: Value::Bytes(masternode_owner_id.clone()),
+                        value: Value::Bytes(masternode_owner_id.to_vec()),
                     },
                 )]),
             },

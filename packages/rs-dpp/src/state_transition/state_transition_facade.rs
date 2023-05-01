@@ -295,7 +295,7 @@ where
         execution_context: &StateTransitionExecutionContext,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
         // TODO: can we avoid duplicated code here?
-        return match state_transition {
+        match state_transition {
             StateTransition::DataContractCreate(ref mut st) => {
                 validate_state_transition_identity_signature(
                     self.state_repository.clone(),
@@ -346,7 +346,7 @@ where
                     .validate(&state_transition, execution_context)
                     .await
             }
-        };
+        }
     }
 
     pub async fn validate_fee(

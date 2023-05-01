@@ -45,7 +45,7 @@ pub struct PlatformVersion {
     pub drive_structure: DriveStructureVersion,
 }
 
-const PLATFORM_VERSIONS: &'static [PlatformVersion] = &[PLATFORM_V0];
+const PLATFORM_VERSIONS: &[PlatformVersion] = &[PLATFORM_V0];
 
 const LATEST_VERSION: PlatformVersion = PLATFORM_V0;
 

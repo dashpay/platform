@@ -178,7 +178,7 @@ impl Value {
             .collect()
     }
 
-    pub fn get_value_at_path<'a, 'b>(&'a self, path: &'b str) -> Result<&'a Value, Error> {
+    pub fn get_value_at_path<'a>(&'a self, path: &str) -> Result<&'a Value, Error> {
         let split = path.split('.');
         let mut current_value = self;
         for path_component in split {

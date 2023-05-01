@@ -1,12 +1,13 @@
 #[cfg(test)]
 mod tests {
-    use crate::{
-        continue_chain_for_strategy, run_chain_for_strategy, ChainExecutionOutcome,
-        ChainExecutionParameters, Frequency, Strategy, StrategyRandomness, UpgradingInfo,
-    };
-
     use tenderdash_abci::proto::types::CoreChainLock;
 
+    use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
+    use crate::frequency::Frequency;
+    use crate::strategy::{
+        ChainExecutionOutcome, ChainExecutionParameters, Strategy, StrategyRandomness,
+        UpgradingInfo,
+    };
     use drive_abci::config::{PlatformConfig, PlatformTestConfig};
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
 
@@ -31,8 +32,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
-            new_proposers: Default::default(),
-            removed_proposers: Default::default(),
+            proposer_strategy: Default::default(),
             rotate_quorums: false,
         };
         let twenty_minutes_in_ms = 1000 * 60 * 20;
@@ -263,8 +263,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
-            new_proposers: Default::default(),
-            removed_proposers: Default::default(),
+            proposer_strategy: Default::default(),
             rotate_quorums: false,
         };
         let hour_in_ms = 1000 * 60 * 60;
@@ -485,8 +484,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
-            new_proposers: Default::default(),
-            removed_proposers: Default::default(),
+            proposer_strategy: Default::default(),
             rotate_quorums: false,
         };
         let hour_in_ms = 1000 * 60 * 60;
@@ -641,8 +639,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
-            new_proposers: Default::default(),
-            removed_proposers: Default::default(),
+            proposer_strategy: Default::default(),
             rotate_quorums: false,
         };
 
@@ -795,8 +792,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
-            new_proposers: Default::default(),
-            removed_proposers: Default::default(),
+            proposer_strategy: Default::default(),
             rotate_quorums: false,
         };
         let hour_in_ms = 1000 * 60 * 60;
@@ -887,8 +883,7 @@ mod tests {
                 times_per_block_range: Default::default(),
                 chance_per_block: None,
             },
-            new_proposers: Default::default(),
-            removed_proposers: Default::default(),
+            proposer_strategy: Default::default(),
             rotate_quorums: false,
         };
 

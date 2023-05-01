@@ -290,6 +290,7 @@ impl Drive {
             }
             Purpose::WITHDRAW => ApproximateElements(1),
             Purpose::SYSTEM => ApproximateElements(1),
+            Purpose::VOTING => ApproximateElements(1),
         };
 
         let estimated_layer_sizes = match purpose {
@@ -302,6 +303,7 @@ impl Drive {
             }
             Purpose::WITHDRAW => AllReference(1, KEY_REFERENCE_SIZE, None),
             Purpose::SYSTEM => AllReference(1, KEY_REFERENCE_SIZE, None),
+            Purpose::VOTING => AllReference(1, KEY_REFERENCE_SIZE, None),
         };
         // we then need to insert the identity keys layer
         estimated_costs_only_with_layer_info.insert(
@@ -329,6 +331,7 @@ impl Drive {
                 identity_id.as_slice(),
                 security_level,
             )),
+            //todo: revisit
             EstimatedLayerInformation {
                 is_sum_tree: false,
                 estimated_layer_count: ApproximateElements(4), //we can estimate that each security level will only have 4 keys

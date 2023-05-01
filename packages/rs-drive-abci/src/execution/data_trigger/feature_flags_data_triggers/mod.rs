@@ -26,9 +26,9 @@ const PROPERTY_ENABLE_AT_HEIGHT: &str = "enableAtHeight";
 /// # Returns
 ///
 /// A `DataTriggerExecutionResult` indicating the success or failure of the trigger execution.
-pub fn create_feature_flag_data_trigger<'a>(
+pub fn create_feature_flag_data_trigger(
     document_transition: &DocumentTransitionAction,
-    context: &DataTriggerExecutionContext<'a>,
+    context: &DataTriggerExecutionContext<'_>,
     top_level_identity: Option<&Identifier>,
 ) -> Result<DataTriggerExecutionResult, Error> {
     let mut result = DataTriggerExecutionResult::default();

@@ -17,6 +17,7 @@ const {
 } = require('./nodeTypes');
 
 const Config = require('../../../config/Config');
+const generateRandomString = require('../../../util/generateRandomString');
 
 /**
  * @param {ConfigFile} configFile
@@ -83,6 +84,9 @@ function setupRegularPresetTaskFactory(
 
           ctx.config.set('platform.enable', ctx.isHP);
           ctx.config.set('core.masternode.enable', ctx.nodeType === NODE_TYPE_MASTERNODE);
+
+          ctx.config.set('core.rpc.user', generateRandomString(8));
+          ctx.config.set('core.rpc.password', generateRandomString(12));
 
           // eslint-disable-next-line no-param-reassign
           task.output = nodeTypeName;

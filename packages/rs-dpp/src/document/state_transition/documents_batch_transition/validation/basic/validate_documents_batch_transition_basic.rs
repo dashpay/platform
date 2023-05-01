@@ -315,7 +315,7 @@ fn validate_raw_transitions<'a>(
                             "g {} d {} c id {} owner {} dt {} e {}",
                             hex::encode(generated_document_id),
                             hex::encode(document_id),
-                            hex::encode(&data_contract.id),
+                            hex::encode(data_contract.id),
                             hex::encode(owner_id),
                             document_type,
                             hex::encode(entropy)

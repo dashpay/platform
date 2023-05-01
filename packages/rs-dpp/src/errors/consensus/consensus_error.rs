@@ -72,9 +72,3 @@ impl ConsensusError {
         })
     }
 }
-
-impl Default for ConsensusError {
-    fn default() -> Self {
-        ConsensusError::DefaultError
-    }
-}

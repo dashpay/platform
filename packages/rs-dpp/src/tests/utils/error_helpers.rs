@@ -9,7 +9,6 @@ use crate::{
     consensus::{basic::BasicError, ConsensusError},
     data_trigger::DataTriggerExecutionResult,
 };
-use jsonptr::IndexError;
 
 pub fn get_schema_error(
     result: &SimpleConsensusValidationResult,

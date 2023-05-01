@@ -804,9 +804,7 @@ impl Drive {
 #[cfg(feature = "full")]
 #[cfg(test)]
 mod tests {
-    use dpp::data_contract::extra::common::{
-        json_document_to_cbor, json_document_to_contract, json_document_to_document,
-    };
+    use dpp::data_contract::extra::common::{json_document_to_contract, json_document_to_document};
     use rand::Rng;
     use serde_json::json;
     use std::borrow::Cow;
@@ -1035,7 +1033,6 @@ mod tests {
             .document_type_for_name("person")
             .expect("expected to get a document type");
 
-        dbg!(document_type);
         let random_owner_id0 = rand::thread_rng().gen::<[u8; 32]>();
 
         let person_document0 = json_document_to_document(
@@ -1046,11 +1043,10 @@ mod tests {
         .expect("expected to get document");
 
         let serialized = person_document0
-            .serialize(&document_type)
+            .serialize(document_type)
             .expect("expected to serialize");
-        dbg!(hex::encode(&serialized));
-        let deserialized =
-            Document::from_bytes(&serialized, &document_type).expect("expected to deserialize");
+        let _deserialized =
+            Document::from_bytes(&serialized, document_type).expect("expected to deserialize");
     }
 
     #[test]
@@ -1107,7 +1103,7 @@ mod tests {
             .document_type_for_name("person")
             .expect("expected to get a document type");
 
-        let random_owner_id1 = rand::thread_rng().gen::<[u8; 32]>();
+        let _random_owner_id1 = rand::thread_rng().gen::<[u8; 32]>();
 
         let person_document1 = json_document_to_document(
             "tests/supporting_files/contract/family/person1.json",

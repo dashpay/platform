@@ -4,13 +4,11 @@ use anyhow::{anyhow, bail};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 
 use platform_value::platform_value;
-use platform_value::string_encoding::Encoding;
 
 use crate::document::Document;
 use crate::{
     data_trigger::create_error, document::document_transition::DocumentTransition,
-    get_from_transition, mocks::SMLStore, prelude::Identifier,
-    state_repository::StateRepositoryLike, ProtocolError,
+    get_from_transition, prelude::Identifier, state_repository::StateRepositoryLike, ProtocolError,
 };
 
 use super::{DataTriggerExecutionContext, DataTriggerExecutionResult};
@@ -257,7 +255,7 @@ mod test {
         let TestData {
             mut document_transition,
             extended_documents,
-            sml_store,
+
             data_contract,
             top_level_identifier,
             identity,
@@ -307,7 +305,7 @@ mod test {
     async fn should_return_an_error_if_pay_to_id_does_not_exists() {
         let TestData {
             document_transition,
-            sml_store,
+
             data_contract,
             top_level_identifier,
             ..
@@ -353,7 +351,7 @@ mod test {
     async fn should_return_an_error_if_owner_id_is_not_a_masternode_identity() {
         let TestData {
             document_transition,
-            sml_store,
+
             data_contract,
             ..
         } = setup_test();
@@ -391,7 +389,7 @@ mod test {
     async fn should_pass() {
         let TestData {
             document_transition,
-            sml_store,
+
             data_contract,
             top_level_identifier,
             identity,
@@ -427,7 +425,7 @@ mod test {
     async fn should_return_error_if_there_are_16_stored_shares() {
         let TestData {
             document_transition,
-            sml_store,
+
             data_contract,
             top_level_identifier,
             identity,

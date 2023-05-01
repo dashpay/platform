@@ -1283,6 +1283,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@balena/dockerignore@npm:^1.0.2":
+  version: 1.0.2
+  resolution: "@balena/dockerignore@npm:1.0.2"
+  checksum: 0d39f8fbcfd1a983a44bced54508471ab81aaaa40e2c62b46a9f97eac9d6b265790799f16919216db486331dedaacdde6ecbd6b7abe285d39bc50de111991699
+  languageName: node
+  linkType: hard
+
 "@colors/colors@npm:1.5.0":
   version: 1.5.0
   resolution: "@colors/colors@npm:1.5.0"
@@ -1556,12 +1563,12 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@dashevo/docker-compose@npm:^0.24.1":
-  version: 0.24.1
-  resolution: "@dashevo/docker-compose@npm:0.24.1"
+"@dashevo/docker-compose@npm:^0.24.2":
+  version: 0.24.2
+  resolution: "@dashevo/docker-compose@npm:0.24.2"
   dependencies:
-    yaml: ^1.10.2
-  checksum: 7792e09b5d2d216eb883d0fe2d54e422a4cf277e17af99dd108078ca41aab9b66eccf9eddb2716e752b6cfe183a6c45d2292b42cce881c658afdcb6cd0d5ca3a
+    yaml: ^2.2.2
+  checksum: f8803c8ab5ccdaaa2f33b71c830a5ea7aaa9794a7c6e5698cd42190d7f05d0bc2df3cfb998d59ca3d4526bfb75503003b46f3f454ec5f52a61a21b3e089cb80c
   languageName: node
   linkType: hard
 
@@ -1716,9 +1723,9 @@ __metadata:
   languageName: unknown
   linkType: soft
 
-"@dashevo/oclif@npm:^1.0.2":
-  version: 1.0.2
-  resolution: "@dashevo/oclif@npm:1.0.2"
+"@dashevo/oclif@npm:^1.0.4":
+  version: 1.0.4
+  resolution: "@dashevo/oclif@npm:1.0.4"
   dependencies:
     "@oclif/core": ^1.20.4
     "@oclif/plugin-help": ^5.1.19
@@ -1740,7 +1747,7 @@ __metadata:
     yosay: ^2.0.2
   bin:
     oclif: bin/run
-  checksum: b421acd414231e2691e1dbc31dc40f83245fddd19bba0bd3a269979a9a62e80e12366b88301dda6be3e1a117be901f0c59dff3c48ee870a19f770a8468ee0b87
+  checksum: 239edbbb304ddfed4a11064491e10b1d283b4480cda31a50e8c9d08591d10ead6b4cd8803ba41915f10b12401346b646af874ca303729dc7b5362d7903129ee0
   languageName: node
   linkType: hard
 
@@ -5916,13 +5923,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"cpu-features@npm:0.0.2":
-  version: 0.0.2
-  resolution: "cpu-features@npm:0.0.2"
-  dependencies:
-    nan: ^2.14.1
-    node-gyp: latest
-  checksum: 15177f9a2d465e4d84390f902c977b34f237dadb29fd8553853b13d906ffe5f15be9f091c72db4f34c71412d5ff4e0e4edf04caebc875b02d1d7ecfce2963299
+"cpu-features@https://registry.yarnpkg.com/@favware/skip-dependency/-/skip-dependency-1.2.1.tgz":
+  version: 1.2.1
+  resolution: "cpu-features@https://registry.yarnpkg.com/@favware/skip-dependency/-/skip-dependency-1.2.1.tgz"
+  checksum: ee452163dbadcf140a085d1364117ad97b8f7d21711c2ad220fc81735a4f101abee2b63ae70e1b7f5bd8a0f2e9552fcf5c3002009833e6ffb39669dff36898b7
   languageName: node
   linkType: hard
 
@@ -6123,12 +6127,12 @@ __metadata:
     "@dashevo/dashcore-lib": ~0.20.3
     "@dashevo/dashd-rpc": ^18.2.0
     "@dashevo/dashpay-contract": "workspace:*"
-    "@dashevo/docker-compose": ^0.24.1
+    "@dashevo/docker-compose": ^0.24.2
     "@dashevo/dpns-contract": "workspace:*"
     "@dashevo/dpp": "workspace:*"
     "@dashevo/feature-flags-contract": "workspace:*"
     "@dashevo/masternode-reward-shares-contract": "workspace:*"
-    "@dashevo/oclif": ^1.0.2
+    "@dashevo/oclif": ^1.0.4
     "@dashevo/wallet-lib": "workspace:*"
     "@dashevo/withdrawals-contract": "workspace:*"
     "@oclif/core": ^1.25.0
@@ -6172,6 +6176,7 @@ __metadata:
     sinon: ^11.1.2
     sinon-chai: ^3.7.0
     table: ^5.4.6
+    wrap-ansi: ^7.0.0
   bin:
     dashmate: ./bin/run
   languageName: unknown
@@ -6537,24 +6542,25 @@ __metadata:
   linkType: hard
 
 "docker-modem@npm:^3.0.0":
-  version: 3.0.3
-  resolution: "docker-modem@npm:3.0.3"
+  version: 3.0.8
+  resolution: "docker-modem@npm:3.0.8"
   dependencies:
     debug: ^4.1.1
     readable-stream: ^3.5.0
     split-ca: ^1.0.1
-    ssh2: ^1.4.0
-  checksum: 4ad495d17a7bbb29f48e3bf8ab74508848a3ca62c2dffc399fc0b9b2d1caccb1be54cc53001d5e0d56069e6cb4a91da4b017240733080b6648a66b40345e1f96
+    ssh2: ^1.11.0
+  checksum: e3675c9b1ad800be8fb1cb9c5621fbef20a75bfedcd6e01b69808eadd7f0165681e4e30d1700897b788a67dbf4769964fcccd19c3d66f6d2499bb7aede6b34df
   languageName: node
   linkType: hard
 
 "dockerode@npm:^3.2.0, dockerode@npm:^3.2.1":
-  version: 3.3.1
-  resolution: "dockerode@npm:3.3.1"
+  version: 3.3.5
+  resolution: "dockerode@npm:3.3.5"
   dependencies:
+    "@balena/dockerignore": ^1.0.2
     docker-modem: ^3.0.0
     tar-fs: ~2.0.1
-  checksum: 930162ae2d8a1fe0e99d9a5885b09aa438da6274d4a30cb90e73046655dbc90764eb755361a63ba08f167e257c4d649d67bce71f650461a20b97fcde0af05ca5
+  checksum: 7f6650422b07fa7ea9d5801f04b1a432634446b5fe37b995b8302b953b64e93abf1bb4596c2fb574ba47aafee685ef2ab959cc86c9654add5a26d09541bbbcc6
   languageName: node
   linkType: hard
 
@@ -10910,12 +10916,12 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"nan@npm:^2.14.1, nan@npm:^2.15.0":
-  version: 2.15.0
-  resolution: "nan@npm:2.15.0"
+"nan@npm:^2.16.0":
+  version: 2.17.0
+  resolution: "nan@npm:2.17.0"
   dependencies:
     node-gyp: latest
-  checksum: 33e1bb4dfca447fe37d4bb5889be55de154828632c8d38646db67293a21afd61ed9909cdf1b886214a64707d935926c4e60e2b09de9edfc2ad58de31d6ce8f39
+  checksum: ec609aeaf7e68b76592a3ba96b372aa7f5df5b056c1e37410b0f1deefbab5a57a922061e2c5b369bae9c7c6b5e6eecf4ad2dac8833a1a7d3a751e0a7c7f849ed
   languageName: node
   linkType: hard
 
@@ -12873,12 +12879,21 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"rxjs@npm:^7.0.0, rxjs@npm:^7.2.0, rxjs@npm:^7.8.0":
+"rxjs@npm:^7.0.0, rxjs@npm:^7.2.0":
   version: 7.8.0
   resolution: "rxjs@npm:7.8.0"
   dependencies:
     tslib: ^2.1.0
   checksum: 61b4d4fd323c1043d8d6ceb91f24183b28bcf5def4f01ca111511d5c6b66755bc5578587fe714ef5d67cf4c9f2e26f4490d4e1d8cabf9bd5967687835e9866a2
+  languageName: node
+  linkType: hard
+
+"rxjs@npm:^7.8.0":
+  version: 7.8.1
+  resolution: "rxjs@npm:7.8.1"
+  dependencies:
+    tslib: ^2.1.0
+  checksum: de4b53db1063e618ec2eca0f7965d9137cabe98cf6be9272efe6c86b47c17b987383df8574861bcced18ebd590764125a901d5506082be84a8b8e364bf05f119
   languageName: node
   linkType: hard
 
@@ -13529,20 +13544,20 @@ fsevents@~2.3.2:
   languageName: node
   linkType: hard
 
-"ssh2@npm:^1.4.0":
-  version: 1.5.0
-  resolution: "ssh2@npm:1.5.0"
+"ssh2@npm:^1.11.0":
+  version: 1.11.0
+  resolution: "ssh2@npm:1.11.0"
   dependencies:
     asn1: ^0.2.4
     bcrypt-pbkdf: ^1.0.2
-    cpu-features: 0.0.2
-    nan: ^2.15.0
+    cpu-features: ~0.0.4
+    nan: ^2.16.0
   dependenciesMeta:
     cpu-features:
       optional: true
     nan:
       optional: true
-  checksum: 6a2252c12d9587eeb31c499d1d13bb14a255d08243762e1a92b2db76add8912b2c8c25103c79b92e156d598c1e2781c5523b58aa9e85aee06fea365e4cc188bb
+  checksum: e40cb9f171741a807c170dc555078aa8c49dc93dd36fc9c8be026fce1cfd31f0d37078d9b60a0f2cfb11d0e007ed5407376b72f8a0ef9f2cb89574632bbfb824
   languageName: node
   linkType: hard
 
@@ -15389,10 +15404,10 @@ typescript@^3.9.5:
   languageName: node
   linkType: hard
 
-"yaml@npm:^1.10.2":
-  version: 1.10.2
-  resolution: "yaml@npm:1.10.2"
-  checksum: ce4ada136e8a78a0b08dc10b4b900936912d15de59905b2bf415b4d33c63df1d555d23acb2a41b23cf9fb5da41c256441afca3d6509de7247daa062fd2c5ea5f
+"yaml@npm:^2.2.2":
+  version: 2.2.2
+  resolution: "yaml@npm:2.2.2"
+  checksum: d90c235e099e30094dcff61ba3350437aef53325db4a6bcd04ca96e1bfe7e348b191f6a7a52b5211e2dbc4eeedb22a00b291527da030de7c189728ef3f2b4eb3
   languageName: node
   linkType: hard
 

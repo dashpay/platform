@@ -109,9 +109,7 @@ impl IdentityCreditWithdrawalTransitionBasicValidator {
 
         if !output_script.is_p2pkh() && !output_script.is_p2sh() {
             result.add_error(
-                InvalidIdentityCreditWithdrawalTransitionOutputScriptError::new(
-                    output_script.clone(),
-                ),
+                InvalidIdentityCreditWithdrawalTransitionOutputScriptError::new(output_script),
             );
         }
 

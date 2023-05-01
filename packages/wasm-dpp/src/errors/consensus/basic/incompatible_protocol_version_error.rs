@@ -2,7 +2,7 @@ use crate::buffer::Buffer;
 use dpp::consensus::basic::IncompatibleProtocolVersionError;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::ConsensusError;
-use dpp::errors::ProtocolError;
+
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=IncompatibleProtocolVersionError)]
@@ -42,7 +42,7 @@ impl IncompatibleProtocolVersionErrorWasm {
     pub fn serialize(&self) -> Result<Buffer, JsError> {
         let bytes = ConsensusError::from(self.inner.clone())
             .serialize()
-            .map_err(|e| JsError::from(e))?;
+            .map_err(JsError::from)?;
 
         Ok(Buffer::from_bytes(bytes.as_slice()))
     }

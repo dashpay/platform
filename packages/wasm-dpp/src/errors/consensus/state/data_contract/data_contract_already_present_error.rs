@@ -3,7 +3,7 @@ use crate::identifier::IdentifierWrapper;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
 use dpp::consensus::ConsensusError;
-use dpp::identifier::Identifier;
+
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(js_name=DataContractAlreadyPresentError)]
@@ -45,7 +45,7 @@ impl DataContractAlreadyPresentErrorWasm {
     pub fn serialize(&self) -> Result<Buffer, JsError> {
         let bytes = ConsensusError::from(self.inner.clone())
             .serialize()
-            .map_err(|e| JsError::from(e))?;
+            .map_err(JsError::from)?;
 
         Ok(Buffer::from_bytes(bytes.as_slice()))
     }

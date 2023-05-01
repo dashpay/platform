@@ -661,7 +661,6 @@ mod tests {
             Drive::verify_full_identities_by_public_key_hashes(proof, key_hashes)
                 .expect("expect that this be verified");
         assert_eq!(proved_identities.len(), 10);
-        dbg!(proved_identities.values());
     }
 
     #[test]
@@ -671,7 +670,6 @@ mod tests {
             62, 171, 130, 51, 233, 19, 45, 191, 194, 183, 0, 171, 182, 77, 93, 70, 216, 67, 22, 47,
             39, 25, 156, 146, 35, 108, 99, 133, 34, 187, 243, 162,
         ];
-        dbg!(hex::encode(identity_id));
         let (_root_hash, maybe_identity) =
             Drive::verify_full_identity_by_identity_id(proof, true, identity_id)
                 .expect("verification failed");

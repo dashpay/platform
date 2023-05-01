@@ -178,7 +178,53 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
-        drive_operations.append(&mut self.insert_reference_to_key_operations(
+        drive_operations.append(&mut self.insert_reference_to_unique_key_operations(
+            identity_id,
+            &identity_key,
+            estimated_costs_only_with_layer_info,
+            transaction,
+        )?);
+
+        let key_id_bytes = identity_key.id.encode_var_vec();
+
+        self.insert_key_to_storage_operations(
+            identity_id,
+            &identity_key,
+            key_id_bytes.as_slice(),
+            drive_operations,
+        )?;
+
+        if with_references
+            && matches!(
+                identity_key.purpose,
+                Purpose::AUTHENTICATION | Purpose::WITHDRAW
+            )
+        {
+            self.insert_key_searchable_references_operations(
+                identity_id,
+                &identity_key,
+                key_id_bytes.as_slice(),
+                estimated_costs_only_with_layer_info,
+                transaction,
+                drive_operations,
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Insert a new non unique key into an identity operations
+    pub(crate) fn insert_new_non_unique_key_operations(
+        &self,
+        identity_id: [u8; 32],
+        identity_key: IdentityPublicKey,
+        with_references: bool,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
+        transaction: TransactionArg,
+        drive_operations: &mut Vec<LowLevelDriveOperation>,
+    ) -> Result<(), Error> {
+        drive_operations.append(&mut self.insert_reference_to_non_unique_key_operations(
             identity_id,
             &identity_key,
             estimated_costs_only_with_layer_info,
@@ -250,8 +296,23 @@ impl Drive {
             &mut batch_operations,
         )?;
 
-        for key in keys.into_iter() {
+        let (unique_keys, non_unique_keys): (Vec<IdentityPublicKey>, Vec<IdentityPublicKey>) = keys
+            .into_iter()
+            .partition(|key| key.key_type.is_unique_key_type());
+
+        for key in unique_keys.into_iter() {
             self.insert_new_unique_key_operations(
+                identity_id,
+                key,
+                true,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                &mut batch_operations,
+            )?;
+        }
+
+        for key in non_unique_keys.into_iter() {
+            self.insert_new_non_unique_key_operations(
                 identity_id,
                 key,
                 true,

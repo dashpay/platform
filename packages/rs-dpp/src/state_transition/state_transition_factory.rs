@@ -1,4 +1,3 @@
-use anyhow::anyhow;
 use std::{
     convert::{TryFrom, TryInto},
     sync::Arc,
@@ -12,7 +11,7 @@ use crate::consensus::basic::decode::SerializedObjectParsingError;
 use crate::data_contract::errors::DataContractNotPresentError;
 use crate::data_contract::state_transition::errors::MissingDataContractIdError;
 use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
-use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+use crate::serialization_traits::PlatformDeserializable;
 use crate::state_transition::errors::StateTransitionError;
 use crate::state_transition::StateTransitionConvert;
 use crate::util::deserializer;
@@ -27,7 +26,6 @@ use crate::{
         DataContract,
     },
     document::DocumentsBatchTransition,
-    encoding::decode_protocol_entity_factory::DecodeProtocolEntity,
     identity::state_transition::{
         identity_create_transition::IdentityCreateTransition,
         identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition,
@@ -38,7 +36,7 @@ use crate::{
     validation::AsyncDataValidatorWithContext,
     BlsModule, ProtocolError,
 };
-use platform_value::{Value, ValueMapHelper};
+use platform_value::Value;
 
 use super::{
     state_transition_execution_context::StateTransitionExecutionContext,
@@ -118,7 +116,7 @@ where
             protocol_version,
             main_message_bytes: document_bytes,
             ..
-        } = deserializer::split_protocol_version(state_transition_buffer.as_ref())?;
+        } = deserializer::split_protocol_version(state_transition_buffer)?;
 
         let state_transition = StateTransition::deserialize(document_bytes).map_err(|e| {
             ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
@@ -357,12 +355,12 @@ mod test {
 
     #[tokio::test]
     async fn should_return_invalid_state_transition_type_if_type_is_invalid() {
-        let state_repostiory_mock = MockStateRepositoryLike::new();
+        let state_repository_mock = MockStateRepositoryLike::new();
         let raw_state_transition = platform_value!( {
             "type" : 110u8
         });
 
-        let result = create_state_transition(&state_repostiory_mock, raw_state_transition).await;
+        let result = create_state_transition(&state_repository_mock, raw_state_transition).await;
         let err = get_protocol_error(result);
 
         match err {

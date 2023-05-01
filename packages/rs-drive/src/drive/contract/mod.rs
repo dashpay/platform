@@ -447,7 +447,7 @@ impl Drive {
 
         self.update_contract_element(
             contract_element,
-            &contract,
+            contract,
             &original_contract_fetch_info.contract,
             &block_info,
             transaction,
@@ -703,10 +703,8 @@ impl Drive {
         transaction: TransactionArg,
     ) -> Result<FeeResult, Error> {
         // first we need to deserialize the contract
-        let contract = DataContract::from_cbor_with_id(
-            &contract_cbor,
-            contract_id.map(|identifier| Identifier::from(identifier)),
-        )?;
+        let contract =
+            DataContract::from_cbor_with_id(contract_cbor, contract_id.map(Identifier::from))?;
 
         self.apply_contract(&contract, block_info, apply, storage_flags, transaction)
     }
@@ -1393,7 +1391,6 @@ mod tests {
     mod get_contract_with_fetch_info {
         use super::*;
         use dpp::prelude::Identifier;
-        use dpp::Convertible;
 
         #[test]
         fn should_get_contract_from_global_and_block_cache() {

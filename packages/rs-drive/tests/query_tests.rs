@@ -89,14 +89,13 @@ use dpp::data_contract::validation::data_contract_validator::DataContractValidat
 use dpp::document::Document;
 #[cfg(feature = "full")]
 use dpp::platform_value::Value;
-use dpp::platform_value::{platform_value, BinaryData, Bytes32, Identifier};
+use dpp::platform_value::{platform_value, Bytes32, Identifier};
 
 #[cfg(feature = "full")]
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::extra::common::json_document_to_contract;
 use dpp::platform_value;
-use dpp::platform_value::btreemap_extensions::BTreeValueMapInsertionPathHelper;
-use dpp::platform_value::Value::Null;
+
 #[cfg(feature = "full")]
 use dpp::prelude::DataContract;
 use dpp::prelude::Revision;
@@ -465,7 +464,7 @@ fn test_serialization_and_deserialization() {
         let serialized = document
             .serialize(document_type)
             .expect("expected to serialize domain document");
-        let deserialized = Document::from_bytes(&serialized, document_type)
+        let _deserialized = Document::from_bytes(&serialized, document_type)
             .expect("expected to deserialize domain document");
     }
 }
@@ -1698,7 +1697,7 @@ fn test_family_basic_queries() {
         last_name: String::from("Ogwu"),
         age: rng.gen_range(0..85),
     };
-    let serialized_person = serde_json::to_value(&fixed_person).expect("serialized person");
+    let serialized_person = serde_json::to_value(fixed_person).expect("serialized person");
     let person_cbor = cbor_serializer::serializable_value_to_cbor(
         &serialized_person,
         Some(drive::drive::defaults::PROTOCOL_VERSION),
@@ -1744,7 +1743,7 @@ fn test_family_basic_queries() {
         last_name: String::from("dkfjghfdk"),
         age: rng.gen_range(0..85),
     };
-    let serialized_person = serde_json::to_value(&next_person).expect("serialized person");
+    let serialized_person = serde_json::to_value(next_person).expect("serialized person");
     let person_cbor = cbor_serializer::serializable_value_to_cbor(
         &serialized_person,
         Some(drive::drive::defaults::PROTOCOL_VERSION),
@@ -3611,7 +3610,7 @@ fn test_dpns_query_start_at_with_null_id() {
 
     let domain0_id = Identifier::random_with_rng(&mut rng);
     let domain0 = Domain {
-        id: domain0_id.clone(),
+        id: domain0_id,
         owner_id: Identifier::random_with_rng(&mut rng),
         label: None,
         normalized_label: None,
@@ -3625,7 +3624,7 @@ fn test_dpns_query_start_at_with_null_id() {
         },
     };
 
-    let value0 = platform_value::to_value(&domain0).expect("serialized domain");
+    let value0 = platform_value::to_value(domain0).expect("serialized domain");
     let document0 =
         platform_value::from_value(value0).expect("document should be properly deserialized");
 
@@ -3665,7 +3664,7 @@ fn test_dpns_query_start_at_with_null_id() {
         },
     };
 
-    let value1 = serde_json::to_value(&domain1).expect("serialized domain");
+    let value1 = serde_json::to_value(domain1).expect("serialized domain");
     let document_cbor1 = cbor_serializer::serializable_value_to_cbor(
         &value1,
         Some(drive::drive::defaults::PROTOCOL_VERSION),
@@ -3806,7 +3805,7 @@ fn test_dpns_query_start_after_with_null_id() {
 
     let domain0_id = Identifier::random_with_rng(&mut rng);
     let domain0 = Domain {
-        id: domain0_id.clone(),
+        id: domain0_id,
         owner_id: Identifier::random_with_rng(&mut rng),
         label: None,
         normalized_label: None,
@@ -3820,7 +3819,7 @@ fn test_dpns_query_start_after_with_null_id() {
         },
     };
 
-    let value0 = serde_json::to_value(&domain0).expect("serialized domain");
+    let value0 = serde_json::to_value(domain0).expect("serialized domain");
     let document_cbor0 = cbor_serializer::serializable_value_to_cbor(
         &value0,
         Some(drive::drive::defaults::PROTOCOL_VERSION),
@@ -3865,7 +3864,7 @@ fn test_dpns_query_start_after_with_null_id() {
         },
     };
 
-    let value1 = serde_json::to_value(&domain1).expect("serialized domain");
+    let value1 = serde_json::to_value(domain1).expect("serialized domain");
     let document_cbor1 = cbor_serializer::serializable_value_to_cbor(
         &value1,
         Some(drive::drive::defaults::PROTOCOL_VERSION),
@@ -4009,7 +4008,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
 
     let domain0_id = Identifier::random_with_rng(&mut rng);
     let domain0 = Domain {
-        id: domain0_id.clone(),
+        id: domain0_id,
         owner_id: Identifier::random_with_rng(&mut rng),
         label: None,
         normalized_label: None,
@@ -4023,7 +4022,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
         },
     };
 
-    let value0 = serde_json::to_value(&domain0).expect("serialized domain");
+    let value0 = serde_json::to_value(domain0).expect("serialized domain");
     let document_cbor0 = cbor_serializer::serializable_value_to_cbor(
         &value0,
         Some(drive::drive::defaults::PROTOCOL_VERSION),
@@ -4054,7 +4053,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     let domain1_id = Identifier::random_with_rng(&mut rng);
 
     let domain1 = Domain {
-        id: domain1_id.clone(),
+        id: domain1_id,
         owner_id: Identifier::random_with_rng(&mut rng),
         label: None,
         normalized_label: None,
@@ -4068,7 +4067,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
         },
     };
 
-    let value1 = serde_json::to_value(&domain1).expect("serialized domain");
+    let value1 = serde_json::to_value(domain1).expect("serialized domain");
     let document_cbor1 = cbor_serializer::serializable_value_to_cbor(
         &value1,
         Some(drive::drive::defaults::PROTOCOL_VERSION),
@@ -4143,7 +4142,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
     // A query getting two elements starting with domain0
     // We should get domain0 only because we have an ascending order on the ids always
     // And also because there is nothing below ""
-    let encoded_start_at = bs58::encode(domain0_id.clone()).into_string();
+    let encoded_start_at = bs58::encode(domain0_id).into_string();
 
     let query_value = json!({
         "where": [
@@ -4192,7 +4191,7 @@ fn test_dpns_query_start_after_with_null_id_desc() {
 
     // A query getting two elements starting with domain1
     // We should get domain1, domain0 only because we have an ascending order on the ids always
-    let encoded_start_at = bs58::encode(domain1_id.clone()).into_string();
+    let encoded_start_at = bs58::encode(domain1_id).into_string();
 
     let query_value = json!({
         "where": [
@@ -4532,7 +4531,7 @@ fn test_query_documents_by_created_at() {
         Some(&WhereClause {
             field: "$createdAt".to_string(),
             operator: WhereOperator::Equal,
-            value: Value::U64(created_at as u64)
+            value: Value::U64(created_at)
         })
     );
 

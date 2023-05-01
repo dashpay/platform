@@ -31,7 +31,6 @@ where
     ) -> Result<ConsensusValidationResult<Self::ResultItem>, ProtocolError> {
         validate_identity_create_transition_state(&self.state_repository, data, execution_context)
             .await
-            .map_err(|err| err.into())
     }
 }
 
@@ -87,9 +86,7 @@ pub async fn validate_identity_create_transition_state(
             .fetch_asset_lock_transaction_output(state_repository, execution_context)
             .await
             .map_err(Into::<NonConsensusError>::into)?;
-        return Ok(
-            IdentityCreateTransitionAction::from_borrowed(state_transition, tx_out.value).into(),
-        );
+        Ok(IdentityCreateTransitionAction::from_borrowed(state_transition, tx_out.value).into())
     }
 }
 

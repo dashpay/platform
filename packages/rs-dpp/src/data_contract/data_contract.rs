@@ -10,7 +10,7 @@ use std::convert::{TryFrom, TryInto};
 use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable, ValueConvertible};
 use itertools::{Either, Itertools};
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
-use platform_value::{platform_value, Bytes32, Identifier};
+use platform_value::{Bytes32, Identifier};
 use platform_value::{ReplacementType, Value, ValueMapHelper};
 use serde::de::Error;
 use serde::{Deserialize, Serialize};
@@ -818,7 +818,8 @@ mod test {
     }
 
     #[test]
-    fn conversion_to_buffer_from_buffer() {
+    #[cfg(feature = "cbor")]
+    fn conversion_to_cbor_buffer_from_cbor_buffer() {
         init();
         let data_contract = get_data_contract_fixture(None);
 
@@ -848,7 +849,8 @@ mod test {
     }
 
     #[test]
-    fn conversion_to_buffer_from_buffer_high_version() {
+    #[cfg(feature = "cbor")]
+    fn conversion_to_cbor_buffer_from_cbor_buffer_high_version() {
         init();
         let mut data_contract = get_data_contract_fixture(None);
         data_contract.protocol_version = 10000;
@@ -880,7 +882,7 @@ mod test {
     }
 
     #[test]
-    fn conversion_to_buffer_from_buffer_too_high_version() {
+    fn conversion_to_cbor_buffer_from_cbor_buffer_too_high_version() {
         init();
         let data_contract = get_data_contract_fixture(None);
 
@@ -1038,6 +1040,17 @@ mod test {
 
     #[test]
     fn serialize_deterministically_serialize_to_cbor() {
+        let data_contract_cbor = get_data_contract_cbor_bytes();
+
+        let data_contract = DataContract::from_cbor_buffer(&data_contract_cbor).unwrap();
+
+        let serialized = data_contract.to_cbor_buffer().unwrap();
+
+        assert_eq!(hex::encode(data_contract_cbor), hex::encode(serialized));
+    }
+
+    #[test]
+    fn serialize_deterministically_serialize_to_bincode() {
         let data_contract_cbor = get_data_contract_cbor_bytes();
 
         let data_contract = DataContract::from_cbor_buffer(&data_contract_cbor).unwrap();

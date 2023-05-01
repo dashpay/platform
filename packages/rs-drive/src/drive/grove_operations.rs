@@ -1629,7 +1629,7 @@ impl Drive {
                     is_sum_tree,
                     estimated_value_size,
                 } => GroveDb::worst_case_delete_operation_for_delete_internal::<RocksDbStorage>(
-                    &KeyInfoPath::from_known_path(path_iter.clone()),
+                    &KeyInfoPath::from_known_path(path_iter),
                     &KeyInfo::KnownKey(key.to_vec()),
                     is_sum_tree,
                     false,
@@ -1641,7 +1641,7 @@ impl Drive {
                 BatchDeleteApplyType::StatefulBatchDelete {
                     is_known_to_be_subtree_with_sum,
                 } => self.grove.delete_operation_for_delete_internal(
-                    path_iter.clone(),
+                    path_iter,
                     key,
                     &options,
                     is_known_to_be_subtree_with_sum,

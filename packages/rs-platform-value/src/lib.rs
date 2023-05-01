@@ -388,14 +388,14 @@ impl Value {
     /// assert!(value.is_any_bytes_type());
     /// ```
     pub fn is_any_bytes_type(&self) -> bool {
-        match self {
+        matches!(
+            self,
             Value::Bytes(_)
-            | Value::Bytes20(_)
-            | Value::Bytes32(_)
-            | Value::Bytes36(_)
-            | Value::Identifier(_) => true,
-            _ => false,
-        }
+                | Value::Bytes20(_)
+                | Value::Bytes32(_)
+                | Value::Bytes36(_)
+                | Value::Identifier(_)
+        )
     }
 
     /// If the `Value` is a `Bytes`, returns a reference to the associated bytes vector.

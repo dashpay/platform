@@ -82,9 +82,9 @@ impl StateTransitionValidation for IdentityCreditWithdrawalTransition {
         )
     }
 
-    fn validate_state<'a, C: CoreRPCLike>(
+    fn validate_state<C: CoreRPCLike>(
         &self,
-        platform: &'a PlatformRef<C>,
+        platform: &PlatformRef<C>,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let maybe_existing_identity_balance = platform

@@ -1,7 +1,6 @@
 use crate::serialization_traits::PlatformDeserializable;
 use crate::state_transition::StateTransition;
 use crate::ProtocolError;
-use bincode::config;
 
 impl StateTransition {
     pub fn deserialize_many(

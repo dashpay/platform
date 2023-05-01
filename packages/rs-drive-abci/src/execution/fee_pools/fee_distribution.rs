@@ -285,7 +285,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
                     .properties
                     .get("percentage")
                     .ok_or(Error::Execution(ExecutionError::DriveMissingData(
-                        "percentage property is missing",
+                        "percentage property is missing".to_string(),
                     )))?
                     .to_integer()
                     .map_err(|_| {

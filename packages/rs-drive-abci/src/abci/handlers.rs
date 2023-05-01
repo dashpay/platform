@@ -81,11 +81,12 @@ where
         &self,
         request: RequestInitChain,
     ) -> Result<ResponseInitChain, ResponseException> {
-        //todo: check to see if the chain is already initialized
         self.start_transaction();
         let transaction_guard = self.transaction.read().unwrap();
         let transaction = transaction_guard.as_ref().unwrap();
         let response = self.platform.init_chain(request, transaction)?;
+
+        transaction.set_savepoint();
 
         tracing::info!(method = "init_chain", "init chain executed");
         Ok(response)
@@ -114,6 +115,12 @@ where
         let mut block_proposal: BlockProposal = (&request).try_into()?;
 
         if let Some(core_chain_lock_update) = core_chain_lock_update.as_ref() {
+            tracing::info!(
+                method = "prepare_proposal",
+                "chain lock update to height {} at block {}",
+                core_chain_lock_update.core_block_height,
+                request.height
+            );
             block_proposal.core_chain_locked_height = core_chain_lock_update.core_block_height;
         }
 
@@ -123,6 +130,9 @@ where
             let transaction = self.transaction.read().unwrap();
             if transaction.is_none() {
                 return Err(Error::Abci(AbciError::BadRequest("received a prepare proposal request for the genesis height before an init chain request".to_string())))?;
+            }
+            if request.round > 0 {
+                transaction.as_ref().map(|tx| tx.rollback_to_savepoint());
             }
             transaction
         } else {
@@ -185,6 +195,14 @@ where
             ..Default::default()
         };
 
+        let mut block_execution_context_guard =
+            self.platform.block_execution_context.write().unwrap();
+
+        let block_execution_context = block_execution_context_guard
+            .as_mut()
+            .expect("expected that a block execution context was set");
+        block_execution_context.proposer_results = Some(response.clone());
+
         Ok(response)
     }
 
@@ -192,12 +210,53 @@ where
         &self,
         mut request: RequestProcessProposal,
     ) -> Result<ResponseProcessProposal, ResponseException> {
+        let mut block_execution_context_guard =
+            self.platform.block_execution_context.write().unwrap();
+
+        let mut new_round = false;
+        if let Some(block_execution_context) = block_execution_context_guard.as_mut() {
+            // We are already in a block
+            // This only makes sense if we were the proposer unless we are at a future round
+            if block_execution_context.block_state_info.round != (request.round as u32) {
+                // We were not the proposer, and we should process something new
+                new_round = true;
+            } else {
+                let Some(proposal_info) = block_execution_context.proposer_results.as_ref() else {
+                    return Err(Error::Abci(AbciError::BadRequest(
+                        "received a process proposal request twice".to_string(),
+                    )))?;
+                };
+                // We need to set the block hash
+                block_execution_context.block_state_info.block_hash =
+                    Some(request.hash.clone().try_into().map_err(|_| {
+                        Error::Abci(AbciError::BadRequestDataSize(
+                            "block hash is not 32 bytes in process proposal".to_string(),
+                        ))
+                    })?);
+                return Ok(ResponseProcessProposal {
+                    status: proto::response_process_proposal::ProposalStatus::Accept.into(),
+                    app_hash: proposal_info.app_hash.clone(),
+                    tx_results: proposal_info.tx_results.clone(),
+                    consensus_param_updates: proposal_info.consensus_param_updates.clone(),
+                    validator_set_update: proposal_info.validator_set_update.clone(),
+                });
+            }
+        }
+
+        if new_round {
+            *block_execution_context_guard = None;
+        }
+        drop(block_execution_context_guard);
+
         let transaction_guard = if request.height == self.platform.config.abci.genesis_height as i64
         {
             // special logic on init chain
             let transaction = self.transaction.read().unwrap();
             if transaction.is_none() {
                 return Err(Error::Abci(AbciError::BadRequest("received a process proposal request for the genesis height before an init chain request".to_string())))?;
+            }
+            if request.round > 0 {
+                transaction.as_ref().map(|tx| tx.rollback_to_savepoint());
             }
             transaction
         } else {
@@ -266,12 +325,12 @@ where
             round as u32,
             block_hash.clone(),
         )? {
-            return Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
-                "received request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
+            Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
+                "received extend vote request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
                 height, round, block_hash.to_hex(),
-                block_state_info.height, block_state_info.round, block_state_info.block_hash.to_hex()
+                block_state_info.height, block_state_info.round, block_state_info.block_hash.map(|block_hash| block_hash.to_hex()).unwrap_or("None".to_string())
             )))
-            .into());
+            .into())
         } else {
             // we only want to sign the hash of the transaction
             let extensions = block_execution_context
@@ -317,9 +376,9 @@ where
             block_hash.clone(),
         )? {
             return Err(Error::from(AbciError::RequestForWrongBlockReceived(format!(
-                "received request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
+                "received verify vote request for height: {} round: {}, block: {};  expected height: {} round: {}, block: {}",
                 height, round,block_hash.to_hex(),
-                block_state_info.height, block_state_info.round, block_state_info.block_hash.to_hex()
+                block_state_info.height, block_state_info.round, block_state_info.block_hash.map(|block_hash| block_hash.to_hex()).unwrap_or("None".to_string())
             )))
             .into());
         }

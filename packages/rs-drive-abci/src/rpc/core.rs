@@ -3,7 +3,7 @@ use dashcore_rpc::dashcore_rpc_json::{
     Bip9SoftforkInfo, ExtendedQuorumDetails, ExtendedQuorumListResult, GetBestChainLockResult,
     GetChainTipsResult, MasternodeListDiff, QuorumInfoResult, QuorumType,
 };
-use dashcore_rpc::json::{GetTransactionResult, MasternodeListDiffWithMasternodes};
+use dashcore_rpc::json::GetTransactionResult;
 use dashcore_rpc::{Auth, Client, Error, RpcApi};
 use mockall::{automock, predicate::*};
 use serde_json::Value;
@@ -63,7 +63,7 @@ pub trait CoreRPCLike {
     /// Get the difference in masternode list, return masternodes as diff elements
     fn get_protx_diff_with_masternodes(
         &self,
-        base_block: u32,
+        base_block: Option<u32>,
         block: u32,
     ) -> Result<MasternodeListDiff, Error>;
 
@@ -114,10 +114,7 @@ impl CoreRPCLike for DefaultCoreRPC {
 
     fn get_fork_info(&self, name: &str) -> Result<Option<Bip9SoftforkInfo>, Error> {
         let blockchain_info = self.inner.get_blockchain_info()?;
-        Ok(blockchain_info
-            .bip9_softforks
-            .get(name)
-            .map(|info| info.clone()))
+        Ok(blockchain_info.bip9_softforks.get(name).cloned())
     }
 
     fn get_block(&self, block_hash: &BlockHash) -> Result<Block, Error> {
@@ -136,7 +133,7 @@ impl CoreRPCLike for DefaultCoreRPC {
         &self,
         height: Option<CoreHeight>,
     ) -> Result<ExtendedQuorumListResult, Error> {
-        self.inner.get_quorum_listextended(height.map(|i| i))
+        self.inner.get_quorum_listextended(height)
     }
 
     fn get_quorum_info(
@@ -151,9 +148,16 @@ impl CoreRPCLike for DefaultCoreRPC {
 
     fn get_protx_diff_with_masternodes(
         &self,
-        base_block: u32,
+        base_block: Option<u32>,
         block: u32,
     ) -> Result<MasternodeListDiff, Error> {
-        self.inner.get_protx_listdiff(base_block, block)
+        tracing::debug!(
+            method = "get_protx_diff_with_masternodes",
+            "base block {:?} block {}",
+            base_block,
+            block
+        );
+        self.inner
+            .get_protx_listdiff(base_block.unwrap_or(1), block)
     }
 }

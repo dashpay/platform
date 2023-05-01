@@ -72,15 +72,17 @@ mod tests {
             drive
                 .add_new_identity(identity.clone(), &BlockInfo::default(), true, None)
                 .expect("expected to add an identity");
+
             let first_key_hash = identity
                 .public_keys
-                .first_key_value()
-                .expect("expected a key")
-                .1
+                .values()
+                .find(|public_key| public_key.key_type.is_unique_key_type())
+                .expect("expected a unique key")
                 .hash()
-                .expect("expected to hash first_key")
+                .expect("expected to hash data")
                 .try_into()
                 .expect("expected to be 20 bytes");
+
             let proof = drive
                 .prove_full_identity_by_unique_public_key_hash(first_key_hash, None)
                 .expect("should not error when proving an identity");
@@ -114,39 +116,41 @@ mod tests {
 
             let key_hashes_to_identities = identities
                 .values()
-                .into_iter()
-                .map(|identity| {
-                    (
-                        identity
-                            .public_keys
-                            .first_key_value()
-                            .expect("expected a key")
-                            .1
-                            .hash()
-                            .expect("expected to hash first_key")
-                            .try_into()
-                            .expect("expected to be 20 bytes"),
-                        Some(identity.clone()),
-                    )
+                .flat_map(|identity| {
+                    identity
+                        .public_keys
+                        .values()
+                        .filter(|public_key| public_key.key_type.is_unique_key_type())
+                        .map(move |public_key| {
+                            (
+                                public_key
+                                    .hash()
+                                    .expect("expected to hash data")
+                                    .try_into()
+                                    .expect("expected to be 20 bytes"),
+                                Some(identity.clone()),
+                            )
+                        })
                 })
                 .collect::<BTreeMap<[u8; 20], Option<Identity>>>();
 
             let key_hashes_to_identity_ids = identities
                 .values()
-                .into_iter()
-                .map(|identity| {
-                    (
-                        identity
-                            .public_keys
-                            .first_key_value()
-                            .expect("expected a key")
-                            .1
-                            .hash()
-                            .expect("expected to hash first_key")
-                            .try_into()
-                            .expect("expected to be 20 bytes"),
-                        Some(identity.id.to_buffer()),
-                    )
+                .flat_map(|identity| {
+                    identity
+                        .public_keys
+                        .values()
+                        .filter(|public_key| public_key.key_type.is_unique_key_type())
+                        .map(move |public_key| {
+                            (
+                                public_key
+                                    .hash()
+                                    .expect("expected to hash data")
+                                    .try_into()
+                                    .expect("expected to be 20 bytes"),
+                                Some(identity.id.to_buffer()),
+                            )
+                        })
                 })
                 .collect::<BTreeMap<[u8; 20], Option<[u8; 32]>>>();
 

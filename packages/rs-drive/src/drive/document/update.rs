@@ -729,12 +729,10 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use crate::drive::config::{DriveConfig, DriveEncoding};
+    use crate::drive::config::DriveConfig;
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::DocumentAndContractInfo;
-    use crate::drive::object_size_info::DocumentInfo::{
-        DocumentRefAndSerialization, DocumentRefInfo,
-    };
+    use crate::drive::object_size_info::DocumentInfo::DocumentRefInfo;
     use crate::drive::{defaults, Drive};
     use crate::fee::credits::Creditable;
     use crate::fee::default_costs::EpochCosts;

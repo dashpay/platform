@@ -2,7 +2,7 @@ use anyhow::{anyhow, bail};
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 
 use crate::consensus::state::data_trigger::data_trigger_condition_error::DataTriggerConditionError;
-use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
+
 use crate::data_trigger::dashpay_data_triggers::property_names::CORE_HEIGHT_CREATED_AT;
 use crate::{
     document::document_transition::DocumentTransition, get_from_transition, prelude::Identifier,
@@ -121,12 +121,12 @@ where
 
 #[cfg(test)]
 mod test {
-    use super::*;
 
     use platform_value::btreemap_extensions::BTreeValueMapHelper;
     use platform_value::platform_value;
 
     use super::create_contact_request_data_trigger;
+    use crate::consensus::state::data_trigger::data_trigger_error::DataTriggerError;
     use crate::{
         data_trigger::DataTriggerExecutionContext,
         document::document_transition::Action,
