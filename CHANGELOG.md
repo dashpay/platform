@@ -70,6 +70,12 @@
 * use master dash core rpc
 * **wasm-dpp:** proper identifier buffer inheritance ([#879](https://github.com/dashpay/platform/issues/879))
 
+## [0.24.0-dev.31](https://github.com/dashpay/platform/compare/v0.24.0-dev.30...v0.24.0-dev.31) (2023-05-01)
+
+
+### Bug Fixes
+
+* expect platformNodeID to be a hex string ([#1013](https://github.com/dashpay/platform/issues/1013))
 
 ## [0.24.0-dev.30](https://github.com/dashpay/platform/compare/v0.24.0-dev.29...v0.24.0-dev.30) (2023-04-30)
 
