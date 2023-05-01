@@ -1,3 +1,10 @@
+## [0.25.0-dev.2](https://github.com/dashpay/platform/compare/v0.25.0-dev.1...v0.25.0-dev.2) (2023-05-01)
+
+### Miscellaneous Chores
+
+* backports from v0.24
+
+
 ## [0.25.0-dev.1](https://github.com/dashpay/platform/compare/v0.24.0-dev.16...v0.25.0-dev.1) (2023-05-01)
 
 ### Features
