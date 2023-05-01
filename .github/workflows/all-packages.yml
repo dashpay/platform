@@ -85,11 +85,11 @@ jobs:
         with:
           node-version: "16"
 
-      # - name: Setup Rust
-      #   uses: ./.github/actions/rust
-      #   with:
-      #     toolchain: stable
-      #     target: wasm32-unknown-unknown
+      - name: Setup Rust
+        uses: ./.github/actions/rust
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
 
       # - name: Setup Cargo cache
       #   uses: Swatinem/rust-cache@v2
