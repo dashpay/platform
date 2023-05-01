@@ -1,72 +1,26 @@
-## [0.24.0-dev.28](https://github.com/dashpay/platform/compare/v0.25.0-dev.2...v0.24.0-dev.28) (2023-05-01)
-
-## [0.25.0-dev.2](https://github.com/dashpay/platform/compare/v0.25.0-dev.1...v0.25.0-dev.2) (2023-04-30)
-
-## [0.25.0-dev.1](https://github.com/dashpay/platform/compare/v0.24.0-dev.16...v0.25.0-dev.1) (2023-04-29)
-
-
-### ⚠ BREAKING CHANGES
-
-* **dashmate:** multiple issues in the reset command (#991)
-* wasm-dpp integration (#848)
+## [0.25.0-dev.1](https://github.com/dashpay/platform/compare/v0.24.0-dev.16...v0.25.0-dev.1) (2023-05-01)
 
 ### Features
 
 * abci propose validators ([#954](https://github.com/dashpay/platform/issues/954))
-* **dashamte:** better ZeroSSL error messages ([#950](https://github.com/dashpay/platform/issues/950))
-* **dashmate:** build linux tarballs ([#887](https://github.com/dashpay/platform/issues/887))
-* **dashmate:** build services before restart ([#894](https://github.com/dashpay/platform/issues/894))
-* **dashmate:** check system requirements before setup ([#935](https://github.com/dashpay/platform/issues/935))
-* **dashmate:** exit status with 2 if it's not running ([#896](https://github.com/dashpay/platform/issues/896))
-* **dashmate:** generate self-signed certificates in the `setup` command ([#869](https://github.com/dashpay/platform/issues/869))
-* **dashmate:** implement http json rpc api ([#888](https://github.com/dashpay/platform/issues/888))
-* **dashmate:** set random core rpc usename and password on setup ([#973](https://github.com/dashpay/platform/issues/973))
-* **dashmate:** tenderdash latest block time in status ([#906](https://github.com/dashpay/platform/issues/906))
-* **dashmate:** verbose `connect ENOENT /var/run/docker.sock` error ([#951](https://github.com/dashpay/platform/issues/951))
-* **dpp:** serialize consensus errors ([#871](https://github.com/dashpay/platform/issues/871))
 * **dpp:** state transition applicator ([#878](https://github.com/dashpay/platform/issues/878))
-* drive verification c bindings ([#860](https://github.com/dashpay/platform/issues/860))
-* wasm-dpp integration ([#848](https://github.com/dashpay/platform/issues/848))
 * **wasm-dpp:** state_transition_fee_validator binding and tests ([#874](https://github.com/dashpay/platform/issues/874))
 * **wasm-dpp:** validate_state_transition_identity_signature binding and test ([#865](https://github.com/dashpay/platform/issues/865))
 
 
 ### Bug Fixes
 
-* DAPI still expected on normal masternodes ([#904](https://github.com/dashpay/platform/issues/904))
-* **dapi-client:** platform port is ignored from SML ([#903](https://github.com/dashpay/platform/issues/903))
-* **dashamte:** Can't find begoo/index with `yarn dashmate setup` ([#933](https://github.com/dashpay/platform/issues/933))
-* **dashamte:** wrong envoy config path on windows ([#949](https://github.com/dashpay/platform/issues/949))
-* **dashmate:** ability to work with non-default docker socket path ([#967](https://github.com/dashpay/platform/issues/967))
-* **dashmate:** already configured preset is ignored ([#974](https://github.com/dashpay/platform/issues/974))
-* **dashmate:** ambiguous validation errors for file certificates ([#870](https://github.com/dashpay/platform/issues/870))
-* **dashmate:** api binds to all interfaces ([#893](https://github.com/dashpay/platform/issues/893))
-* **dashmate:** config.isPlatformEnabled is not a function ([#872](https://github.com/dashpay/platform/issues/872))
-* **dashmate:** dashmate helper is running under root user ([#895](https://github.com/dashpay/platform/issues/895))
-* **dashmate:** dashmate logic doesn't recognize it's ran from helper ([#902](https://github.com/dashpay/platform/issues/902))
-* **dashmate:** empty masternode status while syncing ([#970](https://github.com/dashpay/platform/issues/970))
-* **dashmate:** form accepts invalid BLS key ([#961](https://github.com/dashpay/platform/issues/961))
-* **dashmate:** invalid mn register command in output of dashmate setup ([#959](https://github.com/dashpay/platform/issues/959))
-* **dashmate:** missing rawblock zmq message in core config ([#770](https://github.com/dashpay/platform/issues/770))
-* **dashmate:** multiple issues in the reset command ([#991](https://github.com/dashpay/platform/issues/991))
-* **dashmate:** reward shares can be negative during HP masternode registration ([#960](https://github.com/dashpay/platform/issues/960))
-* **dashmate:** select number of masternodes during local setup freezes ([#957](https://github.com/dashpay/platform/issues/957))
-* **dashmate:** undefined wallet for dash-cli ([#786](https://github.com/dashpay/platform/issues/786))
-* **dashmate:** yaml package security vulnerability ([#975](https://github.com/dashpay/platform/issues/975))
-* **dpp:** various fixes in DPP and system contracts ([#907](https://github.com/dashpay/platform/issues/907))
+
 * fixes for deployment and clean up ([#1004](https://github.com/dashpay/platform/issues/1004))
 * identifier deserialization doesn't work for bincode ([#885](https://github.com/dashpay/platform/issues/885))
 * inconsistencies after merge
 * init chain core chain lock failure ([#976](https://github.com/dashpay/platform/issues/976))
-* llmqType must be equal to one of the allowed values ([#884](https://github.com/dashpay/platform/issues/884))
-* possible overflow issues ([#877](https://github.com/dashpay/platform/issues/877))
 * **rs-dpp:** json query wrapper incorrectly serializes identifier
 * **rs-drive-abci:** Get rs-drive-abci to commit block 1 ([#981](https://github.com/dashpay/platform/issues/981))
 * **rs-drive-abci:** start rs-drive-abci using dashmate and pass init_chain ([#941](https://github.com/dashpay/platform/issues/941))
 * same block core chain lock height
 * **sdk:** provide StateTransitionExecutionContext to validateBasic
 * small wasm fix
-* **test-suite:** expects identities for invalid mns ([#968](https://github.com/dashpay/platform/issues/968))
 * **wasm-dpp:** failing build and tests ([#947](https://github.com/dashpay/platform/issues/947))
 
 
@@ -85,32 +39,14 @@
 * **rs-drive-abci:** set pose_revived_height to None
 
 
-### Documentation
-
-* update changelog
-
-
 ### Continuous Integration
 
-* disable sccache
-* fix release workflow
-* fix release workflow once again
-* fix the release jobs flow
 * remove drive node.js binding release
-* sign MacOs Dashmate release ([#890](https://github.com/dashpay/platform/issues/890))
 
 
 ### Build System
 
 * add missing rust packages to Dockerfiles
-* **dashamte:** build arm64 deb file instead of armel ([#943](https://github.com/dashpay/platform/issues/943))
-* **dashamte:** remove deb release docker dependencies ([#934](https://github.com/dashpay/platform/issues/934))
-* **dashmate:** better versioning ([#988](https://github.com/dashpay/platform/issues/988))
-* **dashmate:** build only linux tarballs ([#936](https://github.com/dashpay/platform/issues/936))
-* **dashmate:** fix removing unnecessary packages
-* **dashmate:** prepare MacOs build for notarization ([#985](https://github.com/dashpay/platform/issues/985))
-* **dashmate:** remove MacOs malicious software warning ([#977](https://github.com/dashpay/platform/issues/977))
-* fix branch in rs-tenderdash-abci
 * operations in configure.sh script were in a wrong order ([#876](https://github.com/dashpay/platform/issues/876))
 * remove js-drive and rs-drive-nodejs from PR CI
 * return proper Rust setup
@@ -119,21 +55,7 @@
 ### Miscellaneous Chores
 
 * `rs-dpp` and `wasm-dpp` updates for integration ([#875](https://github.com/dashpay/platform/issues/875))
-* add missing files
 * bump base.js (local networks only) dashd version to 20.0.0-alpha.assetlocks.2
-* **dashamte:** remove deprecation warning on start ([#925](https://github.com/dashpay/platform/issues/925))
-* **dashmate:** update production dashcore versions for mainnet and testnet ([#840](https://github.com/dashpay/platform/issues/840))
-* **release:** update changelog and bump version to 0.24.0-dev.17 ([#882](https://github.com/dashpay/platform/issues/882))
-* **release:** update changelog and bump version to 0.24.0-dev.18 ([#917](https://github.com/dashpay/platform/issues/917))
-* **release:** update changelog and bump version to 0.24.0-dev.19 ([#919](https://github.com/dashpay/platform/issues/919))
-* **release:** update changelog and bump version to 0.24.0-dev.20 ([#923](https://github.com/dashpay/platform/issues/923))
-* **release:** update changelog and bump version to 0.24.0-dev.21 ([#938](https://github.com/dashpay/platform/issues/938))
-* **release:** update changelog and bump version to 0.24.0-dev.22 ([#945](https://github.com/dashpay/platform/issues/945))
-* **release:** update changelog and bump version to 0.24.0-dev.23 ([#946](https://github.com/dashpay/platform/issues/946))
-* **release:** update changelog and bump version to 0.24.0-dev.24 ([#966](https://github.com/dashpay/platform/issues/966))
-* **release:** update changelog and bump version to 0.24.0-dev.25 ([#982](https://github.com/dashpay/platform/issues/982))
-* **release:** update changelog and bump version to 0.24.0-dev.26 ([#989](https://github.com/dashpay/platform/issues/989))
-* **release:** update changelog and bump version to 0.24.0-dev.27 ([#993](https://github.com/dashpay/platform/issues/993))
 * remove unused deps ([#987](https://github.com/dashpay/platform/issues/987))
 * remove unused js-drive and rs-drive code
 * resolve todos
@@ -174,7 +96,7 @@
 
 ### Features
 
-* **dashamte:** better ZeroSSL error messages ([#950](https://github.com/dashpay/platform/issues/950))
+* **dashmate:** better ZeroSSL error messages ([#950](https://github.com/dashpay/platform/issues/950))
 * **dashmate:** set random core rpc username and password on setup ([#973](https://github.com/dashpay/platform/issues/973))
 * **dashmate:** verbose `connect ENOENT /var/run/docker.sock` error ([#951](https://github.com/dashpay/platform/issues/951))
 
@@ -210,7 +132,7 @@
 
 ### Bug Fixes
 
-* **dashamte:** wrong envoy config path on windows ([#949](https://github.com/dashpay/platform/issues/949))
+* **dashmate:** wrong envoy config path on windows ([#949](https://github.com/dashpay/platform/issues/949))
 * **drive:** updating a masternode identity with invalid entry from SML ([#965](https://github.com/dashpay/platform/issues/965))
 
 ## [0.24.0-dev.23](https://github.com/dashpay/platform/compare/v0.24.0-dev.22...v0.24.0-dev.23) (2023-04-20)
@@ -230,7 +152,7 @@
 
 ### Build System
 
-* **dashamte:** build arm64 deb file instead of armel ([#943](https://github.com/dashpay/platform/issues/943))
+* **dashmate:** build arm64 deb file instead of armel ([#943](https://github.com/dashpay/platform/issues/943))
 
 ## [0.24.0-dev.21](https://github.com/dashpay/platform/compare/v0.24.0-dev.20...v0.24.0-dev.21) (2023-04-19)
 
@@ -242,12 +164,12 @@
 
 ### Bug Fixes
 
-* **dashamte:** сan't find begoo/index with `yarn dashmate setup` ([#933](https://github.com/dashpay/platform/issues/933))
+* **dashmate:** сan't find begoo/index with `yarn dashmate setup` ([#933](https://github.com/dashpay/platform/issues/933))
 
 
 ### Miscellaneous Chores
 
-* **dashamte:** remove deprecation warning on start ([#925](https://github.com/dashpay/platform/issues/925))
+* **dashmate:** remove deprecation warning on start ([#925](https://github.com/dashpay/platform/issues/925))
 
 
 ### Continuous Integration
@@ -257,7 +179,7 @@
 
 ### Build System
 
-* **dashamte:** remove deb release docker dependencies ([#934](https://github.com/dashpay/platform/issues/934))
+* **dashmate:** remove deb release docker dependencies ([#934](https://github.com/dashpay/platform/issues/934))
 * **dashmate:** build only linux tarballs ([#936](https://github.com/dashpay/platform/issues/936))
 
 
