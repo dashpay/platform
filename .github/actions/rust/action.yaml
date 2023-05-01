@@ -32,13 +32,13 @@ runs:
         echo "PROTOC=${HOME}/.local/bin/protoc" >> $GITHUB_ENV
         export PATH="${PATH}:${HOME}/.local/bin"
 
-    # - name: Install sccache cache
-    #   uses: mozilla-actions/sccache-action@v0.0.3
-    # - name: Set sccache Rust variables
-    #   shell: bash
-    #   run: |
-    #     echo SCCACHE_GHA_ENABLED=true >> $GITHUB_ENV
-    #     echo RUSTC_WRAPPER=sccache >> $GITHUB_ENV
+    - name: Install sccache cache
+      uses: mozilla-actions/sccache-action@v0.0.3
+    - name: Set sccache Rust variables
+      shell: bash
+      run: |
+        echo SCCACHE_BUCKET=platform-runner-cache >> $GITHUB_ENV
+        echo RUSTC_WRAPPER=sccache >> $GITHUB_ENV
 
     - name: Rust cache
       uses: Swatinem/rust-cache@v2
