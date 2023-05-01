@@ -512,10 +512,7 @@ where
             prove,
         } = request;
 
-        match self
-            .platform
-            .drive
-            .query_serialized(data, path, prove) {
+        match self.platform.drive.query_serialized(data, path, prove) {
             Ok(data) => {
                 Ok(ResponseQuery {
                     //todo: right now just put GRPC error codes,
