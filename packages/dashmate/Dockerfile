@@ -48,19 +48,13 @@ COPY packages/rs-dpp packages/rs-dpp
 COPY packages/wasm-dpp packages/wasm-dpp
 
 # Build WASM DPP
-RUN --mount=type=cache,sharing=private,target=/root/.cache/sccache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
-    # export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
-    yarn workspace @dashevo/wasm-dpp build && \
+RUN yarn workspace @dashevo/wasm-dpp build && \
     cargo clean && \
     sccache --show-stats
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN --mount=type=cache,target=/tmp/unplugged \
-    cp -R /tmp/unplugged /platform/.yarn/ && \
+RUN cp -R /tmp/unplugged /platform/.yarn/ && \
     yarn workspaces focus --production dashmate && \
     cp -R /platform/.yarn/unplugged /tmp/
 

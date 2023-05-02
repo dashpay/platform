@@ -119,12 +119,7 @@ WORKDIR /usr/src/dash-platform
 
 COPY . .
 
-RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
-    # export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
-    if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
+RUN if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     cargo build \
         --package dashcore-rpc \
        --config net.git-fetch-with-cli=true && \
