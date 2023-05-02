@@ -190,16 +190,7 @@ where
         skip_validation: bool,
     ) -> Result<Identity, ProtocolError> {
         if !skip_validation {
-            let result = self
-                .identity_validator
-                .validate_identity_object(&raw_identity)?;
-
-            if !result.is_valid() {
-                return Err(ProtocolError::InvalidIdentityError {
-                    errors: result.errors,
-                    raw_identity,
-                });
-            }
+            self.validate_identity(&raw_identity)?;
         }
 
         Identity::from_object(raw_identity)
@@ -210,25 +201,32 @@ where
         buffer: Vec<u8>,
         skip_validation: bool,
     ) -> Result<Identity, ProtocolError> {
-        let SplitProtocolVersionOutcome {
-            protocol_version,
-            main_message_bytes: document_bytes,
-            ..
-        } = deserializer::split_protocol_version(buffer.as_ref())?;
-
-        let identity = Identity::deserialize(document_bytes).map_err(|e| {
+        let identity: Identity = Identity::deserialize(&buffer).map_err(|e| {
             ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
                 SerializedObjectParsingError::new(format!("Decode protocol entity: {:#?}", e)),
             ))
         })?;
 
-        if skip_validation {
-            Ok(identity)
-        } else {
-            let mut value = identity.to_object()?;
-            value.set_value("protocolVersion", Value::U32(protocol_version))?;
-            self.create_from_object(value, false)
+        if !skip_validation {
+            self.validate_identity(&identity.to_cleaned_object()?)?;
         }
+
+        Ok(identity)
+    }
+
+    pub fn validate_identity(&self, raw_identity: &Value) -> Result<(), ProtocolError> {
+        let result = self
+            .identity_validator
+            .validate_identity_object(raw_identity)?;
+
+        if !result.is_valid() {
+            return Err(ProtocolError::InvalidIdentityError {
+                errors: result.errors,
+                raw_identity: raw_identity.to_owned(),
+            });
+        }
+
+        Ok(())
     }
 
     pub fn create_instant_lock_proof(

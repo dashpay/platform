@@ -102,9 +102,9 @@ where
         match serialization_result {
             Ok(serialized) => {
                 let len = serialized.len();
-                if len > 16384 {
+                if len > 25600 {
                     result.add_error(BasicError::StateTransitionMaxSizeExceededError(
-                        StateTransitionMaxSizeExceededError::new(len / 1024, 16),
+                        StateTransitionMaxSizeExceededError::new(len / 1024, 25),
                     ));
                 }
             }
