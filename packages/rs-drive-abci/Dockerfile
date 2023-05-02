@@ -56,12 +56,12 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else e
     rm /tmp/protoc.zip && \
     ln -s /opt/protoc/bin/protoc /usr/bin/
 
-# # Install sccache for caching
-# RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else export SCC_ARCH=x86_64; fi; \
-#     curl -Ls \
-#         https://github.com/mozilla/sccache/releases/download/v0.4.1/sccache-v0.4.1-${SCC_ARCH}-unknown-linux-musl.tar.gz | \
-#         tar -C /tmp -xz && \
-#         mv /tmp/sccache-*/sccache /usr/bin/
+# Install sccache for caching
+RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else export SCC_ARCH=x86_64; fi; \
+    curl -Ls \
+        https://github.com/mozilla/sccache/releases/download/v0.4.2/sccache-v0.4.2-${SCC_ARCH}-unknown-linux-musl.tar.gz | \
+        tar -C /tmp -xz && \
+        mv /tmp/sccache-*/sccache /usr/bin/
 
 # Install emcmake, dependency of bls-signatures -> bls-dash-sys
 
