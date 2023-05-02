@@ -1,5 +1,7 @@
+use serde::Serialize;
+use serde_json::json;
 use dpp::consensus::ConsensusError;
-use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
+use wasm_bindgen::{prelude::wasm_bindgen, JsValue, JsError};
 
 use crate::{
     buffer::Buffer, errors::consensus::consensus_error::from_consensus_error_ref,
@@ -44,5 +46,13 @@ impl InvalidStateTransitionErrorWasm {
     #[wasm_bindgen(js_name = getRawStateTransition)]
     pub fn get_raw_state_transition(&self) -> JsValue {
         self.raw_state_transition.clone()
+    }
+
+    #[wasm_bindgen(js_name = valueOf)]
+    pub fn value_of(&self) -> Result<JsValue, JsError> {
+        let errors = serde_json::to_value(&self.errors).map_err(|_| JsError::new("Can't serialize consensus errors to json"))?;
+        let ser = serde_wasm_bindgen::Serializer::json_compatible();
+        let val = errors.serialize(&ser).map_err(|_| JsError::new("Can't serialize consensus errors to json"));
+        val
     }
 }
