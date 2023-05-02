@@ -46,8 +46,10 @@ use crate::query::DriveQuery;
 use dpp::data_contract::document_type::DocumentType;
 
 use dpp::document::Document;
-use dpp::platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use dpp::platform_value::Value;
+use dpp::platform_value::btreemap_extensions::{
+    BTreeValueRemoveFromMapHelper, BTreeValueRemoveInnerValueFromMapHelper,
+};
+use dpp::platform_value::{Bytes20, Value};
 use dpp::ProtocolError;
 
 use crate::query::QueryResultEncoding::CborEncodedQueryResult;
@@ -171,7 +173,7 @@ impl Drive {
                     todo!()
                 }
             }
-            "/identities/by-public-key-hash" => {
+            "/identity/by-public-key-hash" => {
                 let public_key_hash = query.remove_bytes_20("publicKeyHash")?;
                 if prove {
                     self.prove_full_identity_by_unique_public_key_hash(
@@ -181,6 +183,25 @@ impl Drive {
                 } else {
                     self.fetch_serialized_full_identity_by_unique_public_key_hash(
                         public_key_hash.into_buffer(),
+                        CborEncodedQueryResult,
+                        None,
+                    )
+                }
+            }
+            "/identities/by-public-key-hash" => {
+                let public_key_hashes_values: Vec<_> =
+                    query.remove_inner_value_array("publicKeyHashes")?;
+                let public_key_hashes = public_key_hashes_values
+                    .into_iter()
+                    .map(|pub_key_hash_value| {
+                        pub_key_hash_value.into_bytes_20().map(|bytes| bytes.0)
+                    })
+                    .collect::<Result<Vec<[u8; 20]>, dpp::platform_value::Error>>()?;
+                if prove {
+                    self.prove_full_identities_by_unique_public_key_hashes(&public_key_hashes, None)
+                } else {
+                    self.fetch_serialized_full_identities_by_unique_public_key_hashes(
+                        public_key_hashes.as_slice(),
                         CborEncodedQueryResult,
                         None,
                     )

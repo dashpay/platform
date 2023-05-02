@@ -512,25 +512,38 @@ where
             prove,
         } = request;
 
-        let data = self
-            .platform
-            .drive
-            .query_serialized(data, path, prove)
-            .map_err(Error::Drive)?;
-
-        Ok(ResponseQuery {
-            //todo: right now just put GRPC error codes,
-            //  later we will use own error codes
-            code: 0,
-            log: "".to_string(),
-            info: "".to_string(),
-            index: 0,
-            key: vec![],
-            value: data,
-            proof_ops: None,
-            height,
-            codespace: "".to_string(),
-        })
+        match self.platform.drive.query_serialized(data, path, prove) {
+            Ok(data) => {
+                Ok(ResponseQuery {
+                    //todo: right now just put GRPC error codes,
+                    //  later we will use own error codes
+                    code: 0,
+                    log: "".to_string(),
+                    info: "".to_string(),
+                    index: 0,
+                    key: vec![],
+                    value: data,
+                    proof_ops: None,
+                    height,
+                    codespace: "".to_string(),
+                })
+            }
+            Err(error) => {
+                Ok(ResponseQuery {
+                    //todo: right now just put GRPC error codes,
+                    //  later we will use own error codes
+                    code: 1,
+                    log: "".to_string(),
+                    info: "".to_string(),
+                    index: 0,
+                    key: vec![],
+                    value: vec![],
+                    proof_ops: None,
+                    height,
+                    codespace: "".to_string(),
+                })
+            }
+        }
     }
 }
 //

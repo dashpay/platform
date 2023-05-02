@@ -326,6 +326,30 @@ impl Drive {
     }
 
     /// Fetches an identity with all its information from storage.
+    pub fn fetch_serialized_full_identities_by_unique_public_key_hashes(
+        &self,
+        public_key_hashes: &[[u8; 20]],
+        encoding: QueryResultEncoding,
+        transaction: TransactionArg,
+    ) -> Result<Vec<u8>, Error> {
+        let identities = self
+            .fetch_full_identities_by_unique_public_key_hashes(public_key_hashes, transaction)?
+            .into_iter()
+            .map(|(key, value)| {
+                Ok((
+                    key.into(),
+                    value
+                        .map(|identity| identity.to_cleaned_object())
+                        .transpose()?
+                        .into(),
+                ))
+            })
+            .collect::<Result<Vec<(Value, Value)>, Error>>()?;
+
+        encoding.encode_value(&identities.into())
+    }
+
+    /// Fetches an identity with all its information from storage.
     pub fn fetch_full_identity_by_unique_public_key_hash(
         &self,
         public_key_hash: [u8; 20],
