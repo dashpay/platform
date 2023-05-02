@@ -1,0 +1,11 @@
+[package]
+name = "dapi-grpc"
+description = "GRPC client for Dash Platform"
+version = "0.25.0-dev.6"
+authors = ["Samuel Westrich <sam@dash.org>", "Igor Markin <igor.markin@dash.org>"]
+edition = "2021"
+license = "MIT"
+private = true
+
+[dependencies]
+protobuf = "3.2.0"

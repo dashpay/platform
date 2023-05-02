@@ -6,7 +6,8 @@ import "google/protobuf/timestamp.proto";
 
 service Platform {
   rpc broadcastStateTransition (BroadcastStateTransitionRequest) returns (BroadcastStateTransitionResponse);
-  rpc getIdentity (GetIdentityRequest) returns (GetIdentityResponse);
+
+  rpc getIdentity (GetIdentityRequest) returns (QueryResponse);
   rpc getDataContract (GetDataContractRequest) returns (GetDataContractResponse);
   rpc getDocuments (GetDocumentsRequest) returns (GetDocumentsResponse);
   rpc getIdentitiesByPublicKeyHashes (GetIdentitiesByPublicKeyHashesRequest) returns (GetIdentitiesByPublicKeyHashesResponse);
@@ -15,7 +16,7 @@ service Platform {
 }
 
 message Proof {
-  bytes merkle_proof = 1;
+  bytes grovedb_proof = 1;
   bytes quorum_hash = 2;
   bytes signature = 3;
   uint32 round = 4;
@@ -79,6 +80,14 @@ message GetDocumentsRequest {
     }
 
   bool prove = 8;
+}
+
+message QueryResponse {
+  oneof data {
+    bytes results = 1;
+    Proof proof = 2;
+  }
+  ResponseMetadata metadata = 3;
 }
 
 message GetDocumentsResponse {

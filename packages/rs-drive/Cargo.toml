@@ -17,6 +17,7 @@ indexmap = { version = "1.8.0" }
 sqlparser = { version = "0.13.0" }
 thiserror = { version = "1.0.30" }
 moka = { version = "0.10.1", features = ["future", "futures-util"]}
+dapi-grpc = { path = "../dapi-grpc" }
 nohash-hasher = { version = "0.2.0" }
 dpp = { path = "../rs-dpp", features = ["fixtures-and-mocks", "cbor"] }
 bincode = { version="2.0.0-rc.3", features=["serde"] }

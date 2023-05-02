@@ -166,13 +166,6 @@ impl Drive {
                     )
                 }
             }
-            "/proofs" => {
-                if prove {
-                    todo!()
-                } else {
-                    todo!()
-                }
-            }
             "/identity/by-public-key-hash" => {
                 let public_key_hash = query.remove_bytes_20("publicKeyHash")?;
                 if prove {
