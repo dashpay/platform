@@ -1,5 +1,5 @@
 # syntax = docker/dockerfile:1.5
-FROM strophy/buildbase:0.0.6 as builder
+FROM strophy/buildbase:0.0.7 as builder
 
 # TODO: Probably should be release by default
 ARG CARGO_BUILD_PROFILE=debug
@@ -47,7 +47,7 @@ RUN --mount=type=cache,sharing=private,target=/root/.cache/sccache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
-    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
+    # export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     yarn workspace @dashevo/wasm-dpp build && \
     cargo clean && \
     sccache --show-stats
