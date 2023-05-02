@@ -197,7 +197,8 @@ docker run -v "$CORE_PROTO_PATH:$CORE_PROTO_PATH" \
            --rm \
            "$PROTOC_IMAGE" \
            --plugin=protoc-gen-grpc=/usr/bin/protoc-gen-grpc-rust \
-           --grpc-rust_out="$CORE_RUST_OUT_PATH" \
+           --rust_out="$CORE_RUST_OUT_PATH" \
+           --grpc_out="$CORE_RUST_OUT_PATH" \
            --proto_path="$CORE_PROTO_PATH" \
            -I="$CORE_PROTO_PATH" \
            "core.proto"
@@ -213,7 +214,8 @@ docker run -v "$PLATFORM_PROTO_PATH:$PLATFORM_PROTO_PATH" \
            --rm \
            "$PROTOC_IMAGE" \
            --plugin=protoc-gen-grpc=/usr/bin/protoc-gen-grpc-rust \
-           --grpc-rust_out="$PLATFORM_RUST_OUT_PATH" \
+           --rust_out="$PLATFORM_RUST_OUT_PATH" \
+           --grpc_out="$PLATFORM_RUST_OUT_PATH" \
            --proto_path="$PLATFORM_PROTO_PATH" \
            -I="$PLATFORM_PROTO_PATH" \
            "platform.proto"
