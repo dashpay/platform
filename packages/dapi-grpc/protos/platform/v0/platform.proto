@@ -6,16 +6,17 @@ import "google/protobuf/timestamp.proto";
 
 service Platform {
   rpc broadcastStateTransition (BroadcastStateTransitionRequest) returns (BroadcastStateTransitionResponse);
-
-  rpc getIdentity (GetIdentityRequest) returns (QueryResponse);
-  rpc getDataContract (GetDataContractRequest) returns (GetDataContractResponse);
-  rpc getDocuments (GetDocumentsRequest) returns (GetDocumentsResponse);
-  rpc getIdentitiesByPublicKeyHashes (GetIdentitiesByPublicKeyHashesRequest) returns (GetIdentitiesByPublicKeyHashesResponse);
+  rpc getIdentity (GetSingleItemRequest) returns (SingleItemResponse);
+  rpc getIdentityBalance (GetSingleItemRequest) returns (SingleItemResponse);
+  rpc getIdentityBalanceAndRevision (GetSingleItemRequest) returns (SingleItemResponse);
+  rpc getDataContract (GetSingleItemRequest) returns (SingleItemResponse);
+  rpc getDocuments (GetDocumentsRequest) returns (MultiItemResponse);
+  rpc getIdentitiesByPublicKeyHashes (GetMultiItemRequest) returns (MultiItemResponse);
   rpc waitForStateTransitionResult (WaitForStateTransitionResultRequest) returns (WaitForStateTransitionResultResponse);
   rpc getConsensusParams (GetConsensusParamsRequest) returns (GetConsensusParamsResponse);
 }
 
-message Proof {
+message ProvedResult {
   bytes grovedb_proof = 1;
   bytes quorum_hash = 2;
   bytes signature = 3;
@@ -43,26 +44,34 @@ message BroadcastStateTransitionResponse {
 
 }
 
-message GetIdentityRequest {
+message SingleItemResponse {
+  oneof result {
+    bytes non_proved_result = 1;
+    ProvedResult proved_result = 2;
+  }
+  ResponseMetadata metadata = 3;
+}
+
+message ResultList {
+  repeated bytes items = 1;
+}
+
+message MultiItemResponse {
+  oneof result {
+    ResultList non_proved_results = 1;
+    ProvedResult proved_result = 2;
+  }
+  ResponseMetadata metadata = 3;
+}
+
+message GetSingleItemRequest {
   bytes id = 1;
   bool prove = 2;
 }
 
-message GetIdentityResponse {
-  bytes identity = 1;
-  Proof proof = 2;
-  ResponseMetadata metadata = 3;
-}
-
- message GetDataContractRequest {
-  bytes id = 1;
+message GetMultiItemRequest {
+  repeated bytes ids = 1;
   bool prove = 2;
-}
-
-message GetDataContractResponse {
-  bytes data_contract = 1;
-  Proof proof = 2;
-  ResponseMetadata metadata = 3;
 }
 
 message GetDocumentsRequest {
@@ -82,31 +91,6 @@ message GetDocumentsRequest {
   bool prove = 8;
 }
 
-message QueryResponse {
-  oneof data {
-    bytes results = 1;
-    Proof proof = 2;
-  }
-  ResponseMetadata metadata = 3;
-}
-
-message GetDocumentsResponse {
-  repeated bytes documents = 1;
-  Proof proof = 2;
-  ResponseMetadata metadata = 3;
-}
-
-message GetIdentitiesByPublicKeyHashesRequest {
-  repeated bytes public_key_hashes = 1;
-  bool prove = 2;
-}
-
-message GetIdentitiesByPublicKeyHashesResponse {
-  repeated bytes identities = 1;
-  Proof proof = 2;
-  ResponseMetadata metadata = 3;
-}
-
 message WaitForStateTransitionResultRequest {
   bytes state_transition_hash = 1;
   bool prove = 2;
@@ -115,7 +99,7 @@ message WaitForStateTransitionResultRequest {
 message WaitForStateTransitionResultResponse {
   oneof responses {
     StateTransitionBroadcastError error = 1;
-    Proof proof = 2;
+    ProvedResult proof = 2;
   }
   ResponseMetadata metadata = 3;
 }
