@@ -12,7 +12,7 @@
 # - SCCACHE_GHA_ENABLED, ACTIONS_CACHE_URL, ACTIONS_RUNTIME_TOKEN - store sccache caches inside github actions
 #   cache instead of Docker cache mounts (not tested yet)
 # - PROTOC_ARCH - select architecture of protobuf compiler; one of: `x86_64` (default), `aarch_64`
-# - ALPINE_VERSION - use different version of Alpine base image; requires also rust:apline... 
+# - ALPINE_VERSION - use different version of Alpine base image; requires also rust:apline...
 #   image to be available
 # - USERNAME, USER_UID, USER_GID - specification of user used to run the binary
 #
@@ -88,6 +88,7 @@ FROM deps as build
 ENV RUSTC_WRAPPER=/usr/bin/sccache
 # Set args below to use Github Actions cache; see https://github.com/mozilla/sccache/blob/main/docs/GHA.md
 ARG SCCACHE_GHA_ENABLED
+ARG SCCACHE_BUCKET
 ARG ACTIONS_CACHE_URL
 ARG ACTIONS_RUNTIME_TOKEN
 # Alternative solution is to use memcache
@@ -100,7 +101,7 @@ ENV CARGO_INCREMENTAL=false
 ARG CARGO_BUILD_PROFILE=dev
 
 # Run the build, with extensive caching.
-# 
+#
 # Note:
 # 1. All these --mount... are to cache reusable info between runs.
 # See https://doc.rust-lang.org/cargo/guide/cargo-home.html#caching-the-cargo-home-in-ci
@@ -155,10 +156,10 @@ COPY --from=build /usr/src/dash-platform/packages/rs-drive-abci/.env.example /va
 RUN ldd /usr/bin/drive-abci
 
 #
-# CONFIGURATION 
+# CONFIGURATION
 # Hint: generated with:
 # ``
-#   sed -E 's/^([A-Z].+$)/ENV \1/g' packages/rs-drive-abci/.env.example 
+#   sed -E 's/^([A-Z].+$)/ENV \1/g' packages/rs-drive-abci/.env.example
 # ``
 #
 
@@ -246,7 +247,7 @@ ARG USER_UID=1000
 ARG USER_GID=$USER_UID
 RUN addgroup -g $USER_GID $USERNAME && \
     adduser -D -u $USER_UID -G $USERNAME -h /var/lib/dash/rs-drive-abci $USERNAME && \
-    chown -R $USER_UID:$USER_GID /var/lib/dash/rs-drive-abci 
+    chown -R $USER_UID:$USER_GID /var/lib/dash/rs-drive-abci
 
 USER $USERNAME
 

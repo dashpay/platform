@@ -70,6 +70,7 @@ jobs:
       SCCACHE_BUCKET: "platform-runner-cache"
       RUSTC_WRAPPER: "sccache"
       CARGO_INCREMENTAL: "false"
+      SCCACHE_GHA_ENABLED: "false"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3

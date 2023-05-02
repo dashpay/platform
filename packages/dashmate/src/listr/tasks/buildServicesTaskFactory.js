@@ -30,7 +30,14 @@ function buildServicesTaskFactory(
             `ACTIONS_RUNTIME_TOKEN=${process.env.ACTIONS_RUNTIME_TOKEN}`,
           ]);
         }
-
+        if (process.env.SCCACHE_GHA_ENABLED === 'false') {
+          buildArgs = buildArgs.concat([
+            '--build-arg',
+            'SCCACHE_BUCKET=platform-runner-cache',
+            '--build-arg',
+            'SCCACHE_GHA_ENABLED=${process.env.ACTIONS_CACHE_URL}',
+          ]);
+        }
         const obs = await dockerCompose.build(envs, undefined, buildArgs);
 
         await new Promise((res, rej) => {
