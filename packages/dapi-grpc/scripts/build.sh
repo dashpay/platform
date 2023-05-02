@@ -18,6 +18,9 @@ PLATFORM_OBJ_C_OUT_PATH="$PLATFORM_CLIENTS_PATH/objective-c"
 CORE_PYTHON_OUT_PATH="$CORE_CLIENTS_PATH/python"
 PLATFORM_PYTHON_OUT_PATH="$PLATFORM_CLIENTS_PATH/python"
 
+CORE_RUST_OUT_PATH="$CORE_CLIENTS_PATH/rust"
+PLATFORM_RUST_OUT_PATH="$PLATFORM_CLIENTS_PATH/rust"
+
 PROTOC_IMAGE="rvolosatovs/protoc:4.0.0"
 
 #################################################
@@ -182,3 +185,35 @@ docker run -v "$PLATFORM_PROTO_PATH:$PLATFORM_PROTO_PATH" \
           --proto_path="$PLATFORM_PROTO_PATH" \
           -I="$PLATFORM_PROTO_PATH" \
           "platform.proto"
+
+###################################
+# Generate Rust client for `Core` #
+###################################
+
+rm -rf "$CORE_RUST_OUT_PATH/*"
+
+docker run -v "$CORE_PROTO_PATH:$CORE_PROTO_PATH" \
+           -v "$CORE_RUST_OUT_PATH:$CORE_RUST_OUT_PATH" \
+           --rm \
+           "$PROTOC_IMAGE" \
+           --plugin=protoc-gen-grpc=/usr/bin/protoc-gen-grpc-rust \
+           --grpc-rust_out="$CORE_RUST_OUT_PATH" \
+           --proto_path="$CORE_PROTO_PATH" \
+           -I="$CORE_PROTO_PATH" \
+           "core.proto"
+
+#######################################
+# Generate Rust client for `Platform` #
+#######################################
+
+rm -rf "$PLATFORM_RUST_OUT_PATH/*"
+
+docker run -v "$PLATFORM_PROTO_PATH:$PLATFORM_PROTO_PATH" \
+           -v "$PLATFORM_RUST_OUT_PATH:$PLATFORM_RUST_OUT_PATH" \
+           --rm \
+           "$PROTOC_IMAGE" \
+           --plugin=protoc-gen-grpc=/usr/bin/protoc-gen-grpc-rust \
+           --grpc-rust_out="$PLATFORM_RUST_OUT_PATH" \
+           --proto_path="$PLATFORM_PROTO_PATH" \
+           -I="$PLATFORM_PROTO_PATH" \
+           "platform.proto"
