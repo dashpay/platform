@@ -44,6 +44,8 @@ pub trait BTreeValueRemoveFromMapHelper {
     fn remove_bytes_32(&mut self, key: &str) -> Result<Bytes32, Error>;
     fn remove_optional_bytes_20(&mut self, key: &str) -> Result<Option<Bytes20>, Error>;
     fn remove_bytes_20(&mut self, key: &str) -> Result<Bytes20, Error>;
+    fn remove_optional_identifiers(&mut self, key: &str) -> Result<Option<Vec<Identifier>>, Error>;
+    fn remove_identifiers(&mut self, key: &str) -> Result<Vec<Identifier>, Error>;
 }
 
 impl BTreeValueRemoveFromMapHelper for BTreeMap<String, &Value> {
@@ -103,6 +105,26 @@ impl BTreeValueRemoveFromMapHelper for BTreeMap<String, &Value> {
 
     fn remove_identifier(&mut self, key: &str) -> Result<Identifier, Error> {
         self.remove_optional_identifier(key)?.ok_or_else(|| {
+            Error::StructureError(format!("unable to remove identifier property {key}"))
+        })
+    }
+
+    fn remove_optional_identifiers(&mut self, key: &str) -> Result<Option<Vec<Identifier>>, Error> {
+        self.remove(key)
+            .and_then(|v| {
+                if v.is_null() {
+                    None
+                } else if let Value::Array(array) = v {
+                    Some(array.into_iter().map(|item| item.to_identifier()).collect())
+                } else {
+                    None
+                }
+            })
+            .transpose()
+    }
+
+    fn remove_identifiers(&mut self, key: &str) -> Result<Vec<Identifier>, Error> {
+        self.remove_optional_identifiers(key)?.ok_or_else(|| {
             Error::StructureError(format!("unable to remove identifier property {key}"))
         })
     }
@@ -293,6 +315,31 @@ impl BTreeValueRemoveFromMapHelper for BTreeMap<String, Value> {
 
     fn remove_identifier(&mut self, key: &str) -> Result<Identifier, Error> {
         self.remove_optional_identifier(key)?.ok_or_else(|| {
+            Error::StructureError(format!("unable to remove identifier property {key}"))
+        })
+    }
+
+    fn remove_optional_identifiers(&mut self, key: &str) -> Result<Option<Vec<Identifier>>, Error> {
+        self.remove(key)
+            .and_then(|v| {
+                if v.is_null() {
+                    None
+                } else if let Value::Array(array) = v {
+                    Some(
+                        array
+                            .into_iter()
+                            .map(|item| item.into_identifier())
+                            .collect(),
+                    )
+                } else {
+                    None
+                }
+            })
+            .transpose()
+    }
+
+    fn remove_identifiers(&mut self, key: &str) -> Result<Vec<Identifier>, Error> {
+        self.remove_optional_identifiers(key)?.ok_or_else(|| {
             Error::StructureError(format!("unable to remove identifier property {key}"))
         })
     }

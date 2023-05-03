@@ -126,9 +126,28 @@ impl Drive {
                 }
             }
             "/identities/keys" => {
-                // let identity_id = query.remove_identifier("identityIds")?;
-                // let request = query.str_val("keyRequest")?;
-                todo!()
+                let identity_id = query.remove_identifiers("identityIds")?;
+                let request = query.str_val("keyRequest")?;
+                if prove {
+                    identity_id
+                        .iter()
+                        .map(|identity_id| {
+                            self.prove_identity_key(identity_id.into_buffer(), request, None)
+                        })
+                        .collect()
+                } else {
+                    identity_id
+                        .iter()
+                        .map(|identity_id| {
+                            self.fetch_serialized_identity_key(
+                                identity_id.into_buffer(),
+                                request,
+                                CborEncodedQueryResult,
+                                None,
+                            )
+                        })
+                        .collect()
+                }
             }
             "/dataContract" => {
                 let contract_id = query.remove_identifier("contractId")?;
@@ -140,6 +159,25 @@ impl Drive {
                         CborEncodedQueryResult,
                         None,
                     )
+                }
+            }
+            "/dataContracts" => {
+                let contract_ids = query.remove_identifiers("contractIds")?;
+
+                if prove {
+                    contract_ids.iter().map(|contract_id| {
+                        self.prove_contract(contract_id.into_buffer(), None)
+                            .collect()
+                    })
+                } else {
+                    contract_ids.iter().map(|contract_id| {
+                        self.query_contract_as_serialized(
+                            contract_id.into_buffer(),
+                            CborEncodedQueryResult,
+                            None,
+                        )
+                        .collect()
+                    })
                 }
             }
             "/documents" | "/dataContract/documents" => {
