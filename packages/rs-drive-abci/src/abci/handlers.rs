@@ -88,7 +88,9 @@ where
 
         transaction.set_savepoint();
 
-        tracing::info!(method = "init_chain", "init chain executed");
+        let app_hash = hex::encode(&response.app_hash);
+
+        tracing::info!(method = "init_chain", app_hash, "init chain executed");
         Ok(response)
     }
 
