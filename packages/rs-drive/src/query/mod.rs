@@ -336,7 +336,7 @@ impl<'a> DriveQuery<'a> {
     ) -> Result<Self, Error> {
         let query_document_value: Value = ciborium::de::from_reader(query_cbor).map_err(|_| {
             Error::Query(QueryError::DeserializationError(
-                "unable to decode query from cbor",
+                "unable to decode query from cbor".to_string(),
             ))
         })?;
         Self::from_value(query_document_value, contract, document_type)

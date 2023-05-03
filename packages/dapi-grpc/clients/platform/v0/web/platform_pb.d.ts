@@ -4,11 +4,11 @@
 import * as jspb from "google-protobuf";
 import * as google_protobuf_timestamp_pb from "google-protobuf/google/protobuf/timestamp_pb";
 
-export class Proof extends jspb.Message {
-  getMerkleProof(): Uint8Array | string;
-  getMerkleProof_asU8(): Uint8Array;
-  getMerkleProof_asB64(): string;
-  setMerkleProof(value: Uint8Array | string): void;
+export class ProvedResult extends jspb.Message {
+  getGrovedbProof(): Uint8Array | string;
+  getGrovedbProof_asU8(): Uint8Array;
+  getGrovedbProof_asB64(): string;
+  setGrovedbProof(value: Uint8Array | string): void;
 
   getQuorumHash(): Uint8Array | string;
   getQuorumHash_asU8(): Uint8Array;
@@ -24,18 +24,18 @@ export class Proof extends jspb.Message {
   setRound(value: number): void;
 
   serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): Proof.AsObject;
-  static toObject(includeInstance: boolean, msg: Proof): Proof.AsObject;
+  toObject(includeInstance?: boolean): ProvedResult.AsObject;
+  static toObject(includeInstance: boolean, msg: ProvedResult): ProvedResult.AsObject;
   static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
   static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: Proof, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): Proof;
-  static deserializeBinaryFromReader(message: Proof, reader: jspb.BinaryReader): Proof;
+  static serializeBinaryToWriter(message: ProvedResult, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): ProvedResult;
+  static deserializeBinaryFromReader(message: ProvedResult, reader: jspb.BinaryReader): ProvedResult;
 }
 
-export namespace Proof {
+export namespace ProvedResult {
   export type AsObject = {
-    merkleProof: Uint8Array | string,
+    grovedbProof: Uint8Array | string,
     quorumHash: Uint8Array | string,
     signature: Uint8Array | string,
     round: number,
@@ -142,7 +142,115 @@ export namespace BroadcastStateTransitionResponse {
   }
 }
 
-export class GetIdentityRequest extends jspb.Message {
+export class SingleItemResponse extends jspb.Message {
+  hasNonProvedResult(): boolean;
+  clearNonProvedResult(): void;
+  getNonProvedResult(): Uint8Array | string;
+  getNonProvedResult_asU8(): Uint8Array;
+  getNonProvedResult_asB64(): string;
+  setNonProvedResult(value: Uint8Array | string): void;
+
+  hasProvedResult(): boolean;
+  clearProvedResult(): void;
+  getProvedResult(): ProvedResult | undefined;
+  setProvedResult(value?: ProvedResult): void;
+
+  hasMetadata(): boolean;
+  clearMetadata(): void;
+  getMetadata(): ResponseMetadata | undefined;
+  setMetadata(value?: ResponseMetadata): void;
+
+  getResultCase(): SingleItemResponse.ResultCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): SingleItemResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: SingleItemResponse): SingleItemResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: SingleItemResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): SingleItemResponse;
+  static deserializeBinaryFromReader(message: SingleItemResponse, reader: jspb.BinaryReader): SingleItemResponse;
+}
+
+export namespace SingleItemResponse {
+  export type AsObject = {
+    nonProvedResult: Uint8Array | string,
+    provedResult?: ProvedResult.AsObject,
+    metadata?: ResponseMetadata.AsObject,
+  }
+
+  export enum ResultCase {
+    RESULT_NOT_SET = 0,
+    NON_PROVED_RESULT = 1,
+    PROVED_RESULT = 2,
+  }
+}
+
+export class ResultList extends jspb.Message {
+  clearItemsList(): void;
+  getItemsList(): Array<Uint8Array | string>;
+  getItemsList_asU8(): Array<Uint8Array>;
+  getItemsList_asB64(): Array<string>;
+  setItemsList(value: Array<Uint8Array | string>): void;
+  addItems(value: Uint8Array | string, index?: number): Uint8Array | string;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): ResultList.AsObject;
+  static toObject(includeInstance: boolean, msg: ResultList): ResultList.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: ResultList, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): ResultList;
+  static deserializeBinaryFromReader(message: ResultList, reader: jspb.BinaryReader): ResultList;
+}
+
+export namespace ResultList {
+  export type AsObject = {
+    itemsList: Array<Uint8Array | string>,
+  }
+}
+
+export class MultiItemResponse extends jspb.Message {
+  hasNonProvedResults(): boolean;
+  clearNonProvedResults(): void;
+  getNonProvedResults(): ResultList | undefined;
+  setNonProvedResults(value?: ResultList): void;
+
+  hasProvedResult(): boolean;
+  clearProvedResult(): void;
+  getProvedResult(): ProvedResult | undefined;
+  setProvedResult(value?: ProvedResult): void;
+
+  hasMetadata(): boolean;
+  clearMetadata(): void;
+  getMetadata(): ResponseMetadata | undefined;
+  setMetadata(value?: ResponseMetadata): void;
+
+  getResultCase(): MultiItemResponse.ResultCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): MultiItemResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: MultiItemResponse): MultiItemResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: MultiItemResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): MultiItemResponse;
+  static deserializeBinaryFromReader(message: MultiItemResponse, reader: jspb.BinaryReader): MultiItemResponse;
+}
+
+export namespace MultiItemResponse {
+  export type AsObject = {
+    nonProvedResults?: ResultList.AsObject,
+    provedResult?: ProvedResult.AsObject,
+    metadata?: ResponseMetadata.AsObject,
+  }
+
+  export enum ResultCase {
+    RESULT_NOT_SET = 0,
+    NON_PROVED_RESULTS = 1,
+    PROVED_RESULT = 2,
+  }
+}
+
+export class GetSingleItemRequest extends jspb.Message {
   getId(): Uint8Array | string;
   getId_asU8(): Uint8Array;
   getId_asB64(): string;
@@ -152,113 +260,47 @@ export class GetIdentityRequest extends jspb.Message {
   setProve(value: boolean): void;
 
   serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): GetIdentityRequest.AsObject;
-  static toObject(includeInstance: boolean, msg: GetIdentityRequest): GetIdentityRequest.AsObject;
+  toObject(includeInstance?: boolean): GetSingleItemRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetSingleItemRequest): GetSingleItemRequest.AsObject;
   static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
   static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: GetIdentityRequest, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): GetIdentityRequest;
-  static deserializeBinaryFromReader(message: GetIdentityRequest, reader: jspb.BinaryReader): GetIdentityRequest;
+  static serializeBinaryToWriter(message: GetSingleItemRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetSingleItemRequest;
+  static deserializeBinaryFromReader(message: GetSingleItemRequest, reader: jspb.BinaryReader): GetSingleItemRequest;
 }
 
-export namespace GetIdentityRequest {
+export namespace GetSingleItemRequest {
   export type AsObject = {
     id: Uint8Array | string,
     prove: boolean,
   }
 }
 
-export class GetIdentityResponse extends jspb.Message {
-  getIdentity(): Uint8Array | string;
-  getIdentity_asU8(): Uint8Array;
-  getIdentity_asB64(): string;
-  setIdentity(value: Uint8Array | string): void;
-
-  hasProof(): boolean;
-  clearProof(): void;
-  getProof(): Proof | undefined;
-  setProof(value?: Proof): void;
-
-  hasMetadata(): boolean;
-  clearMetadata(): void;
-  getMetadata(): ResponseMetadata | undefined;
-  setMetadata(value?: ResponseMetadata): void;
-
-  serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): GetIdentityResponse.AsObject;
-  static toObject(includeInstance: boolean, msg: GetIdentityResponse): GetIdentityResponse.AsObject;
-  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: GetIdentityResponse, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): GetIdentityResponse;
-  static deserializeBinaryFromReader(message: GetIdentityResponse, reader: jspb.BinaryReader): GetIdentityResponse;
-}
-
-export namespace GetIdentityResponse {
-  export type AsObject = {
-    identity: Uint8Array | string,
-    proof?: Proof.AsObject,
-    metadata?: ResponseMetadata.AsObject,
-  }
-}
-
-export class GetDataContractRequest extends jspb.Message {
-  getId(): Uint8Array | string;
-  getId_asU8(): Uint8Array;
-  getId_asB64(): string;
-  setId(value: Uint8Array | string): void;
+export class GetMultiItemRequest extends jspb.Message {
+  clearIdsList(): void;
+  getIdsList(): Array<Uint8Array | string>;
+  getIdsList_asU8(): Array<Uint8Array>;
+  getIdsList_asB64(): Array<string>;
+  setIdsList(value: Array<Uint8Array | string>): void;
+  addIds(value: Uint8Array | string, index?: number): Uint8Array | string;
 
   getProve(): boolean;
   setProve(value: boolean): void;
 
   serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): GetDataContractRequest.AsObject;
-  static toObject(includeInstance: boolean, msg: GetDataContractRequest): GetDataContractRequest.AsObject;
+  toObject(includeInstance?: boolean): GetMultiItemRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetMultiItemRequest): GetMultiItemRequest.AsObject;
   static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
   static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: GetDataContractRequest, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): GetDataContractRequest;
-  static deserializeBinaryFromReader(message: GetDataContractRequest, reader: jspb.BinaryReader): GetDataContractRequest;
+  static serializeBinaryToWriter(message: GetMultiItemRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetMultiItemRequest;
+  static deserializeBinaryFromReader(message: GetMultiItemRequest, reader: jspb.BinaryReader): GetMultiItemRequest;
 }
 
-export namespace GetDataContractRequest {
+export namespace GetMultiItemRequest {
   export type AsObject = {
-    id: Uint8Array | string,
+    idsList: Array<Uint8Array | string>,
     prove: boolean,
-  }
-}
-
-export class GetDataContractResponse extends jspb.Message {
-  getDataContract(): Uint8Array | string;
-  getDataContract_asU8(): Uint8Array;
-  getDataContract_asB64(): string;
-  setDataContract(value: Uint8Array | string): void;
-
-  hasProof(): boolean;
-  clearProof(): void;
-  getProof(): Proof | undefined;
-  setProof(value?: Proof): void;
-
-  hasMetadata(): boolean;
-  clearMetadata(): void;
-  getMetadata(): ResponseMetadata | undefined;
-  setMetadata(value?: ResponseMetadata): void;
-
-  serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): GetDataContractResponse.AsObject;
-  static toObject(includeInstance: boolean, msg: GetDataContractResponse): GetDataContractResponse.AsObject;
-  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: GetDataContractResponse, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): GetDataContractResponse;
-  static deserializeBinaryFromReader(message: GetDataContractResponse, reader: jspb.BinaryReader): GetDataContractResponse;
-}
-
-export namespace GetDataContractResponse {
-  export type AsObject = {
-    dataContract: Uint8Array | string,
-    proof?: Proof.AsObject,
-    metadata?: ResponseMetadata.AsObject,
   }
 }
 
@@ -331,106 +373,6 @@ export namespace GetDocumentsRequest {
   }
 }
 
-export class GetDocumentsResponse extends jspb.Message {
-  clearDocumentsList(): void;
-  getDocumentsList(): Array<Uint8Array | string>;
-  getDocumentsList_asU8(): Array<Uint8Array>;
-  getDocumentsList_asB64(): Array<string>;
-  setDocumentsList(value: Array<Uint8Array | string>): void;
-  addDocuments(value: Uint8Array | string, index?: number): Uint8Array | string;
-
-  hasProof(): boolean;
-  clearProof(): void;
-  getProof(): Proof | undefined;
-  setProof(value?: Proof): void;
-
-  hasMetadata(): boolean;
-  clearMetadata(): void;
-  getMetadata(): ResponseMetadata | undefined;
-  setMetadata(value?: ResponseMetadata): void;
-
-  serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): GetDocumentsResponse.AsObject;
-  static toObject(includeInstance: boolean, msg: GetDocumentsResponse): GetDocumentsResponse.AsObject;
-  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: GetDocumentsResponse, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): GetDocumentsResponse;
-  static deserializeBinaryFromReader(message: GetDocumentsResponse, reader: jspb.BinaryReader): GetDocumentsResponse;
-}
-
-export namespace GetDocumentsResponse {
-  export type AsObject = {
-    documentsList: Array<Uint8Array | string>,
-    proof?: Proof.AsObject,
-    metadata?: ResponseMetadata.AsObject,
-  }
-}
-
-export class GetIdentitiesByPublicKeyHashesRequest extends jspb.Message {
-  clearPublicKeyHashesList(): void;
-  getPublicKeyHashesList(): Array<Uint8Array | string>;
-  getPublicKeyHashesList_asU8(): Array<Uint8Array>;
-  getPublicKeyHashesList_asB64(): Array<string>;
-  setPublicKeyHashesList(value: Array<Uint8Array | string>): void;
-  addPublicKeyHashes(value: Uint8Array | string, index?: number): Uint8Array | string;
-
-  getProve(): boolean;
-  setProve(value: boolean): void;
-
-  serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): GetIdentitiesByPublicKeyHashesRequest.AsObject;
-  static toObject(includeInstance: boolean, msg: GetIdentitiesByPublicKeyHashesRequest): GetIdentitiesByPublicKeyHashesRequest.AsObject;
-  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: GetIdentitiesByPublicKeyHashesRequest, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): GetIdentitiesByPublicKeyHashesRequest;
-  static deserializeBinaryFromReader(message: GetIdentitiesByPublicKeyHashesRequest, reader: jspb.BinaryReader): GetIdentitiesByPublicKeyHashesRequest;
-}
-
-export namespace GetIdentitiesByPublicKeyHashesRequest {
-  export type AsObject = {
-    publicKeyHashesList: Array<Uint8Array | string>,
-    prove: boolean,
-  }
-}
-
-export class GetIdentitiesByPublicKeyHashesResponse extends jspb.Message {
-  clearIdentitiesList(): void;
-  getIdentitiesList(): Array<Uint8Array | string>;
-  getIdentitiesList_asU8(): Array<Uint8Array>;
-  getIdentitiesList_asB64(): Array<string>;
-  setIdentitiesList(value: Array<Uint8Array | string>): void;
-  addIdentities(value: Uint8Array | string, index?: number): Uint8Array | string;
-
-  hasProof(): boolean;
-  clearProof(): void;
-  getProof(): Proof | undefined;
-  setProof(value?: Proof): void;
-
-  hasMetadata(): boolean;
-  clearMetadata(): void;
-  getMetadata(): ResponseMetadata | undefined;
-  setMetadata(value?: ResponseMetadata): void;
-
-  serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): GetIdentitiesByPublicKeyHashesResponse.AsObject;
-  static toObject(includeInstance: boolean, msg: GetIdentitiesByPublicKeyHashesResponse): GetIdentitiesByPublicKeyHashesResponse.AsObject;
-  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: GetIdentitiesByPublicKeyHashesResponse, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): GetIdentitiesByPublicKeyHashesResponse;
-  static deserializeBinaryFromReader(message: GetIdentitiesByPublicKeyHashesResponse, reader: jspb.BinaryReader): GetIdentitiesByPublicKeyHashesResponse;
-}
-
-export namespace GetIdentitiesByPublicKeyHashesResponse {
-  export type AsObject = {
-    identitiesList: Array<Uint8Array | string>,
-    proof?: Proof.AsObject,
-    metadata?: ResponseMetadata.AsObject,
-  }
-}
-
 export class WaitForStateTransitionResultRequest extends jspb.Message {
   getStateTransitionHash(): Uint8Array | string;
   getStateTransitionHash_asU8(): Uint8Array;
@@ -465,8 +407,8 @@ export class WaitForStateTransitionResultResponse extends jspb.Message {
 
   hasProof(): boolean;
   clearProof(): void;
-  getProof(): Proof | undefined;
-  setProof(value?: Proof): void;
+  getProof(): ProvedResult | undefined;
+  setProof(value?: ProvedResult): void;
 
   hasMetadata(): boolean;
   clearMetadata(): void;
@@ -487,7 +429,7 @@ export class WaitForStateTransitionResultResponse extends jspb.Message {
 export namespace WaitForStateTransitionResultResponse {
   export type AsObject = {
     error?: StateTransitionBroadcastError.AsObject,
-    proof?: Proof.AsObject,
+    proof?: ProvedResult.AsObject,
     metadata?: ResponseMetadata.AsObject,
   }
 

@@ -21,6 +21,7 @@ dapi-grpc = { path = "../dapi-grpc" }
 nohash-hasher = { version = "0.2.0" }
 dpp = { path = "../rs-dpp", features = ["fixtures-and-mocks", "cbor"] }
 bincode = { version="2.0.0-rc.3", features=["serde"] }
+prost = { version = "0.11.9"}
 
 # optional dependencies
 bs58 = { version = "0.4.0", optional = true }

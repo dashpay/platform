@@ -3,7 +3,7 @@
 pub enum QueryError {
     /// Deserialization
     #[error("deserialization error: {0}")]
-    DeserializationError(&'static str),
+    DeserializationError(String),
     /// Unsupported error
     #[error("unsupported error: {0}")]
     Unsupported(String),

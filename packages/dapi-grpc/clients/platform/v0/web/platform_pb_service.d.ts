@@ -18,8 +18,26 @@ type PlatformgetIdentity = {
   readonly service: typeof Platform;
   readonly requestStream: false;
   readonly responseStream: false;
-  readonly requestType: typeof platform_pb.GetIdentityRequest;
-  readonly responseType: typeof platform_pb.GetIdentityResponse;
+  readonly requestType: typeof platform_pb.GetSingleItemRequest;
+  readonly responseType: typeof platform_pb.SingleItemResponse;
+};
+
+type PlatformgetIdentityBalance = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetSingleItemRequest;
+  readonly responseType: typeof platform_pb.SingleItemResponse;
+};
+
+type PlatformgetIdentityBalanceAndRevision = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: false;
+  readonly requestType: typeof platform_pb.GetSingleItemRequest;
+  readonly responseType: typeof platform_pb.SingleItemResponse;
 };
 
 type PlatformgetDataContract = {
@@ -27,8 +45,8 @@ type PlatformgetDataContract = {
   readonly service: typeof Platform;
   readonly requestStream: false;
   readonly responseStream: false;
-  readonly requestType: typeof platform_pb.GetDataContractRequest;
-  readonly responseType: typeof platform_pb.GetDataContractResponse;
+  readonly requestType: typeof platform_pb.GetSingleItemRequest;
+  readonly responseType: typeof platform_pb.SingleItemResponse;
 };
 
 type PlatformgetDocuments = {
@@ -37,7 +55,7 @@ type PlatformgetDocuments = {
   readonly requestStream: false;
   readonly responseStream: false;
   readonly requestType: typeof platform_pb.GetDocumentsRequest;
-  readonly responseType: typeof platform_pb.GetDocumentsResponse;
+  readonly responseType: typeof platform_pb.MultiItemResponse;
 };
 
 type PlatformgetIdentitiesByPublicKeyHashes = {
@@ -45,8 +63,8 @@ type PlatformgetIdentitiesByPublicKeyHashes = {
   readonly service: typeof Platform;
   readonly requestStream: false;
   readonly responseStream: false;
-  readonly requestType: typeof platform_pb.GetIdentitiesByPublicKeyHashesRequest;
-  readonly responseType: typeof platform_pb.GetIdentitiesByPublicKeyHashesResponse;
+  readonly requestType: typeof platform_pb.GetMultiItemRequest;
+  readonly responseType: typeof platform_pb.MultiItemResponse;
 };
 
 type PlatformwaitForStateTransitionResult = {
@@ -71,6 +89,8 @@ export class Platform {
   static readonly serviceName: string;
   static readonly broadcastStateTransition: PlatformbroadcastStateTransition;
   static readonly getIdentity: PlatformgetIdentity;
+  static readonly getIdentityBalance: PlatformgetIdentityBalance;
+  static readonly getIdentityBalanceAndRevision: PlatformgetIdentityBalanceAndRevision;
   static readonly getDataContract: PlatformgetDataContract;
   static readonly getDocuments: PlatformgetDocuments;
   static readonly getIdentitiesByPublicKeyHashes: PlatformgetIdentitiesByPublicKeyHashes;
@@ -120,40 +140,58 @@ export class PlatformClient {
     callback: (error: ServiceError|null, responseMessage: platform_pb.BroadcastStateTransitionResponse|null) => void
   ): UnaryResponse;
   getIdentity(
-    requestMessage: platform_pb.GetIdentityRequest,
+    requestMessage: platform_pb.GetSingleItemRequest,
     metadata: grpc.Metadata,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityResponse|null) => void
+    callback: (error: ServiceError|null, responseMessage: platform_pb.SingleItemResponse|null) => void
   ): UnaryResponse;
   getIdentity(
-    requestMessage: platform_pb.GetIdentityRequest,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentityResponse|null) => void
+    requestMessage: platform_pb.GetSingleItemRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.SingleItemResponse|null) => void
   ): UnaryResponse;
-  getDataContract(
-    requestMessage: platform_pb.GetDataContractRequest,
+  getIdentityBalance(
+    requestMessage: platform_pb.GetSingleItemRequest,
     metadata: grpc.Metadata,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetDataContractResponse|null) => void
+    callback: (error: ServiceError|null, responseMessage: platform_pb.SingleItemResponse|null) => void
+  ): UnaryResponse;
+  getIdentityBalance(
+    requestMessage: platform_pb.GetSingleItemRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.SingleItemResponse|null) => void
+  ): UnaryResponse;
+  getIdentityBalanceAndRevision(
+    requestMessage: platform_pb.GetSingleItemRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.SingleItemResponse|null) => void
+  ): UnaryResponse;
+  getIdentityBalanceAndRevision(
+    requestMessage: platform_pb.GetSingleItemRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.SingleItemResponse|null) => void
   ): UnaryResponse;
   getDataContract(
-    requestMessage: platform_pb.GetDataContractRequest,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetDataContractResponse|null) => void
+    requestMessage: platform_pb.GetSingleItemRequest,
+    metadata: grpc.Metadata,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.SingleItemResponse|null) => void
+  ): UnaryResponse;
+  getDataContract(
+    requestMessage: platform_pb.GetSingleItemRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.SingleItemResponse|null) => void
   ): UnaryResponse;
   getDocuments(
     requestMessage: platform_pb.GetDocumentsRequest,
     metadata: grpc.Metadata,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetDocumentsResponse|null) => void
+    callback: (error: ServiceError|null, responseMessage: platform_pb.MultiItemResponse|null) => void
   ): UnaryResponse;
   getDocuments(
     requestMessage: platform_pb.GetDocumentsRequest,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetDocumentsResponse|null) => void
+    callback: (error: ServiceError|null, responseMessage: platform_pb.MultiItemResponse|null) => void
   ): UnaryResponse;
   getIdentitiesByPublicKeyHashes(
-    requestMessage: platform_pb.GetIdentitiesByPublicKeyHashesRequest,
+    requestMessage: platform_pb.GetMultiItemRequest,
     metadata: grpc.Metadata,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentitiesByPublicKeyHashesResponse|null) => void
+    callback: (error: ServiceError|null, responseMessage: platform_pb.MultiItemResponse|null) => void
   ): UnaryResponse;
   getIdentitiesByPublicKeyHashes(
-    requestMessage: platform_pb.GetIdentitiesByPublicKeyHashesRequest,
-    callback: (error: ServiceError|null, responseMessage: platform_pb.GetIdentitiesByPublicKeyHashesResponse|null) => void
+    requestMessage: platform_pb.GetMultiItemRequest,
+    callback: (error: ServiceError|null, responseMessage: platform_pb.MultiItemResponse|null) => void
   ): UnaryResponse;
   waitForStateTransitionResult(
     requestMessage: platform_pb.WaitForStateTransitionResultRequest,

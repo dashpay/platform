@@ -35,6 +35,7 @@
 use grovedb::query_result_type::{Key, QueryResultType};
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
+use dapi_grpc::platform::GetSingleItemRequest;
 
 use crate::contract::Contract;
 use crate::drive::Drive;
@@ -55,6 +56,7 @@ use dpp::ProtocolError;
 use crate::query::QueryResultEncoding::CborEncodedQueryResult;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
+use dpp::prelude::Identifier;
 
 #[derive(Debug, Default)]
 /// The outcome of a query
@@ -102,6 +104,9 @@ impl Drive {
             })?;
         match path.as_str() {
             "/identity/balance" => {
+                               let request : GetSingleItemRequest = GetSingleItemRequest::docode(&serialized_query)
+                                    .map_err(|e| Error::Query(QueryError::DeserializationError(e.to_string())))?;
+                                let identity_id : Identifier = request.id.try_into()?;
                 let identity_id = query.remove_identifier("identityId")?;
                 if prove {
                     self.prove_identity_balance(identity_id.into_buffer(), None)

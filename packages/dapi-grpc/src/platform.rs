@@ -26,30 +26,30 @@
 const _PROTOBUF_VERSION_CHECK: () = ::protobuf::VERSION_3_2_0;
 
 #[derive(PartialEq,Clone,Default,Debug)]
-// @@protoc_insertion_point(message:org.dash.platform.dapi.v0.Proof)
-pub struct Proof {
+// @@protoc_insertion_point(message:org.dash.platform.dapi.v0.ProvedResult)
+pub struct ProvedResult {
     // message fields
-    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.Proof.merkle_proof)
-    pub merkle_proof: ::std::vec::Vec<u8>,
-    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.Proof.quorum_hash)
+    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.ProvedResult.grovedb_proof)
+    pub grovedb_proof: ::std::vec::Vec<u8>,
+    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.ProvedResult.quorum_hash)
     pub quorum_hash: ::std::vec::Vec<u8>,
-    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.Proof.signature)
+    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.ProvedResult.signature)
     pub signature: ::std::vec::Vec<u8>,
-    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.Proof.round)
+    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.ProvedResult.round)
     pub round: u32,
     // special fields
-    // @@protoc_insertion_point(special_field:org.dash.platform.dapi.v0.Proof.special_fields)
+    // @@protoc_insertion_point(special_field:org.dash.platform.dapi.v0.ProvedResult.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
 }
 
-impl<'a> ::std::default::Default for &'a Proof {
-    fn default() -> &'a Proof {
-        <Proof as ::protobuf::Message>::default_instance()
+impl<'a> ::std::default::Default for &'a ProvedResult {
+    fn default() -> &'a ProvedResult {
+        <ProvedResult as ::protobuf::Message>::default_instance()
     }
 }
 
-impl Proof {
-    pub fn new() -> Proof {
+impl ProvedResult {
+    pub fn new() -> ProvedResult {
         ::std::default::Default::default()
     }
 
@@ -57,35 +57,35 @@ impl Proof {
         let mut fields = ::std::vec::Vec::with_capacity(4);
         let mut oneofs = ::std::vec::Vec::with_capacity(0);
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
-            "merkle_proof",
-            |m: &Proof| { &m.merkle_proof },
-            |m: &mut Proof| { &mut m.merkle_proof },
+            "grovedb_proof",
+            |m: &ProvedResult| { &m.grovedb_proof },
+            |m: &mut ProvedResult| { &mut m.grovedb_proof },
         ));
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
             "quorum_hash",
-            |m: &Proof| { &m.quorum_hash },
-            |m: &mut Proof| { &mut m.quorum_hash },
+            |m: &ProvedResult| { &m.quorum_hash },
+            |m: &mut ProvedResult| { &mut m.quorum_hash },
         ));
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
             "signature",
-            |m: &Proof| { &m.signature },
-            |m: &mut Proof| { &mut m.signature },
+            |m: &ProvedResult| { &m.signature },
+            |m: &mut ProvedResult| { &mut m.signature },
         ));
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
             "round",
-            |m: &Proof| { &m.round },
-            |m: &mut Proof| { &mut m.round },
+            |m: &ProvedResult| { &m.round },
+            |m: &mut ProvedResult| { &mut m.round },
         ));
-        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<Proof>(
-            "Proof",
+        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<ProvedResult>(
+            "ProvedResult",
             fields,
             oneofs,
         )
     }
 }
 
-impl ::protobuf::Message for Proof {
-    const NAME: &'static str = "Proof";
+impl ::protobuf::Message for ProvedResult {
+    const NAME: &'static str = "ProvedResult";
 
     fn is_initialized(&self) -> bool {
         true
@@ -95,7 +95,7 @@ impl ::protobuf::Message for Proof {
         while let Some(tag) = is.read_raw_tag_or_eof()? {
             match tag {
                 10 => {
-                    self.merkle_proof = is.read_bytes()?;
+                    self.grovedb_proof = is.read_bytes()?;
                 },
                 18 => {
                     self.quorum_hash = is.read_bytes()?;
@@ -118,8 +118,8 @@ impl ::protobuf::Message for Proof {
     #[allow(unused_variables)]
     fn compute_size(&self) -> u64 {
         let mut my_size = 0;
-        if !self.merkle_proof.is_empty() {
-            my_size += ::protobuf::rt::bytes_size(1, &self.merkle_proof);
+        if !self.grovedb_proof.is_empty() {
+            my_size += ::protobuf::rt::bytes_size(1, &self.grovedb_proof);
         }
         if !self.quorum_hash.is_empty() {
             my_size += ::protobuf::rt::bytes_size(2, &self.quorum_hash);
@@ -136,8 +136,8 @@ impl ::protobuf::Message for Proof {
     }
 
     fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
-        if !self.merkle_proof.is_empty() {
-            os.write_bytes(1, &self.merkle_proof)?;
+        if !self.grovedb_proof.is_empty() {
+            os.write_bytes(1, &self.grovedb_proof)?;
         }
         if !self.quorum_hash.is_empty() {
             os.write_bytes(2, &self.quorum_hash)?;
@@ -160,21 +160,21 @@ impl ::protobuf::Message for Proof {
         &mut self.special_fields
     }
 
-    fn new() -> Proof {
-        Proof::new()
+    fn new() -> ProvedResult {
+        ProvedResult::new()
     }
 
     fn clear(&mut self) {
-        self.merkle_proof.clear();
+        self.grovedb_proof.clear();
         self.quorum_hash.clear();
         self.signature.clear();
         self.round = 0;
         self.special_fields.clear();
     }
 
-    fn default_instance() -> &'static Proof {
-        static instance: Proof = Proof {
-            merkle_proof: ::std::vec::Vec::new(),
+    fn default_instance() -> &'static ProvedResult {
+        static instance: ProvedResult = ProvedResult {
+            grovedb_proof: ::std::vec::Vec::new(),
             quorum_hash: ::std::vec::Vec::new(),
             signature: ::std::vec::Vec::new(),
             round: 0,
@@ -184,20 +184,20 @@ impl ::protobuf::Message for Proof {
     }
 }
 
-impl ::protobuf::MessageFull for Proof {
+impl ::protobuf::MessageFull for ProvedResult {
     fn descriptor() -> ::protobuf::reflect::MessageDescriptor {
         static descriptor: ::protobuf::rt::Lazy<::protobuf::reflect::MessageDescriptor> = ::protobuf::rt::Lazy::new();
-        descriptor.get(|| file_descriptor().message_by_package_relative_name("Proof").unwrap()).clone()
+        descriptor.get(|| file_descriptor().message_by_package_relative_name("ProvedResult").unwrap()).clone()
     }
 }
 
-impl ::std::fmt::Display for Proof {
+impl ::std::fmt::Display for ProvedResult {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         ::protobuf::text_format::fmt(self, f)
     }
 }
 
-impl ::protobuf::reflect::ProtobufValue for Proof {
+impl ::protobuf::reflect::ProtobufValue for ProvedResult {
     type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
 }
 
@@ -761,26 +761,744 @@ impl ::protobuf::reflect::ProtobufValue for BroadcastStateTransitionResponse {
 }
 
 #[derive(PartialEq,Clone,Default,Debug)]
-// @@protoc_insertion_point(message:org.dash.platform.dapi.v0.GetIdentityRequest)
-pub struct GetIdentityRequest {
+// @@protoc_insertion_point(message:org.dash.platform.dapi.v0.SingleItemResponse)
+pub struct SingleItemResponse {
     // message fields
-    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.GetIdentityRequest.id)
-    pub id: ::std::vec::Vec<u8>,
-    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.GetIdentityRequest.prove)
-    pub prove: bool,
+    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.SingleItemResponse.metadata)
+    pub metadata: ::protobuf::MessageField<ResponseMetadata>,
+    // message oneof groups
+    pub result: ::std::option::Option<single_item_response::Result>,
     // special fields
-    // @@protoc_insertion_point(special_field:org.dash.platform.dapi.v0.GetIdentityRequest.special_fields)
+    // @@protoc_insertion_point(special_field:org.dash.platform.dapi.v0.SingleItemResponse.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
 }
 
-impl<'a> ::std::default::Default for &'a GetIdentityRequest {
-    fn default() -> &'a GetIdentityRequest {
-        <GetIdentityRequest as ::protobuf::Message>::default_instance()
+impl<'a> ::std::default::Default for &'a SingleItemResponse {
+    fn default() -> &'a SingleItemResponse {
+        <SingleItemResponse as ::protobuf::Message>::default_instance()
     }
 }
 
-impl GetIdentityRequest {
-    pub fn new() -> GetIdentityRequest {
+impl SingleItemResponse {
+    pub fn new() -> SingleItemResponse {
+        ::std::default::Default::default()
+    }
+
+    // bytes non_proved_result = 1;
+
+    pub fn non_proved_result(&self) -> &[u8] {
+        match self.result {
+            ::std::option::Option::Some(single_item_response::Result::NonProvedResult(ref v)) => v,
+            _ => &[],
+        }
+    }
+
+    pub fn clear_non_proved_result(&mut self) {
+        self.result = ::std::option::Option::None;
+    }
+
+    pub fn has_non_proved_result(&self) -> bool {
+        match self.result {
+            ::std::option::Option::Some(single_item_response::Result::NonProvedResult(..)) => true,
+            _ => false,
+        }
+    }
+
+    // Param is passed by value, moved
+    pub fn set_non_proved_result(&mut self, v: ::std::vec::Vec<u8>) {
+        self.result = ::std::option::Option::Some(single_item_response::Result::NonProvedResult(v))
+    }
+
+    // Mutable pointer to the field.
+    pub fn mut_non_proved_result(&mut self) -> &mut ::std::vec::Vec<u8> {
+        if let ::std::option::Option::Some(single_item_response::Result::NonProvedResult(_)) = self.result {
+        } else {
+            self.result = ::std::option::Option::Some(single_item_response::Result::NonProvedResult(::std::vec::Vec::new()));
+        }
+        match self.result {
+            ::std::option::Option::Some(single_item_response::Result::NonProvedResult(ref mut v)) => v,
+            _ => panic!(),
+        }
+    }
+
+    // Take field
+    pub fn take_non_proved_result(&mut self) -> ::std::vec::Vec<u8> {
+        if self.has_non_proved_result() {
+            match self.result.take() {
+                ::std::option::Option::Some(single_item_response::Result::NonProvedResult(v)) => v,
+                _ => panic!(),
+            }
+        } else {
+            ::std::vec::Vec::new()
+        }
+    }
+
+    // .org.dash.platform.dapi.v0.ProvedResult proved_result = 2;
+
+    pub fn proved_result(&self) -> &ProvedResult {
+        match self.result {
+            ::std::option::Option::Some(single_item_response::Result::ProvedResult(ref v)) => v,
+            _ => <ProvedResult as ::protobuf::Message>::default_instance(),
+        }
+    }
+
+    pub fn clear_proved_result(&mut self) {
+        self.result = ::std::option::Option::None;
+    }
+
+    pub fn has_proved_result(&self) -> bool {
+        match self.result {
+            ::std::option::Option::Some(single_item_response::Result::ProvedResult(..)) => true,
+            _ => false,
+        }
+    }
+
+    // Param is passed by value, moved
+    pub fn set_proved_result(&mut self, v: ProvedResult) {
+        self.result = ::std::option::Option::Some(single_item_response::Result::ProvedResult(v))
+    }
+
+    // Mutable pointer to the field.
+    pub fn mut_proved_result(&mut self) -> &mut ProvedResult {
+        if let ::std::option::Option::Some(single_item_response::Result::ProvedResult(_)) = self.result {
+        } else {
+            self.result = ::std::option::Option::Some(single_item_response::Result::ProvedResult(ProvedResult::new()));
+        }
+        match self.result {
+            ::std::option::Option::Some(single_item_response::Result::ProvedResult(ref mut v)) => v,
+            _ => panic!(),
+        }
+    }
+
+    // Take field
+    pub fn take_proved_result(&mut self) -> ProvedResult {
+        if self.has_proved_result() {
+            match self.result.take() {
+                ::std::option::Option::Some(single_item_response::Result::ProvedResult(v)) => v,
+                _ => panic!(),
+            }
+        } else {
+            ProvedResult::new()
+        }
+    }
+
+    fn generated_message_descriptor_data() -> ::protobuf::reflect::GeneratedMessageDescriptorData {
+        let mut fields = ::std::vec::Vec::with_capacity(3);
+        let mut oneofs = ::std::vec::Vec::with_capacity(1);
+        fields.push(::protobuf::reflect::rt::v2::make_oneof_deref_has_get_set_simpler_accessor::<_, _>(
+            "non_proved_result",
+            SingleItemResponse::has_non_proved_result,
+            SingleItemResponse::non_proved_result,
+            SingleItemResponse::set_non_proved_result,
+        ));
+        fields.push(::protobuf::reflect::rt::v2::make_oneof_message_has_get_mut_set_accessor::<_, ProvedResult>(
+            "proved_result",
+            SingleItemResponse::has_proved_result,
+            SingleItemResponse::proved_result,
+            SingleItemResponse::mut_proved_result,
+            SingleItemResponse::set_proved_result,
+        ));
+        fields.push(::protobuf::reflect::rt::v2::make_message_field_accessor::<_, ResponseMetadata>(
+            "metadata",
+            |m: &SingleItemResponse| { &m.metadata },
+            |m: &mut SingleItemResponse| { &mut m.metadata },
+        ));
+        oneofs.push(single_item_response::Result::generated_oneof_descriptor_data());
+        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<SingleItemResponse>(
+            "SingleItemResponse",
+            fields,
+            oneofs,
+        )
+    }
+}
+
+impl ::protobuf::Message for SingleItemResponse {
+    const NAME: &'static str = "SingleItemResponse";
+
+    fn is_initialized(&self) -> bool {
+        true
+    }
+
+    fn merge_from(&mut self, is: &mut ::protobuf::CodedInputStream<'_>) -> ::protobuf::Result<()> {
+        while let Some(tag) = is.read_raw_tag_or_eof()? {
+            match tag {
+                10 => {
+                    self.result = ::std::option::Option::Some(single_item_response::Result::NonProvedResult(is.read_bytes()?));
+                },
+                18 => {
+                    self.result = ::std::option::Option::Some(single_item_response::Result::ProvedResult(is.read_message()?));
+                },
+                26 => {
+                    ::protobuf::rt::read_singular_message_into_field(is, &mut self.metadata)?;
+                },
+                tag => {
+                    ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
+                },
+            };
+        }
+        ::std::result::Result::Ok(())
+    }
+
+    // Compute sizes of nested messages
+    #[allow(unused_variables)]
+    fn compute_size(&self) -> u64 {
+        let mut my_size = 0;
+        if let Some(v) = self.metadata.as_ref() {
+            let len = v.compute_size();
+            my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
+        }
+        if let ::std::option::Option::Some(ref v) = self.result {
+            match v {
+                &single_item_response::Result::NonProvedResult(ref v) => {
+                    my_size += ::protobuf::rt::bytes_size(1, &v);
+                },
+                &single_item_response::Result::ProvedResult(ref v) => {
+                    let len = v.compute_size();
+                    my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
+                },
+            };
+        }
+        my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
+        self.special_fields.cached_size().set(my_size as u32);
+        my_size
+    }
+
+    fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
+        if let Some(v) = self.metadata.as_ref() {
+            ::protobuf::rt::write_message_field_with_cached_size(3, v, os)?;
+        }
+        if let ::std::option::Option::Some(ref v) = self.result {
+            match v {
+                &single_item_response::Result::NonProvedResult(ref v) => {
+                    os.write_bytes(1, v)?;
+                },
+                &single_item_response::Result::ProvedResult(ref v) => {
+                    ::protobuf::rt::write_message_field_with_cached_size(2, v, os)?;
+                },
+            };
+        }
+        os.write_unknown_fields(self.special_fields.unknown_fields())?;
+        ::std::result::Result::Ok(())
+    }
+
+    fn special_fields(&self) -> &::protobuf::SpecialFields {
+        &self.special_fields
+    }
+
+    fn mut_special_fields(&mut self) -> &mut ::protobuf::SpecialFields {
+        &mut self.special_fields
+    }
+
+    fn new() -> SingleItemResponse {
+        SingleItemResponse::new()
+    }
+
+    fn clear(&mut self) {
+        self.result = ::std::option::Option::None;
+        self.result = ::std::option::Option::None;
+        self.metadata.clear();
+        self.special_fields.clear();
+    }
+
+    fn default_instance() -> &'static SingleItemResponse {
+        static instance: SingleItemResponse = SingleItemResponse {
+            metadata: ::protobuf::MessageField::none(),
+            result: ::std::option::Option::None,
+            special_fields: ::protobuf::SpecialFields::new(),
+        };
+        &instance
+    }
+}
+
+impl ::protobuf::MessageFull for SingleItemResponse {
+    fn descriptor() -> ::protobuf::reflect::MessageDescriptor {
+        static descriptor: ::protobuf::rt::Lazy<::protobuf::reflect::MessageDescriptor> = ::protobuf::rt::Lazy::new();
+        descriptor.get(|| file_descriptor().message_by_package_relative_name("SingleItemResponse").unwrap()).clone()
+    }
+}
+
+impl ::std::fmt::Display for SingleItemResponse {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        ::protobuf::text_format::fmt(self, f)
+    }
+}
+
+impl ::protobuf::reflect::ProtobufValue for SingleItemResponse {
+    type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
+}
+
+/// Nested message and enums of message `SingleItemResponse`
+pub mod single_item_response {
+
+    #[derive(Clone,PartialEq,Debug)]
+    #[non_exhaustive]
+    // @@protoc_insertion_point(oneof:org.dash.platform.dapi.v0.SingleItemResponse.result)
+    pub enum Result {
+        // @@protoc_insertion_point(oneof_field:org.dash.platform.dapi.v0.SingleItemResponse.non_proved_result)
+        NonProvedResult(::std::vec::Vec<u8>),
+        // @@protoc_insertion_point(oneof_field:org.dash.platform.dapi.v0.SingleItemResponse.proved_result)
+        ProvedResult(super::ProvedResult),
+    }
+
+    impl ::protobuf::Oneof for Result {
+    }
+
+    impl ::protobuf::OneofFull for Result {
+        fn descriptor() -> ::protobuf::reflect::OneofDescriptor {
+            static descriptor: ::protobuf::rt::Lazy<::protobuf::reflect::OneofDescriptor> = ::protobuf::rt::Lazy::new();
+            descriptor.get(|| <super::SingleItemResponse as ::protobuf::MessageFull>::descriptor().oneof_by_name("result").unwrap()).clone()
+        }
+    }
+
+    impl Result {
+        pub(in super) fn generated_oneof_descriptor_data() -> ::protobuf::reflect::GeneratedOneofDescriptorData {
+            ::protobuf::reflect::GeneratedOneofDescriptorData::new::<Result>("result")
+        }
+    }
+}
+
+#[derive(PartialEq,Clone,Default,Debug)]
+// @@protoc_insertion_point(message:org.dash.platform.dapi.v0.ResultList)
+pub struct ResultList {
+    // message fields
+    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.ResultList.items)
+    pub items: ::std::vec::Vec<::std::vec::Vec<u8>>,
+    // special fields
+    // @@protoc_insertion_point(special_field:org.dash.platform.dapi.v0.ResultList.special_fields)
+    pub special_fields: ::protobuf::SpecialFields,
+}
+
+impl<'a> ::std::default::Default for &'a ResultList {
+    fn default() -> &'a ResultList {
+        <ResultList as ::protobuf::Message>::default_instance()
+    }
+}
+
+impl ResultList {
+    pub fn new() -> ResultList {
+        ::std::default::Default::default()
+    }
+
+    fn generated_message_descriptor_data() -> ::protobuf::reflect::GeneratedMessageDescriptorData {
+        let mut fields = ::std::vec::Vec::with_capacity(1);
+        let mut oneofs = ::std::vec::Vec::with_capacity(0);
+        fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
+            "items",
+            |m: &ResultList| { &m.items },
+            |m: &mut ResultList| { &mut m.items },
+        ));
+        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<ResultList>(
+            "ResultList",
+            fields,
+            oneofs,
+        )
+    }
+}
+
+impl ::protobuf::Message for ResultList {
+    const NAME: &'static str = "ResultList";
+
+    fn is_initialized(&self) -> bool {
+        true
+    }
+
+    fn merge_from(&mut self, is: &mut ::protobuf::CodedInputStream<'_>) -> ::protobuf::Result<()> {
+        while let Some(tag) = is.read_raw_tag_or_eof()? {
+            match tag {
+                10 => {
+                    self.items.push(is.read_bytes()?);
+                },
+                tag => {
+                    ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
+                },
+            };
+        }
+        ::std::result::Result::Ok(())
+    }
+
+    // Compute sizes of nested messages
+    #[allow(unused_variables)]
+    fn compute_size(&self) -> u64 {
+        let mut my_size = 0;
+        for value in &self.items {
+            my_size += ::protobuf::rt::bytes_size(1, &value);
+        };
+        my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
+        self.special_fields.cached_size().set(my_size as u32);
+        my_size
+    }
+
+    fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
+        for v in &self.items {
+            os.write_bytes(1, &v)?;
+        };
+        os.write_unknown_fields(self.special_fields.unknown_fields())?;
+        ::std::result::Result::Ok(())
+    }
+
+    fn special_fields(&self) -> &::protobuf::SpecialFields {
+        &self.special_fields
+    }
+
+    fn mut_special_fields(&mut self) -> &mut ::protobuf::SpecialFields {
+        &mut self.special_fields
+    }
+
+    fn new() -> ResultList {
+        ResultList::new()
+    }
+
+    fn clear(&mut self) {
+        self.items.clear();
+        self.special_fields.clear();
+    }
+
+    fn default_instance() -> &'static ResultList {
+        static instance: ResultList = ResultList {
+            items: ::std::vec::Vec::new(),
+            special_fields: ::protobuf::SpecialFields::new(),
+        };
+        &instance
+    }
+}
+
+impl ::protobuf::MessageFull for ResultList {
+    fn descriptor() -> ::protobuf::reflect::MessageDescriptor {
+        static descriptor: ::protobuf::rt::Lazy<::protobuf::reflect::MessageDescriptor> = ::protobuf::rt::Lazy::new();
+        descriptor.get(|| file_descriptor().message_by_package_relative_name("ResultList").unwrap()).clone()
+    }
+}
+
+impl ::std::fmt::Display for ResultList {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        ::protobuf::text_format::fmt(self, f)
+    }
+}
+
+impl ::protobuf::reflect::ProtobufValue for ResultList {
+    type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
+}
+
+#[derive(PartialEq,Clone,Default,Debug)]
+// @@protoc_insertion_point(message:org.dash.platform.dapi.v0.MultiItemResponse)
+pub struct MultiItemResponse {
+    // message fields
+    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.MultiItemResponse.metadata)
+    pub metadata: ::protobuf::MessageField<ResponseMetadata>,
+    // message oneof groups
+    pub result: ::std::option::Option<multi_item_response::Result>,
+    // special fields
+    // @@protoc_insertion_point(special_field:org.dash.platform.dapi.v0.MultiItemResponse.special_fields)
+    pub special_fields: ::protobuf::SpecialFields,
+}
+
+impl<'a> ::std::default::Default for &'a MultiItemResponse {
+    fn default() -> &'a MultiItemResponse {
+        <MultiItemResponse as ::protobuf::Message>::default_instance()
+    }
+}
+
+impl MultiItemResponse {
+    pub fn new() -> MultiItemResponse {
+        ::std::default::Default::default()
+    }
+
+    // .org.dash.platform.dapi.v0.ResultList non_proved_results = 1;
+
+    pub fn non_proved_results(&self) -> &ResultList {
+        match self.result {
+            ::std::option::Option::Some(multi_item_response::Result::NonProvedResults(ref v)) => v,
+            _ => <ResultList as ::protobuf::Message>::default_instance(),
+        }
+    }
+
+    pub fn clear_non_proved_results(&mut self) {
+        self.result = ::std::option::Option::None;
+    }
+
+    pub fn has_non_proved_results(&self) -> bool {
+        match self.result {
+            ::std::option::Option::Some(multi_item_response::Result::NonProvedResults(..)) => true,
+            _ => false,
+        }
+    }
+
+    // Param is passed by value, moved
+    pub fn set_non_proved_results(&mut self, v: ResultList) {
+        self.result = ::std::option::Option::Some(multi_item_response::Result::NonProvedResults(v))
+    }
+
+    // Mutable pointer to the field.
+    pub fn mut_non_proved_results(&mut self) -> &mut ResultList {
+        if let ::std::option::Option::Some(multi_item_response::Result::NonProvedResults(_)) = self.result {
+        } else {
+            self.result = ::std::option::Option::Some(multi_item_response::Result::NonProvedResults(ResultList::new()));
+        }
+        match self.result {
+            ::std::option::Option::Some(multi_item_response::Result::NonProvedResults(ref mut v)) => v,
+            _ => panic!(),
+        }
+    }
+
+    // Take field
+    pub fn take_non_proved_results(&mut self) -> ResultList {
+        if self.has_non_proved_results() {
+            match self.result.take() {
+                ::std::option::Option::Some(multi_item_response::Result::NonProvedResults(v)) => v,
+                _ => panic!(),
+            }
+        } else {
+            ResultList::new()
+        }
+    }
+
+    // .org.dash.platform.dapi.v0.ProvedResult proved_result = 2;
+
+    pub fn proved_result(&self) -> &ProvedResult {
+        match self.result {
+            ::std::option::Option::Some(multi_item_response::Result::ProvedResult(ref v)) => v,
+            _ => <ProvedResult as ::protobuf::Message>::default_instance(),
+        }
+    }
+
+    pub fn clear_proved_result(&mut self) {
+        self.result = ::std::option::Option::None;
+    }
+
+    pub fn has_proved_result(&self) -> bool {
+        match self.result {
+            ::std::option::Option::Some(multi_item_response::Result::ProvedResult(..)) => true,
+            _ => false,
+        }
+    }
+
+    // Param is passed by value, moved
+    pub fn set_proved_result(&mut self, v: ProvedResult) {
+        self.result = ::std::option::Option::Some(multi_item_response::Result::ProvedResult(v))
+    }
+
+    // Mutable pointer to the field.
+    pub fn mut_proved_result(&mut self) -> &mut ProvedResult {
+        if let ::std::option::Option::Some(multi_item_response::Result::ProvedResult(_)) = self.result {
+        } else {
+            self.result = ::std::option::Option::Some(multi_item_response::Result::ProvedResult(ProvedResult::new()));
+        }
+        match self.result {
+            ::std::option::Option::Some(multi_item_response::Result::ProvedResult(ref mut v)) => v,
+            _ => panic!(),
+        }
+    }
+
+    // Take field
+    pub fn take_proved_result(&mut self) -> ProvedResult {
+        if self.has_proved_result() {
+            match self.result.take() {
+                ::std::option::Option::Some(multi_item_response::Result::ProvedResult(v)) => v,
+                _ => panic!(),
+            }
+        } else {
+            ProvedResult::new()
+        }
+    }
+
+    fn generated_message_descriptor_data() -> ::protobuf::reflect::GeneratedMessageDescriptorData {
+        let mut fields = ::std::vec::Vec::with_capacity(3);
+        let mut oneofs = ::std::vec::Vec::with_capacity(1);
+        fields.push(::protobuf::reflect::rt::v2::make_oneof_message_has_get_mut_set_accessor::<_, ResultList>(
+            "non_proved_results",
+            MultiItemResponse::has_non_proved_results,
+            MultiItemResponse::non_proved_results,
+            MultiItemResponse::mut_non_proved_results,
+            MultiItemResponse::set_non_proved_results,
+        ));
+        fields.push(::protobuf::reflect::rt::v2::make_oneof_message_has_get_mut_set_accessor::<_, ProvedResult>(
+            "proved_result",
+            MultiItemResponse::has_proved_result,
+            MultiItemResponse::proved_result,
+            MultiItemResponse::mut_proved_result,
+            MultiItemResponse::set_proved_result,
+        ));
+        fields.push(::protobuf::reflect::rt::v2::make_message_field_accessor::<_, ResponseMetadata>(
+            "metadata",
+            |m: &MultiItemResponse| { &m.metadata },
+            |m: &mut MultiItemResponse| { &mut m.metadata },
+        ));
+        oneofs.push(multi_item_response::Result::generated_oneof_descriptor_data());
+        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<MultiItemResponse>(
+            "MultiItemResponse",
+            fields,
+            oneofs,
+        )
+    }
+}
+
+impl ::protobuf::Message for MultiItemResponse {
+    const NAME: &'static str = "MultiItemResponse";
+
+    fn is_initialized(&self) -> bool {
+        true
+    }
+
+    fn merge_from(&mut self, is: &mut ::protobuf::CodedInputStream<'_>) -> ::protobuf::Result<()> {
+        while let Some(tag) = is.read_raw_tag_or_eof()? {
+            match tag {
+                10 => {
+                    self.result = ::std::option::Option::Some(multi_item_response::Result::NonProvedResults(is.read_message()?));
+                },
+                18 => {
+                    self.result = ::std::option::Option::Some(multi_item_response::Result::ProvedResult(is.read_message()?));
+                },
+                26 => {
+                    ::protobuf::rt::read_singular_message_into_field(is, &mut self.metadata)?;
+                },
+                tag => {
+                    ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
+                },
+            };
+        }
+        ::std::result::Result::Ok(())
+    }
+
+    // Compute sizes of nested messages
+    #[allow(unused_variables)]
+    fn compute_size(&self) -> u64 {
+        let mut my_size = 0;
+        if let Some(v) = self.metadata.as_ref() {
+            let len = v.compute_size();
+            my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
+        }
+        if let ::std::option::Option::Some(ref v) = self.result {
+            match v {
+                &multi_item_response::Result::NonProvedResults(ref v) => {
+                    let len = v.compute_size();
+                    my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
+                },
+                &multi_item_response::Result::ProvedResult(ref v) => {
+                    let len = v.compute_size();
+                    my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
+                },
+            };
+        }
+        my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
+        self.special_fields.cached_size().set(my_size as u32);
+        my_size
+    }
+
+    fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
+        if let Some(v) = self.metadata.as_ref() {
+            ::protobuf::rt::write_message_field_with_cached_size(3, v, os)?;
+        }
+        if let ::std::option::Option::Some(ref v) = self.result {
+            match v {
+                &multi_item_response::Result::NonProvedResults(ref v) => {
+                    ::protobuf::rt::write_message_field_with_cached_size(1, v, os)?;
+                },
+                &multi_item_response::Result::ProvedResult(ref v) => {
+                    ::protobuf::rt::write_message_field_with_cached_size(2, v, os)?;
+                },
+            };
+        }
+        os.write_unknown_fields(self.special_fields.unknown_fields())?;
+        ::std::result::Result::Ok(())
+    }
+
+    fn special_fields(&self) -> &::protobuf::SpecialFields {
+        &self.special_fields
+    }
+
+    fn mut_special_fields(&mut self) -> &mut ::protobuf::SpecialFields {
+        &mut self.special_fields
+    }
+
+    fn new() -> MultiItemResponse {
+        MultiItemResponse::new()
+    }
+
+    fn clear(&mut self) {
+        self.result = ::std::option::Option::None;
+        self.result = ::std::option::Option::None;
+        self.metadata.clear();
+        self.special_fields.clear();
+    }
+
+    fn default_instance() -> &'static MultiItemResponse {
+        static instance: MultiItemResponse = MultiItemResponse {
+            metadata: ::protobuf::MessageField::none(),
+            result: ::std::option::Option::None,
+            special_fields: ::protobuf::SpecialFields::new(),
+        };
+        &instance
+    }
+}
+
+impl ::protobuf::MessageFull for MultiItemResponse {
+    fn descriptor() -> ::protobuf::reflect::MessageDescriptor {
+        static descriptor: ::protobuf::rt::Lazy<::protobuf::reflect::MessageDescriptor> = ::protobuf::rt::Lazy::new();
+        descriptor.get(|| file_descriptor().message_by_package_relative_name("MultiItemResponse").unwrap()).clone()
+    }
+}
+
+impl ::std::fmt::Display for MultiItemResponse {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        ::protobuf::text_format::fmt(self, f)
+    }
+}
+
+impl ::protobuf::reflect::ProtobufValue for MultiItemResponse {
+    type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
+}
+
+/// Nested message and enums of message `MultiItemResponse`
+pub mod multi_item_response {
+
+    #[derive(Clone,PartialEq,Debug)]
+    #[non_exhaustive]
+    // @@protoc_insertion_point(oneof:org.dash.platform.dapi.v0.MultiItemResponse.result)
+    pub enum Result {
+        // @@protoc_insertion_point(oneof_field:org.dash.platform.dapi.v0.MultiItemResponse.non_proved_results)
+        NonProvedResults(super::ResultList),
+        // @@protoc_insertion_point(oneof_field:org.dash.platform.dapi.v0.MultiItemResponse.proved_result)
+        ProvedResult(super::ProvedResult),
+    }
+
+    impl ::protobuf::Oneof for Result {
+    }
+
+    impl ::protobuf::OneofFull for Result {
+        fn descriptor() -> ::protobuf::reflect::OneofDescriptor {
+            static descriptor: ::protobuf::rt::Lazy<::protobuf::reflect::OneofDescriptor> = ::protobuf::rt::Lazy::new();
+            descriptor.get(|| <super::MultiItemResponse as ::protobuf::MessageFull>::descriptor().oneof_by_name("result").unwrap()).clone()
+        }
+    }
+
+    impl Result {
+        pub(in super) fn generated_oneof_descriptor_data() -> ::protobuf::reflect::GeneratedOneofDescriptorData {
+            ::protobuf::reflect::GeneratedOneofDescriptorData::new::<Result>("result")
+        }
+    }
+}
+
+#[derive(PartialEq,Clone,Default,Debug)]
+// @@protoc_insertion_point(message:org.dash.platform.dapi.v0.GetSingleItemRequest)
+pub struct GetSingleItemRequest {
+    // message fields
+    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.GetSingleItemRequest.id)
+    pub id: ::std::vec::Vec<u8>,
+    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.GetSingleItemRequest.prove)
+    pub prove: bool,
+    // special fields
+    // @@protoc_insertion_point(special_field:org.dash.platform.dapi.v0.GetSingleItemRequest.special_fields)
+    pub special_fields: ::protobuf::SpecialFields,
+}
+
+impl<'a> ::std::default::Default for &'a GetSingleItemRequest {
+    fn default() -> &'a GetSingleItemRequest {
+        <GetSingleItemRequest as ::protobuf::Message>::default_instance()
+    }
+}
+
+impl GetSingleItemRequest {
+    pub fn new() -> GetSingleItemRequest {
         ::std::default::Default::default()
     }
 
@@ -789,24 +1507,24 @@ impl GetIdentityRequest {
         let mut oneofs = ::std::vec::Vec::with_capacity(0);
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
             "id",
-            |m: &GetIdentityRequest| { &m.id },
-            |m: &mut GetIdentityRequest| { &mut m.id },
+            |m: &GetSingleItemRequest| { &m.id },
+            |m: &mut GetSingleItemRequest| { &mut m.id },
         ));
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
             "prove",
-            |m: &GetIdentityRequest| { &m.prove },
-            |m: &mut GetIdentityRequest| { &mut m.prove },
+            |m: &GetSingleItemRequest| { &m.prove },
+            |m: &mut GetSingleItemRequest| { &mut m.prove },
         ));
-        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<GetIdentityRequest>(
-            "GetIdentityRequest",
+        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<GetSingleItemRequest>(
+            "GetSingleItemRequest",
             fields,
             oneofs,
         )
     }
 }
 
-impl ::protobuf::Message for GetIdentityRequest {
-    const NAME: &'static str = "GetIdentityRequest";
+impl ::protobuf::Message for GetSingleItemRequest {
+    const NAME: &'static str = "GetSingleItemRequest";
 
     fn is_initialized(&self) -> bool {
         true
@@ -863,8 +1581,8 @@ impl ::protobuf::Message for GetIdentityRequest {
         &mut self.special_fields
     }
 
-    fn new() -> GetIdentityRequest {
-        GetIdentityRequest::new()
+    fn new() -> GetSingleItemRequest {
+        GetSingleItemRequest::new()
     }
 
     fn clear(&mut self) {
@@ -873,8 +1591,8 @@ impl ::protobuf::Message for GetIdentityRequest {
         self.special_fields.clear();
     }
 
-    fn default_instance() -> &'static GetIdentityRequest {
-        static instance: GetIdentityRequest = GetIdentityRequest {
+    fn default_instance() -> &'static GetSingleItemRequest {
+        static instance: GetSingleItemRequest = GetSingleItemRequest {
             id: ::std::vec::Vec::new(),
             prove: false,
             special_fields: ::protobuf::SpecialFields::new(),
@@ -883,230 +1601,70 @@ impl ::protobuf::Message for GetIdentityRequest {
     }
 }
 
-impl ::protobuf::MessageFull for GetIdentityRequest {
+impl ::protobuf::MessageFull for GetSingleItemRequest {
     fn descriptor() -> ::protobuf::reflect::MessageDescriptor {
         static descriptor: ::protobuf::rt::Lazy<::protobuf::reflect::MessageDescriptor> = ::protobuf::rt::Lazy::new();
-        descriptor.get(|| file_descriptor().message_by_package_relative_name("GetIdentityRequest").unwrap()).clone()
+        descriptor.get(|| file_descriptor().message_by_package_relative_name("GetSingleItemRequest").unwrap()).clone()
     }
 }
 
-impl ::std::fmt::Display for GetIdentityRequest {
+impl ::std::fmt::Display for GetSingleItemRequest {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         ::protobuf::text_format::fmt(self, f)
     }
 }
 
-impl ::protobuf::reflect::ProtobufValue for GetIdentityRequest {
+impl ::protobuf::reflect::ProtobufValue for GetSingleItemRequest {
     type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
 }
 
 #[derive(PartialEq,Clone,Default,Debug)]
-// @@protoc_insertion_point(message:org.dash.platform.dapi.v0.GetIdentityResponse)
-pub struct GetIdentityResponse {
+// @@protoc_insertion_point(message:org.dash.platform.dapi.v0.GetMultiItemRequest)
+pub struct GetMultiItemRequest {
     // message fields
-    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.GetIdentityResponse.identity)
-    pub identity: ::std::vec::Vec<u8>,
-    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.GetIdentityResponse.proof)
-    pub proof: ::protobuf::MessageField<Proof>,
-    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.GetIdentityResponse.metadata)
-    pub metadata: ::protobuf::MessageField<ResponseMetadata>,
-    // special fields
-    // @@protoc_insertion_point(special_field:org.dash.platform.dapi.v0.GetIdentityResponse.special_fields)
-    pub special_fields: ::protobuf::SpecialFields,
-}
-
-impl<'a> ::std::default::Default for &'a GetIdentityResponse {
-    fn default() -> &'a GetIdentityResponse {
-        <GetIdentityResponse as ::protobuf::Message>::default_instance()
-    }
-}
-
-impl GetIdentityResponse {
-    pub fn new() -> GetIdentityResponse {
-        ::std::default::Default::default()
-    }
-
-    fn generated_message_descriptor_data() -> ::protobuf::reflect::GeneratedMessageDescriptorData {
-        let mut fields = ::std::vec::Vec::with_capacity(3);
-        let mut oneofs = ::std::vec::Vec::with_capacity(0);
-        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
-            "identity",
-            |m: &GetIdentityResponse| { &m.identity },
-            |m: &mut GetIdentityResponse| { &mut m.identity },
-        ));
-        fields.push(::protobuf::reflect::rt::v2::make_message_field_accessor::<_, Proof>(
-            "proof",
-            |m: &GetIdentityResponse| { &m.proof },
-            |m: &mut GetIdentityResponse| { &mut m.proof },
-        ));
-        fields.push(::protobuf::reflect::rt::v2::make_message_field_accessor::<_, ResponseMetadata>(
-            "metadata",
-            |m: &GetIdentityResponse| { &m.metadata },
-            |m: &mut GetIdentityResponse| { &mut m.metadata },
-        ));
-        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<GetIdentityResponse>(
-            "GetIdentityResponse",
-            fields,
-            oneofs,
-        )
-    }
-}
-
-impl ::protobuf::Message for GetIdentityResponse {
-    const NAME: &'static str = "GetIdentityResponse";
-
-    fn is_initialized(&self) -> bool {
-        true
-    }
-
-    fn merge_from(&mut self, is: &mut ::protobuf::CodedInputStream<'_>) -> ::protobuf::Result<()> {
-        while let Some(tag) = is.read_raw_tag_or_eof()? {
-            match tag {
-                10 => {
-                    self.identity = is.read_bytes()?;
-                },
-                18 => {
-                    ::protobuf::rt::read_singular_message_into_field(is, &mut self.proof)?;
-                },
-                26 => {
-                    ::protobuf::rt::read_singular_message_into_field(is, &mut self.metadata)?;
-                },
-                tag => {
-                    ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
-                },
-            };
-        }
-        ::std::result::Result::Ok(())
-    }
-
-    // Compute sizes of nested messages
-    #[allow(unused_variables)]
-    fn compute_size(&self) -> u64 {
-        let mut my_size = 0;
-        if !self.identity.is_empty() {
-            my_size += ::protobuf::rt::bytes_size(1, &self.identity);
-        }
-        if let Some(v) = self.proof.as_ref() {
-            let len = v.compute_size();
-            my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
-        }
-        if let Some(v) = self.metadata.as_ref() {
-            let len = v.compute_size();
-            my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
-        }
-        my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
-        self.special_fields.cached_size().set(my_size as u32);
-        my_size
-    }
-
-    fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
-        if !self.identity.is_empty() {
-            os.write_bytes(1, &self.identity)?;
-        }
-        if let Some(v) = self.proof.as_ref() {
-            ::protobuf::rt::write_message_field_with_cached_size(2, v, os)?;
-        }
-        if let Some(v) = self.metadata.as_ref() {
-            ::protobuf::rt::write_message_field_with_cached_size(3, v, os)?;
-        }
-        os.write_unknown_fields(self.special_fields.unknown_fields())?;
-        ::std::result::Result::Ok(())
-    }
-
-    fn special_fields(&self) -> &::protobuf::SpecialFields {
-        &self.special_fields
-    }
-
-    fn mut_special_fields(&mut self) -> &mut ::protobuf::SpecialFields {
-        &mut self.special_fields
-    }
-
-    fn new() -> GetIdentityResponse {
-        GetIdentityResponse::new()
-    }
-
-    fn clear(&mut self) {
-        self.identity.clear();
-        self.proof.clear();
-        self.metadata.clear();
-        self.special_fields.clear();
-    }
-
-    fn default_instance() -> &'static GetIdentityResponse {
-        static instance: GetIdentityResponse = GetIdentityResponse {
-            identity: ::std::vec::Vec::new(),
-            proof: ::protobuf::MessageField::none(),
-            metadata: ::protobuf::MessageField::none(),
-            special_fields: ::protobuf::SpecialFields::new(),
-        };
-        &instance
-    }
-}
-
-impl ::protobuf::MessageFull for GetIdentityResponse {
-    fn descriptor() -> ::protobuf::reflect::MessageDescriptor {
-        static descriptor: ::protobuf::rt::Lazy<::protobuf::reflect::MessageDescriptor> = ::protobuf::rt::Lazy::new();
-        descriptor.get(|| file_descriptor().message_by_package_relative_name("GetIdentityResponse").unwrap()).clone()
-    }
-}
-
-impl ::std::fmt::Display for GetIdentityResponse {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        ::protobuf::text_format::fmt(self, f)
-    }
-}
-
-impl ::protobuf::reflect::ProtobufValue for GetIdentityResponse {
-    type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
-}
-
-#[derive(PartialEq,Clone,Default,Debug)]
-// @@protoc_insertion_point(message:org.dash.platform.dapi.v0.GetDataContractRequest)
-pub struct GetDataContractRequest {
-    // message fields
-    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.GetDataContractRequest.id)
-    pub id: ::std::vec::Vec<u8>,
-    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.GetDataContractRequest.prove)
+    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.GetMultiItemRequest.ids)
+    pub ids: ::std::vec::Vec<::std::vec::Vec<u8>>,
+    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.GetMultiItemRequest.prove)
     pub prove: bool,
     // special fields
-    // @@protoc_insertion_point(special_field:org.dash.platform.dapi.v0.GetDataContractRequest.special_fields)
+    // @@protoc_insertion_point(special_field:org.dash.platform.dapi.v0.GetMultiItemRequest.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
 }
 
-impl<'a> ::std::default::Default for &'a GetDataContractRequest {
-    fn default() -> &'a GetDataContractRequest {
-        <GetDataContractRequest as ::protobuf::Message>::default_instance()
+impl<'a> ::std::default::Default for &'a GetMultiItemRequest {
+    fn default() -> &'a GetMultiItemRequest {
+        <GetMultiItemRequest as ::protobuf::Message>::default_instance()
     }
 }
 
-impl GetDataContractRequest {
-    pub fn new() -> GetDataContractRequest {
+impl GetMultiItemRequest {
+    pub fn new() -> GetMultiItemRequest {
         ::std::default::Default::default()
     }
 
     fn generated_message_descriptor_data() -> ::protobuf::reflect::GeneratedMessageDescriptorData {
         let mut fields = ::std::vec::Vec::with_capacity(2);
         let mut oneofs = ::std::vec::Vec::with_capacity(0);
-        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
-            "id",
-            |m: &GetDataContractRequest| { &m.id },
-            |m: &mut GetDataContractRequest| { &mut m.id },
+        fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
+            "ids",
+            |m: &GetMultiItemRequest| { &m.ids },
+            |m: &mut GetMultiItemRequest| { &mut m.ids },
         ));
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
             "prove",
-            |m: &GetDataContractRequest| { &m.prove },
-            |m: &mut GetDataContractRequest| { &mut m.prove },
+            |m: &GetMultiItemRequest| { &m.prove },
+            |m: &mut GetMultiItemRequest| { &mut m.prove },
         ));
-        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<GetDataContractRequest>(
-            "GetDataContractRequest",
+        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<GetMultiItemRequest>(
+            "GetMultiItemRequest",
             fields,
             oneofs,
         )
     }
 }
 
-impl ::protobuf::Message for GetDataContractRequest {
-    const NAME: &'static str = "GetDataContractRequest";
+impl ::protobuf::Message for GetMultiItemRequest {
+    const NAME: &'static str = "GetMultiItemRequest";
 
     fn is_initialized(&self) -> bool {
         true
@@ -1116,7 +1674,7 @@ impl ::protobuf::Message for GetDataContractRequest {
         while let Some(tag) = is.read_raw_tag_or_eof()? {
             match tag {
                 10 => {
-                    self.id = is.read_bytes()?;
+                    self.ids.push(is.read_bytes()?);
                 },
                 16 => {
                     self.prove = is.read_bool()?;
@@ -1133,9 +1691,9 @@ impl ::protobuf::Message for GetDataContractRequest {
     #[allow(unused_variables)]
     fn compute_size(&self) -> u64 {
         let mut my_size = 0;
-        if !self.id.is_empty() {
-            my_size += ::protobuf::rt::bytes_size(1, &self.id);
-        }
+        for value in &self.ids {
+            my_size += ::protobuf::rt::bytes_size(1, &value);
+        };
         if self.prove != false {
             my_size += 1 + 1;
         }
@@ -1145,9 +1703,9 @@ impl ::protobuf::Message for GetDataContractRequest {
     }
 
     fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
-        if !self.id.is_empty() {
-            os.write_bytes(1, &self.id)?;
-        }
+        for v in &self.ids {
+            os.write_bytes(1, &v)?;
+        };
         if self.prove != false {
             os.write_bool(2, self.prove)?;
         }
@@ -1163,19 +1721,19 @@ impl ::protobuf::Message for GetDataContractRequest {
         &mut self.special_fields
     }
 
-    fn new() -> GetDataContractRequest {
-        GetDataContractRequest::new()
+    fn new() -> GetMultiItemRequest {
+        GetMultiItemRequest::new()
     }
 
     fn clear(&mut self) {
-        self.id.clear();
+        self.ids.clear();
         self.prove = false;
         self.special_fields.clear();
     }
 
-    fn default_instance() -> &'static GetDataContractRequest {
-        static instance: GetDataContractRequest = GetDataContractRequest {
-            id: ::std::vec::Vec::new(),
+    fn default_instance() -> &'static GetMultiItemRequest {
+        static instance: GetMultiItemRequest = GetMultiItemRequest {
+            ids: ::std::vec::Vec::new(),
             prove: false,
             special_fields: ::protobuf::SpecialFields::new(),
         };
@@ -1183,180 +1741,20 @@ impl ::protobuf::Message for GetDataContractRequest {
     }
 }
 
-impl ::protobuf::MessageFull for GetDataContractRequest {
+impl ::protobuf::MessageFull for GetMultiItemRequest {
     fn descriptor() -> ::protobuf::reflect::MessageDescriptor {
         static descriptor: ::protobuf::rt::Lazy<::protobuf::reflect::MessageDescriptor> = ::protobuf::rt::Lazy::new();
-        descriptor.get(|| file_descriptor().message_by_package_relative_name("GetDataContractRequest").unwrap()).clone()
+        descriptor.get(|| file_descriptor().message_by_package_relative_name("GetMultiItemRequest").unwrap()).clone()
     }
 }
 
-impl ::std::fmt::Display for GetDataContractRequest {
+impl ::std::fmt::Display for GetMultiItemRequest {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         ::protobuf::text_format::fmt(self, f)
     }
 }
 
-impl ::protobuf::reflect::ProtobufValue for GetDataContractRequest {
-    type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
-}
-
-#[derive(PartialEq,Clone,Default,Debug)]
-// @@protoc_insertion_point(message:org.dash.platform.dapi.v0.GetDataContractResponse)
-pub struct GetDataContractResponse {
-    // message fields
-    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.GetDataContractResponse.data_contract)
-    pub data_contract: ::std::vec::Vec<u8>,
-    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.GetDataContractResponse.proof)
-    pub proof: ::protobuf::MessageField<Proof>,
-    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.GetDataContractResponse.metadata)
-    pub metadata: ::protobuf::MessageField<ResponseMetadata>,
-    // special fields
-    // @@protoc_insertion_point(special_field:org.dash.platform.dapi.v0.GetDataContractResponse.special_fields)
-    pub special_fields: ::protobuf::SpecialFields,
-}
-
-impl<'a> ::std::default::Default for &'a GetDataContractResponse {
-    fn default() -> &'a GetDataContractResponse {
-        <GetDataContractResponse as ::protobuf::Message>::default_instance()
-    }
-}
-
-impl GetDataContractResponse {
-    pub fn new() -> GetDataContractResponse {
-        ::std::default::Default::default()
-    }
-
-    fn generated_message_descriptor_data() -> ::protobuf::reflect::GeneratedMessageDescriptorData {
-        let mut fields = ::std::vec::Vec::with_capacity(3);
-        let mut oneofs = ::std::vec::Vec::with_capacity(0);
-        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
-            "data_contract",
-            |m: &GetDataContractResponse| { &m.data_contract },
-            |m: &mut GetDataContractResponse| { &mut m.data_contract },
-        ));
-        fields.push(::protobuf::reflect::rt::v2::make_message_field_accessor::<_, Proof>(
-            "proof",
-            |m: &GetDataContractResponse| { &m.proof },
-            |m: &mut GetDataContractResponse| { &mut m.proof },
-        ));
-        fields.push(::protobuf::reflect::rt::v2::make_message_field_accessor::<_, ResponseMetadata>(
-            "metadata",
-            |m: &GetDataContractResponse| { &m.metadata },
-            |m: &mut GetDataContractResponse| { &mut m.metadata },
-        ));
-        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<GetDataContractResponse>(
-            "GetDataContractResponse",
-            fields,
-            oneofs,
-        )
-    }
-}
-
-impl ::protobuf::Message for GetDataContractResponse {
-    const NAME: &'static str = "GetDataContractResponse";
-
-    fn is_initialized(&self) -> bool {
-        true
-    }
-
-    fn merge_from(&mut self, is: &mut ::protobuf::CodedInputStream<'_>) -> ::protobuf::Result<()> {
-        while let Some(tag) = is.read_raw_tag_or_eof()? {
-            match tag {
-                10 => {
-                    self.data_contract = is.read_bytes()?;
-                },
-                18 => {
-                    ::protobuf::rt::read_singular_message_into_field(is, &mut self.proof)?;
-                },
-                26 => {
-                    ::protobuf::rt::read_singular_message_into_field(is, &mut self.metadata)?;
-                },
-                tag => {
-                    ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
-                },
-            };
-        }
-        ::std::result::Result::Ok(())
-    }
-
-    // Compute sizes of nested messages
-    #[allow(unused_variables)]
-    fn compute_size(&self) -> u64 {
-        let mut my_size = 0;
-        if !self.data_contract.is_empty() {
-            my_size += ::protobuf::rt::bytes_size(1, &self.data_contract);
-        }
-        if let Some(v) = self.proof.as_ref() {
-            let len = v.compute_size();
-            my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
-        }
-        if let Some(v) = self.metadata.as_ref() {
-            let len = v.compute_size();
-            my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
-        }
-        my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
-        self.special_fields.cached_size().set(my_size as u32);
-        my_size
-    }
-
-    fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
-        if !self.data_contract.is_empty() {
-            os.write_bytes(1, &self.data_contract)?;
-        }
-        if let Some(v) = self.proof.as_ref() {
-            ::protobuf::rt::write_message_field_with_cached_size(2, v, os)?;
-        }
-        if let Some(v) = self.metadata.as_ref() {
-            ::protobuf::rt::write_message_field_with_cached_size(3, v, os)?;
-        }
-        os.write_unknown_fields(self.special_fields.unknown_fields())?;
-        ::std::result::Result::Ok(())
-    }
-
-    fn special_fields(&self) -> &::protobuf::SpecialFields {
-        &self.special_fields
-    }
-
-    fn mut_special_fields(&mut self) -> &mut ::protobuf::SpecialFields {
-        &mut self.special_fields
-    }
-
-    fn new() -> GetDataContractResponse {
-        GetDataContractResponse::new()
-    }
-
-    fn clear(&mut self) {
-        self.data_contract.clear();
-        self.proof.clear();
-        self.metadata.clear();
-        self.special_fields.clear();
-    }
-
-    fn default_instance() -> &'static GetDataContractResponse {
-        static instance: GetDataContractResponse = GetDataContractResponse {
-            data_contract: ::std::vec::Vec::new(),
-            proof: ::protobuf::MessageField::none(),
-            metadata: ::protobuf::MessageField::none(),
-            special_fields: ::protobuf::SpecialFields::new(),
-        };
-        &instance
-    }
-}
-
-impl ::protobuf::MessageFull for GetDataContractResponse {
-    fn descriptor() -> ::protobuf::reflect::MessageDescriptor {
-        static descriptor: ::protobuf::rt::Lazy<::protobuf::reflect::MessageDescriptor> = ::protobuf::rt::Lazy::new();
-        descriptor.get(|| file_descriptor().message_by_package_relative_name("GetDataContractResponse").unwrap()).clone()
-    }
-}
-
-impl ::std::fmt::Display for GetDataContractResponse {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        ::protobuf::text_format::fmt(self, f)
-    }
-}
-
-impl ::protobuf::reflect::ProtobufValue for GetDataContractResponse {
+impl ::protobuf::reflect::ProtobufValue for GetMultiItemRequest {
     type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
 }
 
@@ -1745,466 +2143,6 @@ pub mod get_documents_request {
 }
 
 #[derive(PartialEq,Clone,Default,Debug)]
-// @@protoc_insertion_point(message:org.dash.platform.dapi.v0.GetDocumentsResponse)
-pub struct GetDocumentsResponse {
-    // message fields
-    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.GetDocumentsResponse.documents)
-    pub documents: ::std::vec::Vec<::std::vec::Vec<u8>>,
-    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.GetDocumentsResponse.proof)
-    pub proof: ::protobuf::MessageField<Proof>,
-    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.GetDocumentsResponse.metadata)
-    pub metadata: ::protobuf::MessageField<ResponseMetadata>,
-    // special fields
-    // @@protoc_insertion_point(special_field:org.dash.platform.dapi.v0.GetDocumentsResponse.special_fields)
-    pub special_fields: ::protobuf::SpecialFields,
-}
-
-impl<'a> ::std::default::Default for &'a GetDocumentsResponse {
-    fn default() -> &'a GetDocumentsResponse {
-        <GetDocumentsResponse as ::protobuf::Message>::default_instance()
-    }
-}
-
-impl GetDocumentsResponse {
-    pub fn new() -> GetDocumentsResponse {
-        ::std::default::Default::default()
-    }
-
-    fn generated_message_descriptor_data() -> ::protobuf::reflect::GeneratedMessageDescriptorData {
-        let mut fields = ::std::vec::Vec::with_capacity(3);
-        let mut oneofs = ::std::vec::Vec::with_capacity(0);
-        fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
-            "documents",
-            |m: &GetDocumentsResponse| { &m.documents },
-            |m: &mut GetDocumentsResponse| { &mut m.documents },
-        ));
-        fields.push(::protobuf::reflect::rt::v2::make_message_field_accessor::<_, Proof>(
-            "proof",
-            |m: &GetDocumentsResponse| { &m.proof },
-            |m: &mut GetDocumentsResponse| { &mut m.proof },
-        ));
-        fields.push(::protobuf::reflect::rt::v2::make_message_field_accessor::<_, ResponseMetadata>(
-            "metadata",
-            |m: &GetDocumentsResponse| { &m.metadata },
-            |m: &mut GetDocumentsResponse| { &mut m.metadata },
-        ));
-        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<GetDocumentsResponse>(
-            "GetDocumentsResponse",
-            fields,
-            oneofs,
-        )
-    }
-}
-
-impl ::protobuf::Message for GetDocumentsResponse {
-    const NAME: &'static str = "GetDocumentsResponse";
-
-    fn is_initialized(&self) -> bool {
-        true
-    }
-
-    fn merge_from(&mut self, is: &mut ::protobuf::CodedInputStream<'_>) -> ::protobuf::Result<()> {
-        while let Some(tag) = is.read_raw_tag_or_eof()? {
-            match tag {
-                10 => {
-                    self.documents.push(is.read_bytes()?);
-                },
-                18 => {
-                    ::protobuf::rt::read_singular_message_into_field(is, &mut self.proof)?;
-                },
-                26 => {
-                    ::protobuf::rt::read_singular_message_into_field(is, &mut self.metadata)?;
-                },
-                tag => {
-                    ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
-                },
-            };
-        }
-        ::std::result::Result::Ok(())
-    }
-
-    // Compute sizes of nested messages
-    #[allow(unused_variables)]
-    fn compute_size(&self) -> u64 {
-        let mut my_size = 0;
-        for value in &self.documents {
-            my_size += ::protobuf::rt::bytes_size(1, &value);
-        };
-        if let Some(v) = self.proof.as_ref() {
-            let len = v.compute_size();
-            my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
-        }
-        if let Some(v) = self.metadata.as_ref() {
-            let len = v.compute_size();
-            my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
-        }
-        my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
-        self.special_fields.cached_size().set(my_size as u32);
-        my_size
-    }
-
-    fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
-        for v in &self.documents {
-            os.write_bytes(1, &v)?;
-        };
-        if let Some(v) = self.proof.as_ref() {
-            ::protobuf::rt::write_message_field_with_cached_size(2, v, os)?;
-        }
-        if let Some(v) = self.metadata.as_ref() {
-            ::protobuf::rt::write_message_field_with_cached_size(3, v, os)?;
-        }
-        os.write_unknown_fields(self.special_fields.unknown_fields())?;
-        ::std::result::Result::Ok(())
-    }
-
-    fn special_fields(&self) -> &::protobuf::SpecialFields {
-        &self.special_fields
-    }
-
-    fn mut_special_fields(&mut self) -> &mut ::protobuf::SpecialFields {
-        &mut self.special_fields
-    }
-
-    fn new() -> GetDocumentsResponse {
-        GetDocumentsResponse::new()
-    }
-
-    fn clear(&mut self) {
-        self.documents.clear();
-        self.proof.clear();
-        self.metadata.clear();
-        self.special_fields.clear();
-    }
-
-    fn default_instance() -> &'static GetDocumentsResponse {
-        static instance: GetDocumentsResponse = GetDocumentsResponse {
-            documents: ::std::vec::Vec::new(),
-            proof: ::protobuf::MessageField::none(),
-            metadata: ::protobuf::MessageField::none(),
-            special_fields: ::protobuf::SpecialFields::new(),
-        };
-        &instance
-    }
-}
-
-impl ::protobuf::MessageFull for GetDocumentsResponse {
-    fn descriptor() -> ::protobuf::reflect::MessageDescriptor {
-        static descriptor: ::protobuf::rt::Lazy<::protobuf::reflect::MessageDescriptor> = ::protobuf::rt::Lazy::new();
-        descriptor.get(|| file_descriptor().message_by_package_relative_name("GetDocumentsResponse").unwrap()).clone()
-    }
-}
-
-impl ::std::fmt::Display for GetDocumentsResponse {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        ::protobuf::text_format::fmt(self, f)
-    }
-}
-
-impl ::protobuf::reflect::ProtobufValue for GetDocumentsResponse {
-    type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
-}
-
-#[derive(PartialEq,Clone,Default,Debug)]
-// @@protoc_insertion_point(message:org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesRequest)
-pub struct GetIdentitiesByPublicKeyHashesRequest {
-    // message fields
-    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesRequest.public_key_hashes)
-    pub public_key_hashes: ::std::vec::Vec<::std::vec::Vec<u8>>,
-    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesRequest.prove)
-    pub prove: bool,
-    // special fields
-    // @@protoc_insertion_point(special_field:org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesRequest.special_fields)
-    pub special_fields: ::protobuf::SpecialFields,
-}
-
-impl<'a> ::std::default::Default for &'a GetIdentitiesByPublicKeyHashesRequest {
-    fn default() -> &'a GetIdentitiesByPublicKeyHashesRequest {
-        <GetIdentitiesByPublicKeyHashesRequest as ::protobuf::Message>::default_instance()
-    }
-}
-
-impl GetIdentitiesByPublicKeyHashesRequest {
-    pub fn new() -> GetIdentitiesByPublicKeyHashesRequest {
-        ::std::default::Default::default()
-    }
-
-    fn generated_message_descriptor_data() -> ::protobuf::reflect::GeneratedMessageDescriptorData {
-        let mut fields = ::std::vec::Vec::with_capacity(2);
-        let mut oneofs = ::std::vec::Vec::with_capacity(0);
-        fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
-            "public_key_hashes",
-            |m: &GetIdentitiesByPublicKeyHashesRequest| { &m.public_key_hashes },
-            |m: &mut GetIdentitiesByPublicKeyHashesRequest| { &mut m.public_key_hashes },
-        ));
-        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
-            "prove",
-            |m: &GetIdentitiesByPublicKeyHashesRequest| { &m.prove },
-            |m: &mut GetIdentitiesByPublicKeyHashesRequest| { &mut m.prove },
-        ));
-        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<GetIdentitiesByPublicKeyHashesRequest>(
-            "GetIdentitiesByPublicKeyHashesRequest",
-            fields,
-            oneofs,
-        )
-    }
-}
-
-impl ::protobuf::Message for GetIdentitiesByPublicKeyHashesRequest {
-    const NAME: &'static str = "GetIdentitiesByPublicKeyHashesRequest";
-
-    fn is_initialized(&self) -> bool {
-        true
-    }
-
-    fn merge_from(&mut self, is: &mut ::protobuf::CodedInputStream<'_>) -> ::protobuf::Result<()> {
-        while let Some(tag) = is.read_raw_tag_or_eof()? {
-            match tag {
-                10 => {
-                    self.public_key_hashes.push(is.read_bytes()?);
-                },
-                16 => {
-                    self.prove = is.read_bool()?;
-                },
-                tag => {
-                    ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
-                },
-            };
-        }
-        ::std::result::Result::Ok(())
-    }
-
-    // Compute sizes of nested messages
-    #[allow(unused_variables)]
-    fn compute_size(&self) -> u64 {
-        let mut my_size = 0;
-        for value in &self.public_key_hashes {
-            my_size += ::protobuf::rt::bytes_size(1, &value);
-        };
-        if self.prove != false {
-            my_size += 1 + 1;
-        }
-        my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
-        self.special_fields.cached_size().set(my_size as u32);
-        my_size
-    }
-
-    fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
-        for v in &self.public_key_hashes {
-            os.write_bytes(1, &v)?;
-        };
-        if self.prove != false {
-            os.write_bool(2, self.prove)?;
-        }
-        os.write_unknown_fields(self.special_fields.unknown_fields())?;
-        ::std::result::Result::Ok(())
-    }
-
-    fn special_fields(&self) -> &::protobuf::SpecialFields {
-        &self.special_fields
-    }
-
-    fn mut_special_fields(&mut self) -> &mut ::protobuf::SpecialFields {
-        &mut self.special_fields
-    }
-
-    fn new() -> GetIdentitiesByPublicKeyHashesRequest {
-        GetIdentitiesByPublicKeyHashesRequest::new()
-    }
-
-    fn clear(&mut self) {
-        self.public_key_hashes.clear();
-        self.prove = false;
-        self.special_fields.clear();
-    }
-
-    fn default_instance() -> &'static GetIdentitiesByPublicKeyHashesRequest {
-        static instance: GetIdentitiesByPublicKeyHashesRequest = GetIdentitiesByPublicKeyHashesRequest {
-            public_key_hashes: ::std::vec::Vec::new(),
-            prove: false,
-            special_fields: ::protobuf::SpecialFields::new(),
-        };
-        &instance
-    }
-}
-
-impl ::protobuf::MessageFull for GetIdentitiesByPublicKeyHashesRequest {
-    fn descriptor() -> ::protobuf::reflect::MessageDescriptor {
-        static descriptor: ::protobuf::rt::Lazy<::protobuf::reflect::MessageDescriptor> = ::protobuf::rt::Lazy::new();
-        descriptor.get(|| file_descriptor().message_by_package_relative_name("GetIdentitiesByPublicKeyHashesRequest").unwrap()).clone()
-    }
-}
-
-impl ::std::fmt::Display for GetIdentitiesByPublicKeyHashesRequest {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        ::protobuf::text_format::fmt(self, f)
-    }
-}
-
-impl ::protobuf::reflect::ProtobufValue for GetIdentitiesByPublicKeyHashesRequest {
-    type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
-}
-
-#[derive(PartialEq,Clone,Default,Debug)]
-// @@protoc_insertion_point(message:org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse)
-pub struct GetIdentitiesByPublicKeyHashesResponse {
-    // message fields
-    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.identities)
-    pub identities: ::std::vec::Vec<::std::vec::Vec<u8>>,
-    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.proof)
-    pub proof: ::protobuf::MessageField<Proof>,
-    // @@protoc_insertion_point(field:org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.metadata)
-    pub metadata: ::protobuf::MessageField<ResponseMetadata>,
-    // special fields
-    // @@protoc_insertion_point(special_field:org.dash.platform.dapi.v0.GetIdentitiesByPublicKeyHashesResponse.special_fields)
-    pub special_fields: ::protobuf::SpecialFields,
-}
-
-impl<'a> ::std::default::Default for &'a GetIdentitiesByPublicKeyHashesResponse {
-    fn default() -> &'a GetIdentitiesByPublicKeyHashesResponse {
-        <GetIdentitiesByPublicKeyHashesResponse as ::protobuf::Message>::default_instance()
-    }
-}
-
-impl GetIdentitiesByPublicKeyHashesResponse {
-    pub fn new() -> GetIdentitiesByPublicKeyHashesResponse {
-        ::std::default::Default::default()
-    }
-
-    fn generated_message_descriptor_data() -> ::protobuf::reflect::GeneratedMessageDescriptorData {
-        let mut fields = ::std::vec::Vec::with_capacity(3);
-        let mut oneofs = ::std::vec::Vec::with_capacity(0);
-        fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
-            "identities",
-            |m: &GetIdentitiesByPublicKeyHashesResponse| { &m.identities },
-            |m: &mut GetIdentitiesByPublicKeyHashesResponse| { &mut m.identities },
-        ));
-        fields.push(::protobuf::reflect::rt::v2::make_message_field_accessor::<_, Proof>(
-            "proof",
-            |m: &GetIdentitiesByPublicKeyHashesResponse| { &m.proof },
-            |m: &mut GetIdentitiesByPublicKeyHashesResponse| { &mut m.proof },
-        ));
-        fields.push(::protobuf::reflect::rt::v2::make_message_field_accessor::<_, ResponseMetadata>(
-            "metadata",
-            |m: &GetIdentitiesByPublicKeyHashesResponse| { &m.metadata },
-            |m: &mut GetIdentitiesByPublicKeyHashesResponse| { &mut m.metadata },
-        ));
-        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<GetIdentitiesByPublicKeyHashesResponse>(
-            "GetIdentitiesByPublicKeyHashesResponse",
-            fields,
-            oneofs,
-        )
-    }
-}
-
-impl ::protobuf::Message for GetIdentitiesByPublicKeyHashesResponse {
-    const NAME: &'static str = "GetIdentitiesByPublicKeyHashesResponse";
-
-    fn is_initialized(&self) -> bool {
-        true
-    }
-
-    fn merge_from(&mut self, is: &mut ::protobuf::CodedInputStream<'_>) -> ::protobuf::Result<()> {
-        while let Some(tag) = is.read_raw_tag_or_eof()? {
-            match tag {
-                10 => {
-                    self.identities.push(is.read_bytes()?);
-                },
-                18 => {
-                    ::protobuf::rt::read_singular_message_into_field(is, &mut self.proof)?;
-                },
-                26 => {
-                    ::protobuf::rt::read_singular_message_into_field(is, &mut self.metadata)?;
-                },
-                tag => {
-                    ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
-                },
-            };
-        }
-        ::std::result::Result::Ok(())
-    }
-
-    // Compute sizes of nested messages
-    #[allow(unused_variables)]
-    fn compute_size(&self) -> u64 {
-        let mut my_size = 0;
-        for value in &self.identities {
-            my_size += ::protobuf::rt::bytes_size(1, &value);
-        };
-        if let Some(v) = self.proof.as_ref() {
-            let len = v.compute_size();
-            my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
-        }
-        if let Some(v) = self.metadata.as_ref() {
-            let len = v.compute_size();
-            my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
-        }
-        my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
-        self.special_fields.cached_size().set(my_size as u32);
-        my_size
-    }
-
-    fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
-        for v in &self.identities {
-            os.write_bytes(1, &v)?;
-        };
-        if let Some(v) = self.proof.as_ref() {
-            ::protobuf::rt::write_message_field_with_cached_size(2, v, os)?;
-        }
-        if let Some(v) = self.metadata.as_ref() {
-            ::protobuf::rt::write_message_field_with_cached_size(3, v, os)?;
-        }
-        os.write_unknown_fields(self.special_fields.unknown_fields())?;
-        ::std::result::Result::Ok(())
-    }
-
-    fn special_fields(&self) -> &::protobuf::SpecialFields {
-        &self.special_fields
-    }
-
-    fn mut_special_fields(&mut self) -> &mut ::protobuf::SpecialFields {
-        &mut self.special_fields
-    }
-
-    fn new() -> GetIdentitiesByPublicKeyHashesResponse {
-        GetIdentitiesByPublicKeyHashesResponse::new()
-    }
-
-    fn clear(&mut self) {
-        self.identities.clear();
-        self.proof.clear();
-        self.metadata.clear();
-        self.special_fields.clear();
-    }
-
-    fn default_instance() -> &'static GetIdentitiesByPublicKeyHashesResponse {
-        static instance: GetIdentitiesByPublicKeyHashesResponse = GetIdentitiesByPublicKeyHashesResponse {
-            identities: ::std::vec::Vec::new(),
-            proof: ::protobuf::MessageField::none(),
-            metadata: ::protobuf::MessageField::none(),
-            special_fields: ::protobuf::SpecialFields::new(),
-        };
-        &instance
-    }
-}
-
-impl ::protobuf::MessageFull for GetIdentitiesByPublicKeyHashesResponse {
-    fn descriptor() -> ::protobuf::reflect::MessageDescriptor {
-        static descriptor: ::protobuf::rt::Lazy<::protobuf::reflect::MessageDescriptor> = ::protobuf::rt::Lazy::new();
-        descriptor.get(|| file_descriptor().message_by_package_relative_name("GetIdentitiesByPublicKeyHashesResponse").unwrap()).clone()
-    }
-}
-
-impl ::std::fmt::Display for GetIdentitiesByPublicKeyHashesResponse {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        ::protobuf::text_format::fmt(self, f)
-    }
-}
-
-impl ::protobuf::reflect::ProtobufValue for GetIdentitiesByPublicKeyHashesResponse {
-    type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
-}
-
-#[derive(PartialEq,Clone,Default,Debug)]
 // @@protoc_insertion_point(message:org.dash.platform.dapi.v0.WaitForStateTransitionResultRequest)
 pub struct WaitForStateTransitionResultRequest {
     // message fields
@@ -2417,12 +2355,12 @@ impl WaitForStateTransitionResultResponse {
         }
     }
 
-    // .org.dash.platform.dapi.v0.Proof proof = 2;
+    // .org.dash.platform.dapi.v0.ProvedResult proof = 2;
 
-    pub fn proof(&self) -> &Proof {
+    pub fn proof(&self) -> &ProvedResult {
         match self.responses {
             ::std::option::Option::Some(wait_for_state_transition_result_response::Responses::Proof(ref v)) => v,
-            _ => <Proof as ::protobuf::Message>::default_instance(),
+            _ => <ProvedResult as ::protobuf::Message>::default_instance(),
         }
     }
 
@@ -2438,15 +2376,15 @@ impl WaitForStateTransitionResultResponse {
     }
 
     // Param is passed by value, moved
-    pub fn set_proof(&mut self, v: Proof) {
+    pub fn set_proof(&mut self, v: ProvedResult) {
         self.responses = ::std::option::Option::Some(wait_for_state_transition_result_response::Responses::Proof(v))
     }
 
     // Mutable pointer to the field.
-    pub fn mut_proof(&mut self) -> &mut Proof {
+    pub fn mut_proof(&mut self) -> &mut ProvedResult {
         if let ::std::option::Option::Some(wait_for_state_transition_result_response::Responses::Proof(_)) = self.responses {
         } else {
-            self.responses = ::std::option::Option::Some(wait_for_state_transition_result_response::Responses::Proof(Proof::new()));
+            self.responses = ::std::option::Option::Some(wait_for_state_transition_result_response::Responses::Proof(ProvedResult::new()));
         }
         match self.responses {
             ::std::option::Option::Some(wait_for_state_transition_result_response::Responses::Proof(ref mut v)) => v,
@@ -2455,14 +2393,14 @@ impl WaitForStateTransitionResultResponse {
     }
 
     // Take field
-    pub fn take_proof(&mut self) -> Proof {
+    pub fn take_proof(&mut self) -> ProvedResult {
         if self.has_proof() {
             match self.responses.take() {
                 ::std::option::Option::Some(wait_for_state_transition_result_response::Responses::Proof(v)) => v,
                 _ => panic!(),
             }
         } else {
-            Proof::new()
+            ProvedResult::new()
         }
     }
 
@@ -2476,7 +2414,7 @@ impl WaitForStateTransitionResultResponse {
             WaitForStateTransitionResultResponse::mut_error,
             WaitForStateTransitionResultResponse::set_error,
         ));
-        fields.push(::protobuf::reflect::rt::v2::make_oneof_message_has_get_mut_set_accessor::<_, Proof>(
+        fields.push(::protobuf::reflect::rt::v2::make_oneof_message_has_get_mut_set_accessor::<_, ProvedResult>(
             "proof",
             WaitForStateTransitionResultResponse::has_proof,
             WaitForStateTransitionResultResponse::proof,
@@ -2623,7 +2561,7 @@ pub mod wait_for_state_transition_result_response {
         // @@protoc_insertion_point(oneof_field:org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.error)
         Error(super::StateTransitionBroadcastError),
         // @@protoc_insertion_point(oneof_field:org.dash.platform.dapi.v0.WaitForStateTransitionResultResponse.proof)
-        Proof(super::Proof),
+        Proof(super::ProvedResult),
     }
 
     impl ::protobuf::Oneof for Responses {
@@ -3243,267 +3181,247 @@ impl ::protobuf::reflect::ProtobufValue for GetConsensusParamsResponse {
 
 static file_descriptor_proto_data: &'static [u8] = b"\
     \n\x0eplatform.proto\x12\x19org.dash.platform.dapi.v0\x1a\x1fgoogle/prot\
-    obuf/timestamp.proto\"\x7f\n\x05Proof\x12!\n\x0cmerkle_proof\x18\x01\x20\
-    \x01(\x0cR\x0bmerkleProof\x12\x1f\n\x0bquorum_hash\x18\x02\x20\x01(\x0cR\
-    \nquorumHash\x12\x1c\n\tsignature\x18\x03\x20\x01(\x0cR\tsignature\x12\
-    \x14\n\x05round\x18\x04\x20\x01(\rR\x05round\"\xa7\x01\n\x10ResponseMeta\
-    data\x12\x16\n\x06height\x18\x01\x20\x01(\x03R\x06height\x127\n\x18core_\
-    chain_locked_height\x18\x02\x20\x01(\rR\x15coreChainLockedHeight\x12\x17\
-    \n\x07time_ms\x18\x03\x20\x01(\x04R\x06timeMs\x12)\n\x10protocol_version\
-    \x18\x04\x20\x01(\rR\x0fprotocolVersion\"a\n\x1dStateTransitionBroadcast\
-    Error\x12\x12\n\x04code\x18\x01\x20\x01(\rR\x04code\x12\x18\n\x07message\
-    \x18\x02\x20\x01(\tR\x07message\x12\x12\n\x04data\x18\x03\x20\x01(\x0cR\
-    \x04data\"L\n\x1fBroadcastStateTransitionRequest\x12)\n\x10state_transit\
-    ion\x18\x01\x20\x01(\x0cR\x0fstateTransition\"\"\n\x20BroadcastStateTran\
-    sitionResponse\":\n\x12GetIdentityRequest\x12\x0e\n\x02id\x18\x01\x20\
-    \x01(\x0cR\x02id\x12\x14\n\x05prove\x18\x02\x20\x01(\x08R\x05prove\"\xb2\
-    \x01\n\x13GetIdentityResponse\x12\x1a\n\x08identity\x18\x01\x20\x01(\x0c\
-    R\x08identity\x126\n\x05proof\x18\x02\x20\x01(\x0b2\x20.org.dash.platfor\
-    m.dapi.v0.ProofR\x05proof\x12G\n\x08metadata\x18\x03\x20\x01(\x0b2+.org.\
-    dash.platform.dapi.v0.ResponseMetadataR\x08metadata\">\n\x16GetDataContr\
-    actRequest\x12\x0e\n\x02id\x18\x01\x20\x01(\x0cR\x02id\x12\x14\n\x05prov\
-    e\x18\x02\x20\x01(\x08R\x05prove\"\xbf\x01\n\x17GetDataContractResponse\
-    \x12#\n\rdata_contract\x18\x01\x20\x01(\x0cR\x0cdataContract\x126\n\x05p\
-    roof\x18\x02\x20\x01(\x0b2\x20.org.dash.platform.dapi.v0.ProofR\x05proof\
-    \x12G\n\x08metadata\x18\x03\x20\x01(\x0b2+.org.dash.platform.dapi.v0.Res\
-    ponseMetadataR\x08metadata\"\x8a\x02\n\x13GetDocumentsRequest\x12(\n\x10\
-    data_contract_id\x18\x01\x20\x01(\x0cR\x0edataContractId\x12#\n\rdocumen\
-    t_type\x18\x02\x20\x01(\tR\x0cdocumentType\x12\x14\n\x05where\x18\x03\
-    \x20\x01(\x0cR\x05where\x12\x19\n\x08order_by\x18\x04\x20\x01(\x0cR\x07o\
-    rderBy\x12\x14\n\x05limit\x18\x05\x20\x01(\rR\x05limit\x12!\n\x0bstart_a\
-    fter\x18\x06\x20\x01(\x0cH\0R\nstartAfter\x12\x1b\n\x08start_at\x18\x07\
-    \x20\x01(\x0cH\0R\x07startAt\x12\x14\n\x05prove\x18\x08\x20\x01(\x08R\
-    \x05proveB\x07\n\x05start\"\xb5\x01\n\x14GetDocumentsResponse\x12\x1c\n\
-    \tdocuments\x18\x01\x20\x03(\x0cR\tdocuments\x126\n\x05proof\x18\x02\x20\
-    \x01(\x0b2\x20.org.dash.platform.dapi.v0.ProofR\x05proof\x12G\n\x08metad\
-    ata\x18\x03\x20\x01(\x0b2+.org.dash.platform.dapi.v0.ResponseMetadataR\
-    \x08metadata\"i\n%GetIdentitiesByPublicKeyHashesRequest\x12*\n\x11public\
-    _key_hashes\x18\x01\x20\x03(\x0cR\x0fpublicKeyHashes\x12\x14\n\x05prove\
-    \x18\x02\x20\x01(\x08R\x05prove\"\xc9\x01\n&GetIdentitiesByPublicKeyHash\
-    esResponse\x12\x1e\n\nidentities\x18\x01\x20\x03(\x0cR\nidentities\x126\
-    \n\x05proof\x18\x02\x20\x01(\x0b2\x20.org.dash.platform.dapi.v0.ProofR\
-    \x05proof\x12G\n\x08metadata\x18\x03\x20\x01(\x0b2+.org.dash.platform.da\
-    pi.v0.ResponseMetadataR\x08metadata\"o\n#WaitForStateTransitionResultReq\
-    uest\x122\n\x15state_transition_hash\x18\x01\x20\x01(\x0cR\x13stateTrans\
-    itionHash\x12\x14\n\x05prove\x18\x02\x20\x01(\x08R\x05prove\"\x88\x02\n$\
-    WaitForStateTransitionResultResponse\x12P\n\x05error\x18\x01\x20\x01(\
-    \x0b28.org.dash.platform.dapi.v0.StateTransitionBroadcastErrorH\0R\x05er\
-    ror\x128\n\x05proof\x18\x02\x20\x01(\x0b2\x20.org.dash.platform.dapi.v0.\
-    ProofH\0R\x05proof\x12G\n\x08metadata\x18\x03\x20\x01(\x0b2+.org.dash.pl\
-    atform.dapi.v0.ResponseMetadataR\x08metadataB\x0b\n\tresponses\"n\n\x14C\
-    onsensusParamsBlock\x12\x1b\n\tmax_bytes\x18\x01\x20\x01(\tR\x08maxBytes\
-    \x12\x17\n\x07max_gas\x18\x02\x20\x01(\tR\x06maxGas\x12\x20\n\x0ctime_io\
-    ta_ms\x18\x03\x20\x01(\tR\ntimeIotaMs\"\x8d\x01\n\x17ConsensusParamsEvid\
-    ence\x12+\n\x12max_age_num_blocks\x18\x01\x20\x01(\tR\x0fmaxAgeNumBlocks\
-    \x12(\n\x10max_age_duration\x18\x02\x20\x01(\tR\x0emaxAgeDuration\x12\
-    \x1b\n\tmax_bytes\x18\x03\x20\x01(\tR\x08maxBytes\"I\n\x19GetConsensusPa\
-    ramsRequest\x12\x16\n\x06height\x18\x01\x20\x01(\x03R\x06height\x12\x14\
-    \n\x05prove\x18\x02\x20\x01(\x08R\x05prove\"\xb3\x01\n\x1aGetConsensusPa\
-    ramsResponse\x12E\n\x05block\x18\x01\x20\x01(\x0b2/.org.dash.platform.da\
-    pi.v0.ConsensusParamsBlockR\x05block\x12N\n\x08evidence\x18\x02\x20\x01(\
-    \x0b22.org.dash.platform.dapi.v0.ConsensusParamsEvidenceR\x08evidence2\
-    \xc7\x07\n\x08Platform\x12\x93\x01\n\x18broadcastStateTransition\x12:.or\
-    g.dash.platform.dapi.v0.BroadcastStateTransitionRequest\x1a;.org.dash.pl\
-    atform.dapi.v0.BroadcastStateTransitionResponse\x12l\n\x0bgetIdentity\
-    \x12-.org.dash.platform.dapi.v0.GetIdentityRequest\x1a..org.dash.platfor\
-    m.dapi.v0.GetIdentityResponse\x12x\n\x0fgetDataContract\x121.org.dash.pl\
-    atform.dapi.v0.GetDataContractRequest\x1a2.org.dash.platform.dapi.v0.Get\
-    DataContractResponse\x12o\n\x0cgetDocuments\x12..org.dash.platform.dapi.\
-    v0.GetDocumentsRequest\x1a/.org.dash.platform.dapi.v0.GetDocumentsRespon\
-    se\x12\xa5\x01\n\x1egetIdentitiesByPublicKeyHashes\x12@.org.dash.platfor\
-    m.dapi.v0.GetIdentitiesByPublicKeyHashesRequest\x1aA.org.dash.platform.d\
-    api.v0.GetIdentitiesByPublicKeyHashesResponse\x12\x9f\x01\n\x1cwaitForSt\
-    ateTransitionResult\x12>.org.dash.platform.dapi.v0.WaitForStateTransitio\
-    nResultRequest\x1a?.org.dash.platform.dapi.v0.WaitForStateTransitionResu\
-    ltResponse\x12\x81\x01\n\x12getConsensusParams\x124.org.dash.platform.da\
-    pi.v0.GetConsensusParamsRequest\x1a5.org.dash.platform.dapi.v0.GetConsen\
-    susParamsResponseJ\xda\x1e\n\x07\x12\x05\0\0\x85\x01\x01\n\x08\n\x01\x0c\
-    \x12\x03\0\0\x12\n\x08\n\x01\x02\x12\x03\x02\0\"\n\t\n\x02\x03\0\x12\x03\
-    \x04\0)\n\n\n\x02\x06\0\x12\x04\x06\0\x0e\x01\n\n\n\x03\x06\0\x01\x12\
-    \x03\x06\x08\x10\n\x0b\n\x04\x06\0\x02\0\x12\x03\x07\x02l\n\x0c\n\x05\
-    \x06\0\x02\0\x01\x12\x03\x07\x06\x1e\n\x0c\n\x05\x06\0\x02\0\x02\x12\x03\
-    \x07\x20?\n\x0c\n\x05\x06\0\x02\0\x03\x12\x03\x07Jj\n\x0b\n\x04\x06\0\
-    \x02\x01\x12\x03\x08\x02E\n\x0c\n\x05\x06\0\x02\x01\x01\x12\x03\x08\x06\
-    \x11\n\x0c\n\x05\x06\0\x02\x01\x02\x12\x03\x08\x13%\n\x0c\n\x05\x06\0\
-    \x02\x01\x03\x12\x03\x080C\n\x0b\n\x04\x06\0\x02\x02\x12\x03\t\x02Q\n\
-    \x0c\n\x05\x06\0\x02\x02\x01\x12\x03\t\x06\x15\n\x0c\n\x05\x06\0\x02\x02\
-    \x02\x12\x03\t\x17-\n\x0c\n\x05\x06\0\x02\x02\x03\x12\x03\t8O\n\x0b\n\
-    \x04\x06\0\x02\x03\x12\x03\n\x02H\n\x0c\n\x05\x06\0\x02\x03\x01\x12\x03\
-    \n\x06\x12\n\x0c\n\x05\x06\0\x02\x03\x02\x12\x03\n\x14'\n\x0c\n\x05\x06\
-    \0\x02\x03\x03\x12\x03\n2F\n\x0b\n\x04\x06\0\x02\x04\x12\x03\x0b\x02~\n\
-    \x0c\n\x05\x06\0\x02\x04\x01\x12\x03\x0b\x06$\n\x0c\n\x05\x06\0\x02\x04\
-    \x02\x12\x03\x0b&K\n\x0c\n\x05\x06\0\x02\x04\x03\x12\x03\x0bV|\n\x0b\n\
-    \x04\x06\0\x02\x05\x12\x03\x0c\x02x\n\x0c\n\x05\x06\0\x02\x05\x01\x12\
-    \x03\x0c\x06\"\n\x0c\n\x05\x06\0\x02\x05\x02\x12\x03\x0c$G\n\x0c\n\x05\
-    \x06\0\x02\x05\x03\x12\x03\x0cRv\n\x0b\n\x04\x06\0\x02\x06\x12\x03\r\x02\
-    Z\n\x0c\n\x05\x06\0\x02\x06\x01\x12\x03\r\x06\x18\n\x0c\n\x05\x06\0\x02\
-    \x06\x02\x12\x03\r\x1a3\n\x0c\n\x05\x06\0\x02\x06\x03\x12\x03\r>X\n\n\n\
-    \x02\x04\0\x12\x04\x10\0\x15\x01\n\n\n\x03\x04\0\x01\x12\x03\x10\x08\r\n\
-    \x0b\n\x04\x04\0\x02\0\x12\x03\x11\x02\x19\n\x0c\n\x05\x04\0\x02\0\x05\
-    \x12\x03\x11\x02\x07\n\x0c\n\x05\x04\0\x02\0\x01\x12\x03\x11\x08\x14\n\
-    \x0c\n\x05\x04\0\x02\0\x03\x12\x03\x11\x17\x18\n\x0b\n\x04\x04\0\x02\x01\
-    \x12\x03\x12\x02\x18\n\x0c\n\x05\x04\0\x02\x01\x05\x12\x03\x12\x02\x07\n\
-    \x0c\n\x05\x04\0\x02\x01\x01\x12\x03\x12\x08\x13\n\x0c\n\x05\x04\0\x02\
-    \x01\x03\x12\x03\x12\x16\x17\n\x0b\n\x04\x04\0\x02\x02\x12\x03\x13\x02\
-    \x16\n\x0c\n\x05\x04\0\x02\x02\x05\x12\x03\x13\x02\x07\n\x0c\n\x05\x04\0\
-    \x02\x02\x01\x12\x03\x13\x08\x11\n\x0c\n\x05\x04\0\x02\x02\x03\x12\x03\
-    \x13\x14\x15\n\x0b\n\x04\x04\0\x02\x03\x12\x03\x14\x02\x13\n\x0c\n\x05\
-    \x04\0\x02\x03\x05\x12\x03\x14\x02\x08\n\x0c\n\x05\x04\0\x02\x03\x01\x12\
-    \x03\x14\t\x0e\n\x0c\n\x05\x04\0\x02\x03\x03\x12\x03\x14\x11\x12\n\n\n\
-    \x02\x04\x01\x12\x04\x17\0\x1c\x01\n\n\n\x03\x04\x01\x01\x12\x03\x17\x08\
-    \x18\n\x0b\n\x04\x04\x01\x02\0\x12\x03\x18\x02\x13\n\x0c\n\x05\x04\x01\
-    \x02\0\x05\x12\x03\x18\x02\x07\n\x0c\n\x05\x04\x01\x02\0\x01\x12\x03\x18\
-    \x08\x0e\n\x0c\n\x05\x04\x01\x02\0\x03\x12\x03\x18\x11\x12\n\x0b\n\x04\
-    \x04\x01\x02\x01\x12\x03\x19\x02&\n\x0c\n\x05\x04\x01\x02\x01\x05\x12\
-    \x03\x19\x02\x08\n\x0c\n\x05\x04\x01\x02\x01\x01\x12\x03\x19\t!\n\x0c\n\
-    \x05\x04\x01\x02\x01\x03\x12\x03\x19$%\n\x0b\n\x04\x04\x01\x02\x02\x12\
-    \x03\x1a\x02\x15\n\x0c\n\x05\x04\x01\x02\x02\x05\x12\x03\x1a\x02\x08\n\
-    \x0c\n\x05\x04\x01\x02\x02\x01\x12\x03\x1a\t\x10\n\x0c\n\x05\x04\x01\x02\
-    \x02\x03\x12\x03\x1a\x13\x14\n\x0b\n\x04\x04\x01\x02\x03\x12\x03\x1b\x02\
-    \x1e\n\x0c\n\x05\x04\x01\x02\x03\x05\x12\x03\x1b\x02\x08\n\x0c\n\x05\x04\
-    \x01\x02\x03\x01\x12\x03\x1b\t\x19\n\x0c\n\x05\x04\x01\x02\x03\x03\x12\
-    \x03\x1b\x1c\x1d\n\n\n\x02\x04\x02\x12\x04\x1e\0\"\x01\n\n\n\x03\x04\x02\
-    \x01\x12\x03\x1e\x08%\n\x0b\n\x04\x04\x02\x02\0\x12\x03\x1f\x02\x12\n\
-    \x0c\n\x05\x04\x02\x02\0\x05\x12\x03\x1f\x02\x08\n\x0c\n\x05\x04\x02\x02\
-    \0\x01\x12\x03\x1f\t\r\n\x0c\n\x05\x04\x02\x02\0\x03\x12\x03\x1f\x10\x11\
-    \n\x0b\n\x04\x04\x02\x02\x01\x12\x03\x20\x02\x15\n\x0c\n\x05\x04\x02\x02\
-    \x01\x05\x12\x03\x20\x02\x08\n\x0c\n\x05\x04\x02\x02\x01\x01\x12\x03\x20\
-    \t\x10\n\x0c\n\x05\x04\x02\x02\x01\x03\x12\x03\x20\x13\x14\n\x0b\n\x04\
-    \x04\x02\x02\x02\x12\x03!\x02\x11\n\x0c\n\x05\x04\x02\x02\x02\x05\x12\
-    \x03!\x02\x07\n\x0c\n\x05\x04\x02\x02\x02\x01\x12\x03!\x08\x0c\n\x0c\n\
-    \x05\x04\x02\x02\x02\x03\x12\x03!\x0f\x10\n\n\n\x02\x04\x03\x12\x04$\0&\
-    \x01\n\n\n\x03\x04\x03\x01\x12\x03$\x08'\n\x0b\n\x04\x04\x03\x02\0\x12\
-    \x03%\x02\x1d\n\x0c\n\x05\x04\x03\x02\0\x05\x12\x03%\x02\x07\n\x0c\n\x05\
-    \x04\x03\x02\0\x01\x12\x03%\x08\x18\n\x0c\n\x05\x04\x03\x02\0\x03\x12\
-    \x03%\x1b\x1c\n\n\n\x02\x04\x04\x12\x04(\0*\x01\n\n\n\x03\x04\x04\x01\
-    \x12\x03(\x08(\n\n\n\x02\x04\x05\x12\x04,\0/\x01\n\n\n\x03\x04\x05\x01\
-    \x12\x03,\x08\x1a\n\x0b\n\x04\x04\x05\x02\0\x12\x03-\x02\x0f\n\x0c\n\x05\
-    \x04\x05\x02\0\x05\x12\x03-\x02\x07\n\x0c\n\x05\x04\x05\x02\0\x01\x12\
-    \x03-\x08\n\n\x0c\n\x05\x04\x05\x02\0\x03\x12\x03-\r\x0e\n\x0b\n\x04\x04\
-    \x05\x02\x01\x12\x03.\x02\x11\n\x0c\n\x05\x04\x05\x02\x01\x05\x12\x03.\
-    \x02\x06\n\x0c\n\x05\x04\x05\x02\x01\x01\x12\x03.\x07\x0c\n\x0c\n\x05\
-    \x04\x05\x02\x01\x03\x12\x03.\x0f\x10\n\n\n\x02\x04\x06\x12\x041\05\x01\
-    \n\n\n\x03\x04\x06\x01\x12\x031\x08\x1b\n\x0b\n\x04\x04\x06\x02\0\x12\
-    \x032\x02\x15\n\x0c\n\x05\x04\x06\x02\0\x05\x12\x032\x02\x07\n\x0c\n\x05\
-    \x04\x06\x02\0\x01\x12\x032\x08\x10\n\x0c\n\x05\x04\x06\x02\0\x03\x12\
-    \x032\x13\x14\n\x0b\n\x04\x04\x06\x02\x01\x12\x033\x02\x12\n\x0c\n\x05\
-    \x04\x06\x02\x01\x06\x12\x033\x02\x07\n\x0c\n\x05\x04\x06\x02\x01\x01\
-    \x12\x033\x08\r\n\x0c\n\x05\x04\x06\x02\x01\x03\x12\x033\x10\x11\n\x0b\n\
-    \x04\x04\x06\x02\x02\x12\x034\x02\x20\n\x0c\n\x05\x04\x06\x02\x02\x06\
-    \x12\x034\x02\x12\n\x0c\n\x05\x04\x06\x02\x02\x01\x12\x034\x13\x1b\n\x0c\
-    \n\x05\x04\x06\x02\x02\x03\x12\x034\x1e\x1f\n\n\n\x02\x04\x07\x12\x047\
-    \x01:\x01\n\n\n\x03\x04\x07\x01\x12\x037\t\x1f\n\x0b\n\x04\x04\x07\x02\0\
-    \x12\x038\x02\x0f\n\x0c\n\x05\x04\x07\x02\0\x05\x12\x038\x02\x07\n\x0c\n\
-    \x05\x04\x07\x02\0\x01\x12\x038\x08\n\n\x0c\n\x05\x04\x07\x02\0\x03\x12\
-    \x038\r\x0e\n\x0b\n\x04\x04\x07\x02\x01\x12\x039\x02\x11\n\x0c\n\x05\x04\
-    \x07\x02\x01\x05\x12\x039\x02\x06\n\x0c\n\x05\x04\x07\x02\x01\x01\x12\
-    \x039\x07\x0c\n\x0c\n\x05\x04\x07\x02\x01\x03\x12\x039\x0f\x10\n\n\n\x02\
-    \x04\x08\x12\x04<\0@\x01\n\n\n\x03\x04\x08\x01\x12\x03<\x08\x1f\n\x0b\n\
-    \x04\x04\x08\x02\0\x12\x03=\x02\x1a\n\x0c\n\x05\x04\x08\x02\0\x05\x12\
-    \x03=\x02\x07\n\x0c\n\x05\x04\x08\x02\0\x01\x12\x03=\x08\x15\n\x0c\n\x05\
-    \x04\x08\x02\0\x03\x12\x03=\x18\x19\n\x0b\n\x04\x04\x08\x02\x01\x12\x03>\
-    \x02\x12\n\x0c\n\x05\x04\x08\x02\x01\x06\x12\x03>\x02\x07\n\x0c\n\x05\
-    \x04\x08\x02\x01\x01\x12\x03>\x08\r\n\x0c\n\x05\x04\x08\x02\x01\x03\x12\
-    \x03>\x10\x11\n\x0b\n\x04\x04\x08\x02\x02\x12\x03?\x02\x20\n\x0c\n\x05\
-    \x04\x08\x02\x02\x06\x12\x03?\x02\x12\n\x0c\n\x05\x04\x08\x02\x02\x01\
-    \x12\x03?\x13\x1b\n\x0c\n\x05\x04\x08\x02\x02\x03\x12\x03?\x1e\x1f\n\n\n\
-    \x02\x04\t\x12\x04B\0Q\x01\n\n\n\x03\x04\t\x01\x12\x03B\x08\x1b\n\x0b\n\
-    \x04\x04\t\x02\0\x12\x03C\x02\x1d\n\x0c\n\x05\x04\t\x02\0\x05\x12\x03C\
-    \x02\x07\n\x0c\n\x05\x04\t\x02\0\x01\x12\x03C\x08\x18\n\x0c\n\x05\x04\t\
-    \x02\0\x03\x12\x03C\x1b\x1c\n\x0b\n\x04\x04\t\x02\x01\x12\x03D\x02\x1b\n\
-    \x0c\n\x05\x04\t\x02\x01\x05\x12\x03D\x02\x08\n\x0c\n\x05\x04\t\x02\x01\
-    \x01\x12\x03D\t\x16\n\x0c\n\x05\x04\t\x02\x01\x03\x12\x03D\x19\x1a\n\x0b\
-    \n\x04\x04\t\x02\x02\x12\x03F\x02\x12\n\x0c\n\x05\x04\t\x02\x02\x05\x12\
-    \x03F\x02\x07\n\x0c\n\x05\x04\t\x02\x02\x01\x12\x03F\x08\r\n\x0c\n\x05\
-    \x04\t\x02\x02\x03\x12\x03F\x10\x11\n\x0b\n\x04\x04\t\x02\x03\x12\x03G\
-    \x02\x15\n\x0c\n\x05\x04\t\x02\x03\x05\x12\x03G\x02\x07\n\x0c\n\x05\x04\
-    \t\x02\x03\x01\x12\x03G\x08\x10\n\x0c\n\x05\x04\t\x02\x03\x03\x12\x03G\
-    \x13\x14\n\x0b\n\x04\x04\t\x02\x04\x12\x03I\x02\x13\n\x0c\n\x05\x04\t\
-    \x02\x04\x05\x12\x03I\x02\x08\n\x0c\n\x05\x04\t\x02\x04\x01\x12\x03I\t\
-    \x0e\n\x0c\n\x05\x04\t\x02\x04\x03\x12\x03I\x11\x12\n\x0c\n\x04\x04\t\
-    \x08\0\x12\x04K\x04N\x05\n\x0c\n\x05\x04\t\x08\0\x01\x12\x03K\n\x0f\n\
-    \x0b\n\x04\x04\t\x02\x05\x12\x03L\x06\x1c\n\x0c\n\x05\x04\t\x02\x05\x05\
-    \x12\x03L\x06\x0b\n\x0c\n\x05\x04\t\x02\x05\x01\x12\x03L\x0c\x17\n\x0c\n\
-    \x05\x04\t\x02\x05\x03\x12\x03L\x1a\x1b\n\x0b\n\x04\x04\t\x02\x06\x12\
-    \x03M\x06\x19\n\x0c\n\x05\x04\t\x02\x06\x05\x12\x03M\x06\x0b\n\x0c\n\x05\
-    \x04\t\x02\x06\x01\x12\x03M\x0c\x14\n\x0c\n\x05\x04\t\x02\x06\x03\x12\
-    \x03M\x17\x18\n\x0b\n\x04\x04\t\x02\x07\x12\x03P\x02\x11\n\x0c\n\x05\x04\
-    \t\x02\x07\x05\x12\x03P\x02\x06\n\x0c\n\x05\x04\t\x02\x07\x01\x12\x03P\
-    \x07\x0c\n\x0c\n\x05\x04\t\x02\x07\x03\x12\x03P\x0f\x10\n\n\n\x02\x04\n\
-    \x12\x04S\0W\x01\n\n\n\x03\x04\n\x01\x12\x03S\x08\x1c\n\x0b\n\x04\x04\n\
-    \x02\0\x12\x03T\x02\x1f\n\x0c\n\x05\x04\n\x02\0\x04\x12\x03T\x02\n\n\x0c\
-    \n\x05\x04\n\x02\0\x05\x12\x03T\x0b\x10\n\x0c\n\x05\x04\n\x02\0\x01\x12\
-    \x03T\x11\x1a\n\x0c\n\x05\x04\n\x02\0\x03\x12\x03T\x1d\x1e\n\x0b\n\x04\
-    \x04\n\x02\x01\x12\x03U\x02\x12\n\x0c\n\x05\x04\n\x02\x01\x06\x12\x03U\
-    \x02\x07\n\x0c\n\x05\x04\n\x02\x01\x01\x12\x03U\x08\r\n\x0c\n\x05\x04\n\
-    \x02\x01\x03\x12\x03U\x10\x11\n\x0b\n\x04\x04\n\x02\x02\x12\x03V\x02\x20\
-    \n\x0c\n\x05\x04\n\x02\x02\x06\x12\x03V\x02\x12\n\x0c\n\x05\x04\n\x02\
-    \x02\x01\x12\x03V\x13\x1b\n\x0c\n\x05\x04\n\x02\x02\x03\x12\x03V\x1e\x1f\
-    \n\n\n\x02\x04\x0b\x12\x04Y\0\\\x01\n\n\n\x03\x04\x0b\x01\x12\x03Y\x08-\
-    \n\x0b\n\x04\x04\x0b\x02\0\x12\x03Z\x02'\n\x0c\n\x05\x04\x0b\x02\0\x04\
-    \x12\x03Z\x02\n\n\x0c\n\x05\x04\x0b\x02\0\x05\x12\x03Z\x0b\x10\n\x0c\n\
-    \x05\x04\x0b\x02\0\x01\x12\x03Z\x11\"\n\x0c\n\x05\x04\x0b\x02\0\x03\x12\
-    \x03Z%&\n\x0b\n\x04\x04\x0b\x02\x01\x12\x03[\x02\x11\n\x0c\n\x05\x04\x0b\
-    \x02\x01\x05\x12\x03[\x02\x06\n\x0c\n\x05\x04\x0b\x02\x01\x01\x12\x03[\
-    \x07\x0c\n\x0c\n\x05\x04\x0b\x02\x01\x03\x12\x03[\x0f\x10\n\n\n\x02\x04\
-    \x0c\x12\x04^\0b\x01\n\n\n\x03\x04\x0c\x01\x12\x03^\x08.\n\x0b\n\x04\x04\
-    \x0c\x02\0\x12\x03_\x02\x20\n\x0c\n\x05\x04\x0c\x02\0\x04\x12\x03_\x02\n\
-    \n\x0c\n\x05\x04\x0c\x02\0\x05\x12\x03_\x0b\x10\n\x0c\n\x05\x04\x0c\x02\
-    \0\x01\x12\x03_\x11\x1b\n\x0c\n\x05\x04\x0c\x02\0\x03\x12\x03_\x1e\x1f\n\
-    \x0b\n\x04\x04\x0c\x02\x01\x12\x03`\x02\x12\n\x0c\n\x05\x04\x0c\x02\x01\
-    \x06\x12\x03`\x02\x07\n\x0c\n\x05\x04\x0c\x02\x01\x01\x12\x03`\x08\r\n\
-    \x0c\n\x05\x04\x0c\x02\x01\x03\x12\x03`\x10\x11\n\x0b\n\x04\x04\x0c\x02\
-    \x02\x12\x03a\x02\x20\n\x0c\n\x05\x04\x0c\x02\x02\x06\x12\x03a\x02\x12\n\
-    \x0c\n\x05\x04\x0c\x02\x02\x01\x12\x03a\x13\x1b\n\x0c\n\x05\x04\x0c\x02\
-    \x02\x03\x12\x03a\x1e\x1f\n\n\n\x02\x04\r\x12\x04d\0g\x01\n\n\n\x03\x04\
-    \r\x01\x12\x03d\x08+\n\x0b\n\x04\x04\r\x02\0\x12\x03e\x02\"\n\x0c\n\x05\
-    \x04\r\x02\0\x05\x12\x03e\x02\x07\n\x0c\n\x05\x04\r\x02\0\x01\x12\x03e\
-    \x08\x1d\n\x0c\n\x05\x04\r\x02\0\x03\x12\x03e\x20!\n\x0b\n\x04\x04\r\x02\
-    \x01\x12\x03f\x02\x11\n\x0c\n\x05\x04\r\x02\x01\x05\x12\x03f\x02\x06\n\
-    \x0c\n\x05\x04\r\x02\x01\x01\x12\x03f\x07\x0c\n\x0c\n\x05\x04\r\x02\x01\
-    \x03\x12\x03f\x0f\x10\n\n\n\x02\x04\x0e\x12\x04i\0o\x01\n\n\n\x03\x04\
-    \x0e\x01\x12\x03i\x08,\n\x0c\n\x04\x04\x0e\x08\0\x12\x04j\x02m\x03\n\x0c\
-    \n\x05\x04\x0e\x08\0\x01\x12\x03j\x08\x11\n\x0b\n\x04\x04\x0e\x02\0\x12\
-    \x03k\x04,\n\x0c\n\x05\x04\x0e\x02\0\x06\x12\x03k\x04!\n\x0c\n\x05\x04\
-    \x0e\x02\0\x01\x12\x03k\"'\n\x0c\n\x05\x04\x0e\x02\0\x03\x12\x03k*+\n\
-    \x0b\n\x04\x04\x0e\x02\x01\x12\x03l\x04\x14\n\x0c\n\x05\x04\x0e\x02\x01\
-    \x06\x12\x03l\x04\t\n\x0c\n\x05\x04\x0e\x02\x01\x01\x12\x03l\n\x0f\n\x0c\
-    \n\x05\x04\x0e\x02\x01\x03\x12\x03l\x12\x13\n\x0b\n\x04\x04\x0e\x02\x02\
-    \x12\x03n\x02\x20\n\x0c\n\x05\x04\x0e\x02\x02\x06\x12\x03n\x02\x12\n\x0c\
-    \n\x05\x04\x0e\x02\x02\x01\x12\x03n\x13\x1b\n\x0c\n\x05\x04\x0e\x02\x02\
-    \x03\x12\x03n\x1e\x1f\n\n\n\x02\x04\x0f\x12\x04q\0u\x01\n\n\n\x03\x04\
-    \x0f\x01\x12\x03q\x08\x1c\n\x0b\n\x04\x04\x0f\x02\0\x12\x03r\x02\x17\n\
-    \x0c\n\x05\x04\x0f\x02\0\x05\x12\x03r\x02\x08\n\x0c\n\x05\x04\x0f\x02\0\
-    \x01\x12\x03r\t\x12\n\x0c\n\x05\x04\x0f\x02\0\x03\x12\x03r\x15\x16\n\x0b\
-    \n\x04\x04\x0f\x02\x01\x12\x03s\x02\x15\n\x0c\n\x05\x04\x0f\x02\x01\x05\
-    \x12\x03s\x02\x08\n\x0c\n\x05\x04\x0f\x02\x01\x01\x12\x03s\t\x10\n\x0c\n\
-    \x05\x04\x0f\x02\x01\x03\x12\x03s\x13\x14\n\x0b\n\x04\x04\x0f\x02\x02\
-    \x12\x03t\x02\x1a\n\x0c\n\x05\x04\x0f\x02\x02\x05\x12\x03t\x02\x08\n\x0c\
-    \n\x05\x04\x0f\x02\x02\x01\x12\x03t\t\x15\n\x0c\n\x05\x04\x0f\x02\x02\
-    \x03\x12\x03t\x18\x19\n\n\n\x02\x04\x10\x12\x04w\0{\x01\n\n\n\x03\x04\
-    \x10\x01\x12\x03w\x08\x1f\n\x0b\n\x04\x04\x10\x02\0\x12\x03x\x02\x20\n\
-    \x0c\n\x05\x04\x10\x02\0\x05\x12\x03x\x02\x08\n\x0c\n\x05\x04\x10\x02\0\
-    \x01\x12\x03x\t\x1b\n\x0c\n\x05\x04\x10\x02\0\x03\x12\x03x\x1e\x1f\n\x0b\
-    \n\x04\x04\x10\x02\x01\x12\x03y\x02\x1e\n\x0c\n\x05\x04\x10\x02\x01\x05\
-    \x12\x03y\x02\x08\n\x0c\n\x05\x04\x10\x02\x01\x01\x12\x03y\t\x19\n\x0c\n\
-    \x05\x04\x10\x02\x01\x03\x12\x03y\x1c\x1d\n\x0b\n\x04\x04\x10\x02\x02\
-    \x12\x03z\x02\x17\n\x0c\n\x05\x04\x10\x02\x02\x05\x12\x03z\x02\x08\n\x0c\
-    \n\x05\x04\x10\x02\x02\x01\x12\x03z\t\x12\n\x0c\n\x05\x04\x10\x02\x02\
-    \x03\x12\x03z\x15\x16\n\x0b\n\x02\x04\x11\x12\x05}\0\x80\x01\x01\n\n\n\
-    \x03\x04\x11\x01\x12\x03}\x08!\n\x0b\n\x04\x04\x11\x02\0\x12\x03~\x02\
-    \x13\n\x0c\n\x05\x04\x11\x02\0\x05\x12\x03~\x02\x07\n\x0c\n\x05\x04\x11\
-    \x02\0\x01\x12\x03~\x08\x0e\n\x0c\n\x05\x04\x11\x02\0\x03\x12\x03~\x11\
-    \x12\n\x0b\n\x04\x04\x11\x02\x01\x12\x03\x7f\x02\x11\n\x0c\n\x05\x04\x11\
-    \x02\x01\x05\x12\x03\x7f\x02\x06\n\x0c\n\x05\x04\x11\x02\x01\x01\x12\x03\
-    \x7f\x07\x0c\n\x0c\n\x05\x04\x11\x02\x01\x03\x12\x03\x7f\x0f\x10\n\x0c\n\
-    \x02\x04\x12\x12\x06\x82\x01\0\x85\x01\x01\n\x0b\n\x03\x04\x12\x01\x12\
-    \x04\x82\x01\x08\"\n\x0c\n\x04\x04\x12\x02\0\x12\x04\x83\x01\x02!\n\r\n\
-    \x05\x04\x12\x02\0\x06\x12\x04\x83\x01\x02\x16\n\r\n\x05\x04\x12\x02\0\
-    \x01\x12\x04\x83\x01\x17\x1c\n\r\n\x05\x04\x12\x02\0\x03\x12\x04\x83\x01\
-    \x1f\x20\n\x0c\n\x04\x04\x12\x02\x01\x12\x04\x84\x01\x02'\n\r\n\x05\x04\
-    \x12\x02\x01\x06\x12\x04\x84\x01\x02\x19\n\r\n\x05\x04\x12\x02\x01\x01\
-    \x12\x04\x84\x01\x1a\"\n\r\n\x05\x04\x12\x02\x01\x03\x12\x04\x84\x01%&b\
-    \x06proto3\
+    obuf/timestamp.proto\"\x88\x01\n\x0cProvedResult\x12#\n\rgrovedb_proof\
+    \x18\x01\x20\x01(\x0cR\x0cgrovedbProof\x12\x1f\n\x0bquorum_hash\x18\x02\
+    \x20\x01(\x0cR\nquorumHash\x12\x1c\n\tsignature\x18\x03\x20\x01(\x0cR\ts\
+    ignature\x12\x14\n\x05round\x18\x04\x20\x01(\rR\x05round\"\xa7\x01\n\x10\
+    ResponseMetadata\x12\x16\n\x06height\x18\x01\x20\x01(\x03R\x06height\x12\
+    7\n\x18core_chain_locked_height\x18\x02\x20\x01(\rR\x15coreChainLockedHe\
+    ight\x12\x17\n\x07time_ms\x18\x03\x20\x01(\x04R\x06timeMs\x12)\n\x10prot\
+    ocol_version\x18\x04\x20\x01(\rR\x0fprotocolVersion\"a\n\x1dStateTransit\
+    ionBroadcastError\x12\x12\n\x04code\x18\x01\x20\x01(\rR\x04code\x12\x18\
+    \n\x07message\x18\x02\x20\x01(\tR\x07message\x12\x12\n\x04data\x18\x03\
+    \x20\x01(\x0cR\x04data\"L\n\x1fBroadcastStateTransitionRequest\x12)\n\
+    \x10state_transition\x18\x01\x20\x01(\x0cR\x0fstateTransition\"\"\n\x20B\
+    roadcastStateTransitionResponse\"\xe5\x01\n\x12SingleItemResponse\x12,\n\
+    \x11non_proved_result\x18\x01\x20\x01(\x0cH\0R\x0fnonProvedResult\x12N\n\
+    \rproved_result\x18\x02\x20\x01(\x0b2'.org.dash.platform.dapi.v0.ProvedR\
+    esultH\0R\x0cprovedResult\x12G\n\x08metadata\x18\x03\x20\x01(\x0b2+.org.\
+    dash.platform.dapi.v0.ResponseMetadataR\x08metadataB\x08\n\x06result\"\"\
+    \n\nResultList\x12\x14\n\x05items\x18\x01\x20\x03(\x0cR\x05items\"\x8d\
+    \x02\n\x11MultiItemResponse\x12U\n\x12non_proved_results\x18\x01\x20\x01\
+    (\x0b2%.org.dash.platform.dapi.v0.ResultListH\0R\x10nonProvedResults\x12\
+    N\n\rproved_result\x18\x02\x20\x01(\x0b2'.org.dash.platform.dapi.v0.Prov\
+    edResultH\0R\x0cprovedResult\x12G\n\x08metadata\x18\x03\x20\x01(\x0b2+.o\
+    rg.dash.platform.dapi.v0.ResponseMetadataR\x08metadataB\x08\n\x06result\
+    \"<\n\x14GetSingleItemRequest\x12\x0e\n\x02id\x18\x01\x20\x01(\x0cR\x02i\
+    d\x12\x14\n\x05prove\x18\x02\x20\x01(\x08R\x05prove\"=\n\x13GetMultiItem\
+    Request\x12\x10\n\x03ids\x18\x01\x20\x03(\x0cR\x03ids\x12\x14\n\x05prove\
+    \x18\x02\x20\x01(\x08R\x05prove\"\x8a\x02\n\x13GetDocumentsRequest\x12(\
+    \n\x10data_contract_id\x18\x01\x20\x01(\x0cR\x0edataContractId\x12#\n\rd\
+    ocument_type\x18\x02\x20\x01(\tR\x0cdocumentType\x12\x14\n\x05where\x18\
+    \x03\x20\x01(\x0cR\x05where\x12\x19\n\x08order_by\x18\x04\x20\x01(\x0cR\
+    \x07orderBy\x12\x14\n\x05limit\x18\x05\x20\x01(\rR\x05limit\x12!\n\x0bst\
+    art_after\x18\x06\x20\x01(\x0cH\0R\nstartAfter\x12\x1b\n\x08start_at\x18\
+    \x07\x20\x01(\x0cH\0R\x07startAt\x12\x14\n\x05prove\x18\x08\x20\x01(\x08\
+    R\x05proveB\x07\n\x05start\"o\n#WaitForStateTransitionResultRequest\x122\
+    \n\x15state_transition_hash\x18\x01\x20\x01(\x0cR\x13stateTransitionHash\
+    \x12\x14\n\x05prove\x18\x02\x20\x01(\x08R\x05prove\"\x8f\x02\n$WaitForSt\
+    ateTransitionResultResponse\x12P\n\x05error\x18\x01\x20\x01(\x0b28.org.d\
+    ash.platform.dapi.v0.StateTransitionBroadcastErrorH\0R\x05error\x12?\n\
+    \x05proof\x18\x02\x20\x01(\x0b2'.org.dash.platform.dapi.v0.ProvedResultH\
+    \0R\x05proof\x12G\n\x08metadata\x18\x03\x20\x01(\x0b2+.org.dash.platform\
+    .dapi.v0.ResponseMetadataR\x08metadataB\x0b\n\tresponses\"n\n\x14Consens\
+    usParamsBlock\x12\x1b\n\tmax_bytes\x18\x01\x20\x01(\tR\x08maxBytes\x12\
+    \x17\n\x07max_gas\x18\x02\x20\x01(\tR\x06maxGas\x12\x20\n\x0ctime_iota_m\
+    s\x18\x03\x20\x01(\tR\ntimeIotaMs\"\x8d\x01\n\x17ConsensusParamsEvidence\
+    \x12+\n\x12max_age_num_blocks\x18\x01\x20\x01(\tR\x0fmaxAgeNumBlocks\x12\
+    (\n\x10max_age_duration\x18\x02\x20\x01(\tR\x0emaxAgeDuration\x12\x1b\n\
+    \tmax_bytes\x18\x03\x20\x01(\tR\x08maxBytes\"I\n\x19GetConsensusParamsRe\
+    quest\x12\x16\n\x06height\x18\x01\x20\x01(\x03R\x06height\x12\x14\n\x05p\
+    rove\x18\x02\x20\x01(\x08R\x05prove\"\xb3\x01\n\x1aGetConsensusParamsRes\
+    ponse\x12E\n\x05block\x18\x01\x20\x01(\x0b2/.org.dash.platform.dapi.v0.C\
+    onsensusParamsBlockR\x05block\x12N\n\x08evidence\x18\x02\x20\x01(\x0b22.\
+    org.dash.platform.dapi.v0.ConsensusParamsEvidenceR\x08evidence2\x8d\t\n\
+    \x08Platform\x12\x93\x01\n\x18broadcastStateTransition\x12:.org.dash.pla\
+    tform.dapi.v0.BroadcastStateTransitionRequest\x1a;.org.dash.platform.dap\
+    i.v0.BroadcastStateTransitionResponse\x12m\n\x0bgetIdentity\x12/.org.das\
+    h.platform.dapi.v0.GetSingleItemRequest\x1a-.org.dash.platform.dapi.v0.S\
+    ingleItemResponse\x12t\n\x12getIdentityBalance\x12/.org.dash.platform.da\
+    pi.v0.GetSingleItemRequest\x1a-.org.dash.platform.dapi.v0.SingleItemResp\
+    onse\x12\x7f\n\x1dgetIdentityBalanceAndRevision\x12/.org.dash.platform.d\
+    api.v0.GetSingleItemRequest\x1a-.org.dash.platform.dapi.v0.SingleItemRes\
+    ponse\x12q\n\x0fgetDataContract\x12/.org.dash.platform.dapi.v0.GetSingle\
+    ItemRequest\x1a-.org.dash.platform.dapi.v0.SingleItemResponse\x12l\n\x0c\
+    getDocuments\x12..org.dash.platform.dapi.v0.GetDocumentsRequest\x1a,.org\
+    .dash.platform.dapi.v0.MultiItemResponse\x12~\n\x1egetIdentitiesByPublic\
+    KeyHashes\x12..org.dash.platform.dapi.v0.GetMultiItemRequest\x1a,.org.da\
+    sh.platform.dapi.v0.MultiItemResponse\x12\x9f\x01\n\x1cwaitForStateTrans\
+    itionResult\x12>.org.dash.platform.dapi.v0.WaitForStateTransitionResultR\
+    equest\x1a?.org.dash.platform.dapi.v0.WaitForStateTransitionResultRespon\
+    se\x12\x81\x01\n\x12getConsensusParams\x124.org.dash.platform.dapi.v0.Ge\
+    tConsensusParamsRequest\x1a5.org.dash.platform.dapi.v0.GetConsensusParam\
+    sResponseJ\xb4\x1c\n\x06\x12\x04\0\0~\x01\n\x08\n\x01\x0c\x12\x03\0\0\
+    \x12\n\x08\n\x01\x02\x12\x03\x02\0\"\n\t\n\x02\x03\0\x12\x03\x04\0)\n\n\
+    \n\x02\x06\0\x12\x04\x06\0\x10\x01\n\n\n\x03\x06\0\x01\x12\x03\x06\x08\
+    \x10\n\x0b\n\x04\x06\0\x02\0\x12\x03\x07\x02l\n\x0c\n\x05\x06\0\x02\0\
+    \x01\x12\x03\x07\x06\x1e\n\x0c\n\x05\x06\0\x02\0\x02\x12\x03\x07\x20?\n\
+    \x0c\n\x05\x06\0\x02\0\x03\x12\x03\x07Jj\n\x0b\n\x04\x06\0\x02\x01\x12\
+    \x03\x08\x02F\n\x0c\n\x05\x06\0\x02\x01\x01\x12\x03\x08\x06\x11\n\x0c\n\
+    \x05\x06\0\x02\x01\x02\x12\x03\x08\x13'\n\x0c\n\x05\x06\0\x02\x01\x03\
+    \x12\x03\x082D\n\x0b\n\x04\x06\0\x02\x02\x12\x03\t\x02M\n\x0c\n\x05\x06\
+    \0\x02\x02\x01\x12\x03\t\x06\x18\n\x0c\n\x05\x06\0\x02\x02\x02\x12\x03\t\
+    \x1a.\n\x0c\n\x05\x06\0\x02\x02\x03\x12\x03\t9K\n\x0b\n\x04\x06\0\x02\
+    \x03\x12\x03\n\x02X\n\x0c\n\x05\x06\0\x02\x03\x01\x12\x03\n\x06#\n\x0c\n\
+    \x05\x06\0\x02\x03\x02\x12\x03\n%9\n\x0c\n\x05\x06\0\x02\x03\x03\x12\x03\
+    \nDV\n\x0b\n\x04\x06\0\x02\x04\x12\x03\x0b\x02J\n\x0c\n\x05\x06\0\x02\
+    \x04\x01\x12\x03\x0b\x06\x15\n\x0c\n\x05\x06\0\x02\x04\x02\x12\x03\x0b\
+    \x17+\n\x0c\n\x05\x06\0\x02\x04\x03\x12\x03\x0b6H\n\x0b\n\x04\x06\0\x02\
+    \x05\x12\x03\x0c\x02E\n\x0c\n\x05\x06\0\x02\x05\x01\x12\x03\x0c\x06\x12\
+    \n\x0c\n\x05\x06\0\x02\x05\x02\x12\x03\x0c\x14'\n\x0c\n\x05\x06\0\x02\
+    \x05\x03\x12\x03\x0c2C\n\x0b\n\x04\x06\0\x02\x06\x12\x03\r\x02W\n\x0c\n\
+    \x05\x06\0\x02\x06\x01\x12\x03\r\x06$\n\x0c\n\x05\x06\0\x02\x06\x02\x12\
+    \x03\r&9\n\x0c\n\x05\x06\0\x02\x06\x03\x12\x03\rDU\n\x0b\n\x04\x06\0\x02\
+    \x07\x12\x03\x0e\x02x\n\x0c\n\x05\x06\0\x02\x07\x01\x12\x03\x0e\x06\"\n\
+    \x0c\n\x05\x06\0\x02\x07\x02\x12\x03\x0e$G\n\x0c\n\x05\x06\0\x02\x07\x03\
+    \x12\x03\x0eRv\n\x0b\n\x04\x06\0\x02\x08\x12\x03\x0f\x02Z\n\x0c\n\x05\
+    \x06\0\x02\x08\x01\x12\x03\x0f\x06\x18\n\x0c\n\x05\x06\0\x02\x08\x02\x12\
+    \x03\x0f\x1a3\n\x0c\n\x05\x06\0\x02\x08\x03\x12\x03\x0f>X\n\n\n\x02\x04\
+    \0\x12\x04\x12\0\x17\x01\n\n\n\x03\x04\0\x01\x12\x03\x12\x08\x14\n\x0b\n\
+    \x04\x04\0\x02\0\x12\x03\x13\x02\x1a\n\x0c\n\x05\x04\0\x02\0\x05\x12\x03\
+    \x13\x02\x07\n\x0c\n\x05\x04\0\x02\0\x01\x12\x03\x13\x08\x15\n\x0c\n\x05\
+    \x04\0\x02\0\x03\x12\x03\x13\x18\x19\n\x0b\n\x04\x04\0\x02\x01\x12\x03\
+    \x14\x02\x18\n\x0c\n\x05\x04\0\x02\x01\x05\x12\x03\x14\x02\x07\n\x0c\n\
+    \x05\x04\0\x02\x01\x01\x12\x03\x14\x08\x13\n\x0c\n\x05\x04\0\x02\x01\x03\
+    \x12\x03\x14\x16\x17\n\x0b\n\x04\x04\0\x02\x02\x12\x03\x15\x02\x16\n\x0c\
+    \n\x05\x04\0\x02\x02\x05\x12\x03\x15\x02\x07\n\x0c\n\x05\x04\0\x02\x02\
+    \x01\x12\x03\x15\x08\x11\n\x0c\n\x05\x04\0\x02\x02\x03\x12\x03\x15\x14\
+    \x15\n\x0b\n\x04\x04\0\x02\x03\x12\x03\x16\x02\x13\n\x0c\n\x05\x04\0\x02\
+    \x03\x05\x12\x03\x16\x02\x08\n\x0c\n\x05\x04\0\x02\x03\x01\x12\x03\x16\t\
+    \x0e\n\x0c\n\x05\x04\0\x02\x03\x03\x12\x03\x16\x11\x12\n\n\n\x02\x04\x01\
+    \x12\x04\x19\0\x1e\x01\n\n\n\x03\x04\x01\x01\x12\x03\x19\x08\x18\n\x0b\n\
+    \x04\x04\x01\x02\0\x12\x03\x1a\x02\x13\n\x0c\n\x05\x04\x01\x02\0\x05\x12\
+    \x03\x1a\x02\x07\n\x0c\n\x05\x04\x01\x02\0\x01\x12\x03\x1a\x08\x0e\n\x0c\
+    \n\x05\x04\x01\x02\0\x03\x12\x03\x1a\x11\x12\n\x0b\n\x04\x04\x01\x02\x01\
+    \x12\x03\x1b\x02&\n\x0c\n\x05\x04\x01\x02\x01\x05\x12\x03\x1b\x02\x08\n\
+    \x0c\n\x05\x04\x01\x02\x01\x01\x12\x03\x1b\t!\n\x0c\n\x05\x04\x01\x02\
+    \x01\x03\x12\x03\x1b$%\n\x0b\n\x04\x04\x01\x02\x02\x12\x03\x1c\x02\x15\n\
+    \x0c\n\x05\x04\x01\x02\x02\x05\x12\x03\x1c\x02\x08\n\x0c\n\x05\x04\x01\
+    \x02\x02\x01\x12\x03\x1c\t\x10\n\x0c\n\x05\x04\x01\x02\x02\x03\x12\x03\
+    \x1c\x13\x14\n\x0b\n\x04\x04\x01\x02\x03\x12\x03\x1d\x02\x1e\n\x0c\n\x05\
+    \x04\x01\x02\x03\x05\x12\x03\x1d\x02\x08\n\x0c\n\x05\x04\x01\x02\x03\x01\
+    \x12\x03\x1d\t\x19\n\x0c\n\x05\x04\x01\x02\x03\x03\x12\x03\x1d\x1c\x1d\n\
+    \n\n\x02\x04\x02\x12\x04\x20\0$\x01\n\n\n\x03\x04\x02\x01\x12\x03\x20\
+    \x08%\n\x0b\n\x04\x04\x02\x02\0\x12\x03!\x02\x12\n\x0c\n\x05\x04\x02\x02\
+    \0\x05\x12\x03!\x02\x08\n\x0c\n\x05\x04\x02\x02\0\x01\x12\x03!\t\r\n\x0c\
+    \n\x05\x04\x02\x02\0\x03\x12\x03!\x10\x11\n\x0b\n\x04\x04\x02\x02\x01\
+    \x12\x03\"\x02\x15\n\x0c\n\x05\x04\x02\x02\x01\x05\x12\x03\"\x02\x08\n\
+    \x0c\n\x05\x04\x02\x02\x01\x01\x12\x03\"\t\x10\n\x0c\n\x05\x04\x02\x02\
+    \x01\x03\x12\x03\"\x13\x14\n\x0b\n\x04\x04\x02\x02\x02\x12\x03#\x02\x11\
+    \n\x0c\n\x05\x04\x02\x02\x02\x05\x12\x03#\x02\x07\n\x0c\n\x05\x04\x02\
+    \x02\x02\x01\x12\x03#\x08\x0c\n\x0c\n\x05\x04\x02\x02\x02\x03\x12\x03#\
+    \x0f\x10\n\n\n\x02\x04\x03\x12\x04&\0(\x01\n\n\n\x03\x04\x03\x01\x12\x03\
+    &\x08'\n\x0b\n\x04\x04\x03\x02\0\x12\x03'\x02\x1d\n\x0c\n\x05\x04\x03\
+    \x02\0\x05\x12\x03'\x02\x07\n\x0c\n\x05\x04\x03\x02\0\x01\x12\x03'\x08\
+    \x18\n\x0c\n\x05\x04\x03\x02\0\x03\x12\x03'\x1b\x1c\n\n\n\x02\x04\x04\
+    \x12\x04*\0,\x01\n\n\n\x03\x04\x04\x01\x12\x03*\x08(\n\n\n\x02\x04\x05\
+    \x12\x04.\04\x01\n\n\n\x03\x04\x05\x01\x12\x03.\x08\x1a\n\x0c\n\x04\x04\
+    \x05\x08\0\x12\x04/\x022\x03\n\x0c\n\x05\x04\x05\x08\0\x01\x12\x03/\x08\
+    \x0e\n\x0b\n\x04\x04\x05\x02\0\x12\x030\x04\x20\n\x0c\n\x05\x04\x05\x02\
+    \0\x05\x12\x030\x04\t\n\x0c\n\x05\x04\x05\x02\0\x01\x12\x030\n\x1b\n\x0c\
+    \n\x05\x04\x05\x02\0\x03\x12\x030\x1e\x1f\n\x0b\n\x04\x04\x05\x02\x01\
+    \x12\x031\x04#\n\x0c\n\x05\x04\x05\x02\x01\x06\x12\x031\x04\x10\n\x0c\n\
+    \x05\x04\x05\x02\x01\x01\x12\x031\x11\x1e\n\x0c\n\x05\x04\x05\x02\x01\
+    \x03\x12\x031!\"\n\x0b\n\x04\x04\x05\x02\x02\x12\x033\x02\x20\n\x0c\n\
+    \x05\x04\x05\x02\x02\x06\x12\x033\x02\x12\n\x0c\n\x05\x04\x05\x02\x02\
+    \x01\x12\x033\x13\x1b\n\x0c\n\x05\x04\x05\x02\x02\x03\x12\x033\x1e\x1f\n\
+    \n\n\x02\x04\x06\x12\x046\08\x01\n\n\n\x03\x04\x06\x01\x12\x036\x08\x12\
+    \n\x0b\n\x04\x04\x06\x02\0\x12\x037\x02\x1b\n\x0c\n\x05\x04\x06\x02\0\
+    \x04\x12\x037\x02\n\n\x0c\n\x05\x04\x06\x02\0\x05\x12\x037\x0b\x10\n\x0c\
+    \n\x05\x04\x06\x02\0\x01\x12\x037\x11\x16\n\x0c\n\x05\x04\x06\x02\0\x03\
+    \x12\x037\x19\x1a\n\n\n\x02\x04\x07\x12\x04:\0@\x01\n\n\n\x03\x04\x07\
+    \x01\x12\x03:\x08\x19\n\x0c\n\x04\x04\x07\x08\0\x12\x04;\x02>\x03\n\x0c\
+    \n\x05\x04\x07\x08\0\x01\x12\x03;\x08\x0e\n\x0b\n\x04\x04\x07\x02\0\x12\
+    \x03<\x04&\n\x0c\n\x05\x04\x07\x02\0\x06\x12\x03<\x04\x0e\n\x0c\n\x05\
+    \x04\x07\x02\0\x01\x12\x03<\x0f!\n\x0c\n\x05\x04\x07\x02\0\x03\x12\x03<$\
+    %\n\x0b\n\x04\x04\x07\x02\x01\x12\x03=\x04#\n\x0c\n\x05\x04\x07\x02\x01\
+    \x06\x12\x03=\x04\x10\n\x0c\n\x05\x04\x07\x02\x01\x01\x12\x03=\x11\x1e\n\
+    \x0c\n\x05\x04\x07\x02\x01\x03\x12\x03=!\"\n\x0b\n\x04\x04\x07\x02\x02\
+    \x12\x03?\x02\x20\n\x0c\n\x05\x04\x07\x02\x02\x06\x12\x03?\x02\x12\n\x0c\
+    \n\x05\x04\x07\x02\x02\x01\x12\x03?\x13\x1b\n\x0c\n\x05\x04\x07\x02\x02\
+    \x03\x12\x03?\x1e\x1f\n\n\n\x02\x04\x08\x12\x04B\0E\x01\n\n\n\x03\x04\
+    \x08\x01\x12\x03B\x08\x1c\n\x0b\n\x04\x04\x08\x02\0\x12\x03C\x02\x0f\n\
+    \x0c\n\x05\x04\x08\x02\0\x05\x12\x03C\x02\x07\n\x0c\n\x05\x04\x08\x02\0\
+    \x01\x12\x03C\x08\n\n\x0c\n\x05\x04\x08\x02\0\x03\x12\x03C\r\x0e\n\x0b\n\
+    \x04\x04\x08\x02\x01\x12\x03D\x02\x11\n\x0c\n\x05\x04\x08\x02\x01\x05\
+    \x12\x03D\x02\x06\n\x0c\n\x05\x04\x08\x02\x01\x01\x12\x03D\x07\x0c\n\x0c\
+    \n\x05\x04\x08\x02\x01\x03\x12\x03D\x0f\x10\n\n\n\x02\x04\t\x12\x04G\0J\
+    \x01\n\n\n\x03\x04\t\x01\x12\x03G\x08\x1b\n\x0b\n\x04\x04\t\x02\0\x12\
+    \x03H\x02\x19\n\x0c\n\x05\x04\t\x02\0\x04\x12\x03H\x02\n\n\x0c\n\x05\x04\
+    \t\x02\0\x05\x12\x03H\x0b\x10\n\x0c\n\x05\x04\t\x02\0\x01\x12\x03H\x11\
+    \x14\n\x0c\n\x05\x04\t\x02\0\x03\x12\x03H\x17\x18\n\x0b\n\x04\x04\t\x02\
+    \x01\x12\x03I\x02\x11\n\x0c\n\x05\x04\t\x02\x01\x05\x12\x03I\x02\x06\n\
+    \x0c\n\x05\x04\t\x02\x01\x01\x12\x03I\x07\x0c\n\x0c\n\x05\x04\t\x02\x01\
+    \x03\x12\x03I\x0f\x10\n\n\n\x02\x04\n\x12\x04L\0[\x01\n\n\n\x03\x04\n\
+    \x01\x12\x03L\x08\x1b\n\x0b\n\x04\x04\n\x02\0\x12\x03M\x02\x1d\n\x0c\n\
+    \x05\x04\n\x02\0\x05\x12\x03M\x02\x07\n\x0c\n\x05\x04\n\x02\0\x01\x12\
+    \x03M\x08\x18\n\x0c\n\x05\x04\n\x02\0\x03\x12\x03M\x1b\x1c\n\x0b\n\x04\
+    \x04\n\x02\x01\x12\x03N\x02\x1b\n\x0c\n\x05\x04\n\x02\x01\x05\x12\x03N\
+    \x02\x08\n\x0c\n\x05\x04\n\x02\x01\x01\x12\x03N\t\x16\n\x0c\n\x05\x04\n\
+    \x02\x01\x03\x12\x03N\x19\x1a\n\x0b\n\x04\x04\n\x02\x02\x12\x03P\x02\x12\
+    \n\x0c\n\x05\x04\n\x02\x02\x05\x12\x03P\x02\x07\n\x0c\n\x05\x04\n\x02\
+    \x02\x01\x12\x03P\x08\r\n\x0c\n\x05\x04\n\x02\x02\x03\x12\x03P\x10\x11\n\
+    \x0b\n\x04\x04\n\x02\x03\x12\x03Q\x02\x15\n\x0c\n\x05\x04\n\x02\x03\x05\
+    \x12\x03Q\x02\x07\n\x0c\n\x05\x04\n\x02\x03\x01\x12\x03Q\x08\x10\n\x0c\n\
+    \x05\x04\n\x02\x03\x03\x12\x03Q\x13\x14\n\x0b\n\x04\x04\n\x02\x04\x12\
+    \x03S\x02\x13\n\x0c\n\x05\x04\n\x02\x04\x05\x12\x03S\x02\x08\n\x0c\n\x05\
+    \x04\n\x02\x04\x01\x12\x03S\t\x0e\n\x0c\n\x05\x04\n\x02\x04\x03\x12\x03S\
+    \x11\x12\n\x0c\n\x04\x04\n\x08\0\x12\x04U\x04X\x05\n\x0c\n\x05\x04\n\x08\
+    \0\x01\x12\x03U\n\x0f\n\x0b\n\x04\x04\n\x02\x05\x12\x03V\x06\x1c\n\x0c\n\
+    \x05\x04\n\x02\x05\x05\x12\x03V\x06\x0b\n\x0c\n\x05\x04\n\x02\x05\x01\
+    \x12\x03V\x0c\x17\n\x0c\n\x05\x04\n\x02\x05\x03\x12\x03V\x1a\x1b\n\x0b\n\
+    \x04\x04\n\x02\x06\x12\x03W\x06\x19\n\x0c\n\x05\x04\n\x02\x06\x05\x12\
+    \x03W\x06\x0b\n\x0c\n\x05\x04\n\x02\x06\x01\x12\x03W\x0c\x14\n\x0c\n\x05\
+    \x04\n\x02\x06\x03\x12\x03W\x17\x18\n\x0b\n\x04\x04\n\x02\x07\x12\x03Z\
+    \x02\x11\n\x0c\n\x05\x04\n\x02\x07\x05\x12\x03Z\x02\x06\n\x0c\n\x05\x04\
+    \n\x02\x07\x01\x12\x03Z\x07\x0c\n\x0c\n\x05\x04\n\x02\x07\x03\x12\x03Z\
+    \x0f\x10\n\n\n\x02\x04\x0b\x12\x04]\0`\x01\n\n\n\x03\x04\x0b\x01\x12\x03\
+    ]\x08+\n\x0b\n\x04\x04\x0b\x02\0\x12\x03^\x02\"\n\x0c\n\x05\x04\x0b\x02\
+    \0\x05\x12\x03^\x02\x07\n\x0c\n\x05\x04\x0b\x02\0\x01\x12\x03^\x08\x1d\n\
+    \x0c\n\x05\x04\x0b\x02\0\x03\x12\x03^\x20!\n\x0b\n\x04\x04\x0b\x02\x01\
+    \x12\x03_\x02\x11\n\x0c\n\x05\x04\x0b\x02\x01\x05\x12\x03_\x02\x06\n\x0c\
+    \n\x05\x04\x0b\x02\x01\x01\x12\x03_\x07\x0c\n\x0c\n\x05\x04\x0b\x02\x01\
+    \x03\x12\x03_\x0f\x10\n\n\n\x02\x04\x0c\x12\x04b\0h\x01\n\n\n\x03\x04\
+    \x0c\x01\x12\x03b\x08,\n\x0c\n\x04\x04\x0c\x08\0\x12\x04c\x02f\x03\n\x0c\
+    \n\x05\x04\x0c\x08\0\x01\x12\x03c\x08\x11\n\x0b\n\x04\x04\x0c\x02\0\x12\
+    \x03d\x04,\n\x0c\n\x05\x04\x0c\x02\0\x06\x12\x03d\x04!\n\x0c\n\x05\x04\
+    \x0c\x02\0\x01\x12\x03d\"'\n\x0c\n\x05\x04\x0c\x02\0\x03\x12\x03d*+\n\
+    \x0b\n\x04\x04\x0c\x02\x01\x12\x03e\x04\x1b\n\x0c\n\x05\x04\x0c\x02\x01\
+    \x06\x12\x03e\x04\x10\n\x0c\n\x05\x04\x0c\x02\x01\x01\x12\x03e\x11\x16\n\
+    \x0c\n\x05\x04\x0c\x02\x01\x03\x12\x03e\x19\x1a\n\x0b\n\x04\x04\x0c\x02\
+    \x02\x12\x03g\x02\x20\n\x0c\n\x05\x04\x0c\x02\x02\x06\x12\x03g\x02\x12\n\
+    \x0c\n\x05\x04\x0c\x02\x02\x01\x12\x03g\x13\x1b\n\x0c\n\x05\x04\x0c\x02\
+    \x02\x03\x12\x03g\x1e\x1f\n\n\n\x02\x04\r\x12\x04j\0n\x01\n\n\n\x03\x04\
+    \r\x01\x12\x03j\x08\x1c\n\x0b\n\x04\x04\r\x02\0\x12\x03k\x02\x17\n\x0c\n\
+    \x05\x04\r\x02\0\x05\x12\x03k\x02\x08\n\x0c\n\x05\x04\r\x02\0\x01\x12\
+    \x03k\t\x12\n\x0c\n\x05\x04\r\x02\0\x03\x12\x03k\x15\x16\n\x0b\n\x04\x04\
+    \r\x02\x01\x12\x03l\x02\x15\n\x0c\n\x05\x04\r\x02\x01\x05\x12\x03l\x02\
+    \x08\n\x0c\n\x05\x04\r\x02\x01\x01\x12\x03l\t\x10\n\x0c\n\x05\x04\r\x02\
+    \x01\x03\x12\x03l\x13\x14\n\x0b\n\x04\x04\r\x02\x02\x12\x03m\x02\x1a\n\
+    \x0c\n\x05\x04\r\x02\x02\x05\x12\x03m\x02\x08\n\x0c\n\x05\x04\r\x02\x02\
+    \x01\x12\x03m\t\x15\n\x0c\n\x05\x04\r\x02\x02\x03\x12\x03m\x18\x19\n\n\n\
+    \x02\x04\x0e\x12\x04p\0t\x01\n\n\n\x03\x04\x0e\x01\x12\x03p\x08\x1f\n\
+    \x0b\n\x04\x04\x0e\x02\0\x12\x03q\x02\x20\n\x0c\n\x05\x04\x0e\x02\0\x05\
+    \x12\x03q\x02\x08\n\x0c\n\x05\x04\x0e\x02\0\x01\x12\x03q\t\x1b\n\x0c\n\
+    \x05\x04\x0e\x02\0\x03\x12\x03q\x1e\x1f\n\x0b\n\x04\x04\x0e\x02\x01\x12\
+    \x03r\x02\x1e\n\x0c\n\x05\x04\x0e\x02\x01\x05\x12\x03r\x02\x08\n\x0c\n\
+    \x05\x04\x0e\x02\x01\x01\x12\x03r\t\x19\n\x0c\n\x05\x04\x0e\x02\x01\x03\
+    \x12\x03r\x1c\x1d\n\x0b\n\x04\x04\x0e\x02\x02\x12\x03s\x02\x17\n\x0c\n\
+    \x05\x04\x0e\x02\x02\x05\x12\x03s\x02\x08\n\x0c\n\x05\x04\x0e\x02\x02\
+    \x01\x12\x03s\t\x12\n\x0c\n\x05\x04\x0e\x02\x02\x03\x12\x03s\x15\x16\n\n\
+    \n\x02\x04\x0f\x12\x04v\0y\x01\n\n\n\x03\x04\x0f\x01\x12\x03v\x08!\n\x0b\
+    \n\x04\x04\x0f\x02\0\x12\x03w\x02\x13\n\x0c\n\x05\x04\x0f\x02\0\x05\x12\
+    \x03w\x02\x07\n\x0c\n\x05\x04\x0f\x02\0\x01\x12\x03w\x08\x0e\n\x0c\n\x05\
+    \x04\x0f\x02\0\x03\x12\x03w\x11\x12\n\x0b\n\x04\x04\x0f\x02\x01\x12\x03x\
+    \x02\x11\n\x0c\n\x05\x04\x0f\x02\x01\x05\x12\x03x\x02\x06\n\x0c\n\x05\
+    \x04\x0f\x02\x01\x01\x12\x03x\x07\x0c\n\x0c\n\x05\x04\x0f\x02\x01\x03\
+    \x12\x03x\x0f\x10\n\n\n\x02\x04\x10\x12\x04{\0~\x01\n\n\n\x03\x04\x10\
+    \x01\x12\x03{\x08\"\n\x0b\n\x04\x04\x10\x02\0\x12\x03|\x02!\n\x0c\n\x05\
+    \x04\x10\x02\0\x06\x12\x03|\x02\x16\n\x0c\n\x05\x04\x10\x02\0\x01\x12\
+    \x03|\x17\x1c\n\x0c\n\x05\x04\x10\x02\0\x03\x12\x03|\x1f\x20\n\x0b\n\x04\
+    \x04\x10\x02\x01\x12\x03}\x02'\n\x0c\n\x05\x04\x10\x02\x01\x06\x12\x03}\
+    \x02\x19\n\x0c\n\x05\x04\x10\x02\x01\x01\x12\x03}\x1a\"\n\x0c\n\x05\x04\
+    \x10\x02\x01\x03\x12\x03}%&b\x06proto3\
 ";
 
 /// `FileDescriptorProto` object which was a source for this generated file
@@ -3522,20 +3440,18 @@ pub fn file_descriptor() -> &'static ::protobuf::reflect::FileDescriptor {
         let generated_file_descriptor = generated_file_descriptor_lazy.get(|| {
             let mut deps = ::std::vec::Vec::with_capacity(1);
             deps.push(::protobuf::well_known_types::timestamp::file_descriptor().clone());
-            let mut messages = ::std::vec::Vec::with_capacity(19);
-            messages.push(Proof::generated_message_descriptor_data());
+            let mut messages = ::std::vec::Vec::with_capacity(17);
+            messages.push(ProvedResult::generated_message_descriptor_data());
             messages.push(ResponseMetadata::generated_message_descriptor_data());
             messages.push(StateTransitionBroadcastError::generated_message_descriptor_data());
             messages.push(BroadcastStateTransitionRequest::generated_message_descriptor_data());
             messages.push(BroadcastStateTransitionResponse::generated_message_descriptor_data());
-            messages.push(GetIdentityRequest::generated_message_descriptor_data());
-            messages.push(GetIdentityResponse::generated_message_descriptor_data());
-            messages.push(GetDataContractRequest::generated_message_descriptor_data());
-            messages.push(GetDataContractResponse::generated_message_descriptor_data());
+            messages.push(SingleItemResponse::generated_message_descriptor_data());
+            messages.push(ResultList::generated_message_descriptor_data());
+            messages.push(MultiItemResponse::generated_message_descriptor_data());
+            messages.push(GetSingleItemRequest::generated_message_descriptor_data());
+            messages.push(GetMultiItemRequest::generated_message_descriptor_data());
             messages.push(GetDocumentsRequest::generated_message_descriptor_data());
-            messages.push(GetDocumentsResponse::generated_message_descriptor_data());
-            messages.push(GetIdentitiesByPublicKeyHashesRequest::generated_message_descriptor_data());
-            messages.push(GetIdentitiesByPublicKeyHashesResponse::generated_message_descriptor_data());
             messages.push(WaitForStateTransitionResultRequest::generated_message_descriptor_data());
             messages.push(WaitForStateTransitionResultResponse::generated_message_descriptor_data());
             messages.push(ConsensusParamsBlock::generated_message_descriptor_data());
