@@ -25,12 +25,12 @@ impl InvalidSignaturePublicKeySecurityLevelErrorWasm {
     }
 
     #[wasm_bindgen(js_name=getKeySecurityLevelRequirement)]
-    pub fn get_allowed_key_security_levels(&self) -> Vec<u8> {
-        self.inner
-            .allowed_key_security_levels()
-            .iter()
-            .map(|security_level| *security_level as u8)
-            .collect()
+    pub fn get_allowed_key_security_levels(&self) -> js_sys::Array {
+        let array = js_sys::Array::new();
+        for security_level in self.inner.allowed_key_security_levels() {
+            array.push(&JsValue::from(security_level as u32));
+        }
+        array
     }
 
     #[wasm_bindgen(js_name=getCode)]
