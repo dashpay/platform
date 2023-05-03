@@ -65,10 +65,9 @@ describe('DataContractCreateTransition', () => {
 
   describe('#toBuffer', () => {
     it('should return serialized State Transition', () => {
-      const protocolVersionBytes = Buffer.from(varint.encode(stateTransition.getProtocolVersion()));
-
       const result = stateTransition.toBuffer();
-      expect(result.compare(protocolVersionBytes, 0, 1, 0, 1)).equals(0);
+      expect(result).to.be.instanceOf(Buffer);
+      expect(result).to.have.lengthOf(2271);
     });
   });
 

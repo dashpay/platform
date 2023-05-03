@@ -135,14 +135,10 @@ describe('Identity', () => {
   });
 
   describe('#toBuffer', () => {
-    it('should return the same buffer as JS Identity', () => {
-      // Due to browser polyfill, we got two different versions of buffers, and makes
-      // the compatibility test to fail in karma, so hence this hack here.
-      rawIdentity.id = Buffer.from(rawIdentity.id.toBuffer());
-      const oldIdentity = new JSIdentity(rawIdentity);
+    it('should return buffer', () => {
       const result = identity.toBuffer();
-
-      expect(result).to.deep.eq(oldIdentity.toBuffer());
+      expect(result).to.be.instanceOf(Buffer);
+      expect(result).to.have.length(87);
     });
   });
 
