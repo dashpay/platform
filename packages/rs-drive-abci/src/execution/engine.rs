@@ -648,21 +648,6 @@ where
         }
     }
 
-    // Retrieve quorum public key
-    fn get_quorum_key(&self, quorum_hash: [u8; 32]) -> Result<bls_signatures::PublicKey, Error> {
-        let public_key = self
-            .core_rpc
-            .get_quorum_info(
-                self.config.quorum_type(),
-                &QuorumHash::from_inner(quorum_hash),
-                Some(false),
-            )?
-            .quorum_public_key;
-
-        bls_signatures::PublicKey::from_bytes(&public_key)
-            .map_err(|e| Error::Execution(ExecutionError::BlsErrorFromDashCoreResponse(e)))
-    }
-
     /// Finalize the block, this first involves validating it, then if valid
     /// it is committed to the state
     pub fn finalize_block_proposal(
@@ -741,7 +726,8 @@ where
             )));
             return Ok(validation_result.into());
         }
-        drop(state_cache);
+
+        let quorum_public_key = &state_cache.current_validator_set()?.threshold_public_key;
 
         // In production this will always be true
         if self
@@ -749,8 +735,6 @@ where
             .testing_configs
             .block_commit_signature_verification
         {
-            let quorum_public_key = self.get_quorum_key(commit_info.quorum_hash)?;
-
             // Verify commit
 
             let quorum_type = self.config.quorum_type();
@@ -762,12 +746,13 @@ where
                 &block_header.chain_id,
             );
             let validation_result =
-                commit.verify_signature(&commit_info.block_signature, &quorum_public_key);
+                commit.verify_signature(&commit_info.block_signature, quorum_public_key);
 
             if !validation_result.is_valid() {
                 return Ok(validation_result.into());
             }
         }
+        drop(state_cache);
 
         // Verify vote extensions
         // let received_withdrawals = WithdrawalTxs::from(&commit.threshold_vote_extensions);

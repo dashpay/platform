@@ -1032,7 +1032,7 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc"
 version = "0.15.0"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=master#9ca83f6cc13ae0a68bf7e93627b785f14a9a159c"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=master#8f879a2db8bd746d4bc67b07fb65ac7d6eb54276"
 dependencies = [
  "dashcore-rpc-json",
  "env_logger 0.10.0",
@@ -1045,7 +1045,7 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc-json"
 version = "0.15.0"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=master#9ca83f6cc13ae0a68bf7e93627b785f14a9a159c"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=master#8f879a2db8bd746d4bc67b07fb65ac7d6eb54276"
 dependencies = [
  "dashcore",
  "hex",
