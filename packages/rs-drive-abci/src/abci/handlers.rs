@@ -115,6 +115,7 @@ impl TenderdashAbci for Platform {
                 )))?
         };
 
+        // TODO: This code contains a source of non-determinism and should be fixed in v0.25
         // Update versions
         // let proposed_app_version = request.proposed_app_version;
         //
