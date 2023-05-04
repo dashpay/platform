@@ -1,5 +1,9 @@
 ## [0.24.0-dev.32](https://github.com/dashpay/platform/compare/v0.24.0-dev.31...v0.24.0-dev.32) (2023-05-04)
 
+### ⚠ BREAKING CHANGES
+
+* Previous state won't be valid (#1029)
+
 
 ### Features
 
@@ -21,6 +25,8 @@
 ### Miscellaneous Chores
 
 * **dapi-client:** upate testnet masternode addresses whitelist ([#1023](https://github.com/dashpay/platform/issues/1023))
+* **drive:** disable protocol version signaling ([#1029](https://github.com/dashpay/platform/issues/1029))
+
 
 
 ## [0.25.0-dev.2](https://github.com/dashpay/platform/compare/v0.25.0-dev.1...v0.25.0-dev.2) (2023-05-01)
