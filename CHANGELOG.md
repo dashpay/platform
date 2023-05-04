@@ -1,3 +1,28 @@
+## [0.24.0-dev.32](https://github.com/dashpay/platform/compare/v0.24.0-dev.31...v0.24.0-dev.32) (2023-05-04)
+
+
+### Features
+
+* **dashmate:** core log file and debug categories ([#913](https://github.com/dashpay/platform/issues/913))
+
+
+### Bug Fixes
+
+* **dashmate:** waitForQuorumConnections deadline of 300000 exceeded ([#1015](https://github.com/dashpay/platform/issues/1015))
+* **dashmate:** wrong volume removal retry logic ([#1016](https://github.com/dashpay/platform/issues/1016))
+
+
+### Continuous Integration
+
+* add PR linter ([#1025](https://github.com/dashpay/platform/issues/1025))
+* add timeouts to self-hosted ci runs ([#1026](https://github.com/dashpay/platform/issues/1026))
+
+
+### Miscellaneous Chores
+
+* **dapi-client:** upate testnet masternode addresses whitelist ([#1023](https://github.com/dashpay/platform/issues/1023))
+
+
 ## [0.25.0-dev.2](https://github.com/dashpay/platform/compare/v0.25.0-dev.1...v0.25.0-dev.2) (2023-05-01)
 
 ### Miscellaneous Chores
