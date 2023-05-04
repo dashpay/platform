@@ -334,7 +334,6 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
                                 if ident == "into" {
                                     if let Some(proc_macro2::TokenTree::Literal(lit)) = iter.next()
                                     {
-                                        println!("found into: {:?}", lit);
                                         let lit_str =
                                             syn::LitStr::new(&lit.to_string(), lit.span());
                                         Some(

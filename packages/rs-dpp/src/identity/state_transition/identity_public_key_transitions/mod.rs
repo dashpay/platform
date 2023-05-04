@@ -13,15 +13,11 @@ use platform_value::{BinaryData, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-
-
 use crate::errors::ProtocolError;
 use crate::identity::signer::Signer;
-use crate::platform_serialization::{PlatformSignable};
+use crate::platform_serialization::PlatformSignable;
+use crate::serialization_traits::PlatformMessageSignable;
 use crate::serialization_traits::Signable;
-use crate::serialization_traits::{
-    PlatformMessageSignable,
-};
 
 #[cfg(feature = "cbor")]
 use crate::util::cbor_serializer;
