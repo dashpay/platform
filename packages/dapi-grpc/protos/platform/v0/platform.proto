@@ -2,18 +2,21 @@ syntax = "proto3";
 
 package org.dash.platform.dapi.v0;
 
-import "google/protobuf/timestamp.proto";
-
 service Platform {
-  rpc broadcastStateTransition (BroadcastStateTransitionRequest) returns (BroadcastStateTransitionResponse);
-  rpc getIdentity (GetSingleItemRequest) returns (SingleItemResponse);
-  rpc getIdentityBalance (GetSingleItemRequest) returns (SingleItemResponse);
-  rpc getIdentityBalanceAndRevision (GetSingleItemRequest) returns (SingleItemResponse);
-  rpc getDataContract (GetSingleItemRequest) returns (SingleItemResponse);
-  rpc getDocuments (GetDocumentsRequest) returns (MultiItemResponse);
-  rpc getIdentitiesByPublicKeyHashes (GetMultiItemRequest) returns (MultiItemResponse);
-  rpc waitForStateTransitionResult (WaitForStateTransitionResultRequest) returns (WaitForStateTransitionResultResponse);
-  rpc getConsensusParams (GetConsensusParamsRequest) returns (GetConsensusParamsResponse);
+  rpc broadcastStateTransition(BroadcastStateTransitionRequest)
+      returns (BroadcastStateTransitionResponse);
+  rpc getIdentity(GetSingleItemRequest) returns (SingleItemResponse);
+  rpc getIdentityBalance(GetSingleItemRequest) returns (SingleItemResponse);
+  rpc getIdentityBalanceAndRevision(GetSingleItemRequest)
+      returns (SingleItemResponse);
+  rpc getDataContract(GetSingleItemRequest) returns (SingleItemResponse);
+  rpc getDocuments(GetDocumentsRequest) returns (MultiItemResponse);
+  rpc getIdentitiesByPublicKeyHashes(GetMultiItemRequest)
+      returns (MultiItemResponse);
+  rpc waitForStateTransitionResult(WaitForStateTransitionResultRequest)
+      returns (WaitForStateTransitionResultResponse);
+  rpc getConsensusParams(GetConsensusParamsRequest)
+      returns (GetConsensusParamsResponse);
 }
 
 message ProvedResult {
@@ -36,13 +39,9 @@ message StateTransitionBroadcastError {
   bytes data = 3;
 }
 
-message BroadcastStateTransitionRequest {
-  bytes state_transition = 1;
-}
+message BroadcastStateTransitionRequest { bytes state_transition = 1; }
 
-message BroadcastStateTransitionResponse {
-
-}
+message BroadcastStateTransitionResponse {}
 
 message SingleItemResponse {
   oneof result {
@@ -52,9 +51,7 @@ message SingleItemResponse {
   ResponseMetadata metadata = 3;
 }
 
-message ResultList {
-  repeated bytes items = 1;
-}
+message ResultList { repeated bytes items = 1; }
 
 message MultiItemResponse {
   oneof result {
@@ -83,10 +80,10 @@ message GetDocumentsRequest {
 
   uint32 limit = 5;
 
-    oneof start {
-      bytes start_after = 6;
-      bytes start_at = 7;
-    }
+  oneof start {
+    bytes start_after = 6;
+    bytes start_at = 7;
+  }
 
   bool prove = 8;
 }

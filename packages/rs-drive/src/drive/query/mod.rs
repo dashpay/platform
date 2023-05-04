@@ -37,7 +37,6 @@ use dapi_grpc::Message;
 use grovedb::query_result_type::{Key, QueryResultType};
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
-use dapi_grpc::platform::GetSingleItemRequest;
 
 use crate::contract::Contract;
 use crate::drive::Drive;
