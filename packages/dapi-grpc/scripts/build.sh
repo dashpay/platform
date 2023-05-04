@@ -18,9 +18,6 @@ PLATFORM_OBJ_C_OUT_PATH="$PLATFORM_CLIENTS_PATH/objective-c"
 CORE_PYTHON_OUT_PATH="$CORE_CLIENTS_PATH/python"
 PLATFORM_PYTHON_OUT_PATH="$PLATFORM_CLIENTS_PATH/python"
 
-CORE_RUST_OUT_PATH="$CORE_CLIENTS_PATH/rust"
-PLATFORM_RUST_OUT_PATH="$PLATFORM_CLIENTS_PATH/rust"
-
 PROTOC_IMAGE="rvolosatovs/protoc:4.0.0"
 
 #################################################
@@ -30,13 +27,13 @@ PROTOC_IMAGE="rvolosatovs/protoc:4.0.0"
 rm -rf "$CORE_WEB_OUT_PATH/*"
 
 docker run -v "$CORE_PROTO_PATH:$CORE_PROTO_PATH" \
-           -v "$CORE_WEB_OUT_PATH:$CORE_WEB_OUT_PATH" \
-           --rm \
-           "$PROTOC_IMAGE" \
-           --js_out="import_style=commonjs:$CORE_WEB_OUT_PATH" \
-           --ts_out="service=grpc-web:$CORE_WEB_OUT_PATH" \
-           -I="$CORE_PROTO_PATH" \
-           "core.proto"
+  -v "$CORE_WEB_OUT_PATH:$CORE_WEB_OUT_PATH" \
+  --rm \
+  "$PROTOC_IMAGE" \
+  --js_out="import_style=commonjs:$CORE_WEB_OUT_PATH" \
+  --ts_out="service=grpc-web:$CORE_WEB_OUT_PATH" \
+  -I="$CORE_PROTO_PATH" \
+  "core.proto"
 
 # Clean node message classes
 
@@ -62,13 +59,13 @@ pbjs \
 rm -rf "$PLATFORM_WEB_OUT_PATH/*"
 
 docker run -v "$PLATFORM_PROTO_PATH:$PLATFORM_PROTO_PATH" \
-           -v "$PLATFORM_WEB_OUT_PATH:$PLATFORM_WEB_OUT_PATH" \
-           --rm \
-           "$PROTOC_IMAGE" \
-           --js_out="import_style=commonjs:$PLATFORM_WEB_OUT_PATH" \
-           --ts_out="service=grpc-web:$PLATFORM_WEB_OUT_PATH" \
-           -I="$PLATFORM_PROTO_PATH" \
-           "platform.proto"
+  -v "$PLATFORM_WEB_OUT_PATH:$PLATFORM_WEB_OUT_PATH" \
+  --rm \
+  "$PROTOC_IMAGE" \
+  --js_out="import_style=commonjs:$PLATFORM_WEB_OUT_PATH" \
+  --ts_out="service=grpc-web:$PLATFORM_WEB_OUT_PATH" \
+  -I="$PLATFORM_PROTO_PATH" \
+  "platform.proto"
 
 # Clean node message classes
 
@@ -93,14 +90,14 @@ pbjs \
 rm -rf "$CORE_JAVA_OUT_PATH/*"
 
 docker run -v "$CORE_PROTO_PATH:$CORE_PROTO_PATH" \
-           -v "$CORE_JAVA_OUT_PATH:$CORE_JAVA_OUT_PATH" \
-           --rm \
-           "$PROTOC_IMAGE" \
-           --plugin=protoc-gen-grpc=/usr/bin/protoc-gen-grpc-java \
-           --grpc-java_out="$CORE_JAVA_OUT_PATH" \
-           --proto_path="$CORE_PROTO_PATH" \
-           -I="$CORE_PROTO_PATH" \
-           "core.proto"
+  -v "$CORE_JAVA_OUT_PATH:$CORE_JAVA_OUT_PATH" \
+  --rm \
+  "$PROTOC_IMAGE" \
+  --plugin=protoc-gen-grpc=/usr/bin/protoc-gen-grpc-java \
+  --grpc-java_out="$CORE_JAVA_OUT_PATH" \
+  --proto_path="$CORE_PROTO_PATH" \
+  -I="$CORE_PROTO_PATH" \
+  "core.proto"
 
 #######################################
 # Generate Java client for `Platform` #
@@ -109,14 +106,14 @@ docker run -v "$CORE_PROTO_PATH:$CORE_PROTO_PATH" \
 rm -rf "$PLATFORM_JAVA_OUT_PATH/*"
 
 docker run -v "$PLATFORM_PROTO_PATH:$PLATFORM_PROTO_PATH" \
-           -v "$PLATFORM_JAVA_OUT_PATH:$PLATFORM_JAVA_OUT_PATH" \
-           --rm \
-           "$PROTOC_IMAGE" \
-           --plugin=protoc-gen-grpc=/usr/bin/protoc-gen-grpc-java \
-           --grpc-java_out="$PLATFORM_JAVA_OUT_PATH" \
-           --proto_path="$PLATFORM_PROTO_PATH" \
-           -I="$PLATFORM_PROTO_PATH" \
-           "platform.proto"
+  -v "$PLATFORM_JAVA_OUT_PATH:$PLATFORM_JAVA_OUT_PATH" \
+  --rm \
+  "$PROTOC_IMAGE" \
+  --plugin=protoc-gen-grpc=/usr/bin/protoc-gen-grpc-java \
+  --grpc-java_out="$PLATFORM_JAVA_OUT_PATH" \
+  --proto_path="$PLATFORM_PROTO_PATH" \
+  -I="$PLATFORM_PROTO_PATH" \
+  "platform.proto"
 
 ##########################################
 # Generate Objective-C client for `Core` #
@@ -125,15 +122,15 @@ docker run -v "$PLATFORM_PROTO_PATH:$PLATFORM_PROTO_PATH" \
 rm -rf "$CORE_OBJ_C_OUT_PATH/*"
 
 docker run -v "$CORE_PROTO_PATH:$CORE_PROTO_PATH" \
-           -v "$CORE_OBJ_C_OUT_PATH:$CORE_OBJ_C_OUT_PATH" \
-           --rm \
-           "$PROTOC_IMAGE" \
-           --plugin=protoc-gen-grpc=/usr/bin/grpc_objective_c_plugin \
-           --objc_out="$CORE_OBJ_C_OUT_PATH" \
-           --grpc_out="$CORE_OBJ_C_OUT_PATH" \
-           --proto_path="$CORE_PROTO_PATH" \
-           -I="$CORE_PROTO_PATH" \
-           "core.proto"
+  -v "$CORE_OBJ_C_OUT_PATH:$CORE_OBJ_C_OUT_PATH" \
+  --rm \
+  "$PROTOC_IMAGE" \
+  --plugin=protoc-gen-grpc=/usr/bin/grpc_objective_c_plugin \
+  --objc_out="$CORE_OBJ_C_OUT_PATH" \
+  --grpc_out="$CORE_OBJ_C_OUT_PATH" \
+  --proto_path="$CORE_PROTO_PATH" \
+  -I="$CORE_PROTO_PATH" \
+  "core.proto"
 
 ##############################################
 # Generate Objective-C client for `Platform` #
@@ -142,15 +139,15 @@ docker run -v "$CORE_PROTO_PATH:$CORE_PROTO_PATH" \
 rm -rf "$PLATFORM_OBJ_C_OUT_PATH/*"
 
 docker run -v "$PLATFORM_PROTO_PATH:$PLATFORM_PROTO_PATH" \
-           -v "$PLATFORM_OBJ_C_OUT_PATH:$PLATFORM_OBJ_C_OUT_PATH" \
-           --rm \
-           "$PROTOC_IMAGE" \
-           --plugin=protoc-gen-grpc=/usr/bin/grpc_objective_c_plugin \
-           --objc_out="$PLATFORM_OBJ_C_OUT_PATH" \
-           --grpc_out="$PLATFORM_OBJ_C_OUT_PATH" \
-           --proto_path="$PLATFORM_PROTO_PATH" \
-           -I="$PLATFORM_PROTO_PATH" \
-           "platform.proto"
+  -v "$PLATFORM_OBJ_C_OUT_PATH:$PLATFORM_OBJ_C_OUT_PATH" \
+  --rm \
+  "$PROTOC_IMAGE" \
+  --plugin=protoc-gen-grpc=/usr/bin/grpc_objective_c_plugin \
+  --objc_out="$PLATFORM_OBJ_C_OUT_PATH" \
+  --grpc_out="$PLATFORM_OBJ_C_OUT_PATH" \
+  --proto_path="$PLATFORM_PROTO_PATH" \
+  -I="$PLATFORM_PROTO_PATH" \
+  "platform.proto"
 
 #####################################
 # Generate Python client for `Core` #
@@ -159,15 +156,15 @@ docker run -v "$PLATFORM_PROTO_PATH:$PLATFORM_PROTO_PATH" \
 rm -rf "$CORE_PYTHON_OUT_PATH/*"
 
 docker run -v "$CORE_PROTO_PATH:$CORE_PROTO_PATH" \
-           -v "$CORE_PYTHON_OUT_PATH:$CORE_PYTHON_OUT_PATH" \
-           --rm \
-           "$PROTOC_IMAGE" \
-           --plugin=protoc-gen-grpc=/usr/bin/grpc_python_plugin \
-           --python_out="$CORE_PYTHON_OUT_PATH" \
-           --grpc_out="$CORE_PYTHON_OUT_PATH" \
-           --proto_path="$CORE_PROTO_PATH" \
-           -I="$CORE_PROTO_PATH" \
-           "core.proto"
+  -v "$CORE_PYTHON_OUT_PATH:$CORE_PYTHON_OUT_PATH" \
+  --rm \
+  "$PROTOC_IMAGE" \
+  --plugin=protoc-gen-grpc=/usr/bin/grpc_python_plugin \
+  --python_out="$CORE_PYTHON_OUT_PATH" \
+  --grpc_out="$CORE_PYTHON_OUT_PATH" \
+  --proto_path="$CORE_PROTO_PATH" \
+  -I="$CORE_PROTO_PATH" \
+  "core.proto"
 
 #########################################
 # Generate Python client for `Platform` #
@@ -176,52 +173,12 @@ docker run -v "$CORE_PROTO_PATH:$CORE_PROTO_PATH" \
 rm -rf "$PLATFORM_PYTHON_OUT_PATH/*"
 
 docker run -v "$PLATFORM_PROTO_PATH:$PLATFORM_PROTO_PATH" \
-          -v "$PLATFORM_PYTHON_OUT_PATH:$PLATFORM_PYTHON_OUT_PATH" \
-          --rm \
-          "$PROTOC_IMAGE" \
-          --plugin=protoc-gen-grpc=/usr/bin/grpc_python_plugin \
-          --python_out="$PLATFORM_PYTHON_OUT_PATH" \
-          --grpc_out="$PLATFORM_PYTHON_OUT_PATH" \
-          --proto_path="$PLATFORM_PROTO_PATH" \
-          -I="$PLATFORM_PROTO_PATH" \
-          "platform.proto"
-
-###################################
-# Generate Rust client for `Core` #
-###################################
-
-rm -rf "$CORE_RUST_OUT_PATH/*"
-
-docker run -v "$CORE_PROTO_PATH:$CORE_PROTO_PATH" \
-           -v "$CORE_RUST_OUT_PATH:$CORE_RUST_OUT_PATH" \
-           --rm \
-           "$PROTOC_IMAGE" \
-           --plugin=protoc-gen-grpc=/usr/bin/protoc-gen-rust-grpc \
-           --rust_out="$CORE_RUST_OUT_PATH" \
-           --rust-grpc_out="$CORE_RUST_OUT_PATH" \
-           --proto_path="$CORE_PROTO_PATH" \
-           -I="$CORE_PROTO_PATH" \
-           "core.proto"
-
-#######################################
-# Generate Rust client for `Platform` #
-#######################################
-
-rm -rf "$PLATFORM_RUST_OUT_PATH/*"
-
-docker run -v "$PLATFORM_PROTO_PATH:$PLATFORM_PROTO_PATH" \
-           -v "$PLATFORM_RUST_OUT_PATH:$PLATFORM_RUST_OUT_PATH" \
-           --rm \
-           "$PROTOC_IMAGE" \
-           --plugin=protoc-gen-grpc=/usr/bin/protoc-gen-rust-grpc \
-           --rust_out="$PLATFORM_RUST_OUT_PATH" \
-           --rust-grpc_out="$PLATFORM_RUST_OUT_PATH" \
-           --proto_path="$PLATFORM_PROTO_PATH" \
-           -I="$PLATFORM_PROTO_PATH" \
-           "platform.proto"
-
-cp -R "$CORE_RUST_OUT_PATH"/* ./src/
-cp -R "$PLATFORM_RUST_OUT_PATH"/* ./src/
-
-# Remove mod.rs files
-find ./src/ -name 'mod.rs' -delete
+  -v "$PLATFORM_PYTHON_OUT_PATH:$PLATFORM_PYTHON_OUT_PATH" \
+  --rm \
+  "$PROTOC_IMAGE" \
+  --plugin=protoc-gen-grpc=/usr/bin/grpc_python_plugin \
+  --python_out="$PLATFORM_PYTHON_OUT_PATH" \
+  --grpc_out="$PLATFORM_PYTHON_OUT_PATH" \
+  --proto_path="$PLATFORM_PROTO_PATH" \
+  -I="$PLATFORM_PROTO_PATH" \
+  "platform.proto"
