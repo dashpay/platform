@@ -309,7 +309,7 @@ mod test {
     }
 
     #[tokio::test]
-    async fn should_return_invalid_result_if_state_transition_size_is_more_than_16_kb() {
+    async fn should_return_invalid_result_if_state_transition_size_is_more_than_25_kb() {
         let TestData {
             mut raw_state_transition,
             ..
@@ -344,7 +344,7 @@ mod test {
         match basic_error {
             BasicError::StateTransitionMaxSizeExceededError(err) => {
                 assert_eq!(err.actual_size_kbytes(), 60);
-                assert_eq!(err.max_size_kbytes(), 16);
+                assert_eq!(err.max_size_kbytes(), 25);
             }
             _ => panic!(
                 "Expected StateTransitionMaxSizeExceededError, got {}",
