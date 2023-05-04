@@ -22,7 +22,9 @@ impl From<StateTransitionType> for StateTransitionTypeWasm {
             StateTransitionType::IdentityTopUp => StateTransitionTypeWasm::IdentityTopUp,
             StateTransitionType::DataContractUpdate => StateTransitionTypeWasm::DataContractUpdate,
             StateTransitionType::IdentityUpdate => StateTransitionTypeWasm::IdentityUpdate,
-            StateTransitionType::IdentityCreditWithdrawal => StateTransitionTypeWasm::IdentityCreditWithdrawal,
+            StateTransitionType::IdentityCreditWithdrawal => {
+                StateTransitionTypeWasm::IdentityCreditWithdrawal
+            }
         }
     }
 }
