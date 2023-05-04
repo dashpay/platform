@@ -21,7 +21,6 @@ describe('IdentityFactory', () => {
   let IdentityUpdateTransition;
   let IdentityPublicKeyWithWitness;
   let InvalidIdentityError;
-  let PlatformValueError;
   let UnsupportedProtocolVersionError;
   let ChainAssetLockProof;
 
@@ -30,7 +29,7 @@ describe('IdentityFactory', () => {
       Identity, IdentityFactory, IdentityValidator,
       InstantAssetLockProof, ChainAssetLockProof, IdentityUpdateTransition,
       IdentityCreateTransition, IdentityTopUpTransition, IdentityPublicKeyWithWitness,
-      InvalidIdentityError, UnsupportedProtocolVersionError, PlatformValueError,
+      InvalidIdentityError, UnsupportedProtocolVersionError,
     } = await loadWasmDpp());
   });
 

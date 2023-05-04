@@ -1,7 +1,6 @@
 const bs58 = require('bs58');
 
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
-const JsDataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
 
 const { default: loadWasmDpp } = require('../../../dist');
 
@@ -9,7 +8,6 @@ describe('DataContract', () => {
   let documentType;
   let documentSchema;
   let documents;
-  let jsDataContract;
   let ownerId;
   let entropy;
   let contractId;
@@ -51,16 +49,6 @@ describe('DataContract', () => {
     contractId = generateRandomIdentifier();
 
     defs = { something: { type: 'string' } };
-
-    jsDataContract = new JsDataContract({
-      $schema: JsDataContract.DEFAULTS.SCHEMA,
-      $id: contractId,
-      version: 1,
-      protocolVersion: 1,
-      ownerId,
-      documents,
-      $defs: defs,
-    });
 
     dataContract = new DataContract({
       $schema: DataContractDefaults.SCHEMA,

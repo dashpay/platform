@@ -4,7 +4,9 @@ const { encode } = require('@dashevo/dpp/lib/util/serializer');
 let { decodeProtocolEntity, ProtocolVersionParsingError, SerializedObjectParsingError } = require('../..');
 const { default: loadWasmDpp } = require('../..');
 
-describe('decodeProtocolEntityFactory', () => {
+// TODO(wasm-fixes): decodeProtocolEntityFactory was disabled in wasm-dpp
+//   it was mostly used in js-drive and does not seem to be needed anymore
+describe.skip('decodeProtocolEntityFactory', () => {
   let parsedProtocolVersion;
   let entityBuffer;
   let protocolVersionBuffer;

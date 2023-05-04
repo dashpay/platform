@@ -1,5 +1,5 @@
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
+const getDataContractFixture = require('../../../../../../../lib/test/fixtures/getDataContractFixture');
 
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 
@@ -31,7 +31,7 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
   });
 
   beforeEach(async () => {
-    dataContract = getDataContractFixture();
+    dataContract = await getDataContractFixture();
 
     const updatedRawDataContract = dataContract.toObject();
 
@@ -46,10 +46,11 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
 
     const validator = new DataContractValidator();
     const dataContractFactory = new DataContractFactory(protocolVersion.latestVersion, validator);
-    const wasmDataContract = await dataContractFactory.createFromBuffer(dataContract.toBuffer());
+    const reCreatedDataContract = await dataContractFactory
+      .createFromBuffer(dataContract.toBuffer());
 
     const stateRepositoryLike = {
-      fetchDataContract: async () => wasmDataContract,
+      fetchDataContract: async () => reCreatedDataContract,
     };
 
     validateTransitionWithExistingContract = (t) => validateDataContractUpdateTransitionState(

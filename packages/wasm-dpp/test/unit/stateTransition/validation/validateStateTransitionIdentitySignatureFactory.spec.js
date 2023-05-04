@@ -74,7 +74,9 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchIdentity.resolves(identity);
 
-    validateStateTransitionIdentitySignature = (st) => validate(stateRepositoryMock, st, executionContext, blsMock);
+    validateStateTransitionIdentitySignature = (st) => validate(
+      stateRepositoryMock, st, executionContext, blsMock,
+    );
   });
 
   it('should pass properly signed state transition', async () => {
