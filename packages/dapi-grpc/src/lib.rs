@@ -1,3 +1,5 @@
+pub use prost::Message;
+
 pub mod core {
     #[cfg(feature = "core_v0")]
     pub mod v0 {
