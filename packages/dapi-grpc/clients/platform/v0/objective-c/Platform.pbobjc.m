@@ -36,8 +36,8 @@ GPBObjCClassDeclaration(StateTransitionBroadcastError);
 
 @implementation PlatformRoot
 
-// No extensions in the file and none of the imports (direct or indirect)
-// defined extensions, so no need to generate +extensionRegistry.
+// No extensions in the file and no imports, so no need to generate
+// +extensionRegistry.
 
 @end
 
