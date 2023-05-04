@@ -180,14 +180,15 @@ impl IdentityCreateTransition {
 
         let key_signable_bytes = identity_create_transition.signable_bytes()?;
 
-        dbg!(hex::encode(&key_signable_bytes));
         identity_create_transition
             .public_keys
             .iter_mut()
             .zip(identity.get_public_keys().iter())
             .try_for_each(|(public_key_with_witness, (_, public_key))| {
-                let signature = signer.sign(public_key, &key_signable_bytes)?;
-                public_key_with_witness.signature = signature;
+                if public_key.key_type.is_unique_key_type() {
+                    let signature = signer.sign(public_key, &key_signable_bytes)?;
+                    public_key_with_witness.signature = signature;
+                }
                 Ok::<(), ProtocolError>(())
             })?;
 

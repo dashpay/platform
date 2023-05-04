@@ -463,8 +463,5 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
         }
     };
 
-    let expanded_string = format!("{}", expanded);
-    println!("Expanded TokenStream: {}", expanded_string);
-
     TokenStream::from(expanded)
 }

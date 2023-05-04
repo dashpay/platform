@@ -125,7 +125,7 @@ impl IdentityUpdateTransition {
         public_keys_disabled_at: Option<u64>,
         signer: &S,
     ) -> Result<Self, ProtocolError> {
-        let add_public_keys = add_public_keys
+        let add_public_keys_in_creation = add_public_keys
             .iter()
             .map(|public_key| public_key.into())
             .collect();
@@ -137,7 +137,7 @@ impl IdentityUpdateTransition {
             signature_public_key_id: 0,
             identity_id: identity.id,
             revision: identity.revision,
-            add_public_keys,
+            add_public_keys: add_public_keys_in_creation,
             disable_public_keys,
             public_keys_disabled_at,
         };
@@ -148,10 +148,13 @@ impl IdentityUpdateTransition {
         identity_update_transition
             .add_public_keys
             .iter_mut()
-            .zip(identity.get_public_keys().iter())
-            .try_for_each(|(public_key_with_witness, (_, public_key))| {
-                let signature = signer.sign(public_key, &key_signable_bytes)?;
-                public_key_with_witness.signature = signature;
+            .zip(add_public_keys.iter())
+            .try_for_each(|(public_key_with_witness, public_key)| {
+                if public_key.key_type.is_unique_key_type() {
+                    let signature = signer.sign(public_key, &key_signable_bytes)?;
+                    public_key_with_witness.signature = signature;
+                }
+
                 Ok::<(), ProtocolError>(())
             })?;
 
