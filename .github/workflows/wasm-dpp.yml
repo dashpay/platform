@@ -42,6 +42,7 @@ jobs:
   wasm-errors:
     name: WASM compilation
     runs-on: self-hosted
+    timeout-minutes: 15
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
