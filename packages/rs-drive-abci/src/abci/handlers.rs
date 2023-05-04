@@ -116,13 +116,13 @@ impl TenderdashAbci for Platform {
         };
 
         // Update versions
-        let proposed_app_version = request.proposed_app_version;
-
-        self.drive.update_validator_proposed_app_version(
-            request.proposer_pro_tx_hash,
-            proposed_app_version,
-            transaction,
-        )?;
+        // let proposed_app_version = request.proposed_app_version;
+        //
+        // self.drive.update_validator_proposed_app_version(
+        //     request.proposer_pro_tx_hash,
+        //     proposed_app_version,
+        //     transaction,
+        // )?;
 
         // Init block execution context
         let block_info = BlockStateInfo::from_block_begin_request(&request);

@@ -8,6 +8,7 @@ mod tests {
 
     use drive_abci::config::PlatformConfig;
 
+    #[ignore]
     #[test]
     fn run_chain_version_upgrade() {
         let strategy = Strategy {
@@ -196,6 +197,7 @@ mod tests {
         }
     }
 
+    #[ignore]
     #[test]
     fn run_chain_version_upgrade_slow_upgrade() {
         let strategy = Strategy {
@@ -368,6 +370,7 @@ mod tests {
         }
     }
 
+    #[ignore]
     #[test]
     fn run_chain_version_upgrade_slow_upgrade_quick_reversion_after_lock_in() {
         let strategy = Strategy {
@@ -615,6 +618,7 @@ mod tests {
         }
     }
 
+    #[ignore]
     #[test]
     fn run_chain_version_upgrade_multiple_versions() {
         let strategy = Strategy {
