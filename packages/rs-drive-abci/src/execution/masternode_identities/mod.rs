@@ -115,7 +115,13 @@ where
         self.drive
             .apply_drive_operations(drive_operations, true, block_info, Some(transaction))?;
 
-        let root_hash = hex::encode(self.drive.grove.root_hash(Some(transaction)).unwrap().expect("expected to get root hash")); //todo:remove
+        let root_hash = hex::encode(
+            self.drive
+                .grove
+                .root_hash(Some(transaction))
+                .unwrap()
+                .expect("expected to get root hash"),
+        ); //todo:remove
         let height = block_info.height;
         tracing::debug!(height, root_hash, "Updated masternode identities");
 

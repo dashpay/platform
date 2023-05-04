@@ -44,6 +44,7 @@ pub mod tests;
 pub mod block;
 pub mod encoding;
 pub mod serialization_traits;
+pub mod signing;
 pub mod system_data_contracts;
 
 pub use async_trait;

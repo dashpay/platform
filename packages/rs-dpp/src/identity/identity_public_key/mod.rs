@@ -28,7 +28,7 @@ use crate::util::hash::ripemd160_sha256;
 use crate::Convertible;
 use bincode::{config, Decode, Encode};
 
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 use crate::util::vec;
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
@@ -68,9 +68,9 @@ pub struct IdentityPublicKey {
     pub disabled_at: Option<TimestampMillis>,
 }
 
-impl Into<IdentityPublicKeyInCreationWithWitness> for &IdentityPublicKey {
-    fn into(self) -> IdentityPublicKeyInCreationWithWitness {
-        IdentityPublicKeyInCreationWithWitness {
+impl Into<IdentityPublicKeyInCreation> for &IdentityPublicKey {
+    fn into(self) -> IdentityPublicKeyInCreation {
+        IdentityPublicKeyInCreation {
             id: self.id,
             purpose: self.purpose,
             security_level: self.security_level,

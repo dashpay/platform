@@ -94,11 +94,11 @@ pub struct DocumentsBatchTransition {
     pub transitions: Vec<DocumentTransition>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[exclude_from_sig_hash]
+    #[platform_signable(exclude_from_sig_hash)]
     pub signature_public_key_id: Option<KeyID>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[exclude_from_sig_hash]
+    #[platform_signable(exclude_from_sig_hash)]
     pub signature: Option<BinaryData>,
 }
 
