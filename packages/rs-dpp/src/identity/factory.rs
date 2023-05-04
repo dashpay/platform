@@ -23,9 +23,6 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::serialization_traits::PlatformDeserializable;
 
-use crate::util::deserializer;
-use crate::util::deserializer::SplitProtocolVersionOutcome;
-
 use platform_value::Value;
 use std::sync::Arc;
 

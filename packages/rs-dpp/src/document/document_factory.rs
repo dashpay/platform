@@ -10,7 +10,7 @@ use platform_value::{Bytes32, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 
 use crate::consensus::basic::document::InvalidDocumentTypeError;
-use crate::document::extended_document::{property_names, ExtendedDocument};
+use crate::document::extended_document::ExtendedDocument;
 
 use crate::consensus::basic::decode::SerializedObjectParsingError;
 use crate::consensus::basic::BasicError;
@@ -18,11 +18,10 @@ use crate::consensus::ConsensusError;
 use crate::document::document_transition::INITIAL_REVISION;
 use crate::document::Document;
 use crate::identity::TimestampMillis;
-use crate::serialization_traits::{PlatformDeserializable, ValueConvertible};
+use crate::serialization_traits::PlatformDeserializable;
 use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
 use crate::{
     data_contract::{errors::DataContractError, DataContract},
-    encoding::decode_protocol_entity_factory::DecodeProtocolEntity,
     prelude::Identifier,
     state_repository::StateRepositoryLike,
     ProtocolError,

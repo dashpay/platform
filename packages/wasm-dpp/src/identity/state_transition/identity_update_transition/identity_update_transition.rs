@@ -16,7 +16,6 @@ use crate::{
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
 
-use crate::errors::from_dpp_err;
 use crate::utils::{generic_of_js_val, WithJsError};
 
 use dpp::consensus::ConsensusError;
@@ -26,9 +25,7 @@ use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{string_encoding, BinaryData, Value};
 use dpp::prelude::Revision;
 use dpp::serialization_traits::PlatformSerializable;
-use dpp::state_transition::{
-    StateTransition, StateTransitionConvert, StateTransitionIdentitySigned,
-};
+use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned};
 use dpp::{
     identifier::Identifier,
     identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition,

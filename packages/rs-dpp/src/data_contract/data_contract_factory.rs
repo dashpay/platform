@@ -161,10 +161,9 @@ impl DataContractFactory {
     ) -> Result<DataContract, ProtocolError> {
         let data_contract: DataContract =
             DataContract::deserialize(buffer.as_slice()).map_err(|e| {
-                let error = ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
+                ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
                     SerializedObjectParsingError::new(format!("Decode protocol entity: {:#?}", e)),
-                ));
-                error
+                ))
             })?;
 
         if !skip_validation {
@@ -175,7 +174,7 @@ impl DataContractFactory {
     }
 
     pub fn validate_data_contract(&self, raw_data_contract: &Value) -> Result<(), ProtocolError> {
-        let result = self.validate_data_contract.validate(&raw_data_contract)?;
+        let result = self.validate_data_contract.validate(raw_data_contract)?;
 
         if !result.is_valid() {
             return Err(ProtocolError::InvalidDataContractError(

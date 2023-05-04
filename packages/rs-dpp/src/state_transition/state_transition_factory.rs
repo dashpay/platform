@@ -14,8 +14,7 @@ use crate::identity::state_transition::identity_update_transition::identity_upda
 use crate::serialization_traits::PlatformDeserializable;
 use crate::state_transition::errors::StateTransitionError;
 use crate::state_transition::StateTransitionConvert;
-use crate::util::deserializer;
-use crate::util::deserializer::SplitProtocolVersionOutcome;
+
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     data_contract::{
@@ -122,7 +121,7 @@ where
 
         let validation_result = self
             .basic_validator
-            .validate(&raw_state_transition, &execution_context)
+            .validate(raw_state_transition, &execution_context)
             .await?;
 
         if !validation_result.is_valid() {

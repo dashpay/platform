@@ -18,8 +18,7 @@ use crate::{
 };
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
-use crate::errors::from_dpp_err;
-use dpp::state_transition::{StateTransition, StateTransitionConvert};
+use dpp::state_transition::StateTransition;
 
 use crate::utils::{generic_of_js_val, ToSerdeJSONExt, WithJsError};
 use dpp::identity::KeyType;

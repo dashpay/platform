@@ -30,8 +30,6 @@ use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::converter::serde_json::BTreeValueJsonConverter;
 use platform_value::{Bytes32, ReplacementType, Value};
 
-use platform_value_convertible::PlatformValueConvert;
-use serde::ser::Error;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use std::collections::{BTreeMap, HashSet};
