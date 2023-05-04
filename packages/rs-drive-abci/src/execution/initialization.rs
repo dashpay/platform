@@ -111,7 +111,12 @@ where
         if let Some(requested) = requested {
             let best = self.core_rpc.get_best_chain_lock()?.core_block_height;
 
-            tracing::trace!(requested, v20_fork, best, "selecting initial core lock height");
+            tracing::trace!(
+                requested,
+                v20_fork,
+                best,
+                "selecting initial core lock height"
+            );
             // TODO in my opinion, the condition should be:
             //
             // `v20_fork <= requested && requested <= best`

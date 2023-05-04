@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::convert::{TryFrom, TryInto};
 
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 
 use crate::consensus::signature::{
     InvalidSignaturePublicKeySecurityLevelError, MissingPublicKeyError, SignatureError,
@@ -15,6 +15,7 @@ use crate::consensus::ConsensusError;
 use crate::identity::signer::Signer;
 use crate::identity::{Identity, IdentityPublicKey};
 
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationSignable;
 use crate::serialization_traits::PlatformSerializable;
 use crate::{
     identity::{KeyID, SecurityLevel},
@@ -77,7 +78,8 @@ pub struct IdentityUpdateTransition {
     /// Public Keys to add to the Identity
     /// we want to skip serialization of transitions, as we does it manually in `to_object()`  and `to_json()`
     #[serde(default)]
-    pub add_public_keys: Vec<IdentityPublicKeyInCreationWithWitness>,
+    #[platform_signable(into = "Vec<IdentityPublicKeyInCreationSignable>")]
+    pub add_public_keys: Vec<IdentityPublicKeyInCreation>,
 
     /// Identity Public Keys ID's to disable for the Identity
     #[serde(default)]
@@ -87,10 +89,10 @@ pub struct IdentityUpdateTransition {
     pub public_keys_disabled_at: Option<TimestampMillis>,
 
     /// The ID of the public key used to sing the State Transition
-    #[exclude_from_sig_hash]
+    #[platform_signable(exclude_from_sig_hash)]
     pub signature_public_key_id: KeyID,
     /// Cryptographic signature of the State Transition
-    #[exclude_from_sig_hash]
+    #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
 }
 
@@ -123,15 +125,10 @@ impl IdentityUpdateTransition {
         public_keys_disabled_at: Option<u64>,
         signer: &S,
     ) -> Result<Self, ProtocolError> {
-        let add_public_keys = add_public_keys
+        let add_public_keys_in_creation = add_public_keys
             .iter()
-            .map(|public_key| {
-                IdentityPublicKeyInCreationWithWitness::from_public_key_signed_external(
-                    public_key.clone(),
-                    signer,
-                )
-            })
-            .collect::<Result<Vec<IdentityPublicKeyInCreationWithWitness>, ProtocolError>>()?;
+            .map(|public_key| public_key.into())
+            .collect();
 
         let mut identity_update_transition = IdentityUpdateTransition {
             protocol_version: LATEST_VERSION,
@@ -140,10 +137,27 @@ impl IdentityUpdateTransition {
             signature_public_key_id: 0,
             identity_id: identity.id,
             revision: identity.revision,
-            add_public_keys,
+            add_public_keys: add_public_keys_in_creation,
             disable_public_keys,
             public_keys_disabled_at,
         };
+
+        let key_signable_bytes = identity_update_transition.signable_bytes()?;
+
+        // Sign all the keys
+        identity_update_transition
+            .add_public_keys
+            .iter_mut()
+            .zip(add_public_keys.iter())
+            .try_for_each(|(public_key_with_witness, public_key)| {
+                if public_key.key_type.is_unique_key_type() {
+                    let signature = signer.sign(public_key, &key_signable_bytes)?;
+                    public_key_with_witness.signature = signature;
+                }
+
+                Ok::<(), ProtocolError>(())
+            })?;
+
         let master_public_key = identity
             .public_keys
             .get(master_public_key_id)
@@ -227,18 +241,15 @@ impl IdentityUpdateTransition {
         self.revision
     }
 
-    pub fn set_public_keys_to_add(
-        &mut self,
-        add_public_keys: Vec<IdentityPublicKeyInCreationWithWitness>,
-    ) {
+    pub fn set_public_keys_to_add(&mut self, add_public_keys: Vec<IdentityPublicKeyInCreation>) {
         self.add_public_keys = add_public_keys;
     }
 
-    pub fn get_public_keys_to_add(&self) -> &[IdentityPublicKeyInCreationWithWitness] {
+    pub fn get_public_keys_to_add(&self) -> &[IdentityPublicKeyInCreation] {
         &self.add_public_keys
     }
 
-    pub fn get_public_keys_to_add_mut(&mut self) -> &mut [IdentityPublicKeyInCreationWithWitness] {
+    pub fn get_public_keys_to_add_mut(&mut self) -> &mut [IdentityPublicKeyInCreation] {
         &mut self.add_public_keys
     }
 
