@@ -12,19 +12,17 @@ license = "MIT"
 
 [dependencies]
 prost = { version = "0.11" }
-prost-build = { version = "0.11", optional = true }
 
 [build-dependencies]
 prost-build = { version = "0.11" }
-# tenderdash-proto-compiler = { path = "../../../rs-tenderdash-abci/proto-compiler/", optional = true }
 
 [features]
-proto2rs = ["dep:prost-build"]
+default = ["core", "platform"]
+core = ["core_v0"]
+platform = ["platform_v0"]
 
-[[bin]]
-name = "proto2rs"
-path = "src/proto2rs.rs"
-required-features = ["proto2rs"]
+core_v0 = []
+platform_v0 = []
 
 [lib]
 

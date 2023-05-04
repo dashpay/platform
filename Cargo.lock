@@ -1022,9 +1022,8 @@ dependencies = [
 name = "dapi-grpc"
 version = "0.25.0-dev.6"
 dependencies = [
- "protobuf",
- "tonic",
- "tonic-build",
+ "prost",
+ "prost-build",
 ]
 
 [[package]]
