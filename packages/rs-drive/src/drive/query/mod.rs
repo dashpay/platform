@@ -32,8 +32,6 @@
 //! Defines and implements in Drive functions relevant to querying.
 //!
 
-use dapi_grpc::platform::v0::GetSingleItemRequest;
-use dapi_grpc::Message;
 use grovedb::query_result_type::{Key, QueryResultType};
 use grovedb::TransactionArg;
 use std::collections::BTreeMap;
@@ -57,7 +55,6 @@ use dpp::ProtocolError;
 use crate::query::QueryResultEncoding::CborEncodedQueryResult;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
-use dpp::prelude::Identifier;
 
 #[derive(Debug, Default)]
 /// The outcome of a query
@@ -105,11 +102,6 @@ impl Drive {
             })?;
         match path.as_str() {
             "/identity/balance" => {
-                let request: GetSingleItemRequest =
-                    GetSingleItemRequest::decode(serialized_query.as_ref()).map_err(|e| {
-                        Error::Query(QueryError::DeserializationError(e.to_string()))
-                    })?;
-                let identity_id: Identifier = request.id.try_into()?;
                 let identity_id = query.remove_identifier("identityId")?;
                 if prove {
                     self.prove_identity_balance(identity_id.into_buffer(), None)
@@ -172,6 +164,13 @@ impl Drive {
                         CborEncodedQueryResult,
                         None,
                     )
+                }
+            }
+            "/proofs" => {
+                if prove {
+                    todo!()
+                } else {
+                    todo!()
                 }
             }
             "/identity/by-public-key-hash" => {
