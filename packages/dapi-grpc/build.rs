@@ -1,3 +1,9 @@
+use std::{
+    collections::HashMap,
+    fs::{create_dir_all, remove_dir_all},
+    path::PathBuf,
+};
+
 fn main() {
     generate().expect("failed to compile protobuf definitions");
 
@@ -6,15 +12,7 @@ fn main() {
     println!("cargo:rerun-if-changed=./src/platform/proto");
 }
 
-// Generate Rust definitions based on DAPI protobuf definitions.
-// This file is included inside the build.rs script.
-use std::{
-    collections::HashMap,
-    fs::{create_dir_all, remove_dir_all},
-    path::PathBuf,
-};
-
-/// Generate Rust definitions based on DAPI protobuf definitions
+/// Generate Rust definitions from Protobuf definitions
 pub fn generate() -> Result<(), std::io::Error> {
     // Mapping between protobuf files => output directory
     let mut input = HashMap::<PathBuf, PathBuf>::new();
