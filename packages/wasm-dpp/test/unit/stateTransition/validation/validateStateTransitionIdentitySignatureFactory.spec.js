@@ -231,8 +231,9 @@ describe('validateStateTransitionIdentitySignatureFactory', () => {
       expect(error.getKeySecurityLevelRequirement()).to.deep.equal([2]);
     });
 
-    // TODO(wasm-fixes): the error is not used anymore,
-    //  remove the test and remaining matches in rs-dpp that still expecting to receive it?
+    // TODO: the error is not used anymore,
+    //  remove the test and remaining `match` variants in rs-dpp
+    //  that still expecting to receive this error?
     it.skip('should return PublicKeySecurityLevelNotMetConsensusError if PublicKeySecurityLevelNotMetError was thrown', async () => {
       const publicKeys = identity.getPublicKeys();
       publicKeys[2].setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MEDIUM);

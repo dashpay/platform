@@ -417,7 +417,7 @@ describe('Document', () => {
       expect(buffer.length).to.equal(509);
     });
 
-    // TODO(wasm-fixes): remove or replace?
+    // TODO: remove or replace?
     //  can not be compared to JS buffers anymore because uses bin code
     it.skip('should return the same bytes as JS version when dynamic identifier is in Document', () => {
       const jsId = generateRandomIdentifier();
@@ -438,7 +438,7 @@ describe('Document', () => {
       expect(jsBuffer).to.deep.equal(buffer);
     });
 
-    // TODO(wasm-fixes): remove or replace?
+    // TODO: remove or replace?
     //  can not be compared to JS buffers anymore because uses bin code
     it.skip('should return the same bytes as JS version when dynamic binaryData is in Document', () => {
       const data = Buffer.alloc(32);

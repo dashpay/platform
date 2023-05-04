@@ -279,7 +279,7 @@ describe('DataContract', () => {
     });
   });
 
-  // TODO(wasm-fixes): can not compare to JS because rust
+  // TODO: can not compare to JS because rust
   //  DataContract does not match JS anymore
   describe('#hash', () => {
     it('should return DataContract hash', () => {
