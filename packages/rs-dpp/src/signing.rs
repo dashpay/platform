@@ -1,7 +1,7 @@
 use crate::consensus::signature::{
     BasicBLSError, BasicECDSAError, SignatureError, SignatureShouldNotBePresentError,
 };
-use crate::identity::{IdentityPublicKey, KeyType};
+use crate::identity::{KeyType};
 use crate::serialization_traits::PlatformMessageSignable;
 use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
 use crate::validation::SimpleConsensusValidationResult;

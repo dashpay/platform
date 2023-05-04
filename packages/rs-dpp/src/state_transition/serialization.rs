@@ -25,7 +25,7 @@ mod tests {
     use crate::identity::state_transition::identity_credit_withdrawal_transition::{
         IdentityCreditWithdrawalTransition, Pooling,
     };
-    use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
+    
     use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
     use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
     use crate::identity::Identity;

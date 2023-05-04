@@ -1,7 +1,7 @@
 use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 #[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
-use dashcore::signer;
+
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 
@@ -13,24 +13,22 @@ use platform_value::{BinaryData, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-use crate::consensus::signature::{
-    BasicBLSError, BasicECDSAError, SignatureError, SignatureShouldNotBePresentError,
-};
+
 
 use crate::errors::ProtocolError;
 use crate::identity::signer::Signer;
-use crate::platform_serialization::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
+use crate::platform_serialization::{PlatformSignable};
 use crate::serialization_traits::Signable;
 use crate::serialization_traits::{
-    PlatformDeserializable, PlatformMessageSignable, PlatformSerializable,
+    PlatformMessageSignable,
 };
-use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
+
 #[cfg(feature = "cbor")]
 use crate::util::cbor_serializer;
 #[cfg(feature = "cbor")]
 use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
 use crate::util::vec;
-use crate::validation::SimpleConsensusValidationResult;
+
 use crate::{BlsModule, Convertible, InvalidVectorSizeError, SerdeParsingError};
 
 pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];

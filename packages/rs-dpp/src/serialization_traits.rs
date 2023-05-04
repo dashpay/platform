@@ -1,5 +1,5 @@
 use crate::identity::KeyType;
-use crate::prelude::IdentityPublicKey;
+
 use crate::validation::SimpleConsensusValidationResult;
 use crate::{BlsModule, ProtocolError};
 use platform_value::Value;
