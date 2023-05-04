@@ -2,11 +2,37 @@
 name = "dapi-grpc"
 description = "GRPC client for Dash Platform"
 version = "0.25.0-dev.6"
-authors = ["Samuel Westrich <sam@dash.org>", "Igor Markin <igor.markin@dash.org>"]
+authors = [
+    "Samuel Westrich <sam@dash.org>",
+    "Igor Markin <igor.markin@dash.org>",
+    "Łukasz Klimek <lukasz.klimek@dash.org>",
+]
 edition = "2021"
 license = "MIT"
 
 [dependencies]
-protobuf = "3.2.0"
-tonic = "0.9.2"
-tonic-build = "0.9.2"
+prost = { version = "0.11" }
+prost-build = { version = "0.11", optional = true }
+
+[build-dependencies]
+prost-build = { version = "0.11" }
+# tenderdash-proto-compiler = { path = "../../../rs-tenderdash-abci/proto-compiler/", optional = true }
+
+[features]
+proto2rs = ["dep:prost-build"]
+
+[[bin]]
+name = "proto2rs"
+path = "src/proto2rs.rs"
+required-features = ["proto2rs"]
+
+[lib]
+
+[[example]]
+name = "core_example"
+path = "clients/core/v0/rust/core_example.rs"
+
+
+[[example]]
+name = "platform_example"
+path = "clients/platform/v0/rust/platform_example.rs"
