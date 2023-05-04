@@ -223,3 +223,14 @@ impl Validator {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use dashcore_rpc::dashcore::{hashes::Hash, ProTxHash, QuorumHash};
+
+    #[test]
+    fn test_quorum_hash() {
+        assert_eq!(false, ProTxHash::DISPLAY_BACKWARD);
+        assert_eq!(false, QuorumHash::DISPLAY_BACKWARD);
+    }
+}
