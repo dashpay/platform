@@ -17,9 +17,8 @@ use crate::rpc::core::CoreRPCLike;
 use crate::validation::state_transition::common::{validate_protocol_version, validate_schema};
 use crate::validation::state_transition::key_validation::{
     validate_identity_public_key_ids_dont_exist_in_state,
-    validate_identity_public_key_ids_exist_in_state, validate_identity_public_keys_signatures,
-    validate_identity_public_keys_structure, validate_state_transition_identity_signature,
-    validate_unique_identity_public_key_hashes_state,
+    validate_identity_public_key_ids_exist_in_state, validate_identity_public_keys_structure,
+    validate_state_transition_identity_signature, validate_unique_identity_public_key_hashes_state,
 };
 
 use super::StateTransitionValidation;
@@ -50,7 +49,7 @@ impl StateTransitionValidation for IdentityUpdateTransition {
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         let mut result = ConsensusValidationResult::<Option<PartialIdentity>>::default();
         result.add_errors(
-            validate_identity_public_keys_signatures(self.add_public_keys.as_slice())?.errors,
+            //validate_identity_public_keys_signatures(self.add_public_keys.as_slice())?.errors,
         );
 
         if !result.is_valid() {

@@ -25,7 +25,7 @@ mod tests {
     use crate::identity::state_transition::identity_credit_withdrawal_transition::{
         IdentityCreditWithdrawalTransition, Pooling,
     };
-    use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
+    use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
     use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
     use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
     use crate::identity::Identity;
@@ -101,13 +101,13 @@ mod tests {
                     let private_key = keys
                         .get(&public_key)
                         .expect("expected to have the private key");
-                    IdentityPublicKeyInCreationWithWitness::from_public_key_signed_with_private_key(
+                    IdentityPublicKeyInCreation::from_public_key_signed_with_private_key(
                         public_key,
                         private_key,
                         &bls,
                     )
                 })
-                .collect::<Result<Vec<IdentityPublicKeyInCreationWithWitness>, ProtocolError>>()
+                .collect::<Result<Vec<IdentityPublicKeyInCreation>, ProtocolError>>()
                 .expect("expected to get added public keys"),
             disable_public_keys: vec![],
             public_keys_disabled_at: None,
@@ -146,13 +146,13 @@ mod tests {
                     let private_key = keys
                         .get(&public_key)
                         .expect("expected to have the private key");
-                    IdentityPublicKeyInCreationWithWitness::from_public_key_signed_with_private_key(
+                    IdentityPublicKeyInCreation::from_public_key_signed_with_private_key(
                         public_key,
                         private_key,
                         &bls,
                     )
                 })
-                .collect::<Result<Vec<IdentityPublicKeyInCreationWithWitness>, ProtocolError>>()
+                .collect::<Result<Vec<IdentityPublicKeyInCreation>, ProtocolError>>()
                 .expect("expected to get added public keys"),
             disable_public_keys: vec![3, 4, 5],
             public_keys_disabled_at: Some(15),
