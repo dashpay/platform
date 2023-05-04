@@ -6,6 +6,8 @@ authors = [
     "Samuel Westrich <sam@dash.org>",
     "Igor Markin <igor.markin@dash.org>",
     "Łukasz Klimek <lukasz.klimek@dash.org>",
+    "Anton Suprunchuk <anton.suprunchuk@dash.org>",
+    "Ivan Shumkov <shumkov@dash.org>",
 ]
 edition = "2021"
 license = "MIT"
