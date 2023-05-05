@@ -115,14 +115,15 @@ impl TenderdashAbci for Platform {
                 )))?
         };
 
+        // TODO: This code contains a source of non-determinism and should be fixed in v0.25
         // Update versions
-        let proposed_app_version = request.proposed_app_version;
-
-        self.drive.update_validator_proposed_app_version(
-            request.proposer_pro_tx_hash,
-            proposed_app_version,
-            transaction,
-        )?;
+        // let proposed_app_version = request.proposed_app_version;
+        //
+        // self.drive.update_validator_proposed_app_version(
+        //     request.proposer_pro_tx_hash,
+        //     proposed_app_version,
+        //     transaction,
+        // )?;
 
         // Init block execution context
         let block_info = BlockStateInfo::from_block_begin_request(&request);

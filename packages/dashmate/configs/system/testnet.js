@@ -25,6 +25,12 @@ module.exports = lodashMerge({}, baseConfig, {
     rpc: {
       port: 19998,
     },
+    log: {
+      file: {
+        categories: [],
+        path: path.join(HOME_DIR_PATH, 'logs', 'testnet', 'core.log'),
+      },
+    },
   },
   platform: {
     dapi: {
