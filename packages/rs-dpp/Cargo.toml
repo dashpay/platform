@@ -2,7 +2,7 @@
 name = "dpp"
 version = "0.1.0"
 edition = "2018"
-authors = ["Anton Suprunchuk <anton.suprunchuk@gmail.com>", "Samuel Westrich <sam@dash.org>", "Ivan Shumkov <ivan@shumkov.ru>", "Djavid Gabibiyan <djavid@dash.org>"]
+authors = ["Anton Suprunchuk <anton.suprunchuk@gmail.com>", "Samuel Westrich <sam@dash.org>", "Ivan Shumkov <ivan@shumkov.ru>", "Djavid Gabibiyan <djavid@dash.org>", "Igor Markin <igor.markin@dash.org>"]
 
 [dependencies]
 anyhow = { version = "1.0.70" }

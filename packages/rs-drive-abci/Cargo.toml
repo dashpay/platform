@@ -6,6 +6,7 @@ authors = [
     "Ivan Shumkov <ivan@shumkov.ru>",
     "Djavid Gabibiyan <djavid@dash.org>",
     "Lukasz Klimek <lukasz.klimek@dash.org>",
+    "Igor Markin <igor.markin@dash.org>",
 ]
 edition = "2021"
 license = "MIT"
