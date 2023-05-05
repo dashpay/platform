@@ -2,8 +2,6 @@ syntax = "proto3";
 
 package org.dash.platform.dapi.v0;
 
-import "google/protobuf/timestamp.proto";
-
 service Platform {
   rpc broadcastStateTransition (BroadcastStateTransitionRequest) returns (BroadcastStateTransitionResponse);
   rpc getIdentity (GetIdentityRequest) returns (GetIdentityResponse);
