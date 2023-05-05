@@ -2,6 +2,7 @@
 .idea
 .vscode
 .nyc_output
+Dockerfile
 
 logs
 db
