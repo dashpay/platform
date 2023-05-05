@@ -46,29 +46,29 @@ public final class PlatformGrpc {
     return getBroadcastStateTransitionMethod;
   }
 
-  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest,
-      org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse> getGetIdentityMethod;
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityResponse> getGetIdentityMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "getIdentity",
-      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest.class,
-      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse.class,
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityResponse.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest,
-      org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse> getGetIdentityMethod() {
-    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest, org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse> getGetIdentityMethod;
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityResponse> getGetIdentityMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityResponse> getGetIdentityMethod;
     if ((getGetIdentityMethod = PlatformGrpc.getGetIdentityMethod) == null) {
       synchronized (PlatformGrpc.class) {
         if ((getGetIdentityMethod = PlatformGrpc.getGetIdentityMethod) == null) {
           PlatformGrpc.getGetIdentityMethod = getGetIdentityMethod =
-              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest, org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse>newBuilder()
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityResponse>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getIdentity"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest.getDefaultInstance()))
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse.getDefaultInstance()))
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityResponse.getDefaultInstance()))
               .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getIdentity"))
               .build();
         }
@@ -77,29 +77,29 @@ public final class PlatformGrpc {
     return getGetIdentityMethod;
   }
 
-  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest,
-      org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse> getGetIdentityBalanceMethod;
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceResponse> getGetIdentityBalanceMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "getIdentityBalance",
-      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest.class,
-      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse.class,
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceResponse.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest,
-      org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse> getGetIdentityBalanceMethod() {
-    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest, org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse> getGetIdentityBalanceMethod;
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceResponse> getGetIdentityBalanceMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceResponse> getGetIdentityBalanceMethod;
     if ((getGetIdentityBalanceMethod = PlatformGrpc.getGetIdentityBalanceMethod) == null) {
       synchronized (PlatformGrpc.class) {
         if ((getGetIdentityBalanceMethod = PlatformGrpc.getGetIdentityBalanceMethod) == null) {
           PlatformGrpc.getGetIdentityBalanceMethod = getGetIdentityBalanceMethod =
-              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest, org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse>newBuilder()
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceResponse>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getIdentityBalance"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest.getDefaultInstance()))
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse.getDefaultInstance()))
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceResponse.getDefaultInstance()))
               .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getIdentityBalance"))
               .build();
         }
@@ -108,29 +108,29 @@ public final class PlatformGrpc {
     return getGetIdentityBalanceMethod;
   }
 
-  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest,
-      org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse> getGetIdentityBalanceAndRevisionMethod;
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceAndRevisionResponse> getGetIdentityBalanceAndRevisionMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "getIdentityBalanceAndRevision",
-      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest.class,
-      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse.class,
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceAndRevisionResponse.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest,
-      org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse> getGetIdentityBalanceAndRevisionMethod() {
-    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest, org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse> getGetIdentityBalanceAndRevisionMethod;
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceAndRevisionResponse> getGetIdentityBalanceAndRevisionMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceAndRevisionResponse> getGetIdentityBalanceAndRevisionMethod;
     if ((getGetIdentityBalanceAndRevisionMethod = PlatformGrpc.getGetIdentityBalanceAndRevisionMethod) == null) {
       synchronized (PlatformGrpc.class) {
         if ((getGetIdentityBalanceAndRevisionMethod = PlatformGrpc.getGetIdentityBalanceAndRevisionMethod) == null) {
           PlatformGrpc.getGetIdentityBalanceAndRevisionMethod = getGetIdentityBalanceAndRevisionMethod =
-              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest, org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse>newBuilder()
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceAndRevisionResponse>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getIdentityBalanceAndRevision"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest.getDefaultInstance()))
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse.getDefaultInstance()))
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceAndRevisionResponse.getDefaultInstance()))
               .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getIdentityBalanceAndRevision"))
               .build();
         }
@@ -139,29 +139,29 @@ public final class PlatformGrpc {
     return getGetIdentityBalanceAndRevisionMethod;
   }
 
-  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest,
-      org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse> getGetDataContractMethod;
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractResponse> getGetDataContractMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "getDataContract",
-      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest.class,
-      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse.class,
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractResponse.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest,
-      org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse> getGetDataContractMethod() {
-    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest, org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse> getGetDataContractMethod;
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractResponse> getGetDataContractMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractResponse> getGetDataContractMethod;
     if ((getGetDataContractMethod = PlatformGrpc.getGetDataContractMethod) == null) {
       synchronized (PlatformGrpc.class) {
         if ((getGetDataContractMethod = PlatformGrpc.getGetDataContractMethod) == null) {
           PlatformGrpc.getGetDataContractMethod = getGetDataContractMethod =
-              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest, org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse>newBuilder()
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractResponse>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getDataContract"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest.getDefaultInstance()))
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse.getDefaultInstance()))
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractResponse.getDefaultInstance()))
               .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getDataContract"))
               .build();
         }
@@ -171,28 +171,28 @@ public final class PlatformGrpc {
   }
 
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsRequest,
-      org.dash.platform.dapi.v0.PlatformOuterClass.MultiItemResponse> getGetDocumentsMethod;
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsResponse> getGetDocumentsMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "getDocuments",
       requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsRequest.class,
-      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.MultiItemResponse.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsResponse.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
   public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsRequest,
-      org.dash.platform.dapi.v0.PlatformOuterClass.MultiItemResponse> getGetDocumentsMethod() {
-    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsRequest, org.dash.platform.dapi.v0.PlatformOuterClass.MultiItemResponse> getGetDocumentsMethod;
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsResponse> getGetDocumentsMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsResponse> getGetDocumentsMethod;
     if ((getGetDocumentsMethod = PlatformGrpc.getGetDocumentsMethod) == null) {
       synchronized (PlatformGrpc.class) {
         if ((getGetDocumentsMethod = PlatformGrpc.getGetDocumentsMethod) == null) {
           PlatformGrpc.getGetDocumentsMethod = getGetDocumentsMethod =
-              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsRequest, org.dash.platform.dapi.v0.PlatformOuterClass.MultiItemResponse>newBuilder()
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsResponse>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getDocuments"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  org.dash.platform.dapi.v0.PlatformOuterClass.MultiItemResponse.getDefaultInstance()))
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsResponse.getDefaultInstance()))
               .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getDocuments"))
               .build();
         }
@@ -201,29 +201,29 @@ public final class PlatformGrpc {
     return getGetDocumentsMethod;
   }
 
-  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetMultiItemRequest,
-      org.dash.platform.dapi.v0.PlatformOuterClass.MultiItemResponse> getGetIdentitiesByPublicKeyHashesMethod;
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesResponse> getGetIdentitiesByPublicKeyHashesMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
       fullMethodName = SERVICE_NAME + '/' + "getIdentitiesByPublicKeyHashes",
-      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetMultiItemRequest.class,
-      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.MultiItemResponse.class,
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesResponse.class,
       methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
-  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetMultiItemRequest,
-      org.dash.platform.dapi.v0.PlatformOuterClass.MultiItemResponse> getGetIdentitiesByPublicKeyHashesMethod() {
-    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetMultiItemRequest, org.dash.platform.dapi.v0.PlatformOuterClass.MultiItemResponse> getGetIdentitiesByPublicKeyHashesMethod;
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesResponse> getGetIdentitiesByPublicKeyHashesMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesResponse> getGetIdentitiesByPublicKeyHashesMethod;
     if ((getGetIdentitiesByPublicKeyHashesMethod = PlatformGrpc.getGetIdentitiesByPublicKeyHashesMethod) == null) {
       synchronized (PlatformGrpc.class) {
         if ((getGetIdentitiesByPublicKeyHashesMethod = PlatformGrpc.getGetIdentitiesByPublicKeyHashesMethod) == null) {
           PlatformGrpc.getGetIdentitiesByPublicKeyHashesMethod = getGetIdentitiesByPublicKeyHashesMethod =
-              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetMultiItemRequest, org.dash.platform.dapi.v0.PlatformOuterClass.MultiItemResponse>newBuilder()
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesResponse>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
               .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getIdentitiesByPublicKeyHashes"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  org.dash.platform.dapi.v0.PlatformOuterClass.GetMultiItemRequest.getDefaultInstance()))
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
-                  org.dash.platform.dapi.v0.PlatformOuterClass.MultiItemResponse.getDefaultInstance()))
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesResponse.getDefaultInstance()))
               .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getIdentitiesByPublicKeyHashes"))
               .build();
         }
@@ -351,43 +351,43 @@ public final class PlatformGrpc {
 
     /**
      */
-    public void getIdentity(org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse> responseObserver) {
+    public void getIdentity(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetIdentityMethod(), responseObserver);
     }
 
     /**
      */
-    public void getIdentityBalance(org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse> responseObserver) {
+    public void getIdentityBalance(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetIdentityBalanceMethod(), responseObserver);
     }
 
     /**
      */
-    public void getIdentityBalanceAndRevision(org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse> responseObserver) {
+    public void getIdentityBalanceAndRevision(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceAndRevisionResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetIdentityBalanceAndRevisionMethod(), responseObserver);
     }
 
     /**
      */
-    public void getDataContract(org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse> responseObserver) {
+    public void getDataContract(org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetDataContractMethod(), responseObserver);
     }
 
     /**
      */
     public void getDocuments(org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.MultiItemResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetDocumentsMethod(), responseObserver);
     }
 
     /**
      */
-    public void getIdentitiesByPublicKeyHashes(org.dash.platform.dapi.v0.PlatformOuterClass.GetMultiItemRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.MultiItemResponse> responseObserver) {
+    public void getIdentitiesByPublicKeyHashes(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetIdentitiesByPublicKeyHashesMethod(), responseObserver);
     }
 
@@ -418,43 +418,43 @@ public final class PlatformGrpc {
             getGetIdentityMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
               new MethodHandlers<
-                org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest,
-                org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse>(
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityResponse>(
                   this, METHODID_GET_IDENTITY)))
           .addMethod(
             getGetIdentityBalanceMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
               new MethodHandlers<
-                org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest,
-                org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse>(
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceResponse>(
                   this, METHODID_GET_IDENTITY_BALANCE)))
           .addMethod(
             getGetIdentityBalanceAndRevisionMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
               new MethodHandlers<
-                org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest,
-                org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse>(
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceAndRevisionResponse>(
                   this, METHODID_GET_IDENTITY_BALANCE_AND_REVISION)))
           .addMethod(
             getGetDataContractMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
               new MethodHandlers<
-                org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest,
-                org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse>(
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractResponse>(
                   this, METHODID_GET_DATA_CONTRACT)))
           .addMethod(
             getGetDocumentsMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
               new MethodHandlers<
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsRequest,
-                org.dash.platform.dapi.v0.PlatformOuterClass.MultiItemResponse>(
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsResponse>(
                   this, METHODID_GET_DOCUMENTS)))
           .addMethod(
             getGetIdentitiesByPublicKeyHashesMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
               new MethodHandlers<
-                org.dash.platform.dapi.v0.PlatformOuterClass.GetMultiItemRequest,
-                org.dash.platform.dapi.v0.PlatformOuterClass.MultiItemResponse>(
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesResponse>(
                   this, METHODID_GET_IDENTITIES_BY_PUBLIC_KEY_HASHES)))
           .addMethod(
             getWaitForStateTransitionResultMethod(),
@@ -498,32 +498,32 @@ public final class PlatformGrpc {
 
     /**
      */
-    public void getIdentity(org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse> responseObserver) {
+    public void getIdentity(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetIdentityMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
      */
-    public void getIdentityBalance(org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse> responseObserver) {
+    public void getIdentityBalance(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetIdentityBalanceMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
      */
-    public void getIdentityBalanceAndRevision(org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse> responseObserver) {
+    public void getIdentityBalanceAndRevision(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceAndRevisionResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetIdentityBalanceAndRevisionMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
      */
-    public void getDataContract(org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse> responseObserver) {
+    public void getDataContract(org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetDataContractMethod(), getCallOptions()), request, responseObserver);
     }
@@ -531,15 +531,15 @@ public final class PlatformGrpc {
     /**
      */
     public void getDocuments(org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.MultiItemResponse> responseObserver) {
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetDocumentsMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
      */
-    public void getIdentitiesByPublicKeyHashes(org.dash.platform.dapi.v0.PlatformOuterClass.GetMultiItemRequest request,
-        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.MultiItemResponse> responseObserver) {
+    public void getIdentitiesByPublicKeyHashes(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetIdentitiesByPublicKeyHashesMethod(), getCallOptions()), request, responseObserver);
     }
@@ -584,42 +584,42 @@ public final class PlatformGrpc {
 
     /**
      */
-    public org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse getIdentity(org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest request) {
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityResponse getIdentity(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetIdentityMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse getIdentityBalance(org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest request) {
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceResponse getIdentityBalance(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetIdentityBalanceMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse getIdentityBalanceAndRevision(org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest request) {
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceAndRevisionResponse getIdentityBalanceAndRevision(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetIdentityBalanceAndRevisionMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse getDataContract(org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest request) {
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractResponse getDataContract(org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetDataContractMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public org.dash.platform.dapi.v0.PlatformOuterClass.MultiItemResponse getDocuments(org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsRequest request) {
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsResponse getDocuments(org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetDocumentsMethod(), getCallOptions(), request);
     }
 
     /**
      */
-    public org.dash.platform.dapi.v0.PlatformOuterClass.MultiItemResponse getIdentitiesByPublicKeyHashes(org.dash.platform.dapi.v0.PlatformOuterClass.GetMultiItemRequest request) {
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesResponse getIdentitiesByPublicKeyHashes(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetIdentitiesByPublicKeyHashesMethod(), getCallOptions(), request);
     }
@@ -663,39 +663,39 @@ public final class PlatformGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse> getIdentity(
-        org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest request) {
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityResponse> getIdentity(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetIdentityMethod(), getCallOptions()), request);
     }
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse> getIdentityBalance(
-        org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest request) {
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceResponse> getIdentityBalance(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetIdentityBalanceMethod(), getCallOptions()), request);
     }
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse> getIdentityBalanceAndRevision(
-        org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest request) {
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceAndRevisionResponse> getIdentityBalanceAndRevision(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetIdentityBalanceAndRevisionMethod(), getCallOptions()), request);
     }
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse> getDataContract(
-        org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest request) {
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractResponse> getDataContract(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetDataContractMethod(), getCallOptions()), request);
     }
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.MultiItemResponse> getDocuments(
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsResponse> getDocuments(
         org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetDocumentsMethod(), getCallOptions()), request);
@@ -703,8 +703,8 @@ public final class PlatformGrpc {
 
     /**
      */
-    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.MultiItemResponse> getIdentitiesByPublicKeyHashes(
-        org.dash.platform.dapi.v0.PlatformOuterClass.GetMultiItemRequest request) {
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesResponse> getIdentitiesByPublicKeyHashes(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetIdentitiesByPublicKeyHashesMethod(), getCallOptions()), request);
     }
@@ -758,28 +758,28 @@ public final class PlatformGrpc {
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.BroadcastStateTransitionResponse>) responseObserver);
           break;
         case METHODID_GET_IDENTITY:
-          serviceImpl.getIdentity((org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest) request,
-              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse>) responseObserver);
+          serviceImpl.getIdentity((org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityResponse>) responseObserver);
           break;
         case METHODID_GET_IDENTITY_BALANCE:
-          serviceImpl.getIdentityBalance((org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest) request,
-              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse>) responseObserver);
+          serviceImpl.getIdentityBalance((org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceResponse>) responseObserver);
           break;
         case METHODID_GET_IDENTITY_BALANCE_AND_REVISION:
-          serviceImpl.getIdentityBalanceAndRevision((org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest) request,
-              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse>) responseObserver);
+          serviceImpl.getIdentityBalanceAndRevision((org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceAndRevisionResponse>) responseObserver);
           break;
         case METHODID_GET_DATA_CONTRACT:
-          serviceImpl.getDataContract((org.dash.platform.dapi.v0.PlatformOuterClass.GetSingleItemRequest) request,
-              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.SingleItemResponse>) responseObserver);
+          serviceImpl.getDataContract((org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractResponse>) responseObserver);
           break;
         case METHODID_GET_DOCUMENTS:
           serviceImpl.getDocuments((org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsRequest) request,
-              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.MultiItemResponse>) responseObserver);
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetDocumentsResponse>) responseObserver);
           break;
         case METHODID_GET_IDENTITIES_BY_PUBLIC_KEY_HASHES:
-          serviceImpl.getIdentitiesByPublicKeyHashes((org.dash.platform.dapi.v0.PlatformOuterClass.GetMultiItemRequest) request,
-              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.MultiItemResponse>) responseObserver);
+          serviceImpl.getIdentitiesByPublicKeyHashes((org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesByPublicKeyHashesResponse>) responseObserver);
           break;
         case METHODID_WAIT_FOR_STATE_TRANSITION_RESULT:
           serviceImpl.waitForStateTransitionResult((org.dash.platform.dapi.v0.PlatformOuterClass.WaitForStateTransitionResultRequest) request,

@@ -7,6 +7,16 @@
 #import <ProtoRPC/ProtoRPCLegacy.h>
 #import <RxLibrary/GRXWriter+Immediate.h>
 
+#if defined(GPB_USE_PROTOBUF_FRAMEWORK_IMPORTS) && GPB_USE_PROTOBUF_FRAMEWORK_IMPORTS
+#import <Protobuf/GPBWrappers.pbobjc.h>
+#else
+#import "GPBWrappers.pbobjc.h"
+#endif
+#if defined(GPB_USE_PROTOBUF_FRAMEWORK_IMPORTS) && GPB_USE_PROTOBUF_FRAMEWORK_IMPORTS
+#import <Protobuf/GPBTimestamp.pbobjc.h>
+#else
+#import "GPBTimestamp.pbobjc.h"
+#endif
 
 @implementation Platform
 
@@ -75,96 +85,96 @@
              responseClass:[BroadcastStateTransitionResponse class]];
 }
 
-#pragma mark getIdentity(GetSingleItemRequest) returns (SingleItemResponse)
+#pragma mark getIdentity(GetIdentityRequest) returns (GetIdentityResponse)
 
-- (void)getIdentityWithRequest:(GetSingleItemRequest *)request handler:(void(^)(SingleItemResponse *_Nullable response, NSError *_Nullable error))handler{
+- (void)getIdentityWithRequest:(GetIdentityRequest *)request handler:(void(^)(GetIdentityResponse *_Nullable response, NSError *_Nullable error))handler{
   [[self RPCTogetIdentityWithRequest:request handler:handler] start];
 }
 // Returns a not-yet-started RPC object.
-- (GRPCProtoCall *)RPCTogetIdentityWithRequest:(GetSingleItemRequest *)request handler:(void(^)(SingleItemResponse *_Nullable response, NSError *_Nullable error))handler{
+- (GRPCProtoCall *)RPCTogetIdentityWithRequest:(GetIdentityRequest *)request handler:(void(^)(GetIdentityResponse *_Nullable response, NSError *_Nullable error))handler{
   return [self RPCToMethod:@"getIdentity"
             requestsWriter:[GRXWriter writerWithValue:request]
-             responseClass:[SingleItemResponse class]
+             responseClass:[GetIdentityResponse class]
         responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
 }
-- (GRPCUnaryProtoCall *)getIdentityWithMessage:(GetSingleItemRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+- (GRPCUnaryProtoCall *)getIdentityWithMessage:(GetIdentityRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
   return [self RPCToMethod:@"getIdentity"
                    message:message
            responseHandler:handler
                callOptions:callOptions
-             responseClass:[SingleItemResponse class]];
+             responseClass:[GetIdentityResponse class]];
 }
 
-#pragma mark getIdentityBalance(GetSingleItemRequest) returns (SingleItemResponse)
+#pragma mark getIdentityBalance(GetIdentityRequest) returns (GetIdentityBalanceResponse)
 
-- (void)getIdentityBalanceWithRequest:(GetSingleItemRequest *)request handler:(void(^)(SingleItemResponse *_Nullable response, NSError *_Nullable error))handler{
+- (void)getIdentityBalanceWithRequest:(GetIdentityRequest *)request handler:(void(^)(GetIdentityBalanceResponse *_Nullable response, NSError *_Nullable error))handler{
   [[self RPCTogetIdentityBalanceWithRequest:request handler:handler] start];
 }
 // Returns a not-yet-started RPC object.
-- (GRPCProtoCall *)RPCTogetIdentityBalanceWithRequest:(GetSingleItemRequest *)request handler:(void(^)(SingleItemResponse *_Nullable response, NSError *_Nullable error))handler{
+- (GRPCProtoCall *)RPCTogetIdentityBalanceWithRequest:(GetIdentityRequest *)request handler:(void(^)(GetIdentityBalanceResponse *_Nullable response, NSError *_Nullable error))handler{
   return [self RPCToMethod:@"getIdentityBalance"
             requestsWriter:[GRXWriter writerWithValue:request]
-             responseClass:[SingleItemResponse class]
+             responseClass:[GetIdentityBalanceResponse class]
         responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
 }
-- (GRPCUnaryProtoCall *)getIdentityBalanceWithMessage:(GetSingleItemRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+- (GRPCUnaryProtoCall *)getIdentityBalanceWithMessage:(GetIdentityRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
   return [self RPCToMethod:@"getIdentityBalance"
                    message:message
            responseHandler:handler
                callOptions:callOptions
-             responseClass:[SingleItemResponse class]];
+             responseClass:[GetIdentityBalanceResponse class]];
 }
 
-#pragma mark getIdentityBalanceAndRevision(GetSingleItemRequest) returns (SingleItemResponse)
+#pragma mark getIdentityBalanceAndRevision(GetIdentityRequest) returns (GetIdentityBalanceAndRevisionResponse)
 
-- (void)getIdentityBalanceAndRevisionWithRequest:(GetSingleItemRequest *)request handler:(void(^)(SingleItemResponse *_Nullable response, NSError *_Nullable error))handler{
+- (void)getIdentityBalanceAndRevisionWithRequest:(GetIdentityRequest *)request handler:(void(^)(GetIdentityBalanceAndRevisionResponse *_Nullable response, NSError *_Nullable error))handler{
   [[self RPCTogetIdentityBalanceAndRevisionWithRequest:request handler:handler] start];
 }
 // Returns a not-yet-started RPC object.
-- (GRPCProtoCall *)RPCTogetIdentityBalanceAndRevisionWithRequest:(GetSingleItemRequest *)request handler:(void(^)(SingleItemResponse *_Nullable response, NSError *_Nullable error))handler{
+- (GRPCProtoCall *)RPCTogetIdentityBalanceAndRevisionWithRequest:(GetIdentityRequest *)request handler:(void(^)(GetIdentityBalanceAndRevisionResponse *_Nullable response, NSError *_Nullable error))handler{
   return [self RPCToMethod:@"getIdentityBalanceAndRevision"
             requestsWriter:[GRXWriter writerWithValue:request]
-             responseClass:[SingleItemResponse class]
+             responseClass:[GetIdentityBalanceAndRevisionResponse class]
         responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
 }
-- (GRPCUnaryProtoCall *)getIdentityBalanceAndRevisionWithMessage:(GetSingleItemRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+- (GRPCUnaryProtoCall *)getIdentityBalanceAndRevisionWithMessage:(GetIdentityRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
   return [self RPCToMethod:@"getIdentityBalanceAndRevision"
                    message:message
            responseHandler:handler
                callOptions:callOptions
-             responseClass:[SingleItemResponse class]];
+             responseClass:[GetIdentityBalanceAndRevisionResponse class]];
 }
 
-#pragma mark getDataContract(GetSingleItemRequest) returns (SingleItemResponse)
+#pragma mark getDataContract(GetDataContractRequest) returns (GetDataContractResponse)
 
-- (void)getDataContractWithRequest:(GetSingleItemRequest *)request handler:(void(^)(SingleItemResponse *_Nullable response, NSError *_Nullable error))handler{
+- (void)getDataContractWithRequest:(GetDataContractRequest *)request handler:(void(^)(GetDataContractResponse *_Nullable response, NSError *_Nullable error))handler{
   [[self RPCTogetDataContractWithRequest:request handler:handler] start];
 }
 // Returns a not-yet-started RPC object.
-- (GRPCProtoCall *)RPCTogetDataContractWithRequest:(GetSingleItemRequest *)request handler:(void(^)(SingleItemResponse *_Nullable response, NSError *_Nullable error))handler{
+- (GRPCProtoCall *)RPCTogetDataContractWithRequest:(GetDataContractRequest *)request handler:(void(^)(GetDataContractResponse *_Nullable response, NSError *_Nullable error))handler{
   return [self RPCToMethod:@"getDataContract"
             requestsWriter:[GRXWriter writerWithValue:request]
-             responseClass:[SingleItemResponse class]
+             responseClass:[GetDataContractResponse class]
         responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
 }
-- (GRPCUnaryProtoCall *)getDataContractWithMessage:(GetSingleItemRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+- (GRPCUnaryProtoCall *)getDataContractWithMessage:(GetDataContractRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
   return [self RPCToMethod:@"getDataContract"
                    message:message
            responseHandler:handler
                callOptions:callOptions
-             responseClass:[SingleItemResponse class]];
+             responseClass:[GetDataContractResponse class]];
 }
 
-#pragma mark getDocuments(GetDocumentsRequest) returns (MultiItemResponse)
+#pragma mark getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse)
 
-- (void)getDocumentsWithRequest:(GetDocumentsRequest *)request handler:(void(^)(MultiItemResponse *_Nullable response, NSError *_Nullable error))handler{
+- (void)getDocumentsWithRequest:(GetDocumentsRequest *)request handler:(void(^)(GetDocumentsResponse *_Nullable response, NSError *_Nullable error))handler{
   [[self RPCTogetDocumentsWithRequest:request handler:handler] start];
 }
 // Returns a not-yet-started RPC object.
-- (GRPCProtoCall *)RPCTogetDocumentsWithRequest:(GetDocumentsRequest *)request handler:(void(^)(MultiItemResponse *_Nullable response, NSError *_Nullable error))handler{
+- (GRPCProtoCall *)RPCTogetDocumentsWithRequest:(GetDocumentsRequest *)request handler:(void(^)(GetDocumentsResponse *_Nullable response, NSError *_Nullable error))handler{
   return [self RPCToMethod:@"getDocuments"
             requestsWriter:[GRXWriter writerWithValue:request]
-             responseClass:[MultiItemResponse class]
+             responseClass:[GetDocumentsResponse class]
         responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
 }
 - (GRPCUnaryProtoCall *)getDocumentsWithMessage:(GetDocumentsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
@@ -172,27 +182,27 @@
                    message:message
            responseHandler:handler
                callOptions:callOptions
-             responseClass:[MultiItemResponse class]];
+             responseClass:[GetDocumentsResponse class]];
 }
 
-#pragma mark getIdentitiesByPublicKeyHashes(GetMultiItemRequest) returns (MultiItemResponse)
+#pragma mark getIdentitiesByPublicKeyHashes(GetIdentitiesByPublicKeyHashesRequest) returns (GetIdentitiesByPublicKeyHashesResponse)
 
-- (void)getIdentitiesByPublicKeyHashesWithRequest:(GetMultiItemRequest *)request handler:(void(^)(MultiItemResponse *_Nullable response, NSError *_Nullable error))handler{
+- (void)getIdentitiesByPublicKeyHashesWithRequest:(GetIdentitiesByPublicKeyHashesRequest *)request handler:(void(^)(GetIdentitiesByPublicKeyHashesResponse *_Nullable response, NSError *_Nullable error))handler{
   [[self RPCTogetIdentitiesByPublicKeyHashesWithRequest:request handler:handler] start];
 }
 // Returns a not-yet-started RPC object.
-- (GRPCProtoCall *)RPCTogetIdentitiesByPublicKeyHashesWithRequest:(GetMultiItemRequest *)request handler:(void(^)(MultiItemResponse *_Nullable response, NSError *_Nullable error))handler{
+- (GRPCProtoCall *)RPCTogetIdentitiesByPublicKeyHashesWithRequest:(GetIdentitiesByPublicKeyHashesRequest *)request handler:(void(^)(GetIdentitiesByPublicKeyHashesResponse *_Nullable response, NSError *_Nullable error))handler{
   return [self RPCToMethod:@"getIdentitiesByPublicKeyHashes"
             requestsWriter:[GRXWriter writerWithValue:request]
-             responseClass:[MultiItemResponse class]
+             responseClass:[GetIdentitiesByPublicKeyHashesResponse class]
         responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
 }
-- (GRPCUnaryProtoCall *)getIdentitiesByPublicKeyHashesWithMessage:(GetMultiItemRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+- (GRPCUnaryProtoCall *)getIdentitiesByPublicKeyHashesWithMessage:(GetIdentitiesByPublicKeyHashesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
   return [self RPCToMethod:@"getIdentitiesByPublicKeyHashes"
                    message:message
            responseHandler:handler
                callOptions:callOptions
-             responseClass:[MultiItemResponse class]];
+             responseClass:[GetIdentitiesByPublicKeyHashesResponse class]];
 }
 
 #pragma mark waitForStateTransitionResult(WaitForStateTransitionResultRequest) returns (WaitForStateTransitionResultResponse)

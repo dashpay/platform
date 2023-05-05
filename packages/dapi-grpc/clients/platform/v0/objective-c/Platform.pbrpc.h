@@ -18,15 +18,30 @@
 @class BroadcastStateTransitionResponse;
 @class GetConsensusParamsRequest;
 @class GetConsensusParamsResponse;
+@class GetDataContractRequest;
+@class GetDataContractResponse;
 @class GetDocumentsRequest;
-@class GetMultiItemRequest;
-@class GetSingleItemRequest;
-@class MultiItemResponse;
-@class SingleItemResponse;
+@class GetDocumentsResponse;
+@class GetIdentitiesByPublicKeyHashesRequest;
+@class GetIdentitiesByPublicKeyHashesResponse;
+@class GetIdentityBalanceAndRevisionResponse;
+@class GetIdentityBalanceResponse;
+@class GetIdentityRequest;
+@class GetIdentityResponse;
 @class WaitForStateTransitionResultRequest;
 @class WaitForStateTransitionResultResponse;
 
 #if !defined(GPB_GRPC_FORWARD_DECLARE_MESSAGE_PROTO) || !GPB_GRPC_FORWARD_DECLARE_MESSAGE_PROTO
+#if defined(GPB_USE_PROTOBUF_FRAMEWORK_IMPORTS) && GPB_USE_PROTOBUF_FRAMEWORK_IMPORTS
+  #import <Protobuf/GPBWrappers.pbobjc.h>
+#else
+  #import "GPBWrappers.pbobjc.h"
+#endif
+#if defined(GPB_USE_PROTOBUF_FRAMEWORK_IMPORTS) && GPB_USE_PROTOBUF_FRAMEWORK_IMPORTS
+  #import <Protobuf/GPBTimestamp.pbobjc.h>
+#else
+  #import "GPBTimestamp.pbobjc.h"
+#endif
 #endif
 
 @class GRPCUnaryProtoCall;
@@ -44,29 +59,29 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (GRPCUnaryProtoCall *)broadcastStateTransitionWithMessage:(BroadcastStateTransitionRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
-#pragma mark getIdentity(GetSingleItemRequest) returns (SingleItemResponse)
+#pragma mark getIdentity(GetIdentityRequest) returns (GetIdentityResponse)
 
-- (GRPCUnaryProtoCall *)getIdentityWithMessage:(GetSingleItemRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+- (GRPCUnaryProtoCall *)getIdentityWithMessage:(GetIdentityRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
-#pragma mark getIdentityBalance(GetSingleItemRequest) returns (SingleItemResponse)
+#pragma mark getIdentityBalance(GetIdentityRequest) returns (GetIdentityBalanceResponse)
 
-- (GRPCUnaryProtoCall *)getIdentityBalanceWithMessage:(GetSingleItemRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+- (GRPCUnaryProtoCall *)getIdentityBalanceWithMessage:(GetIdentityRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
-#pragma mark getIdentityBalanceAndRevision(GetSingleItemRequest) returns (SingleItemResponse)
+#pragma mark getIdentityBalanceAndRevision(GetIdentityRequest) returns (GetIdentityBalanceAndRevisionResponse)
 
-- (GRPCUnaryProtoCall *)getIdentityBalanceAndRevisionWithMessage:(GetSingleItemRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+- (GRPCUnaryProtoCall *)getIdentityBalanceAndRevisionWithMessage:(GetIdentityRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
-#pragma mark getDataContract(GetSingleItemRequest) returns (SingleItemResponse)
+#pragma mark getDataContract(GetDataContractRequest) returns (GetDataContractResponse)
 
-- (GRPCUnaryProtoCall *)getDataContractWithMessage:(GetSingleItemRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+- (GRPCUnaryProtoCall *)getDataContractWithMessage:(GetDataContractRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
-#pragma mark getDocuments(GetDocumentsRequest) returns (MultiItemResponse)
+#pragma mark getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse)
 
 - (GRPCUnaryProtoCall *)getDocumentsWithMessage:(GetDocumentsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
-#pragma mark getIdentitiesByPublicKeyHashes(GetMultiItemRequest) returns (MultiItemResponse)
+#pragma mark getIdentitiesByPublicKeyHashes(GetIdentitiesByPublicKeyHashesRequest) returns (GetIdentitiesByPublicKeyHashesResponse)
 
-- (GRPCUnaryProtoCall *)getIdentitiesByPublicKeyHashesWithMessage:(GetMultiItemRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+- (GRPCUnaryProtoCall *)getIdentitiesByPublicKeyHashesWithMessage:(GetIdentitiesByPublicKeyHashesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark waitForStateTransitionResult(WaitForStateTransitionResultRequest) returns (WaitForStateTransitionResultResponse)
 
@@ -91,46 +106,46 @@ NS_ASSUME_NONNULL_BEGIN
 - (GRPCProtoCall *)RPCTobroadcastStateTransitionWithRequest:(BroadcastStateTransitionRequest *)request handler:(void(^)(BroadcastStateTransitionResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
-#pragma mark getIdentity(GetSingleItemRequest) returns (SingleItemResponse)
+#pragma mark getIdentity(GetIdentityRequest) returns (GetIdentityResponse)
 
-- (void)getIdentityWithRequest:(GetSingleItemRequest *)request handler:(void(^)(SingleItemResponse *_Nullable response, NSError *_Nullable error))handler;
+- (void)getIdentityWithRequest:(GetIdentityRequest *)request handler:(void(^)(GetIdentityResponse *_Nullable response, NSError *_Nullable error))handler;
 
-- (GRPCProtoCall *)RPCTogetIdentityWithRequest:(GetSingleItemRequest *)request handler:(void(^)(SingleItemResponse *_Nullable response, NSError *_Nullable error))handler;
-
-
-#pragma mark getIdentityBalance(GetSingleItemRequest) returns (SingleItemResponse)
-
-- (void)getIdentityBalanceWithRequest:(GetSingleItemRequest *)request handler:(void(^)(SingleItemResponse *_Nullable response, NSError *_Nullable error))handler;
-
-- (GRPCProtoCall *)RPCTogetIdentityBalanceWithRequest:(GetSingleItemRequest *)request handler:(void(^)(SingleItemResponse *_Nullable response, NSError *_Nullable error))handler;
+- (GRPCProtoCall *)RPCTogetIdentityWithRequest:(GetIdentityRequest *)request handler:(void(^)(GetIdentityResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
-#pragma mark getIdentityBalanceAndRevision(GetSingleItemRequest) returns (SingleItemResponse)
+#pragma mark getIdentityBalance(GetIdentityRequest) returns (GetIdentityBalanceResponse)
 
-- (void)getIdentityBalanceAndRevisionWithRequest:(GetSingleItemRequest *)request handler:(void(^)(SingleItemResponse *_Nullable response, NSError *_Nullable error))handler;
+- (void)getIdentityBalanceWithRequest:(GetIdentityRequest *)request handler:(void(^)(GetIdentityBalanceResponse *_Nullable response, NSError *_Nullable error))handler;
 
-- (GRPCProtoCall *)RPCTogetIdentityBalanceAndRevisionWithRequest:(GetSingleItemRequest *)request handler:(void(^)(SingleItemResponse *_Nullable response, NSError *_Nullable error))handler;
-
-
-#pragma mark getDataContract(GetSingleItemRequest) returns (SingleItemResponse)
-
-- (void)getDataContractWithRequest:(GetSingleItemRequest *)request handler:(void(^)(SingleItemResponse *_Nullable response, NSError *_Nullable error))handler;
-
-- (GRPCProtoCall *)RPCTogetDataContractWithRequest:(GetSingleItemRequest *)request handler:(void(^)(SingleItemResponse *_Nullable response, NSError *_Nullable error))handler;
+- (GRPCProtoCall *)RPCTogetIdentityBalanceWithRequest:(GetIdentityRequest *)request handler:(void(^)(GetIdentityBalanceResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
-#pragma mark getDocuments(GetDocumentsRequest) returns (MultiItemResponse)
+#pragma mark getIdentityBalanceAndRevision(GetIdentityRequest) returns (GetIdentityBalanceAndRevisionResponse)
 
-- (void)getDocumentsWithRequest:(GetDocumentsRequest *)request handler:(void(^)(MultiItemResponse *_Nullable response, NSError *_Nullable error))handler;
+- (void)getIdentityBalanceAndRevisionWithRequest:(GetIdentityRequest *)request handler:(void(^)(GetIdentityBalanceAndRevisionResponse *_Nullable response, NSError *_Nullable error))handler;
 
-- (GRPCProtoCall *)RPCTogetDocumentsWithRequest:(GetDocumentsRequest *)request handler:(void(^)(MultiItemResponse *_Nullable response, NSError *_Nullable error))handler;
+- (GRPCProtoCall *)RPCTogetIdentityBalanceAndRevisionWithRequest:(GetIdentityRequest *)request handler:(void(^)(GetIdentityBalanceAndRevisionResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
-#pragma mark getIdentitiesByPublicKeyHashes(GetMultiItemRequest) returns (MultiItemResponse)
+#pragma mark getDataContract(GetDataContractRequest) returns (GetDataContractResponse)
 
-- (void)getIdentitiesByPublicKeyHashesWithRequest:(GetMultiItemRequest *)request handler:(void(^)(MultiItemResponse *_Nullable response, NSError *_Nullable error))handler;
+- (void)getDataContractWithRequest:(GetDataContractRequest *)request handler:(void(^)(GetDataContractResponse *_Nullable response, NSError *_Nullable error))handler;
 
-- (GRPCProtoCall *)RPCTogetIdentitiesByPublicKeyHashesWithRequest:(GetMultiItemRequest *)request handler:(void(^)(MultiItemResponse *_Nullable response, NSError *_Nullable error))handler;
+- (GRPCProtoCall *)RPCTogetDataContractWithRequest:(GetDataContractRequest *)request handler:(void(^)(GetDataContractResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse)
+
+- (void)getDocumentsWithRequest:(GetDocumentsRequest *)request handler:(void(^)(GetDocumentsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetDocumentsWithRequest:(GetDocumentsRequest *)request handler:(void(^)(GetDocumentsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getIdentitiesByPublicKeyHashes(GetIdentitiesByPublicKeyHashesRequest) returns (GetIdentitiesByPublicKeyHashesResponse)
+
+- (void)getIdentitiesByPublicKeyHashesWithRequest:(GetIdentitiesByPublicKeyHashesRequest *)request handler:(void(^)(GetIdentitiesByPublicKeyHashesResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetIdentitiesByPublicKeyHashesWithRequest:(GetIdentitiesByPublicKeyHashesRequest *)request handler:(void(^)(GetIdentitiesByPublicKeyHashesResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark waitForStateTransitionResult(WaitForStateTransitionResultRequest) returns (WaitForStateTransitionResultResponse)

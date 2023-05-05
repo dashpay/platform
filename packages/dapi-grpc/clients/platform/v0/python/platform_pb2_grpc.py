@@ -21,33 +21,33 @@ class PlatformStub(object):
                 )
         self.getIdentity = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getIdentity',
-                request_serializer=platform__pb2.GetSingleItemRequest.SerializeToString,
-                response_deserializer=platform__pb2.SingleItemResponse.FromString,
+                request_serializer=platform__pb2.GetIdentityRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetIdentityResponse.FromString,
                 )
         self.getIdentityBalance = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getIdentityBalance',
-                request_serializer=platform__pb2.GetSingleItemRequest.SerializeToString,
-                response_deserializer=platform__pb2.SingleItemResponse.FromString,
+                request_serializer=platform__pb2.GetIdentityRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetIdentityBalanceResponse.FromString,
                 )
         self.getIdentityBalanceAndRevision = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getIdentityBalanceAndRevision',
-                request_serializer=platform__pb2.GetSingleItemRequest.SerializeToString,
-                response_deserializer=platform__pb2.SingleItemResponse.FromString,
+                request_serializer=platform__pb2.GetIdentityRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetIdentityBalanceAndRevisionResponse.FromString,
                 )
         self.getDataContract = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getDataContract',
-                request_serializer=platform__pb2.GetSingleItemRequest.SerializeToString,
-                response_deserializer=platform__pb2.SingleItemResponse.FromString,
+                request_serializer=platform__pb2.GetDataContractRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetDataContractResponse.FromString,
                 )
         self.getDocuments = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getDocuments',
                 request_serializer=platform__pb2.GetDocumentsRequest.SerializeToString,
-                response_deserializer=platform__pb2.MultiItemResponse.FromString,
+                response_deserializer=platform__pb2.GetDocumentsResponse.FromString,
                 )
         self.getIdentitiesByPublicKeyHashes = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getIdentitiesByPublicKeyHashes',
-                request_serializer=platform__pb2.GetMultiItemRequest.SerializeToString,
-                response_deserializer=platform__pb2.MultiItemResponse.FromString,
+                request_serializer=platform__pb2.GetIdentitiesByPublicKeyHashesRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetIdentitiesByPublicKeyHashesResponse.FromString,
                 )
         self.waitForStateTransitionResult = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult',
@@ -128,33 +128,33 @@ def add_PlatformServicer_to_server(servicer, server):
             ),
             'getIdentity': grpc.unary_unary_rpc_method_handler(
                     servicer.getIdentity,
-                    request_deserializer=platform__pb2.GetSingleItemRequest.FromString,
-                    response_serializer=platform__pb2.SingleItemResponse.SerializeToString,
+                    request_deserializer=platform__pb2.GetIdentityRequest.FromString,
+                    response_serializer=platform__pb2.GetIdentityResponse.SerializeToString,
             ),
             'getIdentityBalance': grpc.unary_unary_rpc_method_handler(
                     servicer.getIdentityBalance,
-                    request_deserializer=platform__pb2.GetSingleItemRequest.FromString,
-                    response_serializer=platform__pb2.SingleItemResponse.SerializeToString,
+                    request_deserializer=platform__pb2.GetIdentityRequest.FromString,
+                    response_serializer=platform__pb2.GetIdentityBalanceResponse.SerializeToString,
             ),
             'getIdentityBalanceAndRevision': grpc.unary_unary_rpc_method_handler(
                     servicer.getIdentityBalanceAndRevision,
-                    request_deserializer=platform__pb2.GetSingleItemRequest.FromString,
-                    response_serializer=platform__pb2.SingleItemResponse.SerializeToString,
+                    request_deserializer=platform__pb2.GetIdentityRequest.FromString,
+                    response_serializer=platform__pb2.GetIdentityBalanceAndRevisionResponse.SerializeToString,
             ),
             'getDataContract': grpc.unary_unary_rpc_method_handler(
                     servicer.getDataContract,
-                    request_deserializer=platform__pb2.GetSingleItemRequest.FromString,
-                    response_serializer=platform__pb2.SingleItemResponse.SerializeToString,
+                    request_deserializer=platform__pb2.GetDataContractRequest.FromString,
+                    response_serializer=platform__pb2.GetDataContractResponse.SerializeToString,
             ),
             'getDocuments': grpc.unary_unary_rpc_method_handler(
                     servicer.getDocuments,
                     request_deserializer=platform__pb2.GetDocumentsRequest.FromString,
-                    response_serializer=platform__pb2.MultiItemResponse.SerializeToString,
+                    response_serializer=platform__pb2.GetDocumentsResponse.SerializeToString,
             ),
             'getIdentitiesByPublicKeyHashes': grpc.unary_unary_rpc_method_handler(
                     servicer.getIdentitiesByPublicKeyHashes,
-                    request_deserializer=platform__pb2.GetMultiItemRequest.FromString,
-                    response_serializer=platform__pb2.MultiItemResponse.SerializeToString,
+                    request_deserializer=platform__pb2.GetIdentitiesByPublicKeyHashesRequest.FromString,
+                    response_serializer=platform__pb2.GetIdentitiesByPublicKeyHashesResponse.SerializeToString,
             ),
             'waitForStateTransitionResult': grpc.unary_unary_rpc_method_handler(
                     servicer.waitForStateTransitionResult,
@@ -205,8 +205,8 @@ class Platform(object):
             timeout=None,
             metadata=None):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentity',
-            platform__pb2.GetSingleItemRequest.SerializeToString,
-            platform__pb2.SingleItemResponse.FromString,
+            platform__pb2.GetIdentityRequest.SerializeToString,
+            platform__pb2.GetIdentityResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
@@ -222,8 +222,8 @@ class Platform(object):
             timeout=None,
             metadata=None):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentityBalance',
-            platform__pb2.GetSingleItemRequest.SerializeToString,
-            platform__pb2.SingleItemResponse.FromString,
+            platform__pb2.GetIdentityRequest.SerializeToString,
+            platform__pb2.GetIdentityBalanceResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
@@ -239,8 +239,8 @@ class Platform(object):
             timeout=None,
             metadata=None):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentityBalanceAndRevision',
-            platform__pb2.GetSingleItemRequest.SerializeToString,
-            platform__pb2.SingleItemResponse.FromString,
+            platform__pb2.GetIdentityRequest.SerializeToString,
+            platform__pb2.GetIdentityBalanceAndRevisionResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
@@ -256,8 +256,8 @@ class Platform(object):
             timeout=None,
             metadata=None):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getDataContract',
-            platform__pb2.GetSingleItemRequest.SerializeToString,
-            platform__pb2.SingleItemResponse.FromString,
+            platform__pb2.GetDataContractRequest.SerializeToString,
+            platform__pb2.GetDataContractResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
@@ -274,7 +274,7 @@ class Platform(object):
             metadata=None):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getDocuments',
             platform__pb2.GetDocumentsRequest.SerializeToString,
-            platform__pb2.MultiItemResponse.FromString,
+            platform__pb2.GetDocumentsResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
@@ -290,8 +290,8 @@ class Platform(object):
             timeout=None,
             metadata=None):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentitiesByPublicKeyHashes',
-            platform__pb2.GetMultiItemRequest.SerializeToString,
-            platform__pb2.MultiItemResponse.FromString,
+            platform__pb2.GetIdentitiesByPublicKeyHashesRequest.SerializeToString,
+            platform__pb2.GetIdentitiesByPublicKeyHashesResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 

@@ -24,8 +24,8 @@ Platform.getIdentity = {
   service: Platform,
   requestStream: false,
   responseStream: false,
-  requestType: platform_pb.GetSingleItemRequest,
-  responseType: platform_pb.SingleItemResponse
+  requestType: platform_pb.GetIdentityRequest,
+  responseType: platform_pb.GetIdentityResponse
 };
 
 Platform.getIdentityBalance = {
@@ -33,8 +33,8 @@ Platform.getIdentityBalance = {
   service: Platform,
   requestStream: false,
   responseStream: false,
-  requestType: platform_pb.GetSingleItemRequest,
-  responseType: platform_pb.SingleItemResponse
+  requestType: platform_pb.GetIdentityRequest,
+  responseType: platform_pb.GetIdentityBalanceResponse
 };
 
 Platform.getIdentityBalanceAndRevision = {
@@ -42,8 +42,8 @@ Platform.getIdentityBalanceAndRevision = {
   service: Platform,
   requestStream: false,
   responseStream: false,
-  requestType: platform_pb.GetSingleItemRequest,
-  responseType: platform_pb.SingleItemResponse
+  requestType: platform_pb.GetIdentityRequest,
+  responseType: platform_pb.GetIdentityBalanceAndRevisionResponse
 };
 
 Platform.getDataContract = {
@@ -51,8 +51,8 @@ Platform.getDataContract = {
   service: Platform,
   requestStream: false,
   responseStream: false,
-  requestType: platform_pb.GetSingleItemRequest,
-  responseType: platform_pb.SingleItemResponse
+  requestType: platform_pb.GetDataContractRequest,
+  responseType: platform_pb.GetDataContractResponse
 };
 
 Platform.getDocuments = {
@@ -61,7 +61,7 @@ Platform.getDocuments = {
   requestStream: false,
   responseStream: false,
   requestType: platform_pb.GetDocumentsRequest,
-  responseType: platform_pb.MultiItemResponse
+  responseType: platform_pb.GetDocumentsResponse
 };
 
 Platform.getIdentitiesByPublicKeyHashes = {
@@ -69,8 +69,8 @@ Platform.getIdentitiesByPublicKeyHashes = {
   service: Platform,
   requestStream: false,
   responseStream: false,
-  requestType: platform_pb.GetMultiItemRequest,
-  responseType: platform_pb.MultiItemResponse
+  requestType: platform_pb.GetIdentitiesByPublicKeyHashesRequest,
+  responseType: platform_pb.GetIdentitiesByPublicKeyHashesResponse
 };
 
 Platform.waitForStateTransitionResult = {
