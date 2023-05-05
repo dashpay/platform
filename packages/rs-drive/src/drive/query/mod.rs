@@ -35,7 +35,6 @@
 use grovedb::query_result_type::{Key, QueryResultType};
 use grovedb::TransactionArg;
 
-
 use crate::contract::Contract;
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
@@ -47,13 +46,10 @@ use dpp::data_contract::document_type::DocumentType;
 
 use dpp::document::Document;
 
-
 use dpp::ProtocolError;
-
 
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
-
 
 #[derive(Debug, Default)]
 /// The outcome of a query

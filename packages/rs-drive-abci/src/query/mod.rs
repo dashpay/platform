@@ -5,7 +5,8 @@ use dapi_grpc::platform::v0::get_documents_request::Start;
 use dapi_grpc::platform::v0::{
     GetDataContractRequest, GetDataContractResponse, GetDocumentsRequest, GetDocumentsResponse,
     GetIdentitiesByPublicKeyHashesRequest, GetIdentitiesByPublicKeyHashesResponse,
-    GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceResponse, GetIdentityRequest, Proof, ResponseMetadata,
+    GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceResponse, GetIdentityRequest, Proof,
+    ResponseMetadata,
 };
 use dpp::identifier::Identifier;
 use dpp::platform_value::Bytes20;
@@ -16,8 +17,7 @@ use dpp::{check_validation_result_with_data, ProtocolError};
 
 use drive::error::query::QuerySyntaxError;
 use drive::query::DriveQuery;
-use prost::{Message};
-
+use prost::Message;
 
 /// A query validation result
 pub type QueryValidationResult<TData> = ValidationResult<TData, QueryError>;
@@ -57,7 +57,6 @@ impl<C> Platform<C> {
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()
-                    .into()
                 } else {
                     let balance = check_validation_result_with_data!(self
                         .drive
@@ -90,7 +89,6 @@ impl<C> Platform<C> {
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()
-                    .into()
                 } else {
                     let balance = check_validation_result_with_data!(self
                         .drive
@@ -132,7 +130,6 @@ impl<C> Platform<C> {
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()
-                    .into()
                 } else {
                     let contract = check_validation_result_with_data!(self
                         .drive
@@ -296,7 +293,6 @@ impl<C> Platform<C> {
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()
-                    .into()
                 } else {
                     //todo: fix this so we return optionals
                     let identities = check_validation_result_with_data!(self
@@ -315,7 +311,6 @@ impl<C> Platform<C> {
                         metadata: Some(metadata),
                     }
                     .encode_to_vec()
-                    .into()
                 };
                 Ok(QueryValidationResult::new_with_data(response_data))
 

@@ -4,7 +4,6 @@ use crate::ProtocolError;
 use bincode::config;
 use bincode::{Decode, Encode};
 
-
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
 /// Extended Block information
