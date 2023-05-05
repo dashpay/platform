@@ -3,8 +3,8 @@ use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use crate::ProtocolError;
 use bincode::config;
 use bincode::{Decode, Encode};
-use dashcore::bls_sig_utils::BLSSignature;
-use dashcore::QuorumHash;
+
+
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
 /// Extended Block information
