@@ -24,26 +24,8 @@ Platform.getIdentity = {
   service: Platform,
   requestStream: false,
   responseStream: false,
-  requestType: platform_pb.GetSingleItemRequest,
-  responseType: platform_pb.SingleItemResponse
-};
-
-Platform.getIdentityBalance = {
-  methodName: "getIdentityBalance",
-  service: Platform,
-  requestStream: false,
-  responseStream: false,
-  requestType: platform_pb.GetSingleItemRequest,
-  responseType: platform_pb.SingleItemResponse
-};
-
-Platform.getIdentityBalanceAndRevision = {
-  methodName: "getIdentityBalanceAndRevision",
-  service: Platform,
-  requestStream: false,
-  responseStream: false,
-  requestType: platform_pb.GetSingleItemRequest,
-  responseType: platform_pb.SingleItemResponse
+  requestType: platform_pb.GetIdentityRequest,
+  responseType: platform_pb.GetIdentityResponse
 };
 
 Platform.getDataContract = {
@@ -51,8 +33,8 @@ Platform.getDataContract = {
   service: Platform,
   requestStream: false,
   responseStream: false,
-  requestType: platform_pb.GetSingleItemRequest,
-  responseType: platform_pb.SingleItemResponse
+  requestType: platform_pb.GetDataContractRequest,
+  responseType: platform_pb.GetDataContractResponse
 };
 
 Platform.getDocuments = {
@@ -61,7 +43,7 @@ Platform.getDocuments = {
   requestStream: false,
   responseStream: false,
   requestType: platform_pb.GetDocumentsRequest,
-  responseType: platform_pb.MultiItemResponse
+  responseType: platform_pb.GetDocumentsResponse
 };
 
 Platform.getIdentitiesByPublicKeyHashes = {
@@ -69,8 +51,8 @@ Platform.getIdentitiesByPublicKeyHashes = {
   service: Platform,
   requestStream: false,
   responseStream: false,
-  requestType: platform_pb.GetMultiItemRequest,
-  responseType: platform_pb.MultiItemResponse
+  requestType: platform_pb.GetIdentitiesByPublicKeyHashesRequest,
+  responseType: platform_pb.GetIdentitiesByPublicKeyHashesResponse
 };
 
 Platform.waitForStateTransitionResult = {
@@ -134,68 +116,6 @@ PlatformClient.prototype.getIdentity = function getIdentity(requestMessage, meta
     callback = arguments[1];
   }
   var client = grpc.unary(Platform.getIdentity, {
-    request: requestMessage,
-    host: this.serviceHost,
-    metadata: metadata,
-    transport: this.options.transport,
-    debug: this.options.debug,
-    onEnd: function (response) {
-      if (callback) {
-        if (response.status !== grpc.Code.OK) {
-          var err = new Error(response.statusMessage);
-          err.code = response.status;
-          err.metadata = response.trailers;
-          callback(err, null);
-        } else {
-          callback(null, response.message);
-        }
-      }
-    }
-  });
-  return {
-    cancel: function () {
-      callback = null;
-      client.close();
-    }
-  };
-};
-
-PlatformClient.prototype.getIdentityBalance = function getIdentityBalance(requestMessage, metadata, callback) {
-  if (arguments.length === 2) {
-    callback = arguments[1];
-  }
-  var client = grpc.unary(Platform.getIdentityBalance, {
-    request: requestMessage,
-    host: this.serviceHost,
-    metadata: metadata,
-    transport: this.options.transport,
-    debug: this.options.debug,
-    onEnd: function (response) {
-      if (callback) {
-        if (response.status !== grpc.Code.OK) {
-          var err = new Error(response.statusMessage);
-          err.code = response.status;
-          err.metadata = response.trailers;
-          callback(err, null);
-        } else {
-          callback(null, response.message);
-        }
-      }
-    }
-  });
-  return {
-    cancel: function () {
-      callback = null;
-      client.close();
-    }
-  };
-};
-
-PlatformClient.prototype.getIdentityBalanceAndRevision = function getIdentityBalanceAndRevision(requestMessage, metadata, callback) {
-  if (arguments.length === 2) {
-    callback = arguments[1];
-  }
-  var client = grpc.unary(Platform.getIdentityBalanceAndRevision, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,
