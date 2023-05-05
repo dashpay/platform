@@ -15,8 +15,13 @@ use integer_encoding::VarInt;
 use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::data_contract::document_type::DocumentType;
 use crate::document::Document;
-use crate::serialization_traits::PlatformDeserializable;
 use crate::serialization_traits::ValueConvertible;
+use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+use bincode::de::Decoder;
+use bincode::enc::Encoder;
+use bincode::error::{DecodeError, EncodeError};
+use bincode::{config, Decode, Encode};
+use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
 use platform_value::btreemap_extensions::BTreeValueMapInsertionPathHelper;
 use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
@@ -49,7 +54,8 @@ pub const IDENTIFIER_FIELDS: [&str; 3] = [
 ];
 
 /// The document object represents the data provided by the platform in response to a query.
-#[derive(Serialize, Deserialize, Debug, Clone, Default)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PlatformDeserialize, PlatformSerialize)]
+#[platform_error_type(ProtocolError)]
 pub struct ExtendedDocument {
     #[serde(rename = "$protocolVersion")]
     pub protocol_version: u32,
@@ -66,6 +72,47 @@ pub struct ExtendedDocument {
     #[serde(skip)]
     //todo: make entropy optional
     pub entropy: Bytes32,
+}
+
+impl Encode for ExtendedDocument {
+    fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
+        self.data_contract.encode(encoder)?;
+        self.document_type_name.encode(encoder)?;
+        let serialized_document = self
+            .document
+            .serialize(
+                self.data_contract
+                    .document_type_for_name(&self.document_type_name)
+                    .map_err(|e| EncodeError::OtherString(e.to_string()))?,
+            )
+            .map_err(|e| EncodeError::OtherString(e.to_string()))?;
+        serialized_document.encode(encoder)?;
+        Ok(())
+    }
+}
+
+impl Decode for ExtendedDocument {
+    fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
+        let data_contract = DataContract::decode(decoder)?;
+        let document_type_name = String::decode(decoder)?;
+        let document_bytes = Vec::<u8>::decode(decoder)?;
+        let document = Document::from_bytes(
+            &document_bytes,
+            data_contract
+                .document_type_for_name(&document_type_name)
+                .map_err(|e| DecodeError::OtherString(e.to_string()))?,
+        )
+        .map_err(|e| DecodeError::OtherString(e.to_string()))?;
+        Ok(Self {
+            protocol_version: PROTOCOL_VERSION,
+            data_contract_id: data_contract.id,
+            data_contract,
+            document_type_name,
+            document,
+            metadata: None,
+            entropy: Bytes32::default(),
+        })
+    }
 }
 
 impl ExtendedDocument {
@@ -426,15 +473,6 @@ impl ExtendedDocument {
         identifiers_paths.extend(IDENTIFIER_FIELDS.map(|str| str.to_string()));
 
         Ok((identifiers_paths, binary_paths))
-    }
-}
-
-impl PlatformDeserializable for ExtendedDocument {
-    fn deserialize(_data: &[u8]) -> Result<Self, ProtocolError>
-    where
-        Self: Sized,
-    {
-        todo!()
     }
 }
 

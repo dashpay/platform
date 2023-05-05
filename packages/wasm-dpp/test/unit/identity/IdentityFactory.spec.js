@@ -2,7 +2,7 @@ const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey')
 const getInstantAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
 const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
 const getChainAssetLockProofFixture = require('../../../lib/test/fixtures/getChainAssetLockProofFixture');
-const { default: loadWasmDpp } = require('../../../dist');
+const { default: loadWasmDpp, SerializedObjectParsingError } = require('../../../dist');
 const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
 
 describe('IdentityFactory', () => {
@@ -21,7 +21,6 @@ describe('IdentityFactory', () => {
   let IdentityUpdateTransition;
   let IdentityPublicKeyWithWitness;
   let InvalidIdentityError;
-  let PlatformValueError;
   let UnsupportedProtocolVersionError;
   let ChainAssetLockProof;
 
@@ -30,7 +29,7 @@ describe('IdentityFactory', () => {
       Identity, IdentityFactory, IdentityValidator,
       InstantAssetLockProof, ChainAssetLockProof, IdentityUpdateTransition,
       IdentityCreateTransition, IdentityTopUpTransition, IdentityPublicKeyWithWitness,
-      InvalidIdentityError, UnsupportedProtocolVersionError, PlatformValueError,
+      InvalidIdentityError, UnsupportedProtocolVersionError,
     } = await loadWasmDpp());
   });
 
@@ -149,7 +148,7 @@ describe('IdentityFactory', () => {
 
         expect.fail('should throw an error');
       } catch (e) {
-        expect(e).to.be.instanceOf(PlatformValueError);
+        expect(e).to.be.instanceOf(SerializedObjectParsingError);
       }
     });
   });

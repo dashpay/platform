@@ -18,13 +18,13 @@ use crate::{
 };
 
 use crate::bls_adapter::{BlsAdapter, JsBlsAdapter};
-use crate::errors::from_dpp_err;
-use dpp::state_transition::StateTransitionConvert;
+use dpp::state_transition::StateTransition;
 
 use crate::utils::{generic_of_js_val, ToSerdeJSONExt, WithJsError};
 use dpp::identity::KeyType;
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{string_encoding, BinaryData};
+use dpp::serialization_traits::PlatformSerializable;
 use dpp::{
     identity::state_transition::{
         asset_lock_proof::AssetLockProof, identity_create_transition::IdentityCreateTransition,
@@ -228,19 +228,11 @@ impl IdentityCreateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=toBuffer)]
-    pub fn to_buffer(&self, options: JsValue) -> Result<JsValue, JsValue> {
-        let opts: super::to_object::ToObjectOptions = if options.is_object() {
-            with_js_error!(serde_wasm_bindgen::from_value(options))?
-        } else {
-            Default::default()
-        };
-
-        let buffer = self
-            .0
-            .to_cbor_buffer(opts.skip_signature.unwrap_or(false))
-            .map_err(from_dpp_err)?;
-
-        Ok(Buffer::from_bytes(&buffer).into())
+    pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
+        let bytes =
+            PlatformSerializable::serialize(&StateTransition::IdentityCreate(self.0.clone()))
+                .with_js_error()?;
+        Ok(Buffer::from_bytes(&bytes))
     }
 
     #[wasm_bindgen(js_name=toJSON)]
