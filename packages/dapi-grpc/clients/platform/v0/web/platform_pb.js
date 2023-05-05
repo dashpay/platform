@@ -15,6 +15,8 @@ var jspb = require('google-protobuf');
 var goog = jspb;
 const proto = {};
 
+var google_protobuf_timestamp_pb = require('google-protobuf/google/protobuf/timestamp_pb.js');
+goog.object.extend(proto, google_protobuf_timestamp_pb);
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.BroadcastStateTransitionRequest', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.BroadcastStateTransitionResponse', null, { proto });
 goog.exportSymbol('proto.org.dash.platform.dapi.v0.ConsensusParamsBlock', null, { proto });
