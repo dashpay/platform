@@ -1,3 +1,10 @@
+## [0.24.0-dev.33](https://github.com/dashpay/platform/compare/v0.24.0-dev.32...v0.24.0-dev.33) (2023-05-05)
+
+
+### Continuous Integration
+
+* increase release timeouts ([#1032](https://github.com/dashpay/platform/issues/1032))
+
 ## [0.24.0-dev.32](https://github.com/dashpay/platform/compare/v0.24.0-dev.31...v0.24.0-dev.32) (2023-05-04)
 
 ### ⚠ BREAKING CHANGES
