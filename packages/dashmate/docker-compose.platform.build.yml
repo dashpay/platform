@@ -11,6 +11,8 @@ services:
         SCCACHE_BUCKET: ${SCCACHE_BUCKET}
         ACTIONS_CACHE_URL: ${ACTIONS_CACHE_URL}
         ACTIONS_RUNTIME_TOKEN: ${ACTIONS_RUNTIME_TOKEN}
+      cache_from:
+        - "type=s3,region=eu-west-1,bucket=platform-runner-cache,name=cache-image"
     image: drive:local
     stop_grace_period: 30s
 
