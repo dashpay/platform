@@ -113,7 +113,7 @@ jobs:
   release-drive-docker-image:
     name: Release Drive to Docker Hub
     runs-on: self-hosted
-    timeout-minutes: 60
+    timeout-minutes: 120
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
@@ -252,7 +252,7 @@ jobs:
   release-dapi-docker-image:
     name: Release DAPI to Docker Hub
     runs-on: self-hosted
-    timeout-minutes: 60
+    timeout-minutes: 120
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
@@ -398,7 +398,7 @@ jobs:
   release-test-suite-docker-image:
     name: Release Test Suite to Docker Hub
     runs-on: self-hosted
-    timeout-minutes: 60
+    timeout-minutes: 120
     env:
       SCCACHE_GHA_ENABLED: "true"
       RUSTC_WRAPPER: "sccache"
