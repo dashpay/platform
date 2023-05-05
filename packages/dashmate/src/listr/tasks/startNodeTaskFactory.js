@@ -46,7 +46,7 @@ function startNodeTaskFactory(
     }
 
     const coreLogFilePath = config.get('core.log.file.path');
-    ensureFileMountExists(coreLogFilePath);
+    ensureFileMountExists(coreLogFilePath, 0o666);
 
     // Check Drive log files are created
     if (config.get('platform.enable')) {
