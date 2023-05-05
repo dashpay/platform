@@ -86,7 +86,7 @@ use crate::drive::Drive;
 #[cfg(feature = "full")]
 use crate::error::drive::DriveError;
 #[cfg(any(feature = "full", feature = "verify"))]
-use crate::error::query::QueryError;
+use crate::error::query::QuerySyntaxError;
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::error::Error;
 #[cfg(feature = "full")]
@@ -105,7 +105,9 @@ use dpp::platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use dpp::platform_value::platform_value;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::platform_value::Value;
+use dpp::prelude::Identifier;
 
+use crate::common::encode::encode_u64;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::ProtocolError;
 
@@ -206,7 +208,7 @@ impl InternalClauses {
                     .clone(),
             )),
             _ => Err(Error::Query(
-                QueryError::DuplicateNonGroupableClauseSameField(
+                QuerySyntaxError::DuplicateNonGroupableClauseSameField(
                     "There should only be one equal clause for the primary key",
                 ),
             )),
@@ -221,7 +223,7 @@ impl InternalClauses {
                     .clone(),
             )),
             _ => Err(Error::Query(
-                QueryError::DuplicateNonGroupableClauseSameField(
+                QuerySyntaxError::DuplicateNonGroupableClauseSameField(
                     "There should only be one in clause for the primary key",
                 ),
             )),
@@ -237,9 +239,9 @@ impl InternalClauses {
 
         match internal_clauses.verify() {
             true => Ok(internal_clauses),
-            false => Err(Error::Query(QueryError::InvalidWhereClauseComponents(
-                "Query has invalid where clauses",
-            ))),
+            false => Err(Error::Query(
+                QuerySyntaxError::InvalidWhereClauseComponents("Query has invalid where clauses"),
+            )),
         }
     }
 }
@@ -288,7 +290,7 @@ pub struct DriveQuery<'a> {
     /// Start at included
     pub start_at_included: bool,
     /// Block time
-    pub block_time: Option<f64>,
+    pub block_time_ms: Option<u64>,
 }
 
 // TODO: expose this also
@@ -306,7 +308,7 @@ impl<'a> DriveQuery<'a> {
             order_by: Default::default(),
             start_at: None,
             start_at_included: true,
-            block_time: None,
+            block_time_ms: None,
         }
     }
 
@@ -335,7 +337,7 @@ impl<'a> DriveQuery<'a> {
         document_type: &'a DocumentType,
     ) -> Result<Self, Error> {
         let query_document_value: Value = ciborium::de::from_reader(query_cbor).map_err(|_| {
-            Error::Query(QueryError::DeserializationError(
+            Error::Query(QuerySyntaxError::DeserializationError(
                 "unable to decode query from cbor".to_string(),
             ))
         })?;
@@ -372,12 +374,12 @@ impl<'a> DriveQuery<'a> {
                     Some(limit_value)
                 }
             })
-            .ok_or(Error::Query(QueryError::InvalidLimit(
+            .ok_or(Error::Query(QuerySyntaxError::InvalidLimit(
                 "limit should be a integer from 1 to 100",
             )))?;
 
-        let block_time: Option<f64> = query_document
-            .remove_optional_float("blockTime")
+        let block_time_ms: Option<u64> = query_document
+            .remove_optional_integer("blockTime")
             .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
 
         let all_where_clauses: Vec<WhereClause> =
@@ -391,14 +393,14 @@ impl<'a> DriveQuery<'a> {
                                 if let Value::Array(clauses_components) = where_clause {
                                     WhereClause::from_components(clauses_components)
                                 } else {
-                                    Err(Error::Query(QueryError::InvalidFormatWhereClause(
+                                    Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
                                         "where clause must be an array",
                                     )))
                                 }
                             })
                             .collect::<Result<Vec<WhereClause>, Error>>()
                     } else {
-                        Err(Error::Query(QueryError::InvalidFormatWhereClause(
+                        Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
                             "where clause must be an array",
                         )))
                     }
@@ -409,7 +411,7 @@ impl<'a> DriveQuery<'a> {
         let start_at_option = query_document.remove("startAt");
         let start_after_option = query_document.remove("startAfter");
         if start_after_option.is_some() && start_at_option.is_some() {
-            return Err(Error::Query(QueryError::DuplicateStartConditions(
+            return Err(Error::Query(QuerySyntaxError::DuplicateStartConditions(
                 "only one of startAt or startAfter should be provided",
             )));
         }
@@ -456,7 +458,7 @@ impl<'a> DriveQuery<'a> {
             .collect::<Result<IndexMap<String, OrderClause>, Error>>()?;
 
         if !query_document.is_empty() {
-            return Err(Error::Query(QueryError::Unsupported(
+            return Err(Error::Query(QuerySyntaxError::Unsupported(
                 "unsupported syntax in where clause".to_string(),
             )));
         }
@@ -470,7 +472,86 @@ impl<'a> DriveQuery<'a> {
             order_by,
             start_at,
             start_at_included,
-            block_time,
+            block_time_ms,
+        })
+    }
+
+    #[cfg(any(feature = "full", feature = "verify"))]
+    /// Converts a query Value to a `DriveQuery`.
+    pub fn from_decomposed_values(
+        where_clause: Value,
+        order_by: Option<Value>,
+        maybe_limit: Option<u16>,
+        start_at: Option<Vec<u8>>,
+        start_at_included: bool,
+        block_time_ms: Option<u64>,
+        contract: &'a Contract,
+        document_type: &'a DocumentType,
+    ) -> Result<Self, Error> {
+        let limit = maybe_limit
+            .map_or(Some(defaults::DEFAULT_QUERY_LIMIT), |limit_value| {
+                if limit_value == 0 || limit_value > defaults::DEFAULT_QUERY_LIMIT {
+                    None
+                } else {
+                    Some(limit_value)
+                }
+            })
+            .ok_or(Error::Query(QuerySyntaxError::InvalidLimit(
+                "limit should be a integer from 1 to 100",
+            )))?;
+
+        let all_where_clauses: Vec<WhereClause> = match where_clause {
+            Value::Null => Ok(vec![]),
+            Value::Array(clauses) => clauses
+                .iter()
+                .map(|where_clause| {
+                    if let Value::Array(clauses_components) = where_clause {
+                        WhereClause::from_components(clauses_components)
+                    } else {
+                        Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
+                            "where clause must be an array",
+                        )))
+                    }
+                })
+                .collect::<Result<Vec<WhereClause>, Error>>(),
+            _ => Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
+                "where clause must be an array",
+            ))),
+        }?;
+
+        let internal_clauses = InternalClauses::extract_from_clauses(all_where_clauses)?;
+
+        let order_by: IndexMap<String, OrderClause> = order_by
+            .map_or(vec![], |id_cbor| {
+                if let Value::Array(clauses) = id_cbor {
+                    clauses
+                        .iter()
+                        .filter_map(|order_clause| {
+                            if let Value::Array(clauses_components) = order_clause {
+                                OrderClause::from_components(clauses_components).ok()
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
+                } else {
+                    vec![]
+                }
+            })
+            .iter()
+            .map(|order_clause| Ok((order_clause.field.clone(), order_clause.to_owned())))
+            .collect::<Result<IndexMap<String, OrderClause>, Error>>()?;
+
+        Ok(DriveQuery {
+            contract,
+            document_type,
+            internal_clauses,
+            offset: 0,
+            limit,
+            order_by,
+            start_at,
+            start_at_included,
+            block_time_ms,
         })
     }
 
@@ -479,18 +560,23 @@ impl<'a> DriveQuery<'a> {
     pub fn from_sql_expr(sql_string: &str, contract: &'a Contract) -> Result<Self, Error> {
         let dialect: GenericDialect = sqlparser::dialect::GenericDialect {};
         let statements: Vec<Statement> = Parser::parse_sql(&dialect, sql_string)
-            .map_err(|_| Error::Query(QueryError::InvalidSQL("Issue parsing sql")))?;
+            .map_err(|_| Error::Query(QuerySyntaxError::InvalidSQL("Issue parsing sql")))?;
 
         // Should ideally iterate over each statement
-        let first_statement = statements
-            .get(0)
-            .ok_or(Error::Query(QueryError::InvalidSQL("Issue parsing sql")))?;
+        let first_statement =
+            statements
+                .get(0)
+                .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(
+                    "Issue parsing sql",
+                )))?;
 
         let query: &ast::Query = match first_statement {
             ast::Statement::Query(query_struct) => Some(query_struct),
             _ => None,
         }
-        .ok_or(Error::Query(QueryError::InvalidSQL("Issue parsing sql")))?;
+        .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(
+            "Issue parsing sql",
+        )))?;
 
         let limit: u16 = if let Some(limit_expr) = &query.limit {
             match limit_expr {
@@ -500,7 +586,7 @@ impl<'a> DriveQuery<'a> {
                 }
                 _ => None,
             }
-            .ok_or(Error::Query(QueryError::InvalidLimit(
+            .ok_or(Error::Query(QuerySyntaxError::InvalidLimit(
                 "Issue parsing sql: invalid limit value",
             )))?
         } else {
@@ -522,13 +608,15 @@ impl<'a> DriveQuery<'a> {
             ast::SetExpr::Select(select) => Some(select),
             _ => None,
         }
-        .ok_or(Error::Query(QueryError::InvalidSQL("Issue parsing sql")))?;
+        .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(
+            "Issue parsing sql",
+        )))?;
 
         // Get the document type from the 'from' section
         let document_type_name = match &select
             .from
             .get(0)
-            .ok_or(Error::Query(QueryError::InvalidSQL(
+            .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(
                 "Invalid query: missing from section",
             )))?
             .relation
@@ -541,14 +629,14 @@ impl<'a> DriveQuery<'a> {
             } => name.0.get(0).as_ref().map(|identifier| &identifier.value),
             _ => None,
         }
-        .ok_or(Error::Query(QueryError::InvalidSQL(
+        .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(
             "Issue parsing sql: invalid from value",
         )))?;
 
         let document_type = contract
             .document_types
             .get(document_type_name)
-            .ok_or(Error::Query(QueryError::DocumentTypeNotFound(
+            .ok_or(Error::Query(QuerySyntaxError::DocumentTypeNotFound(
                 "document type not found in contract",
             )))?;
 
@@ -603,7 +691,7 @@ impl<'a> DriveQuery<'a> {
             order_by,
             start_at,
             start_at_included,
-            block_time: None,
+            block_time_ms: None,
         })
     }
 
@@ -665,7 +753,7 @@ impl<'a> DriveQuery<'a> {
                                 "startAfter document not found"
                             };
 
-                            Error::Query(QueryError::StartDocumentNotFound(error_message))
+                            Error::Query(QuerySyntaxError::StartDocumentNotFound(error_message))
                         }
                         _ => e,
                     })?
@@ -712,8 +800,8 @@ impl<'a> DriveQuery<'a> {
 
             if self.document_type.documents_keep_history {
                 // if the documents keep history then we should insert a subquery
-                if let Some(block_time) = self.block_time {
-                    let encoded_block_time = encode_float(block_time)?;
+                if let Some(block_time) = self.block_time_ms {
+                    let encoded_block_time = encode_u64(block_time)?;
                     let mut sub_query = Query::new_with_direction(false);
                     sub_query.insert_range_to_inclusive(..=encoded_block_time);
                     query.set_subquery(sub_query);
@@ -727,7 +815,7 @@ impl<'a> DriveQuery<'a> {
             // This is for a range
             let left_to_right = if self.order_by.keys().len() == 1 {
                 if self.order_by.keys().next().unwrap() != "$id" {
-                    return Err(Error::Query(QueryError::InvalidOrderByProperties(
+                    return Err(Error::Query(QuerySyntaxError::InvalidOrderByProperties(
                         "order by should include $id only",
                     )));
                 }
@@ -778,9 +866,9 @@ impl<'a> DriveQuery<'a> {
 
                 if self.document_type.documents_keep_history {
                     // if the documents keep history then we should insert a subquery
-                    if let Some(_block_time) = self.block_time {
+                    if let Some(_block_time) = self.block_time_ms {
                         //todo
-                        return Err(Error::Query(QueryError::Unsupported(
+                        return Err(Error::Query(QuerySyntaxError::Unsupported(
                             "Not yet implemented".to_string(),
                         )));
                         // in order to be able to do this we would need limited subqueries
@@ -819,8 +907,8 @@ impl<'a> DriveQuery<'a> {
 
                 if self.document_type.documents_keep_history {
                     // if the documents keep history then we should insert a subquery
-                    if let Some(_block_time) = self.block_time {
-                        return Err(Error::Query(QueryError::Unsupported(
+                    if let Some(_block_time) = self.block_time_ms {
+                        return Err(Error::Query(QuerySyntaxError::Unsupported(
                             "this query is not supported".to_string(),
                         )));
                         // in order to be able to do this we would need limited subqueries
@@ -886,11 +974,13 @@ impl<'a> DriveQuery<'a> {
         let (index, difference) = self
             .document_type
             .index_for_types(fields.as_slice(), in_field, order_by_keys.as_slice())
-            .ok_or(Error::Query(QueryError::WhereClauseOnNonIndexedProperty(
-                "query must be for valid indexes",
-            )))?;
+            .ok_or(Error::Query(
+                QuerySyntaxError::WhereClauseOnNonIndexedProperty(
+                    "query must be for valid indexes",
+                ),
+            ))?;
         if difference > defaults::MAX_INDEX_DIFFERENCE {
-            return Err(Error::Query(QueryError::QueryTooFarFromIndex(
+            return Err(Error::Query(QuerySyntaxError::QueryTooFarFromIndex(
                 "query must better match an existing index",
             )));
         }
@@ -1213,7 +1303,7 @@ impl<'a> DriveQuery<'a> {
                     let order_clause: &OrderClause = self
                         .order_by
                         .get(where_clause.field.as_str())
-                        .ok_or(Error::Query(QueryError::MissingOrderByForRange(
+                        .ok_or(Error::Query(QuerySyntaxError::MissingOrderByForRange(
                             "query must have an orderBy field for each range element",
                         )))?;
 
@@ -1263,7 +1353,7 @@ impl<'a> DriveQuery<'a> {
                         let order_clause: &OrderClause = self
                             .order_by
                             .get(subquery_where_clause.field.as_str())
-                            .ok_or(Error::Query(QueryError::MissingOrderByForRange(
+                            .ok_or(Error::Query(QuerySyntaxError::MissingOrderByForRange(
                                 "query must have an orderBy field for each range element",
                             )))?;
                         let mut subquery = subquery_where_clause.to_path_query(
@@ -1303,7 +1393,9 @@ impl<'a> DriveQuery<'a> {
 
         // Now we should construct the path
         let last_index = last_indexes.first().ok_or(Error::Query(
-            QueryError::QueryOnDocumentTypeWithNoIndexes("document query has no index with fields"),
+            QuerySyntaxError::QueryOnDocumentTypeWithNoIndexes(
+                "document query has no index with fields",
+            ),
         ))?;
 
         let mut path = document_type_path;

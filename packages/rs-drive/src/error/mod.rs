@@ -6,7 +6,7 @@ use dpp::platform_value::Error as ValueError;
 use dpp::ProtocolError;
 use fee::FeeError;
 use identity::IdentityError;
-use query::QueryError;
+use query::QuerySyntaxError;
 
 /// Document module
 pub mod document;
@@ -28,7 +28,7 @@ pub mod storage_flags;
 pub enum Error {
     /// Query error
     #[error("query: {0}")]
-    Query(#[from] QueryError),
+    Query(#[from] QuerySyntaxError),
     /// Storage Flags error
     #[error("storage flags: {0}")]
     StorageFlags(#[from] StorageFlagsError),

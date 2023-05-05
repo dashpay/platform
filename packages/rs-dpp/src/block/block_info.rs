@@ -3,7 +3,24 @@ use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use crate::ProtocolError;
 use bincode::config;
 use bincode::{Decode, Encode};
+use dashcore::bls_sig_utils::BLSSignature;
+use dashcore::QuorumHash;
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+
+/// Extended Block information
+#[derive(Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
+#[platform_error_type(ProtocolError)]
+#[platform_deserialize_limit(15000)]
+pub struct ExtendedBlockInfo {
+    /// Basic block info
+    pub basic_info: BlockInfo,
+    /// Signature
+    pub quorum_hash: [u8; 32],
+    /// Signature
+    pub signature: [u8; 96],
+    /// Round
+    pub round: u32,
+}
 
 /// Block information
 #[derive(Clone, Default, Encode, Decode, PlatformSerialize, PlatformDeserialize)]

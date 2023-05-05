@@ -582,7 +582,7 @@ pub(crate) fn continue_chain_for_strategy(
                 .expect("lock is poisoned")
                 .last_committed_block_info
                 .as_ref()
-                .map(|block_info| block_info.time_ms),
+                .map(|block_info| block_info.basic_info.time_ms),
         )
         .expect("should calculate epoch info");
 
@@ -690,6 +690,7 @@ pub(crate) fn continue_chain_for_strategy(
         .last_committed_block_info
         .as_ref()
         .unwrap()
+        .basic_info
         .epoch
         .index;
 

@@ -1,25 +1,24 @@
 syntax = "proto3";
+import "google/protobuf/wrappers.proto";
 
 package org.dash.platform.dapi.v0;
 
+import "google/protobuf/timestamp.proto";
+
 service Platform {
-  rpc broadcastStateTransition(BroadcastStateTransitionRequest)
-      returns (BroadcastStateTransitionResponse);
-  rpc getIdentity(GetSingleItemRequest) returns (SingleItemResponse);
-  rpc getIdentityBalance(GetSingleItemRequest) returns (SingleItemResponse);
-  rpc getIdentityBalanceAndRevision(GetSingleItemRequest)
-      returns (SingleItemResponse);
-  rpc getDataContract(GetSingleItemRequest) returns (SingleItemResponse);
-  rpc getDocuments(GetDocumentsRequest) returns (MultiItemResponse);
-  rpc getIdentitiesByPublicKeyHashes(GetMultiItemRequest)
-      returns (MultiItemResponse);
-  rpc waitForStateTransitionResult(WaitForStateTransitionResultRequest)
-      returns (WaitForStateTransitionResultResponse);
-  rpc getConsensusParams(GetConsensusParamsRequest)
-      returns (GetConsensusParamsResponse);
+  rpc broadcastStateTransition (BroadcastStateTransitionRequest) returns (BroadcastStateTransitionResponse);
+  rpc getIdentity (GetIdentityRequest) returns (GetIdentityResponse);
+  rpc getIdentityBalance(GetIdentityRequest) returns (GetIdentityBalanceResponse);
+  rpc getIdentityBalanceAndRevision(GetIdentityRequest)
+          returns (GetIdentityBalanceAndRevisionResponse);
+  rpc getDataContract (GetDataContractRequest) returns (GetDataContractResponse);
+  rpc getDocuments (GetDocumentsRequest) returns (GetDocumentsResponse);
+  rpc getIdentitiesByPublicKeyHashes (GetIdentitiesByPublicKeyHashesRequest) returns (GetIdentitiesByPublicKeyHashesResponse);
+  rpc waitForStateTransitionResult (WaitForStateTransitionResultRequest) returns (WaitForStateTransitionResultResponse);
+  rpc getConsensusParams (GetConsensusParamsRequest) returns (GetConsensusParamsResponse);
 }
 
-message ProvedResult {
+message Proof {
   bytes grovedb_proof = 1;
   bytes quorum_hash = 2;
   bytes signature = 3;
@@ -27,7 +26,7 @@ message ProvedResult {
 }
 
 message ResponseMetadata {
-  int64 height = 1;
+  uint64 height = 1;
   uint32 core_chain_locked_height = 2;
   uint64 time_ms = 3;
   uint32 protocol_version = 4;
@@ -39,36 +38,47 @@ message StateTransitionBroadcastError {
   bytes data = 3;
 }
 
-message BroadcastStateTransitionRequest { bytes state_transition = 1; }
-
-message BroadcastStateTransitionResponse {}
-
-message SingleItemResponse {
-  oneof result {
-    bytes non_proved_result = 1;
-    ProvedResult proved_result = 2;
-  }
-  ResponseMetadata metadata = 3;
+message BroadcastStateTransitionRequest {
+  bytes state_transition = 1;
 }
 
-message ResultList { repeated bytes items = 1; }
+message BroadcastStateTransitionResponse {
 
-message MultiItemResponse {
-  oneof result {
-    ResultList non_proved_results = 1;
-    ProvedResult proved_result = 2;
-  }
-  ResponseMetadata metadata = 3;
 }
 
-message GetSingleItemRequest {
+message GetIdentityRequest {
   bytes id = 1;
   bool prove = 2;
 }
 
-message GetMultiItemRequest {
-  repeated bytes ids = 1;
+message GetIdentityResponse {
+  bytes identity = 1;
+  Proof proof = 2;
+  ResponseMetadata metadata = 3;
+}
+
+message GetIdentityBalanceResponse {
+  google.protobuf.UInt64Value balance = 1;
+  Proof proof = 2;
+  ResponseMetadata metadata = 3;
+}
+
+message GetIdentityBalanceAndRevisionResponse {
+  google.protobuf.UInt64Value  balance = 1;
+  google.protobuf.UInt64Value  revision = 2;
+  Proof proof = 3;
+  ResponseMetadata metadata = 4;
+}
+
+message GetDataContractRequest {
+  bytes id = 1;
   bool prove = 2;
+}
+
+message GetDataContractResponse {
+  bytes data_contract = 1;
+  Proof proof = 2;
+  ResponseMetadata metadata = 3;
 }
 
 message GetDocumentsRequest {
@@ -88,6 +98,23 @@ message GetDocumentsRequest {
   bool prove = 8;
 }
 
+message GetDocumentsResponse {
+  repeated bytes documents = 1;
+  Proof proof = 2;
+  ResponseMetadata metadata = 3;
+}
+
+message GetIdentitiesByPublicKeyHashesRequest {
+  repeated bytes public_key_hashes = 1;
+  bool prove = 2;
+}
+
+message GetIdentitiesByPublicKeyHashesResponse {
+  repeated bytes identities = 1;
+  Proof proof = 2;
+  ResponseMetadata metadata = 3;
+}
+
 message WaitForStateTransitionResultRequest {
   bytes state_transition_hash = 1;
   bool prove = 2;
@@ -96,7 +123,7 @@ message WaitForStateTransitionResultRequest {
 message WaitForStateTransitionResultResponse {
   oneof responses {
     StateTransitionBroadcastError error = 1;
-    ProvedResult proof = 2;
+    Proof proof = 2;
   }
   ResponseMetadata metadata = 3;
 }

@@ -1,6 +1,6 @@
 /// Query errors
 #[derive(Debug, thiserror::Error)]
-pub enum QueryError {
+pub enum QuerySyntaxError {
     /// Deserialization
     #[error("deserialization error: {0}")]
     DeserializationError(String),

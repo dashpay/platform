@@ -7,7 +7,7 @@ mod tests {
     use serde_json::json;
 
     use crate::contract::Contract;
-    use crate::error::{query::QueryError, Error};
+    use crate::error::{query::QuerySyntaxError, Error};
     use crate::query::DriveQuery;
 
     fn construct_indexed_document_type() -> DocumentType {
@@ -120,7 +120,7 @@ mod tests {
             .find_best_index()
             .expect_err("expected to not find index");
         assert!(
-            matches!(error, Error::Query(QueryError::WhereClauseOnNonIndexedProperty(message)) if message == "query must be for valid indexes")
+            matches!(error, Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(message)) if message == "query must be for valid indexes")
         )
     }
 }

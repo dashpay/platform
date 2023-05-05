@@ -124,7 +124,7 @@ pub(super) fn fetch_documents_for_transitions_knowing_contract_and_document_type
         order_by: Default::default(),
         start_at: None,
         start_at_included: false,
-        block_time: None,
+        block_time_ms: None,
     };
 
     //todo: deal with cost of this operation

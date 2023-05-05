@@ -73,7 +73,7 @@ impl Drive {
             order_by,
             start_at: None,
             start_at_included: false,
-            block_time: None,
+            block_time_ms: None,
         };
 
         let QuerySerializedDocumentsOutcome {
@@ -154,7 +154,7 @@ impl Drive {
             order_by: IndexMap::new(),
             start_at: None,
             start_at_included: false,
-            block_time: None,
+            block_time_ms: None,
         };
 
         let QuerySerializedDocumentsOutcome {

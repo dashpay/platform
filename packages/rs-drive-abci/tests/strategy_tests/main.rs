@@ -257,6 +257,7 @@ mod tests {
             .last_committed_block_info
             .as_ref()
             .unwrap()
+            .basic_info
             .height
             + 1;
 
@@ -445,6 +446,7 @@ mod tests {
                 .last_committed_block_info
                 .as_ref()
                 .unwrap()
+                .basic_info
                 .epoch
                 .index,
             0

@@ -73,7 +73,7 @@ use drive::drive::object_size_info::{DocumentAndContractInfo, OwnedDocumentInfo}
 #[cfg(feature = "full")]
 use drive::drive::Drive;
 #[cfg(feature = "full")]
-use drive::error::{query::QueryError, Error};
+use drive::error::{query::QuerySyntaxError, Error};
 #[cfg(feature = "full")]
 use drive::query::DriveQuery;
 
@@ -1544,7 +1544,7 @@ fn test_query_historical() {
     );
 
     assert!(
-        matches!(result, Err(Error::Query(QueryError::StartDocumentNotFound(message))) if message == "startAt document not found")
+        matches!(result, Err(Error::Query(QuerySyntaxError::StartDocumentNotFound(message))) if message == "startAt document not found")
     );
 
     // using non existing document in startAfter
@@ -1574,7 +1574,7 @@ fn test_query_historical() {
     );
 
     assert!(
-        matches!(result, Err(Error::Query(QueryError::StartDocumentNotFound(message))) if message == "startAfter document not found")
+        matches!(result, Err(Error::Query(QuerySyntaxError::StartDocumentNotFound(message))) if message == "startAfter document not found")
     );
 
     // validate eventual root hash

@@ -40,7 +40,7 @@ use WhereOperator::{
     GreaterThanOrEquals, In, LessThan, LessThanOrEquals, StartsWith,
 };
 
-use crate::error::query::QueryError;
+use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::document::Document;
@@ -123,22 +123,22 @@ impl WhereOperator {
             GreaterThanOrEquals => Ok(LessThanOrEquals),
             LessThan => Ok(GreaterThan),
             LessThanOrEquals => Ok(GreaterThanOrEquals),
-            Between => Err(Error::Query(QueryError::InvalidWhereClauseOrder(
+            Between => Err(Error::Query(QuerySyntaxError::InvalidWhereClauseOrder(
                 "Between clause order invalid",
             ))),
-            BetweenExcludeBounds => Err(Error::Query(QueryError::InvalidWhereClauseOrder(
+            BetweenExcludeBounds => Err(Error::Query(QuerySyntaxError::InvalidWhereClauseOrder(
                 "Between clause order invalid",
             ))),
-            BetweenExcludeLeft => Err(Error::Query(QueryError::InvalidWhereClauseOrder(
+            BetweenExcludeLeft => Err(Error::Query(QuerySyntaxError::InvalidWhereClauseOrder(
                 "Between clause order invalid",
             ))),
-            BetweenExcludeRight => Err(Error::Query(QueryError::InvalidWhereClauseOrder(
+            BetweenExcludeRight => Err(Error::Query(QuerySyntaxError::InvalidWhereClauseOrder(
                 "Between clause order invalid",
             ))),
-            In => Err(Error::Query(QueryError::InvalidWhereClauseOrder(
+            In => Err(Error::Query(QuerySyntaxError::InvalidWhereClauseOrder(
                 "In clause order invalid",
             ))),
-            StartsWith => Err(Error::Query(QueryError::InvalidWhereClauseOrder(
+            StartsWith => Err(Error::Query(QuerySyntaxError::InvalidWhereClauseOrder(
                 "Startswith clause order invalid",
             ))),
         }
@@ -222,27 +222,27 @@ impl<'a> WhereClause {
             Value::Bytes(bytes) => Ok(Cow::Owned(
                 bytes.iter().map(|int| Value::U8(*int)).collect(),
             )),
-            _ => Err(Error::Query(QueryError::InvalidInClause(
+            _ => Err(Error::Query(QuerySyntaxError::InvalidInClause(
                 "when using in operator you must provide an array of values",
             ))),
         }?;
 
         let len = in_values.len();
         if len == 0 {
-            return Err(Error::Query(QueryError::InvalidInClause(
+            return Err(Error::Query(QuerySyntaxError::InvalidInClause(
                 "in clause must at least 1 value",
             )));
         }
 
         if len > 100 {
-            return Err(Error::Query(QueryError::InvalidInClause(
+            return Err(Error::Query(QuerySyntaxError::InvalidInClause(
                 "in clause must at most 100 values",
             )));
         }
 
         // Throw an error if there are duplicates
         if (1..in_values.len()).any(|i| in_values[i..].contains(&in_values[i - 1])) {
-            return Err(Error::Query(QueryError::InvalidInClause(
+            return Err(Error::Query(QuerySyntaxError::InvalidInClause(
                 "there should be no duplicates values for In query",
             )));
         }
@@ -343,7 +343,7 @@ impl<'a> WhereClause {
                     Ok(x.lt(y))
                 }
             }
-            _ => Err(Error::Query(QueryError::RangeClausesNotGroupable(
+            _ => Err(Error::Query(QuerySyntaxError::RangeClausesNotGroupable(
                 "range clauses can not be coherently grouped",
             ))),
         }
@@ -352,42 +352,45 @@ impl<'a> WhereClause {
     /// Returns a `WhereClause` given a list of clause components
     pub fn from_components(clause_components: &'a [Value]) -> Result<Self, Error> {
         if clause_components.len() != 3 {
-            return Err(Error::Query(QueryError::InvalidWhereClauseComponents(
-                "where clauses should have at most 3 components",
-            )));
+            return Err(Error::Query(
+                QuerySyntaxError::InvalidWhereClauseComponents(
+                    "where clauses should have at most 3 components",
+                ),
+            ));
         }
 
         let field_value = clause_components
             .get(0)
             .expect("check above enforces it exists");
-        let field_ref =
-            field_value
-                .as_text()
-                .ok_or(Error::Query(QueryError::InvalidWhereClauseComponents(
-                    "first field of where component should be a string",
-                )))?;
+        let field_ref = field_value.as_text().ok_or(Error::Query(
+            QuerySyntaxError::InvalidWhereClauseComponents(
+                "first field of where component should be a string",
+            ),
+        ))?;
         let field = String::from(field_ref);
 
         let operator_value = clause_components
             .get(1)
             .expect("check above enforces it exists");
         let operator_string = operator_value.as_text().ok_or(Error::Query(
-            QueryError::InvalidWhereClauseComponents(
+            QuerySyntaxError::InvalidWhereClauseComponents(
                 "second field of where component should be a string",
             ),
         ))?;
 
         let operator = WhereOperator::from_string(operator_string).ok_or({
-            Error::Query(QueryError::InvalidWhereClauseComponents(
+            Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
                 "second field of where component should be a known operator",
             ))
         })?;
 
         let value = clause_components
             .get(2)
-            .ok_or(Error::Query(QueryError::InvalidWhereClauseComponents(
-                "third field of where component should exist",
-            )))?
+            .ok_or(Error::Query(
+                QuerySyntaxError::InvalidWhereClauseComponents(
+                    "third field of where component should exist",
+                ),
+            ))?
             .clone();
 
         Ok(WhereClause {
@@ -407,7 +410,7 @@ impl<'a> WhereClause {
         match lower_range_clauses.len() {
             0 => Ok(None),
             1 => Ok(Some(lower_range_clauses.get(0).unwrap())),
-            _ => Err(Error::Query(QueryError::MultipleRangeClauses(
+            _ => Err(Error::Query(QuerySyntaxError::MultipleRangeClauses(
                 "there can only at most one range clause with a lower bound",
             ))),
         }
@@ -421,7 +424,7 @@ impl<'a> WhereClause {
         match upper_range_clauses.len() {
             0 => Ok(None),
             1 => Ok(Some(upper_range_clauses.get(0).unwrap())),
-            _ => Err(Error::Query(QueryError::MultipleRangeClauses(
+            _ => Err(Error::Query(QuerySyntaxError::MultipleRangeClauses(
                 "there can only at most one range clause with a lower bound",
             ))),
         }
@@ -450,7 +453,7 @@ impl<'a> WhereClause {
             .map(|where_clause| {
                 if known_fields.contains(&where_clause.field) {
                     Err(Error::Query(
-                        QueryError::DuplicateNonGroupableClauseSameField(
+                        QuerySyntaxError::DuplicateNonGroupableClauseSameField(
                             "duplicate equality fields",
                         ),
                     ))
@@ -478,7 +481,7 @@ impl<'a> WhereClause {
                 let clause = in_clauses_array.get(0).expect("there must be a value");
                 if known_fields.contains(&clause.field) {
                     Err(Error::Query(
-                        QueryError::DuplicateNonGroupableClauseSameField(
+                        QuerySyntaxError::DuplicateNonGroupableClauseSameField(
                             "in clause has same field as an equality clause",
                         ),
                     ))
@@ -487,7 +490,7 @@ impl<'a> WhereClause {
                     Ok(Some(clause.clone()))
                 }
             }
-            _ => Err(Error::Query(QueryError::MultipleInClauses(
+            _ => Err(Error::Query(QuerySyntaxError::MultipleInClauses(
                 "There should only be one in clause",
             ))),
         }?;
@@ -534,32 +537,36 @@ impl<'a> WhereClause {
                 } else if groupable_range_clauses.len() == 1 {
                     let clause = *groupable_range_clauses.first().unwrap();
                     if known_fields.contains(clause.field.as_str()) {
-                        Err(Error::Query(QueryError::InvalidWhereClauseComponents(
-                            "in clause has same field as an equality clause",
-                        )))
+                        Err(Error::Query(
+                            QuerySyntaxError::InvalidWhereClauseComponents(
+                                "in clause has same field as an equality clause",
+                            ),
+                        ))
                     } else {
                         Ok(Some(clause.clone()))
                     }
                 } else if groupable_range_clauses.len() > 2 {
-                    Err(Error::Query(QueryError::MultipleRangeClauses(
+                    Err(Error::Query(QuerySyntaxError::MultipleRangeClauses(
                         "there can only be at most 2 range clauses that must be on the same field",
                     )))
                 } else {
                     let first_field = groupable_range_clauses.first().unwrap().field.as_str();
                     if known_fields.contains(first_field) {
-                        Err(Error::Query(QueryError::InvalidWhereClauseComponents(
-                            "a range clause has same field as an equality or in clause",
-                        )))
+                        Err(Error::Query(
+                            QuerySyntaxError::InvalidWhereClauseComponents(
+                                "a range clause has same field as an equality or in clause",
+                            ),
+                        ))
                     } else if groupable_range_clauses
                         .iter()
                         .any(|&z| z.field.as_str() != first_field)
                     {
-                        Err(Error::Query(QueryError::MultipleRangeClauses(
+                        Err(Error::Query(QuerySyntaxError::MultipleRangeClauses(
                             "all ranges must be on same field",
                         )))
                     } else {
                         let lower_upper_error = || {
-                            Error::Query(QueryError::RangeClausesNotGroupable(
+                            Error::Query(QuerySyntaxError::RangeClausesNotGroupable(
                                 "lower and upper bounds must be passed if providing 2 ranges",
                             ))
                         };
@@ -585,7 +592,7 @@ impl<'a> WhereClause {
                         if upper_bounds_clause
                             .less_than(lower_bounds_clause, operator == BetweenExcludeBounds)?
                         {
-                            return Err(Error::Query(QueryError::MultipleRangeClauses(
+                            return Err(Error::Query(QuerySyntaxError::MultipleRangeClauses(
                                 "lower bounds must be under upper bounds",
                             )));
                         }
@@ -606,25 +613,25 @@ impl<'a> WhereClause {
                     // Starts with must null be against an empty string
                     if let Value::Text(text) = &where_clause.value {
                         if text.is_empty() {
-                            return Err(Error::Query(QueryError::StartsWithIllegalString(
+                            return Err(Error::Query(QuerySyntaxError::StartsWithIllegalString(
                                 "starts with can not start with an empty string",
                             )));
                         }
                     }
                 }
                 if known_fields.contains(where_clause.field.as_str()) {
-                    Err(Error::Query(QueryError::DuplicateNonGroupableClauseSameField(
+                    Err(Error::Query(QuerySyntaxError::DuplicateNonGroupableClauseSameField(
                     "a non groupable range clause has same field as an equality or in clause",
                 )))
                 } else {
                     Ok(Some(where_clause.clone()))
                 }
             } else if groupable_range_clauses.is_empty() {
-                Err(Error::Query(QueryError::MultipleRangeClauses(
+                Err(Error::Query(QuerySyntaxError::MultipleRangeClauses(
                     "there can not be more than 1 non groupable range clause",
                 )))
             } else {
-                Err(Error::Query(QueryError::RangeClausesNotGroupable(
+                Err(Error::Query(QuerySyntaxError::RangeClausesNotGroupable(
                     "clauses are not groupable",
                 )))
             }?;
@@ -641,12 +648,12 @@ impl<'a> WhereClause {
             _ => None,
         }
         .ok_or({
-            Error::Query(QueryError::InvalidBetweenClause(
+            Error::Query(QuerySyntaxError::InvalidBetweenClause(
                 "when using between operator you must provide a tuple array of values",
             ))
         })?;
         if in_values.len() != 2 {
-            return Err(Error::Query(QueryError::InvalidBetweenClause(
+            return Err(Error::Query(QuerySyntaxError::InvalidBetweenClause(
                 "when using between operator you must provide an array of exactly two values",
             )));
         }
@@ -960,7 +967,7 @@ impl<'a> WhereClause {
                     document_type.serialize_value_for_key(self.field.as_str(), &self.value)?;
                 let mut right_key = left_key.clone();
                 let last_char = right_key.last_mut().ok_or({
-                    Error::Query(QueryError::InvalidStartsWithClause(
+                    Error::Query(QuerySyntaxError::InvalidStartsWithClause(
                         "starts with must have at least one character",
                     ))
                 })?;
@@ -1010,7 +1017,7 @@ impl<'a> WhereClause {
                 negated,
             } => {
                 if *negated {
-                    return Err(Error::Query(QueryError::Unsupported(
+                    return Err(Error::Query(QuerySyntaxError::Unsupported(
                         "Invalid query: negated in clause not supported".to_string(),
                     )));
                 }
@@ -1018,7 +1025,7 @@ impl<'a> WhereClause {
                 let field_name = if let ast::Expr::Identifier(ident) = &**expr {
                     ident.value.clone()
                 } else {
-                    return Err(Error::Query(QueryError::InvalidInClause(
+                    return Err(Error::Query(QuerySyntaxError::InvalidInClause(
                         "Invalid query: in clause should start with an identifier",
                     )));
                 };
@@ -1027,13 +1034,13 @@ impl<'a> WhereClause {
                 for value in list {
                     if let ast::Expr::Value(sql_value) = value {
                         let cbor_val = sql_value_to_platform_value(sql_value.clone()).ok_or({
-                            Error::Query(QueryError::InvalidSQL(
+                            Error::Query(QuerySyntaxError::InvalidSQL(
                                 "Invalid query: unexpected value type",
                             ))
                         })?;
                         in_values.push(cbor_val);
                     } else {
-                        return Err(Error::Query(QueryError::InvalidSQL(
+                        return Err(Error::Query(QuerySyntaxError::InvalidSQL(
                             "Invalid query: expected a list of sql values",
                         )));
                     }
@@ -1052,9 +1059,10 @@ impl<'a> WhereClause {
                     Self::build_where_clauses_from_operations(left, where_clauses)?;
                     Self::build_where_clauses_from_operations(right, where_clauses)?;
                 } else {
-                    let mut where_operator = WhereOperator::from_sql_operator(op.clone()).ok_or(
-                        Error::Query(QueryError::Unsupported("Unknown operator".to_string())),
-                    )?;
+                    let mut where_operator =
+                        WhereOperator::from_sql_operator(op.clone()).ok_or(Error::Query(
+                            QuerySyntaxError::Unsupported("Unknown operator".to_string()),
+                        ))?;
 
                     let identifier;
                     let value_expr;
@@ -1071,7 +1079,7 @@ impl<'a> WhereClause {
                         value_expr = &**left;
                         where_operator = where_operator.flip()?;
                     } else {
-                        return Err(Error::Query(QueryError::InvalidSQL(
+                        return Err(Error::Query(QuerySyntaxError::InvalidSQL(
                             "Invalid query: where clause should have field name and value",
                         )));
                     }
@@ -1084,14 +1092,14 @@ impl<'a> WhereClause {
 
                     let value = if let ast::Expr::Value(value) = value_expr {
                         let cbor_val = sql_value_to_platform_value(value.clone()).ok_or({
-                            Error::Query(QueryError::InvalidSQL(
+                            Error::Query(QuerySyntaxError::InvalidSQL(
                                 "Invalid query: unexpected value type",
                             ))
                         })?;
                         if where_operator == StartsWith {
                             // make sure the value is of the right format i.e prefix%
                             let inner_text = cbor_val.as_text().ok_or({
-                                Error::Query(QueryError::InvalidStartsWithClause(
+                                Error::Query(QuerySyntaxError::InvalidStartsWithClause(
                                     "Invalid query: startsWith takes text",
                                 ))
                             })?;
@@ -1101,7 +1109,7 @@ impl<'a> WhereClause {
                             {
                                 Value::Text(String::from(&inner_text[..(inner_text.len() - 1)]))
                             } else {
-                                return Err(Error::Query(QueryError::Unsupported(
+                                return Err(Error::Query(QuerySyntaxError::Unsupported(
                                     "Invalid query: like can only be used to represent startswith"
                                         .to_string(),
                                 )));
@@ -1121,7 +1129,7 @@ impl<'a> WhereClause {
                 }
                 Ok(())
             }
-            _ => Err(Error::Query(QueryError::InvalidSQL(
+            _ => Err(Error::Query(QuerySyntaxError::InvalidSQL(
                 "Issue parsing sql: invalid selection format",
             ))),
         }
