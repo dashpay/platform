@@ -136,7 +136,9 @@ function getRandomQuorumFactory(coreRpcClient, fetchQuorumMembers, simplifiedMas
         }
 
         // Remove non DCG nodes
-        return whiteList.includes(member.service.split(':')[0]);
+        const [ip] = member.service.split(':');
+        // leave local network addresses and whitelisted nodes
+        return ip.startsWith('192.168') || ip.startsWith('172.17') || whiteList.includes(ip);
       });
     }));
 
@@ -148,7 +150,7 @@ function getRandomQuorumFactory(coreRpcClient, fetchQuorumMembers, simplifiedMas
 
           const minimumNodeCount = Math.ceil((threshold / 100) * size);
 
-          return quorumsMembers[validatorQuorum.quorumHash] >= minimumNodeCount;
+          return quorumsMembers[validatorQuorum.quorumHash].length >= minimumNodeCount;
         },
       )
       .filter((validatorQuorum) => {
