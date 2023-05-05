@@ -8,6 +8,9 @@ inputs:
   image:
     description: Name of image in Docker Hub, like `dashpay/drive`
     required: true
+  target:
+    description: Target stage within Dockerfile, like `drive-abci`
+    required: false
   push:
     description: Shall we push the image to Docker Hub?
     default: "false"
@@ -88,6 +91,7 @@ runs:
       with:
         context: .
         file: ${{ inputs.dockerfile }}
+        target: ${{ inputs.target }}
         tags: ${{ steps.docker_meta.outputs.tags }}
         labels: ${{ steps.docker_meta.outputs.labels }}
         build-args: |
