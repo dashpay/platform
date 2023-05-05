@@ -16,7 +16,7 @@
 #   image to be available
 # - USERNAME, USER_UID, USER_GID - specification of user used to run the binary
 #
-ARG ALPINE_VERSION=3.17
+ARG ALPINE_VERSION=3.16
 
 #
 # DEPS: INSTALL AND CACHE DEPENDENCIES
@@ -29,28 +29,35 @@ FROM rust:alpine${ALPINE_VERSION} as deps
 RUN apk add --no-cache \
         alpine-sdk \
         bash \
+        binutils \
+        ca-certificates \        
         clang-static clang-dev \
-        llvm-static llvm-dev  \
+        cmake \
         git \
+        libc-dev \        
         linux-headers \
+        llvm-static llvm-dev  \
+        nodejs \
+        npm \
         openssl-dev \
         perl \
-        unzip \
-        cmake \
         python3 \
+        unzip \
         wget \
-        xz
+        xz \
+        zeromq-dev        
 
 SHELL ["/bin/bash", "-c"]
 
 ARG TARGETARCH
 
-RUN rustup install stable
+RUN rustup install stable && \
+    rustup target add wasm32-unknown-unknown --toolchain stable
 
 # Install protoc - protobuf compiler
 # The one shipped with Alpine does not work
 RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else export PROTOC_ARCH=x86_64; fi; \
-    curl -Ls https://github.com/protocolbuffers/protobuf/releases/download/v22.2/protoc-22.2-linux-${PROTOC_ARCH}.zip \
+    curl -Ls https://github.com/protocolbuffers/protobuf/releases/download/v22.4/protoc-22.4-linux-${PROTOC_ARCH}.zip \
         -o /tmp/protoc.zip && \
     unzip -qd /opt/protoc /tmp/protoc.zip && \
     rm /tmp/protoc.zip && \
@@ -64,22 +71,25 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else expor
         mv /tmp/sccache-*/sccache /usr/bin/
 
 # Install emcmake, dependency of bls-signatures -> bls-dash-sys
+# TODO: Build ARM image to check if this is still needed
+# RUN curl -Ls \
+#         https://github.com/emscripten-core/emsdk/archive/refs/tags/3.1.36.tar.gz | \
+#         tar -C /opt -xz && \
+#         ln -s /opt/emsdk-* /opt/emsdk && \
+#         /opt/emsdk/emsdk install latest && \
+#         /opt/emsdk/emsdk activate latest
 
-RUN curl -Ls \
-        https://github.com/emscripten-core/emsdk/archive/refs/tags/3.1.36.tar.gz | \
-        tar -C /opt -xz && \
-        ln -s /opt/emsdk-* /opt/emsdk && \
-        /opt/emsdk/emsdk install latest && \
-        /opt/emsdk/emsdk activate latest
+# Configure Node.js
+RUN npm install -g npm@latest && \
+    npm install -g corepack@latest && \
+    corepack prepare yarn@stable --activate && \
+    corepack enable
+
+# TODO: Move above, where we call rustup
 
 
 # Switch to clang
 RUN rm /usr/bin/cc && ln -s /usr/bin/clang /usr/bin/cc
-
-#
-# EXECUTE BUILD
-#
-FROM deps as build
 
 #
 # Configure sccache
@@ -94,62 +104,107 @@ ARG ACTIONS_RUNTIME_TOKEN
 ARG SCCACHE_MEMCACHED
 
 # Disable incremental buildings, not supported by sccache
-ENV CARGO_INCREMENTAL=false
+ARG CARGO_INCREMENTAL=false
 
 # Select whether we want dev or release
-ARG CARGO_BUILD_PROFILE=dev
+ARG CARGO_BUILD_PROFILE=debug
+ENV CARGO_BUILD_PROFILE ${CARGO_BUILD_PROFILE}
 
-# Run the build, with extensive caching.
+ARG NODE_ENV=production
+ENV NODE_ENV ${NODE_ENV}
+
+# Install wasm-bindgen-cli
+WORKDIR /platform
+RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
+    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
+    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
+    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=shared,target=/platform/target \
+    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
+    if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
+    cargo install wasm-bindgen-cli
+
+#
+# EXECUTE BUILD
+#
+FROM deps as sources
+
+
+# We run builds with extensive caching.
 # 
 # Note:
 # 1. All these --mount... are to cache reusable info between runs.
 # See https://doc.rust-lang.org/cargo/guide/cargo-home.html#caching-the-cargo-home-in-ci
 # 2. We add `--config net.git-fetch-with-cli=true` to address ARM build issue,
 # see https://github.com/rust-lang/cargo/issues/10781#issuecomment-1441071052
-# 3. To preserve space on github cache, we call `cargo clean`.
-# 4. Github Actions have shared networking configured, so we need to set a random
+# 3. Github Actions have shared networking configured, so we need to set a random
 # SCCACHE_SERVER_PORT port to avoid conflicts in case of parallel compilation
-# 5. We also set RUSTC to include exact toolchain name in compilation command, and
+# 4. We also set RUSTC to include exact toolchain name in compilation command, and
 # include this in cache key
 
-WORKDIR /usr/src/dash-platform
+WORKDIR /platform
 
 COPY . .
+
+RUN yarn config set enableInlineBuilds true
+
+#
+# STAGE: BUILD RS-DRIVE-ABCI
+#
+# This will prebuild majority of dependencies
+FROM sources AS build-drive-abci
+
+RUN mkdir /artifacts
 
 RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=shared,target=/platform/target \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
-    cargo build \
-        --package dashcore-rpc \
+    cargo build -p drive-abci \
        --config net.git-fetch-with-cli=true && \
-    cargo build \
-        --package drive-abci \
-        --config net.git-fetch-with-cli=true && \
-    cp /usr/src/dash-platform/target/*/drive-abci /usr/src/dash-platform/drive-abci && \
-    cargo clean && \
-    sccache --show-stats
+    cp /platform/target/*/drive-abci /artifacts/drive-abci && \
+    sccache --show-stats && \
+    du -sh /platform/target/*/*
+
+#     yarn workspace @dashevo/wasm-dpp build && \
 
 #
-# FINAL IMAGE
+# STAGE: BUILD WASM-DPP
 #
-FROM alpine:${ALPINE_VERSION} AS release
+FROM sources AS build-wasm-dpp
+
+RUN mkdir /artifacts
+
+RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
+    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
+    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
+    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=shared,id=wasm_dpp_target,target=/platform/target \
+    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
+    if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
+    yarn workspace @dashevo/wasm-dpp build && \
+    sccache --show-stats && \
+    du -sh /platform/target/*/*
+
+#     yarn workspace @dashevo/wasm-dpp build && \
+
+#
+# STAGE: FINAL DRIVE-ABCI IMAGE
+#
+FROM alpine:${ALPINE_VERSION} AS drive-abci
 
 LABEL maintainer="Dash Developers <dev@dash.org>"
 LABEL description="Drive ABCI Rust"
 
-
-#
-# Install binaries and data
-#
 WORKDIR /var/lib/dash
 
 RUN apk add --no-cache libgcc libstdc++
 
-COPY --from=build /usr/src/dash-platform/drive-abci /usr/bin/drive-abci
-COPY --from=build /usr/src/dash-platform/packages/rs-drive-abci/.env.example /var/lib/dash/rs-drive-abci/.env
+COPY --from=build-drive-abci /artifacts/drive-abci /usr/bin/drive-abci
+COPY --from=build-drive-abci /platform/packages/rs-drive-abci/.env.example /var/lib/dash/rs-drive-abci/.env
 
 # Double-check that we don't have missing deps
 RUN ldd /usr/bin/drive-abci
@@ -256,3 +311,112 @@ ENTRYPOINT ["/usr/bin/drive-abci"]
 CMD ["-vvvv", "start"]
 
 EXPOSE 26658
+
+#
+# STAGE: DASHMATE BUILD
+#
+FROM build-wasm-dpp AS build-dashmate
+
+# Install Test Suite specific dependencies using previous
+# node_modules directory to reuse built binaries
+RUN --mount=type=cache,target=/tmp/unplugged \
+    cp -R /tmp/unplugged /platform/.yarn/ && \
+    yarn workspaces focus --production dashmate && \
+    cp -R /platform/.yarn/unplugged /tmp/
+
+# Remove Rust sources
+RUN find ./packages -name Cargo.toml | xargs -n1 dirname | xargs -t rm -r
+
+# TODO: Clean all other files not needed by dashmate
+
+#
+#  STAGE: FINAL DASHMATE IMAGE
+#
+FROM node:16-alpine${ALPINE_VERSION} AS dashmate
+
+RUN apk update && \
+    apk --no-cache upgrade && \
+    apk add --no-cache docker-cli docker-cli-compose curl
+
+LABEL maintainer="Dash Developers <dev@dash.org>"
+LABEL description="Dashmate Helper Node.JS"
+
+WORKDIR /platform
+
+COPY --from=build-dashmate /platform /platform
+
+ENTRYPOINT ["/platform/packages/dashmate/docker/entrypoint.sh"]
+
+
+#
+# STAGE: TEST SUITE BUILD
+#
+FROM build-wasm-dpp AS build-testsuite
+
+# Install Test Suite specific dependencies using previous
+# node_modules directory to reuse built binaries
+RUN --mount=type=cache,target=/tmp/unplugged \
+    cp -R /tmp/unplugged /platform/.yarn/ && \
+    yarn workspaces focus --production @dashevo/platform-test-suite && \
+    cp -R /platform/.yarn/unplugged /tmp/
+
+# Remove Rust sources
+RUN find ./packages -name Cargo.toml | xargs -n1 dirname | xargs -t rm -r
+
+# TODO: Clean all other files not needed by test suite
+
+#
+#  STAGE: FINAL TEST SUITE IMAGE
+#
+FROM node:16-alpine${ALPINE_VERSION} AS testsuite
+
+RUN apk add --no-cache bash
+
+LABEL maintainer="Dash Developers <dev@dash.org>"
+LABEL description="Dash Platform test suite"
+
+WORKDIR /platform
+
+COPY --from=build-testsuite /platform /platform
+
+RUN cp /platform/packages/platform-test-suite/.env.example /platform/packages/platform-test-suite/.env
+
+EXPOSE 2500 2501 2510
+
+ENTRYPOINT ["/platform/packages/platform-test-suite/bin/test.sh"]
+
+#
+# STAGE: DAPI BUILD
+#
+FROM build-wasm-dpp AS build-dapi
+
+# Install Test Suite specific dependencies using previous
+# node_modules directory to reuse built binaries
+RUN --mount=type=cache,target=/tmp/unplugged \
+    cp -R /tmp/unplugged /platform/.yarn/ && \
+    yarn workspaces focus --production @dashevo/dapi && \
+    cp -R /platform/.yarn/unplugged /tmp/
+
+# Remove Rust sources
+RUN find ./packages -name Cargo.toml | xargs -n1 dirname | xargs -t rm -r
+
+# TODO: Clean all other files not needed by dapi
+
+#
+# STAGE: FINAL DAPI IMAGE
+#
+FROM node:16-alpine3.16 AS dapi
+
+LABEL maintainer="Dash Developers <dev@dash.org>"
+LABEL description="DAPI Node.JS"
+
+# Install ZMQ shared library
+RUN apk update && apk add --no-cache zeromq-dev
+
+WORKDIR /platform
+
+COPY --from=build-dapi /platform /platform
+
+RUN cp /platform/packages/dapi/.env.example /platform/packages/dapi/.env
+
+EXPOSE 2500 2501 2510
