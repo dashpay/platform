@@ -796,6 +796,17 @@ impl Drive {
             }
         }
     }
+
+    pub fn fetch_identities_all_keys(
+        &self,
+        identity_ids: Vec<[u8; 32]>,
+        transaction: TransactionArg,
+    ) -> Result<BTreeMap<[u8; 32], Vec<BTreeMap<KeyID, IdentityPublicKey>>>, Error> {
+        identity_ids
+            .iter()
+            .map(|identity_id| Self::fetch_all_identity_keys(&self, *identity_id, transaction))
+            .collect()
+    }
 }
 
 #[cfg(feature = "full")]

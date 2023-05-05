@@ -1,5 +1,7 @@
 use crate::drive::contract::paths::contract_storage_path_vec;
 use crate::drive::Drive;
+use crate::error::Error;
+use crate::error::Error::GroveDB;
 use grovedb::PathQuery;
 
 impl Drive {
@@ -7,5 +9,13 @@ impl Drive {
     pub fn fetch_contract_query(contract_id: [u8; 32]) -> PathQuery {
         let contract_path = contract_storage_path_vec(contract_id.as_slice());
         PathQuery::new_single_key(contract_path, contract_id.to_vec())
+    }
+
+    pub fn fetch_contracts_query(contract_ids: &[[u8; 32]]) -> Result<PathQuery, Error> {
+        let mut queries = Vec::new();
+        for contract_id in contract_ids {
+            queries.push(Self::fetch_contract_query(*contract_id));
+        }
+        PathQuery::merge(queries.iter().collect()).map_err(GroveDB)
     }
 }

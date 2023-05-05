@@ -12,4 +12,13 @@ impl Drive {
         let contract_query = Self::fetch_contract_query(contract_id);
         self.grove_get_proved_path_query(&contract_query, false, transaction, &mut vec![])
     }
+
+    pub fn prove_contracts(
+        &self,
+        contract_ids: &[[u8; 32]],
+        transaction: TransactionArg,
+    ) -> Result<Vec<u8>, Error> {
+        let contract_query = Self::fetch_contracts_query(contract_ids)?;
+        self.grove_get_proved_path_query(&contract_query, false, transaction, &mut vec![])
+    }
 }

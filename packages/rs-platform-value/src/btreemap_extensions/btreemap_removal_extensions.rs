@@ -46,6 +46,8 @@ pub trait BTreeValueRemoveFromMapHelper {
     fn remove_bytes_20(&mut self, key: &str) -> Result<Bytes20, Error>;
     fn remove_optional_identifiers(&mut self, key: &str) -> Result<Option<Vec<Identifier>>, Error>;
     fn remove_identifiers(&mut self, key: &str) -> Result<Vec<Identifier>, Error>;
+    fn remove_optional_hash256s(&mut self, key: &str) -> Result<Option<Vec<[u8; 32]>>, Error>;
+    fn remove_hash256s(&mut self, key: &str) -> Result<Vec<[u8; 32]>, Error>;
 }
 
 impl BTreeValueRemoveFromMapHelper for BTreeMap<String, &Value> {
@@ -145,6 +147,31 @@ impl BTreeValueRemoveFromMapHelper for BTreeMap<String, &Value> {
         self.remove_optional_bytes_20(key)?.ok_or_else(|| {
             Error::StructureError(format!("unable to remove binary bytes 20 property {key}"))
         })
+    }
+
+    fn remove_hash256s(&mut self, key: &str) -> Result<Vec<[u8; 32]>, Error> {
+        self.remove_optional_hash256s(key)?.ok_or_else(|| {
+            Error::StructureError(format!("unable to remove identifier property {key}"))
+        })
+    }
+
+    fn remove_optional_hash256s(&mut self, key: &str) -> Result<Option<Vec<[u8; 32]>>, Error> {
+        self.remove(key)
+            .and_then(|v| {
+                if v.is_null() {
+                    None
+                } else if let Value::Array(array) = v {
+                    Some(
+                        array
+                            .into_iter()
+                            .map(|item| item.clone().into_hash256())
+                            .collect(),
+                    )
+                } else {
+                    None
+                }
+            })
+            .transpose()
     }
 
     fn remove_optional_bytes_32(&mut self, key: &str) -> Result<Option<Bytes32>, Error> {
@@ -340,6 +367,26 @@ impl BTreeValueRemoveFromMapHelper for BTreeMap<String, Value> {
 
     fn remove_identifiers(&mut self, key: &str) -> Result<Vec<Identifier>, Error> {
         self.remove_optional_identifiers(key)?.ok_or_else(|| {
+            Error::StructureError(format!("unable to remove identifier property {key}"))
+        })
+    }
+
+    fn remove_optional_hash256s(&mut self, key: &str) -> Result<Option<Vec<[u8; 32]>>, Error> {
+        self.remove(key)
+            .and_then(|v| {
+                if v.is_null() {
+                    None
+                } else if let Value::Array(array) = v {
+                    Some(array.into_iter().map(|item| item.into_hash256()).collect())
+                } else {
+                    None
+                }
+            })
+            .transpose()
+    }
+
+    fn remove_hash256s(&mut self, key: &str) -> Result<Vec<[u8; 32]>, Error> {
+        self.remove_optional_hash256s(key)?.ok_or_else(|| {
             Error::StructureError(format!("unable to remove identifier property {key}"))
         })
     }

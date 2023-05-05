@@ -52,6 +52,7 @@ use dpp::platform_value::btreemap_extensions::{
 use dpp::platform_value::{Bytes20, Value};
 use dpp::ProtocolError;
 
+use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::query::QueryResultEncoding::CborEncodedQueryResult;
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
@@ -125,28 +126,20 @@ impl Drive {
                     )
                 }
             }
-            "/identities/keys" => {
-                let identity_id = query.remove_identifiers("identityIds")?;
-                let request = query.str_val("keyRequest")?;
+            "/identities/allKeys" => {
+                let identity_ids = query.remove_identifiers("identityIds")?;
+                let identity_ids_slice = identity_ids
+                    .iter()
+                    .map(|identity_id| identity_id.as_slice())
+                    .collect::<Vec<[u8; 32]>>();
+
+                let request = IdentityKeysRequest::new_all_keys_query();
+                request.into_path_query();
+
                 if prove {
-                    identity_id
-                        .iter()
-                        .map(|identity_id| {
-                            self.prove_identity_key(identity_id.into_buffer(), request, None)
-                        })
-                        .collect()
+                    self.prove_identities_all_keys(identity_ids_slice, request, None)
                 } else {
-                    identity_id
-                        .iter()
-                        .map(|identity_id| {
-                            self.fetch_serialized_identity_key(
-                                identity_id.into_buffer(),
-                                request,
-                                CborEncodedQueryResult,
-                                None,
-                            )
-                        })
-                        .collect()
+                    self.fetch_identities_all_keys(identity_ids_slice, None)
                 }
             }
             "/dataContract" => {
@@ -162,22 +155,21 @@ impl Drive {
                 }
             }
             "/dataContracts" => {
-                let contract_ids = query.remove_identifiers("contractIds")?;
+                let contract_ids = query.remove_hash256s("contractIds")?;
 
                 if prove {
-                    contract_ids.iter().map(|contract_id| {
-                        self.prove_contract(contract_id.into_buffer(), None)
-                            .collect()
-                    })
+                    self.prove_contracts(contract_ids.as_slice(), None)
                 } else {
-                    contract_ids.iter().map(|contract_id| {
-                        self.query_contract_as_serialized(
-                            contract_id.into_buffer(),
-                            CborEncodedQueryResult,
-                            None,
-                        )
-                        .collect()
-                    })
+                    contract_ids
+                        .iter()
+                        .map(|contract_id| {
+                            self.query_contract_as_serialized(
+                                contract_id.into_buffer(),
+                                CborEncodedQueryResult,
+                                None,
+                            )
+                        })
+                        .collect::<Result<Vec<Vec<u8>>, Error>>()
                 }
             }
             "/documents" | "/dataContract/documents" => {
