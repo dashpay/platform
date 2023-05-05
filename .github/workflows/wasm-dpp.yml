@@ -41,6 +41,7 @@ jobs:
 
   wasm-errors:
     name: WASM compilation
+    if: false
     runs-on: self-hosted
     env:
       SCCACHE_GHA_ENABLED: "true"

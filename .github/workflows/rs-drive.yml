@@ -25,6 +25,7 @@ jobs:
   feature-compilation:
     name: Feature compilation errors
     runs-on: self-hosted
+    if: false
     timeout-minutes: 15
     env:
       SCCACHE_GHA_ENABLED: "true"

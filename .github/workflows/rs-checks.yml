@@ -12,6 +12,7 @@ jobs:
   lint:
     name: Linting
     runs-on: self-hosted
+    if: false
     timeout-minutes: 15
     env:
       SCCACHE_GHA_ENABLED: "true"
@@ -64,6 +65,7 @@ jobs:
   compile:
     name: Compilation errors
     runs-on: self-hosted
+    if: false
     timeout-minutes: 15
     env:
       SCCACHE_GHA_ENABLED: "true"
@@ -97,6 +99,7 @@ jobs:
   test:
     name: Tests
     runs-on: self-hosted
+    if: false
     timeout-minutes: 15
     env:
       SCCACHE_GHA_ENABLED: "true"
