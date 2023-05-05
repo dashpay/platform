@@ -185,3 +185,6 @@ docker run -v "$PLATFORM_PROTO_PATH:$PLATFORM_PROTO_PATH" \
   --proto_path="$PLATFORM_PROTO_PATH" \
   -I="$PLATFORM_PROTO_PATH" \
   "platform.proto"
+
+# Patch generated protobuf files
+exec "${PWD}/scripts/patch-protobuf-js.sh"
