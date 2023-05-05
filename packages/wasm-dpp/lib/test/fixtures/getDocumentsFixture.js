@@ -6,6 +6,8 @@ const { default: loadWasmDpp } = require('../../..');
 let { DocumentFactory, DocumentValidator, ProtocolVersionValidator } = require('../../..');
 const generateRandomIdentifierAsync = require('../utils/generateRandomIdentifierAsync');
 
+let ownerId;
+
 /**
  * @param {DataContract} [dataContract]
  * @return {Promise<Document[]>}
@@ -28,7 +30,9 @@ module.exports = async function getDocumentsFixture(
   };
   const factory = new DocumentFactory(1, documentValidator, {}, entropyGenerator);
 
-  const ownerId = await generateRandomIdentifierAsync();
+  if (!ownerId) {
+    ownerId = await generateRandomIdentifierAsync();
+  }
 
   return [
     factory.create(dataContract, ownerId, 'niceDocument', { name: 'Cutie' }),

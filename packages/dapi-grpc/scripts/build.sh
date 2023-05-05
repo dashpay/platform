@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2250
 
 CORE_PROTO_PATH="$PWD/protos/core/v0"
 CORE_CLIENTS_PATH="$PWD/clients/core/v0"
@@ -20,11 +21,13 @@ PLATFORM_PYTHON_OUT_PATH="$PLATFORM_CLIENTS_PATH/python"
 
 PROTOC_IMAGE="rvolosatovs/protoc:4.0.0"
 
+set -ex
+
 #################################################
 # Generate JavaScript client for `Core` service #
 #################################################
 
-rm -rf "$CORE_WEB_OUT_PATH/*"
+rm -rf "${CORE_WEB_OUT_PATH:?}/*" || true
 
 docker run -v "$CORE_PROTO_PATH:$CORE_PROTO_PATH" \
   -v "$CORE_WEB_OUT_PATH:$CORE_WEB_OUT_PATH" \
@@ -37,8 +40,8 @@ docker run -v "$CORE_PROTO_PATH:$CORE_PROTO_PATH" \
 
 # Clean node message classes
 
-rm -rf "$CORE_CLIENTS_PATH/nodejs/*_protoc.js"
-rm -rf "$CORE_CLIENTS_PATH/nodejs/*_pbjs.js"
+rm -rf "$CORE_CLIENTS_PATH/nodejs/*_protoc.js" || true
+rm -rf "$CORE_CLIENTS_PATH/nodejs/*_pbjs.js" || true
 
 # Copy compiled modules with message classes
 
@@ -56,7 +59,7 @@ pbjs \
 # Generate JavaScript client for `Platform` service #
 #####################################################
 
-rm -rf "$PLATFORM_WEB_OUT_PATH/*"
+rm -rf "${PLATFORM_WEB_OUT_PATH:?}/*" || true
 
 docker run -v "$PLATFORM_PROTO_PATH:$PLATFORM_PROTO_PATH" \
   -v "$PLATFORM_WEB_OUT_PATH:$PLATFORM_WEB_OUT_PATH" \
@@ -69,8 +72,8 @@ docker run -v "$PLATFORM_PROTO_PATH:$PLATFORM_PROTO_PATH" \
 
 # Clean node message classes
 
-rm -rf "$PLATFORM_CLIENTS_PATH/nodejs/*_protoc.js"
-rm -rf "$PLATFORM_CLIENTS_PATH/nodejs/*_pbjs.js"
+rm -rf "$PLATFORM_CLIENTS_PATH/nodejs/*_protoc.js" || true
+rm -rf "$PLATFORM_CLIENTS_PATH/nodejs/*_pbjs.js" || true
 
 # Copy compiled modules with message classes
 
@@ -87,7 +90,7 @@ pbjs \
 # Generate Java client for `Core` #
 ###################################
 
-rm -rf "$CORE_JAVA_OUT_PATH/*"
+rm -rf "${CORE_JAVA_OUT_PATH:?}/*" || true
 
 docker run -v "$CORE_PROTO_PATH:$CORE_PROTO_PATH" \
   -v "$CORE_JAVA_OUT_PATH:$CORE_JAVA_OUT_PATH" \
@@ -103,7 +106,7 @@ docker run -v "$CORE_PROTO_PATH:$CORE_PROTO_PATH" \
 # Generate Java client for `Platform` #
 #######################################
 
-rm -rf "$PLATFORM_JAVA_OUT_PATH/*"
+rm -rf "${PLATFORM_JAVA_OUT_PATH:?}/*" || true
 
 docker run -v "$PLATFORM_PROTO_PATH:$PLATFORM_PROTO_PATH" \
   -v "$PLATFORM_JAVA_OUT_PATH:$PLATFORM_JAVA_OUT_PATH" \
@@ -119,7 +122,7 @@ docker run -v "$PLATFORM_PROTO_PATH:$PLATFORM_PROTO_PATH" \
 # Generate Objective-C client for `Core` #
 ##########################################
 
-rm -rf "$CORE_OBJ_C_OUT_PATH/*"
+rm -rf "${CORE_OBJ_C_OUT_PATH:?}/*" || true
 
 docker run -v "$CORE_PROTO_PATH:$CORE_PROTO_PATH" \
   -v "$CORE_OBJ_C_OUT_PATH:$CORE_OBJ_C_OUT_PATH" \
@@ -136,7 +139,7 @@ docker run -v "$CORE_PROTO_PATH:$CORE_PROTO_PATH" \
 # Generate Objective-C client for `Platform` #
 ##############################################
 
-rm -rf "$PLATFORM_OBJ_C_OUT_PATH/*"
+rm -rf "${PLATFORM_OBJ_C_OUT_PATH:?}/*" || true
 
 docker run -v "$PLATFORM_PROTO_PATH:$PLATFORM_PROTO_PATH" \
   -v "$PLATFORM_OBJ_C_OUT_PATH:$PLATFORM_OBJ_C_OUT_PATH" \
@@ -153,7 +156,7 @@ docker run -v "$PLATFORM_PROTO_PATH:$PLATFORM_PROTO_PATH" \
 # Generate Python client for `Core` #
 #####################################
 
-rm -rf "$CORE_PYTHON_OUT_PATH/*"
+rm -rf "${CORE_PYTHON_OUT_PATH:?}/*" || true
 
 docker run -v "$CORE_PROTO_PATH:$CORE_PROTO_PATH" \
   -v "$CORE_PYTHON_OUT_PATH:$CORE_PYTHON_OUT_PATH" \
@@ -170,7 +173,7 @@ docker run -v "$CORE_PROTO_PATH:$CORE_PROTO_PATH" \
 # Generate Python client for `Platform` #
 #########################################
 
-rm -rf "$PLATFORM_PYTHON_OUT_PATH/*"
+rm -rf "${PLATFORM_PYTHON_OUT_PATH:?}/*" || true
 
 docker run -v "$PLATFORM_PROTO_PATH:$PLATFORM_PROTO_PATH" \
   -v "$PLATFORM_PYTHON_OUT_PATH:$PLATFORM_PYTHON_OUT_PATH" \
@@ -182,3 +185,6 @@ docker run -v "$PLATFORM_PROTO_PATH:$PLATFORM_PROTO_PATH" \
   --proto_path="$PLATFORM_PROTO_PATH" \
   -I="$PLATFORM_PROTO_PATH" \
   "platform.proto"
+
+# Patch generated protobuf files
+exec "${PWD}/scripts/patch-protobuf-js.sh"

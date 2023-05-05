@@ -1200,6 +1200,7 @@ dependencies = [
  "ciborium",
  "costs",
  "criterion",
+ "dapi-grpc",
  "dpp",
  "enum-map",
  "grovedb",
