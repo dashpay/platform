@@ -19,6 +19,8 @@ use serde::{Deserialize, Serialize};
 use dpp::consensus::signature::SignatureError;
 use dpp::consensus::ConsensusError;
 use dpp::platform_value::{BinaryData, ReplacementType};
+use dpp::serialization_traits::PlatformSerializable;
+use dpp::state_transition::StateTransition;
 use wasm_bindgen::prelude::*;
 
 use crate::{
@@ -369,15 +371,10 @@ impl DocumentsBatchTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=toBuffer)]
-    pub fn to_buffer(&self, options: &JsValue) -> Result<Buffer, JsValue> {
-        let skip_signature = if options.is_object() {
-            let options = options.with_serde_to_json_value()?;
-            options.get_bool("skipSignature").unwrap_or_default()
-        } else {
-            false
-        };
-        let bytes = self.0.to_cbor_buffer(skip_signature).with_js_error()?;
-
+    pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
+        let bytes =
+            PlatformSerializable::serialize(&StateTransition::DocumentsBatch(self.0.clone()))
+                .with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
 
