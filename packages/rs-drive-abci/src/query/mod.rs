@@ -5,20 +5,19 @@ use dapi_grpc::platform::v0::get_documents_request::Start;
 use dapi_grpc::platform::v0::{
     GetDataContractRequest, GetDataContractResponse, GetDocumentsRequest, GetDocumentsResponse,
     GetIdentitiesByPublicKeyHashesRequest, GetIdentitiesByPublicKeyHashesResponse,
-    GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceResponse, GetIdentityRequest,
-    GetIdentityResponse, Proof, ResponseMetadata,
+    GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceResponse, GetIdentityRequest, Proof, ResponseMetadata,
 };
 use dpp::identifier::Identifier;
 use dpp::platform_value::Bytes20;
-use dpp::prelude::{ConsensusValidationResult, DataContract};
+
 use dpp::serialization_traits::PlatformSerializable;
 use dpp::validation::ValidationResult;
 use dpp::{check_validation_result_with_data, ProtocolError};
-use drive::error::drive::DriveError;
+
 use drive::error::query::QuerySyntaxError;
 use drive::query::DriveQuery;
-use prost::{DecodeError, Message};
-use tenderdash_abci::proto::abci::response;
+use prost::{Message};
+
 
 /// A query validation result
 pub type QueryValidationResult<TData> = ValidationResult<TData, QueryError>;
@@ -29,7 +28,7 @@ impl<C> Platform<C> {
         &self,
         query_path: &str,
         query_data: &[u8],
-        prove: bool,
+        _prove: bool,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let state = self.state.read().unwrap();
         let metadata = ResponseMetadata {

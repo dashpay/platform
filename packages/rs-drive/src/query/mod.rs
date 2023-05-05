@@ -75,8 +75,7 @@ use dpp::data_contract::document_type::{Index, IndexProperty};
 #[cfg(any(feature = "full", feature = "verify"))]
 pub use ordering::OrderClause;
 
-#[cfg(any(feature = "full", feature = "verify"))]
-use crate::common::encode::encode_float;
+
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::contract::Contract;
 #[cfg(feature = "full")]
@@ -105,7 +104,7 @@ use dpp::platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use dpp::platform_value::platform_value;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::platform_value::Value;
-use dpp::prelude::Identifier;
+
 
 use crate::common::encode::encode_u64;
 #[cfg(any(feature = "full", feature = "verify"))]

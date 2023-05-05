@@ -5,9 +5,9 @@ use crate::rpc::core::QuorumListExtendedInfo;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
 use dashcore_rpc::json::QuorumType;
-use dpp::block::block_info::{BlockInfo, ExtendedBlockInfo};
+use dpp::block::block_info::{ExtendedBlockInfo};
 use dpp::block::epoch::Epoch;
-use dpp::dashcore::bls_sig_utils::BLSSignature;
+
 use drive::dpp::util::deserializer::ProtocolVersion;
 use indexmap::IndexMap;
 use std::collections::{BTreeMap, HashMap};

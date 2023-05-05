@@ -34,7 +34,7 @@
 
 use grovedb::query_result_type::{Key, QueryResultType};
 use grovedb::TransactionArg;
-use std::collections::BTreeMap;
+
 
 use crate::contract::Contract;
 use crate::drive::Drive;
@@ -46,16 +46,14 @@ use crate::query::DriveQuery;
 use dpp::data_contract::document_type::DocumentType;
 
 use dpp::document::Document;
-use dpp::platform_value::btreemap_extensions::{
-    BTreeValueRemoveFromMapHelper, BTreeValueRemoveInnerValueFromMapHelper,
-};
-use dpp::platform_value::{Bytes20, Value};
+
+
 use dpp::ProtocolError;
 
-use crate::query::QueryResultEncoding::CborEncodedQueryResult;
+
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
-use dpp::prelude::Identifier;
+
 
 #[derive(Debug, Default)]
 /// The outcome of a query
