@@ -21,7 +21,7 @@ function ensureFileMountExistsFactory() {
     }
 
     if (mode) {
-      fs.chmodSync(logFilePath, mode)
+      fs.chmodSync(logFilePath, mode);
     }
   }
 
