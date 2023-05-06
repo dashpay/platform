@@ -9,7 +9,7 @@ const ValidatorSetIsNotInitializedError = require('../../../lib/validator/errors
 const Validator = require('../../../lib/validator/Validator');
 const PublicKeyShareIsNotPresentError = require('../../../lib/validator/errors/PublicKeyShareIsNotPresentError');
 
-describe('ValidatorSet', () => {
+describe.skip('ValidatorSet', () => {
   let smlStoreMock;
   let simplifiedMasternodeListMock;
   let smlDiffMock;

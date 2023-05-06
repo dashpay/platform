@@ -30,7 +30,7 @@ function calculateQuorumHashScores(quorumHashes, modifier) {
   });
 }
 
-const whiteList = [
+const testnetWhiteList = [
   '34.214.48.68',
   '35.166.18.166',
   '35.165.50.126',
@@ -71,9 +71,15 @@ const whiteList = [
  * @param {RpcClient} coreRpcClient
  * @param {fetchQuorumMembers} fetchQuorumMembers
  * @param {SimplifiedMasternodeList} simplifiedMasternodeList
+ * @param {string} network
  * @return {getRandomQuorum}
  */
-function getRandomQuorumFactory(coreRpcClient, fetchQuorumMembers, simplifiedMasternodeList) {
+function getRandomQuorumFactory(
+  coreRpcClient,
+  fetchQuorumMembers,
+  simplifiedMasternodeList,
+  network,
+) {
   /**
    * Gets the current validator set quorum hash for a particular core height
    *
@@ -110,7 +116,7 @@ function getRandomQuorumFactory(coreRpcClient, fetchQuorumMembers, simplifiedMas
       );
 
     const numberOfQuorums = validatorQuorums.length;
-    const minTtl = ValidatorSet.ROTATION_BLOCK_INTERVAL * 3;
+    const minTtl = ValidatorSet.ROTATION_BLOCK_INTERVAL * 3; // minutes
     const dkgInterval = 24;
 
     const quorumsMembers = {};
@@ -135,10 +141,14 @@ function getRandomQuorumFactory(coreRpcClient, fetchQuorumMembers, simplifiedMas
           return false;
         }
 
-        // Remove non DCG nodes
-        const [ip] = member.service.split(':');
-        // leave local network addresses and whitelisted nodes
-        return ip.startsWith('192.168') || ip.startsWith('172.17') || whiteList.includes(ip);
+        // Remove non DCG nodes on testnet
+        if (network === 'testnet') {
+          const [ip] = member.service.split(':');
+
+          return testnetWhiteList.includes(ip);
+        }
+
+        return true;
       });
     }));
 
@@ -152,21 +162,22 @@ function getRandomQuorumFactory(coreRpcClient, fetchQuorumMembers, simplifiedMas
 
           return quorumsMembers[validatorQuorum.quorumHash].length >= minimumNodeCount;
         },
-      )
-      .filter((validatorQuorum) => {
-        const validatorQuorumInfo = validatorQuorumsInfo[validatorQuorum.quorumHash];
-
-        if (!validatorQuorumInfo) {
-          return false;
-        }
-
-        const quorumRemoveHeight = validatorQuorumInfo.creationHeight
-          + (dkgInterval * numberOfQuorums);
-        const howMuchInRest = quorumRemoveHeight - coreHeight;
-        const quorumTtl = howMuchInRest * 2.5;
-
-        return quorumTtl > minTtl;
-      });
+      );
+      // TODO This logic doesn't work properly
+      // .filter((validatorQuorum) => {
+      //   const validatorQuorumInfo = validatorQuorumsInfo[validatorQuorum.quorumHash];
+      //
+      //   if (!validatorQuorumInfo) {
+      //     return false;
+      //   }
+      //
+      //   const quorumRemoveHeight = validatorQuorumInfo.creationHeight
+      //     + (dkgInterval * numberOfQuorums);
+      //   const howMuchInRest = quorumRemoveHeight - coreHeight;
+      //   const quorumTtl = howMuchInRest * 2.5; // minutes
+      //
+      //   return quorumTtl > minTtl;
+      // });
 
     if (filteredValidatorQuorums.length === 0) {
       return null;
