@@ -7,6 +7,8 @@ const path = require('path');
 function ensureFileMountExistsFactory() {
   /**
    * @typedef {resolveDockerHostIp}
+   * @param logFilePath {string}
+   * @param mode {mode} https://nodejs.org/api/fs.html#fschmodpath-mode-callback
    * @return {Promise<string>}
    */
   function ensureFileMountExists(logFilePath, mode) {
@@ -20,6 +22,7 @@ function ensureFileMountExistsFactory() {
       fs.writeFileSync(logFilePath, '');
     }
 
+    // applies permission on each run
     if (mode) {
       fs.chmodSync(logFilePath, mode);
     }
