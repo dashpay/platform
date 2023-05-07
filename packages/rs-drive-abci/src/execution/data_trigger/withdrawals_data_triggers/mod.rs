@@ -59,7 +59,7 @@ pub fn delete_withdrawal_data_trigger(
             range_clause: None,
             equal_clauses: BTreeMap::default(),
         },
-        offset: 0,
+        offset: None,
         limit: 100,
         order_by: Default::default(),
         start_at: None,

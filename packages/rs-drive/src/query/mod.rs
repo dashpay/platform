@@ -1549,7 +1549,7 @@ impl<'a> DriveQuery<'a> {
             self.construct_path_query_operations(drive, true, transaction, drive_operations)?;
 
         let proof =
-            drive.grove_get_proved_path_query(&path_query, false, transaction, drive_operations)?;
+            drive.grove_get_proved_path_query(&path_query, self.start_at.is_some(), transaction, drive_operations)?;
         self.verify_proof_keep_serialized(proof.as_slice())
     }
 
