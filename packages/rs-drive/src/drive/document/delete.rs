@@ -813,6 +813,7 @@ mod tests {
 
     use super::*;
     use crate::common::{cbor_from_hex, setup_contract, setup_contract_from_cbor_hex};
+    use crate::drive::config::DriveConfig;
     use crate::drive::document::tests::setup_dashpay;
     use crate::drive::flags::StorageFlags;
     use crate::drive::object_size_info::DocumentAndContractInfo;
@@ -876,7 +877,8 @@ mod tests {
 
         let sql_string =
             "select * from person where firstName = 'Samuel' order by firstName asc limit 100";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
+        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+            .expect("should build query");
 
         let (results_no_transaction, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None)
@@ -973,7 +975,8 @@ mod tests {
 
         let sql_string =
             "select * from person where firstName = 'Samuel' order by firstName asc limit 100";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
+        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+            .expect("should build query");
 
         let (results_no_transaction, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None)
@@ -1139,7 +1142,8 @@ mod tests {
 
         let sql_string =
             "select * from person where firstName > 'A' order by firstName asc limit 5";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
+        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+            .expect("should build query");
 
         let (results_no_transaction, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None)
@@ -1176,7 +1180,8 @@ mod tests {
 
         let sql_string =
             "select * from person where firstName > 'A' order by firstName asc limit 5";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
+        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+            .expect("should build query");
 
         let (results_no_transaction, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None)
@@ -1213,7 +1218,8 @@ mod tests {
 
         let sql_string =
             "select * from person where firstName > 'A' order by firstName asc limit 5";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
+        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+            .expect("should build query");
 
         let (results_no_transaction, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None)
@@ -1308,7 +1314,8 @@ mod tests {
 
         let sql_string =
             "select * from person where firstName > 'A' order by firstName asc limit 5";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
+        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+            .expect("should build query");
 
         let (results_no_transaction, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None)
@@ -1415,7 +1422,8 @@ mod tests {
 
         let sql_string =
             "select * from person where firstName > 'A' order by firstName asc limit 5";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
+        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+            .expect("should build query");
 
         let (results_no_transaction, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None)

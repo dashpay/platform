@@ -12,7 +12,7 @@ use dpp::consensus::state::identity::max_identity_public_key_limit_reached_error
 use dpp::consensus::state::identity::missing_identity_public_key_ids_error::MissingIdentityPublicKeyIdsError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::identity::security_level::ALLOWED_SECURITY_LEVELS;
-use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
+use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 use dpp::identity::state_transition::identity_update_transition::validate_public_keys::IDENTITY_PLATFORM_VALUE_SCHEMA;
 use dpp::identity::validation::{duplicated_key_ids_witness, duplicated_keys_witness};
 use dpp::identity::{KeyID, PartialIdentity};
@@ -146,7 +146,7 @@ pub fn validate_state_transition_identity_signature(
 /// id or by data. This is done before signature and state validation to remove potential
 /// attack vectors.
 pub fn validate_identity_public_keys_structure(
-    identity_public_keys_with_witness: &[IdentityPublicKeyInCreationWithWitness],
+    identity_public_keys_with_witness: &[IdentityPublicKeyInCreation],
 ) -> Result<SimpleConsensusValidationResult, Error> {
     let max_items: usize = IDENTITY_PLATFORM_VALUE_SCHEMA
         .get_integer_at_path("properties.publicKeys.maxItems")
@@ -220,29 +220,10 @@ pub fn validate_identity_public_keys_structure(
     ))
 }
 
-/// This validation will validate that all keys are valid for their type and that all signatures
-/// are also valid.
-pub fn validate_identity_public_keys_signatures(
-    identity_public_keys_with_witness: &[IdentityPublicKeyInCreationWithWitness],
-) -> Result<SimpleConsensusValidationResult, Error> {
-    let validation_errors = identity_public_keys_with_witness
-        .iter()
-        .map(|identity_public_key| {
-            identity_public_key
-                .verify_signature()
-                .map_err(Error::Protocol)
-        })
-        .collect::<Result<Vec<SimpleConsensusValidationResult>, Error>>()?;
-
-    Ok(SimpleConsensusValidationResult::merge_many_errors(
-        validation_errors,
-    ))
-}
-
 /// This will validate that all keys are valid against the state
 pub fn validate_identity_public_key_ids_dont_exist_in_state(
     identity_id: Identifier,
-    identity_public_keys_with_witness: &[IdentityPublicKeyInCreationWithWitness],
+    identity_public_keys_with_witness: &[IdentityPublicKeyInCreation],
     drive: &Drive,
     transaction: TransactionArg,
 ) -> Result<SimpleConsensusValidationResult, Error> {
@@ -301,7 +282,7 @@ pub fn validate_identity_public_key_ids_exist_in_state(
 
 /// This will validate that all keys are valid against the state
 pub fn validate_unique_identity_public_key_hashes_state(
-    identity_public_keys_with_witness: &[IdentityPublicKeyInCreationWithWitness],
+    identity_public_keys_with_witness: &[IdentityPublicKeyInCreation],
     drive: &Drive,
     transaction: TransactionArg,
 ) -> Result<SimpleConsensusValidationResult, Error> {

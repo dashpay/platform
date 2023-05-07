@@ -14,8 +14,7 @@ use crate::identity::state_transition::identity_update_transition::identity_upda
 use crate::serialization_traits::PlatformDeserializable;
 use crate::state_transition::errors::StateTransitionError;
 use crate::state_transition::StateTransitionConvert;
-use crate::util::deserializer;
-use crate::util::deserializer::SplitProtocolVersionOutcome;
+
 use crate::{
     consensus::{basic::BasicError, ConsensusError},
     data_contract::{
@@ -87,21 +86,7 @@ where
         let options = options.unwrap_or_default();
 
         if !options.skip_validation {
-            let execution_context = StateTransitionExecutionContext::default();
-
-            let validation_result = self
-                .basic_validator
-                .validate(&raw_state_transition, &execution_context)
-                .await?;
-
-            if !validation_result.is_valid() {
-                return Err(ProtocolError::StateTransitionError(
-                    StateTransitionError::InvalidStateTransitionError {
-                        errors: validation_result.errors,
-                        raw_state_transition,
-                    },
-                ));
-            }
+            self.validate_basic(&raw_state_transition).await?;
         }
 
         create_state_transition(self.state_repository.as_ref(), raw_state_transition).await
@@ -112,29 +97,43 @@ where
         state_transition_buffer: &[u8],
         options: Option<StateTransitionFactoryOptions>,
     ) -> Result<StateTransition, ProtocolError> {
-        let SplitProtocolVersionOutcome {
-            protocol_version,
-            main_message_bytes: document_bytes,
-            ..
-        } = deserializer::split_protocol_version(state_transition_buffer)?;
+        let state_transition: StateTransition =
+            StateTransition::deserialize(state_transition_buffer).map_err(|e| {
+                ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
+                    SerializedObjectParsingError::new(format!("Decode protocol entity: {:#?}", e)),
+                ))
+            })?;
 
-        let state_transition = StateTransition::deserialize(document_bytes).map_err(|e| {
-            ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
-                SerializedObjectParsingError::new(format!("Decode protocol entity: {:#?}", e)),
-            ))
-        })?;
-
-        if options
+        if !options
             .as_ref()
             .map(|options| options.skip_validation)
             .unwrap_or_default()
         {
-            Ok(state_transition)
-        } else {
-            let mut value = state_transition.to_object(false)?;
-            value.set_value("protocolVersion", Value::U32(protocol_version))?;
-            self.create_from_object(value, options).await
+            self.validate_basic(&state_transition.to_cleaned_object(false)?)
+                .await?;
         }
+
+        Ok(state_transition)
+    }
+
+    pub async fn validate_basic(&self, raw_state_transition: &Value) -> Result<(), ProtocolError> {
+        let execution_context = StateTransitionExecutionContext::default();
+
+        let validation_result = self
+            .basic_validator
+            .validate(raw_state_transition, &execution_context)
+            .await?;
+
+        if !validation_result.is_valid() {
+            return Err(ProtocolError::StateTransitionError(
+                StateTransitionError::InvalidStateTransitionError {
+                    errors: validation_result.errors,
+                    raw_state_transition: raw_state_transition.to_owned(),
+                },
+            ));
+        }
+
+        Ok(())
     }
 }
 

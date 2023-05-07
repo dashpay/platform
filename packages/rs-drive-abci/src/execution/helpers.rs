@@ -290,7 +290,7 @@ where
         if let Some(last_commited_block_info) =
             block_platform_state.last_committed_block_info.as_ref()
         {
-            if core_block_height == last_commited_block_info.core_height {
+            if core_block_height == last_commited_block_info.basic_info.core_height {
                 tracing::debug!(
                     method = "update_masternode_list",
                     "no update mnl at height {}",

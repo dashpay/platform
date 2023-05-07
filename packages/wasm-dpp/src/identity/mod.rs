@@ -12,6 +12,7 @@ use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 use dpp::identity::IdentityPublicKey;
 use dpp::identity::{Identity, KeyID};
 use dpp::metadata::Metadata;
+use dpp::serialization_traits::PlatformSerializable;
 use dpp::{Convertible, ProtocolError};
 
 use crate::identifier::IdentifierWrapper;
@@ -212,8 +213,9 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(js_name=toBuffer)]
-    pub fn to_buffer(&self) -> Vec<u8> {
-        self.0.to_cbor_buffer().unwrap()
+    pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
+        let bytes = PlatformSerializable::serialize(&self.0.clone()).with_js_error()?;
+        Ok(Buffer::from_bytes(&bytes))
     }
 
     #[wasm_bindgen]

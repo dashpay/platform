@@ -243,9 +243,9 @@ mod test {
         pub protocol_version: u32,
         pub transition_type: StateTransitionType,
         pub owner_id: Identifier,
-        #[exclude_from_sig_hash]
+        #[platform_signable(exclude_from_sig_hash)]
         pub signature: BinaryData,
-        #[exclude_from_sig_hash]
+        #[platform_signable(exclude_from_sig_hash)]
         pub signature_public_key_id: KeyID,
     }
 

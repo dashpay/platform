@@ -20,9 +20,14 @@ use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
 use crate::data_contract::document_type::DocumentType;
 use crate::document::extended_document::v0::ExtendedDocumentV0;
 use crate::document::Document;
-use crate::serialization_traits::PlatformDeserializable;
 use crate::serialization_traits::ValueConvertible;
-use crate::version::{FeatureVersion, LATEST_PLATFORM_VERSION};
+use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+use bincode::de::Decoder;
+use bincode::enc::Encoder;
+use bincode::error::{DecodeError, EncodeError};
+use bincode::{config, Decode, Encode};
+use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+
 use platform_value::btreemap_extensions::BTreeValueMapInsertionPathHelper;
 use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
 use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
@@ -55,6 +60,7 @@ pub const IDENTIFIER_FIELDS: [&str; 3] = [
 pub enum ExtendedDocument {
     V0(ExtendedDocumentV0),
 }
+
 impl ExtendedDocument {
     /// Returns the properties of the document as a JSON value.
     ///

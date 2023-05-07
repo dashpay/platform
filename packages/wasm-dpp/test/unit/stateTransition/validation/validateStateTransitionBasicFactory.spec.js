@@ -87,11 +87,11 @@ describe('validateStateTransitionBasicFactory', () => {
     expect(error).to.instanceof(JsonSchemaError);
   });
 
-  it('should return invalid result if ST size is more than 16 kb', async () => {
+  it('should return invalid result if ST size is more than 25 kb', async () => {
     const largeDocument = rawStateTransition.dataContract.documents.niceDocument;
 
     // generate big state transition
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 7; i++) {
       largeDocument.properties[`name${i}`] = { type: 'string' };
     }
     for (let i = 0; i < 90; i++) {

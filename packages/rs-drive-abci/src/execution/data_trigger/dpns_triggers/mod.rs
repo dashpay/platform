@@ -199,7 +199,7 @@ pub fn create_domain_data_trigger(
             order_by: Default::default(),
             start_at: None,
             start_at_included: false,
-            block_time: None,
+            block_time_ms: None,
         };
 
         let documents = context
@@ -276,7 +276,7 @@ pub fn create_domain_data_trigger(
         order_by: Default::default(),
         start_at: None,
         start_at_included: false,
-        block_time: None,
+        block_time_ms: None,
     };
 
     let preorder_documents = context

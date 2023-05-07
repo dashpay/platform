@@ -70,9 +70,9 @@ pub struct IdentityCreditWithdrawalTransition {
     pub pooling: Pooling,
     pub output_script: CoreScript,
     pub revision: Revision,
-    #[exclude_from_sig_hash]
+    #[platform_signable(exclude_from_sig_hash)]
     pub signature_public_key_id: KeyID,
-    #[exclude_from_sig_hash]
+    #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
 }
 

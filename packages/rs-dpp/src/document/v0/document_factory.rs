@@ -10,23 +10,26 @@ use platform_value::{Bytes32, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 
 use crate::consensus::basic::document::InvalidDocumentTypeError;
-use crate::document::extended_document::{property_names, ExtendedDocument};
+use crate::document::extended_document::ExtendedDocument;
 
+use crate::consensus::basic::decode::SerializedObjectParsingError;
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
 use crate::document::document_transition::{Action, INITIAL_REVISION};
-use crate::document::errors::DocumentError;
-use crate::document::fetch_and_validate_data_contract::DataContractFetcherAndValidator;
-use crate::document::generate_document_id::generate_document_id;
-use crate::document::{document_transition, Document, DocumentV0, DocumentsBatchTransition};
+use crate::document::{Document, DocumentsBatchTransition, DocumentV0};
 use crate::identity::TimestampMillis;
+use crate::serialization_traits::PlatformDeserializable;
 use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
 use crate::version::LATEST_PLATFORM_VERSION;
 use crate::{
     data_contract::{errors::DataContractError, DataContract},
-    encoding::decode_protocol_entity_factory::DecodeProtocolEntity,
     prelude::Identifier,
     state_repository::StateRepositoryLike,
     ProtocolError,
 };
+use crate::document::errors::DocumentError;
+use crate::document::fetch_and_validate_data_contract::DataContractFetcherAndValidator;
+use crate::document::generate_document_id::generate_document_id;
 
 use super::{
     document_transition::{self, Action},
@@ -276,21 +279,13 @@ where
         buffer: impl AsRef<[u8]>,
         options: FactoryOptions,
     ) -> Result<ExtendedDocument, ProtocolError> {
-        let result =
-            DecodeProtocolEntity::decode_protocol_entity_to_value::<ExtendedDocument>(buffer);
-
-        match result {
-            Err(ProtocolError::ConsensusError(err)) => Err(DocumentError::InvalidDocumentError {
-                errors: vec![*err],
-                raw_document: Value::Null,
-            }
-            .into()),
-            Err(err) => Err(err),
-            Ok((version, mut raw_document)) => {
-                raw_document.set_value(property_names::FEATURE_VERSION, Value::U32(version))?;
-                self.create_from_object(raw_document, options).await
-            }
-        }
+        let document = <ExtendedDocument as PlatformDeserializable>::deserialize(buffer.as_ref())
+            .map_err(|e| {
+            ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
+                SerializedObjectParsingError::new(format!("Decode protocol entity: {:#?}", e)),
+            ))
+        })?;
+        self.create_from_object(document.to_value()?, options).await
     }
 
     pub async fn create_from_object(

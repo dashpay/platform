@@ -86,7 +86,12 @@ impl StateTransitionValidation for DataContractCreateTransition {
         let drive = platform.drive;
         // Data contract shouldn't exist
         if drive
-            .get_contract_with_fetch_info(self.data_contract().id.to_buffer(), None, false, tx)?
+            .get_contract_with_fetch_info_and_fee(
+                self.data_contract.id.to_buffer(),
+                None,
+                false,
+                tx,
+            )?
             .1
             .is_some()
         {

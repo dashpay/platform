@@ -3,7 +3,6 @@ use platform_value::Value;
 use crate::consensus::basic::decode::SerializedObjectParsingError;
 use crate::consensus::basic::BasicError;
 use crate::serialization_traits::{PlatformDeserializable, ValueConvertible};
-use crate::state_transition::StateTransitionConvert;
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::{errors::consensus::ConsensusError, errors::ProtocolError};

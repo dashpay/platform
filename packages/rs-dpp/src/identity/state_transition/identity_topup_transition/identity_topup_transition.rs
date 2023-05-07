@@ -50,7 +50,7 @@ pub struct IdentityTopUpTransition {
     pub identity_id: Identifier,
     // Generic identity ST fields
     pub protocol_version: u32,
-    #[exclude_from_sig_hash]
+    #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
 }
 

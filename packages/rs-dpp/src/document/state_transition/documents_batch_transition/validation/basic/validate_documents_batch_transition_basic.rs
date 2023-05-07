@@ -311,15 +311,15 @@ fn validate_raw_transitions<'a>(
                         generate_document_id(&data_contract.id, &owner_id, document_type, &entropy);
 
                     if generated_document_id != document_id {
-                        dbg!(
-                            "g {} d {} c id {} owner {} dt {} e {}",
-                            hex::encode(generated_document_id),
-                            hex::encode(document_id),
-                            hex::encode(data_contract.id),
-                            hex::encode(owner_id),
-                            document_type,
-                            hex::encode(entropy)
-                        );
+                        // dbg!(
+                        //     "g {} d {} c id {} owner {} dt {} e {}",
+                        //     hex::encode(generated_document_id),
+                        //     hex::encode(document_id),
+                        //     hex::encode(data_contract.id),
+                        //     hex::encode(owner_id),
+                        //     document_type,
+                        //     hex::encode(entropy)
+                        // );
                         result.add_error(BasicError::InvalidDocumentTransitionIdError(
                             InvalidDocumentTransitionIdError::new(
                                 generated_document_id,

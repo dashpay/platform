@@ -139,9 +139,13 @@ impl Quorum {
         } = value;
 
         let validator_set = members.into_iter().filter_map(|quorum_member| {
+            if !quorum_member.valid {
+                return None;
+            }
+
             let Some(pub_key_share) = quorum_member.pub_key_share else {
-                //todo: check to make sure there are no cases where this could be "normal" from core's side
-                return Some(Err(Error::Execution(ExecutionError::DashCoreBadResponseError("quorum member did not have a public key share".to_string()))));
+                tracing::debug!(method = "quorum::try_from_info_result", "No public key share for quorum member {}", quorum_member.pro_tx_hash);
+                return None;
             };
 
             let public_key = match BlsPublicKey::from_bytes(pub_key_share.as_slice()).map_err(ExecutionError::BlsErrorFromDashCoreResponse) {

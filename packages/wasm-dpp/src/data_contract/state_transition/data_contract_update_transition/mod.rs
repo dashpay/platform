@@ -7,6 +7,8 @@ pub use apply::*;
 pub use validation::*;
 
 use dpp::consensus::ConsensusError;
+use dpp::serialization_traits::PlatformSerializable;
+use dpp::state_transition::StateTransition;
 use dpp::{
     consensus::signature::SignatureError,
     data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition,
@@ -109,11 +111,10 @@ impl DataContractUpdateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name=toBuffer)]
-    pub fn to_buffer(&self, skip_signature: Option<bool>) -> Result<Buffer, JsValue> {
-        let bytes = self
-            .0
-            .to_cbor_buffer(skip_signature.unwrap_or(false))
-            .with_js_error()?;
+    pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
+        let bytes =
+            PlatformSerializable::serialize(&StateTransition::DataContractUpdate(self.0.clone()))
+                .with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
 

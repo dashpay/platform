@@ -143,7 +143,23 @@ impl DriveLowLevelOperationConverter for DriveOperation<'_> {
 }
 
 impl Drive {
-    /// Converts drive operations to grove operations
+    /// Convert a batch of drive operations to a batch of grove database operations.
+    ///
+    /// This function takes drive operations and converts them into grove database operations by
+    /// processing each operation in the `drive_batch_operations` vector, transforming them to low-level
+    /// drive operations and finally, into grove database operations. The resulting operations are
+    /// returned as a `GroveDbOpBatch`.
+    ///
+    /// # Arguments
+    ///
+    /// * `drive_batch_operations` - A vector of high-level drive operations to be converted.
+    /// * `block_info` - A reference to the block information associated with these operations.
+    /// * `transaction` - A transaction argument to be used during processing.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing a `GroveDbOpBatch` with transformed grove database operations,
+    /// or an error if any step in the conversion process fails.
     pub fn convert_drive_operations_to_grove_operations(
         &self,
         drive_batch_operations: Vec<DriveOperation>,
@@ -167,7 +183,23 @@ impl Drive {
             .collect::<Result<Vec<GroveDbOp>, Error>>()?;
         Ok(GroveDbOpBatch::from_operations(ops))
     }
-    /// We can apply multiple operations at once
+
+    /// Applies a list of high level DriveOperations to the drive, and calculates the fee for them.
+    ///
+    /// # Arguments
+    ///
+    /// * `operations` - A vector of `DriveOperation`s to apply to the drive.
+    /// * `apply` - A boolean flag indicating whether to apply the changes or only estimate costs.
+    /// * `block_info` - A reference to information about the current block.
+    /// * `transaction` - Transaction arguments.
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing the `FeeResult` if the operations are successfully applied,
+    /// otherwise an `Error`.
+    ///
+    /// If `apply` is set to true, it applies the low-level drive operations and updates side info accordingly.
+    /// If not, it only estimates the costs and updates estimated costs with layer info.
     pub fn apply_drive_operations(
         &self,
         operations: Vec<DriveOperation>,

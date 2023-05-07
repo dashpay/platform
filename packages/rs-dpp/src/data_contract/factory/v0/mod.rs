@@ -152,15 +152,7 @@ impl DataContractFactoryV0 {
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
         if !skip_validation {
-            let result = self
-                .validate_data_contract
-                .validate(&data_contract_object)?;
-
-            if !result.is_valid() {
-                return Err(ProtocolError::InvalidDataContractError(
-                    InvalidDataContractError::new(result.errors, data_contract_object),
-                ));
-            }
+            self.validate_data_contract(&data_contract_object)?;
         }
         if !data_contract_object
             .has(PROTOCOL_VERSION)
@@ -182,18 +174,30 @@ impl DataContractFactoryV0 {
         buffer: Vec<u8>,
         skip_validation: bool,
     ) -> Result<DataContract, ProtocolError> {
-        let data_contract = DataContract::deserialize(buffer.as_slice()).map_err(|e| {
-            ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
-                SerializedObjectParsingError::new(format!("Decode protocol entity: {:#?}", e)),
-            ))
-        })?;
+        let data_contract: DataContract =
+            DataContract::deserialize(buffer.as_slice()).map_err(|e| {
+                ConsensusError::BasicError(BasicError::SerializedObjectParsingError(
+                    SerializedObjectParsingError::new(format!("Decode protocol entity: {:#?}", e)),
+                ))
+            })?;
 
         if !skip_validation {
-            let value = data_contract.to_object()?;
-            self.create_from_object(value, skip_validation).await
-        } else {
-            Ok(data_contract)
+            self.validate_data_contract(&data_contract.to_cleaned_object()?)?;
         }
+
+        Ok(data_contract)
+    }
+
+    pub fn validate_data_contract(&self, raw_data_contract: &Value) -> Result<(), ProtocolError> {
+        let result = self.validate_data_contract.validate(raw_data_contract)?;
+
+        if !result.is_valid() {
+            return Err(ProtocolError::InvalidDataContractError(
+                InvalidDataContractError::new(result.errors, raw_data_contract.to_owned()),
+            ));
+        }
+
+        Ok(())
     }
 
     pub fn create_data_contract_create_transition(

@@ -87,7 +87,7 @@ impl StateTransitionValidation for DataContractUpdateTransition {
         // Data contract should exist
         let Some(contract_fetch_info) =
             drive
-                .get_contract_with_fetch_info(self.data_contract().id.0 .0, None, add_to_cache_if_pulled, tx)?
+                .get_contract_with_fetch_info_and_fee(self.data_contract.id.0 .0, None, add_to_cache_if_pulled, tx)?
                 .1
             else {
                 validation_result

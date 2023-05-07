@@ -11,6 +11,7 @@ use dpp::data_contract::{DataContract, SCHEMA_URI};
 use dpp::platform_value::string_encoding::Encoding;
 use dpp::platform_value::{Bytes32, Value};
 
+use dpp::serialization_traits::PlatformSerializable;
 use dpp::{platform_value, Convertible};
 
 use crate::errors::RustConversionError;
@@ -303,7 +304,7 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
-        let bytes = self.0.to_cbor_buffer().with_js_error()?;
+        let bytes = PlatformSerializable::serialize(&self.0).with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
 
