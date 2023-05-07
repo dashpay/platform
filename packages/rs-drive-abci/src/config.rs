@@ -133,7 +133,7 @@ impl Default for CoreConfig {
 pub struct PlatformConfig {
     /// Drive configuration
     #[serde(flatten)]
-    pub drive: Option<DriveConfig>,
+    pub drive: DriveConfig,
 
     /// Dash Core config
     #[serde(flatten)]

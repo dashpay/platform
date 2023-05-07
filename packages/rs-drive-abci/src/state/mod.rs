@@ -5,8 +5,9 @@ use crate::rpc::core::QuorumListExtendedInfo;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
 use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
 use dashcore_rpc::json::QuorumType;
-use dpp::block::block_info::BlockInfo;
+use dpp::block::block_info::ExtendedBlockInfo;
 use dpp::block::epoch::Epoch;
+
 use drive::dpp::util::deserializer::ProtocolVersion;
 use indexmap::IndexMap;
 use std::collections::{BTreeMap, HashMap};
@@ -16,9 +17,8 @@ mod genesis;
 /// Platform state
 #[derive(Clone)]
 pub struct PlatformState {
-    //todo: add quorum hash to block info
     /// Information about the last block
-    pub last_committed_block_info: Option<BlockInfo>,
+    pub last_committed_block_info: Option<ExtendedBlockInfo>,
     /// Current Version
     pub current_protocol_version_in_consensus: ProtocolVersion,
     /// upcoming protocol version
@@ -56,7 +56,7 @@ impl PlatformState {
     pub fn height(&self) -> u64 {
         self.last_committed_block_info
             .as_ref()
-            .map(|block_info| block_info.height)
+            .map(|block_info| block_info.basic_info.height)
             .unwrap_or_default()
     }
 
@@ -64,7 +64,7 @@ impl PlatformState {
     pub fn known_height_or(&self, default: u64) -> u64 {
         self.last_committed_block_info
             .as_ref()
-            .map(|block_info| block_info.height)
+            .map(|block_info| block_info.basic_info.height)
             .unwrap_or(default)
     }
 
@@ -72,7 +72,7 @@ impl PlatformState {
     pub fn core_height(&self) -> u32 {
         self.last_committed_block_info
             .as_ref()
-            .map(|block_info| block_info.core_height)
+            .map(|block_info| block_info.basic_info.core_height)
             .unwrap_or_else(|| {
                 self.initialization_information
                     .as_ref()
@@ -87,7 +87,7 @@ impl PlatformState {
     pub fn known_core_height_or(&self, default: u32) -> u32 {
         self.last_committed_block_info
             .as_ref()
-            .map(|block_info| block_info.core_height)
+            .map(|block_info| block_info.basic_info.core_height)
             .unwrap_or_else(|| {
                 self.initialization_information
                     .as_ref()
@@ -102,14 +102,38 @@ impl PlatformState {
     pub fn last_block_time_ms(&self) -> Option<u64> {
         self.last_committed_block_info
             .as_ref()
-            .map(|block_info| block_info.time_ms)
+            .map(|block_info| block_info.basic_info.time_ms)
+    }
+
+    /// The last quorum hash
+    pub fn last_quorum_hash(&self) -> [u8; 32] {
+        self.last_committed_block_info
+            .as_ref()
+            .map(|block_info| block_info.quorum_hash)
+            .unwrap_or_default()
+    }
+
+    /// The last block signature
+    pub fn last_block_signature(&self) -> [u8; 96] {
+        self.last_committed_block_info
+            .as_ref()
+            .map(|block_info| block_info.signature)
+            .unwrap_or([0u8; 96])
+    }
+
+    /// The last block round
+    pub fn last_block_round(&self) -> u32 {
+        self.last_committed_block_info
+            .as_ref()
+            .map(|block_info| block_info.round)
+            .unwrap_or_default()
     }
 
     /// The current epoch
     pub fn epoch(&self) -> Epoch {
         self.last_committed_block_info
             .as_ref()
-            .map(|block_info| block_info.epoch)
+            .map(|block_info| block_info.basic_info.epoch)
             .unwrap_or_default()
     }
 

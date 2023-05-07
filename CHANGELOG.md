@@ -1,3 +1,102 @@
+## [0.25.0-dev.2](https://github.com/dashpay/platform/compare/v0.25.0-dev.1...v0.25.0-dev.2) (2023-05-01)
+
+### Miscellaneous Chores
+
+* backports from v0.24
+
+
+## [0.25.0-dev.1](https://github.com/dashpay/platform/compare/v0.24.0-dev.16...v0.25.0-dev.1) (2023-05-01)
+
+### Features
+
+* abci propose validators ([#954](https://github.com/dashpay/platform/issues/954))
+* **dpp:** state transition applicator ([#878](https://github.com/dashpay/platform/issues/878))
+* **wasm-dpp:** state_transition_fee_validator binding and tests ([#874](https://github.com/dashpay/platform/issues/874))
+* **wasm-dpp:** validate_state_transition_identity_signature binding and test ([#865](https://github.com/dashpay/platform/issues/865))
+
+
+### Bug Fixes
+
+
+* fixes for deployment and clean up ([#1004](https://github.com/dashpay/platform/issues/1004))
+* identifier deserialization doesn't work for bincode ([#885](https://github.com/dashpay/platform/issues/885))
+* inconsistencies after merge
+* init chain core chain lock failure ([#976](https://github.com/dashpay/platform/issues/976))
+* **rs-dpp:** json query wrapper incorrectly serializes identifier
+* **rs-drive-abci:** Get rs-drive-abci to commit block 1 ([#981](https://github.com/dashpay/platform/issues/981))
+* **rs-drive-abci:** start rs-drive-abci using dashmate and pass init_chain ([#941](https://github.com/dashpay/platform/issues/941))
+* same block core chain lock height
+* **sdk:** provide StateTransitionExecutionContext to validateBasic
+* small wasm fix
+* **wasm-dpp:** failing build and tests ([#947](https://github.com/dashpay/platform/issues/947))
+
+
+### Code Refactoring
+
+* **rs-dpp:** use common wrapper for new signature errors
+* **rs-drive-abci:** new error wrappers
+
+
+### Tests
+
+* chainlock quorum rotation test ([#952](https://github.com/dashpay/platform/issues/952))
+* **dapi-client:** fix broken SimplifiedMasternodeListDAPIAddressProvider test ([#916](https://github.com/dashpay/platform/issues/916))
+* **rs-dpp:** fix tests
+* **rs-drive-abci:** fix optional pose_revived_height
+* **rs-drive-abci:** set pose_revived_height to None
+
+
+### Continuous Integration
+
+* remove drive node.js binding release
+
+
+### Build System
+
+* add missing rust packages to Dockerfiles
+* operations in configure.sh script were in a wrong order ([#876](https://github.com/dashpay/platform/issues/876))
+* remove js-drive and rs-drive-nodejs from PR CI
+* return proper Rust setup
+
+
+### Miscellaneous Chores
+
+* `rs-dpp` and `wasm-dpp` updates for integration ([#875](https://github.com/dashpay/platform/issues/875))
+* bump base.js (local networks only) dashd version to 20.0.0-alpha.assetlocks.2
+* remove unused deps ([#987](https://github.com/dashpay/platform/issues/987))
+* remove unused js-drive and rs-drive code
+* resolve todos
+* **sdk:** add eslint ([#829](https://github.com/dashpay/platform/issues/829))
+* use master dash core rpc
+* **wasm-dpp:** proper identifier buffer inheritance ([#879](https://github.com/dashpay/platform/issues/879))
+
+
+## [0.24.0-dev.30](https://github.com/dashpay/platform/compare/v0.24.0-dev.29...v0.24.0-dev.30) (2023-04-30)
+
+
+### Bug Fixes
+
+* **dashmate:** "volume is in use" and "no such volume" ([#1005](https://github.com/dashpay/platform/issues/1005))
+
+
+## [0.24.0-dev.29](https://github.com/dashpay/platform/compare/v0.24.0-dev.28...v0.24.0-dev.29) (2023-04-29)
+
+
+### Bug Fixes
+
+* **dashmate:** reset platform affects core ([#1001](https://github.com/dashpay/platform/issues/1001))
+* **drive:** double init chain leads to side bugs ([#1002](https://github.com/dashpay/platform/issues/1002))
+
+## [0.24.0-dev.28](https://github.com/dashpay/platform/compare/v0.24.0-dev.27...v0.24.0-dev.28) (2023-04-28)
+
+
+### Bug Fixes
+
+* **dashmate:** BLS private key validate accepts whitespaces ([#998](https://github.com/dashpay/platform/issues/998))
+* **dashmate:** can't remove volumes if they not exist ([#997](https://github.com/dashpay/platform/issues/997))
+* **dashmate:** show masternode state while it is not synced ([#999](https://github.com/dashpay/platform/issues/999))
+* **dashmate:** wrap register masternode command in small terminals ([#996](https://github.com/dashpay/platform/issues/996))
+
 ## [0.24.0-dev.27](https://github.com/dashpay/platform/compare/v0.24.0-dev.26...v0.24.0-dev.27) (2023-04-28)
 
 
@@ -31,7 +130,7 @@
 
 ### Features
 
-* **dashamte:** better ZeroSSL error messages ([#950](https://github.com/dashpay/platform/issues/950))
+* **dashmate:** better ZeroSSL error messages ([#950](https://github.com/dashpay/platform/issues/950))
 * **dashmate:** set random core rpc username and password on setup ([#973](https://github.com/dashpay/platform/issues/973))
 * **dashmate:** verbose `connect ENOENT /var/run/docker.sock` error ([#951](https://github.com/dashpay/platform/issues/951))
 
@@ -67,7 +166,7 @@
 
 ### Bug Fixes
 
-* **dashamte:** wrong envoy config path on windows ([#949](https://github.com/dashpay/platform/issues/949))
+* **dashmate:** wrong envoy config path on windows ([#949](https://github.com/dashpay/platform/issues/949))
 * **drive:** updating a masternode identity with invalid entry from SML ([#965](https://github.com/dashpay/platform/issues/965))
 
 ## [0.24.0-dev.23](https://github.com/dashpay/platform/compare/v0.24.0-dev.22...v0.24.0-dev.23) (2023-04-20)
@@ -87,7 +186,7 @@
 
 ### Build System
 
-* **dashamte:** build arm64 deb file instead of armel ([#943](https://github.com/dashpay/platform/issues/943))
+* **dashmate:** build arm64 deb file instead of armel ([#943](https://github.com/dashpay/platform/issues/943))
 
 ## [0.24.0-dev.21](https://github.com/dashpay/platform/compare/v0.24.0-dev.20...v0.24.0-dev.21) (2023-04-19)
 
@@ -99,12 +198,12 @@
 
 ### Bug Fixes
 
-* **dashamte:** сan't find begoo/index with `yarn dashmate setup` ([#933](https://github.com/dashpay/platform/issues/933))
+* **dashmate:** сan't find begoo/index with `yarn dashmate setup` ([#933](https://github.com/dashpay/platform/issues/933))
 
 
 ### Miscellaneous Chores
 
-* **dashamte:** remove deprecation warning on start ([#925](https://github.com/dashpay/platform/issues/925))
+* **dashmate:** remove deprecation warning on start ([#925](https://github.com/dashpay/platform/issues/925))
 
 
 ### Continuous Integration
@@ -114,7 +213,7 @@
 
 ### Build System
 
-* **dashamte:** remove deb release docker dependencies ([#934](https://github.com/dashpay/platform/issues/934))
+* **dashmate:** remove deb release docker dependencies ([#934](https://github.com/dashpay/platform/issues/934))
 * **dashmate:** build only linux tarballs ([#936](https://github.com/dashpay/platform/issues/936))
 
 

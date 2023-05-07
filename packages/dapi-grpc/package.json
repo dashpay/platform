@@ -1,11 +1,11 @@
 {
   "name": "@dashevo/dapi-grpc",
-  "version": "0.24.0-dev.27",
+  "version": "0.25.0-dev.9",
   "description": "DAPI GRPC definition file and generated clients",
   "browser": "browser.js",
   "main": "node.js",
   "scripts": {
-    "build": "yarn exec scripts/build.sh && yarn exec scripts/patch-protobuf-js.sh",
+    "build": "yarn exec scripts/build.sh",
     "lint": "eslint .",
     "prepublishOnly": "yarn run build",
     "test": "yarn run test:unit",
@@ -21,6 +21,18 @@
       "name": "Anton Suprunchuk",
       "email": "anton.suprunchuk@dash.org",
       "url": "https://github.com/antouhou"
+    },
+    {
+      "name": "Samuel Westrich",
+      "email": "sam@dash.org"
+    },
+    {
+      "name": "Igor Markin",
+      "email": "igor.markin@dash.org"
+    },
+    {
+      "name": "Łukasz Klimek",
+      "email": "lukasz.klimek@dash.org"
     }
   ],
   "repository": {

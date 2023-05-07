@@ -51,7 +51,7 @@ impl DashPlatformProtocol {
         // "attempted to set a logger after the logging system was already initialized"
         // Usage of unsafe is fine here as we are in a single-threaded JS environment
         unsafe {
-            if cfg!(LOGGER_INITIALIZED) && !LOGGER_INITIALIZED {
+            if !LOGGER_INITIALIZED {
                 LOGGER_INITIALIZED = true;
                 wasm_logger::init(wasm_logger::Config::new(log::Level::Debug));
             }

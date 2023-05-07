@@ -44,6 +44,7 @@ pub(crate) mod queries;
 
 #[cfg(feature = "full")]
 use std::borrow::Cow;
+use std::collections::BTreeMap;
 #[cfg(feature = "full")]
 use std::collections::{HashMap, HashSet};
 #[cfg(feature = "full")]
@@ -401,7 +402,29 @@ impl Drive {
         Ok(batch_operations)
     }
 
-    /// Update a data contract
+    /// Updates a data contract.
+    ///
+    /// This function updates a given data contract in the storage. The fee for updating
+    /// the contract is also calculated and returned.
+    ///
+    /// # Arguments
+    ///
+    /// * `contract` - A reference to the `DataContract` to be updated.
+    /// * `block_info` - A `BlockInfo` object containing information about the block where
+    ///   the contract is being updated.
+    /// * `apply` - A boolean indicating whether the contract update should be applied (`true`) or not (`false`). Passing `false` would only tell the fees but won't interact with the state.
+    /// * `transaction` - A `TransactionArg` object representing the transaction to be used
+    ///   for updating the contract.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<FeeResult, Error>` - If successful, returns a `FeeResult` representing the fee
+    ///   for updating the contract. If an error occurs during the contract update or fee calculation,
+    ///   returns an `Error`.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error if the contract update or fee calculation fails.
     pub fn update_contract(
         &self,
         contract: &DataContract,
@@ -739,8 +762,108 @@ impl Drive {
         encoding.encode_value(&value)
     }
 
-    /// Returns the contract with fetch info and operations with the given ID.
+    /// Retrieves the specified contracts along with their fetch info.
+    ///
+    /// # Arguments
+    ///
+    /// * `contract_ids` - A slice of contract IDs as 32-byte arrays. The contract IDs are used to
+    ///   fetch the corresponding contracts and their fetch info.
+    /// * `add_to_cache_if_pulled` - A boolean indicating whether to add the fetched contracts to the
+    ///   cache if they were pulled from storage.
+    /// * `transaction` - A `TransactionArg` object representing the transaction to be used
+    ///   for fetching the contracts.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<BTreeMap<[u8; 32], Option<Arc<Contract>>>, Error>` - If successful,
+    ///   returns a `BTreeMap` where the keys are the contract IDs and the values are `Option`s
+    ///   containing `Arc`s to `Contract`s. If an error occurs during the contract fetching,
+    ///   returns an `Error`.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error if the contract fetching fails.
+    pub fn get_contracts_with_fetch_info(
+        &self,
+        contract_ids: &[[u8; 32]],
+        add_to_cache_if_pulled: bool,
+        transaction: TransactionArg,
+    ) -> Result<BTreeMap<[u8; 32], Option<Arc<ContractFetchInfo>>>, Error> {
+        contract_ids
+            .iter()
+            .map(|contract_id| {
+                Ok((
+                    *contract_id,
+                    self.get_contract_with_fetch_info(
+                        *contract_id,
+                        add_to_cache_if_pulled,
+                        transaction,
+                    )?,
+                ))
+            })
+            .collect()
+    }
+
+    /// Retrieves the specified contract.
+    ///
+    /// # Arguments
+    ///
+    /// * `contract_id` - A contract ID as a 32-byte array. The contract ID is used to
+    ///   fetch the corresponding contract.
+    /// * `add_to_cache_if_pulled` - A boolean indicating whether to add the fetched contract to the
+    ///   cache if it was pulled from storage.
+    /// * `transaction` - A `TransactionArg` object representing the transaction to be used
+    ///   for fetching the contract.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Option<Arc<Contract>>, Error>` - If successful, returns an `Option` containing a
+    ///   reference to the fetched `Contract`. If an error occurs during the contract fetching,
+    ///   returns an `Error`.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error if the contract fetching fails.
     pub fn get_contract_with_fetch_info(
+        &self,
+        contract_id: [u8; 32],
+        add_to_cache_if_pulled: bool,
+        transaction: TransactionArg,
+    ) -> Result<Option<Arc<ContractFetchInfo>>, Error> {
+        self.get_contract_with_fetch_info_and_add_to_operations(
+            contract_id,
+            None,
+            add_to_cache_if_pulled,
+            transaction,
+            &mut vec![],
+        )
+    }
+
+    /// Retrieves the specified contract along with its fetch info and calculates the fee if an epoch is provided.
+    ///
+    /// # Arguments
+    ///
+    /// * `contract_id` - A contract ID as a 32-byte array. The contract ID is used to
+    ///   fetch the corresponding contract and its fetch info.
+    /// * `epoch` - An optional reference to an `Epoch` object. If provided, the function calculates
+    ///   the fee for the contract operations.
+    /// * `add_to_cache_if_pulled` - A boolean indicating whether to add the fetched contract to the
+    ///   cache if it was pulled from storage.
+    /// * `transaction` - A `TransactionArg` object representing the transaction to be used
+    ///
+    ///   for fetching the contract.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<(Option<FeeResult>, Option<Arc<ContractFetchInfo>>), Error>` - If successful,
+    ///   returns a tuple containing an `Option` with the `FeeResult` (if an epoch was provided) and
+    ///   an `Option` containing an `Arc` to the fetched `ContractFetchInfo`. If an error occurs
+    ///   during the contract fetching or fee calculation, returns an `Error`.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error if the contract fetching or fee calculation fails.
+    pub fn get_contract_with_fetch_info_and_fee(
         &self,
         contract_id: [u8; 32],
         epoch: Option<&Epoch>,
@@ -877,7 +1000,30 @@ impl Drive {
             .map(|fetch_info| Arc::clone(&fetch_info))
     }
 
-    /// Returns the contract with the given ID from storage and also inserts it in cache.
+    /// Retrieves the specified contract from storage and inserts it into the cache.
+    ///
+    /// This function fetches the contract with the given ID from storage and, if successful,
+    /// inserts the contract into the cache. Additionally, the fee for the contract operations
+    /// is calculated if an epoch is provided.
+    ///
+    /// # Arguments
+    ///
+    /// * `contract_id` - A contract ID as a 32-byte array. The contract ID is used to
+    ///   fetch the corresponding contract from storage.
+    /// * `epoch` - An optional reference to an `Epoch` object. If provided, the function calculates
+    ///   the fee for the contract operations.
+    /// * `transaction` - A `TransactionArg` object representing the transaction to be used
+    ///   for fetching the contract from storage.
+    ///
+    /// # Returns
+    ///
+    /// * `CostResult<Option<Arc<ContractFetchInfo>>, Error>` - If successful, returns a `CostResult`
+    ///   containing an `Option` with an `Arc` to the fetched `ContractFetchInfo`. If an error occurs
+    ///   during the contract fetching or fee calculation, returns an `Error`.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error if the contract fetching or fee calculation fails.
     pub fn fetch_contract(
         &self,
         contract_id: [u8; 32],
@@ -938,7 +1084,30 @@ impl Drive {
     }
 
     /// Applies a contract and returns the fee for applying.
-    /// If the contract already exists, an update is applied, otherwise an insert.
+    ///
+    /// This function applies a given contract to the storage. If the contract already exists,
+    /// an update is performed; otherwise, a new contract is inserted. The fee for applying
+    /// the contract is also calculated and returned.
+    ///
+    /// # Arguments
+    ///
+    /// * `contract` - A reference to the `Contract` to be applied.
+    /// * `block_info` - A `BlockInfo` object containing information about the block where
+    ///   the contract is being applied.
+    /// * `apply` - A boolean indicating whether the contract should be applied (`true`) or not (`false`).
+    /// * `storage_flags` - An optional `Cow<StorageFlags>` containing the storage flags for the contract.
+    /// * `transaction` - A `TransactionArg` object representing the transaction to be used
+    ///   for applying the contract.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<FeeResult, Error>` - If successful, returns a `FeeResult` representing the fee
+    ///   for applying the contract. If an error occurs during the contract application or fee calculation,
+    ///   returns an `Error`.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error if the contract application or fee calculation fails.
     pub fn apply_contract(
         &self,
         contract: &Contract,
@@ -1405,7 +1574,7 @@ mod tests {
                 .expect("should update contract");
 
             let fetch_info_from_database = drive
-                .get_contract_with_fetch_info(contract.id.to_buffer(), None, true, None)
+                .get_contract_with_fetch_info_and_fee(contract.id.to_buffer(), None, true, None)
                 .expect("should get contract")
                 .1
                 .expect("should be present");
@@ -1413,7 +1582,7 @@ mod tests {
             assert_eq!(fetch_info_from_database.contract.version, 1);
 
             let fetch_info_from_cache = drive
-                .get_contract_with_fetch_info(
+                .get_contract_with_fetch_info_and_fee(
                     contract.id.to_buffer(),
                     None,
                     true,
@@ -1431,7 +1600,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
 
             let result = drive
-                .get_contract_with_fetch_info([0; 32], None, true, None)
+                .get_contract_with_fetch_info_and_fee([0; 32], None, true, None)
                 .expect("should get contract");
 
             assert!(result.0.is_none());
@@ -1443,7 +1612,12 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
 
             let result = drive
-                .get_contract_with_fetch_info([0; 32], Some(&Epoch::new(0).unwrap()), true, None)
+                .get_contract_with_fetch_info_and_fee(
+                    [0; 32],
+                    Some(&Epoch::new(0).unwrap()),
+                    true,
+                    None,
+                )
                 .expect("should get contract");
 
             assert_eq!(
@@ -1502,7 +1676,7 @@ mod tests {
                 .expect("expected to apply contract successfully");
 
             let mut ref_contract_fetch_info_transactional = drive
-                .get_contract_with_fetch_info(
+                .get_contract_with_fetch_info_and_fee(
                     ref_contract_id_buffer,
                     Some(&Epoch::new(0).unwrap()),
                     true,
@@ -1513,7 +1687,7 @@ mod tests {
                 .expect("got contract fetch info");
 
             let mut deep_contract_fetch_info_transactional = drive
-                .get_contract_with_fetch_info(
+                .get_contract_with_fetch_info_and_fee(
                     deep_contract.id.to_buffer(),
                     Some(&Epoch::new(0).unwrap()),
                     true,
@@ -1539,13 +1713,18 @@ mod tests {
              */
 
             let deep_contract_fetch_info = drive
-                .get_contract_with_fetch_info(deep_contract.id.to_buffer(), None, true, None)
+                .get_contract_with_fetch_info_and_fee(
+                    deep_contract.id.to_buffer(),
+                    None,
+                    true,
+                    None,
+                )
                 .expect("got contract")
                 .1
                 .expect("got contract fetch info");
 
             let ref_contract_fetch_info = drive
-                .get_contract_with_fetch_info(ref_contract_id_buffer, None, true, None)
+                .get_contract_with_fetch_info_and_fee(ref_contract_id_buffer, None, true, None)
                 .expect("got contract")
                 .1
                 .expect("got contract fetch info");
@@ -1574,13 +1753,18 @@ mod tests {
              */
 
             let deep_contract_fetch_info_without_cache = drive
-                .get_contract_with_fetch_info(deep_contract.id.to_buffer(), None, true, None)
+                .get_contract_with_fetch_info_and_fee(
+                    deep_contract.id.to_buffer(),
+                    None,
+                    true,
+                    None,
+                )
                 .expect("got contract")
                 .1
                 .expect("got contract fetch info");
 
             let ref_contract_fetch_info_without_cache = drive
-                .get_contract_with_fetch_info(ref_contract_id_buffer, None, true, None)
+                .get_contract_with_fetch_info_and_fee(ref_contract_id_buffer, None, true, None)
                 .expect("got contract")
                 .1
                 .expect("got contract fetch info");
@@ -1637,7 +1821,7 @@ mod tests {
              */
 
             let mut deep_contract_fetch_info_transactional2 = drive
-                .get_contract_with_fetch_info(
+                .get_contract_with_fetch_info_and_fee(
                     deep_contract.id.to_buffer(),
                     Some(&Epoch::new(0).unwrap()),
                     true,
@@ -1648,7 +1832,7 @@ mod tests {
                 .expect("got contract fetch info");
 
             let mut ref_contract_fetch_info_transactional2 = drive
-                .get_contract_with_fetch_info(
+                .get_contract_with_fetch_info_and_fee(
                     ref_contract_id_buffer,
                     Some(&Epoch::new(0).unwrap()),
                     true,

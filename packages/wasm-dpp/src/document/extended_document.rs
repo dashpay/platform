@@ -7,6 +7,7 @@ use dpp::util::json_schema::JsonSchemaExt;
 use dpp::util::json_value::JsonValueExt;
 
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
+use dpp::serialization_traits::PlatformSerializable;
 use dpp::ProtocolError;
 use serde::{Deserialize, Serialize};
 use std::convert::TryInto;
@@ -325,8 +326,7 @@ impl ExtendedDocumentWasm {
 
     #[wasm_bindgen(js_name=toBuffer)]
     pub fn to_buffer(&self) -> Result<Buffer, JsValue> {
-        let bytes = self.0.to_cbor_buffer().with_js_error()?;
-
+        let bytes = PlatformSerializable::serialize(&self.0.clone()).with_js_error()?;
         Ok(Buffer::from_bytes(&bytes))
     }
 

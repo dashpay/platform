@@ -1,4 +1,7 @@
-use crate::ProtocolError;
+use crate::identity::KeyType;
+
+use crate::validation::SimpleConsensusValidationResult;
+use crate::{BlsModule, ProtocolError};
 use platform_value::Value;
 
 pub trait Signable {
@@ -35,4 +38,19 @@ pub trait ValueConvertible {
     fn from_object_ref(value: &Value) -> Result<Self, ProtocolError>
     where
         Self: Sized;
+}
+
+pub trait PlatformMessageSignable {
+    fn verify_signature(
+        &self,
+        public_key_type: KeyType,
+        public_key_data: &[u8],
+        signature: &[u8],
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError>;
+    fn sign_by_private_key(
+        &self,
+        private_key: &[u8],
+        key_type: KeyType,
+        bls: &impl BlsModule,
+    ) -> Result<Vec<u8>, ProtocolError>;
 }

@@ -9,6 +9,7 @@ use crate::fee::calculate_fee;
 use crate::fee::op::LowLevelDriveOperation;
 use crate::fee::result::FeeResult;
 use dpp::block::block_info::BlockInfo;
+use dpp::prelude::Revision;
 use grovedb::Element::Item;
 use grovedb::TransactionArg;
 
@@ -20,7 +21,7 @@ impl Drive {
         identity_id: [u8; 32],
         apply: bool,
         transaction: TransactionArg,
-    ) -> Result<Option<u64>, Error> {
+    ) -> Result<Option<Revision>, Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         self.fetch_identity_revision_operations(
             identity_id,
@@ -38,7 +39,7 @@ impl Drive {
         block_info: &BlockInfo,
         apply: bool,
         transaction: TransactionArg,
-    ) -> Result<(Option<u64>, FeeResult), Error> {
+    ) -> Result<(Option<Revision>, FeeResult), Error> {
         let mut drive_operations: Vec<LowLevelDriveOperation> = vec![];
         let value = self.fetch_identity_revision_operations(
             identity_id,
@@ -58,7 +59,7 @@ impl Drive {
         apply: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-    ) -> Result<Option<u64>, Error> {
+    ) -> Result<Option<Revision>, Error> {
         let direct_query_type = if apply {
             DirectQueryType::StatefulDirectQuery
         } else {
@@ -76,11 +77,12 @@ impl Drive {
             drive_operations,
         ) {
             Ok(Some(Item(encoded_revision, _))) => {
-                let revision = u64::from_be_bytes(encoded_revision.try_into().map_err(|_| {
-                    Error::Drive(DriveError::CorruptedElementType(
-                        "identity revision was not 8 bytes as expected",
-                    ))
-                })?);
+                let revision =
+                    Revision::from_be_bytes(encoded_revision.try_into().map_err(|_| {
+                        Error::Drive(DriveError::CorruptedElementType(
+                            "identity revision was not 8 bytes as expected",
+                        ))
+                    })?);
 
                 Ok(Some(revision))
             }

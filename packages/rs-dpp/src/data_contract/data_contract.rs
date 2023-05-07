@@ -3,11 +3,10 @@ use bincode::de::{BorrowDecoder, Decoder};
 use bincode::enc::Encoder;
 use bincode::error::{DecodeError, EncodeError};
 use bincode::{BorrowDecode, Decode, Encode};
-use futures::StreamExt;
 use std::collections::{BTreeMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 
-use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable, ValueConvertible};
+use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use itertools::{Either, Itertools};
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::{Bytes32, Identifier};

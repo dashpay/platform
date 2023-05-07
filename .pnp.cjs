@@ -8222,7 +8222,8 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["semver", "npm:7.3.8"],\
             ["sinon", "npm:11.1.2"],\
             ["sinon-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:3.7.0"],\
-            ["table", "npm:5.4.6"]\
+            ["table", "npm:5.4.6"],\
+            ["wrap-ansi", "npm:7.0.0"]\
           ],\
           "linkType": "SOFT"\
         }]\
@@ -12763,7 +12764,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["log-update", "npm:4.0.0"],\
             ["p-map", "npm:4.0.0"],\
             ["rfdc", "npm:1.3.0"],\
-            ["rxjs", "npm:7.8.0"],\
+            ["rxjs", "npm:7.8.1"],\
             ["through", "npm:2.3.8"],\
             ["wrap-ansi", "npm:7.0.0"]\
           ],\
@@ -16058,6 +16059,14 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "packageLocation": "./.yarn/cache/rxjs-npm-7.8.0-722f1c7172-61b4d4fd32.zip/node_modules/rxjs/",\
           "packageDependencies": [\
             ["rxjs", "npm:7.8.0"],\
+            ["tslib", "npm:2.4.1"]\
+          ],\
+          "linkType": "HARD"\
+        }],\
+        ["npm:7.8.1", {\
+          "packageLocation": "./.yarn/cache/rxjs-npm-7.8.1-41c443a75b-de4b53db10.zip/node_modules/rxjs/",\
+          "packageDependencies": [\
+            ["rxjs", "npm:7.8.1"],\
             ["tslib", "npm:2.4.1"]\
           ],\
           "linkType": "HARD"\

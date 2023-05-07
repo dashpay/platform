@@ -123,7 +123,7 @@ fn validate_document_transitions_within_contract(
     let drive = platform.drive;
     // Data Contract must exist
     let Some(contract_fetch_info) = drive
-            .get_contract_with_fetch_info(data_contract_id.0 .0, None, false, transaction)?
+            .get_contract_with_fetch_info_and_fee(data_contract_id.0 .0, None, false, transaction)?
             .1
         else {
             return Ok(ConsensusValidationResult::new_with_error(BasicError::DataContractNotPresentError(DataContractNotPresentError::new(*data_contract_id)).into()));

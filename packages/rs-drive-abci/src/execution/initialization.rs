@@ -108,10 +108,15 @@ where
         };
         let v20_fork = fork_info.since;
 
-        tracing::trace!(requested, v20_fork, "selecting initial core lock height");
-
         if let Some(requested) = requested {
             let best = self.core_rpc.get_best_chain_lock()?.core_block_height;
+
+            tracing::trace!(
+                requested,
+                v20_fork,
+                best,
+                "selecting initial core lock height"
+            );
             // TODO in my opinion, the condition should be:
             //
             // `v20_fork <= requested && requested <= best`
@@ -130,6 +135,7 @@ where
                 .into())
             }
         } else {
+            tracing::trace!(v20_fork, "used fork height as initial core lock height");
             Ok(v20_fork)
         }
     }
