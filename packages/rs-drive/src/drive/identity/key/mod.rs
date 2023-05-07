@@ -5,7 +5,7 @@ pub mod fetch;
 pub(crate) mod insert;
 #[cfg(feature = "full")]
 pub(crate) mod insert_key_hash_identity_reference;
-#[cfg(any(feature = "full", feature = "verify"))]
+#[cfg(feature = "full")]
 /// Prove module
 pub mod prove;
 #[cfg(any(feature = "full", feature = "verify"))]
