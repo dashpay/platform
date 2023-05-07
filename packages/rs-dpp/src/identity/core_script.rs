@@ -4,7 +4,6 @@ use bincode::error::{DecodeError, EncodeError};
 use bincode::{BorrowDecode, Decode, Encode};
 use dashcore::blockdata::opcodes;
 use std::fmt;
-use std::io::{Read, Write};
 use std::ops::Deref;
 
 use dashcore::{Script as DashcoreScript, Script};

@@ -979,6 +979,7 @@ version = "0.25.0-dev.6"
 dependencies = [
  "prost",
  "prost-build",
+ "prost-types",
 ]
 
 [[package]]
@@ -1200,7 +1201,6 @@ dependencies = [
  "ciborium",
  "costs",
  "criterion",
- "dapi-grpc",
  "dpp",
  "enum-map",
  "grovedb",
@@ -1235,6 +1235,7 @@ dependencies = [
  "chrono",
  "ciborium",
  "clap 4.2.7",
+ "dapi-grpc",
  "dashcore-rpc",
  "dotenvy",
  "dpp",

@@ -68,7 +68,7 @@ pub(super) fn fetch_documents_for_transitions_knowing_contract_id_and_document_t
     //todo: deal with fee result
     //we only want to add to the cache if we are validating in a transaction
     let add_to_cache_if_pulled = transaction.is_some();
-    let (_, contract_fetch_info) = drive.get_contract_with_fetch_info(
+    let (_, contract_fetch_info) = drive.get_contract_with_fetch_info_and_fee(
         contract_id.to_buffer(),
         Some(&platform.state.epoch()),
         add_to_cache_if_pulled,
@@ -124,7 +124,7 @@ pub(super) fn fetch_documents_for_transitions_knowing_contract_and_document_type
         order_by: Default::default(),
         start_at: None,
         start_at_included: false,
-        block_time: None,
+        block_time_ms: None,
     };
 
     //todo: deal with cost of this operation

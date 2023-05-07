@@ -3,8 +3,6 @@ extern crate proc_macro;
 use proc_macro::TokenStream;
 
 use quote::quote;
-use syn::parse::Parser;
-use syn::spanned::Spanned;
 use syn::{parse_macro_input, DeriveInput, Expr, Lit, Meta};
 
 #[proc_macro_derive(

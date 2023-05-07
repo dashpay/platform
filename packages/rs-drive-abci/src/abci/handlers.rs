@@ -508,44 +508,30 @@ where
 
     fn query(&self, request: RequestQuery) -> Result<ResponseQuery, ResponseException> {
         let RequestQuery {
-            data,
-            path,
-            height,
-            prove,
+            data, path, prove, ..
         } = request;
 
-        match self.platform.drive.query_serialized(data, path, prove) {
-            Ok(data) => {
-                Ok(ResponseQuery {
-                    //todo: right now just put GRPC error codes,
-                    //  later we will use own error codes
-                    code: 0,
-                    log: "".to_string(),
-                    info: "".to_string(),
-                    index: 0,
-                    key: vec![],
-                    value: data,
-                    proof_ops: None,
-                    height,
-                    codespace: "".to_string(),
-                })
-            }
-            Err(error) => {
-                Ok(ResponseQuery {
-                    //todo: right now just put GRPC error codes,
-                    //  later we will use own error codes
-                    code: 1,
-                    log: "".to_string(),
-                    info: "".to_string(),
-                    index: 0,
-                    key: vec![],
-                    value: vec![],
-                    proof_ops: None,
-                    height,
-                    codespace: "".to_string(),
-                })
-            }
-        }
+        let result = self.platform.query(path.as_str(), data.as_slice(), prove)?;
+
+        let (code, data) = if result.is_valid() {
+            (0, result.data.unwrap_or_default())
+        } else {
+            (1, vec![])
+        };
+
+        Ok(ResponseQuery {
+            //todo: right now just put GRPC error codes,
+            //  later we will use own error codes
+            code,
+            log: "".to_string(),
+            info: "".to_string(),
+            index: 0,
+            key: vec![],
+            value: data,
+            proof_ops: None,
+            height: self.platform.state.read().unwrap().height() as i64,
+            codespace: "".to_string(),
+        })
     }
 }
 //

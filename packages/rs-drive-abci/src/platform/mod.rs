@@ -47,7 +47,7 @@ use dashcore_rpc::dashcore::hashes::hex::FromHex;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::{BlockHash, QuorumHash};
 
-use dpp::block::block_info::BlockInfo;
+use dpp::block::block_info::ExtendedBlockInfo;
 use dpp::serialization_traits::PlatformDeserializable;
 use drive::error::drive::DriveError;
 use drive::error::Error::GroveDB;
@@ -168,7 +168,8 @@ impl Platform<MockCoreRPCLike> {
             return Ok(false);
         };
 
-        let block_info: BlockInfo = BlockInfo::deserialize(serialized_block_info.as_slice())?;
+        let block_info: ExtendedBlockInfo =
+            ExtendedBlockInfo::deserialize(serialized_block_info.as_slice())?;
 
         let maybe_quorum_hash = self
             .drive
@@ -231,7 +232,7 @@ impl<C> Platform<C> {
         C: CoreRPCLike,
     {
         let config = config.unwrap_or_default();
-        let drive = Drive::open(path, config.drive.clone()).map_err(Error::Drive)?;
+        let drive = Drive::open(path, Some(config.drive.clone())).map_err(Error::Drive)?;
 
         let current_protocol_version_in_consensus = drive
             .fetch_current_protocol_version(None)
@@ -281,7 +282,7 @@ impl<C> Platform<C> {
     where
         C: CoreRPCLike,
     {
-        let block_info = BlockInfo::deserialize(serialized_block_info.as_slice())?;
+        let block_info = ExtendedBlockInfo::deserialize(serialized_block_info.as_slice())?;
 
         let maybe_quorum_hash = drive
             .grove

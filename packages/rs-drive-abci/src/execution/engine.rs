@@ -1,6 +1,6 @@
 use dashcore_rpc::dashcore::hashes::{hex::ToHex, Hash};
 use dashcore_rpc::dashcore::{QuorumHash, Txid};
-use dpp::block::block_info::BlockInfo;
+use dpp::block::block_info::{BlockInfo, ExtendedBlockInfo};
 use dpp::block::epoch::Epoch;
 use dpp::bls_signatures;
 use dpp::consensus::ConsensusError;
@@ -509,7 +509,7 @@ where
     // TODO: remove function from here
     fn store_ephemeral_data(
         &self,
-        block_info: &BlockInfo,
+        block_info: &ExtendedBlockInfo,
         quorum_hash: &QuorumHash,
         transaction: &Transaction,
     ) -> Result<(), Error> {
@@ -545,7 +545,7 @@ where
     /// Update the current quorums if the core_height changes
     pub fn update_state_cache_and_quorums(
         &self,
-        block_info: BlockInfo,
+        block_info: ExtendedBlockInfo,
         transaction: &Transaction,
     ) -> Result<(), Error> {
         let mut block_execution_context = self.block_execution_context.write().unwrap();
@@ -719,7 +719,8 @@ where
         }
 
         let state_cache = self.state.read().unwrap();
-        if state_cache.current_validator_set_quorum_hash.as_inner() != &commit_info.quorum_hash {
+        let current_quorum_hash = state_cache.current_validator_set_quorum_hash.into_inner();
+        if current_quorum_hash != commit_info.quorum_hash {
             validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
                 "received a block for h: {} r: {} with validator set quorum hash {} expected current validator set quorum hash is {}",
                 height, round, hex::encode(commit_info.quorum_hash), hex::encode(block_platform_state.current_validator_set_quorum_hash)
@@ -791,7 +792,15 @@ where
         // At the end we update the state cache
 
         drop(guarded_block_execution_context);
-        self.update_state_cache_and_quorums(to_commit_block_info, transaction)?;
+
+        let extended_block_info = ExtendedBlockInfo {
+            basic_info: to_commit_block_info,
+            quorum_hash: current_quorum_hash,
+            signature: commit_info.block_signature,
+            round,
+        };
+
+        self.update_state_cache_and_quorums(extended_block_info, transaction)?;
 
         let mut drive_cache = self.drive.cache.write().unwrap();
 
@@ -826,7 +835,7 @@ where
         if let Some(block_info) = state_read_guard.last_committed_block_info.as_ref() {
             // We do not put the transaction, because this event happens outside of a block
             execution_event.and_then_borrowed_validation(|execution_event| {
-                self.validate_fees_of_event(execution_event, block_info, None)
+                self.validate_fees_of_event(execution_event, &block_info.basic_info, None)
             })
         } else {
             execution_event.and_then_borrowed_validation(|execution_event| {

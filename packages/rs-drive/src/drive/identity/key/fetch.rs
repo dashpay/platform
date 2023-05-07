@@ -81,9 +81,11 @@ pub enum KeyRequestType {
 }
 
 #[cfg(any(feature = "full", feature = "verify"))]
-type PurposeU8 = u8;
+/// The key purpose as u8.
+pub type PurposeU8 = u8;
 #[cfg(any(feature = "full", feature = "verify"))]
-type SecurityLevelU8 = u8;
+/// The key security level as u8.
+pub type SecurityLevelU8 = u8;
 
 #[cfg(feature = "full")]
 /// Type alias for a hashset of IdentityPublicKey Ids as the outcome of the query.
@@ -92,6 +94,14 @@ pub type KeyIDHashSet = HashSet<KeyID>;
 #[cfg(feature = "full")]
 /// Type alias for a vec of IdentityPublicKey Ids as the outcome of the query.
 pub type KeyIDVec = Vec<KeyID>;
+
+#[cfg(feature = "full")]
+/// Type alias for a vec of IdentityPublicKeys as the outcome of the query.
+pub type KeyVec = Vec<IdentityPublicKey>;
+
+#[cfg(feature = "full")]
+/// Type alias for a vec of serialized IdentityPublicKeys as the outcome of the query.
+pub type SerializedKeyVec = Vec<Vec<u8>>;
 
 #[cfg(feature = "full")]
 /// Type alias for a single IdentityPublicKey as the outcome of the query.
@@ -137,6 +147,17 @@ pub trait IdentityPublicKeyResult {
     fn try_from_query_results(value: QueryResultElements) -> Result<Self, Error>
     where
         Self: Sized;
+}
+
+#[cfg(feature = "full")]
+fn element_to_serialized_identity_public_key(element: Element) -> Result<Vec<u8>, Error> {
+    let Item(value, _) = element else {
+        return Err(Error::Drive(DriveError::CorruptedElementType(
+            "expected item for identity public key",
+        )))
+    };
+
+    Ok(value)
 }
 
 #[cfg(feature = "full")]
@@ -191,6 +212,19 @@ fn supported_query_result_element_to_identity_public_key(
         | QueryResultElement::KeyElementPairResultItem((_, element))
         | QueryResultElement::PathKeyElementTrioResultItem((_, _, element)) => {
             element_to_identity_public_key(element)
+        }
+    }
+}
+
+#[cfg(feature = "full")]
+fn supported_query_result_element_to_serialized_identity_public_key(
+    query_result_element: QueryResultElement,
+) -> Result<Vec<u8>, Error> {
+    match query_result_element {
+        QueryResultElement::ElementResultItem(element)
+        | QueryResultElement::KeyElementPairResultItem((_, element))
+        | QueryResultElement::PathKeyElementTrioResultItem((_, _, element)) => {
+            element_to_serialized_identity_public_key(element)
         }
     }
 }
@@ -349,6 +383,46 @@ impl IdentityPublicKeyResult for KeyIDVec {
             .elements
             .into_iter()
             .map(supported_query_result_element_to_identity_public_key_id)
+            .collect()
+    }
+}
+
+#[cfg(feature = "full")]
+impl IdentityPublicKeyResult for KeyVec {
+    fn try_from_path_key_optional(value: Vec<PathKeyOptionalElementTrio>) -> Result<Self, Error> {
+        // We do not care about non existence
+        value
+            .into_iter()
+            .filter_map(|(_, _, maybe_element)| maybe_element)
+            .map(element_to_identity_public_key)
+            .collect()
+    }
+
+    fn try_from_query_results(value: QueryResultElements) -> Result<Self, Error> {
+        value
+            .elements
+            .into_iter()
+            .map(supported_query_result_element_to_identity_public_key)
+            .collect()
+    }
+}
+
+#[cfg(feature = "full")]
+impl IdentityPublicKeyResult for SerializedKeyVec {
+    fn try_from_path_key_optional(value: Vec<PathKeyOptionalElementTrio>) -> Result<Self, Error> {
+        // We do not care about non existence
+        value
+            .into_iter()
+            .filter_map(|(_, _, maybe_element)| maybe_element)
+            .map(element_to_serialized_identity_public_key)
+            .collect()
+    }
+
+    fn try_from_query_results(value: QueryResultElements) -> Result<Self, Error> {
+        value
+            .elements
+            .into_iter()
+            .map(supported_query_result_element_to_serialized_identity_public_key)
             .collect()
     }
 }
@@ -795,6 +869,44 @@ impl Drive {
                 T::try_from_path_key_optional(result)
             }
         }
+    }
+
+    /// Fetches all keys associated with the specified identities.
+    ///
+    /// This function retrieves all keys associated with each identity ID provided
+    /// and returns the result as a `BTreeMap` mapping the identity IDs to their respective keys.
+    ///
+    /// # Arguments
+    ///
+    /// * `identity_ids` - A slice of identity IDs as 32-byte arrays. Each identity ID is used to
+    ///   fetch its associated keys.
+    /// * `transaction` - A `TransactionArg` object representing the transaction to be used
+    ///   for fetching the keys.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<BTreeMap<[u8; 32], Vec<BTreeMap<KeyID, IdentityPublicKey>>>, Error>` - If successful,
+    ///   returns a `BTreeMap` where the keys are the identity IDs and the values are `Vec`s containing
+    ///   `BTreeMap`s mapping `KeyID`s to `IdentityPublicKey`s. If an error occurs during the key
+    ///   fetching, returns an `Error`.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error if the key fetching fails.
+    pub fn fetch_identities_all_keys(
+        &self,
+        identity_ids: &[[u8; 32]],
+        transaction: TransactionArg,
+    ) -> Result<BTreeMap<[u8; 32], BTreeMap<KeyID, IdentityPublicKey>>, Error> {
+        identity_ids
+            .iter()
+            .map(|identity_id| {
+                Ok((
+                    *identity_id,
+                    Self::fetch_all_identity_keys(&self, *identity_id, transaction)?,
+                ))
+            })
+            .collect()
     }
 }
 
