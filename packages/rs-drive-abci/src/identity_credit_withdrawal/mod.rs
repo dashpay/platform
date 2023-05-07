@@ -54,7 +54,7 @@ where
 
         let data_contract_id = &withdrawals_contract::CONTRACT_ID;
 
-        let (_, Some(contract_fetch_info)) = self.drive.get_contract_with_fetch_info(
+        let (_, Some(contract_fetch_info)) = self.drive.get_contract_with_fetch_info_and_fee(
             data_contract_id.to_buffer(),
             None,
             true,
@@ -192,7 +192,7 @@ where
 
         let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
 
-        let (_, Some(contract_fetch_info)) = self.drive.get_contract_with_fetch_info(
+        let (_, Some(contract_fetch_info)) = self.drive.get_contract_with_fetch_info_and_fee(
             data_contract_id.to_buffer(),
             None,
             true,
@@ -318,7 +318,7 @@ where
 
         let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
 
-        let (_, Some(contract_fetch_info)) = self.drive.get_contract_with_fetch_info(
+        let (_, Some(contract_fetch_info)) = self.drive.get_contract_with_fetch_info_and_fee(
             data_contract_id.to_buffer(),
             None,
             true,

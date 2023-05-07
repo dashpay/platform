@@ -28,6 +28,15 @@ Platform.getIdentity = {
   responseType: platform_pb.GetIdentityResponse
 };
 
+Platform.getIdentityKeys = {
+  methodName: "getIdentityKeys",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetIdentityKeysRequest,
+  responseType: platform_pb.GetIdentityKeysResponse
+};
+
 Platform.getIdentityBalance = {
   methodName: "getIdentityBalance",
   service: Platform,
@@ -55,6 +64,15 @@ Platform.getDataContract = {
   responseType: platform_pb.GetDataContractResponse
 };
 
+Platform.getDataContracts = {
+  methodName: "getDataContracts",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetDataContractsRequest,
+  responseType: platform_pb.GetDataContractsResponse
+};
+
 Platform.getDocuments = {
   methodName: "getDocuments",
   service: Platform,
@@ -71,6 +89,15 @@ Platform.getIdentitiesByPublicKeyHashes = {
   responseStream: false,
   requestType: platform_pb.GetIdentitiesByPublicKeyHashesRequest,
   responseType: platform_pb.GetIdentitiesByPublicKeyHashesResponse
+};
+
+Platform.getIdentityByPublicKeyHashes = {
+  methodName: "getIdentityByPublicKeyHashes",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetIdentityByPublicKeyHashesRequest,
+  responseType: platform_pb.GetIdentityByPublicKeyHashesResponse
 };
 
 Platform.waitForStateTransitionResult = {
@@ -134,6 +161,37 @@ PlatformClient.prototype.getIdentity = function getIdentity(requestMessage, meta
     callback = arguments[1];
   }
   var client = grpc.unary(Platform.getIdentity, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getIdentityKeys = function getIdentityKeys(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getIdentityKeys, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,
@@ -253,6 +311,37 @@ PlatformClient.prototype.getDataContract = function getDataContract(requestMessa
   };
 };
 
+PlatformClient.prototype.getDataContracts = function getDataContracts(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getDataContracts, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
 PlatformClient.prototype.getDocuments = function getDocuments(requestMessage, metadata, callback) {
   if (arguments.length === 2) {
     callback = arguments[1];
@@ -289,6 +378,37 @@ PlatformClient.prototype.getIdentitiesByPublicKeyHashes = function getIdentities
     callback = arguments[1];
   }
   var client = grpc.unary(Platform.getIdentitiesByPublicKeyHashes, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getIdentityByPublicKeyHashes = function getIdentityByPublicKeyHashes(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getIdentityByPublicKeyHashes, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,

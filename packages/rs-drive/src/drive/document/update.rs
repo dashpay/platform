@@ -858,7 +858,8 @@ mod tests {
             .expect("should create alice profile");
 
         let sql_string = "select * from profile";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
+        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+            .expect("should build query");
 
         let (results_no_transaction, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None)
@@ -953,7 +954,8 @@ mod tests {
             .expect("should commit transaction");
 
         let sql_string = "select * from profile";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
+        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+            .expect("should build query");
 
         let (results_no_transaction, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None)
@@ -1062,7 +1064,8 @@ mod tests {
             .expect("should commit transaction");
 
         let sql_string = "select * from profile";
-        let query = DriveQuery::from_sql_expr(sql_string, &contract).expect("should build query");
+        let query = DriveQuery::from_sql_expr(sql_string, &contract, &DriveConfig::default())
+            .expect("should build query");
 
         let (results_no_transaction, _, _) = query
             .execute_raw_results_no_proof(&drive, None, None)

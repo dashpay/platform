@@ -13,7 +13,8 @@ edition = "2021"
 license = "MIT"
 
 [dependencies]
-prost = { version = "0.11" }
+prost = { version = "0.11.9" }
+prost-types = { version = "0.11.9" }
 
 [build-dependencies]
 prost-build = { version = "0.11" }

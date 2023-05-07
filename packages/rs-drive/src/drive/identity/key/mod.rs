@@ -5,6 +5,12 @@ pub mod fetch;
 pub(crate) mod insert;
 #[cfg(feature = "full")]
 pub(crate) mod insert_key_hash_identity_reference;
+#[cfg(any(feature = "full", feature = "verify"))]
+/// Prove module
+pub mod prove;
+#[cfg(any(feature = "full", feature = "verify"))]
+/// Queries module
+pub mod queries;
 
 #[cfg(feature = "full")]
 /// Apply info for a contract

@@ -58,9 +58,15 @@ pub enum QuerySyntaxError {
     /// Invalid contract id error
     #[error("invalid contract id error: {0}")]
     InvalidContractId(&'static str),
+    /// Query for a key has an invalid parameter
+    #[error("query invalid key parameter error: {0}")]
+    InvalidKeyParameter(String),
     /// Query invalid limit error
     #[error("query invalid limit error: {0}")]
-    InvalidLimit(&'static str),
+    InvalidLimit(String),
+    /// Query invalid parameter error
+    #[error("query invalid parameter error: {0}")]
+    InvalidParameter(String),
     /// Query invalid format for where clause error
     #[error("query invalid format for where clause error: {0}")]
     InvalidFormatWhereClause(&'static str),

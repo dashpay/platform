@@ -232,7 +232,7 @@ impl<C> Platform<C> {
         C: CoreRPCLike,
     {
         let config = config.unwrap_or_default();
-        let drive = Drive::open(path, config.drive.clone()).map_err(Error::Drive)?;
+        let drive = Drive::open(path, Some(config.drive.clone())).map_err(Error::Drive)?;
 
         let current_protocol_version_in_consensus = drive
             .fetch_current_protocol_version(None)

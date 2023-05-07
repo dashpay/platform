@@ -206,7 +206,8 @@ impl Drive {
             .contract
             .document_type_for_name(document_type_name)?;
 
-        let query = DriveQuery::from_cbor(query_cbor, &contract.contract, document_type)?;
+        let query =
+            DriveQuery::from_cbor(query_cbor, &contract.contract, document_type, &self.config)?;
 
         self.query_documents_as_serialized(query, epoch, transaction)
     }
@@ -302,7 +303,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
-        let query = DriveQuery::from_cbor(query_cbor, contract, document_type)?;
+        let query = DriveQuery::from_cbor(query_cbor, contract, document_type, &self.config)?;
 
         query.execute_raw_results_no_proof_internal(self, transaction, drive_operations)
     }
@@ -387,7 +388,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<Vec<u8>, Error> {
-        let query = DriveQuery::from_cbor(query_cbor, contract, document_type)?;
+        let query = DriveQuery::from_cbor(query_cbor, contract, document_type, &self.config)?;
 
         query.execute_with_proof_internal(self, transaction, drive_operations)
     }
@@ -429,7 +430,7 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<([u8; 32], Vec<Vec<u8>>), Error> {
-        let query = DriveQuery::from_cbor(query_cbor, contract, document_type)?;
+        let query = DriveQuery::from_cbor(query_cbor, contract, document_type, &self.config)?;
 
         query.execute_with_proof_only_get_elements_internal(self, transaction, drive_operations)
     }

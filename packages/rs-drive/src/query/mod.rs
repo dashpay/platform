@@ -105,6 +105,7 @@ use dpp::platform_value::platform_value;
 use dpp::platform_value::Value;
 
 use crate::common::encode::encode_u64;
+use crate::drive::config::DriveConfig;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::ProtocolError;
 
@@ -332,13 +333,14 @@ impl<'a> DriveQuery<'a> {
         query_cbor: &[u8],
         contract: &'a Contract,
         document_type: &'a DocumentType,
+        config: &DriveConfig,
     ) -> Result<Self, Error> {
         let query_document_value: Value = ciborium::de::from_reader(query_cbor).map_err(|_| {
             Error::Query(QuerySyntaxError::DeserializationError(
                 "unable to decode query from cbor".to_string(),
             ))
         })?;
-        Self::from_value(query_document_value, contract, document_type)
+        Self::from_value(query_document_value, contract, document_type, config)
     }
 
     #[cfg(any(feature = "full", feature = "verify"))]
@@ -347,9 +349,10 @@ impl<'a> DriveQuery<'a> {
         query_value: Value,
         contract: &'a Contract,
         document_type: &'a DocumentType,
+        config: &DriveConfig,
     ) -> Result<Self, Error> {
         let query_document: BTreeMap<String, Value> = query_value.into_btree_string_map()?;
-        Self::from_btree_map_value(query_document, contract, document_type)
+        Self::from_btree_map_value(query_document, contract, document_type, config)
     }
 
     #[cfg(any(feature = "full", feature = "verify"))]
@@ -358,22 +361,24 @@ impl<'a> DriveQuery<'a> {
         mut query_document: BTreeMap<String, Value>,
         contract: &'a Contract,
         document_type: &'a DocumentType,
+        config: &DriveConfig,
     ) -> Result<Self, Error> {
         let maybe_limit: Option<u16> = query_document
             .remove_optional_integer("limit")
             .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
 
         let limit = maybe_limit
-            .map_or(Some(defaults::DEFAULT_QUERY_LIMIT), |limit_value| {
-                if limit_value == 0 || limit_value > defaults::DEFAULT_QUERY_LIMIT {
+            .map_or(Some(config.default_query_limit), |limit_value| {
+                if limit_value == 0 || limit_value > config.default_query_limit {
                     None
                 } else {
                     Some(limit_value)
                 }
             })
-            .ok_or(Error::Query(QuerySyntaxError::InvalidLimit(
-                "limit should be a integer from 1 to 100",
-            )))?;
+            .ok_or(Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                "limit greater than max limit {}",
+                config.max_query_limit
+            ))))?;
 
         let block_time_ms: Option<u64> = query_document
             .remove_optional_integer("blockTime")
@@ -484,18 +489,20 @@ impl<'a> DriveQuery<'a> {
         block_time_ms: Option<u64>,
         contract: &'a Contract,
         document_type: &'a DocumentType,
+        config: &DriveConfig,
     ) -> Result<Self, Error> {
         let limit = maybe_limit
-            .map_or(Some(defaults::DEFAULT_QUERY_LIMIT), |limit_value| {
-                if limit_value == 0 || limit_value > defaults::DEFAULT_QUERY_LIMIT {
+            .map_or(Some(config.default_query_limit), |limit_value| {
+                if limit_value == 0 || limit_value > config.default_query_limit {
                     None
                 } else {
                     Some(limit_value)
                 }
             })
-            .ok_or(Error::Query(QuerySyntaxError::InvalidLimit(
-                "limit should be a integer from 1 to 100",
-            )))?;
+            .ok_or(Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                "limit greater than max limit {}",
+                config.max_query_limit
+            ))))?;
 
         let all_where_clauses: Vec<WhereClause> = match where_clause {
             Value::Null => Ok(vec![]),
@@ -554,7 +561,11 @@ impl<'a> DriveQuery<'a> {
 
     #[cfg(any(feature = "full", feature = "verify"))]
     /// Converts a SQL expression to a `DriveQuery`.
-    pub fn from_sql_expr(sql_string: &str, contract: &'a Contract) -> Result<Self, Error> {
+    pub fn from_sql_expr(
+        sql_string: &str,
+        contract: &'a Contract,
+        config: &DriveConfig,
+    ) -> Result<Self, Error> {
         let dialect: GenericDialect = sqlparser::dialect::GenericDialect {};
         let statements: Vec<Statement> = Parser::parse_sql(&dialect, sql_string)
             .map_err(|_| Error::Query(QuerySyntaxError::InvalidSQL("Issue parsing sql")))?;
@@ -583,11 +594,12 @@ impl<'a> DriveQuery<'a> {
                 }
                 _ => None,
             }
-            .ok_or(Error::Query(QuerySyntaxError::InvalidLimit(
-                "Issue parsing sql: invalid limit value",
-            )))?
+            .ok_or(Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                "limit greater than max limit {}",
+                config.max_query_limit
+            ))))?
         } else {
-            defaults::DEFAULT_QUERY_LIMIT
+            config.default_query_limit
         };
 
         let order_by: IndexMap<String, OrderClause> = query
@@ -1623,6 +1635,7 @@ mod tests {
     use dpp::util::cbor_serializer;
     use serde_json::Value::Null;
 
+    use crate::drive::config::DriveConfig;
     use dpp::block::block_info::BlockInfo;
 
     fn setup_family_contract() -> (Drive, Contract) {
@@ -1685,8 +1698,13 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
-            .expect_err("all ranges must be on same field");
+        DriveQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            &document_type,
+            &DriveConfig::default(),
+        )
+        .expect_err("all ranges must be on same field");
     }
 
     #[test]
@@ -1707,9 +1725,13 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type).expect_err(
-            "fields of queries must of defined supported types (where, limit, orderBy...)",
-        );
+        DriveQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            &document_type,
+            &DriveConfig::default(),
+        )
+        .expect_err("fields of queries must of defined supported types (where, limit, orderBy...)");
     }
 
     #[test]
@@ -1731,8 +1753,13 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
-            .expect_err("the query should not be created");
+        DriveQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            &document_type,
+            &DriveConfig::default(),
+        )
+        .expect_err("the query should not be created");
     }
 
     #[test]
@@ -1754,8 +1781,13 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
-            .expect("the query should be created");
+        DriveQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            &document_type,
+            &DriveConfig::default(),
+        )
+        .expect("the query should be created");
     }
 
     #[test]
@@ -1776,8 +1808,13 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
-            .expect("query should be fine for a 255 byte long string");
+        DriveQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            &document_type,
+            &DriveConfig::default(),
+        )
+        .expect("query should be fine for a 255 byte long string");
     }
 
     #[test]
@@ -1802,8 +1839,13 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
-            .expect("fields of queries length must be under 256 bytes long");
+        let query = DriveQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            document_type,
+            &DriveConfig::default(),
+        )
+        .expect("fields of queries length must be under 256 bytes long");
         query
             .execute_raw_results_no_proof(&drive, None, None)
             .expect_err("fields of queries length must be under 256 bytes long");
@@ -1829,7 +1871,7 @@ mod tests {
     //     });
     //
     //     let where_cbor = serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
-    //     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
+    //     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type, &DriveConfig::default())
     //         .expect("The query itself should be valid for a null type");
     //     query
     //         .execute_no_proof(&drive, None, None)
@@ -1857,7 +1899,7 @@ mod tests {
     //     });
     //
     //     let where_cbor = serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
-    //     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
+    //     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type, &DriveConfig::default())
     //         .expect("The query itself should be valid for a null type");
     //     query
     //         .execute_no_proof(&drive, None, None)
@@ -1884,8 +1926,13 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
-            .expect("The query itself should be valid for a null type");
+        let query = DriveQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            document_type,
+            &DriveConfig::default(),
+        )
+        .expect("The query itself should be valid for a null type");
         query
             .execute_raw_results_no_proof(&drive, None, None)
             .expect("a Null value doesn't make sense for a float");
@@ -1911,8 +1958,13 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
-            .expect("query should be valid for empty array");
+        let query = DriveQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            document_type,
+            &DriveConfig::default(),
+        )
+        .expect("query should be valid for empty array");
 
         query
             .execute_raw_results_no_proof(&drive, None, None)
@@ -1943,8 +1995,13 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
-            .expect("query is valid for too many elements");
+        let query = DriveQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            document_type,
+            &DriveConfig::default(),
+        )
+        .expect("query is valid for too many elements");
 
         query
             .execute_raw_results_no_proof(&drive, None, None)
@@ -1975,8 +2032,13 @@ mod tests {
         // The is actually valid, however executing it is not
         // This is in order to optimize query execution
 
-        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
-            .expect("the query should be created");
+        let query = DriveQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            document_type,
+            &DriveConfig::default(),
+        )
+        .expect("the query should be created");
 
         query
             .execute_raw_results_no_proof(&drive, None, None)
@@ -2000,8 +2062,13 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
-            .expect_err("starts with can not start with an empty string");
+        DriveQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            &document_type,
+            &DriveConfig::default(),
+        )
+        .expect_err("starts with can not start with an empty string");
     }
 
     #[test]
@@ -2021,8 +2088,13 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
-            .expect_err("starts with can not start with an empty string");
+        DriveQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            &document_type,
+            &DriveConfig::default(),
+        )
+        .expect_err("starts with can not start with an empty string");
     }
 
     #[test]
@@ -2042,8 +2114,13 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
-            .expect_err("starts with can not start with an empty string");
+        DriveQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            &document_type,
+            &DriveConfig::default(),
+        )
+        .expect_err("starts with can not start with an empty string");
     }
 
     #[test]
@@ -2063,7 +2140,12 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
-            .expect_err("starts with can not start with an empty string");
+        DriveQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            &document_type,
+            &DriveConfig::default(),
+        )
+        .expect_err("starts with can not start with an empty string");
     }
 }
