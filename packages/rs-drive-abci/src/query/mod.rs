@@ -22,7 +22,7 @@ use dpp::{check_validation_result_with_data, ProtocolError};
 use dapi_grpc::platform::v0::get_data_contracts_response::DataContractEntry;
 use dpp::identity::{KeyID, Purpose, SecurityLevel};
 use drive::drive::identity::key::fetch::{
-    IdentityKeysRequest, KeyKindRequestType, KeyRequestType, KeyVec, PurposeU8, SecurityLevelU8,
+    IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
     SerializedKeyVec,
 };
 use drive::error::query::QuerySyntaxError;
