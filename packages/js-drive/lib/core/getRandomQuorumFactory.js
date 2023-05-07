@@ -1,14 +1,14 @@
 const BufferWriter = require('@dashevo/dashcore-lib/lib/encoding/bufferwriter');
 const Hash = require('@dashevo/dashcore-lib/lib/crypto/hash');
-const { LLMQ_TYPES } = require('@dashevo/dashcore-lib/lib/constants');
+// const { LLMQ_TYPES } = require('@dashevo/dashcore-lib/lib/constants');
 const QuorumEntry = require('@dashevo/dashcore-lib/lib/deterministicmnlist/QuorumEntry');
 const QuorumsNotFoundError = require('./errors/QuorumsNotFoundError');
-const ValidatorSet = require('../validator/ValidatorSet');
-
-const LLMQ_TYPE_TO_NAME = Object
-  .fromEntries(Object
-    .entries(LLMQ_TYPES)
-    .map(([key, value]) => [value, key.toLowerCase().replace('type_', '')]));
+// const ValidatorSet = require('../validator/ValidatorSet');
+//
+// const LLMQ_TYPE_TO_NAME = Object
+//   .fromEntries(Object
+//     .entries(LLMQ_TYPES)
+//     .map(([key, value]) => [value, key.toLowerCase().replace('type_', '')]));
 
 /**
  * Calculates scores for validator quorum selection
@@ -91,6 +91,7 @@ function getRandomQuorumFactory(
    * @returns {Promise<{ quorum: QuorumEntry, members: Object[]}|null>} - the current validator
    *  set's quorumHash
    */
+  // eslint-disable-next-line no-unused-vars
   async function getRandomQuorum(sml, quorumType, entropy, coreHeight) {
     const validatorQuorums = sml.getQuorumsOfType(quorumType);
 
@@ -103,21 +104,23 @@ function getRandomQuorumFactory(
       .getCurrentSML()
       .getValidMasternodesList();
 
-    const { result: allValidatorQuorumsExtendedInfo } = await coreRpcClient.quorum('listextended', coreHeight);
+    // const {
+    //   result: allValidatorQuorumsExtendedInfo,
+    // } = await coreRpcClient.quorum('listextended', coreHeight);
 
     // convert to object
-    const validatorQuorumsInfo = allValidatorQuorumsExtendedInfo[LLMQ_TYPE_TO_NAME[quorumType]]
-      .reduce(
-        (obj, item) => ({
-          ...obj,
-          ...item,
-        }),
-        {},
-      );
-
-    const numberOfQuorums = validatorQuorums.length;
-    const minTtl = ValidatorSet.ROTATION_BLOCK_INTERVAL * 3; // minutes
-    const dkgInterval = 24;
+    // const validatorQuorumsInfo = allValidatorQuorumsExtendedInfo[LLMQ_TYPE_TO_NAME[quorumType]]
+    //   .reduce(
+    //     (obj, item) => ({
+    //       ...obj,
+    //       ...item,
+    //     }),
+    //     {},
+    //   );
+    //
+    // const numberOfQuorums = validatorQuorums.length;
+    // const minTtl = ValidatorSet.ROTATION_BLOCK_INTERVAL * 3; // minutes
+    // const dkgInterval = 24;
 
     const quorumsMembers = {};
 
