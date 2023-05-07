@@ -73,7 +73,7 @@ pub const IDENTIFIER_FIELDS: [&str; 3] = [
     property_names::TRANSITIONS_ID,
     property_names::TRANSITIONS_DATA_CONTRACT_ID,
 ];
-pub const U32_FIELDS: [&str; 1] = [property_names::PROTOCOL_VERSION];
+pub const U16_FIELDS: [&str; 1] = [property_names::STATE_TRANSITION_PROTOCOL_VERSION];
 
 const DEFAULT_SECURITY_LEVEL: SecurityLevel = SecurityLevel::HIGH;
 
@@ -274,7 +274,7 @@ impl DocumentsBatchTransition {
 
     pub fn clean_value(value: &mut Value) -> Result<(), platform_value::Error> {
         value.replace_at_paths(IDENTIFIER_FIELDS, ReplacementType::Identifier)?;
-        value.replace_integer_type_at_paths(U32_FIELDS, IntegerReplacementType::U32)?;
+        value.replace_integer_type_at_paths(U16_FIELDS, IntegerReplacementType::U16)?;
         Ok(())
     }
 }

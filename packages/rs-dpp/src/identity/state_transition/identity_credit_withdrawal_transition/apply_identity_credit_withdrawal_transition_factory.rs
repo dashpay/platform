@@ -8,7 +8,7 @@ use platform_value::{platform_value, Bytes32, Value};
 
 use crate::contracts::withdrawals_contract::property_names;
 use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
-use crate::document::ExtendedDocument;
+use crate::document::{DocumentV0, ExtendedDocument};
 use crate::state_transition::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::util::entropy_generator::DefaultEntropyGenerator;
 use crate::version::LATEST_PLATFORM_VERSION;
@@ -122,26 +122,25 @@ where
             }
         }
 
-        let withdrawal_document = Document {
+        let withdrawal_document: Document = DocumentV0 {
             id: document_id,
             revision: None,
             owner_id: state_transition.identity_id,
             created_at: Some(document_created_at_millis),
             updated_at: Some(document_created_at_millis),
             properties: document_properties,
-        };
+        }
+        .into();
 
-        let extended_withdrawal_document = ExtendedDocument {
-            feature_version: LATEST_PLATFORM_VERSION
-                .extended_document
-                .default_current_version,
+        let extended_withdrawal_document = ExtendedDocumentV0 {
             document_type_name: document_type,
             data_contract_id: withdrawals_data_contract.id,
             document: withdrawal_document,
             data_contract: withdrawals_data_contract,
             metadata: None,
             entropy: Bytes32::default(),
-        };
+        }
+        .into();
 
         self.state_repository
             .create_document(&extended_withdrawal_document, Some(execution_context))

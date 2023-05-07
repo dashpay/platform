@@ -8,14 +8,6 @@ use crate::{
     version::ProtocolVersionValidator, ProtocolError,
 };
 
-use super::{
-    document_factory::{DocumentFactory, FactoryOptions},
-    document_transition::Action,
-    document_validator::DocumentValidator,
-    fetch_and_validate_data_contract::DataContractFetcherAndValidator,
-    DocumentsBatchTransition,
-};
-
 pub struct DocumentFacade<SR> {
     pub data_contract_fetcher_and_validator: DataContractFetcherAndValidator<SR>,
     pub validator: DocumentValidator,

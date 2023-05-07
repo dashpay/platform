@@ -1,35 +1,15 @@
-use crate::identity::v0::identity::IdentityV0;
 use crate::identity::identity_public_key::factory::KeyCount;
-use crate::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use crate::identity::state_transition::asset_lock_proof::{AssetLockProof, InstantAssetLockProof};
-use crate::identity::state_transition::identity_create_transition::IdentityCreateTransition;
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
-use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
-use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
-use crate::identity::validation::{IdentityValidator, PublicKeysValidator};
-use crate::identity::{Identity, IdentityPublicKey, KeyID, TimestampMillis};
+use crate::identity::v0::identity::IdentityV0;
+use crate::identity::{IdentityPublicKey, KeyID};
 use crate::prelude::Identifier;
 
-use crate::{BlsModule, Convertible, ProtocolError};
+use crate::ProtocolError;
 
-use dashcore::{InstantLock, Transaction};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::collections::BTreeMap;
-use std::convert::TryInto;
 use std::iter::FromIterator;
-
-use crate::consensus::basic::decode::SerializedObjectParsingError;
-use crate::consensus::basic::BasicError;
-use crate::consensus::ConsensusError;
-use crate::serialization_traits::PlatformDeserializable;
-use crate::util::deserializer;
-use crate::util::deserializer::SplitProtocolVersionOutcome;
-use crate::version::LATEST_PLATFORM_VERSION;
-
-use platform_value::Value;
-use std::sync::Arc;
-use crate::identity::v0::identity::Identity;
 
 impl IdentityV0 {
     // TODO: Move to a separate module under a feature
@@ -44,8 +24,7 @@ impl IdentityV0 {
             .map(|key| (key.id, key))
             .collect();
 
-        Identity {
-            feature_version: LATEST_PLATFORM_VERSION.identity.default_current_version,
+        IdentityV0 {
             id,
             revision,
             asset_lock_proof: Default::default(),
@@ -60,8 +39,8 @@ impl IdentityV0 {
         key_count: KeyCount,
         rng: &mut StdRng,
     ) -> Result<(Self, I), ProtocolError>
-        where
-            I: Default
+    where
+        I: Default
             + IntoIterator<Item = (IdentityPublicKey, Vec<u8>)>
             + Extend<(IdentityPublicKey, Vec<u8>)>,
     {
@@ -79,8 +58,7 @@ impl IdentityV0 {
                 .unzip();
 
         Ok((
-            Identity {
-                feature_version: LATEST_PLATFORM_VERSION.identity.default_current_version,
+            IdentityV0 {
                 id,
                 revision,
                 asset_lock_proof: Some(AssetLockProof::Instant(InstantAssetLockProof::default())),
@@ -129,8 +107,8 @@ impl IdentityV0 {
         key_count: KeyCount,
         rng: &mut StdRng,
     ) -> Result<(Vec<Self>, I), ProtocolError>
-        where
-            I: Default
+    where
+        I: Default
             + FromIterator<(IdentityPublicKey, Vec<u8>)>
             + Extend<(IdentityPublicKey, Vec<u8>)>,
     {

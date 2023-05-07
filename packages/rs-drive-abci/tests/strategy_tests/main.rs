@@ -654,7 +654,7 @@ mod tests {
                 .as_ref()
                 .map(|identity| {
                     identity
-                        .public_keys
+                        .public_keys()
                         .values()
                         .any(|key| key.disabled_at.is_some())
                 })
@@ -1654,7 +1654,7 @@ mod tests {
         assert!(identities.into_iter().any(|(_, identity)| {
             identity
                 .expect("expected identity")
-                .public_keys
+                .public_keys()
                 .into_iter()
                 .any(|(_, public_key)| public_key.is_disabled())
         }));

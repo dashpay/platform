@@ -653,7 +653,7 @@ pub(crate) fn continue_chain_for_strategy(
                         .find(|identity| identity.id == identifier)
                         .expect("expected to find an identity");
                     identity
-                        .public_keys
+                        .public_keys()
                         .extend(keys.into_iter().map(|key| (key.id, key)));
                 }
             }

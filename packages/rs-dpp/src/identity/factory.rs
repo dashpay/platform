@@ -28,7 +28,6 @@ use crate::version::LATEST_PLATFORM_VERSION;
 
 use platform_value::Value;
 use std::sync::Arc;
-use crate::identity::v0::identity::Identity;
 
 pub const IDENTITY_PROTOCOL_VERSION: u32 = 1;
 

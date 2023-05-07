@@ -5,8 +5,6 @@ use crate::data_contract::errors::{DataContractError, StructureError};
 use crate::document::document::property_names;
 use crate::document::document::property_names::{CREATED_AT, UPDATED_AT};
 
-use crate::document::Document;
-
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
 use crate::util::deserializer;
@@ -51,11 +49,11 @@ pub struct DocumentForCbor {
 }
 
 #[cfg(feature = "cbor")]
-impl TryFrom<Document> for DocumentForCbor {
+impl TryFrom<DocumentV0> for DocumentForCbor {
     type Error = ProtocolError;
 
-    fn try_from(value: Document) -> Result<Self, Self::Error> {
-        let Document {
+    fn try_from(value: DocumentV0) -> Result<Self, Self::Error> {
+        let DocumentV0 {
             id,
             properties,
             owner_id,
@@ -354,14 +352,15 @@ impl DocumentV0 {
                 }
             })
             .collect::<Result<BTreeMap<String, Value>, ProtocolError>>()?;
-        Ok(Document {
+        Ok(DocumentV0 {
             id: Identifier::new(id),
             properties,
             owner_id: Identifier::new(owner_id),
             revision,
             created_at,
             updated_at,
-        })
+        }
+        .into())
     }
 
     /// Reads a CBOR-serialized document and creates a Document from it.
@@ -418,7 +417,7 @@ impl DocumentV0 {
         let updated_at = document_map.remove_optional_integer(property_names::UPDATED_AT)?;
 
         // dev-note: properties is everything other than the id and owner id
-        Ok(Document {
+        Ok(DocumentV0 {
             properties: document_map,
             owner_id: Identifier::new(owner_id),
             id: Identifier::new(id),

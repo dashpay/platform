@@ -11,7 +11,7 @@ use crate::consensus::state::identity::invalid_identity_revision_error::InvalidI
 use crate::consensus::state::identity::IdentityInsufficientBalanceError;
 use crate::consensus::state::state_error::StateError;
 use crate::contracts::withdrawals_contract;
-use crate::document::{generate_document_id, Document};
+use crate::document::{generate_document_id, Document, DocumentV0};
 use crate::identity::state_transition::identity_credit_withdrawal_transition::{
     IdentityCreditWithdrawalTransitionAction, Pooling,
 };
@@ -119,14 +119,15 @@ where
             withdrawals_contract::property_names::UPDATED_AT: document_created_at_millis,
         });
 
-        let withdrawal_document = Document {
+        let withdrawal_document: Document = DocumentV0 {
             id: document_id,
             owner_id: state_transition.identity_id,
             properties: document_data.into_btree_string_map().unwrap(),
             revision: None,
             created_at: None,
             updated_at: None,
-        };
+        }
+        .into();
 
         Ok(IdentityCreditWithdrawalTransitionAction {
             version: IdentityCreditWithdrawalTransitionAction::current_version(),

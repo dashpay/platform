@@ -13,6 +13,7 @@ use crate::util::deserializer::SplitProtocolVersionOutcome;
 use crate::util::hash::hash_to_vec;
 use crate::version::{FeatureVersion, LATEST_PLATFORM_VERSION};
 use crate::ProtocolError;
+use ciborium::Value as CborValue;
 use platform_value::btreemap_extensions::{BTreeValueMapPathHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::{Bytes32, Identifier, ReplacementType, Value};
 use serde_json::json;

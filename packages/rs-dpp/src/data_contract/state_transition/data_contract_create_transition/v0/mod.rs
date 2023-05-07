@@ -50,9 +50,9 @@ use crate::version::FeatureVersion;
 pub struct DataContractCreateTransitionV0 {
     pub data_contract: DataContract,
     pub entropy: Bytes32,
-    #[exclude_from_sig_hash]
+    #[platform_signable(exclude_from_sig_hash)]
     pub signature_public_key_id: KeyID,
-    #[exclude_from_sig_hash]
+    #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
 }
 

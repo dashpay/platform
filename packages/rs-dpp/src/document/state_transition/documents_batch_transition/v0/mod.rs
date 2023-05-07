@@ -33,9 +33,9 @@ use std::collections::{BTreeMap, HashMap};
 pub struct DocumentsBatchTransitionV0 {
     pub owner_id: Identifier,
     pub transitions: Vec<DocumentTransition>,
-    #[exclude_from_sig_hash]
+    #[platform_signable(exclude_from_sig_hash)]
     pub signature_public_key_id: Option<KeyID>,
-    #[exclude_from_sig_hash]
+    #[platform_signable(exclude_from_sig_hash)]
     pub signature: Option<BinaryData>,
 }
 

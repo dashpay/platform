@@ -19,9 +19,9 @@ pub mod errors;
 pub mod factory;
 pub mod signer;
 
-mod v0;
-pub mod random;
-pub mod versions;
 pub mod accessors;
+pub mod random;
+mod v0;
+pub mod versions;
 
 pub use v0::*;

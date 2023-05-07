@@ -216,7 +216,7 @@ impl IdentityCreateTransitionWasm {
         )?;
 
         let keys_objects = object
-            .public_keys
+            .public_keys()
             .into_iter()
             .map(IdentityPublicKeyWithWitnessWasm::from)
             .map(|key| key.to_object(options.clone()))
@@ -278,7 +278,7 @@ impl IdentityCreateTransitionWasm {
         )?;
 
         let keys_objects = object
-            .public_keys
+            .public_keys()
             .into_iter()
             .map(IdentityPublicKeyWithWitnessWasm::from)
             .map(|key| key.to_json())

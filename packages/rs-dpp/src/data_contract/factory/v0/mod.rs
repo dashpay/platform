@@ -17,6 +17,7 @@ use crate::consensus::ConsensusError;
 use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use crate::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use crate::data_contract::validation::data_contract_validator::DataContractValidator;
+use crate::data_contract::DataContract;
 use crate::serialization_traits::PlatformDeserializable;
 use crate::state_transition::StateTransitionType;
 use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
@@ -27,10 +28,6 @@ use crate::{
     prelude::Identifier,
     Convertible,
 };
-
-use super::state_transition::data_contract_create_transition::DataContractCreateTransition;
-use super::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use super::{validation::data_contract_validator::DataContractValidator, DataContract};
 
 /// The version 0 implementation of the data contract factory.
 ///

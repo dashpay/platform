@@ -1,5 +1,5 @@
 use crate::identity::Identity;
-use crate::version::{FeatureVersion, LATEST_PLATFORM_VERSION, PlatformVersion};
+use crate::version::{FeatureVersion, PlatformVersion, LATEST_PLATFORM_VERSION};
 
 /// Versions
 impl Identity {

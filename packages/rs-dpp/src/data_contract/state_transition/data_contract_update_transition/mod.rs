@@ -10,13 +10,13 @@ use crate::serialization_traits::Signable;
 use crate::state_transition::{
     StateTransitionConvert, StateTransitionIdentitySigned, StateTransitionLike, StateTransitionType,
 };
-use crate::{metadata, Convertible, ProtocolError};
+use crate::{Convertible, ProtocolError};
 use bincode::{config, Decode, Encode};
 use derive_more::From;
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_value::{BinaryData, Identifier, Value};
-use serde::de::{DeserializeSeed, IgnoredAny, IntoDeserializer, MapAccess, Visitor};
+use serde::de::{MapAccess, Visitor};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeMap;
@@ -355,7 +355,7 @@ mod test {
     use crate::data_contract::state_transition::data_contract_update_transition::property_names::STATE_TRANSITION_PROTOCOL_VERSION;
     use crate::data_contract::state_transition::property_names::TRANSITION_TYPE;
     use crate::tests::fixtures::get_data_contract_fixture;
-    use crate::version::{LATEST_PLATFORM_VERSION, PLATFORM_VERSIONS};
+    use crate::version::LATEST_PLATFORM_VERSION;
     use crate::{version, Convertible};
 
     use super::*;

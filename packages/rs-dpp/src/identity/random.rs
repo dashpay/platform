@@ -1,10 +1,10 @@
-use std::iter::FromIterator;
-use rand::prelude::StdRng;
 use crate::identity::identity_public_key::factory::KeyCount;
-use crate::identity::{Identity, IdentityPublicKey};
 use crate::identity::v0::identity::IdentityV0;
-use crate::ProtocolError;
+use crate::identity::{Identity, IdentityPublicKey};
 use crate::version::FeatureVersion;
+use crate::ProtocolError;
+use rand::prelude::StdRng;
+use std::iter::FromIterator;
 
 impl Identity {
     /// Generates a random identity using the specified version and key count, with a provided RNG.
@@ -22,11 +22,15 @@ impl Identity {
     /// # Panics
     ///
     /// This function will panic if an unsupported version is provided.
-    pub fn random_identity_with_rng(version: Option<FeatureVersion>, key_count: KeyCount, rng: &mut StdRng) -> Self {
+    pub fn random_identity_with_rng(
+        version: Option<FeatureVersion>,
+        key_count: KeyCount,
+        rng: &mut StdRng,
+    ) -> Self {
         let version = version.unwrap_or(Self::latest_version());
         match version {
             0 => IdentityV0::random_identity_with_rng(key_count, rng).into(),
-            _ => panic!()
+            _ => panic!(),
         }
     }
 
@@ -54,15 +58,15 @@ impl Identity {
         key_count: KeyCount,
         rng: &mut StdRng,
     ) -> Result<(Self, I), ProtocolError>
-        where
-            I: Default
+    where
+        I: Default
             + IntoIterator<Item = (IdentityPublicKey, Vec<u8>)>
             + Extend<(IdentityPublicKey, Vec<u8>)>,
     {
         let version = version.unwrap_or(Self::latest_version());
         match version {
             0 => IdentityV0::random_identity_with_main_keys_with_private_key(key_count, rng).into(),
-            _ => panic!()
+            _ => panic!(),
         }
     }
 
@@ -85,7 +89,7 @@ impl Identity {
         let version = version.unwrap_or(Self::latest_version());
         match version {
             0 => IdentityV0::random_identity(key_count, seed).into(),
-            _ => panic!()
+            _ => panic!(),
         }
     }
 
@@ -105,11 +109,16 @@ impl Identity {
     /// # Panics
     ///
     /// This function will panic if an unsupported version is provided.
-    pub fn random_identities(version: Option<u16>, count: u16, key_count: KeyCount, seed: Option<u64>) -> Vec<Self> {
+    pub fn random_identities(
+        version: Option<u16>,
+        count: u16,
+        key_count: KeyCount,
+        seed: Option<u64>,
+    ) -> Vec<Self> {
         let version = version.unwrap_or(Self::latest_version());
         match version {
             0 => IdentityV0::random_identities(count, key_count, seed).into(),
-            _ => panic!()
+            _ => panic!(),
         }
     }
 
@@ -137,7 +146,7 @@ impl Identity {
         let version = version.unwrap_or(Self::latest_version());
         match version {
             0 => IdentityV0::random_identities_with_rng(count, key_count, rng).into(),
-            _ => panic!()
+            _ => panic!(),
         }
     }
 
@@ -167,15 +176,16 @@ impl Identity {
         key_count: KeyCount,
         rng: &mut StdRng,
     ) -> Result<(Vec<Self>, I), ProtocolError>
-        where
-            I: Default
+    where
+        I: Default
             + FromIterator<(IdentityPublicKey, Vec<u8>)>
             + Extend<(IdentityPublicKey, Vec<u8>)>,
     {
         let version = version.unwrap_or(Self::latest_version());
         match version {
-            0 => IdentityV0::random_identities_with_private_keys_with_rng(count, key_count, rng).into(),
-            _ => panic!()
+            0 => IdentityV0::random_identities_with_private_keys_with_rng(count, key_count, rng)
+                .into(),
+            _ => panic!(),
         }
     }
 }

@@ -74,7 +74,7 @@ mod tests {
                 .expect("expected to add an identity");
 
             let first_key_hash = identity
-                .public_keys
+                .public_keys()
                 .values()
                 .find(|public_key| public_key.key_type.is_unique_key_type())
                 .expect("expected a unique key")
@@ -103,7 +103,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
 
             let identities: BTreeMap<[u8; 32], Identity> =
-                Identity::random_identities( None,10, 3, Some(14))
+                Identity::random_identities(None, 10, 3, Some(14))
                     .into_iter()
                     .map(|identity| (identity.id.to_buffer(), identity))
                     .collect();
@@ -118,7 +118,7 @@ mod tests {
                 .values()
                 .flat_map(|identity| {
                     identity
-                        .public_keys
+                        .public_keys()
                         .values()
                         .filter(|public_key| public_key.key_type.is_unique_key_type())
                         .map(move |public_key| {
@@ -138,7 +138,7 @@ mod tests {
                 .values()
                 .flat_map(|identity| {
                     identity
-                        .public_keys
+                        .public_keys()
                         .values()
                         .filter(|public_key| public_key.key_type.is_unique_key_type())
                         .map(move |public_key| {

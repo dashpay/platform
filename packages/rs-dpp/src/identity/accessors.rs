@@ -1,8 +1,8 @@
-use std::collections::BTreeMap;
-use platform_value::Identifier;
 use crate::identity::{Identity, IdentityPublicKey, KeyID};
 use crate::metadata::Metadata;
 use crate::prelude::{AssetLockProof, Revision};
+use platform_value::Identifier;
+use std::collections::BTreeMap;
 
 impl Identity {
     /// Returns a reference to the public keys of the identity.
@@ -11,9 +11,9 @@ impl Identity {
     ///
     /// A reference to a `BTreeMap` containing the `KeyID` as keys and `IdentityPublicKey` as values.
     pub fn public_keys(&self) -> &BTreeMap<KeyID, IdentityPublicKey> {
-        match self { Identity::V0(identity) => {
-            &identity.public_keys
-        } }
+        match self {
+            Identity::V0(identity) => &identity.public_keys,
+        }
     }
 
     /// Returns a mutable reference to the public keys of the identity.
@@ -22,9 +22,9 @@ impl Identity {
     ///
     /// A mutable reference to a `BTreeMap` containing the `KeyID` as keys and `IdentityPublicKey` as values.
     pub fn public_keys_mut(&mut self) -> &mut BTreeMap<KeyID, IdentityPublicKey> {
-        match self { Identity::V0(identity) => {
-            &mut identity.public_keys
-        } }
+        match self {
+            Identity::V0(identity) => &mut identity.public_keys,
+        }
     }
 
     /// Consumes the `Identity` and returns the owned public keys.
@@ -33,9 +33,9 @@ impl Identity {
     ///
     /// A `BTreeMap` containing the `KeyID` as keys and `IdentityPublicKey` as values.
     pub fn public_keys_owned(self) -> BTreeMap<KeyID, IdentityPublicKey> {
-        match self { Identity::V0(identity) => {
-            identity.public_keys
-        } }
+        match self {
+            Identity::V0(identity) => identity.public_keys,
+        }
     }
 
     /// Sets the public keys of the identity.
@@ -131,9 +131,16 @@ impl Identity {
     /// # Arguments
     ///
     /// * `new_asset_lock_proof` - An `Option` containing the new `AssetLockProof`, if it exists.
-    pub fn set_asset_lock_proof(&mut self, new_asset_lock_proof: Option<AssetLockProof>) {
+    pub fn set_asset_lock_proof(&mut self, new_asset_lock_proof: AssetLockProof) {
         match self {
-            Identity::V0(identity) => identity.asset_lock_proof = new_asset_lock_proof,
+            Identity::V0(identity) => identity.asset_lock_proof = Some(new_asset_lock_proof),
+        }
+    }
+
+    /// Remove the asset lock proof of the identity.
+    pub fn remove_asset_lock_proof(&mut self) {
+        match self {
+            Identity::V0(identity) => identity.asset_lock_proof = None,
         }
     }
 

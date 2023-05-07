@@ -1,5 +1,5 @@
 use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
-use bincode::{BorrowDecode, Decode, Encode};
+use bincode::{config, BorrowDecode, Decode, Encode};
 pub use data_contract::*;
 pub use data_contract_factory::*;
 use derive_more::From;
@@ -18,6 +18,11 @@ mod v0;
 
 pub use v0::*;
 
+use crate::data_contract::v0::data_contract::DataContractV0;
+use crate::version::LATEST_PLATFORM_VERSION;
+use crate::ProtocolError;
+use platform_versioning::PlatformVersioned;
+
 pub mod property_names {
     pub const PROTOCOL_VERSION: &str = "protocolVersion";
     pub const ID: &str = "$id";
@@ -28,10 +33,6 @@ pub mod property_names {
     pub const DEFINITIONS: &str = "$defs";
     pub const ENTROPY: &str = "entropy"; // not a data contract field actually but at some point it can be there for some time
 }
-
-use crate::data_contract::v0::data_contract::DataContractV0;
-use crate::version::LATEST_PLATFORM_VERSION;
-use platform_versioning::PlatformVersioned;
 
 #[derive(
     Debug,

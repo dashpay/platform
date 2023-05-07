@@ -30,6 +30,7 @@ mod tests {
         IdentityCreditWithdrawalTransition, Pooling,
     };
 
+    use crate::document::state_transition::documents_batch_transition::DocumentsBatchTransitionV0;
     use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
     use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
     use crate::identity::Identity;
@@ -50,7 +51,7 @@ mod tests {
 
     #[test]
     fn identity_create_transition_ser_de() {
-        let mut identity = Identity::random_identity(5, Some(5));
+        let mut identity = Identity::random_identity(None, 5, Some(5));
         let asset_lock_proof = raw_instant_asset_lock_proof_fixture(None);
         identity.set_asset_lock_proof(AssetLockProof::Instant(asset_lock_proof));
 
@@ -66,7 +67,7 @@ mod tests {
 
     #[test]
     fn identity_topup_transition_ser_de() {
-        let mut identity = Identity::random_identity(5, Some(5));
+        let mut identity = Identity::random_identity(None, 5, Some(5));
         let asset_lock_proof = raw_instant_asset_lock_proof_fixture(None);
         identity.set_asset_lock_proof(AssetLockProof::Instant(asset_lock_proof));
 
@@ -90,7 +91,7 @@ mod tests {
     fn identity_update_transition_add_keys_ser_de() {
         let mut rng = StdRng::seed_from_u64(5);
         let (identity, mut keys): (Identity, BTreeMap<_, _>) =
-            Identity::random_identity_with_main_keys_with_private_key(5, &mut rng)
+            Identity::random_identity_with_main_keys_with_private_key(None, 5, &mut rng)
                 .expect("expected to get identity");
         let bls = NativeBlsModule::default();
         let add_public_keys_in_creation = identity
@@ -150,7 +151,7 @@ mod tests {
     fn identity_update_transition_disable_keys_ser_de() {
         let mut rng = StdRng::seed_from_u64(5);
         let (identity, mut keys): (Identity, BTreeMap<_, _>) =
-            Identity::random_identity_with_main_keys_with_private_key(5, &mut rng)
+            Identity::random_identity_with_main_keys_with_private_key(None, 5, &mut rng)
                 .expect("expected to get identity");
         let bls = NativeBlsModule::default();
         let add_public_keys_in_creation = identity
@@ -208,7 +209,7 @@ mod tests {
 
     #[test]
     fn identity_credit_withdrawal_transition_ser_de() {
-        let identity = Identity::random_identity(5, Some(5));
+        let identity = Identity::random_identity(None, 5, Some(5));
         let identity_credit_withdrawal_transition = IdentityCreditWithdrawalTransition {
             protocol_version: LATEST_VERSION,
             transition_type: StateTransitionType::IdentityCreditWithdrawal,
@@ -230,7 +231,7 @@ mod tests {
 
     #[test]
     fn data_contract_create_ser_de() {
-        let identity = Identity::random_identity(5, Some(5));
+        let identity = Identity::random_identity(None, 5, Some(5));
         let mut data_contract = get_data_contract_fixture(Some(identity.id));
         data_contract.entropy = Default::default();
         let data_contract_create_transition =
@@ -249,7 +250,7 @@ mod tests {
 
     #[test]
     fn data_contract_update_ser_de() {
-        let identity = Identity::random_identity(5, Some(5));
+        let identity = Identity::random_identity(None, 5, Some(5));
         let mut data_contract = get_data_contract_fixture(Some(identity.id));
         data_contract.entropy = Default::default();
         let data_contract_update_transition =
@@ -272,11 +273,12 @@ mod tests {
         let documents =
             get_documents_fixture_with_owner_id_from_contract(data_contract.clone()).unwrap();
         let transitions = get_document_transitions_fixture([(Action::Create, documents)]);
-        let documents_batch_transition = DocumentsBatchTransition {
+        let documents_batch_transition: DocumentsBatchTransition = DocumentsBatchTransitionV0 {
             owner_id: data_contract.owner_id,
             transitions,
             ..Default::default()
-        };
+        }
+        .into();
         let state_transition: StateTransition = documents_batch_transition.into();
         let bytes = state_transition.serialize().expect("expected to serialize");
         let recovered_state_transition =

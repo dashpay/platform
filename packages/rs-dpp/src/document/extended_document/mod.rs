@@ -3,41 +3,14 @@ mod serde_serialize;
 mod v0;
 
 use crate::data_contract::DataContract;
-use crate::metadata::Metadata;
-use crate::prelude::Identifier;
-use crate::prelude::{Revision, TimestampMillis};
-#[cfg(feature = "cbor")]
-use crate::util::cbor_value::CborCanonicalMap;
-use crate::util::deserializer;
-use crate::util::deserializer::{ProtocolVersion, SplitProtocolVersionOutcome};
-use crate::util::hash::hash_to_vec;
 use crate::ProtocolError;
-#[cfg(feature = "cbor")]
-use ciborium::Value as CborValue;
-use integer_encoding::VarInt;
 
-use crate::data_contract::document_type::document_type::PROTOCOL_VERSION;
-use crate::data_contract::document_type::DocumentType;
 use crate::document::extended_document::v0::ExtendedDocumentV0;
-use crate::document::Document;
-use crate::serialization_traits::ValueConvertible;
-use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
-use bincode::de::Decoder;
-use bincode::enc::Encoder;
-use bincode::error::{DecodeError, EncodeError};
-use bincode::{config, Decode, Encode};
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
-use platform_value::btreemap_extensions::BTreeValueMapInsertionPathHelper;
-use platform_value::btreemap_extensions::BTreeValueMapPathHelper;
-use platform_value::btreemap_extensions::BTreeValueMapReplacementPathHelper;
-use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
-use platform_value::converter::serde_json::BTreeValueJsonConverter;
-use platform_value::{Bytes32, ReplacementType, Value};
-use serde::{Deserialize, Serialize};
-use serde_json::{json, Value as JsonValue};
+use platform_value::Value;
+use serde_json::Value as JsonValue;
 use std::collections::{BTreeMap, HashSet};
-use std::convert::TryInto;
 
 pub mod property_names {
     pub const FEATURE_VERSION: &str = "$version";
@@ -272,7 +245,8 @@ mod test {
     use crate::document::extended_document::{ExtendedDocument, IDENTIFIER_FIELDS};
 
     use crate::data_contract::DataContract;
-    use crate::document::Document;
+    use crate::document::extended_document::v0::ExtendedDocumentV0;
+    use crate::document::{Document, DocumentV0};
     use crate::prelude::Identifier;
     use crate::system_data_contracts::load_system_data_contract;
     use crate::tests::utils::*;
@@ -551,15 +525,16 @@ mod test {
         hex::decode("01a7632469645820715d3d65756024a2de0ab1b2bb1e83b5ef297bf0c6fa616aad5c887e4f10def9646e616d656543757469656524747970656c6e696365446f63756d656e7468246f776e657249645820b6bf374d302fbe2b511b43e23d033f965e2e33a024c7419db07533d4ba7d708e69247265766973696f6e016a246372656174656441741b00000181b40fa1fb6f2464617461436f6e7472616374496458207abc5f9ab4bcd0612ed6cacec204dd6d7411a56127d4248af1eadacb93525da2").unwrap()
     }
 
-    fn new_example_document() -> ExtendedDocument {
-        ExtendedDocument {
-            document: Document {
+    fn new_example_document() -> ExtendedDocumentV0 {
+        ExtendedDocumentV0 {
+            document: DocumentV0 {
                 id: generate_random_identifier_struct(),
                 owner_id: generate_random_identifier_struct(),
                 created_at: Some(1648013404492),
                 updated_at: Some(1648013404492),
                 ..Default::default()
-            },
+            }
+            .into(),
             data_contract_id: generate_random_identifier_struct(),
             ..Default::default()
         }

@@ -16,7 +16,10 @@ use crate::consensus::basic::decode::SerializedObjectParsingError;
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::document::document_transition::{Action, INITIAL_REVISION};
-use crate::document::{Document, DocumentsBatchTransition, DocumentV0};
+use crate::document::errors::DocumentError;
+use crate::document::fetch_and_validate_data_contract::DataContractFetcherAndValidator;
+use crate::document::generate_document_id::generate_document_id;
+use crate::document::{Document, DocumentV0, DocumentsBatchTransition};
 use crate::identity::TimestampMillis;
 use crate::serialization_traits::PlatformDeserializable;
 use crate::util::entropy_generator::{DefaultEntropyGenerator, EntropyGenerator};
@@ -27,9 +30,6 @@ use crate::{
     state_repository::StateRepositoryLike,
     ProtocolError,
 };
-use crate::document::errors::DocumentError;
-use crate::document::fetch_and_validate_data_contract::DataContractFetcherAndValidator;
-use crate::document::generate_document_id::generate_document_id;
 
 use super::{
     document_transition::{self, Action},

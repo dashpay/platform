@@ -5,7 +5,6 @@ use integer_encoding::VarInt;
 use serde_json::{Map, Number, Value as JsonValue};
 
 use crate::data_contract::errors::StructureError;
-use crate::data_contract::extra::common::check_protocol_version;
 use crate::errors::ProtocolError;
 
 pub fn parse_protocol_version(

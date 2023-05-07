@@ -47,7 +47,7 @@ pub fn create_identity_update_transition_add_keys(
 ) -> (StateTransition, (Identifier, Vec<IdentityPublicKey>)) {
     identity.revision += 1;
     let keys = IdentityPublicKey::random_authentication_keys_with_private_keys_with_rng(
-        identity.public_keys.len() as KeyID,
+        identity.public_keys().len() as KeyID,
         count as u32,
         rng,
     );
@@ -55,7 +55,7 @@ pub fn create_identity_update_transition_add_keys(
     let add_public_keys: Vec<IdentityPublicKey> = keys.iter().map(|(key, _)| key.clone()).collect();
     signer.private_keys_in_creation.extend(keys);
     let (key_id, _) = identity
-        .public_keys
+        .public_keys()
         .iter()
         .find(|(_, key)| key.security_level == MASTER)
         .expect("expected to have a master key");
@@ -85,7 +85,7 @@ pub fn create_identity_update_transition_disable_keys(
     identity.revision += 1;
     // we want to find keys that are not disabled
     let key_ids_we_could_disable = identity
-        .public_keys
+        .public_keys()
         .iter()
         .filter(|(_, key)| {
             key.disabled_at.is_none()
@@ -108,14 +108,17 @@ pub fn create_identity_update_transition_disable_keys(
         .map(|index| key_ids_we_could_disable[index])
         .collect();
 
-    identity.public_keys.iter_mut().for_each(|(key_id, key)| {
-        if key_ids_to_disable.contains(key_id) {
-            key.disabled_at = Some(block_time);
-        }
-    });
+    identity
+        .public_keys_mut()
+        .iter_mut()
+        .for_each(|(key_id, key)| {
+            if key_ids_to_disable.contains(key_id) {
+                key.disabled_at = Some(block_time);
+            }
+        });
 
     let (key_id, _) = identity
-        .public_keys
+        .public_keys()
         .iter()
         .find(|(_, key)| key.security_level == MASTER)
         .expect("expected to have a master key");
@@ -175,9 +178,10 @@ pub fn create_identities_state_transitions(
     signer: &mut SimpleSigner,
     rng: &mut StdRng,
 ) -> Vec<(Identity, StateTransition)> {
-    let (identities, keys) =
-        Identity::random_identities_with_private_keys_with_rng::<Vec<_>>(None, count, key_count, rng)
-            .expect("expected to create identities");
+    let (identities, keys) = Identity::random_identities_with_private_keys_with_rng::<Vec<_>>(
+        None, count, key_count, rng,
+    )
+    .expect("expected to create identities");
     signer.add_keys(keys);
     identities
         .into_iter()

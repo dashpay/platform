@@ -1,7 +1,7 @@
-use crate::version::AbciStructureVersion;
 use crate::version::protocol_version::{
     DriveStructureVersion, FeatureVersionBounds, PlatformVersion, StateTransitionVersion,
 };
+use crate::version::AbciStructureVersion;
 
 pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
     protocol_version: 0,
@@ -89,10 +89,11 @@ pub(super) const PLATFORM_V1: PlatformVersion = PlatformVersion {
             default_current_version: 0,
         },
     },
-    abci_structure: AbciStructureVersion { extended_block_info: FeatureVersionBounds {
-        min_version: 0,
-        max_version: 0,
-        default_current_version: 0,
-    }
+    abci_structure: AbciStructureVersion {
+        extended_block_info: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
     },
 };

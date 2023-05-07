@@ -1,30 +1,28 @@
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 use std::hash::{Hash, Hasher};
 
-use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+use crate::serialization_traits::PlatformSerializable;
 use integer_encoding::VarInt;
 use platform_value::{ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
-use crate::identity::{identity_public_key, IdentityPublicKey, KeyID, KeyType, PartialIdentity, Purpose, SecurityLevel};
+use crate::identity::{
+    identity_public_key, IdentityPublicKey, KeyID, KeyType, PartialIdentity, Purpose, SecurityLevel,
+};
 use crate::prelude::Revision;
 #[cfg(feature = "cbor")]
 use crate::util::cbor_value::{CborBTreeMapHelper, CborCanonicalMap};
 use crate::util::deserializer;
 use crate::util::deserializer::SplitProtocolVersionOutcome;
-use crate::version::FeatureVersion;
 use crate::{
     errors::ProtocolError, identifier::Identifier, metadata::Metadata, util::hash, Convertible,
 };
-use bincode::{config, Decode, Encode};
+use bincode::{Decode, Encode};
 #[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
-
-
-use super::{IdentityPublicKey, KeyID};
 
 mod property_names {
     pub const PUBLIC_KEYS: &str = "publicKeys";
@@ -39,23 +37,9 @@ pub const IDENTIFIER_FIELDS_RAW_OBJECT: [&str; 1] = [property_names::ID_RAW_OBJE
 
 /// Implement the Identity. Identity is a low-level construct that provides the foundation
 /// for user-facing functionality on the platform
-#[derive(
-    Default,
-    Debug,
-    Serialize,
-    Deserialize,
-    Encode,
-    Decode,
-    Clone,
-    Eq,
-    PartialEq,
-)]
-#[platform_error_type(ProtocolError)]
-#[platform_deserialize_limit(15000)]
-#[platform_serialize_limit(15000)]
+#[derive(Default, Debug, Serialize, Deserialize, Encode, Decode, Clone, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct IdentityV0 {
-    pub feature_version: FeatureVersion,
     pub id: Identifier,
     #[serde(with = "public_key_serialization")]
     pub public_keys: BTreeMap<KeyID, IdentityPublicKey>,

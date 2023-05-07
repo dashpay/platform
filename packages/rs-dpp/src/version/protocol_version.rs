@@ -35,10 +35,8 @@ pub struct AbciStructureVersion {
     pub extended_block_info: FeatureVersionBounds,
 }
 
-
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DriveStructureVersion {
-
     pub document_indexes: FeatureVersionBounds,
     pub identity_indexes: FeatureVersionBounds,
     pub pools: FeatureVersionBounds,

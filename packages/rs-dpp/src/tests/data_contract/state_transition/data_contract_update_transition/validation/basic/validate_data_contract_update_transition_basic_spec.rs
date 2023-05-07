@@ -13,15 +13,14 @@ use crate::{
     },
     state_repository::MockStateRepositoryLike,
     state_transition::{
-        state_transition_execution_context::StateTransitionExecutionContext,
-        StateTransitionConvert, StateTransitionType,
+        state_transition_execution_context::StateTransitionExecutionContext, StateTransitionConvert,
     },
     tests::{
         fixtures::{get_data_contract_fixture, get_protocol_version_validator_fixture},
         utils::{get_basic_error_from_result, get_schema_error},
     },
     validation::AsyncDataValidatorWithContext,
-    version::{ProtocolVersionValidator, LATEST_VERSION},
+    version::ProtocolVersionValidator,
 };
 
 use crate::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;

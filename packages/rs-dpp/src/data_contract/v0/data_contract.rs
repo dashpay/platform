@@ -1,4 +1,3 @@
-use bincode::config;
 use bincode::de::{BorrowDecoder, Decoder};
 use bincode::enc::Encoder;
 use bincode::error::{DecodeError, EncodeError};
@@ -6,7 +5,7 @@ use bincode::{BorrowDecode, Decode, Encode};
 use std::collections::{BTreeMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 
-use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+use crate::serialization_traits::PlatformSerializable;
 use itertools::{Either, Itertools};
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
 use platform_value::{Bytes32, Identifier};
@@ -31,12 +30,9 @@ use crate::{errors::ProtocolError, metadata::Metadata, util::hash::hash_to_vec};
 use crate::{identifier, Convertible};
 use platform_value::string_encoding::Encoding;
 
+use super::document_type::DocumentType;
 use crate::data_contract::errors::DataContractError;
 use crate::version::LATEST_VERSION;
-use platform_serialization::{PlatformDeserialize, PlatformDeserializeNoLimit, PlatformSerialize};
-
-use super::document_type::DocumentType;
-use super::errors::*;
 
 use super::super::property_names;
 
@@ -107,7 +103,7 @@ impl Convertible for DataContractV0 {
 ///
 /// Additionally, `DataContractV0` holds definitions for JSON schemas, entropy, and binary properties
 /// of the documents.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq)]
 #[serde(try_from = "DataContractV0Inner")]
 #[serde(rename_all = "camelCase")]
 pub struct DataContractV0 {

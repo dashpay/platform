@@ -8,10 +8,8 @@ use crate::data_contract::state_transition::data_contract_update_transition::{
 use crate::identity::signer::Signer;
 use crate::identity::{KeyID, PartialIdentity};
 use crate::prelude::DataContract;
-use crate::serialization_traits::{PlatformDeserializable, Signable};
-use crate::state_transition::StateTransitionType::{DataContractCreate, DataContractUpdate};
-use crate::state_transition::{StateTransitionConvert, StateTransitionLike};
-use crate::version::LATEST_VERSION;
+use crate::serialization_traits::Signable;
+use crate::state_transition::StateTransitionLike;
 use crate::{NonConsensusError, ProtocolError};
 
 impl DataContractCreateTransition {
