@@ -205,6 +205,7 @@ mod test {
         let mut state_write_guard = platform.state.write().unwrap();
 
         state_write_guard.last_committed_block_info = Some(ExtendedBlockInfo {
+            version: 0,
             basic_info: BlockInfo {
                 time_ms: 500000,
                 height: 100,
@@ -283,6 +284,7 @@ mod test {
         let mut state_write_guard = platform.state.write().unwrap();
 
         state_write_guard.last_committed_block_info = Some(ExtendedBlockInfo {
+            version: 0,
             basic_info: BlockInfo {
                 time_ms: 500000,
                 height: 100,

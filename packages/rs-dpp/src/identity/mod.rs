@@ -20,4 +20,8 @@ pub mod factory;
 pub mod signer;
 
 mod v0;
+pub mod random;
+pub mod versions;
+pub mod accessors;
+
 pub use v0::*;

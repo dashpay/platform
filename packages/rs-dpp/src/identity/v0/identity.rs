@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
-use crate::identity::{identity_public_key, KeyType, Purpose, SecurityLevel};
+use crate::identity::{identity_public_key, IdentityPublicKey, KeyID, KeyType, PartialIdentity, Purpose, SecurityLevel};
 use crate::prelude::Revision;
 #[cfg(feature = "cbor")]
 use crate::util::cbor_value::{CborBTreeMapHelper, CborCanonicalMap};
@@ -22,7 +22,7 @@ use crate::{
 use bincode::{config, Decode, Encode};
 #[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+
 
 use super::{IdentityPublicKey, KeyID};
 
@@ -46,8 +46,6 @@ pub const IDENTIFIER_FIELDS_RAW_OBJECT: [&str; 1] = [property_names::ID_RAW_OBJE
     Deserialize,
     Encode,
     Decode,
-    PlatformDeserialize,
-    PlatformSerialize,
     Clone,
     Eq,
     PartialEq,
@@ -56,7 +54,7 @@ pub const IDENTIFIER_FIELDS_RAW_OBJECT: [&str; 1] = [property_names::ID_RAW_OBJE
 #[platform_deserialize_limit(15000)]
 #[platform_serialize_limit(15000)]
 #[serde(rename_all = "camelCase")]
-pub struct Identity {
+pub struct IdentityV0 {
     pub feature_version: FeatureVersion,
     pub id: Identifier,
     #[serde(with = "public_key_serialization")]
@@ -71,21 +69,10 @@ pub struct Identity {
     pub metadata: Option<Metadata>,
 }
 
-impl Hash for Identity {
+impl Hash for IdentityV0 {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.id.hash(state);
     }
-}
-
-/// An identity struct that represent partially set/loaded identity data.
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct PartialIdentity {
-    pub id: Identifier,
-    pub loaded_public_keys: BTreeMap<KeyID, IdentityPublicKey>,
-    pub balance: Option<u64>,
-    pub revision: Option<Revision>,
-    /// These are keys that were requested but didn't exist
-    pub not_found_public_keys: BTreeSet<KeyID>,
 }
 
 mod public_key_serialization {
@@ -120,7 +107,7 @@ mod public_key_serialization {
     }
 }
 
-impl Convertible for Identity {
+impl Convertible for IdentityV0 {
     fn to_object(&self) -> Result<Value, ProtocolError> {
         platform_value::to_value(self).map_err(ProtocolError::ValueError)
     }
@@ -158,7 +145,7 @@ impl Convertible for Identity {
     }
 }
 
-impl Identity {
+impl IdentityV0 {
     /// Get Identity protocol version
     pub fn get_feature_version(&self) -> u16 {
         self.feature_version
@@ -361,7 +348,7 @@ impl Identity {
     }
 
     /// Creates an identity from a json structure
-    pub fn from_json(json_object: JsonValue) -> Result<Identity, ProtocolError> {
+    pub fn from_json(json_object: JsonValue) -> Result<Self, ProtocolError> {
         let mut platform_value: Value = json_object.into();
 
         platform_value
@@ -376,13 +363,13 @@ impl Identity {
             }
         }
 
-        let identity: Identity = platform_value::from_value(platform_value)?;
+        let identity: Self = platform_value::from_value(platform_value)?;
 
         Ok(identity)
     }
 
     /// Creates an identity from a raw object
-    pub fn from_object(raw_object: Value) -> Result<Identity, ProtocolError> {
+    pub fn from_object(raw_object: Value) -> Result<Self, ProtocolError> {
         raw_object.try_into()
     }
 
@@ -393,7 +380,7 @@ impl Identity {
 
     /// Convenience method to get Partial Identity Info
     pub fn into_partial_identity_info(self) -> PartialIdentity {
-        let Identity {
+        let Self {
             id,
             public_keys,
             balance,
@@ -410,7 +397,7 @@ impl Identity {
     }
 }
 
-impl TryFrom<Value> for Identity {
+impl TryFrom<Value> for IdentityV0 {
     type Error = ProtocolError;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
@@ -418,7 +405,7 @@ impl TryFrom<Value> for Identity {
     }
 }
 
-impl TryFrom<&Value> for Identity {
+impl TryFrom<&Value> for IdentityV0 {
     type Error = ProtocolError;
 
     fn try_from(value: &Value) -> Result<Self, Self::Error> {

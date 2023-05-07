@@ -794,6 +794,7 @@ where
         drop(guarded_block_execution_context);
 
         let extended_block_info = ExtendedBlockInfo {
+            version: 0,
             basic_info: to_commit_block_info,
             quorum_hash: current_quorum_hash,
             signature: commit_info.block_signature,

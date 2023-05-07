@@ -31,7 +31,14 @@ pub struct StateTransitionVersion {
 }
 
 #[derive(Clone, Copy, Debug, Default)]
+pub struct AbciStructureVersion {
+    pub extended_block_info: FeatureVersionBounds,
+}
+
+
+#[derive(Clone, Copy, Debug, Default)]
 pub struct DriveStructureVersion {
+
     pub document_indexes: FeatureVersionBounds,
     pub identity_indexes: FeatureVersionBounds,
     pub pools: FeatureVersionBounds,
@@ -48,6 +55,7 @@ pub struct PlatformVersion {
     pub costs: FeatureVersionBounds,
     pub state_transitions: StateTransitionVersion,
     pub drive_structure: DriveStructureVersion,
+    pub abci_structure: AbciStructureVersion,
 }
 
 pub const PLATFORM_VERSIONS: &'static [PlatformVersion] = &[PLATFORM_V1];

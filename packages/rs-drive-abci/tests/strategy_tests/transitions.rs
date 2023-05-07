@@ -176,7 +176,7 @@ pub fn create_identities_state_transitions(
     rng: &mut StdRng,
 ) -> Vec<(Identity, StateTransition)> {
     let (identities, keys) =
-        Identity::random_identities_with_private_keys_with_rng::<Vec<_>>(count, key_count, rng)
+        Identity::random_identities_with_private_keys_with_rng::<Vec<_>>(None, count, key_count, rng)
             .expect("expected to create identities");
     signer.add_keys(keys);
     identities

@@ -11,6 +11,8 @@ use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 #[platform_error_type(ProtocolError)]
 #[platform_deserialize_limit(15000)]
 pub struct ExtendedBlockInfo {
+    /// Version byte (in case we need to extend this later)
+    pub version: u16,
     /// Basic block info
     pub basic_info: BlockInfo,
     /// Signature
@@ -37,8 +39,6 @@ pub struct BlockInfo {
 
     /// Current fee epoch
     pub epoch: Epoch,
-    // /// current quorum
-    // pub current_validator_set_quorum_hash: QuorumHash,
 }
 
 impl BlockInfo {

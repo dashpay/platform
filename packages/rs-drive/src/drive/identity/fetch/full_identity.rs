@@ -163,7 +163,7 @@ mod tests {
             let drive = setup_drive_with_initial_state_structure();
 
             let identities: BTreeMap<[u8; 32], Option<Identity>> =
-                Identity::random_identities(10, 3, Some(14))
+                Identity::random_identities( None,10, 3, Some(14))
                     .into_iter()
                     .map(|identity| (identity.id.to_buffer(), Some(identity)))
                     .collect();

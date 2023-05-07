@@ -2,8 +2,7 @@ use anyhow::anyhow;
 use serde_json::Value as JsonValue;
 
 use crate::{errors::ProtocolError, util::json_schema::JsonSchemaExt};
-
-use super::DataContract;
+use crate::data_contract::data_contract::DataContractV0;
 
 const PROPERTY_PROPERTIES: &str = "properties";
 const PROPERTY_REQUIRED: &str = "required";
@@ -13,13 +12,13 @@ pub const PREFIX_BYTE_1: u8 = 1;
 pub const PREFIX_BYTE_2: u8 = 2;
 pub const PREFIX_BYTE_3: u8 = 3;
 
-impl DataContract {
+impl DataContractV0 {
     pub fn enrich_with_base_schema(
         &self,
         base_schema: &JsonValue,
         schema_id_byte_prefix: u8,
         exclude_properties: &[&str],
-    ) -> Result<DataContract, ProtocolError> {
+    ) -> Result<DataContractV0, ProtocolError> {
         let mut cloned_data_contract = self.clone();
         cloned_data_contract.schema = String::from("");
 
