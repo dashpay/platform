@@ -3,7 +3,7 @@
 
 ### ⚠ BREAKING CHANGES
 
-* **drive:** whitelist and filter banned nodes for validators (#1034)
+* Validator rotation logic is changed. Previous blockchain data won't be compatible (#1034)
 
 ### Features
 
