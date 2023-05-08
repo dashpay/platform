@@ -324,9 +324,8 @@ RUN --mount=type=cache,target=/tmp/unplugged \
     cp -R /platform/.yarn/unplugged /tmp/
 
 # Remove Rust sources
-RUN find ./packages -name Cargo.toml | xargs -n1 dirname | xargs -t rm -r
-
-# TODO: Clean all other files not needed by dashmate
+RUN rm -fr ./packages/rs-*
+# TODO: Clean all other files not needed by dapi
 
 #
 #  STAGE: FINAL DASHMATE IMAGE
@@ -361,9 +360,9 @@ RUN --mount=type=cache,target=/tmp/unplugged \
     cp -R /platform/.yarn/unplugged /tmp/
 
 # Remove Rust sources
-RUN find ./packages -name Cargo.toml | xargs -n1 dirname | xargs -t rm -r
+RUN rm -fr ./packages/rs-*
+# TODO: Clean all other files not needed by dapi
 
-# TODO: Clean all other files not needed by test suite
 
 #
 #  STAGE: FINAL TEST SUITE IMAGE
@@ -398,8 +397,7 @@ RUN --mount=type=cache,target=/tmp/unplugged \
     cp -R /platform/.yarn/unplugged /tmp/
 
 # Remove Rust sources
-RUN find ./packages -name Cargo.toml | xargs -n1 dirname | xargs -t rm -r
-
+RUN rm -fr ./packages/rs-*
 # TODO: Clean all other files not needed by dapi
 
 #
