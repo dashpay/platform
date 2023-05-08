@@ -508,7 +508,7 @@ where
     }
 
     fn query(&self, request: RequestQuery) -> Result<ResponseQuery, ResponseException> {
-        let RequestQuery { data, path, .. } = request;
+        let RequestQuery { data, path, .. } = &request;
 
         let result = self.platform.query(path.as_str(), data.as_slice())?;
 
@@ -520,7 +520,15 @@ where
             )
         } else {
             let mut buffer: Vec<u8> = Vec::new();
-            ciborium::ser::into_writer(&result.errors, &buffer)?;
+            ciborium::ser::into_writer(
+                &result
+                    .errors
+                    .iter()
+                    .map(|e| e.to_string())
+                    .collect::<Vec<_>>(),
+                &mut buffer,
+            )
+            .map_err(|e| e.to_string())?;
             (1, buffer, format!("{:?}", result.errors))
         };
 
@@ -537,7 +545,7 @@ where
             height: self.platform.state.read().unwrap().height() as i64,
             codespace: "".to_string(),
         };
-        tracing::trace!(method = "query", ?request, &response);
+        tracing::trace!(method = "query", ?request, ?response);
 
         Ok(response)
     }
