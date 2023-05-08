@@ -7,24 +7,24 @@ const path = require('path');
 function ensureFileMountExistsFactory() {
   /**
    * @typedef {resolveDockerHostIp}
-   * @param logFilePath {string}
-   * @param mode {mode} https://nodejs.org/api/fs.html#fschmodpath-mode-callback
-   * @return {Promise<string>}
+   * @param {string} filePath
+   * @param {string|number} [mode] - https://nodejs.org/api/fs.html#fschmodpath-mode-callback
+   * @return {Promise<void>}
    */
-  function ensureFileMountExists(logFilePath, mode) {
+  function ensureFileMountExists(filePath, mode = undefined) {
     // Remove directory that could potentially be created by Docker mount
-    if (fs.existsSync(logFilePath) && fs.lstatSync(logFilePath).isDirectory()) {
-      fs.rmSync(logFilePath, { recursive: true });
+    if (fs.existsSync(filePath) && fs.lstatSync(filePath).isDirectory()) {
+      fs.rmSync(filePath, { recursive: true });
     }
 
-    if (!fs.existsSync(logFilePath)) {
-      fs.mkdirSync(path.dirname(logFilePath), { recursive: true });
-      fs.writeFileSync(logFilePath, '');
+    if (!fs.existsSync(filePath)) {
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      fs.writeFileSync(filePath, '');
     }
 
     // applies permission on each run
-    if (mode) {
-      fs.chmodSync(logFilePath, mode);
+    if (mode !== undefined) {
+      fs.chmodSync(filePath, mode);
     }
   }
 
