@@ -19,6 +19,11 @@ services:
       context: ${PLATFORM_SOURCE_PATH:?err}
       dockerfile: ${PLATFORM_SOURCE_PATH:?err}/Dockerfile
       target: dapi
+      args:
+        SCCACHE_MEMCACHED: ${SCCACHE_MEMCACHED}
+        SCCACHE_GHA_ENABLED: ${SCCACHE_GHA_ENABLED}
+        ACTIONS_CACHE_URL: ${ACTIONS_CACHE_URL}
+        ACTIONS_RUNTIME_TOKEN: ${ACTIONS_RUNTIME_TOKEN}      
     image: dapi:local
     stop_grace_period: 10s
 
@@ -27,6 +32,11 @@ services:
       context: ${PLATFORM_SOURCE_PATH:?err}
       dockerfile: ${PLATFORM_SOURCE_PATH:?err}/Dockerfile
       target: dapi
+      args:
+        SCCACHE_MEMCACHED: ${SCCACHE_MEMCACHED}
+        SCCACHE_GHA_ENABLED: ${SCCACHE_GHA_ENABLED}
+        ACTIONS_CACHE_URL: ${ACTIONS_CACHE_URL}
+        ACTIONS_RUNTIME_TOKEN: ${ACTIONS_RUNTIME_TOKEN}      
     image: dapi:local
     stop_grace_period: 10s
 
@@ -34,6 +44,11 @@ services:
     build:
       context: ${PLATFORM_SOURCE_PATH:?err}
       dockerfile: ${PLATFORM_SOURCE_PATH:?err}/packages/dashmate/docker/envoy/Dockerfile
+      args:
+        SCCACHE_MEMCACHED: ${SCCACHE_MEMCACHED}
+        SCCACHE_GHA_ENABLED: ${SCCACHE_GHA_ENABLED}
+        ACTIONS_CACHE_URL: ${ACTIONS_CACHE_URL}
+        ACTIONS_RUNTIME_TOKEN: ${ACTIONS_RUNTIME_TOKEN}      
     image: dapi-envoy:local
     stop_grace_period: 10s
 
@@ -42,5 +57,10 @@ services:
       context: ${PLATFORM_SOURCE_PATH:?err}
       dockerfile: ${PLATFORM_SOURCE_PATH:?err}/Dockerfile
       target: dashmate
+      args:
+        SCCACHE_MEMCACHED: ${SCCACHE_MEMCACHED}
+        SCCACHE_GHA_ENABLED: ${SCCACHE_GHA_ENABLED}
+        ACTIONS_CACHE_URL: ${ACTIONS_CACHE_URL}
+        ACTIONS_RUNTIME_TOKEN: ${ACTIONS_RUNTIME_TOKEN}      
     image: dashmate_helper:local
     stop_grace_period: 10s
