@@ -45,6 +45,7 @@ use std::collections::BTreeMap;
 use strategy::{ChainExecutionOutcome, ChainExecutionParameters, Strategy, StrategyRandomness};
 
 mod execution;
+mod failures;
 mod frequency;
 mod masternode_list_item_helpers;
 mod masternodes;
@@ -115,6 +116,7 @@ mod tests {
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
+            failure_testing: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -160,6 +162,7 @@ mod tests {
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
+            failure_testing: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -205,6 +208,7 @@ mod tests {
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
+            failure_testing: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -296,6 +300,7 @@ mod tests {
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
+            failure_testing: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -350,6 +355,7 @@ mod tests {
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
+            failure_testing: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -395,6 +401,7 @@ mod tests {
             },
             proposer_strategy: Default::default(),
             rotate_quorums: true,
+            failure_testing: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -477,6 +484,7 @@ mod tests {
                 ..Default::default()
             },
             rotate_quorums: true,
+            failure_testing: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -541,6 +549,7 @@ mod tests {
                 ..Default::default()
             },
             rotate_quorums: true,
+            failure_testing: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -600,6 +609,7 @@ mod tests {
                 ..Default::default()
             },
             rotate_quorums: true,
+            failure_testing: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -680,6 +690,7 @@ mod tests {
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
+            failure_testing: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -726,6 +737,7 @@ mod tests {
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
+            failure_testing: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -784,6 +796,7 @@ mod tests {
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
+            failure_testing: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -874,6 +887,7 @@ mod tests {
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
+            failure_testing: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -958,6 +972,7 @@ mod tests {
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
+            failure_testing: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -1022,6 +1037,7 @@ mod tests {
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
+            failure_testing: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -1114,6 +1130,7 @@ mod tests {
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
+            failure_testing: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -1206,6 +1223,7 @@ mod tests {
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
+            failure_testing: None,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -1299,6 +1317,7 @@ mod tests {
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
+            failure_testing: None,
         };
 
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -1410,6 +1429,7 @@ mod tests {
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
+            failure_testing: None,
         };
 
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -1472,6 +1492,7 @@ mod tests {
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
+            failure_testing: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -1541,6 +1562,7 @@ mod tests {
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
+            failure_testing: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -1611,6 +1633,7 @@ mod tests {
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
+            failure_testing: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -1692,6 +1715,7 @@ mod tests {
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
+            failure_testing: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
