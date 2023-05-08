@@ -344,6 +344,7 @@ WORKDIR /platform
 
 COPY --from=build-dashmate /platform /platform
 
+USER node
 ENTRYPOINT ["/platform/packages/dashmate/docker/entrypoint.sh"]
 
 
@@ -381,7 +382,7 @@ COPY --from=build-testsuite /platform /platform
 RUN cp /platform/packages/platform-test-suite/.env.example /platform/packages/platform-test-suite/.env
 
 EXPOSE 2500 2501 2510
-
+USER node
 ENTRYPOINT ["/platform/packages/platform-test-suite/bin/test.sh"]
 
 #
@@ -419,3 +420,4 @@ COPY --from=build-dapi /platform /platform
 RUN cp /platform/packages/dapi/.env.example /platform/packages/dapi/.env
 
 EXPOSE 2500 2501 2510
+USER node
