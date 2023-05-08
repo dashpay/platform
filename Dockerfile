@@ -2,16 +2,17 @@
 
 # Docker image for rs-drive-abci
 #
-# This image is divided into 3 stages, for better layer caching:
+# This image is divided multiple parts:
 # - deps - includes all dependencies and some libraries
-# - build - actual build process
-# - release - final image
+# - sources - includes full source code
+# - build-* - actual build process of given image
+# - drive-abci, dashmate, testsuite, dapi - final images
 #
 # The following build arguments can be provided using --build-arg:
 # - CARGO_BUILD_PROFILE - set to `release` to build final binary, without debugging information
+# - NODE_ENV - node.js environment name to use to build the library
 # - SCCACHE_GHA_ENABLED, ACTIONS_CACHE_URL, ACTIONS_RUNTIME_TOKEN - store sccache caches inside github actions
-#   cache instead of Docker cache mounts (not tested yet)
-# - PROTOC_ARCH - select architecture of protobuf compiler; one of: `x86_64` (default), `aarch_64`
+# - SCCACHE_MEMCACHED - set to memcache server URI (eg. tcp://172.17.0.1:11211) to enable sccache memcached backend
 # - ALPINE_VERSION - use different version of Alpine base image; requires also rust:apline... 
 #   image to be available
 # - USERNAME, USER_UID, USER_GID - specification of user used to run the binary
@@ -80,9 +81,9 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else expor
 #         /opt/emsdk/emsdk activate latest
 
 # Configure Node.js
-RUN npm install -g npm@latest && \
+RUN npm install -g npm@9.6.6 && \
     npm install -g corepack@latest && \
-    corepack prepare yarn@stable --activate && \
+    corepack prepare yarn@3.3.0 --activate && \
     corepack enable
 
 # TODO: Move above, where we call rustup
@@ -107,7 +108,7 @@ ARG SCCACHE_MEMCACHED
 ARG CARGO_INCREMENTAL=false
 
 # Select whether we want dev or release
-ARG CARGO_BUILD_PROFILE=debug
+ARG CARGO_BUILD_PROFILE=dev
 ENV CARGO_BUILD_PROFILE ${CARGO_BUILD_PROFILE}
 
 ARG NODE_ENV=production
@@ -166,8 +167,7 @@ RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
     cargo build -p drive-abci \
        --config net.git-fetch-with-cli=true && \
     cp /platform/target/*/drive-abci /artifacts/drive-abci && \
-    sccache --show-stats && \
-    du -sh /platform/target/*/*
+    sccache --show-stats
 
 #     yarn workspace @dashevo/wasm-dpp build && \
 
@@ -186,8 +186,7 @@ RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     yarn workspace @dashevo/wasm-dpp build && \
-    sccache --show-stats && \
-    du -sh /platform/target/*/*
+    sccache --show-stats
 
 #     yarn workspace @dashevo/wasm-dpp build && \
 
