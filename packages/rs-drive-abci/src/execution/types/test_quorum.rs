@@ -45,7 +45,7 @@ impl From<&ValidatorInQuorum> for Validator {
         } = value;
         Validator {
             pro_tx_hash: *pro_tx_hash,
-            public_key: public_key.clone(),
+            public_key: Some(public_key.clone()),
             node_ip: node_ip.to_string(),
             node_id: *node_id,
             core_port: *core_port,
@@ -69,7 +69,7 @@ impl From<ValidatorInQuorum> for Validator {
         } = value;
         Validator {
             pro_tx_hash,
-            public_key,
+            public_key: Some(public_key),
             node_ip,
             node_id,
             core_port,
