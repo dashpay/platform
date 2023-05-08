@@ -53,6 +53,24 @@ pub struct PlatformInitializationState {
 }
 
 impl PlatformState {
+    /// The default state at init chain
+    pub fn default_with_protocol_versions(
+        current_protocol_version_in_consensus: ProtocolVersion,
+        next_epoch_protocol_version: ProtocolVersion,
+    ) -> PlatformState {
+        PlatformState {
+            last_committed_block_info: None,
+            current_protocol_version_in_consensus,
+            next_epoch_protocol_version,
+            quorums_extended_info: Default::default(),
+            current_validator_set_quorum_hash: Default::default(),
+            next_validator_set_quorum_hash: None,
+            validator_sets: Default::default(),
+            full_masternode_list: Default::default(),
+            hpmn_masternode_list: Default::default(),
+            initialization_information: None,
+        }
+    }
     /// The height of the platform, only committed blocks increase height
     pub fn height(&self) -> u64 {
         self.last_committed_block_info

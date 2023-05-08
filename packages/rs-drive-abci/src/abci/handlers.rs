@@ -38,6 +38,7 @@ use crate::error::Error;
 use crate::execution::block_proposal::BlockProposal;
 use crate::execution::engine::BlockExecutionOutcome;
 use crate::rpc::core::CoreRPCLike;
+use crate::state::PlatformState;
 use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dpp::errors::consensus::codes::ErrorWithCode;
 use drive::fee::credits::SignedCredits;
@@ -82,6 +83,20 @@ where
         request: RequestInitChain,
     ) -> Result<ResponseInitChain, ResponseException> {
         self.start_transaction();
+        // We need to drop the block execution context just in case init chain had already been called
+        let mut block_execution_context = self.platform.block_execution_context.write().unwrap();
+        let block_context = block_execution_context.take(); //drop the block execution context
+        if block_context.is_some() {
+            let protocol_version_in_consensus = self.platform.config.initial_protocol_version;
+            let mut platform_state_write_guard = self.platform.state.write().unwrap();
+            *platform_state_write_guard = PlatformState::default_with_protocol_versions(
+                protocol_version_in_consensus,
+                protocol_version_in_consensus,
+            );
+            drop(platform_state_write_guard);
+        }
+        drop(block_execution_context);
+
         let transaction_guard = self.transaction.read().unwrap();
         let transaction = transaction_guard.as_ref().unwrap();
         let response = self.platform.init_chain(request, transaction)?;

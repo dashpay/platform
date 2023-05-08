@@ -336,18 +336,10 @@ impl<C> Platform<C> {
     where
         C: CoreRPCLike,
     {
-        let state = PlatformState {
-            last_committed_block_info: None,
+        let state = PlatformState::default_with_protocol_versions(
             current_protocol_version_in_consensus,
             next_epoch_protocol_version,
-            quorums_extended_info: Default::default(),
-            current_validator_set_quorum_hash: Default::default(),
-            next_validator_set_quorum_hash: None,
-            validator_sets: Default::default(),
-            full_masternode_list: Default::default(),
-            hpmn_masternode_list: Default::default(),
-            initialization_information: None,
-        };
+        );
 
         Ok(Platform {
             drive,
