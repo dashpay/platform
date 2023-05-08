@@ -16,7 +16,7 @@ class Proof {
   /**
    * @returns {Buffer}
    */
-  getMerkleProof() {
+  getGrovedbProof() {
     return this.merkleProof;
   }
 
@@ -43,13 +43,13 @@ class Proof {
   }
 
   /**
-   * @param {Object} proofProto
+   * @param {object} proofProto
    *
    * @returns {Proof}
    */
   static createFromProto(proofProto) {
     return new Proof({
-      merkleProof: Buffer.from(proofProto.getMerkleProof()),
+      merkleProof: Buffer.from(proofProto.getGrovedbProof()),
       quorumHash: Buffer.from(proofProto.getQuorumHash()),
       signature: Buffer.from(proofProto.getSignature()),
       round: proofProto.getRound(),

@@ -102,6 +102,12 @@ pub enum StrategyMode {
     //ProposerAndValidatorSigning, todo
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct FailureStrategy {
+    pub deterministic_start_seed: Option<u64>,
+    pub dont_finalize_block: bool,
+}
+
 #[derive(Clone, Debug)]
 pub struct Strategy {
     pub contracts_with_updates: Vec<(Contract, Option<BTreeMap<u64, Contract>>)>,
@@ -114,6 +120,7 @@ pub struct Strategy {
     pub core_height_increase: Frequency,
     pub proposer_strategy: MasternodeListChangesStrategy,
     pub rotate_quorums: bool,
+    pub failure_testing: Option<FailureStrategy>,
 }
 
 #[derive(Clone, Debug)]
@@ -163,6 +170,13 @@ impl UpgradingInfo {
 }
 
 impl Strategy {
+    pub fn dont_finalize_block(&self) -> bool {
+        self.failure_testing
+            .as_ref()
+            .map(|failure_strategy| failure_strategy.dont_finalize_block)
+            .unwrap_or(false)
+    }
+
     // TODO: This belongs to `DocumentOp`
     pub fn add_strategy_contracts_into_drive(&mut self, drive: &Drive) {
         for op in &self.operations {

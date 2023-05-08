@@ -47,7 +47,7 @@ describe('getIdentityFactory', () => {
 
     proofResponse.setQuorumHash(proofFixture.quorumHash);
     proofResponse.setSignature(proofFixture.signature);
-    proofResponse.setMerkleProof(proofFixture.merkleProof);
+    proofResponse.setGrovedbProof(proofFixture.merkleProof);
     proofResponse.setRound(proofFixture.round);
 
     grpcTransportMock = {
@@ -102,7 +102,7 @@ describe('getIdentityFactory', () => {
     expect(result.getMetadata()).to.deep.equal(metadataFixture);
 
     expect(result.getProof()).to.be.an.instanceOf(Proof);
-    expect(result.getProof().getMerkleProof()).to.deep.equal(proofFixture.merkleProof);
+    expect(result.getProof().getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
     expect(result.getProof().getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
     expect(result.getProof().getSignature()).to.deep.equal(proofFixture.signature);
     expect(result.getProof().getRound()).to.deep.equal(proofFixture.round);

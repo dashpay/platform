@@ -51,7 +51,7 @@ describe('GetDataContractResponse', () => {
 
     expect(dataContract).to.deep.equal(Buffer.alloc(0));
     expect(proof).to.be.an.instanceOf(Proof);
-    expect(proof.getMerkleProof()).to.deep.equal(proofFixture.merkleProof);
+    expect(proof.getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
     expect(proof.getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
     expect(proof.getSignature()).to.deep.equal(proofFixture.signature);
   });
@@ -85,7 +85,7 @@ describe('GetDataContractResponse', () => {
 
     proofProto.setQuorumHash(proofFixture.quorumHash);
     proofProto.setSignature(proofFixture.signature);
-    proofProto.setMerkleProof(proofFixture.merkleProof);
+    proofProto.setGrovedbProof(proofFixture.merkleProof);
 
     const proto = new GetDataContractResponse();
 
@@ -112,7 +112,7 @@ describe('GetDataContractResponse', () => {
     const proof = getDataContractResponse.getProof();
 
     expect(proof).to.be.an.instanceOf(Proof);
-    expect(proof.getMerkleProof()).to.deep.equal(proofFixture.merkleProof);
+    expect(proof.getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
     expect(proof.getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
     expect(proof.getSignature()).to.deep.equal(proofFixture.signature);
   });
