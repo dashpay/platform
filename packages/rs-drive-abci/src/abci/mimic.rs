@@ -38,6 +38,12 @@ pub struct MimicExecuteBlockOutcome {
     pub next_validator_set_hash: Vec<u8>,
 }
 
+/// Options for execution
+pub struct MimicExecuteBlockOptions {
+    /// don't finalize block
+    pub dont_finalize_block: bool,
+}
+
 impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
     /// Execute a block with various state transitions
     /// Returns the withdrawal transactions that were signed in the block
@@ -49,6 +55,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         block_info: BlockInfo,
         expect_validation_errors: bool,
         state_transitions: Vec<StateTransition>,
+        options: MimicExecuteBlockOptions,
     ) -> Result<MimicExecuteBlockOutcome, Error> {
         let mut rng = StdRng::seed_from_u64(block_info.height);
         let block_hash: [u8; 32] = rng.gen(); // We fake a block hash for the test
@@ -336,13 +343,15 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             block_id: Some(block_id),
         };
 
-        self.finalize_block(request_finalize_block)
-            .unwrap_or_else(|e| {
-                panic!(
-                    "should finalize block #{} at time #{} : {:?}",
-                    block_info.height, block_info.time_ms, e
-                )
-            });
+        if !options.dont_finalize_block {
+            self.finalize_block(request_finalize_block)
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "should finalize block #{} at time #{} : {:?}",
+                        block_info.height, block_info.time_ms, e
+                    )
+                });
+        }
 
         Ok(MimicExecuteBlockOutcome {
             withdrawal_transactions: withdrawals,

@@ -15,7 +15,7 @@ use dashcore_rpc::dashcore_rpc_json::{
 };
 use dpp::block::block_info::BlockInfo;
 use dpp::block::epoch::Epoch;
-use drive_abci::abci::mimic::MimicExecuteBlockOutcome;
+use drive_abci::abci::mimic::{MimicExecuteBlockOptions, MimicExecuteBlockOutcome};
 use drive_abci::abci::AbciApplication;
 use drive_abci::config::PlatformConfig;
 use drive_abci::execution::fee_pools::epoch::{EpochInfo, EPOCH_CHANGE_TIME_MS};
@@ -28,6 +28,7 @@ use rand::SeedableRng;
 use std::collections::{BTreeMap, HashMap};
 use tenderdash_abci::proto::abci::{ResponseInitChain, ValidatorSetUpdate};
 use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
+use tenderdash_abci::Application;
 
 pub(crate) fn run_chain_for_strategy(
     platform: &mut Platform<MockCoreRPCLike>,
@@ -413,7 +414,7 @@ pub(crate) fn run_chain_for_strategy(
             Ok(diff)
         });
 
-    start_chain_for_strategy(
+    create_chain_for_strategy(
         platform,
         block_count,
         all_hpmns_with_updates,
@@ -424,7 +425,7 @@ pub(crate) fn run_chain_for_strategy(
     )
 }
 
-pub(crate) fn start_chain_for_strategy(
+pub(crate) fn create_chain_for_strategy(
     platform: &Platform<MockCoreRPCLike>,
     block_count: u64,
     proposers_with_updates: Vec<MasternodeListItemWithUpdates>,
@@ -434,6 +435,37 @@ pub(crate) fn start_chain_for_strategy(
     mut rng: StdRng,
 ) -> ChainExecutionOutcome {
     let abci_application = AbciApplication::new(platform).expect("expected new abci application");
+    let seed = strategy
+        .failure_testing
+        .as_ref()
+        .map(|strategy| strategy.deterministic_start_seed)
+        .flatten()
+        .map(|seed| StrategyRandomness::SeedEntropy(seed))
+        .unwrap_or(StrategyRandomness::RNGEntropy(rng));
+    start_chain_for_strategy(
+        abci_application,
+        block_count,
+        proposers_with_updates,
+        quorums,
+        strategy,
+        config,
+        seed,
+    )
+}
+
+pub(crate) fn start_chain_for_strategy(
+    abci_application: AbciApplication<MockCoreRPCLike>,
+    block_count: u64,
+    proposers_with_updates: Vec<MasternodeListItemWithUpdates>,
+    quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
+    strategy: Strategy,
+    config: PlatformConfig,
+    seed: StrategyRandomness,
+) -> ChainExecutionOutcome {
+    let mut rng = match seed {
+        StrategyRandomness::SeedEntropy(seed) => StdRng::seed_from_u64(seed),
+        StrategyRandomness::RNGEntropy(rng) => rng,
+    };
 
     let quorum_hashes: Vec<&QuorumHash> = quorums.keys().collect();
 
@@ -472,29 +504,20 @@ pub(crate) fn start_chain_for_strategy(
         quorum_hash: current_quorum_hash.to_vec(),
     });
 
-    abci_application.start_transaction();
-
-    let binding = abci_application.transaction.read().unwrap();
-
-    let transaction = binding.as_ref().expect("expected a transaction");
-
     let ResponseInitChain {
         initial_core_height,
         ..
-    } = platform
-        .init_chain(init_chain_request, transaction)
+    } = abci_application
+        .init_chain(init_chain_request)
         .expect("should init chain");
 
     // initialization will change the current quorum hash
-    current_quorum_hash = platform
+    current_quorum_hash = abci_application
+        .platform
         .state
         .read()
         .unwrap()
         .current_validator_set_quorum_hash;
-
-    platform.create_mn_shares_contract(Some(transaction));
-
-    drop(binding);
 
     continue_chain_for_strategy(
         abci_application,
@@ -640,8 +663,15 @@ pub(crate) fn continue_chain_for_strategy(
                 block_info,
                 false,
                 state_transitions,
+                MimicExecuteBlockOptions {
+                    dont_finalize_block: strategy.dont_finalize_block(),
+                },
             )
             .expect("expected to execute a block");
+
+        if strategy.dont_finalize_block() {
+            continue;
+        }
 
         total_withdrawals.append(&mut withdrawals_this_block);
 
@@ -672,27 +702,35 @@ pub(crate) fn continue_chain_for_strategy(
         }
     }
 
-    let masternode_identity_balances = platform
-        .drive
-        .fetch_identities_balances(
-            &proposers_with_updates
-                .iter()
-                .map(|proposer| proposer.pro_tx_hash().into_inner())
-                .collect(),
-            None,
-        )
-        .expect("expected to get balances");
+    let masternode_identity_balances = if strategy.dont_finalize_block() && i == 0 {
+        BTreeMap::new()
+    } else {
+        platform
+            .drive
+            .fetch_identities_balances(
+                &proposers_with_updates
+                    .iter()
+                    .map(|proposer| proposer.pro_tx_hash().into_inner())
+                    .collect(),
+                None,
+            )
+            .expect("expected to get balances")
+    };
 
-    let end_epoch_index = platform
-        .state
-        .read()
-        .expect("lock is poisoned")
-        .last_committed_block_info
-        .as_ref()
-        .unwrap()
-        .basic_info
-        .epoch
-        .index;
+    let end_epoch_index = if strategy.dont_finalize_block() && i == 0 {
+        0
+    } else {
+        platform
+            .state
+            .read()
+            .expect("lock is poisoned")
+            .last_committed_block_info
+            .as_ref()
+            .unwrap()
+            .basic_info
+            .epoch
+            .index
+    };
 
     ChainExecutionOutcome {
         abci_app,
