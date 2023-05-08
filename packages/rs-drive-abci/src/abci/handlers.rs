@@ -34,6 +34,7 @@
 
 use crate::abci::server::AbciApplication;
 use crate::error::execution::ExecutionError;
+use crate::error::query::QueryError;
 use crate::error::Error;
 use crate::execution::block_proposal::BlockProposal;
 use crate::execution::engine::BlockExecutionOutcome;
@@ -507,23 +508,27 @@ where
     }
 
     fn query(&self, request: RequestQuery) -> Result<ResponseQuery, ResponseException> {
-        let RequestQuery {
-            data, path, prove, ..
-        } = request;
+        let RequestQuery { data, path, .. } = request;
 
-        let result = self.platform.query(path.as_str(), data.as_slice(), prove)?;
+        let result = self.platform.query(path.as_str(), data.as_slice())?;
 
-        let (code, data) = if result.is_valid() {
-            (0, result.data.unwrap_or_default())
+        let (code, data, log) = if result.is_valid() {
+            (
+                0,
+                result.data.unwrap_or_default(),
+                "query success".to_string(),
+            )
         } else {
-            (1, vec![])
+            let mut buffer: Vec<u8> = Vec::new();
+            ciborium::ser::into_writer(&result.errors, &buffer)?;
+            (1, buffer, format!("{:?}", result.errors))
         };
 
-        Ok(ResponseQuery {
+        let response = ResponseQuery {
             //todo: right now just put GRPC error codes,
             //  later we will use own error codes
             code,
-            log: "".to_string(),
+            log,
             info: "".to_string(),
             index: 0,
             key: vec![],
@@ -531,7 +536,10 @@ where
             proof_ops: None,
             height: self.platform.state.read().unwrap().height() as i64,
             codespace: "".to_string(),
-        })
+        };
+        tracing::trace!(method = "query", ?request, &response);
+
+        Ok(response)
     }
 }
 //
