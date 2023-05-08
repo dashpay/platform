@@ -56,7 +56,7 @@ describe('getDataContractFactory', () => {
 
     proof.setQuorumHash(proofFixture.quorumHash);
     proof.setSignature(proofFixture.signature);
-    proof.setMerkleProof(proofFixture.merkleProof);
+    proof.setGrovedbProof(proofFixture.merkleProof);
     proof.setRound(proofFixture.round);
   });
 
@@ -104,7 +104,7 @@ describe('getDataContractFactory', () => {
 
     expect(result.getDataContract()).to.deep.equal(Buffer.alloc(0));
     expect(result.getProof()).to.be.an.instanceOf(ProofClass);
-    expect(result.getProof().getMerkleProof()).to.deep.equal(proofFixture.merkleProof);
+    expect(result.getProof().getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
     expect(result.getProof().getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
     expect(result.getProof().getSignature()).to.deep.equal(proofFixture.signature);
     expect(result.getProof().getRound()).to.deep.equal(proofFixture.round);
