@@ -125,7 +125,7 @@ function waitForStateTransitionResultHandlerFactory(
 
       const proof = new Proof();
 
-      proof.setMerkleProof(proofObject.merkleProof);
+      proof.setGrovedbProof(proofObject.merkleProof);
       proof.setQuorumHash(proofObject.quorumHash);
       proof.setSignature(proofObject.signature);
       proof.setRound(proofObject.round);

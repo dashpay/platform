@@ -75,7 +75,7 @@ describe('getDocumentsHandlerFactory', () => {
     };
 
     proofMock = new Proof();
-    proofMock.setMerkleProof(proofFixture.merkleProof);
+    proofMock.setGrovedbProof(proofFixture.merkleProof);
 
     response = new GetDocumentsResponse();
     response.setProof(proofMock);
@@ -146,7 +146,7 @@ describe('getDocumentsHandlerFactory', () => {
     const proof = result.getProof();
 
     expect(proof).to.be.an.instanceOf(Proof);
-    const merkleProof = proof.getMerkleProof();
+    const merkleProof = proof.getGrovedbProof();
 
     expect(merkleProof).to.deep.equal(proofFixture.merkleProof);
   });
