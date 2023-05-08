@@ -65,7 +65,6 @@ pub struct Identity {
     pub balance: u64,
     #[bincode(with_serde)]
     pub revision: Revision,
-    #[bincode(with_serde)]
     #[serde(skip)]
     pub asset_lock_proof: Option<AssetLockProof>,
     #[bincode(with_serde)]
