@@ -87,6 +87,10 @@ where
         let mut block_execution_context = self.platform.block_execution_context.write().unwrap();
         let block_context = block_execution_context.take(); //drop the block execution context
         if block_context.is_some() {
+            tracing::debug!(
+                method = "init_chain",
+                "block context was present during init chain, restarting"
+            );
             let protocol_version_in_consensus = self.platform.config.initial_protocol_version;
             let mut platform_state_write_guard = self.platform.state.write().unwrap();
             *platform_state_write_guard = PlatformState::default_with_protocol_versions(
