@@ -101,9 +101,5 @@ runs:
           CARGO_BUILD_PROFILE=dev
         platforms: ${{ env.build_platforms }}
         push: ${{ inputs.push }}
-        cache-from: |
-          type=gha
-        # In practice, time spent preparing images is much lower than build.
-        # We minimize cached info to leave more space for sccache cache.
-        cache-to: |
-          type=gha,mode=min
+        cache-from: type=s3,region=eu-west-1,bucket=platform-runner-cache
+        cache-to: type=s3,region=eu-west-1,bucket=platform-runner-cache
