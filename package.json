@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/platform",
-  "version": "0.24.0-dev.26",
+  "version": "0.24.0-dev.33",
   "private": true,
   "scripts": {
     "setup": "yarn install && yarn run build && yarn run configure",
@@ -75,7 +75,7 @@
     "fast-json-patch": "^3.1.1",
     "oclif@3.4.2": "patch:oclif@npm:3.4.2#.yarn/patches/oclif-npm-3.4.2-a655d32eed.patch",
     "qs": "^6.7.3",
-    "engine.io": "^6.2.1",
+    "engine.io": "^6.4.2",
     "ua-parser-js": "^1.0.33",
     "dns-packet": "^5.4.0",
     "cpu-features": "https://registry.yarnpkg.com/@favware/skip-dependency/-/skip-dependency-1.2.1.tgz"

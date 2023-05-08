@@ -1,3 +1,83 @@
+## [0.24.0-dev.33](https://github.com/dashpay/platform/compare/v0.24.0-dev.32...v0.24.0-dev.33) (2023-05-05)
+
+
+### Continuous Integration
+
+* increase release timeouts ([#1032](https://github.com/dashpay/platform/issues/1032))
+
+## [0.24.0-dev.32](https://github.com/dashpay/platform/compare/v0.24.0-dev.31...v0.24.0-dev.32) (2023-05-04)
+
+### ⚠ BREAKING CHANGES
+
+* Previous state won't be valid (#1029)
+
+
+### Features
+
+* **dashmate:** core log file and debug categories ([#913](https://github.com/dashpay/platform/issues/913))
+
+
+### Bug Fixes
+
+* **dashmate:** waitForQuorumConnections deadline of 300000 exceeded ([#1015](https://github.com/dashpay/platform/issues/1015))
+* **dashmate:** wrong volume removal retry logic ([#1016](https://github.com/dashpay/platform/issues/1016))
+
+
+### Continuous Integration
+
+* add PR linter ([#1025](https://github.com/dashpay/platform/issues/1025))
+* add timeouts to self-hosted ci runs ([#1026](https://github.com/dashpay/platform/issues/1026))
+
+
+### Miscellaneous Chores
+
+* **dapi-client:** upate testnet masternode addresses whitelist ([#1023](https://github.com/dashpay/platform/issues/1023))
+* **drive:** disable protocol version signaling ([#1029](https://github.com/dashpay/platform/issues/1029))
+
+
+## [0.24.0-dev.31](https://github.com/dashpay/platform/compare/v0.24.0-dev.30...v0.24.0-dev.31) (2023-05-01)
+
+
+### Bug Fixes
+
+* expect platformNodeID to be a hex string ([#1013](https://github.com/dashpay/platform/issues/1013))
+
+## [0.24.0-dev.30](https://github.com/dashpay/platform/compare/v0.24.0-dev.29...v0.24.0-dev.30) (2023-04-30)
+
+
+### Bug Fixes
+
+* **dashmate:** "volume is in use" and "no such volume" ([#1005](https://github.com/dashpay/platform/issues/1005))
+
+## [0.24.0-dev.29](https://github.com/dashpay/platform/compare/v0.24.0-dev.28...v0.24.0-dev.29) (2023-04-29)
+
+
+### Bug Fixes
+
+* **dashmate:** reset platform affects core ([#1001](https://github.com/dashpay/platform/issues/1001))
+* **drive:** double init chain leads to side bugs ([#1002](https://github.com/dashpay/platform/issues/1002))
+
+## [0.24.0-dev.28](https://github.com/dashpay/platform/compare/v0.24.0-dev.27...v0.24.0-dev.28) (2023-04-28)
+
+
+### Bug Fixes
+
+* **dashmate:** BLS private key validate accepts whitespaces ([#998](https://github.com/dashpay/platform/issues/998))
+* **dashmate:** can't remove volumes if they not exist ([#997](https://github.com/dashpay/platform/issues/997))
+* **dashmate:** show masternode state while it is not synced ([#999](https://github.com/dashpay/platform/issues/999))
+* **dashmate:** wrap register masternode command in small terminals ([#996](https://github.com/dashpay/platform/issues/996))
+
+## [0.24.0-dev.27](https://github.com/dashpay/platform/compare/v0.24.0-dev.26...v0.24.0-dev.27) (2023-04-28)
+
+
+### ⚠ BREAKING CHANGES
+
+* The --platfrom-only flag is renamed to --platform (#991)
+
+### Bug Fixes
+
+* **dashmate:** multiple issues in the reset command ([#991](https://github.com/dashpay/platform/issues/991))
+
 ## [0.24.0-dev.26](https://github.com/dashpay/platform/compare/v0.24.0-dev.25...v0.24.0-dev.26) (2023-04-27)
 
 

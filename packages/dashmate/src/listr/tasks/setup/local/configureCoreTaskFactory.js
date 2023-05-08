@@ -162,13 +162,6 @@ function configureCoreTaskFactory(
 
                 const subTasks = masternodeConfigs.map((config, index) => ({
                   title: `Register ${config.getName()} masternode`,
-                  skip: () => {
-                    if (config.get('core.masternode.operator.privateKey')) {
-                      return `Masternode operator private key ('core.masternode.operator.privateKey') is already set in ${config.getName()} config`;
-                    }
-
-                    return false;
-                  },
                   task: () => new Listr([
                     {
                       title: 'Generate a masternode operator key',
