@@ -63,7 +63,7 @@ describe('GetIdentityResponse', () => {
 
     expect(identity).to.deep.equal(Buffer.alloc(0));
     expect(proof).to.be.an.instanceOf(Proof);
-    expect(proof.getMerkleProof()).to.deep.equal(proofFixture.merkleProof);
+    expect(proof.getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
     expect(proof.getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
     expect(proof.getSignature()).to.deep.equal(proofFixture.signature);
     expect(proof.getRound()).to.deep.equal(proofFixture.round);
@@ -89,7 +89,7 @@ describe('GetIdentityResponse', () => {
 
     proofProto.setQuorumHash(proofFixture.quorumHash);
     proofProto.setSignature(proofFixture.signature);
-    proofProto.setMerkleProof(proofFixture.merkleProof);
+    proofProto.setGrovedbProof(proofFixture.merkleProof);
     proofProto.setRound(proofFixture.round);
 
     proto.setIdentity(undefined);
@@ -102,7 +102,7 @@ describe('GetIdentityResponse', () => {
 
     const proof = getIdentityResponse.getProof();
     expect(proof).to.be.an.instanceOf(Proof);
-    expect(proof.getMerkleProof()).to.deep.equal(proofFixture.merkleProof);
+    expect(proof.getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
     expect(proof.getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
     expect(proof.getSignature()).to.deep.equal(proofFixture.signature);
     expect(proof.getRound()).to.deep.equal(proofFixture.round);
