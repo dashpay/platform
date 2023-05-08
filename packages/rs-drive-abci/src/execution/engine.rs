@@ -1,22 +1,17 @@
 use dashcore_rpc::dashcore::hashes::{hex::ToHex, Hash};
-use dashcore_rpc::dashcore::{QuorumHash, Txid};
+use dashcore_rpc::dashcore::Txid;
 use dpp::block::block_info::{BlockInfo, ExtendedBlockInfo};
 use dpp::block::epoch::Epoch;
 use dpp::bls_signatures;
 use dpp::consensus::ConsensusError;
 use dpp::state_transition::StateTransition;
-use dpp::validation::{
-    ConsensusValidationResult, SimpleConsensusValidationResult, SimpleValidationResult,
-    ValidationResult,
-};
+use dpp::validation::{SimpleValidationResult, ValidationResult};
 use drive::error::Error::GroveDB;
 use drive::fee::result::FeeResult;
-use drive::grovedb::{Transaction, TransactionArg};
+use drive::grovedb::Transaction;
 use std::collections::BTreeMap;
 
-use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
-use dpp::consensus::state::state_error::StateError;
-use dpp::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+use dpp::serialization_traits::PlatformDeserializable;
 use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 
@@ -28,15 +23,10 @@ use crate::error::execution::ExecutionError;
 
 use crate::error::Error;
 use crate::execution::block_proposal::BlockProposal;
-use crate::execution::execution_event::ExecutionResult::{
-    ConsensusExecutionError, SuccessfulFreeExecution, SuccessfulPaidExecution,
-};
-use crate::execution::execution_event::{ExecutionEvent, ExecutionResult};
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::execution::finalize_block_cleaned_request::{CleanedBlock, FinalizeBlockCleanedRequest};
 use crate::platform::{Platform, PlatformRef};
 use crate::rpc::core::CoreRPCLike;
-use crate::state::PlatformState;
 
 use crate::validation::state_transition::process_state_transition;
 
@@ -70,168 +60,29 @@ impl<C> Platform<C>
 where
     C: CoreRPCLike,
 {
-    pub(crate) fn validate_fees_of_event(
-        &self,
-        event: &ExecutionEvent,
-        block_info: &BlockInfo,
-        transaction: TransactionArg,
-    ) -> Result<ConsensusValidationResult<FeeResult>, Error> {
-        match event {
-            ExecutionEvent::PaidFromAssetLockDriveEvent {
-                identity,
-                operations,
-            }
-            | ExecutionEvent::PaidDriveEvent {
-                identity,
-                operations,
-            } => {
-                let balance = identity.balance.ok_or(Error::Execution(
-                    ExecutionError::CorruptedCodeExecution("partial identity info with no balance"),
-                ))?;
-                let estimated_fee_result = self
-                    .drive
-                    .apply_drive_operations(operations.clone(), false, block_info, transaction)
-                    .map_err(Error::Drive)?;
-
-                // TODO: Should take into account refunds as well
-                if balance >= estimated_fee_result.total_base_fee() {
-                    Ok(ConsensusValidationResult::new_with_data(
-                        estimated_fee_result,
-                    ))
-                } else {
-                    Ok(ConsensusValidationResult::new_with_data_and_errors(
-                        estimated_fee_result,
-                        vec![StateError::IdentityInsufficientBalanceError(
-                            IdentityInsufficientBalanceError::new(identity.id, balance),
-                        )
-                        .into()],
-                    ))
-                }
-            }
-            ExecutionEvent::FreeDriveEvent { .. } => Ok(ConsensusValidationResult::new_with_data(
-                FeeResult::default(),
-            )),
-        }
-    }
-
-    pub(crate) fn execute_event(
-        &self,
-        event: ExecutionEvent,
-        block_info: &BlockInfo,
-        transaction: &Transaction,
-    ) -> Result<ExecutionResult, Error> {
-        //todo: we need to split out errors
-        //  between failed execution and internal errors
-        let validation_result =
-            self.validate_fees_of_event(&event, block_info, Some(transaction))?;
-        match event {
-            ExecutionEvent::PaidFromAssetLockDriveEvent {
-                identity,
-                operations,
-            }
-            | ExecutionEvent::PaidDriveEvent {
-                identity,
-                operations,
-            } => {
-                if validation_result.is_valid_with_data() {
-                    //todo: make this into an atomic event with partial batches
-                    let individual_fee_result = self
-                        .drive
-                        .apply_drive_operations(operations, true, block_info, Some(transaction))
-                        .map_err(Error::Drive)?;
-
-                    let balance_change =
-                        individual_fee_result.into_balance_change(identity.id.to_buffer());
-
-                    let outcome = self.drive.apply_balance_change_from_fee_to_identity(
-                        balance_change,
-                        Some(transaction),
-                    )?;
-
-                    // println!("State transition fees {:#?}", outcome.actual_fee_paid);
-                    //
-                    // println!(
-                    //     "Identity balance {:?} changed {:#?}",
-                    //     identity.balance,
-                    //     balance_change.change()
-                    // );
-
-                    Ok(SuccessfulPaidExecution(
-                        validation_result.into_data()?,
-                        outcome.actual_fee_paid,
-                    ))
-                } else {
-                    Ok(ConsensusExecutionError(
-                        SimpleConsensusValidationResult::new_with_errors(validation_result.errors),
-                    ))
-                }
-            }
-            ExecutionEvent::FreeDriveEvent { operations } => {
-                self.drive
-                    .apply_drive_operations(operations, true, block_info, Some(transaction))
-                    .map_err(Error::Drive)?;
-                Ok(SuccessfulFreeExecution)
-            }
-        }
-    }
-
-    pub(crate) fn process_raw_state_transitions(
-        &self,
-        raw_state_transitions: &Vec<Vec<u8>>,
-        block_info: &BlockInfo,
-        transaction: &Transaction,
-    ) -> Result<(FeeResult, Vec<ExecTxResult>), Error> {
-        let state_transitions = StateTransition::deserialize_many(raw_state_transitions)?;
-        let mut aggregate_fee_result = FeeResult::default();
-        let state_read_guard = self.state.read().unwrap();
-        let platform_ref = PlatformRef {
-            drive: &self.drive,
-            state: &state_read_guard,
-            config: &self.config,
-            core_rpc: &self.core_rpc,
-        };
-        let exec_tx_results = state_transitions
-            .into_iter()
-            .map(|state_transition| {
-                let state_transition_execution_event =
-                    process_state_transition(&platform_ref, state_transition, Some(transaction))?;
-
-                let execution_result = if state_transition_execution_event.is_valid() {
-                    let execution_event = state_transition_execution_event.into_data()?;
-                    self.execute_event(execution_event, block_info, transaction)?
-                } else {
-                    ConsensusExecutionError(SimpleConsensusValidationResult::new_with_errors(
-                        state_transition_execution_event.errors,
-                    ))
-                };
-                if let SuccessfulPaidExecution(_, fee_result) = &execution_result {
-                    aggregate_fee_result.checked_add_assign(fee_result.clone())?;
-                }
-
-                Ok(execution_result.into())
-            })
-            .collect::<Result<Vec<ExecTxResult>, Error>>()?;
-        Ok((aggregate_fee_result, exec_tx_results))
-    }
-
-    // /// Update of the masternode identities
-    // pub fn update_masternode_identities(
-    //     &self,
-    //     previous_core_height: u32,
-    //     current_core_height: u32,
-    // ) -> Result<(), Error> {
-    //     if previous_core_height != current_core_height {
-    //         //todo:
-    //         // self.drive.fetch_full_identity()
-    //         // self.drive.add_new_non_unique_keys_to_identity()
-    //     }
-    //     Ok(())
-    // }
-
-    /// Run a block proposal, either from process proposal, or prepare proposal
-    /// Errors returned in the validation result are consensus errors, any error here means that
-    /// the block should be rejected
-    /// Errors returned in the result are critical system errors
+    /// Runs a block proposal, either from process proposal or prepare proposal.
+    ///
+    /// This function takes a `BlockProposal` and a `Transaction` as input and processes the block
+    /// proposal. It first validates the block proposal and then processes raw state transitions,
+    /// withdrawal transactions, and block fees. It also updates the validator set.
+    ///
+    /// # Arguments
+    ///
+    /// * `block_proposal` - The block proposal to be processed.
+    /// * `transaction` - The transaction associated with the block proposal.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<ValidationResult<BlockExecutionOutcome, Error>, Error>` - If the block proposal is
+    ///   successfully processed, it returns a `ValidationResult` containing the `BlockExecutionOutcome`.
+    ///   If the block proposal processing fails, it returns an `Error`. Consensus errors are returned
+    ///   in the `ValidationResult`, while critical system errors are returned in the `Result`.
+    ///
+    /// # Errors
+    ///
+    /// This function may return an `Error` variant if there is a problem with processing the block
+    /// proposal, updating the core info, processing raw state transitions, or processing block fees.
+    ///
     pub fn run_block_proposal(
         &self,
         block_proposal: BlockProposal,
@@ -397,152 +248,27 @@ where
         }))
     }
 
-    /// We need to validate against the platform state for rotation and not the block execution
-    /// context state
-    fn validator_set_update(
-        &self,
-        platform_state: &PlatformState,
-        block_execution_context: &mut BlockExecutionContext,
-    ) -> Result<Option<ValidatorSetUpdate>, Error> {
-        let mut perform_rotation = false;
-
-        if block_execution_context.block_state_info.height
-            % self.config.validator_set_quorum_rotation_block_count as u64
-            == 0
-        {
-            tracing::debug!(
-                method = "validator_set_update",
-                "rotation: previous quorum finished members"
-            );
-            perform_rotation = true;
-        }
-        // we also need to perform a rotation if the validator set is being removed
-        if block_execution_context
-            .block_platform_state
-            .validator_sets
-            .get(&platform_state.current_validator_set_quorum_hash)
-            .is_none()
-        {
-            tracing::debug!(
-                method = "validator_set_update",
-                "rotation: new quorums not containing current quorum current {:?}, {}",
-                block_execution_context
-                    .block_platform_state
-                    .validator_sets
-                    .keys()
-                    .map(|quorum_hash| format!("{}", quorum_hash)),
-                &platform_state.current_validator_set_quorum_hash
-            );
-            perform_rotation = true;
-        }
-
-        //todo: perform a rotation if quorum health is low
-
-        if perform_rotation {
-            // get the index of the previous quorum
-            let mut index = platform_state
-                .validator_sets
-                .get_index_of(&platform_state.current_validator_set_quorum_hash)
-                .ok_or(Error::Execution(ExecutionError::CorruptedCachedState(
-                    "current quorums do not contain current validator set",
-                )))?;
-            // we should rotate the quorum
-            let quorum_count = platform_state.validator_sets.len();
-            match quorum_count {
-                0 => Err(Error::Execution(ExecutionError::CorruptedCachedState(
-                    "no current quorums",
-                ))),
-                1 => Ok(None),
-                count => {
-                    let start_index = index;
-                    index = (index + 1) % count;
-                    // We can't just take the next item because it might no longer be in the state
-                    while index != start_index {
-                        let (quorum_hash, new_quorum) = platform_state
-                            .validator_sets
-                            .get_index(index)
-                            .expect("expected next validator set");
-                        // We still have it in the state
-                        if block_execution_context
-                            .block_platform_state
-                            .validator_sets
-                            .contains_key(quorum_hash)
-                        {
-                            tracing::debug!(
-                                method = "validator_set_update",
-                                "rotation: to new quorum: {}",
-                                &quorum_hash
-                            );
-                            block_execution_context
-                                .block_platform_state
-                                .next_validator_set_quorum_hash = Some(*quorum_hash);
-                            return Ok(Some(new_quorum.into()));
-                        }
-                        index = (index + 1) % count;
-                    }
-                    // All quorums changed
-                    if let Some((quorum_hash, new_quorum)) = block_execution_context
-                        .block_platform_state
-                        .validator_sets
-                        .first()
-                    {
-                        block_execution_context
-                            .block_platform_state
-                            .next_validator_set_quorum_hash = Some(*quorum_hash);
-                        tracing::debug!(
-                            method = "validator_set_update",
-                            "rotation: all quorums changed, rotation to new quorum: {}",
-                            &quorum_hash
-                        );
-                        return Ok(Some(new_quorum.into()));
-                    }
-                    tracing::debug!("no new quorums to choose from");
-                    Ok(None)
-                }
-            }
-        } else {
-            tracing::debug!(method = "validator_set_update", "no validator set update");
-            Ok(None)
-        }
-    }
-
-    // TODO: remove function from here
-    fn store_ephemeral_data(
-        &self,
-        block_info: &ExtendedBlockInfo,
-        quorum_hash: &QuorumHash,
-        transaction: &Transaction,
-    ) -> Result<(), Error> {
-        // we need to serialize the block info
-        let serialized_block_info = block_info.serialize()?;
-
-        // next we need to store this data in groveb
-        self.drive
-            .grove
-            .put_aux(
-                b"saved_state",
-                &serialized_block_info,
-                None,
-                Some(transaction),
-            )
-            .unwrap()
-            .map_err(|e| Error::Drive(GroveDB(e)))?;
-
-        self.drive
-            .grove
-            .put_aux(
-                b"saved_quorum_hash",
-                &quorum_hash.into_inner(),
-                None,
-                Some(transaction),
-            )
-            .unwrap()
-            .map_err(|e| Error::Drive(GroveDB(e)))?;
-
-        Ok(())
-    }
-
-    /// Update the current quorums if the core_height changes
+    /// Updates the current quorums and state cache if the `core_height` changes.
+    ///
+    /// This function takes an `ExtendedBlockInfo` and a `Transaction` as input and updates the
+    /// state cache and quorums based on the given block information. It handles protocol version
+    /// updates and sets the current and next epoch protocol versions.
+    ///
+    /// # Arguments
+    ///
+    /// * `block_info` - Extended block information for the current block.
+    /// * `transaction` - The transaction associated with the block.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<(), Error>` - If the state cache and quorums are successfully updated, it returns `Ok(())`.
+    ///   If there is a problem with the update, it returns an `Error`.
+    ///
+    /// # Errors
+    ///
+    /// This function may return an `Error` variant if there is a problem with updating the state cache
+    /// and quorums or storing the ephemeral data.
+    ///
     pub fn update_state_cache_and_quorums(
         &self,
         block_info: ExtendedBlockInfo,
@@ -601,7 +327,27 @@ where
         Ok(())
     }
 
-    /// check if received withdrawal transactions are correct and match our withdrawal txs
+    /// Checks if the received withdrawal transactions are correct and match the expected withdrawal transactions.
+    ///
+    /// This function compares the received withdrawal transactions with the expected ones. If they don't match,
+    /// an error is returned. If a validator public key is provided, the function also verifies the withdrawal
+    /// transactions' signatures.
+    ///
+    /// # Arguments
+    ///
+    /// * `received_withdrawals` - The withdrawal transactions received.
+    /// * `our_withdrawals` - The expected withdrawal transactions.
+    /// * `height` - The block height.
+    /// * `round` - The consensus round.
+    /// * `verify_with_validator_public_key` - An optional reference to a validator public key.
+    /// * `quorum_hash` - An optional byte slice reference containing the quorum hash.
+    ///
+    /// # Returns
+    ///
+    /// * `SimpleValidationResult<AbciError>` - If the received withdrawal transactions match the expected ones
+    ///   and the signatures are valid (if provided), it returns a default `SimpleValidationResult`. Otherwise,
+    ///   it returns a `SimpleValidationResult` with an error.
+    ///
     pub fn check_withdrawals(
         &self,
         received_withdrawals: &WithdrawalTxs,
@@ -648,8 +394,23 @@ where
         }
     }
 
-    /// Finalize the block, this first involves validating it, then if valid
-    /// it is committed to the state
+    /// Finalizes the block proposal by first validating it and then committing it to the state.
+    ///
+    /// This function first retrieves the block execution context and decomposes the request. It then checks
+    /// if the received block matches the expected block information (height, round, hash, etc.). If everything
+    /// matches, the function verifies the commit signature (if enabled) and the vote extensions. If all checks
+    /// pass, the block is committed to the state.
+    ///
+    /// # Arguments
+    ///
+    /// * `request_finalize_block` - A `FinalizeBlockCleanedRequest` object containing the block proposal data.
+    /// * `transaction` - A reference to a `Transaction` object.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<BlockFinalizationOutcome, Error>` - If the block proposal passes all checks and is committed
+    ///   to the state, it returns a `BlockFinalizationOutcome`. If any check fails, it returns an `Error`.
+    ///
     pub fn finalize_block_proposal(
         &self,
         request_finalize_block: FinalizeBlockCleanedRequest,
@@ -809,11 +570,20 @@ where
         Ok(validation_result.into())
     }
 
-    /// Check a state transition to see if it should be added to mempool,
-    /// This executes a few checks.
-    /// It does validation on the state transition, and checks that the user is able to pay
-    /// for the it. It can be wrong is rare cases, so the proposer needs to check transactions
-    /// again before proposing his block.
+    /// Checks a state transition to determine if it should be added to the mempool.
+    ///
+    /// This function performs a few checks, including validating the state transition and ensuring that the
+    /// user can pay for it. It may be inaccurate in rare cases, so the proposer needs to re-check transactions
+    /// before proposing a block.
+    ///
+    /// # Arguments
+    ///
+    /// * `raw_tx` - A raw transaction represented as a vector of bytes.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<ValidationResult<FeeResult, ConsensusError>, Error>` - If the state transition passes all
+    ///   checks, it returns a `ValidationResult` with fee information. If any check fails, it returns an `Error`.
     pub fn check_tx(
         &self,
         raw_tx: Vec<u8>,

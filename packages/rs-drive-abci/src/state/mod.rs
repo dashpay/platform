@@ -12,6 +12,7 @@ use drive::dpp::util::deserializer::ProtocolVersion;
 use indexmap::IndexMap;
 use std::collections::{BTreeMap, HashMap};
 
+mod commit;
 mod genesis;
 
 /// Platform state

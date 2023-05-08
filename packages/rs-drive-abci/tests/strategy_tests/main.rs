@@ -40,8 +40,6 @@ use drive_abci::test::helpers::setup::TestPlatformBuilder;
 use drive_abci::{config::PlatformConfig, test::helpers::setup::TempPlatform};
 use frequency::Frequency;
 
-use rand::distributions::Distribution;
-
 use std::collections::BTreeMap;
 
 use strategy::{ChainExecutionOutcome, ChainExecutionParameters, Strategy, StrategyRandomness};
