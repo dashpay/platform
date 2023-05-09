@@ -87,6 +87,9 @@ function resetNodeTaskFactory(
                     if (e.statusCode === 409) {
                       await wait(1000);
 
+                      // Remove containers
+                      await dockerCompose.rm(config.toEnvs(), serviceNames);
+
                       isRetry = true;
 
                       continue;

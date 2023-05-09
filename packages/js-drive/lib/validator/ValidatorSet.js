@@ -1,6 +1,7 @@
 const Validator = require('./Validator');
 const ValidatorSetIsNotInitializedError = require('./errors/ValidatorSetIsNotInitializedError');
 const ValidatorNetworkInfo = require('./ValidatorNetworkInfo');
+const QuorumsNotFoundError = require('../core/errors/QuorumsNotFoundError');
 
 class ValidatorSet {
   /**
@@ -106,17 +107,25 @@ class ValidatorSet {
    * @return {Promise<void>}
    */
   async switchToRandomQuorum(sml, coreHeight, rotationEntropy) {
-    this.quorum = await this.getRandomQuorum(
+    const result = await this.getRandomQuorum(
       sml,
       this.validatorSetLLMQType,
       rotationEntropy,
       coreHeight,
     );
 
-    const quorumMembers = await this.fetchQuorumMembers(
-      this.validatorSetLLMQType,
-      this.quorum.quorumHash,
-    );
+    // Stay with the current quorum if there are no any other valid
+    if (!result) {
+      if (!this.quorum) {
+        throw new QuorumsNotFoundError(sml, this.validatorSetLLMQType);
+      }
+
+      return;
+    }
+
+    const { quorum, members } = result;
+
+    this.quorum = quorum;
 
     // If the node is a quorum member and doesn't receive public key share for members
     // it should throw an error
@@ -135,31 +144,13 @@ class ValidatorSet {
       }
     }
 
-    const isThisNodeMember = !!quorumMembers
+    const isThisNodeMember = !!members
       .find((member) => member.valid && member.proTxHash === proTxHash);
 
-    const validMasternodesList = this.simplifiedMasternodeList
-      .getStore()
-      .getCurrentSML()
-      .getValidMasternodesList();
+    this.validators = members.map((member) => {
+      const ip = member.service.split(':')[0];
 
-    const masternodes = {};
-
-    this.validators = quorumMembers.filter((member) => {
-      // Ignore invalid quorum members
-      if (!member.valid) {
-        return false;
-      }
-
-      // Ignore members which are not part of SML
-      masternodes[member.proTxHash] = validMasternodesList
-        .find((mnEntry) => mnEntry.proRegTxHash === member.proTxHash);
-
-      return Boolean(masternodes[member.proTxHash]);
-    }).map((member) => {
-      const masternode = masternodes[member.proTxHash];
-
-      const networkInfo = new ValidatorNetworkInfo(masternode.getIp(), this.tenderdashP2pPort);
+      const networkInfo = new ValidatorNetworkInfo(ip, this.tenderdashP2pPort);
 
       return Validator.createFromQuorumMember(member, networkInfo, isThisNodeMember);
     });

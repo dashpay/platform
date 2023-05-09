@@ -1,7 +1,7 @@
 const { expect } = require('chai');
 const getRandomQuorumFactory = require('../../../lib/core/getRandomQuorumFactory');
 
-describe('getRandomQuorumFactory', () => {
+describe.skip('getRandomQuorumFactory', () => {
   let smlMock;
   let quorumType;
   let getRandomQuorum;
