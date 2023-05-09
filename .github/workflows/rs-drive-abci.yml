@@ -36,6 +36,7 @@ jobs:
   docker:
     name: Docker
     runs-on: self-hosted
+    if: false
     timeout-minutes: 180  # ARM build can take forever
     steps:
       - uses: actions/checkout@v3
