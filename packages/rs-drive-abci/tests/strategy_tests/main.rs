@@ -55,6 +55,7 @@ mod signer;
 mod strategy;
 mod transitions;
 mod upgrade_fork_tests;
+mod verify_state_transitions;
 
 pub type BlockHeight = u64;
 
@@ -119,7 +120,8 @@ mod tests {
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
-            query_testing: None, verify_state_transition_results: false,
+            query_testing: None,
+            verify_state_transition_results: false,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -166,7 +168,8 @@ mod tests {
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
-            query_testing: None, verify_state_transition_results: false,
+            query_testing: None,
+            verify_state_transition_results: false,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -213,7 +216,8 @@ mod tests {
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
-            query_testing: None, verify_state_transition_results: false,
+            query_testing: None,
+            verify_state_transition_results: false,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -306,7 +310,8 @@ mod tests {
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
-            query_testing: None, verify_state_transition_results: false,
+            query_testing: None,
+            verify_state_transition_results: true,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -362,7 +367,8 @@ mod tests {
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
-            query_testing: None, verify_state_transition_results: false,
+            query_testing: None,
+            verify_state_transition_results: true,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -409,7 +415,8 @@ mod tests {
             proposer_strategy: Default::default(),
             rotate_quorums: true,
             failure_testing: None,
-            query_testing: None, verify_state_transition_results: false,
+            query_testing: None,
+            verify_state_transition_results: true,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -493,7 +500,8 @@ mod tests {
             },
             rotate_quorums: true,
             failure_testing: None,
-            query_testing: None, verify_state_transition_results: false,
+            query_testing: None,
+            verify_state_transition_results: true,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -559,7 +567,8 @@ mod tests {
             },
             rotate_quorums: true,
             failure_testing: None,
-            query_testing: None, verify_state_transition_results: false,
+            query_testing: None,
+            verify_state_transition_results: true,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -620,7 +629,8 @@ mod tests {
             },
             rotate_quorums: true,
             failure_testing: None,
-            query_testing: None, verify_state_transition_results: false,
+            query_testing: None,
+            verify_state_transition_results: true,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -708,7 +718,7 @@ mod tests {
                     chance_per_block: None,
                 },
             }),
-            verify_state_transition_results: false,
+            verify_state_transition_results: true,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -756,7 +766,8 @@ mod tests {
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
-            query_testing: None, verify_state_transition_results: false,
+            query_testing: None,
+            verify_state_transition_results: true,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -816,7 +827,8 @@ mod tests {
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
-            query_testing: None, verify_state_transition_results: false,
+            query_testing: None,
+            verify_state_transition_results: true,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -908,7 +920,8 @@ mod tests {
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
-            query_testing: None, verify_state_transition_results: false,
+            query_testing: None,
+            verify_state_transition_results: true,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -994,7 +1007,8 @@ mod tests {
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
-            query_testing: None, verify_state_transition_results: false,
+            query_testing: None,
+            verify_state_transition_results: true,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -1060,7 +1074,8 @@ mod tests {
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
-            query_testing: None, verify_state_transition_results: false,
+            query_testing: None,
+            verify_state_transition_results: true,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -1154,7 +1169,8 @@ mod tests {
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
-            query_testing: None, verify_state_transition_results: false,
+            query_testing: None,
+            verify_state_transition_results: true,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -1248,7 +1264,8 @@ mod tests {
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
-            query_testing: None, verify_state_transition_results: false,
+            query_testing: None,
+            verify_state_transition_results: true,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -1343,7 +1360,8 @@ mod tests {
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
-            query_testing: None, verify_state_transition_results: false,
+            query_testing: None,
+            verify_state_transition_results: true,
         };
 
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -1456,7 +1474,8 @@ mod tests {
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
-            query_testing: None, verify_state_transition_results: false,
+            query_testing: None,
+            verify_state_transition_results: true,
         };
 
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -1520,7 +1539,8 @@ mod tests {
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
-            query_testing: None, verify_state_transition_results: false,
+            query_testing: None,
+            verify_state_transition_results: true,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -1591,7 +1611,8 @@ mod tests {
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
-            query_testing: None, verify_state_transition_results: false,
+            query_testing: None,
+            verify_state_transition_results: true,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -1663,7 +1684,8 @@ mod tests {
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
-            query_testing: None, verify_state_transition_results: false,
+            query_testing: None,
+            verify_state_transition_results: true,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -1746,7 +1768,8 @@ mod tests {
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
-            query_testing: None, verify_state_transition_results: false,
+            query_testing: None,
+            verify_state_transition_results: true,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,

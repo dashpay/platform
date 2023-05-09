@@ -167,8 +167,22 @@ message GetProofsRequest {
     bytes document_id = 4;
   }
 
-  repeated bytes identity_ids = 1;
-  repeated bytes contract_ids = 2;
+  message IdentityRequest {
+    enum Type {
+      FULL_IDENTITY = 0;
+      BALANCE = 1;
+      KEYS = 2;
+    }
+    bytes identity_id = 1;
+    Type request_type = 2;
+  }
+
+  message ContractRequest {
+    bytes contract_id = 1;
+  }
+
+  repeated IdentityRequest identities = 1;
+  repeated ContractRequest contracts = 2;
   repeated DocumentProofRequest documents = 3;
 }
 

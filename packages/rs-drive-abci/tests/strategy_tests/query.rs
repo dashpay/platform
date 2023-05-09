@@ -41,7 +41,7 @@ impl QueryStrategy {
             StrategyRandomness::RNGEntropy(rng) => rng,
         };
         let QueryStrategy {
-            query_identities_by_public_key_hashes
+            query_identities_by_public_key_hashes,
         } = self;
         if query_identities_by_public_key_hashes.is_set() {
             Self::query_identities_by_public_key_hashes(

@@ -123,4 +123,8 @@ pub enum QuerySyntaxError {
     /// Starts with illegal string error
     #[error("starts with illegal string error: {0}")]
     StartsWithIllegalString(&'static str),
+
+    /// Invalid identity prove request error
+    #[error("invalid identity prove request error: {0}")]
+    InvalidIdentityProveRequest(&'static str),
 }

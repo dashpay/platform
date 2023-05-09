@@ -1,3 +1,4 @@
+use crate::drive::identity::{IdentityDriveQuery, IdentityProveRequestType};
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
@@ -8,16 +9,31 @@ impl Drive {
     /// Given public key hashes, fetches full identities as proofs.
     pub fn prove_multiple(
         &self,
-        identity_ids: &[[u8; 32]],
+        identity_queries: &Vec<IdentityDriveQuery>,
         contract_ids: &[[u8; 32]],
         document_queries: &Vec<SingleDocumentDriveQuery>,
         transaction: TransactionArg,
     ) -> Result<Vec<u8>, Error> {
         let mut path_queries = vec![];
         let mut count = 0;
-        if !identity_ids.is_empty() {
-            path_queries.push(Self::full_identities_query(identity_ids)?);
-            count += identity_ids.len();
+        if !identity_queries.is_empty() {
+            for identity_query in identity_queries {
+                match identity_query.prove_request_type {
+                    IdentityProveRequestType::FullIdentity => {
+                        path_queries.push(Self::full_identity_query(&identity_query.identity_id)?);
+                    }
+                    IdentityProveRequestType::Balance => {
+                        path_queries.push(Self::balance_for_identity_id_query(
+                            identity_query.identity_id,
+                        ));
+                    }
+                    IdentityProveRequestType::Keys => {
+                        path_queries
+                            .push(Self::identity_all_keys_query(&identity_query.identity_id)?);
+                    }
+                }
+            }
+            count += identity_queries.len();
         }
         if !contract_ids.is_empty() {
             path_queries.push(Self::fetch_contracts_query(contract_ids)?);

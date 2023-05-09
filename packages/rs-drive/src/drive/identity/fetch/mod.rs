@@ -41,7 +41,7 @@ mod partial_identity;
 #[cfg(feature = "full")]
 mod prove;
 #[cfg(any(feature = "full", feature = "verify"))]
-mod queries;
+pub(crate) mod queries;
 #[cfg(feature = "full")]
 mod revision;
 

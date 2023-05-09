@@ -39,7 +39,9 @@ CF_EXTERN_C_BEGIN
 @class GetIdentitiesKeysResponse_PublicKeyEntries;
 @class GetIdentitiesKeysResponse_PublicKeyEntry;
 @class GetIdentityKeysResponse_Keys;
+@class GetProofsRequest_ContractRequest;
 @class GetProofsRequest_DocumentProofRequest;
+@class GetProofsRequest_IdentityRequest;
 @class KeyRequestType;
 @class Proof;
 @class ResponseMetadata;
@@ -90,6 +92,28 @@ GPBEnumDescriptor *GetIdentitiesKeysRequest_SecurityLevelMap_KeyKindRequestType_
  * the time this source was generated.
  **/
 BOOL GetIdentitiesKeysRequest_SecurityLevelMap_KeyKindRequestType_IsValidValue(int32_t value);
+
+#pragma mark - Enum GetProofsRequest_IdentityRequest_Type
+
+typedef GPB_ENUM(GetProofsRequest_IdentityRequest_Type) {
+  /**
+   * Value used if any message's field encounters a value that is not defined
+   * by this enum. The message will also have C functions to get/set the rawValue
+   * of the field.
+   **/
+  GetProofsRequest_IdentityRequest_Type_GPBUnrecognizedEnumeratorValue = kGPBUnrecognizedEnumeratorValue,
+  GetProofsRequest_IdentityRequest_Type_FullIdentity = 0,
+  GetProofsRequest_IdentityRequest_Type_Balance = 1,
+  GetProofsRequest_IdentityRequest_Type_Keys = 2,
+};
+
+GPBEnumDescriptor *GetProofsRequest_IdentityRequest_Type_EnumDescriptor(void);
+
+/**
+ * Checks to see if the given value is defined by the enum or was not known at
+ * the time this source was generated.
+ **/
+BOOL GetProofsRequest_IdentityRequest_Type_IsValidValue(int32_t value);
 
 #pragma mark - PlatformRoot
 
@@ -558,20 +582,20 @@ GPB_FINAL @interface GetIdentitiesKeysResponse_PublicKeyEntries : GPBMessage
 #pragma mark - GetProofsRequest
 
 typedef GPB_ENUM(GetProofsRequest_FieldNumber) {
-  GetProofsRequest_FieldNumber_IdentityIdsArray = 1,
-  GetProofsRequest_FieldNumber_ContractIdsArray = 2,
+  GetProofsRequest_FieldNumber_IdentitiesArray = 1,
+  GetProofsRequest_FieldNumber_ContractsArray = 2,
   GetProofsRequest_FieldNumber_DocumentsArray = 3,
 };
 
 GPB_FINAL @interface GetProofsRequest : GPBMessage
 
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *identityIdsArray;
-/** The number of items in @c identityIdsArray without causing the array to be created. */
-@property(nonatomic, readonly) NSUInteger identityIdsArray_Count;
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetProofsRequest_IdentityRequest*> *identitiesArray;
+/** The number of items in @c identitiesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger identitiesArray_Count;
 
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *contractIdsArray;
-/** The number of items in @c contractIdsArray without causing the array to be created. */
-@property(nonatomic, readonly) NSUInteger contractIdsArray_Count;
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetProofsRequest_ContractRequest*> *contractsArray;
+/** The number of items in @c contractsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger contractsArray_Count;
 
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetProofsRequest_DocumentProofRequest*> *documentsArray;
 /** The number of items in @c documentsArray without causing the array to be created. */
@@ -597,6 +621,45 @@ GPB_FINAL @interface GetProofsRequest_DocumentProofRequest : GPBMessage
 @property(nonatomic, readwrite) BOOL documentTypeKeepsHistory;
 
 @property(nonatomic, readwrite, copy, null_resettable) NSData *documentId;
+
+@end
+
+#pragma mark - GetProofsRequest_IdentityRequest
+
+typedef GPB_ENUM(GetProofsRequest_IdentityRequest_FieldNumber) {
+  GetProofsRequest_IdentityRequest_FieldNumber_IdentityId = 1,
+  GetProofsRequest_IdentityRequest_FieldNumber_RequestType = 2,
+};
+
+GPB_FINAL @interface GetProofsRequest_IdentityRequest : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *identityId;
+
+@property(nonatomic, readwrite) GetProofsRequest_IdentityRequest_Type requestType;
+
+@end
+
+/**
+ * Fetches the raw value of a @c GetProofsRequest_IdentityRequest's @c requestType property, even
+ * if the value was not defined by the enum at the time the code was generated.
+ **/
+int32_t GetProofsRequest_IdentityRequest_RequestType_RawValue(GetProofsRequest_IdentityRequest *message);
+/**
+ * Sets the raw value of an @c GetProofsRequest_IdentityRequest's @c requestType property, allowing
+ * it to be set to a value that was not defined by the enum at the time the code
+ * was generated.
+ **/
+void SetGetProofsRequest_IdentityRequest_RequestType_RawValue(GetProofsRequest_IdentityRequest *message, int32_t value);
+
+#pragma mark - GetProofsRequest_ContractRequest
+
+typedef GPB_ENUM(GetProofsRequest_ContractRequest_FieldNumber) {
+  GetProofsRequest_ContractRequest_FieldNumber_ContractId = 1,
+};
+
+GPB_FINAL @interface GetProofsRequest_ContractRequest : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *contractId;
 
 @end
 

@@ -19,6 +19,8 @@ use std::collections::BTreeMap;
 use dpp::serialization_traits::PlatformSerializable;
 use dpp::validation::ValidationResult;
 use dpp::{check_validation_result_with_data, ProtocolError};
+use drive::drive::identity::IdentityDriveQuery;
+use drive::drive::identity::IdentityProveRequestType;
 
 use dapi_grpc::platform::v0::get_data_contracts_response::DataContractEntry;
 use dpp::identity::{KeyID, Purpose, SecurityLevel};
@@ -544,22 +546,28 @@ impl<C> Platform<C> {
             }
             "/proofs" => {
                 let GetProofsRequest {
-                    identity_ids,
-                    contract_ids,
+                    identities,
+                    contracts,
                     documents,
                 } = check_validation_result_with_data!(GetProofsRequest::decode(query_data));
-                let contract_ids = check_validation_result_with_data!(contract_ids
+                let contract_ids = check_validation_result_with_data!(contracts
                     .into_iter()
-                    .map(|contract_id_vec| {
-                        Bytes32::from_vec(contract_id_vec).map(|bytes| bytes.0)
+                    .map(|contract_request| {
+                        Bytes32::from_vec(contract_request.contract_id).map(|bytes| bytes.0)
                     })
                     .collect::<Result<Vec<[u8; 32]>, dpp::platform_value::Error>>());
-                let identity_ids = check_validation_result_with_data!(identity_ids
+                let identity_ids = check_validation_result_with_data!(identities
                     .into_iter()
-                    .map(|identity_id_vec| {
-                        Bytes32::from_vec(identity_id_vec).map(|bytes| bytes.0)
+                    .map(|identity_request| {
+                        Ok(IdentityDriveQuery {
+                            identity_id: Bytes32::from_vec(identity_request.identity_id)
+                                .map(|bytes| bytes.0)?,
+                            prove_request_type: IdentityProveRequestType::try_from(
+                                identity_request.request_type as u8,
+                            )?,
+                        })
                     })
-                    .collect::<Result<Vec<[u8; 32]>, dpp::platform_value::Error>>());
+                    .collect::<Result<Vec<IdentityDriveQuery>, QueryError>>());
                 let document_queries = check_validation_result_with_data!(documents
                     .into_iter()
                     .map(|document_proof_request| {

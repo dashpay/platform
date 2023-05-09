@@ -57,19 +57,54 @@ pub fn process_state_transition<'a, C: CoreRPCLike>(
     result.map_result(|action| (maybe_identity, action, &platform.state.epoch()).try_into())
 }
 
+/// A trait for validating state transitions within a blockchain.
 pub trait StateTransitionValidation {
+    /// Validates the structure of a transaction by checking its basic elements.
+    ///
+    /// # Arguments
+    ///
+    /// * `drive` - A reference to the drive containing the transaction data.
+    /// * `tx` - The transaction argument to be checked.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<SimpleConsensusValidationResult, Error>` - A result with either a SimpleConsensusValidationResult or an Error.
     fn validate_structure(
         &self,
         drive: &Drive,
         tx: TransactionArg,
     ) -> Result<SimpleConsensusValidationResult, Error>;
 
+    /// Validates the identity and signatures of a transaction to ensure its authenticity.
+    ///
+    /// # Arguments
+    ///
+    /// * `drive` - A reference to the drive containing the transaction data.
+    /// * `tx` - The transaction argument to be authenticated.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<ConsensusValidationResult<Option<PartialIdentity>>, Error>` - A result with either a ConsensusValidationResult containing an optional PartialIdentity or an Error.
     fn validate_identity_and_signatures(
         &self,
         drive: &Drive,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error>;
 
+    /// Validates the state transition by analyzing the changes in the platform state after applying the transaction.
+    ///
+    /// # Arguments
+    ///
+    /// * `platform` - A reference to the platform containing the state data.
+    /// * `tx` - The transaction argument to be applied.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `C: CoreRPCLike` - A type constraint indicating that C should implement `CoreRPCLike`.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<ConsensusValidationResult<StateTransitionAction>, Error>` - A result with either a ConsensusValidationResult containing a StateTransitionAction or an Error.
     fn validate_state<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
