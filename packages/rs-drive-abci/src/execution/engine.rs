@@ -37,7 +37,7 @@ pub struct BlockExecutionOutcome {
     /// after the block has been executed
     pub app_hash: [u8; 32],
     /// The results of the execution of each transaction
-    pub tx_results: Vec<ExecTxResult>,
+    pub tx_results: Vec<(Vec<u8>, ExecTxResult)>,
     /// The changes to the validator set
     pub validator_set_update: Option<ValidatorSetUpdate>,
 }
