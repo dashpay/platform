@@ -4,6 +4,7 @@ use crate::operations::FinalizeBlockOperation::IdentityAddKeys;
 use crate::operations::{
     DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, Operation, OperationType,
 };
+use crate::query::QueryStrategy;
 use crate::signer::SimpleSigner;
 use crate::BlockHeight;
 use dashcore_rpc::dashcore;
@@ -121,6 +122,7 @@ pub struct Strategy {
     pub proposer_strategy: MasternodeListChangesStrategy,
     pub rotate_quorums: bool,
     pub failure_testing: Option<FailureStrategy>,
+    pub query_testing: Option<QueryStrategy>,
 }
 
 #[derive(Clone, Debug)]

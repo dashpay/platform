@@ -1,6 +1,7 @@
 use crate::masternodes;
 use crate::masternodes::{GenerateTestMasternodeUpdates, MasternodeListItemWithUpdates};
 use crate::operations::FinalizeBlockOperation::IdentityAddKeys;
+use crate::query::ProofVerification;
 use crate::signer::SimpleSigner;
 use crate::strategy::{
     ChainExecutionOutcome, ChainExecutionParameters, Strategy, StrategyRandomness,
@@ -655,6 +656,7 @@ pub(crate) fn continue_chain_for_strategy(
         let MimicExecuteBlockOutcome {
             withdrawal_transactions: mut withdrawals_this_block,
             next_validator_set_hash,
+            root_app_hash,
         } = abci_app
             .mimic_execute_block(
                 proposer.pro_tx_hash.into_inner(),
@@ -691,6 +693,19 @@ pub(crate) fn continue_chain_for_strategy(
         signer.commit_block_keys();
 
         current_time_ms += config.block_spacing_ms;
+
+        if let Some(query_strategy) = &strategy.query_testing {
+            query_strategy.query_chain_for_strategy(
+                &ProofVerification {
+                    root_app_hash: &root_app_hash,
+                    block_signature: &vec![], //todo
+                    quorum_hash: &current_quorum_with_test_info.quorum_hash.into_inner(),
+                },
+                &current_identities,
+                &abci_app,
+                StrategyRandomness::RNGEntropy(rng.clone()),
+            )
+        }
 
         let next_quorum_hash = QuorumHash::from_inner(next_validator_set_hash.try_into().unwrap());
         if current_quorum_hash != next_quorum_hash {

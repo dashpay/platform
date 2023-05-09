@@ -9,6 +9,6 @@ pub fn hash(payload: impl AsRef<[u8]>) -> [u8; 32] {
     Sha256::digest(Sha256::digest(payload)).into()
 }
 
-pub fn ripemd160_sha256(data: &[u8]) -> Vec<u8> {
-    ripemd160::Hash::hash(&sha256::Hash::hash(data)).to_vec()
+pub fn ripemd160_sha256(data: &[u8]) -> [u8; 20] {
+    ripemd160::Hash::hash(&sha256::Hash::hash(data)).into_inner()
 }
