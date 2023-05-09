@@ -29,7 +29,7 @@ pub(crate) fn verify_state_transitions_were_executed(
         .iter()
         .map(|state_transition| {
             state_transition
-                .validate_state(&platform, None)
+                .transform_into_action(&platform, None)
                 .expect("expected state transitions to validate")
                 .into_data()
                 .expect("expected state transitions to be valid")

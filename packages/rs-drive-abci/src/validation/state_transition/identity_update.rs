@@ -186,6 +186,15 @@ impl StateTransitionValidation for IdentityUpdateTransition {
                 }
             }
         }
+        self.transform_into_action(platform, tx)
+    }
+
+    fn transform_into_action<C: CoreRPCLike>(
+        &self,
+        _platform: &PlatformRef<C>,
+        _tx: TransactionArg,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        let mut validation_result = ConsensusValidationResult::<StateTransitionAction>::default();
 
         validation_result.set_data(IdentityUpdateTransitionAction::from(self).into());
         Ok(validation_result)

@@ -44,6 +44,7 @@ use dpp::{
 use drive::grovedb::TransactionArg;
 
 pub fn validate_document_batch_transition_state(
+    bypass_validation: bool,
     platform: &PlatformStateRef,
     batch_state_transition: &DocumentsBatchTransition,
     transaction: TransactionArg,
@@ -83,6 +84,7 @@ pub fn validate_document_batch_transition_state(
         .map(
             |(data_contract_id, document_transitions_by_document_type)| {
                 validate_document_transitions_within_contract(
+                    bypass_validation,
                     platform,
                     data_contract_id,
                     owner_id,
@@ -113,6 +115,7 @@ pub fn validate_document_batch_transition_state(
 }
 
 fn validate_document_transitions_within_contract(
+    bypass_validation: bool,
     platform: &PlatformStateRef,
     data_contract_id: &Identifier,
     owner_id: Identifier,
@@ -135,6 +138,7 @@ fn validate_document_transitions_within_contract(
         .iter()
         .map(|(document_type_name, document_transitions)| {
             validate_document_transitions_within_document_type(
+                bypass_validation,
                 platform,
                 data_contract,
                 document_type_name,
@@ -150,6 +154,7 @@ fn validate_document_transitions_within_contract(
 }
 
 fn validate_document_transitions_within_document_type(
+    bypass_validation: bool,
     platform: &PlatformStateRef,
     data_contract: &DataContract,
     document_type_name: &str,
@@ -195,6 +200,7 @@ fn validate_document_transitions_within_document_type(
             .map(|transition| {
                 // we validate every transition in this document type
                 validate_transition(
+                    bypass_validation,
                     platform,
                     data_contract,
                     document_type,
@@ -230,6 +236,7 @@ fn validate_document_transitions_within_document_type(
         data_contract,
         state_transition_execution_context: execution_context,
     };
+
     let data_trigger_execution_results = execute_data_triggers(
         document_transition_actions.as_slice(),
         &data_trigger_execution_context,
@@ -252,6 +259,7 @@ fn validate_document_transitions_within_document_type(
 }
 
 fn validate_transition(
+    bypass_validation: bool,
     platform: &PlatformStateRef,
     contract: &DataContract,
     document_type: &DocumentType,
@@ -267,58 +275,62 @@ fn validate_transition(
             let mut result = ConsensusValidationResult::<DocumentTransitionAction>::new_with_data(
                 DocumentTransitionAction::CreateAction(DocumentCreateTransitionAction::default()),
             );
-            let validation_result = check_if_timestamps_are_equal(transition);
-            result.merge(validation_result);
-
-            if !result.is_valid() {
-                return Ok(result);
-            }
-
-            // We do not need to perform these checks on genesis
-            if let Some(latest_block_time_ms) = latest_block_time_ms {
-                let validation_result = check_created_inside_time_window(
-                    transition,
-                    latest_block_time_ms,
-                    average_block_spacing_ms,
-                )?;
+            if !bypass_validation {
+                let validation_result = check_if_timestamps_are_equal(transition);
                 result.merge(validation_result);
 
                 if !result.is_valid() {
                     return Ok(result);
                 }
-                let validation_result = check_updated_inside_time_window(
-                    transition,
-                    latest_block_time_ms,
-                    average_block_spacing_ms,
-                )?;
+
+                // We do not need to perform these checks on genesis
+                if let Some(latest_block_time_ms) = latest_block_time_ms {
+                    let validation_result = check_created_inside_time_window(
+                        transition,
+                        latest_block_time_ms,
+                        average_block_spacing_ms,
+                    )?;
+                    result.merge(validation_result);
+
+                    if !result.is_valid() {
+                        return Ok(result);
+                    }
+                    let validation_result = check_updated_inside_time_window(
+                        transition,
+                        latest_block_time_ms,
+                        average_block_spacing_ms,
+                    )?;
+                    result.merge(validation_result);
+
+                    if !result.is_valid() {
+                        return Ok(result);
+                    }
+                }
+
+                let validation_result =
+                    check_if_document_is_not_already_present(transition, fetched_documents);
                 result.merge(validation_result);
 
                 if !result.is_valid() {
                     return Ok(result);
                 }
-            }
-
-            let validation_result =
-                check_if_document_is_not_already_present(transition, fetched_documents);
-            result.merge(validation_result);
-
-            if !result.is_valid() {
-                return Ok(result);
             }
 
             let document_create_action: DocumentCreateTransitionAction =
                 document_create_transition.into();
 
-            let validation_result = platform
-                .drive
-                .validate_document_create_transition_action_uniqueness(
-                    contract,
-                    document_type,
-                    &document_create_action,
-                    owner_id,
-                    transaction,
-                )?;
-            result.merge(validation_result);
+            if !bypass_validation {
+                let validation_result = platform
+                    .drive
+                    .validate_document_create_transition_action_uniqueness(
+                        contract,
+                        document_type,
+                        &document_create_action,
+                        owner_id,
+                        transaction,
+                    )?;
+                result.merge(validation_result);
+            }
 
             if result.is_valid() {
                 Ok(DocumentTransitionAction::CreateAction(document_create_action).into())
@@ -330,17 +342,19 @@ fn validate_transition(
             let mut result = ConsensusValidationResult::<DocumentTransitionAction>::new_with_data(
                 DocumentTransitionAction::ReplaceAction(DocumentReplaceTransitionAction::default()),
             );
-            // We do not need to perform this check on genesis
-            if let Some(latest_block_time_ms) = latest_block_time_ms {
-                let validation_result = check_updated_inside_time_window(
-                    transition,
-                    latest_block_time_ms,
-                    average_block_spacing_ms,
-                )?;
-                result.merge(validation_result);
+            if !bypass_validation {
+                // We do not need to perform this check on genesis
+                if let Some(latest_block_time_ms) = latest_block_time_ms {
+                    let validation_result = check_updated_inside_time_window(
+                        transition,
+                        latest_block_time_ms,
+                        average_block_spacing_ms,
+                    )?;
+                    result.merge(validation_result);
 
-                if !result.is_valid() {
-                    return Ok(result);
+                    if !result.is_valid() {
+                        return Ok(result);
+                    }
                 }
             }
 
@@ -354,20 +368,22 @@ fn validate_transition(
                 return Ok(result);
             };
 
-            // we check the revision first because it is a more common issue
-            let validation_result =
-                check_revision_is_bumped_by_one(document_replace_transition, original_document);
-            result.merge(validation_result);
+            if !bypass_validation {
+                // we check the revision first because it is a more common issue
+                let validation_result =
+                    check_revision_is_bumped_by_one(document_replace_transition, original_document);
+                result.merge(validation_result);
 
-            if !result.is_valid() {
-                return Ok(result);
-            }
+                if !result.is_valid() {
+                    return Ok(result);
+                }
 
-            let validation_result = check_ownership(transition, original_document, owner_id);
-            result.merge(validation_result);
+                let validation_result = check_ownership(transition, original_document, owner_id);
+                result.merge(validation_result);
 
-            if !result.is_valid() {
-                return Ok(result);
+                if !result.is_valid() {
+                    return Ok(result);
+                }
             }
 
             let document_replace_action: DocumentReplaceTransitionAction =
@@ -376,16 +392,18 @@ fn validate_transition(
                     original_document.created_at,
                 );
 
-            let validation_result = platform
-                .drive
-                .validate_document_replace_transition_action_uniqueness(
-                    contract,
-                    document_type,
-                    &document_replace_action,
-                    owner_id,
-                    transaction,
-                )?;
-            result.merge(validation_result);
+            if !bypass_validation {
+                let validation_result = platform
+                    .drive
+                    .validate_document_replace_transition_action_uniqueness(
+                        contract,
+                        document_type,
+                        &document_replace_action,
+                        owner_id,
+                        transaction,
+                    )?;
+                result.merge(validation_result);
+            }
 
             if result.is_valid() {
                 Ok(DocumentTransitionAction::ReplaceAction(document_replace_action).into())
@@ -408,9 +426,11 @@ fn validate_transition(
                 return Ok(result);
             };
 
-            let validation_result = check_ownership(transition, original_document, owner_id);
-            if !validation_result.is_valid() {
-                result.add_errors(validation_result.errors);
+            if !bypass_validation {
+                let validation_result = check_ownership(transition, original_document, owner_id);
+                if !validation_result.is_valid() {
+                    result.add_errors(validation_result.errors);
+                }
             }
 
             if result.is_valid() {
