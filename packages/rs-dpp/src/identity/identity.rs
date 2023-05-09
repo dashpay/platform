@@ -409,6 +409,23 @@ impl Identity {
             not_found_public_keys: Default::default(),
         }
     }
+
+    /// Convenience method to get Partial Identity Info
+    pub fn into_partial_identity_info_no_balance(self) -> PartialIdentity {
+        let Identity {
+            id,
+            public_keys,
+            revision,
+            ..
+        } = self;
+        PartialIdentity {
+            id,
+            loaded_public_keys: public_keys,
+            balance: None,
+            revision: Some(revision),
+            not_found_public_keys: Default::default(),
+        }
+    }
 }
 
 impl TryFrom<Value> for Identity {

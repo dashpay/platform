@@ -36,3 +36,15 @@ pub enum ProofError {
         actual: Path,
     },
 }
+
+fn get_error_code(error: &ProofError) -> u32 {
+    match error {
+        ProofError::TooManyElements(_) => 6000,
+        ProofError::WrongElementCount(_) => 6001,
+        ProofError::Overflow(_) => 6002,
+        ProofError::CorruptedProof(_) => 6003,
+        ProofError::IncompleteProof(_) => 6004,
+        ProofError::IncorrectValueSize(_) => 6005,
+        ProofError::IncorrectElementPath { .. } => 6006,
+    }
+}

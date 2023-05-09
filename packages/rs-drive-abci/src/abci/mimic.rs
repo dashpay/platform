@@ -36,6 +36,8 @@ pub struct MimicExecuteBlockOutcome {
     pub withdrawal_transactions: Vec<dashcore_rpc::dashcore::Transaction>,
     /// The next validators hash
     pub next_validator_set_hash: Vec<u8>,
+    /// Root App hash
+    pub root_app_hash: [u8; 32],
 }
 
 /// Options for execution
@@ -326,7 +328,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                     next_validators_hash: next_validator_set_hash.clone(),
                     consensus_hash: [0; 32].to_vec(),
                     next_consensus_hash: [0; 32].to_vec(),
-                    app_hash,
+                    app_hash: app_hash.clone(),
                     results_hash: [0; 32].to_vec(),
                     evidence_hash: vec![],
                     proposed_app_version: 0,
@@ -356,6 +358,9 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         Ok(MimicExecuteBlockOutcome {
             withdrawal_transactions: withdrawals,
             next_validator_set_hash,
+            root_app_hash: app_hash
+                .try_into()
+                .expect("expected 32 bytes for the root hash"),
         })
     }
 }

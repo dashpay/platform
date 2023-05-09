@@ -40,6 +40,7 @@ mod tests {
                 deterministic_start_seed: Some(99),
                 dont_finalize_block: true,
             }),
+            query_testing: None,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
