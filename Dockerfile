@@ -86,9 +86,6 @@ RUN npm install -g npm@9.6.6 && \
     corepack prepare yarn@3.3.0 --activate && \
     corepack enable
 
-# TODO: Move above, where we call rustup
-
-
 # Switch to clang
 RUN rm /usr/bin/cc && ln -s /usr/bin/clang /usr/bin/cc
 
@@ -169,8 +166,6 @@ RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
     cp /platform/target/*/drive-abci /artifacts/drive-abci && \
     sccache --show-stats
 
-#     yarn workspace @dashevo/wasm-dpp build && \
-
 #
 # STAGE: BUILD WASM-DPP
 #
@@ -187,8 +182,6 @@ RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     yarn workspace @dashevo/wasm-dpp build && \
     sccache --show-stats
-
-#     yarn workspace @dashevo/wasm-dpp build && \
 
 #
 # STAGE: FINAL DRIVE-ABCI IMAGE
