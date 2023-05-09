@@ -195,6 +195,11 @@ jobs:
       #     cache-path: /tmp/buildkit-cache
       #     cache-max-size: 3g
 
+      - name: Show context
+        uses: actions/github-script@v6
+        with:
+          script: "console.log(core.getInput('tag'))"
+
       - name: Get tag
         uses: actions/github-script@v6
         id: tag
