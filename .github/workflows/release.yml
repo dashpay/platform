@@ -218,7 +218,10 @@ jobs:
       - name: Show input result
         uses: actions/github-script@v6
         with:
-          script: "console.log(core.getInput('tag', { required: true }))"
+          script: |
+            console.log("getting data");
+            const result = core.getInput('tag');
+            console.log(result);
 
       - name: Get tag
         uses: actions/github-script@v6
