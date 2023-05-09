@@ -204,7 +204,8 @@ where
             core_rpc: &self.core_rpc,
         };
         let exec_tx_results = state_transitions
-            .into_iter().zip(raw_state_transitions.iter())
+            .into_iter()
+            .zip(raw_state_transitions.iter())
             .map(|(state_transition, raw_state_transition)| {
                 let state_transition_execution_event =
                     process_state_transition(&platform_ref, state_transition, Some(transaction))?;

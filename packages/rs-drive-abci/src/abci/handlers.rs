@@ -184,7 +184,7 @@ where
         // We need to let Tenderdash know about the transactions we should remove from execution
         let (tx_results, tx_records): (Vec<Option<ExecTxResult>>, Vec<TxRecord>) = tx_results
             .into_iter()
-            .map(|(tx,result)| {
+            .map(|(tx, result)| {
                 if result.code > 0 {
                     (
                         None,
