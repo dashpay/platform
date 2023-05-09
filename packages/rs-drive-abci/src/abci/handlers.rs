@@ -527,9 +527,11 @@ where
     }
 
     fn query(&self, request: RequestQuery) -> Result<ResponseQuery, ResponseException> {
-        let RequestQuery { data, path, .. } = &request;
+        let RequestQuery {
+            data, path, prove, ..
+        } = &request;
 
-        let result = self.platform.query(path.as_str(), data.as_slice())?;
+        let result = self.platform.query(path.as_str(), data.as_slice(), prove)?;
 
         let (code, data, log) = if result.is_valid() {
             (

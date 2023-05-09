@@ -12,7 +12,7 @@ use dapi_grpc::platform::v0::{
     GetIdentityKeysRequest, GetIdentityKeysResponse, GetIdentityRequest, Proof, ResponseMetadata,
 };
 use dpp::identifier::Identifier;
-use dpp::platform_value::{Bytes20, Bytes32};
+use dpp::platform_value::{Bytes20, Bytes32, Value, ValueMapHelper};
 use std::collections::BTreeMap;
 
 use dpp::serialization_traits::PlatformSerializable;
@@ -88,6 +88,7 @@ impl<C> Platform<C> {
         &self,
         query_path: &str,
         query_data: &[u8],
+        _prove: &bool,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let state = self.state.read().unwrap();
         let metadata = ResponseMetadata {
@@ -490,19 +491,41 @@ impl<C> Platform<C> {
                 Ok(QueryValidationResult::new_with_data(response_data))
             }
             "/identities/by-public-key-hash" => {
-                let GetIdentitiesByPublicKeyHashesRequest {
-                    public_key_hashes,
-                    prove,
-                } = check_validation_result_with_data!(
-                    GetIdentitiesByPublicKeyHashesRequest::decode(query_data)
-                );
+                let decoded_data: Value =
+                    check_validation_result_with_data!(ciborium::de::from_reader(query_data)
+                        .map_err(|_| {
+                            QueryError::Query(QuerySyntaxError::DeserializationError(
+                                "unable to decode query data from cbor".to_string(),
+                            ))
+                        }));
+
+                let decoded_data_map = check_validation_result_with_data!(decoded_data
+                    .as_map()
+                    .ok_or(QueryError::Query(QuerySyntaxError::DeserializationError(
+                        "query data is not a map".to_string()
+                    ))));
+
+                let public_key_hashes_value = check_validation_result_with_data!(decoded_data_map
+                    .get_key("publicKeyHashes")
+                    .map_err(|_| {
+                        QueryError::Query(QuerySyntaxError::DeserializationError(
+                            "publicKeyHashes is missing in query data ".to_string(),
+                        ))
+                    }));
+
+                let public_key_hashes = check_validation_result_with_data!(public_key_hashes_value
+                    .as_array()
+                    .ok_or(QueryError::Query(QuerySyntaxError::DeserializationError(
+                        "publicKeyHashes is not array".to_string(),
+                    ))));
+
                 let public_key_hashes = check_validation_result_with_data!(public_key_hashes
                     .into_iter()
-                    .map(|pub_key_hash_vec| {
-                        Bytes20::from_vec(pub_key_hash_vec).map(|bytes| bytes.0)
+                    .map(|pub_key_hash_value| {
+                        Bytes20::try_from(pub_key_hash_value).map(|bytes| bytes.0)
                     })
                     .collect::<Result<Vec<[u8; 20]>, dpp::platform_value::Error>>());
-                let response_data = if prove {
+                let response_data = if *_prove {
                     let proof = check_validation_result_with_data!(self
                         .drive
                         .prove_full_identities_by_unique_public_key_hashes(
