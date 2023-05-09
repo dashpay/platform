@@ -257,6 +257,7 @@ jobs:
   release-dapi-docker-image:
     name: Release DAPI to Docker Hub
     runs-on: self-hosted
+    if: false
     env:
       SCCACHE_GHA_ENABLED: "false"
       RUSTC_WRAPPER: ""
@@ -401,6 +402,7 @@ jobs:
   release-test-suite-docker-image:
     name: Release Test Suite to Docker Hub
     runs-on: self-hosted
+    if: false
     env:
       SCCACHE_GHA_ENABLED: "false"
       RUSTC_WRAPPER: ""
@@ -545,6 +547,7 @@ jobs:
   release-envoy-docker-image:
     name: Release Envoy to Docker Hub
     runs-on: ubuntu-22.04
+    if: false
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -614,6 +617,7 @@ jobs:
   release-dashmate-helper-docker-image:
     name: Release Dashmate helper to Docker Hub
     runs-on: self-hosted
+    if: false
     env:
       SCCACHE_GHA_ENABLED: "false"
       RUSTC_WRAPPER: ""
@@ -753,6 +757,7 @@ jobs:
     name: Release Dashmate packages
     runs-on: ${{ matrix.os }}
     needs: release-npm
+    if: false
     strategy:
       fail-fast: false
       matrix:
