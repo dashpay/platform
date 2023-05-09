@@ -215,10 +215,10 @@ jobs:
         with:
           script: console.log(context.eventName)
 
-      - name: Show comparison result
+      - name: Show input result
         uses: actions/github-script@v6
         with:
-          script: console.log(core.getInput('tag'))
+          script: "console.log(core.getInput('tag', { required: true }))"
 
       - name: Get tag
         uses: actions/github-script@v6
