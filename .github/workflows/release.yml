@@ -113,9 +113,9 @@ jobs:
     name: Release Drive to Docker Hub
     runs-on: self-hosted
     env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
-      CARGO_INCREMENTAL: "false"
+      SCCACHE_GHA_ENABLED: "false"
+      RUSTC_WRAPPER: ""
+      CARGO_INCREMENTAL: "true"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -132,18 +132,18 @@ jobs:
           toolchain: stable
           target: wasm32-unknown-unknown
 
-      - name: Setup Cargo cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          # Don't cache ./target, as it takes tons of space, use sccache instead.
-          cache-targets: false
-          # We set a shared key, as our cache is reusable between jobs
-          shared-key: rust-cargo
+      # - name: Setup Cargo cache
+      #   uses: Swatinem/rust-cache@v2
+      #   with:
+      #     # Don't cache ./target, as it takes tons of space, use sccache instead.
+      #     cache-targets: false
+      #     # We set a shared key, as our cache is reusable between jobs
+      #     shared-key: rust-cargo
 
-      - name: Setup Rust compilation cache
-        uses: mozilla-actions/sccache-action@v0.0.3
-        with:
-          version: "v0.4.1"
+      # - name: Setup Rust compilation cache
+      #   uses: mozilla-actions/sccache-action@v0.0.3
+      #   with:
+      #     version: "v0.4.1"
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -156,13 +156,13 @@ jobs:
       - name: Disable NPM audit
         run: npm config set audit false
 
-      - name: Enable Yarn unplugged modules cache
-        uses: actions/cache@v3
-        with:
-          path: ".yarn/unplugged"
-          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-yarn-unplugged-
+      # - name: Enable Yarn unplugged modules cache
+      #   uses: actions/cache@v3
+      #   with:
+      #     path: ".yarn/unplugged"
+      #     key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
+      #     restore-keys: |
+      #       ${{ runner.os }}-yarn-unplugged-
 
       - name: Install dependencies
         run: yarn install
@@ -180,20 +180,20 @@ jobs:
         with:
           install: true
 
-      - name: Enable docker cache mount
-        uses: actions/cache@v3
-        with:
-          path: /tmp/buildkit-cache/buildkit-state.tar
-          key: ${{ runner.os }}-buildkit-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildkit
+      # - name: Enable docker cache mount
+      #   uses: actions/cache@v3
+      #   with:
+      #     path: /tmp/buildkit-cache/buildkit-state.tar
+      #     key: ${{ runner.os }}-buildkit-${{ github.sha }}
+      #     restore-keys: |
+      #       ${{ runner.os }}-buildkit
 
-      - name: Load docker cache mount
-        uses: dashevo/gh-action-cache-buildkit-state@master
-        with:
-          builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
-          cache-path: /tmp/buildkit-cache
-          cache-max-size: 3g
+      # - name: Load docker cache mount
+      #   uses: dashevo/gh-action-cache-buildkit-state@master
+      #   with:
+      #     builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
+      #     cache-path: /tmp/buildkit-cache
+      #     cache-max-size: 3g
 
       - name: Get tag
         uses: actions/github-script@v6
@@ -242,9 +242,7 @@ jobs:
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
           build-args: |
-            SCCACHE_GHA_ENABLED=true
-            ACTIONS_CACHE_URL=${{ env.ACTIONS_CACHE_URL }}
-            ACTIONS_RUNTIME_TOKEN=${{ env.ACTIONS_RUNTIME_TOKEN }}
+            SCCACHE_GHA_ENABLED=false
             CARGO_BUILD_PROFILE=release
           platforms: linux/amd64,linux/arm64
 
@@ -252,9 +250,9 @@ jobs:
     name: Release DAPI to Docker Hub
     runs-on: self-hosted
     env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
-      CARGO_INCREMENTAL: "false"
+      SCCACHE_GHA_ENABLED: "false"
+      RUSTC_WRAPPER: ""
+      CARGO_INCREMENTAL: "true"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -271,18 +269,18 @@ jobs:
           toolchain: stable
           target: wasm32-unknown-unknown
 
-      - name: Setup Cargo cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          # Don't cache ./target, as it takes tons of space, use sccache instead.
-          cache-targets: false
-          # We set a shared key, as our cache is reusable between jobs
-          shared-key: rust-cargo
+      # - name: Setup Cargo cache
+      #   uses: Swatinem/rust-cache@v2
+      #   with:
+      #     # Don't cache ./target, as it takes tons of space, use sccache instead.
+      #     cache-targets: false
+      #     # We set a shared key, as our cache is reusable between jobs
+      #     shared-key: rust-cargo
 
-      - name: Setup Rust compilation cache
-        uses: mozilla-actions/sccache-action@v0.0.3
-        with:
-          version: "v0.4.1"
+      # - name: Setup Rust compilation cache
+      #   uses: mozilla-actions/sccache-action@v0.0.3
+      #   with:
+      #     version: "v0.4.1"
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -295,13 +293,13 @@ jobs:
       - name: Disable NPM audit
         run: npm config set audit false
 
-      - name: Enable Yarn unplugged modules cache
-        uses: actions/cache@v3
-        with:
-          path: ".yarn/unplugged"
-          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-yarn-unplugged-
+      # - name: Enable Yarn unplugged modules cache
+      #   uses: actions/cache@v3
+      #   with:
+      #     path: ".yarn/unplugged"
+      #     key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
+      #     restore-keys: |
+      #       ${{ runner.os }}-yarn-unplugged-
 
       - name: Install dependencies
         run: yarn install
@@ -320,20 +318,20 @@ jobs:
         with:
           install: true
 
-      - name: Enable docker cache mount
-        uses: actions/cache@v3
-        with:
-          path: /tmp/buildkit-cache/buildkit-state.tar
-          key: ${{ runner.os }}-buildkit-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildkit
+      # - name: Enable docker cache mount
+      #   uses: actions/cache@v3
+      #   with:
+      #     path: /tmp/buildkit-cache/buildkit-state.tar
+      #     key: ${{ runner.os }}-buildkit-${{ github.sha }}
+      #     restore-keys: |
+      #       ${{ runner.os }}-buildkit
 
-      - name: Load docker cache mount
-        uses: dashevo/gh-action-cache-buildkit-state@master
-        with:
-          builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
-          cache-path: /tmp/buildkit-cache
-          cache-max-size: 3g
+      # - name: Load docker cache mount
+      #   uses: dashevo/gh-action-cache-buildkit-state@master
+      #   with:
+      #     builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
+      #     cache-path: /tmp/buildkit-cache
+      #     cache-max-size: 3g
 
       - name: Get tag
         uses: actions/github-script@v6
@@ -398,9 +396,9 @@ jobs:
     name: Release Test Suite to Docker Hub
     runs-on: self-hosted
     env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
-      CARGO_INCREMENTAL: "false"
+      SCCACHE_GHA_ENABLED: "false"
+      RUSTC_WRAPPER: ""
+      CARGO_INCREMENTAL: "true"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -417,18 +415,18 @@ jobs:
           toolchain: stable
           target: wasm32-unknown-unknown
 
-      - name: Setup Cargo cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          # Don't cache ./target, as it takes tons of space, use sccache instead.
-          cache-targets: false
-          # We set a shared key, as our cache is reusable between jobs
-          shared-key: rust-cargo
+      # - name: Setup Cargo cache
+      #   uses: Swatinem/rust-cache@v2
+      #   with:
+      #     # Don't cache ./target, as it takes tons of space, use sccache instead.
+      #     cache-targets: false
+      #     # We set a shared key, as our cache is reusable between jobs
+      #     shared-key: rust-cargo
 
-      - name: Setup Rust compilation cache
-        uses: mozilla-actions/sccache-action@v0.0.3
-        with:
-          version: "v0.4.1"
+      # - name: Setup Rust compilation cache
+      #   uses: mozilla-actions/sccache-action@v0.0.3
+      #   with:
+      #     version: "v0.4.1"
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -441,13 +439,13 @@ jobs:
       - name: Disable NPM audit
         run: npm config set audit false
 
-      - name: Enable Yarn unplugged modules cache
-        uses: actions/cache@v3
-        with:
-          path: ".yarn/unplugged"
-          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-yarn-unplugged-
+      # - name: Enable Yarn unplugged modules cache
+      #   uses: actions/cache@v3
+      #   with:
+      #     path: ".yarn/unplugged"
+      #     key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
+      #     restore-keys: |
+      #       ${{ runner.os }}-yarn-unplugged-
 
       - name: Install dependencies
         run: yarn install
@@ -466,20 +464,20 @@ jobs:
         with:
           install: true
 
-      - name: Enable docker cache mount
-        uses: actions/cache@v3
-        with:
-          path: /tmp/buildkit-cache/buildkit-state.tar
-          key: ${{ runner.os }}-buildkit-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildkit
+      # - name: Enable docker cache mount
+      #   uses: actions/cache@v3
+      #   with:
+      #     path: /tmp/buildkit-cache/buildkit-state.tar
+      #     key: ${{ runner.os }}-buildkit-${{ github.sha }}
+      #     restore-keys: |
+      #       ${{ runner.os }}-buildkit
 
-      - name: Load docker cache mount
-        uses: dashevo/gh-action-cache-buildkit-state@master
-        with:
-          builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
-          cache-path: /tmp/buildkit-cache
-          cache-max-size: 3g
+      # - name: Load docker cache mount
+      #   uses: dashevo/gh-action-cache-buildkit-state@master
+      #   with:
+      #     builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
+      #     cache-path: /tmp/buildkit-cache
+      #     cache-max-size: 3g
 
       - name: Get tag
         uses: actions/github-script@v6
@@ -626,13 +624,13 @@ jobs:
           toolchain: stable
           target: wasm32-unknown-unknown
 
-      - name: Setup Cargo cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          # Don't cache ./target, as it takes tons of space, use sccache instead.
-          cache-targets: false
-          # We set a shared key, as our cache is reusable between jobs
-          shared-key: rust-cargo
+      # - name: Setup Cargo cache
+      #   uses: Swatinem/rust-cache@v2
+      #   with:
+      #     # Don't cache ./target, as it takes tons of space, use sccache instead.
+      #     cache-targets: false
+      #     # We set a shared key, as our cache is reusable between jobs
+      #     shared-key: rust-cargo
 
       - name: Login to DockerHub
         uses: docker/login-action@v2
@@ -640,10 +638,10 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Setup Rust compilation cache
-        uses: mozilla-actions/sccache-action@v0.0.3
-        with:
-          version: "v0.4.1"
+      # - name: Setup Rust compilation cache
+      #   uses: mozilla-actions/sccache-action@v0.0.3
+      #   with:
+      #     version: "v0.4.1"
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -656,13 +654,13 @@ jobs:
       - name: Disable NPM audit
         run: npm config set audit false
 
-      - name: Enable Yarn unplugged modules cache
-        uses: actions/cache@v3
-        with:
-          path: ".yarn/unplugged"
-          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-yarn-unplugged-
+      # - name: Enable Yarn unplugged modules cache
+      #   uses: actions/cache@v3
+      #   with:
+      #     path: ".yarn/unplugged"
+      #     key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
+      #     restore-keys: |
+      #       ${{ runner.os }}-yarn-unplugged-
 
       - name: Install dependencies
         run: yarn install
@@ -681,20 +679,20 @@ jobs:
         with:
           install: true
 
-      - name: Enable docker cache mount
-        uses: actions/cache@v3
-        with:
-          path: /tmp/buildkit-cache/buildkit-state.tar
-          key: ${{ runner.os }}-buildkit-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildkit
+      # - name: Enable docker cache mount
+      #   uses: actions/cache@v3
+      #   with:
+      #     path: /tmp/buildkit-cache/buildkit-state.tar
+      #     key: ${{ runner.os }}-buildkit-${{ github.sha }}
+      #     restore-keys: |
+      #       ${{ runner.os }}-buildkit
 
-      - name: Load docker cache mount
-        uses: dashevo/gh-action-cache-buildkit-state@master
-        with:
-          builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
-          cache-path: /tmp/buildkit-cache
-          cache-max-size: 3g
+      # - name: Load docker cache mount
+      #   uses: dashevo/gh-action-cache-buildkit-state@master
+      #   with:
+      #     builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
+      #     cache-path: /tmp/buildkit-cache
+      #     cache-max-size: 3g
 
       - name: Get tag
         uses: actions/github-script@v6
@@ -766,9 +764,9 @@ jobs:
           - package_type: macos
             os: macos-12
     env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
-      CARGO_INCREMENTAL: "false"
+      SCCACHE_GHA_ENABLED: "false"
+      RUSTC_WRAPPER: ""
+      CARGO_INCREMENTAL: "true"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -816,18 +814,18 @@ jobs:
           toolchain: stable
           target: wasm32-unknown-unknown
 
-      - name: Setup Cargo cache
-        uses: Swatinem/rust-cache@v2
-        with:
-          # Don't cache ./target, as it takes tons of space, use sccache instead.
-          cache-targets: false
-          # We set a shared key, as our cache is reusable between jobs
-          shared-key: rust-cargo
+      # - name: Setup Cargo cache
+      #   uses: Swatinem/rust-cache@v2
+      #   with:
+      #     # Don't cache ./target, as it takes tons of space, use sccache instead.
+      #     cache-targets: false
+      #     # We set a shared key, as our cache is reusable between jobs
+      #     shared-key: rust-cargo
 
-      - name: Setup Rust compilation cache
-        uses: mozilla-actions/sccache-action@v0.0.3
-        with:
-          version: "v0.4.1"
+      # - name: Setup Rust compilation cache
+      #   uses: mozilla-actions/sccache-action@v0.0.3
+      #   with:
+      #     version: "v0.4.1"
 
       - name: Enable corepack
         run: corepack enable
@@ -835,13 +833,13 @@ jobs:
       - name: Disable NPM audit
         run: npm config set audit false
 
-      - name: Enable Yarn unplugged modules cache
-        uses: actions/cache@v3
-        with:
-          path: ".yarn/unplugged"
-          key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-yarn-unplugged-
+      # - name: Enable Yarn unplugged modules cache
+      #   uses: actions/cache@v3
+      #   with:
+      #     path: ".yarn/unplugged"
+      #     key: ${{ runner.os }}-yarn-unplugged-${{ hashFiles('yarn.lock') }}
+      #     restore-keys: |
+      #       ${{ runner.os }}-yarn-unplugged-
 
       - name: Install dependencies
         run: yarn install
