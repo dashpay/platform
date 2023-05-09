@@ -51,7 +51,7 @@ mod update;
 
 /// Returns the path to a contract document type.
 pub(crate) fn contract_document_type_path<'a>(
-    contract_id: &'a [u8],
+    contract_id: &'a [u8; 32],
     document_type_name: &'a str,
 ) -> [&'a [u8]; 4] {
     [

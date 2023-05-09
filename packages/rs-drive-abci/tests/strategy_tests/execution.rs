@@ -694,6 +694,11 @@ pub(crate) fn continue_chain_for_strategy(
 
         current_time_ms += config.block_spacing_ms;
 
+        if strategy.verify_state_transition_results {
+            //we need to verify state transitions
+            state_transitions
+        }
+
         if let Some(query_strategy) = &strategy.query_testing {
             query_strategy.query_chain_for_strategy(
                 &ProofVerification {

@@ -41,6 +41,7 @@ mod tests {
                 dont_finalize_block: true,
             }),
             query_testing: None,
+            verify_state_transition_results: false,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,

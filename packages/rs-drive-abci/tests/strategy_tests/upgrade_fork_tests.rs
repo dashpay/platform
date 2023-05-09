@@ -35,7 +35,7 @@ mod tests {
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
-            query_testing: None,
+            query_testing: None, verify_state_transition_results: false,
         };
         let twenty_minutes_in_ms = 1000 * 60 * 20;
         let mut config = PlatformConfig {
@@ -273,7 +273,7 @@ mod tests {
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
-            query_testing: None,
+            query_testing: None, verify_state_transition_results: false,
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
@@ -501,7 +501,7 @@ mod tests {
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
-            query_testing: None,
+            query_testing: None, verify_state_transition_results: false,
         };
         let hour_in_ms = 1000 * 60 * 60;
         let mut config = PlatformConfig {
@@ -661,7 +661,7 @@ mod tests {
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
-            query_testing: None,
+            query_testing: None, verify_state_transition_results: false,
         };
 
         let block_start = platform
@@ -820,7 +820,7 @@ mod tests {
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
-            query_testing: None,
+            query_testing: None, verify_state_transition_results: false,
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
@@ -914,7 +914,7 @@ mod tests {
             proposer_strategy: Default::default(),
             rotate_quorums: false,
             failure_testing: None,
-            query_testing: None,
+            query_testing: None, verify_state_transition_results: false,
         };
 
         // we hit the required threshold to upgrade

@@ -171,7 +171,7 @@ impl Drive {
                 storage_flags.as_ref().map(|flags| flags.as_ref()),
                 insert_operations,
             )?;
-            let encoded_time = encode_u64(block_info.time_ms)?;
+            let encoded_time = encode_u64(block_info.time_ms);
             let contract_keeping_history_storage_path =
                 paths::contract_keeping_history_storage_path(contract.id.as_bytes());
             self.batch_insert(

@@ -115,8 +115,13 @@ pub mod conditions;
 mod defaults;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod ordering;
+#[cfg(any(feature = "full", feature = "verify"))]
+mod single_document_drive_query;
 #[cfg(feature = "full")]
 mod test_index;
+
+#[cfg(any(feature = "full", feature = "verify"))]
+pub use single_document_drive_query::SingleDocumentDriveQuery;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 /// Internal clauses struct
@@ -810,7 +815,7 @@ impl<'a> DriveQuery<'a> {
             if self.document_type.documents_keep_history {
                 // if the documents keep history then we should insert a subquery
                 if let Some(block_time) = self.block_time_ms {
-                    let encoded_block_time = encode_u64(block_time)?;
+                    let encoded_block_time = encode_u64(block_time);
                     let mut sub_query = Query::new_with_direction(false);
                     sub_query.insert_range_to_inclusive(..=encoded_block_time);
                     query.set_subquery(sub_query);

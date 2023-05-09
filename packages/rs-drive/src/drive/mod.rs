@@ -110,6 +110,8 @@ mod system;
 mod test_utils;
 
 #[cfg(feature = "full")]
+mod prove;
+#[cfg(feature = "full")]
 mod system_contracts_cache;
 /// Contains a set of useful grovedb proof verification functions
 #[cfg(any(feature = "full", feature = "verify"))]

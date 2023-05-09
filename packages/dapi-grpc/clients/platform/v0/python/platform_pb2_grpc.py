@@ -39,6 +39,11 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetIdentityRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetIdentityBalanceAndRevisionResponse.FromString,
                 )
+        self.getProofs = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getProofs',
+                request_serializer=platform__pb2.GetProofsRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetProofsResponse.FromString,
+                )
         self.getDataContract = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getDataContract',
                 request_serializer=platform__pb2.GetDataContractRequest.SerializeToString,
@@ -105,6 +110,12 @@ class PlatformServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def getIdentityBalanceAndRevision(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getProofs(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -179,6 +190,11 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getIdentityBalanceAndRevision,
                     request_deserializer=platform__pb2.GetIdentityRequest.FromString,
                     response_serializer=platform__pb2.GetIdentityBalanceAndRevisionResponse.SerializeToString,
+            ),
+            'getProofs': grpc.unary_unary_rpc_method_handler(
+                    servicer.getProofs,
+                    request_deserializer=platform__pb2.GetProofsRequest.FromString,
+                    response_serializer=platform__pb2.GetProofsResponse.SerializeToString,
             ),
             'getDataContract': grpc.unary_unary_rpc_method_handler(
                     servicer.getDataContract,
@@ -307,6 +323,23 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentityBalanceAndRevision',
             platform__pb2.GetIdentityRequest.SerializeToString,
             platform__pb2.GetIdentityBalanceAndRevisionResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getProofs(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getProofs',
+            platform__pb2.GetProofsRequest.SerializeToString,
+            platform__pb2.GetProofsResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 

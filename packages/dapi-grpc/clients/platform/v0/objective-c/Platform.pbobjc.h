@@ -39,6 +39,7 @@ CF_EXTERN_C_BEGIN
 @class GetIdentitiesKeysResponse_PublicKeyEntries;
 @class GetIdentitiesKeysResponse_PublicKeyEntry;
 @class GetIdentityKeysResponse_Keys;
+@class GetProofsRequest_DocumentProofRequest;
 @class KeyRequestType;
 @class Proof;
 @class ResponseMetadata;
@@ -551,6 +552,70 @@ GPB_FINAL @interface GetIdentitiesKeysResponse_PublicKeyEntries : GPBMessage
 @property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetIdentitiesKeysResponse_PublicKeyEntry*> *publicKeyEntriesArray;
 /** The number of items in @c publicKeyEntriesArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger publicKeyEntriesArray_Count;
+
+@end
+
+#pragma mark - GetProofsRequest
+
+typedef GPB_ENUM(GetProofsRequest_FieldNumber) {
+  GetProofsRequest_FieldNumber_IdentityIdsArray = 1,
+  GetProofsRequest_FieldNumber_ContractIdsArray = 2,
+  GetProofsRequest_FieldNumber_DocumentsArray = 3,
+};
+
+GPB_FINAL @interface GetProofsRequest : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *identityIdsArray;
+/** The number of items in @c identityIdsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger identityIdsArray_Count;
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *contractIdsArray;
+/** The number of items in @c contractIdsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger contractIdsArray_Count;
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetProofsRequest_DocumentProofRequest*> *documentsArray;
+/** The number of items in @c documentsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger documentsArray_Count;
+
+@end
+
+#pragma mark - GetProofsRequest_DocumentProofRequest
+
+typedef GPB_ENUM(GetProofsRequest_DocumentProofRequest_FieldNumber) {
+  GetProofsRequest_DocumentProofRequest_FieldNumber_ContractId = 1,
+  GetProofsRequest_DocumentProofRequest_FieldNumber_DocumentType = 2,
+  GetProofsRequest_DocumentProofRequest_FieldNumber_DocumentTypeKeepsHistory = 3,
+  GetProofsRequest_DocumentProofRequest_FieldNumber_DocumentId = 4,
+};
+
+GPB_FINAL @interface GetProofsRequest_DocumentProofRequest : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *contractId;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *documentType;
+
+@property(nonatomic, readwrite) BOOL documentTypeKeepsHistory;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *documentId;
+
+@end
+
+#pragma mark - GetProofsResponse
+
+typedef GPB_ENUM(GetProofsResponse_FieldNumber) {
+  GetProofsResponse_FieldNumber_Proof = 1,
+  GetProofsResponse_FieldNumber_Metadata = 2,
+};
+
+GPB_FINAL @interface GetProofsResponse : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+/** Test to see if @c proof has been set. */
+@property(nonatomic, readwrite) BOOL hasProof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
 
 @end
 

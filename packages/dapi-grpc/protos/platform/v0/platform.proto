@@ -14,6 +14,7 @@ service Platform {
   rpc getIdentityBalance(GetIdentityRequest) returns (GetIdentityBalanceResponse);
   rpc getIdentityBalanceAndRevision(GetIdentityRequest)
           returns (GetIdentityBalanceAndRevisionResponse);
+  rpc getProofs (GetProofsRequest) returns (GetProofsResponse);
   rpc getDataContract (GetDataContractRequest) returns (GetDataContractResponse);
   rpc getDataContracts (GetDataContractsRequest) returns (GetDataContractsResponse);
   rpc getDocuments (GetDocumentsRequest) returns (GetDocumentsResponse);
@@ -158,6 +159,23 @@ message GetIdentitiesKeysResponse {
   ResponseMetadata metadata = 3;
 }
 
+message GetProofsRequest {
+  message DocumentProofRequest {
+    bytes contract_id = 1;
+    string document_type = 2;
+    bool document_type_keeps_history = 3;
+    bytes document_id = 4;
+  }
+
+  repeated bytes identity_ids = 1;
+  repeated bytes contract_ids = 2;
+  repeated DocumentProofRequest documents = 3;
+}
+
+message GetProofsResponse {
+  Proof proof = 1;
+  ResponseMetadata metadata = 2;
+}
 
 message GetDataContractRequest {
   bytes id = 1;

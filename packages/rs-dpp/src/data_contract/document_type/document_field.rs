@@ -662,9 +662,9 @@ impl DocumentFieldType {
 
                 encode_signed_integer(value_as_i64)
             }
-            DocumentFieldType::Number => {
-                encode_float(value.to_float().map_err(ProtocolError::ValueError)?)
-            }
+            DocumentFieldType::Number => Ok(encode_float(
+                value.to_float().map_err(ProtocolError::ValueError)?,
+            )),
             DocumentFieldType::ByteArray(_, _) => {
                 value.to_binary_bytes().map_err(ProtocolError::ValueError)
             }
@@ -839,7 +839,7 @@ pub fn encode_signed_integer(val: i64) -> Result<Vec<u8>, ProtocolError> {
     Ok(wtr)
 }
 
-pub fn encode_float(val: f64) -> Result<Vec<u8>, ProtocolError> {
+pub fn encode_float(val: f64) -> Vec<u8> {
     // Floats are represented based on the  IEEE 754-2008 standard
     // [sign bit] [biased exponent] [mantissa]
 
@@ -875,5 +875,5 @@ pub fn encode_float(val: f64) -> Result<Vec<u8>, ProtocolError> {
         wtr[0] ^= 0b1000_0000;
     }
 
-    Ok(wtr)
+    wtr
 }

@@ -9,7 +9,8 @@ use dapi_grpc::platform::v0::{
     GetIdentitiesByPublicKeyHashesRequest, GetIdentitiesByPublicKeyHashesResponse,
     GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceResponse,
     GetIdentityByPublicKeyHashesRequest, GetIdentityByPublicKeyHashesResponse,
-    GetIdentityKeysRequest, GetIdentityKeysResponse, GetIdentityRequest, Proof, ResponseMetadata,
+    GetIdentityKeysRequest, GetIdentityKeysResponse, GetIdentityRequest, GetProofsRequest,
+    GetProofsResponse, Proof, ResponseMetadata,
 };
 use dpp::identifier::Identifier;
 use dpp::platform_value::{Bytes20, Bytes32};
@@ -26,7 +27,7 @@ use drive::drive::identity::key::fetch::{
     SerializedKeyVec,
 };
 use drive::error::query::QuerySyntaxError;
-use drive::query::DriveQuery;
+use drive::query::{DriveQuery, SingleDocumentDriveQuery};
 use prost::Message;
 
 /// A query validation result
@@ -539,6 +540,60 @@ impl<C> Platform<C> {
                     }
                     .encode_to_vec()
                 };
+                Ok(QueryValidationResult::new_with_data(response_data))
+            }
+            "/proofs" => {
+                let GetProofsRequest {
+                    identity_ids,
+                    contract_ids,
+                    documents,
+                } = check_validation_result_with_data!(GetProofsRequest::decode(query_data));
+                let contract_ids = check_validation_result_with_data!(contract_ids
+                    .into_iter()
+                    .map(|contract_id_vec| {
+                        Bytes32::from_vec(contract_id_vec).map(|bytes| bytes.0)
+                    })
+                    .collect::<Result<Vec<[u8; 32]>, dpp::platform_value::Error>>());
+                let identity_ids = check_validation_result_with_data!(identity_ids
+                    .into_iter()
+                    .map(|identity_id_vec| {
+                        Bytes32::from_vec(identity_id_vec).map(|bytes| bytes.0)
+                    })
+                    .collect::<Result<Vec<[u8; 32]>, dpp::platform_value::Error>>());
+                let document_queries = check_validation_result_with_data!(documents
+                    .into_iter()
+                    .map(|document_proof_request| {
+                        let contract_id: Identifier =
+                            document_proof_request.contract_id.try_into()?;
+                        let document_id: Identifier =
+                            document_proof_request.document_id.try_into()?;
+
+                        Ok(SingleDocumentDriveQuery {
+                            contract_id: contract_id.into_buffer(),
+                            document_type_name: document_proof_request.document_type,
+                            document_type_keeps_history: document_proof_request
+                                .document_type_keeps_history,
+                            document_id: document_id.into_buffer(),
+                            block_time_ms: None, //None because we want latest
+                        })
+                    })
+                    .collect::<Result<Vec<_>, dpp::platform_value::Error>>());
+                let proof = check_validation_result_with_data!(self.drive.prove_multiple(
+                    &identity_ids,
+                    &contract_ids,
+                    &document_queries,
+                    None
+                ));
+                let response_data = GetProofsResponse {
+                    proof: Some(Proof {
+                        grovedb_proof: proof,
+                        quorum_hash: state.last_quorum_hash().to_vec(),
+                        signature: state.last_block_signature().to_vec(),
+                        round: state.last_block_round(),
+                    }),
+                    metadata: Some(metadata),
+                }
+                .encode_to_vec();
                 Ok(QueryValidationResult::new_with_data(response_data))
             }
             other => Ok(QueryValidationResult::new_with_error(QueryError::Query(

@@ -34,6 +34,8 @@
 @class GetIdentityKeysResponse;
 @class GetIdentityRequest;
 @class GetIdentityResponse;
+@class GetProofsRequest;
+@class GetProofsResponse;
 @class WaitForStateTransitionResultRequest;
 @class WaitForStateTransitionResultResponse;
 
@@ -88,6 +90,10 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getIdentityBalanceAndRevision(GetIdentityRequest) returns (GetIdentityBalanceAndRevisionResponse)
 
 - (GRPCUnaryProtoCall *)getIdentityBalanceAndRevisionWithMessage:(GetIdentityRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark getProofs(GetProofsRequest) returns (GetProofsResponse)
+
+- (GRPCUnaryProtoCall *)getProofsWithMessage:(GetProofsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 #pragma mark getDataContract(GetDataContractRequest) returns (GetDataContractResponse)
 
@@ -168,6 +174,13 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getIdentityBalanceAndRevisionWithRequest:(GetIdentityRequest *)request handler:(void(^)(GetIdentityBalanceAndRevisionResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetIdentityBalanceAndRevisionWithRequest:(GetIdentityRequest *)request handler:(void(^)(GetIdentityBalanceAndRevisionResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark getProofs(GetProofsRequest) returns (GetProofsResponse)
+
+- (void)getProofsWithRequest:(GetProofsRequest *)request handler:(void(^)(GetProofsResponse *_Nullable response, NSError *_Nullable error))handler;
+
+- (GRPCProtoCall *)RPCTogetProofsWithRequest:(GetProofsRequest *)request handler:(void(^)(GetProofsResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
 #pragma mark getDataContract(GetDataContractRequest) returns (GetDataContractResponse)

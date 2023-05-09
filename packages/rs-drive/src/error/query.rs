@@ -11,6 +11,9 @@ pub enum QuerySyntaxError {
     #[error("invalid sql error: {0}")]
     InvalidSQL(&'static str),
 
+    /// We asked for nothing
+    #[error("no query items error: {0}")]
+    NoQueryItems(&'static str),
     /// Contract not found error
     #[error("contract not found error: {0}")]
     ContractNotFound(&'static str),

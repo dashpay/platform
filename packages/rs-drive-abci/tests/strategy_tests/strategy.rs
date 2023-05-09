@@ -123,6 +123,7 @@ pub struct Strategy {
     pub rotate_quorums: bool,
     pub failure_testing: Option<FailureStrategy>,
     pub query_testing: Option<QueryStrategy>,
+    pub verify_state_transition_results: bool,
 }
 
 #[derive(Clone, Debug)]
