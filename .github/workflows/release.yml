@@ -200,6 +200,16 @@ jobs:
         with:
           script: "console.log(core.getInput('tag'))"
 
+      - name: View context attributes
+        uses: actions/github-script@v6
+        with:
+          script: console.log(context)
+
+      - name: View context attributes
+        uses: actions/github-script@v6
+        with:
+          script: console.log(core)
+
       - name: Show context
         run: echo ${{ toJson(github) }}
 
