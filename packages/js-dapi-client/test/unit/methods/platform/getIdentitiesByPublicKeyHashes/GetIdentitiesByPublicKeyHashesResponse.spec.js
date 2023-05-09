@@ -65,7 +65,7 @@ describe('GetIdentitiesByPublicKeyHashesResponse', () => {
 
     expect(identities).to.deep.members([]);
     expect(proof).to.be.an.instanceOf(Proof);
-    expect(proof.getMerkleProof()).to.deep.equal(proofFixture.merkleProof);
+    expect(proof.getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
     expect(proof.getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
     expect(proof.getSignature()).to.deep.equal(proofFixture.signature);
   });
@@ -92,7 +92,7 @@ describe('GetIdentitiesByPublicKeyHashesResponse', () => {
 
     proofProto.setQuorumHash(proofFixture.quorumHash);
     proofProto.setSignature(proofFixture.signature);
-    proofProto.setMerkleProof(proofFixture.merkleProof);
+    proofProto.setGrovedbProof(proofFixture.merkleProof);
     proofProto.setRound(proofFixture.round);
 
     proto.setIdentitiesList([]);
@@ -107,7 +107,7 @@ describe('GetIdentitiesByPublicKeyHashesResponse', () => {
 
     expect(getIdentitiesResponse.getProof())
       .to.be.an.instanceOf(Proof);
-    expect(getIdentitiesResponse.getProof().getMerkleProof())
+    expect(getIdentitiesResponse.getProof().getGrovedbProof())
       .to.deep.equal(proofFixture.merkleProof);
     expect(getIdentitiesResponse.getProof().getQuorumHash())
       .to.deep.equal(proofFixture.quorumHash);

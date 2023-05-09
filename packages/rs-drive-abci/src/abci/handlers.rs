@@ -88,7 +88,9 @@ where
 
         transaction.set_savepoint();
 
-        tracing::info!(method = "init_chain", "init chain executed");
+        let app_hash = hex::encode(&response.app_hash);
+
+        tracing::info!(method = "init_chain", app_hash, "init chain executed");
         Ok(response)
     }
 
@@ -506,29 +508,28 @@ where
 
     fn query(&self, request: RequestQuery) -> Result<ResponseQuery, ResponseException> {
         let RequestQuery {
-            data,
-            path,
-            height,
-            prove,
+            data, path, prove, ..
         } = request;
 
-        let data = self
-            .platform
-            .drive
-            .query_serialized(data, path, prove)
-            .map_err(Error::Drive)?;
+        let result = self.platform.query(path.as_str(), data.as_slice(), prove)?;
+
+        let (code, data) = if result.is_valid() {
+            (0, result.data.unwrap_or_default())
+        } else {
+            (1, vec![])
+        };
 
         Ok(ResponseQuery {
             //todo: right now just put GRPC error codes,
             //  later we will use own error codes
-            code: 0,
+            code,
             log: "".to_string(),
             info: "".to_string(),
             index: 0,
             key: vec![],
             value: data,
             proof_ops: None,
-            height,
+            height: self.platform.state.read().unwrap().height() as i64,
             codespace: "".to_string(),
         })
     }

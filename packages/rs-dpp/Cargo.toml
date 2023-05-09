@@ -2,13 +2,13 @@
 name = "dpp"
 version = "0.1.0"
 edition = "2018"
-authors = ["Anton Suprunchuk <anton.suprunchuk@gmail.com>", "Samuel Westrich <sam@dash.org>", "Ivan Shumkov <ivan@shumkov.ru>", "Djavid Gabibiyan <djavid@dash.org>"]
+authors = ["Anton Suprunchuk <anton.suprunchuk@gmail.com>", "Samuel Westrich <sam@dash.org>", "Ivan Shumkov <ivan@shumkov.ru>", "Djavid Gabibiyan <djavid@dash.org>", "Igor Markin <igor.markin@dash.org>"]
 
 [dependencies]
 anyhow = { version = "1.0.70" }
 async-trait = { version = "0.1" }
 base64 = "0.20.0"
-bls-signatures = { git = "https://github.com/dashpay/bls-signatures", branch = "feat/clone" }
+bls-signatures = { git = "https://github.com/dashpay/bls-signatures", branch = "develop" }
 bs58 = "0.4.0"
 byteorder = { version = "1.4" }
 chrono = { version = "0.4.20", default-features = false, features = [

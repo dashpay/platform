@@ -137,7 +137,7 @@ describe('StateTransitionFacade', () => {
   });
 
   describe('createFromBuffer', () => {
-    it('should create State Transition from string', async () => {
+    it('should create Data Contract State Transition from buffer', async () => {
       const result = await dpp.stateTransition.createFromBuffer(
         dataContractCreateTransition.toBuffer(),
       );

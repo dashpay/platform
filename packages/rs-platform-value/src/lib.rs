@@ -1321,6 +1321,8 @@ implfrom! {
     Bytes(Vec<u8>),
     Bytes(&[u8]),
     Bytes32([u8;32]),
+    Bytes20([u8;20]),
+    Bytes36([u8;36]),
 
     Float(f64),
     Float(f32),
@@ -1423,6 +1425,29 @@ where
                 .map(|(key, value)| (key.into(), value))
                 .collect(),
         )
+    }
+}
+
+impl<T> From<BTreeMap<T, Option<T>>> for Value
+where
+    T: Into<Value>,
+{
+    fn from(value: BTreeMap<T, Option<T>>) -> Self {
+        Value::Map(
+            value
+                .into_iter()
+                .map(|(key, value)| (key.into(), value.map(|a| a.into()).into()))
+                .collect(),
+        )
+    }
+}
+
+impl From<Option<Value>> for Value {
+    fn from(value: Option<Value>) -> Self {
+        match value {
+            None => Value::Null,
+            Some(value) => value,
+        }
     }
 }
 

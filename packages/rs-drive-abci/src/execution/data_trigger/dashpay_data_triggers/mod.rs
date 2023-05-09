@@ -130,7 +130,7 @@ mod test {
     use crate::execution::data_trigger::DataTriggerExecutionContext;
     use crate::platform::PlatformStateRef;
     use crate::test::helpers::setup::TestPlatformBuilder;
-    use dpp::block::block_info::BlockInfo;
+    use dpp::block::block_info::{BlockInfo, ExtendedBlockInfo};
     use dpp::document::document_transition::{Action, DocumentCreateTransitionAction};
     use dpp::errors::consensus::state::data_trigger::data_trigger_error::DataTriggerActionError;
     use dpp::platform_value;
@@ -204,11 +204,16 @@ mod test {
             .set_initial_state_structure();
         let mut state_write_guard = platform.state.write().unwrap();
 
-        state_write_guard.last_committed_block_info = Some(BlockInfo {
-            time_ms: 500000,
-            height: 100,
-            core_height: 42,
-            epoch: Default::default(),
+        state_write_guard.last_committed_block_info = Some(ExtendedBlockInfo {
+            basic_info: BlockInfo {
+                time_ms: 500000,
+                height: 100,
+                core_height: 42,
+                epoch: Default::default(),
+            },
+            quorum_hash: [0u8; 32],
+            signature: [0u8; 96],
+            round: 0,
         });
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
@@ -277,12 +282,18 @@ mod test {
             .set_initial_state_structure();
         let mut state_write_guard = platform.state.write().unwrap();
 
-        state_write_guard.last_committed_block_info = Some(BlockInfo {
-            time_ms: 500000,
-            height: 100,
-            core_height: 42,
-            epoch: Default::default(),
+        state_write_guard.last_committed_block_info = Some(ExtendedBlockInfo {
+            basic_info: BlockInfo {
+                time_ms: 500000,
+                height: 100,
+                core_height: 42,
+                epoch: Default::default(),
+            },
+            quorum_hash: [0u8; 32],
+            signature: [0u8; 96],
+            round: 0,
         });
+
         let platform_ref = PlatformStateRef {
             drive: &platform.drive,
             state: &state_write_guard,

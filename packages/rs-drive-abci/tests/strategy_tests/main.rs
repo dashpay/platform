@@ -40,8 +40,6 @@ use drive_abci::test::helpers::setup::TestPlatformBuilder;
 use drive_abci::{config::PlatformConfig, test::helpers::setup::TempPlatform};
 use frequency::Frequency;
 
-use rand::distributions::Distribution;
-
 use std::collections::BTreeMap;
 
 use strategy::{ChainExecutionOutcome, ChainExecutionParameters, Strategy, StrategyRandomness};
@@ -257,6 +255,7 @@ mod tests {
             .last_committed_block_info
             .as_ref()
             .unwrap()
+            .basic_info
             .height
             + 1;
 
@@ -445,6 +444,7 @@ mod tests {
                 .last_committed_block_info
                 .as_ref()
                 .unwrap()
+                .basic_info
                 .epoch
                 .index,
             0

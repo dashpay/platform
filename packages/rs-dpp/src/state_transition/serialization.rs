@@ -25,10 +25,12 @@ mod tests {
     use crate::identity::state_transition::identity_credit_withdrawal_transition::{
         IdentityCreditWithdrawalTransition, Pooling,
     };
-    use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
+
     use crate::identity::state_transition::identity_topup_transition::IdentityTopUpTransition;
     use crate::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
     use crate::identity::Identity;
+    use crate::serialization_traits::PlatformMessageSignable;
+    use crate::serialization_traits::Signable;
     use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
     use crate::state_transition::{StateTransition, StateTransitionLike, StateTransitionType};
     use crate::tests::fixtures::{
@@ -87,6 +89,11 @@ mod tests {
             Identity::random_identity_with_main_keys_with_private_key(5, &mut rng)
                 .expect("expected to get identity");
         let bls = NativeBlsModule::default();
+        let add_public_keys_in_creation = identity
+            .public_keys
+            .values()
+            .map(|public_key| public_key.into())
+            .collect();
         let mut identity_update_transition = IdentityUpdateTransition {
             protocol_version: LATEST_VERSION,
             transition_type: StateTransitionType::IdentityUpdate,
@@ -94,24 +101,34 @@ mod tests {
             signature_public_key_id: 0,
             identity_id: identity.id,
             revision: 1,
-            add_public_keys: identity
-                .public_keys
-                .into_values()
-                .map(|public_key| {
-                    let private_key = keys
-                        .get(&public_key)
-                        .expect("expected to have the private key");
-                    IdentityPublicKeyInCreationWithWitness::from_public_key_signed_with_private_key(
-                        public_key,
-                        private_key,
-                        &bls,
-                    )
-                })
-                .collect::<Result<Vec<IdentityPublicKeyInCreationWithWitness>, ProtocolError>>()
-                .expect("expected to get added public keys"),
+            add_public_keys: add_public_keys_in_creation,
             disable_public_keys: vec![],
             public_keys_disabled_at: None,
         };
+
+        let key_signable_bytes = identity_update_transition
+            .signable_bytes()
+            .expect("expected to get signable bytes");
+
+        identity_update_transition
+            .add_public_keys
+            .iter_mut()
+            .zip(identity.public_keys.into_values())
+            .try_for_each(|(public_key_with_witness, public_key)| {
+                if public_key.key_type.is_unique_key_type() {
+                    let private_key = keys
+                        .get(&public_key)
+                        .expect("expected to have the private key");
+                    let signature = key_signable_bytes
+                        .as_slice()
+                        .sign_by_private_key(private_key, public_key.key_type, &bls)?
+                        .into();
+                    public_key_with_witness.signature = signature;
+                }
+
+                Ok::<(), ProtocolError>(())
+            })
+            .expect("expected to update keys");
 
         let (public_key, private_key) = keys.pop_first().unwrap();
         identity_update_transition
@@ -132,6 +149,11 @@ mod tests {
             Identity::random_identity_with_main_keys_with_private_key(5, &mut rng)
                 .expect("expected to get identity");
         let bls = NativeBlsModule::default();
+        let add_public_keys_in_creation = identity
+            .public_keys
+            .values()
+            .map(|public_key| public_key.into())
+            .collect();
         let mut identity_update_transition = IdentityUpdateTransition {
             protocol_version: LATEST_VERSION,
             transition_type: StateTransitionType::IdentityUpdate,
@@ -139,24 +161,34 @@ mod tests {
             signature_public_key_id: 0,
             identity_id: identity.id,
             revision: 1,
-            add_public_keys: identity
-                .public_keys
-                .into_values()
-                .map(|public_key| {
-                    let private_key = keys
-                        .get(&public_key)
-                        .expect("expected to have the private key");
-                    IdentityPublicKeyInCreationWithWitness::from_public_key_signed_with_private_key(
-                        public_key,
-                        private_key,
-                        &bls,
-                    )
-                })
-                .collect::<Result<Vec<IdentityPublicKeyInCreationWithWitness>, ProtocolError>>()
-                .expect("expected to get added public keys"),
+            add_public_keys: add_public_keys_in_creation,
             disable_public_keys: vec![3, 4, 5],
             public_keys_disabled_at: Some(15),
         };
+
+        let key_signable_bytes = identity_update_transition
+            .signable_bytes()
+            .expect("expected to get signable bytes");
+
+        identity_update_transition
+            .add_public_keys
+            .iter_mut()
+            .zip(identity.public_keys.into_values())
+            .try_for_each(|(public_key_with_witness, public_key)| {
+                if public_key.key_type.is_unique_key_type() {
+                    let private_key = keys
+                        .get(&public_key)
+                        .expect("expected to have the private key");
+                    let signature = key_signable_bytes
+                        .as_slice()
+                        .sign_by_private_key(private_key, public_key.key_type, &bls)?
+                        .into();
+                    public_key_with_witness.signature = signature;
+                }
+
+                Ok::<(), ProtocolError>(())
+            })
+            .expect("expected to update keys");
 
         let (public_key, private_key) = keys.pop_first().unwrap();
         identity_update_transition
