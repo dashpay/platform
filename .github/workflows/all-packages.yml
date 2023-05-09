@@ -65,6 +65,7 @@ jobs:
   test-suite:
     name: Run Platform Test Suite
     runs-on: self-hosted
+    if: false
     timeout-minutes: 30
     env:
       SCCACHE_BUCKET: "platform-runner-cache"

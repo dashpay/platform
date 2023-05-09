@@ -20,9 +20,9 @@ jobs:
     runs-on: self-hosted
     if: github.event_name != 'workflow_dispatch'
     env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
-      CARGO_INCREMENTAL: "false"
+      SCCACHE_GHA_ENABLED: "false"
+      RUSTC_WRAPPER: ""
+      CARGO_INCREMENTAL: "true"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -201,6 +201,9 @@ jobs:
         with:
           result-encoding: string
           script: "return context.eventName === 'workflow_dispatch' ? core.getInput('tag') : context.payload.release.tag_name;"
+
+      - name: Show tag
+        run: echo ${{ steps.tag.outputs.result }}
 
       - name: Set suffix
         uses: actions/github-script@v6
@@ -381,9 +384,7 @@ jobs:
           labels: ${{ steps.docker_meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
           build-args: |
-            SCCACHE_GHA_ENABLED=true
-            ACTIONS_CACHE_URL=${{ env.ACTIONS_CACHE_URL }}
-            ACTIONS_RUNTIME_TOKEN=${{ env.ACTIONS_RUNTIME_TOKEN }}
+            SCCACHE_GHA_ENABLED=false
             CARGO_BUILD_PROFILE=release
           cache-from: |
             type=gha
@@ -527,9 +528,7 @@ jobs:
           labels: ${{ steps.docker_meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
           build-args: |
-            SCCACHE_GHA_ENABLED=true
-            ACTIONS_CACHE_URL=${{ env.ACTIONS_CACHE_URL }}
-            ACTIONS_RUNTIME_TOKEN=${{ env.ACTIONS_RUNTIME_TOKEN }}
+            SCCACHE_GHA_ENABLED=false
             CARGO_BUILD_PROFILE=release
           cache-from: |
             type=gha
@@ -611,9 +610,9 @@ jobs:
     name: Release Dashmate helper to Docker Hub
     runs-on: self-hosted
     env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
-      CARGO_INCREMENTAL: "false"
+      SCCACHE_GHA_ENABLED: "false"
+      RUSTC_WRAPPER: ""
+      CARGO_INCREMENTAL: "true"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -742,9 +741,7 @@ jobs:
           labels: ${{ steps.docker_meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
           build-args: |
-            SCCACHE_GHA_ENABLED=true
-            ACTIONS_CACHE_URL=${{ env.ACTIONS_CACHE_URL }}
-            ACTIONS_RUNTIME_TOKEN=${{ env.ACTIONS_RUNTIME_TOKEN }}
+            SCCACHE_GHA_ENABLED=false
             CARGO_BUILD_PROFILE=release
 
   release-dashmate:
