@@ -184,13 +184,13 @@ where
         // We need to let Tenderdash know about the transactions we should remove from execution
         let (tx_results, tx_records): (Vec<Option<ExecTxResult>>, Vec<TxRecord>) = tx_results
             .into_iter()
-            .map(|result| {
+            .map(|(tx,result)| {
                 if result.code > 0 {
                     (
                         None,
                         TxRecord {
                             action: TxAction::Removed as i32,
-                            tx: result.data,
+                            tx,
                         },
                     )
                 } else {
@@ -198,7 +198,7 @@ where
                         Some(result.clone()),
                         TxRecord {
                             action: TxAction::Unmodified as i32,
-                            tx: result.data,
+                            tx,
                         },
                     )
                 }
@@ -314,7 +314,7 @@ where
             // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
             let response = ResponseProcessProposal {
                 app_hash: app_hash.to_vec(),
-                tx_results,
+                tx_results: tx_results.into_iter().map(|(_, value)| value).collect(),
                 status: proto::response_process_proposal::ProposalStatus::Accept.into(),
                 validator_set_update,
                 ..Default::default()

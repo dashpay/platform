@@ -193,7 +193,7 @@ where
         raw_state_transitions: &Vec<Vec<u8>>,
         block_info: &BlockInfo,
         transaction: &Transaction,
-    ) -> Result<(FeeResult, Vec<ExecTxResult>), Error> {
+    ) -> Result<(FeeResult, Vec<(Vec<u8>, ExecTxResult)>), Error> {
         let state_transitions = StateTransition::deserialize_many(raw_state_transitions)?;
         let mut aggregate_fee_result = FeeResult::default();
         let state_read_guard = self.state.read().unwrap();
@@ -204,8 +204,8 @@ where
             core_rpc: &self.core_rpc,
         };
         let exec_tx_results = state_transitions
-            .into_iter()
-            .map(|state_transition| {
+            .into_iter().zip(raw_state_transitions.iter())
+            .map(|(state_transition, raw_state_transition)| {
                 let state_transition_execution_event =
                     process_state_transition(&platform_ref, state_transition, Some(transaction))?;
 
@@ -221,9 +221,9 @@ where
                     aggregate_fee_result.checked_add_assign(fee_result.clone())?;
                 }
 
-                Ok(execution_result.into())
+                Ok((raw_state_transition.clone(), execution_result.into()))
             })
-            .collect::<Result<Vec<ExecTxResult>, Error>>()?;
+            .collect::<Result<Vec<(Vec<u8>, ExecTxResult)>, Error>>()?;
         Ok((aggregate_fee_result, exec_tx_results))
     }
 }
