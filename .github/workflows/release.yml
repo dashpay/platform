@@ -210,8 +210,15 @@ jobs:
         with:
           script: console.log(core)
 
-      - name: Show context
-        run: echo ${{ toJson(github) }}
+      - name: Show eventName value
+        uses: actions/github-script@v6
+        with:
+          script: console.log(context.eventName)
+
+      - name: Show comparison result
+        uses: actions/github-script@v6
+        with:
+          script: console.log(core.getInput('tag'))
 
       - name: Get tag
         uses: actions/github-script@v6
