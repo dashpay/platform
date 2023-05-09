@@ -556,7 +556,7 @@ impl<C> Platform<C> {
                         Bytes32::from_vec(contract_request.contract_id).map(|bytes| bytes.0)
                     })
                     .collect::<Result<Vec<[u8; 32]>, dpp::platform_value::Error>>());
-                let identity_ids = check_validation_result_with_data!(identities
+                let identity_requests = check_validation_result_with_data!(identities
                     .into_iter()
                     .map(|identity_request| {
                         Ok(IdentityDriveQuery {
@@ -587,7 +587,7 @@ impl<C> Platform<C> {
                     })
                     .collect::<Result<Vec<_>, dpp::platform_value::Error>>());
                 let proof = check_validation_result_with_data!(self.drive.prove_multiple(
-                    &identity_ids,
+                    &identity_requests,
                     &contract_ids,
                     &document_queries,
                     None
