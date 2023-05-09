@@ -27,7 +27,7 @@ function configureTenderdashTaskFactory(
           subTasks.push({
             task: async () => {
               const randomChainIdPart = Math.floor(Math.random() * 60) + 1;
-              const chainId = `dash_masternode_local_${randomChainIdPart}`;
+              const chainId = `dashmate_local_${randomChainIdPart}`; // TODO: Change to dashmate
 
               const genesisTime = new Date().toISOString();
 
