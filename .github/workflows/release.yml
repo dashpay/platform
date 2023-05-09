@@ -215,6 +215,9 @@ jobs:
         with:
           script: console.log(context.eventName)
 
+      - name: Try to echo input
+        run: echo ${{ github.event.inputs.tag }}
+
       - name: Show input result
         uses: actions/github-script@v6
         with:
