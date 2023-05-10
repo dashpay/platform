@@ -1,6 +1,7 @@
-use dapi_grpc::platform::v0::{get_proofs_request, GetProofsRequest};
+use dapi_grpc::platform::v0::{get_proofs_request, GetProofsRequest, GetProofsResponse};
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransitionAction;
 use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransitionAction;
+use dpp::identity::PartialIdentity;
 use dpp::state_transition::{StateTransition, StateTransitionAction};
 use drive::drive::Drive;
 use drive_abci::abci::AbciApplication;
@@ -85,10 +86,18 @@ pub(crate) fn verify_state_transitions_were_executed(
                     .platform
                     .query("/proofs", &proofs_request.encode_to_vec())
                     .expect("expected to query proofs");
-                let response_proof = result.into_data().expect("expected queries to be valid");
+                let serialized_get_proofs_response =
+                    result.into_data().expect("expected queries to be valid");
+
+                let GetProofsResponse { proof, metadata } =
+                    GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
+                        .expect("expected to decode proof response");
+
+                let response_proof = proof.expect("proof should be present");
+
                 // we expect to get an identity that matches the state transition
                 let (root_hash, identity) = Drive::verify_full_identity_by_identity_id(
-                    &response_proof,
+                    &response_proof.grovedb_proof,
                     false,
                     identity_create_transition.identity_id.into_buffer(),
                 )
@@ -98,7 +107,17 @@ pub(crate) fn verify_state_transitions_were_executed(
                     identity
                         .expect("expected an identity")
                         .into_partial_identity_info_no_balance(),
-                    identity_create_transition.into()
+                    PartialIdentity {
+                        id: identity_create_transition.identity_id,
+                        loaded_public_keys: identity_create_transition
+                            .public_keys
+                            .iter()
+                            .map(|key| (key.id, key.clone()))
+                            .collect(),
+                        balance: None,
+                        revision: Some(0),
+                        not_found_public_keys: Default::default(),
+                    }
                 )
             }
             StateTransitionAction::IdentityTopUpAction(identity_top_up_transition) => {
