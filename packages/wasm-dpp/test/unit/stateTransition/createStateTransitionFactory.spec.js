@@ -1,32 +1,53 @@
-const createStateTransitionFactory = require('@dashevo/dpp/lib/stateTransition/createStateTransitionFactory');
+const crypto = require('crypto');
 
-const DataContractCreateTransition = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractCreateTransition/DataContractCreateTransition');
-const DocumentsBatchTransition = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/DocumentsBatchTransition');
+const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
+const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
+const getDocumentTransitionsFixture = require('../../../lib/test/fixtures/getDocumentTransitionsFixture');
 
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
-const getDocumentTranstionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
-
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
-
-const InvalidStateTransitionTypeError = require('@dashevo/dpp/lib/stateTransition/errors/InvalidStateTransitionTypeError');
+const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRepositoryMock');
+const { default: loadWasmDpp } = require('../../..');
+const {
+  DashPlatformProtocol,
+  DataContractCreateTransition,
+  DocumentsBatchTransition,
+  InvalidStateTransitionTypeError,
+} = require('../../..');
+const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
 
 describe('createStateTransitionFactory', () => {
   let createStateTransition;
   let stateRepositoryMock;
   let dataContract;
+  let dpp;
+  let blsAdapter;
 
-  beforeEach(function beforeEach() {
-    dataContract = getDataContractFixture();
+  before(async () => {
+    await loadWasmDpp();
+  });
+
+  beforeEach(async function beforeEach() {
+    blsAdapter = await getBlsAdapterMock();
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+
+    dpp = new DashPlatformProtocol(
+      blsAdapter,
+      stateRepositoryMock,
+      { generate: () => crypto.randomBytes(32) },
+      1,
+    );
+
+    dataContract = await getDataContractFixture();
     stateRepositoryMock.fetchDataContract.resolves(dataContract);
-    createStateTransition = createStateTransitionFactory(stateRepositoryMock);
+    createStateTransition = (st) => dpp.stateTransition.createFromObject(
+      st, { skipValidation: true },
+    );
   });
 
   it('should return DataContractCreateTransition if type is DATA_CONTRACT_CREATE', async () => {
     const stateTransition = new DataContractCreateTransition({
       dataContract: dataContract.toObject(),
       entropy: dataContract.getEntropy(),
+      protocolVersion: 1,
     });
 
     const result = await createStateTransition(stateTransition.toObject());
@@ -36,13 +57,14 @@ describe('createStateTransitionFactory', () => {
   });
 
   it('should return DocumentsBatchTransition if type is DOCUMENTS', async () => {
-    const documents = getDocumentsFixture(dataContract);
-    const documentTransitions = getDocumentTranstionsFixture({
+    const documents = await getDocumentsFixture(dataContract);
+    const ownerId = documents[0].getOwnerId();
+    const documentTransitions = getDocumentTransitionsFixture({
       create: documents,
     });
 
     const stateTransition = new DocumentsBatchTransition({
-      ownerId: getDocumentsFixture.ownerId,
+      ownerId,
       contractId: dataContract.getId(),
       transitions: documentTransitions.map((t) => t.toObject()),
     }, [dataContract]);
@@ -57,7 +79,7 @@ describe('createStateTransitionFactory', () => {
 
   it('should throw InvalidStateTransitionTypeError if type is invalid', async () => {
     const rawStateTransition = {
-      type: 666,
+      type: 253,
     };
 
     try {

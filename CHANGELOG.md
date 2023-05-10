@@ -1,3 +1,23 @@
+## [0.24.0-dev.34](https://github.com/dashpay/platform/compare/v0.24.0-dev.33...v0.24.0-dev.34) (2023-05-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* Validator rotation logic is changed. Previous blockchain data won't be compatible (#1034)
+
+### Features
+
+* **drive:** whitelist and filter banned nodes for validators ([#1034](https://github.com/dashpay/platform/issues/1034))
+
+
+### Bug Fixes
+
+* **dapi:** invalid addresses in the whitelist ([#1044](https://github.com/dashpay/platform/issues/1044))
+* **dashmate:** reset platform commands hangs ([#1038](https://github.com/dashpay/platform/issues/1038))
+* **dashmate:** set permissions for dashcore log file ([#1037](https://github.com/dashpay/platform/issues/1037))
+* **drive:** cannot destructure property ‘quorumHash’ of ‘instantLock... ([#1046](https://github.com/dashpay/platform/issues/1046))
+* **drive:** cannot read properties of undefined (reading 'toString') ([#1045](https://github.com/dashpay/platform/issues/1045))
+
 ## [0.24.0-dev.33](https://github.com/dashpay/platform/compare/v0.24.0-dev.32...v0.24.0-dev.33) (2023-05-05)
 
 

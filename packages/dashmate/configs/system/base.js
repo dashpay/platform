@@ -37,7 +37,7 @@ module.exports = {
   },
   core: {
     docker: {
-      image: 'dashpay/dashd:19.0.0-rc.7',
+      image: 'dashpay/dashd:19.0.0',
     },
     p2p: {
       port: 9999,
@@ -71,7 +71,7 @@ module.exports = {
     },
     sentinel: {
       docker: {
-        image: 'dashpay/sentinel:1.7.1',
+        image: 'dashpay/sentinel:1.7.3',
       },
     },
     devnet: {
@@ -148,7 +148,7 @@ module.exports = {
       },
       tenderdash: {
         docker: {
-          image: 'dashpay/tenderdash:0.11.0-dev.4',
+          image: 'dashpay/tenderdash:0.11.2',
         },
         p2p: {
           port: 26656,

@@ -60,7 +60,7 @@ function startCoreFactory(
     }
 
     const logFilePath = config.get('core.log.file.path');
-    ensureFileMountExists(logFilePath);
+    ensureFileMountExists(logFilePath, 0o666);
 
     const coreContainer = await dockerCompose.runService(
       config.toEnvs(),

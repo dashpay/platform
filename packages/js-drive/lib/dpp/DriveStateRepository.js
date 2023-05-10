@@ -658,15 +658,19 @@ class DriveStateRepository {
     const llmqType = instantlockSML.getInstantSendLLMQType();
 
     if (instantlockSML.isLLMQTypeRotated(llmqType)) {
-      const { quorumHash } = instantLock.selectSignatoryRotatedQuorum(
+      const quorum = instantLock.selectSignatoryRotatedQuorum(
         smlStore,
         instantLock.getRequestId(),
         offset,
       );
 
-      const { result: quorumInfo } = await this.coreRpcClient.quorum('info', llmqType, quorumHash);
-      if (quorumInfo.previousConsecutiveDKGFailures !== 0) {
-        return false;
+      // TODO: We should throw an error if quorum is not found?
+      if (quorum) {
+        const { result: quorumInfo } = await this.coreRpcClient.quorum('info', llmqType, quorum.quorumHash);
+
+        if (quorumInfo.previousConsecutiveDKGFailures !== 0) {
+          return false;
+        }
       }
     }
 
