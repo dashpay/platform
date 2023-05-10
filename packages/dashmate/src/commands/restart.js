@@ -56,7 +56,7 @@ RestartCommand.description = 'Restart node';
 
 RestartCommand.flags = {
   ...ConfigBaseCommand.flags,
-  platform: Flags.boolean({ char: 'p', description: 'start only platform', default: false }),
+  platform: Flags.boolean({ char: 'p', description: 'restart only platform', default: false }),
 };
 
 module.exports = RestartCommand;
