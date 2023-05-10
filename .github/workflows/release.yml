@@ -231,6 +231,24 @@ jobs:
             suffix=${{ steps.suffix.outputs.result }},onlatest=true
             latest=${{ github.event_name == 'release' }}
 
+      # - uses: tespkg/actions-cache@v1
+      #   with:
+      #     accessKey: "Q3AM3UQ867SPQQA43P2F" # required
+      #     secretKey: "zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG" # required
+      #     sessionToken: "AQoDYXdzEJraDcqRtz123" # optional
+      #     bucket: platform-runner-cache # required
+      #     # actions/cache compatible properties: https://github.com/actions/cache
+      #     key: ${{ runner.os }}-cache-mount-cache-${{ hashFiles('**/go.sum') }}
+      #     path: |
+      #       cache-mount-cache
+      #     restore-keys: |
+      #       ${{ runner.os }}-cache-mount-cache
+
+      # - name: inject go-build-cache into docker
+      #   uses: overmindtech/buildkit-cache-dance/inject@main
+      #   with:
+      #     cache-source: cache-mount-cache
+
       - name: Build and push Docker image for Drive
         uses: docker/build-push-action@v3
         with:
@@ -245,6 +263,13 @@ jobs:
             SCCACHE_GHA_ENABLED=false
             CARGO_BUILD_PROFILE=release
           platforms: linux/amd64,linux/arm64
+          cache-from: type=s3,region=eu-west-1,bucket=platform-runner-cache
+          cache-to: type=s3,region=eu-west-1,bucket=platform-runner-cache
+
+      # - name: extract go-build-cache from docker
+      #   uses: overmindtech/buildkit-cache-dance/extract@main
+      #   with:
+      #     cache-source: cache-mount-cache
 
   release-dapi-docker-image:
     name: Release DAPI to Docker Hub
