@@ -177,7 +177,7 @@ class Config {
 
     let envs = {
       CONFIG_NAME: this.getName(),
-      COMPOSE_PROJECT_NAME: `dash_masternode_${this.getName()}`,
+      COMPOSE_PROJECT_NAME: `dashmate_${this.getName()}`,
       COMPOSE_FILE: dockerComposeFiles.join(':'),
       COMPOSE_PATH_SEPARATOR: ':',
       DOCKER_BUILDKIT: 1,
