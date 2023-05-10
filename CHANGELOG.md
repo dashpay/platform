@@ -3,339 +3,26 @@
 
 ### ⚠ BREAKING CHANGES
 
-* **dashmate:** rename compose project name (#1055)
-
-### Bug Fixes
-
-* **dashmate:** external IP detection hangs sometimes ([#1053](https://github.com/dashpay/platform/issues/1053))
-
-
-### Miscellaneous Chores
-
-* bump sentinel to 1.7.3 ([#1057](https://github.com/dashpay/platform/issues/1057))
-* **dashmate:** rename compose project name ([#1055](https://github.com/dashpay/platform/issues/1055))
-* **dashmate:** update testnet preset ([#1054](https://github.com/dashpay/platform/issues/1054))
-* increase client side timeouts ([#1050](https://github.com/dashpay/platform/issues/1050))
-
-
-### Tests
-
-* **dpp:** remove old dpp fixtures from tests ([#971](https://github.com/dashpay/platform/issues/971))
-
-## [0.24.0-dev.34](https://github.com/dashpay/platform/compare/v0.24.0-dev.33...v0.24.0-dev.34) (2023-05-08)
-
-
-### ⚠ BREAKING CHANGES
-
-* **drive:** whitelist and filter banned nodes for validators (#1034)
+* Previous blockchain data and state is not compatible
+* Previous created compose projects won't be supported. Please destroy them before update (#1055)
+* The --platfrom-only flag is renamed to --platform in the reset command (#991)
+* Some wasm-dpp APIs are different to js-dpp ones. The only divergencies that were addressed are the ones that were visible in tests, but some others might've been left intact (#848)
+* Core version less than 19 and legacy BLS schema are not supported (#771)
+* gRPC and HTTP platform ports now handling with the one single port (#752)
+* State Transition fees are changed
+* Document's query validation logic has minor incompatibilities with previous version
 
 ### Features
 
 * **drive:** whitelist and filter banned nodes for validators ([#1034](https://github.com/dashpay/platform/issues/1034))
-
-
-### Bug Fixes
-
-* **dapi:** invalid addresses in the whitelist ([#1044](https://github.com/dashpay/platform/issues/1044))
-* **dashmate:** reset platform commands hangs ([#1038](https://github.com/dashpay/platform/issues/1038))
-* **dashmate:** set permissions for dashcore log file ([#1037](https://github.com/dashpay/platform/issues/1037))
-* **drive:** cannot destructure property ‘quorumHash’ of ‘instantLock... ([#1046](https://github.com/dashpay/platform/issues/1046))
-* **drive:** cannot read properties of undefined (reading 'toString') ([#1045](https://github.com/dashpay/platform/issues/1045))
-
-
-### Miscellaneous Chores
-
-* **release:** update changelog and bump version to 0.24.0-dev.34 ([#1047](https://github.com/dashpay/platform/issues/1047))
-
-## [0.24.0-dev.33](https://github.com/dashpay/platform/compare/v0.24.0-dev.32...v0.24.0-dev.33) (2023-05-05)
-
-
-### Continuous Integration
-
-* increase release timeouts ([#1032](https://github.com/dashpay/platform/issues/1032))
-
-
-### Miscellaneous Chores
-
-* **release:** update changelog and bump version to 0.24.0-dev.33 ([#1033](https://github.com/dashpay/platform/issues/1033))
-
-## [0.24.0-dev.32](https://github.com/dashpay/platform/compare/v0.24.0-dev.31...v0.24.0-dev.32) (2023-05-04)
-
-
-### ⚠ BREAKING CHANGES
-
-* disable protocol version signaling (#1029)
-
-### Features
-
 * **dashmate:** core log file and debug categories ([#913](https://github.com/dashpay/platform/issues/913))
-
-
-### Bug Fixes
-
-* **dashmate:** waitForQuorumConnections deadline of 300000 exceeded ([#1015](https://github.com/dashpay/platform/issues/1015))
-* **dashmate:** wrong volume removal retry logic ([#1016](https://github.com/dashpay/platform/issues/1016))
-
-
-### Continuous Integration
-
-* add PR linter ([#1025](https://github.com/dashpay/platform/issues/1025))
-* add timeouts to self-hosted ci runs ([#1026](https://github.com/dashpay/platform/issues/1026))
-
-
-### Miscellaneous Chores
-
-* **dapi-client:** upate testnet masternode addresses whitelist ([#1023](https://github.com/dashpay/platform/issues/1023))
-* disable protocol version signaling ([#1029](https://github.com/dashpay/platform/issues/1029))
-* **release:** update changelog and bump version to 0.24.0-dev.32 ([#1031](https://github.com/dashpay/platform/issues/1031))
-
-
-### Documentation
-
-* update changelog
-
-## [0.24.0-dev.31](https://github.com/dashpay/platform/compare/v0.24.0-dev.30...v0.24.0-dev.31) (2023-05-01)
-
-
-### Bug Fixes
-
-* expect platformNodeID to be a hex string ([#1013](https://github.com/dashpay/platform/issues/1013))
-
-
-### Miscellaneous Chores
-
-* **release:** update changelog and bump version to 0.24.0-dev.31 ([#1014](https://github.com/dashpay/platform/issues/1014))
-
-## [0.24.0-dev.30](https://github.com/dashpay/platform/compare/v0.24.0-dev.29...v0.24.0-dev.30) (2023-04-30)
-
-
-### Bug Fixes
-
-* **dashmate:** "volume is in use" and "no such volume" ([#1005](https://github.com/dashpay/platform/issues/1005))
-
-
-### Miscellaneous Chores
-
-* **release:** update changelog and bump version to 0.24.0-dev.30 ([#1006](https://github.com/dashpay/platform/issues/1006))
-
-## [0.24.0-dev.29](https://github.com/dashpay/platform/compare/v0.24.0-dev.28...v0.24.0-dev.29) (2023-04-29)
-
-
-### Bug Fixes
-
-* **dashmate:** reset platform affects core ([#1001](https://github.com/dashpay/platform/issues/1001))
-* **drive:** double init chain leads to side bugs ([#1002](https://github.com/dashpay/platform/issues/1002))
-
-
-### Miscellaneous Chores
-
-* **release:** update changelog and bump version to 0.24.0-dev.29 ([#1003](https://github.com/dashpay/platform/issues/1003))
-
-## [0.24.0-dev.28](https://github.com/dashpay/platform/compare/v0.24.0-dev.27...v0.24.0-dev.28) (2023-04-28)
-
-
-### Bug Fixes
-
-* **dashmate:** BLS private key validate accepts whitespaces ([#998](https://github.com/dashpay/platform/issues/998))
-* **dashmate:** can't remove volumes if they not exist ([#997](https://github.com/dashpay/platform/issues/997))
-* **dashmate:** show masternode state while it is not synced ([#999](https://github.com/dashpay/platform/issues/999))
-* **dashmate:** wrap register masternode command in small terminals ([#996](https://github.com/dashpay/platform/issues/996))
-
-
-### Miscellaneous Chores
-
-* **release:** update changelog and bump version to 0.24.0-dev.28 ([#1000](https://github.com/dashpay/platform/issues/1000))
-
-## [0.24.0-dev.27](https://github.com/dashpay/platform/compare/v0.24.0-dev.26...v0.24.0-dev.27) (2023-04-28)
-
-
-### ⚠ BREAKING CHANGES
-
-* **dashmate:** multiple issues in the reset command (#991)
-
-### Bug Fixes
-
-* **dashmate:** multiple issues in the reset command ([#991](https://github.com/dashpay/platform/issues/991))
-
-
-### Miscellaneous Chores
-
-* **release:** update changelog and bump version to 0.24.0-dev.27 ([#993](https://github.com/dashpay/platform/issues/993))
-
-## [0.24.0-dev.26](https://github.com/dashpay/platform/compare/v0.24.0-dev.25...v0.24.0-dev.26) (2023-04-27)
-
-
-### ⚠ BREAKING CHANGES
-
-* **drive:** non-unique masternode voting keys (#986)
-
-### Bug Fixes
-
-* **drive:** non-unique masternode voting keys ([#986](https://github.com/dashpay/platform/issues/986))
-
-
-### Build System
-
-* **dashmate:** better versioning ([#988](https://github.com/dashpay/platform/issues/988))
-* **dashmate:** prepare MacOs build for notarization ([#985](https://github.com/dashpay/platform/issues/985))
-
-
-### Miscellaneous Chores
-
-* **release:** update changelog and bump version to 0.24.0-dev.26 ([#989](https://github.com/dashpay/platform/issues/989))
-
-## [0.24.0-dev.25](https://github.com/dashpay/platform/compare/v0.24.0-dev.24...v0.24.0-dev.25) (2023-04-26)
-
-
-### Features
-
 * **dashamte:** better ZeroSSL error messages ([#950](https://github.com/dashpay/platform/issues/950))
 * **dashmate:** set random core rpc usename and password on setup ([#973](https://github.com/dashpay/platform/issues/973))
 * **dashmate:** verbose `connect ENOENT /var/run/docker.sock` error ([#951](https://github.com/dashpay/platform/issues/951))
-
-
-### Bug Fixes
-
-* **dashmate:** ability to work with non-default docker socket path ([#967](https://github.com/dashpay/platform/issues/967))
-* **dashmate:** already configured preset is ignored ([#974](https://github.com/dashpay/platform/issues/974))
-* **dashmate:** empty masternode status while syncing ([#970](https://github.com/dashpay/platform/issues/970))
-* **dashmate:** form accepts invalid BLS key ([#961](https://github.com/dashpay/platform/issues/961))
-* **dashmate:** invalid mn register command in output of dashmate setup ([#959](https://github.com/dashpay/platform/issues/959))
-* **dashmate:** reward shares can be negative during HP masternode registration ([#960](https://github.com/dashpay/platform/issues/960))
-* **dashmate:** select number of masternodes during local setup freezes ([#957](https://github.com/dashpay/platform/issues/957))
-* **dashmate:** yaml package security vulnerability ([#975](https://github.com/dashpay/platform/issues/975))
-* **test-suite:** expects identities for invalid mns ([#968](https://github.com/dashpay/platform/issues/968))
-
-
-### Build System
-
-* **dashmate:** remove MacOs malicious software warning ([#977](https://github.com/dashpay/platform/issues/977))
-
-
-### Miscellaneous Chores
-
-* **release:** update changelog and bump version to 0.24.0-dev.25 ([#982](https://github.com/dashpay/platform/issues/982))
-
-## [0.24.0-dev.24](https://github.com/dashpay/platform/compare/v0.24.0-dev.23...v0.24.0-dev.24) (2023-04-24)
-
-
-### ⚠ BREAKING CHANGES
-
-* **drive:** updating a masternode identity with invalid entry from SML (#965)
-
-### Features
-
 * **wasm-dpp:** state_transition_fee_validator binding and tests ([#874](https://github.com/dashpay/platform/issues/874))
-
-
-### Bug Fixes
-
-* **dashamte:** wrong envoy config path on windows ([#949](https://github.com/dashpay/platform/issues/949))
-* **drive:** updating a masternode identity with invalid entry from SML ([#965](https://github.com/dashpay/platform/issues/965))
-
-
-### Miscellaneous Chores
-
-* **release:** update changelog and bump version to 0.24.0-dev.24 ([#966](https://github.com/dashpay/platform/issues/966))
-
-## [0.24.0-dev.23](https://github.com/dashpay/platform/compare/v0.24.0-dev.22...v0.24.0-dev.23) (2023-04-20)
-
-
-### Build System
-
-* **dashmate:** fix removing unnecessary packages
-
-
-### Miscellaneous Chores
-
-* **release:** update changelog and bump version to 0.24.0-dev.23 ([#946](https://github.com/dashpay/platform/issues/946))
-
-## [0.24.0-dev.22](https://github.com/dashpay/platform/compare/v0.24.0-dev.21...v0.24.0-dev.22) (2023-04-20)
-
-
-### Continuous Integration
-
-* remove drive node.js binding release
-
-
-### Build System
-
-* **dashamte:** build arm64 deb file instead of armel ([#943](https://github.com/dashpay/platform/issues/943))
-
-
-### Miscellaneous Chores
-
-* **release:** update changelog and bump version to 0.24.0-dev.22 ([#945](https://github.com/dashpay/platform/issues/945))
-
-## [0.24.0-dev.21](https://github.com/dashpay/platform/compare/v0.24.0-dev.20...v0.24.0-dev.21) (2023-04-19)
-
-
-### Features
-
 * **dashmate:** check system requirements before setup ([#935](https://github.com/dashpay/platform/issues/935))
-
-
-### Bug Fixes
-
-* **dashamte:** Can't find begoo/index with `yarn dashmate setup` ([#933](https://github.com/dashpay/platform/issues/933))
-
-
-### Documentation
-
-* update changelog
-
-
-### Continuous Integration
-
-* disable sccache
-* disable sccache
-* even more fixes to release workflow
-* fix release workflow
-* fix release workflow once again
-* fix the release jobs flow
-* more fixes to release workflow
-
-
-### Build System
-
-* **dashamte:** remove deb release docker dependencies ([#934](https://github.com/dashpay/platform/issues/934))
-* **dashmate:** build only linux tarballs ([#936](https://github.com/dashpay/platform/issues/936))
-
-
-### Miscellaneous Chores
-
-* **dashamte:** remove deprecation warning on start ([#925](https://github.com/dashpay/platform/issues/925))
-* **release:** update changelog and bump version to 0.24.0-dev.21 ([#938](https://github.com/dashpay/platform/issues/938))
-
-## [0.24.0-dev.20](https://github.com/dashpay/platform/compare/v0.24.0-dev.19...v0.24.0-dev.20) (2023-04-18)
-
-
-### ⚠ BREAKING CHANGES
-
-* wasm-dpp integration (#848)
-
-### Features
-
 * **drive:** handle quorum rotation failure ([#858](https://github.com/dashpay/platform/issues/858))
 * wasm-dpp integration ([#848](https://github.com/dashpay/platform/issues/848))
-
-
-### Miscellaneous Chores
-
-* **release:** update changelog and bump version to 0.24.0-dev.20 ([#923](https://github.com/dashpay/platform/issues/923))
-
-## [0.24.0-dev.19](https://github.com/dashpay/platform/compare/v0.24.0-dev.18...v0.24.0-dev.19) (2023-04-17)
-
-
-### Miscellaneous Chores
-
-* **release:** update changelog and bump version to 0.24.0-dev.19 ([#919](https://github.com/dashpay/platform/issues/919))
-
-## [0.24.0-dev.18](https://github.com/dashpay/platform/compare/v0.24.0-dev.17...v0.24.0-dev.18) (2023-04-14)
-
-
-### Features
-
 * **dashmate:** build linux tarballs ([#887](https://github.com/dashpay/platform/issues/887))
 * **dashmate:** build services before restart ([#894](https://github.com/dashpay/platform/issues/894))
 * **dashmate:** exit status with 2 if it's not running ([#896](https://github.com/dashpay/platform/issues/896))
@@ -343,46 +30,6 @@
 * **dashmate:** tenderdash latest block time in status ([#906](https://github.com/dashpay/platform/issues/906))
 * **dpp:** serialize consensus errors ([#871](https://github.com/dashpay/platform/issues/871))
 * drive verification c bindings ([#860](https://github.com/dashpay/platform/issues/860))
-
-
-### Bug Fixes
-
-* DAPI still expected on normal masternodes ([#904](https://github.com/dashpay/platform/issues/904))
-* **dapi-client:** platform port is ignored from SML ([#903](https://github.com/dashpay/platform/issues/903))
-* **dashmate:** api binds to all interfaces ([#893](https://github.com/dashpay/platform/issues/893))
-* **dashmate:** dashmate helper is running under root user ([#895](https://github.com/dashpay/platform/issues/895))
-* **dashmate:** dashmate logic doesn't recognize it's ran from helper ([#902](https://github.com/dashpay/platform/issues/902))
-* **dashmate:** missing rawblock zmq message in core config ([#770](https://github.com/dashpay/platform/issues/770))
-* **dashmate:** undefined wallet for dash-cli ([#786](https://github.com/dashpay/platform/issues/786))
-* **dpp:** various fixes in DPP and system contracts ([#907](https://github.com/dashpay/platform/issues/907))
-* **drive:** non-deterministic run of mn identities sync ([#910](https://github.com/dashpay/platform/issues/910))
-* **drive:** total HPMNs contains all masternodes ([#911](https://github.com/dashpay/platform/issues/911))
-* identifier deserialization doesn't work for bincode ([#885](https://github.com/dashpay/platform/issues/885))
-* llmqType must be equal to one of the allowed values ([#884](https://github.com/dashpay/platform/issues/884))
-* possible overflow issues ([#877](https://github.com/dashpay/platform/issues/877))
-
-
-### Continuous Integration
-
-* sign MacOs Dashmate release ([#890](https://github.com/dashpay/platform/issues/890))
-
-
-### Tests
-
-* **dapi-client:** fix broken SimplifiedMasternodeListDAPIAddressProvider test ([#916](https://github.com/dashpay/platform/issues/916))
-
-
-### Miscellaneous Chores
-
-* **dashmate:** update production dashcore versions for mainnet and testnet ([#840](https://github.com/dashpay/platform/issues/840))
-* **release:** update changelog and bump version to 0.24.0-dev.18 ([#917](https://github.com/dashpay/platform/issues/917))
-* **sdk:** add eslint ([#829](https://github.com/dashpay/platform/issues/829))
-
-## [0.24.0-dev.17](https://github.com/dashpay/platform/compare/v0.24.0-dev.16...v0.24.0-dev.17) (2023-04-04)
-
-
-### Features
-
 * **dashmate:** add new quroum in dashcore config ([#862](https://github.com/dashpay/platform/issues/862))
 * **dashmate:** enable platform option ([#853](https://github.com/dashpay/platform/issues/853))
 * **dashmate:** generate self-signed certificates in the `setup` command ([#869](https://github.com/dashpay/platform/issues/869))
@@ -399,85 +46,6 @@
 * **wasm-dpp:** implement validateStateTransitionStateFactory tests ([#861](https://github.com/dashpay/platform/issues/861))
 * **wasm-dpp:** provide external entropy generator to document factory ([#845](https://github.com/dashpay/platform/issues/845))
 * **wasm-dpp:** validate_state_transition_identity_signature binding and test ([#865](https://github.com/dashpay/platform/issues/865))
-
-
-### Bug Fixes
-
-* **dashmate:** ambiguous validation errors for file certificates ([#870](https://github.com/dashpay/platform/issues/870))
-* **dashmate:** config.isPlatformEnabled is not a function ([#872](https://github.com/dashpay/platform/issues/872))
-* **dpp:** incorrect public key validator schema in ST Facade ([#854](https://github.com/dashpay/platform/issues/854))
-* **scripts:** update configure_test_network for hpmn ([#863](https://github.com/dashpay/platform/issues/863))
-* **wasm-dpp:** fix decoding protocol version varint error to match previous implementation ([#849](https://github.com/dashpay/platform/issues/849))
-
-
-### Tests
-
-* **rs-drive:** fix path to EntropyGenerator ([#856](https://github.com/dashpay/platform/issues/856))
-
-
-### Code Refactoring
-
-* **dashmate:** always keep platform config ([#868](https://github.com/dashpay/platform/issues/868))
-* **dashmate:** move core devnet options to subsection ([#867](https://github.com/dashpay/platform/issues/867))
-
-
-### Build System
-
-* **dashmate:** fix deb package release  ([#864](https://github.com/dashpay/platform/issues/864))
-* operations in configure.sh script were in a wrong order ([#876](https://github.com/dashpay/platform/issues/876))
-
-
-### Miscellaneous Chores
-
-* `rs-dpp` and `wasm-dpp` updates for integration ([#875](https://github.com/dashpay/platform/issues/875))
-* **release:** update changelog and bump version to 0.24.0-dev.17 ([#882](https://github.com/dashpay/platform/issues/882))
-* **wasm-dpp:** proper identifier buffer inheritance ([#879](https://github.com/dashpay/platform/issues/879))
-
-## [0.24.0-dev.16](https://github.com/dashpay/platform/compare/v0.24.0-dev.15...v0.24.0-dev.16) (2023-03-22)
-
-
-### Features
-
-* **wasm-dpp:** decodeProtocolEntity test ([#834](https://github.com/dashpay/platform/issues/834))
-
-
-### Code Refactoring
-
-* change dpp to be based on platform value ([#809](https://github.com/dashpay/platform/issues/809))
-
-
-### Continuous Integration
-
-* dashmate release script fix ([#846](https://github.com/dashpay/platform/issues/846))
-
-
-### Miscellaneous Chores
-
-* **dashmate:** upgrade dashcore version for local networks ([#843](https://github.com/dashpay/platform/issues/843))
-* **release:** update changelog and bump version to 0.24.0-dev.16 ([#847](https://github.com/dashpay/platform/issues/847))
-
-## [0.24.0-dev.15](https://github.com/dashpay/platform/compare/v0.24.0-dev.14...v0.24.0-dev.15) (2023-03-21)
-
-
-### Continuous Integration
-
-* dashmate release script fix ([#836](https://github.com/dashpay/platform/issues/836))
-
-
-### Miscellaneous Chores
-
-* **drive:** temporary disable payout script ([#835](https://github.com/dashpay/platform/issues/835))
-* **release:** update changelog and bump version to 0.24.0-dev.15 ([#837](https://github.com/dashpay/platform/issues/837))
-
-## [0.24.0-dev.14](https://github.com/dashpay/platform/compare/v0.24.0-dev.13...v0.24.0-dev.14) (2023-03-20)
-
-
-### ⚠ BREAKING CHANGES
-
-* core version 19.0-beta integration (#771)
-
-### Features
-
 * better Core 19 support ([#832](https://github.com/dashpay/platform/issues/832))
 * core version 19.0-beta integration ([#771](https://github.com/dashpay/platform/issues/771))
 * **dashmate:** register HPMN for local network ([#796](https://github.com/dashpay/platform/issues/796))
@@ -507,50 +75,6 @@
 * **wasm-dpp:** remove unused documents factory tests ([#828](https://github.com/dashpay/platform/issues/828))
 * **wasm-dpp:** state transition facade ([#814](https://github.com/dashpay/platform/issues/814))
 * withdrawals status sync ([#679](https://github.com/dashpay/platform/issues/679))
-
-
-### Bug Fixes
-
-* **ci:** fix release workflow syntax error ([#808](https://github.com/dashpay/platform/issues/808))
-* **dashmate:** make dashmate helper run commands as host user ([#765](https://github.com/dashpay/platform/issues/765))
-* **dashmate:** visual fixes for dashmate status ([#787](https://github.com/dashpay/platform/issues/787))
-* **dpp:** update jsonschema-rs and enable tests ([#780](https://github.com/dashpay/platform/issues/780))
-* **rs-dpp:** fetch latest core chain locked height misuse ([#789](https://github.com/dashpay/platform/issues/789))
-* update webpack to resolve npm audit error ([#822](https://github.com/dashpay/platform/issues/822))
-* **wasm-dpp:** Identifier and its tests ([#821](https://github.com/dashpay/platform/issues/821))
-
-
-### Code Refactoring
-
-* remove various Clippy warnings ([#793](https://github.com/dashpay/platform/issues/793))
-* **rs-dpp:** bring error type to one format ([#804](https://github.com/dashpay/platform/issues/804))
-
-
-### Build System
-
-* add missing deps ([#824](https://github.com/dashpay/platform/issues/824))
-
-
-### Documentation
-
-* supported Node.JS version and dashmate command description ([#825](https://github.com/dashpay/platform/issues/825))
-
-
-### Miscellaneous Chores
-
-* **drive:** temporary disable unstable withdrawal logic ([#831](https://github.com/dashpay/platform/issues/831))
-* **release:** update changelog and bump version to 0.24.0-dev.14 ([#833](https://github.com/dashpay/platform/issues/833))
-* **sdk:** add eslint ([#827](https://github.com/dashpay/platform/issues/827))
-
-## [0.24.0-dev.13](https://github.com/dashpay/platform/compare/v0.23.2...v0.24.0-dev.13) (2023-01-30)
-
-
-### ⚠ BREAKING CHANGES
-
-* **dapi:** use single envoy port for all connections (#752)
-
-### Features
-
 * allow to get drive status from dashmate helper ([#749](https://github.com/dashpay/platform/issues/749))
 * allow to get drive's status from dashmate helper ([#755](https://github.com/dashpay/platform/issues/755))
 * **dapi:** use single envoy port for all connections ([#752](https://github.com/dashpay/platform/issues/752))
@@ -564,38 +88,6 @@
 * **wasm-dpp:** implement identity create transition ([#697](https://github.com/dashpay/platform/issues/697))
 * **wasm-dpp:** implement identity topup transition ([#745](https://github.com/dashpay/platform/issues/745))
 * **wasm-dpp:** Wasm dpp integration tests validate data contract factory ([#751](https://github.com/dashpay/platform/issues/751))
-
-
-### Bug Fixes
-
-* **dashmate:** Dash Core container is unable to restart properly under WSL ([#736](https://github.com/dashpay/platform/issues/736))
-* **dashmate:** fix migration for configs without platform ([#738](https://github.com/dashpay/platform/issues/738))
-* **dashmate:** migrations fixes ([#759](https://github.com/dashpay/platform/issues/759))
-* **dpp:** existing property in a new index ([#694](https://github.com/dashpay/platform/issues/694))
-* ua-parser-js vulnerability  ([#756](https://github.com/dashpay/platform/issues/756))
-
-
-### Code Refactoring
-
-* initial cleanup of Drive and DPP document types ([#750](https://github.com/dashpay/platform/issues/750))
-* use a trait to remove the need for some functions ([#747](https://github.com/dashpay/platform/issues/747))
-
-
-### Miscellaneous Chores
-
-* **dashmate:** sync Tenderdash config with Tenderdash v0.10.0-dev.8 ([#746](https://github.com/dashpay/platform/issues/746))
-* **release:** update changelog and bump version to 0.24.0-dev.13 ([#760](https://github.com/dashpay/platform/issues/760))
-* update Tenderdash to 0.10.0-dev.8 ([#741](https://github.com/dashpay/platform/issues/741))
-
-## [0.24.0-dev.12](https://github.com/dashpay/platform/compare/v0.24.0-dev.11...v0.24.0-dev.12) (2023-01-11)
-
-
-### ⚠ BREAKING CHANGES
-
-* credit refunds (#662)
-
-### Features
-
 * credit refunds ([#662](https://github.com/dashpay/platform/issues/662))
 * **dashmate:** additional dashd options ([#692](https://github.com/dashpay/platform/issues/692))
 * **dashmate:** pass ZeroSSL as command line parameter ([#651](https://github.com/dashpay/platform/issues/651))
@@ -605,91 +97,7 @@
 * **dpp:** Data Contract Update Transition wasm binding ([#696](https://github.com/dashpay/platform/issues/696))
 * **drive:** do not switch to validator quorum which will be removed soon ([#616](https://github.com/dashpay/platform/issues/616))
 * multiple documents changes per batch and support for GroveDB 0.9 ([#699](https://github.com/dashpay/platform/issues/699))
-
-
-### Bug Fixes
-
-* **dashmate:** ZeroSSL certificate cannot be downloaded ([#718](https://github.com/dashpay/platform/issues/718))
-* **dpp:** can’t create fingerprint from a document transition ([#723](https://github.com/dashpay/platform/issues/723))
-* **drive:** merk caching in contract caching (irony) ([#710](https://github.com/dashpay/platform/issues/710))
-* find_duplicates_by_id.rs not compiling ([#702](https://github.com/dashpay/platform/issues/702))
-* Starcounter-Jack JSON-Patch Prototype Pollution vulnerability ([#708](https://github.com/dashpay/platform/issues/708))
-
-
-### Continuous Integration
-
-* increase cache-max-size ([#704](https://github.com/dashpay/platform/issues/704))
-
-
-### Code Refactoring
-
-* **dashmate:** status command ([#660](https://github.com/dashpay/platform/issues/660))
-* **drive:** remove redundant genesis time key ([#722](https://github.com/dashpay/platform/issues/722))
-
-
-### Miscellaneous Chores
-
-* **dpp:** wasm dpp data contract test error types ([#684](https://github.com/dashpay/platform/issues/684))
-* **drive:** log synchronize identities properly ([#686](https://github.com/dashpay/platform/issues/686))
-* **release:** update changelog and bump version to 0.24.0-dev.12 ([#724](https://github.com/dashpay/platform/issues/724))
-
-## [0.24.0-dev.11](https://github.com/dashpay/platform/compare/v0.24.0-dev.10...v0.24.0-dev.11) (2022-12-20)
-
-
-### Bug Fixes
-
-* **dashmate:** setDay is not a function ([#677](https://github.com/dashpay/platform/issues/677))
-* **dashmate:** ZeroSSL certificates are not saved in WSL ([#676](https://github.com/dashpay/platform/issues/676))
-* **drive:** initChain handler is not idempotent ([#675](https://github.com/dashpay/platform/issues/675))
-
-
-### Continuous Integration
-
-* bump action versions ([#678](https://github.com/dashpay/platform/issues/678))
-
-
-### Miscellaneous Chores
-
-* **dashmate:** update tenderdash up to 0.10.0-dev.6 ([#674](https://github.com/dashpay/platform/issues/674))
-* **drive:** remove txs from logs ([#683](https://github.com/dashpay/platform/issues/683))
-* **release:** update changelog and bump version to 0.24.0-dev.11 ([#685](https://github.com/dashpay/platform/issues/685))
-
-## [0.24.0-dev.10](https://github.com/dashpay/platform/compare/v0.24.0-dev.9...v0.24.0-dev.10) (2022-12-15)
-
-
-### Features
-
 * Consensus Errors and ValidationResult bindings ([#643](https://github.com/dashpay/platform/issues/643))
-
-
-### Bug Fixes
-
-* **dashmate:** SSL domain verification config could not be generated in WSL ([#673](https://github.com/dashpay/platform/issues/673))
-
-
-### Miscellaneous Chores
-
-* **release:** update changelog and bump version to 0.24.0-dev.10 ([#672](https://github.com/dashpay/platform/issues/672))
-
-
-### Continuous Integration
-
-* add rust toolchain with wasm target to release workflow
-* escape arguments in release workflow
-* escape arguments in release workflow
-* fix building drive nodejs binding
-* fix entrypoint path in release workflow ([#671](https://github.com/dashpay/platform/issues/671))
-* fix env list in release workflow
-
-## [0.24.0-dev.9](https://github.com/dashpay/platform/compare/v0.23.0...v0.24.0-dev.9) (2022-12-14)
-
-
-### ⚠ BREAKING CHANGES
-
-* **drive:** precise fees (dashpay/rs-platform#170)
-
-### Features
-
 * average estimated processing fees ([#642](https://github.com/dashpay/platform/issues/642))
 * **dpp:** bls adapter for WASM DPP ([#633](https://github.com/dashpay/platform/issues/633))
 * **drive:** add time and protocolVersion fields to query metadata response ([#611](https://github.com/dashpay/platform/issues/611))
@@ -700,236 +108,17 @@
 * **drive:** use single block execution context ([#627](https://github.com/dashpay/platform/issues/627))
 * external bls validtor (dashpay/rs-platform[#186](https://github.com/dashpay/platform/issues/186))
 * insert with parents for `Document` (dashpay/rs-platform[#189](https://github.com/dashpay/platform/issues/189))
-
-
-### Bug Fixes
-
-* build not working because of deprecated wasm-bindgen feature ([#639](https://github.com/dashpay/platform/issues/639))
-* **dapi:** fail to reconnect to tenderdash in case of ENOTFOUND ([#621](https://github.com/dashpay/platform/issues/621))
-* **dashmate:** broken helper docker image ([#630](https://github.com/dashpay/platform/issues/630))
-* **dashmate:** outdated Drive and DAPI images ([#668](https://github.com/dashpay/platform/issues/668))
-* **dashmate:** ZeroSSL certificate renewal ([#624](https://github.com/dashpay/platform/issues/624))
-* **drive:** invalid create name
-* **drive:** multi transactions doesn't work properly ([#636](https://github.com/dashpay/platform/issues/636))
-* **drive:** remove ambiguous use
-
-
-### Performance Improvements
-
-* **drive:** do not call process proposal after prepare ([#656](https://github.com/dashpay/platform/issues/656))
-
-
-### Styles
-
-* fix formatting
-
-
-### Build System
-
-* add bash to Drive's Dockerfile
-* continuation of build profile fixing
-* continuation of build profile fixing
-* fix cargo build profile option
-* integrate rust and js build process
-* use debug profile for development
-
-
-### Code Refactoring
-
-* use FeeResult to collect block fees ([#652](https://github.com/dashpay/platform/issues/652))
-
-
-### Continuous Integration
-
-* add toolchain to setup rust actions
-* build package before lining
-* checks for JS and Rust packages
-* code scanning ([#626](https://github.com/dashpay/platform/issues/626))
-* do not build everything everytime
-* fix concurrency for js checks
-* fix env syntax in release workflow ([#664](https://github.com/dashpay/platform/issues/664))
-* fix rs-checks
-* fix workflow names
-* increase JS linting timeout
-* increase timeouts
-* move concurrency to package workflows
-* move out workflows from include
-* set concurrency based on workflow
-* shorten workflow
-
-
-### Miscellaneous Chores
-
-* add yarn cache
-* **dpp:** switch dpp to working revision
-* **drive:** comprehensive logging for same block execution ([#657](https://github.com/dashpay/platform/issues/657))
-* ensure consistent Rust dependencies ([#658](https://github.com/dashpay/platform/issues/658))
-* fix NPM security vulnerabilities
-* ignore target dir for docker
-* **release:** bump package version
-* **release:** update changelog and bump version to 0.24.0-dev.9 ([#667](https://github.com/dashpay/platform/issues/667))
-* remove js-abci from workspaces
-* remove lodash per-method deps ([#661](https://github.com/dashpay/platform/issues/661))
-* remove package-lock.json
-* update to yarn 3.3.0
-
-## [0.24.0-dev.8](https://github.com/dashpay/platform/compare/0.24.0-dev.8...v0.24.0-dev.8) (2022-11-18)
-
-
-### Features
-
 * add `withdrawals` data contract package ([#604](https://github.com/dashpay/platform/issues/604))
 * **done:** changes needed for wasm-dpp integration (dashpay/rs-platform[#154](https://github.com/dashpay/platform/issues/154))
 * **dpp:** [v23 port]  validate fee calculating worst case operations (dashpay/rs-platform[#160](https://github.com/dashpay/platform/issues/160))
 * **dpp:** dashpay datatrigger toUserIds better validation ([#620](https://github.com/dashpay/platform/issues/620))
 * **drive:** select the most vital validator set quorums ([#617](https://github.com/dashpay/platform/issues/617))
-
-
-### Bug Fixes
-
-* DataContract.spec.js in wasm-dpp ([#618](https://github.com/dashpay/platform/issues/618))
-* **dpp:**  [v23 port] cannot read properties of null (reading 'getBalance') (dashpay/rs-platform[#163](https://github.com/dashpay/platform/issues/163))
-* **dpp:** [v23 port] non-deterministic fees due to data contract cache (dashpay/rs-platform[#161](https://github.com/dashpay/platform/issues/161))
-* **dpp:** [v23 port] repeated disabling of already disabled identity key (dashpay/rs-platform[#162](https://github.com/dashpay/platform/issues/162))
-* renamed method from rs-dpp ([#623](https://github.com/dashpay/platform/issues/623))
-
-
-### Miscellaneous Chores
-
-* **release:** update changelog and version to 0.24.0-dev.8 ([#625](https://github.com/dashpay/platform/issues/625))
-* update bls-signatures to fix dependencies conflict (dashpay/rs-platform[#184](https://github.com/dashpay/platform/issues/184))
-
-## [0.24.0-dev.7](https://github.com/dashpay/platform/compare/v0.23.0-alpha.8...v0.24.0-dev.7) (2022-11-07)
-
-
-### ⚠ BREAKING CHANGES
-
-* **drive:** same block execution (#593)
-
-### Features
-
 * **dpp:** initial RS DPP integration ([#483](https://github.com/dashpay/platform/issues/483))
 * **drive:** same block execution ([#593](https://github.com/dashpay/platform/issues/593))
-
-
-### Bug Fixes
-
-* `featureFlags` test was awaiting blocks that have not been produced ([#602](https://github.com/dashpay/platform/issues/602))
-* **dapi:** `getConsensusParamsHandler` was handling wrong Tendermint error ([#601](https://github.com/dashpay/platform/issues/601))
-* **dashmate:** invalid testnet TenderDash genesis ([#608](https://github.com/dashpay/platform/issues/608))
-* **dashmate:** SSL verification server cannot be started ([#606](https://github.com/dashpay/platform/issues/606))
-
-
-### Build System
-
-* **dpp:** build script failed with unknown mkdipr command ([#613](https://github.com/dashpay/platform/issues/613))
-
-
-### Miscellaneous Chores
-
-* **release:** update changelog and bump version to 0.24.0-dev.7 ([#614](https://github.com/dashpay/platform/issues/614))
-
-## [0.24.0-dev.6](https://github.com/dashpay/platform/compare/v0.24.0-dev.5...v0.24.0-dev.6) (2022-10-26)
-
-
-### Bug Fixes
-
-* typo `dash-amte` to `dashmate` ([#599](https://github.com/dashpay/platform/issues/599))
-
-
-### Miscellaneous Chores
-
-* **release:** update changelog and version to 0.24.0-dev.6 ([#600](https://github.com/dashpay/platform/issues/600))
-
-## [0.24.0-dev.5](https://github.com/dashpay/platform/compare/v0.24.0-dev.4...v0.24.0-dev.5) (2022-10-26)
-
-
-### ⚠ BREAKING CHANGES
-
-* **node:** multiple transactions (dashpay/rs-platform#155)
-
-### Features
-
 * **node:** multiple transactions (dashpay/rs-platform[#155](https://github.com/dashpay/platform/issues/155))
-
-
-### Bug Fixes
-
-* release.yml contained wrong indentation ([#597](https://github.com/dashpay/platform/issues/597))
-
-
-### Miscellaneous Chores
-
-* **release:** bump version to v0.22.0-dev.10 (dashpay/rs-platform[#168](https://github.com/dashpay/platform/issues/168))
-* **release:** bump version to v0.24.0-dev.1 (dashpay/rs-platform[#169](https://github.com/dashpay/platform/issues/169))
-* **release:** update changelog and version to 0.24.0-dev.5 ([#598](https://github.com/dashpay/platform/issues/598))
-
-## [0.24.0-dev.4](https://github.com/dashpay/platform/compare/v0.24.0-dev.3...v0.24.0-dev.4) (2022-10-26)
-
-
-### Build System
-
-* publish envoy and dashmate-helper docker images after release ([#595](https://github.com/dashpay/platform/issues/595))
-
-
-### Miscellaneous Chores
-
-* **release:** update changelog and version to 0.24.0-dev.4 ([#596](https://github.com/dashpay/platform/issues/596))
-
-## [0.24.0-dev.3](https://github.com/dashpay/platform/compare/v0.23.0-alpha.7...v0.24.0-dev.3) (2022-10-20)
-
-
-### Features
-
 * **drive:** AssetUnlock transactions processing ([#530](https://github.com/dashpay/platform/issues/530))
 * withdrawal request queue (dashpay/rs-platform[#149](https://github.com/dashpay/platform/issues/149))
-
-
-### Continuous Integration
-
-* update workflows to use stable toolchain (dashpay/rs-platform[#167](https://github.com/dashpay/platform/issues/167))
-
-
-### Miscellaneous Chores
-
-* **dpp:** re-enable limited array support for data contracts (dashpay/rs-platform[#165](https://github.com/dashpay/platform/issues/165))
-* **release:** bump version to 0.23.0-dev.9
-* **release:** update changelog and bump version to 0.24.0-dev.3 ([#592](https://github.com/dashpay/platform/issues/592))
-
-## [0.24.0-dev.2](https://github.com/dashpay/platform/compare/v0.23.0-alpha.6...v0.24.0-dev.2) (2022-10-13)
-
-
-### Features
-
 * Public Keys Identities Proofs (dashpay/rs-platform[#151](https://github.com/dashpay/platform/issues/151))
-
-
-### Bug Fixes
-
-* **dapi-client:** temporary use http protocol by default ([#573](https://github.com/dashpay/platform/issues/573))
-* using `ProtocolError ` in `cbor_value_to_json_value ` could lead to a stackoverflow error (dashpay/rs-platform[#164](https://github.com/dashpay/platform/issues/164))
-
-
-### Tests
-
-* **drive:** synchronizeMasternodeIdentitiesFactory ([#586](https://github.com/dashpay/platform/issues/586))
-
-
-### Miscellaneous Chores
-
-* **release:** update changelog and bump version to 0.24.0-dev.2 ([#587](https://github.com/dashpay/platform/issues/587))
-
-## [0.24.0-dev.1](https://github.com/dashpay/platform/compare/v0.23.0-alpha.2...v0.24.0-dev.1) (2022-10-07)
-
-
-### ⚠ BREAKING CHANGES
-
-* migrate to ABCI++ (#464)
-* fees distribution (dashpay/rs-platform#105)
-* query validation logic (dashpay/rs-platform#104)
-
-### Features
-
 *  [v23 port]  data contract indices validation (dashpay/rs-platform[#26](https://github.com/dashpay/platform/issues/26))
 * a temporary plug for dry run (dashpay/rs-platform[#113](https://github.com/dashpay/platform/issues/113))
 * ability to get elements by $id directly (dashpay/rs-platform[#61](https://github.com/dashpay/platform/issues/61))
@@ -983,6 +172,95 @@
 
 ### Bug Fixes
 
+* **dashmate:** external IP detection hangs sometimes ([#1053](https://github.com/dashpay/platform/issues/1053))
+* **dapi:** invalid addresses in the whitelist ([#1044](https://github.com/dashpay/platform/issues/1044))
+* **dashmate:** reset platform commands hangs ([#1038](https://github.com/dashpay/platform/issues/1038))
+* **dashmate:** set permissions for dashcore log file ([#1037](https://github.com/dashpay/platform/issues/1037))
+* **drive:** cannot destructure property ‘quorumHash’ of ‘instantLock... ([#1046](https://github.com/dashpay/platform/issues/1046))
+* **drive:** cannot read properties of undefined (reading 'toString') ([#1045](https://github.com/dashpay/platform/issues/1045))
+* **dashmate:** waitForQuorumConnections deadline of 300000 exceeded ([#1015](https://github.com/dashpay/platform/issues/1015))
+* **dashmate:** wrong volume removal retry logic ([#1016](https://github.com/dashpay/platform/issues/1016))
+* expect platformNodeID to be a hex string ([#1013](https://github.com/dashpay/platform/issues/1013))
+* **dashmate:** "volume is in use" and "no such volume" ([#1005](https://github.com/dashpay/platform/issues/1005))
+* **dashmate:** reset platform affects core ([#1001](https://github.com/dashpay/platform/issues/1001))
+* **drive:** double init chain leads to side bugs ([#1002](https://github.com/dashpay/platform/issues/1002))
+* **dashmate:** BLS private key validate accepts whitespaces ([#998](https://github.com/dashpay/platform/issues/998))
+* **dashmate:** can't remove volumes if they not exist ([#997](https://github.com/dashpay/platform/issues/997))
+* **dashmate:** show masternode state while it is not synced ([#999](https://github.com/dashpay/platform/issues/999))
+* **dashmate:** wrap register masternode command in small terminals ([#996](https://github.com/dashpay/platform/issues/996))
+* **dashmate:** multiple issues in the reset command ([#991](https://github.com/dashpay/platform/issues/991))
+* **drive:** non-unique masternode voting keys ([#986](https://github.com/dashpay/platform/issues/986))
+* **dashmate:** ability to work with non-default docker socket path ([#967](https://github.com/dashpay/platform/issues/967))
+* **dashmate:** already configured preset is ignored ([#974](https://github.com/dashpay/platform/issues/974))
+* **dashmate:** empty masternode status while syncing ([#970](https://github.com/dashpay/platform/issues/970))
+* **dashmate:** form accepts invalid BLS key ([#961](https://github.com/dashpay/platform/issues/961))
+* **dashmate:** invalid mn register command in output of dashmate setup ([#959](https://github.com/dashpay/platform/issues/959))
+* **dashmate:** reward shares can be negative during HP masternode registration ([#960](https://github.com/dashpay/platform/issues/960))
+* **dashmate:** select number of masternodes during local setup freezes ([#957](https://github.com/dashpay/platform/issues/957))
+* **dashmate:** yaml package security vulnerability ([#975](https://github.com/dashpay/platform/issues/975))
+* **test-suite:** expects identities for invalid mns ([#968](https://github.com/dashpay/platform/issues/968))
+* **dashamte:** wrong envoy config path on windows ([#949](https://github.com/dashpay/platform/issues/949))
+* **drive:** updating a masternode identity with invalid entry from SML ([#965](https://github.com/dashpay/platform/issues/965))
+* **dashamte:** Can't find begoo/index with `yarn dashmate setup` ([#933](https://github.com/dashpay/platform/issues/933))
+* DAPI still expected on normal masternodes ([#904](https://github.com/dashpay/platform/issues/904))
+* **dapi-client:** platform port is ignored from SML ([#903](https://github.com/dashpay/platform/issues/903))
+* **dashmate:** api binds to all interfaces ([#893](https://github.com/dashpay/platform/issues/893))
+* **dashmate:** dashmate helper is running under root user ([#895](https://github.com/dashpay/platform/issues/895))
+* **dashmate:** dashmate logic doesn't recognize it's ran from helper ([#902](https://github.com/dashpay/platform/issues/902))
+* **dashmate:** missing rawblock zmq message in core config ([#770](https://github.com/dashpay/platform/issues/770))
+* **dashmate:** undefined wallet for dash-cli ([#786](https://github.com/dashpay/platform/issues/786))
+* **dpp:** various fixes in DPP and system contracts ([#907](https://github.com/dashpay/platform/issues/907))
+* **drive:** non-deterministic run of mn identities sync ([#910](https://github.com/dashpay/platform/issues/910))
+* **drive:** total HPMNs contains all masternodes ([#911](https://github.com/dashpay/platform/issues/911))
+* identifier deserialization doesn't work for bincode ([#885](https://github.com/dashpay/platform/issues/885))
+* llmqType must be equal to one of the allowed values ([#884](https://github.com/dashpay/platform/issues/884))
+* possible overflow issues ([#877](https://github.com/dashpay/platform/issues/877))
+* **dashmate:** ambiguous validation errors for file certificates ([#870](https://github.com/dashpay/platform/issues/870))
+* **dashmate:** config.isPlatformEnabled is not a function ([#872](https://github.com/dashpay/platform/issues/872))
+* **dpp:** incorrect public key validator schema in ST Facade ([#854](https://github.com/dashpay/platform/issues/854))
+* **scripts:** update configure_test_network for hpmn ([#863](https://github.com/dashpay/platform/issues/863))
+* **wasm-dpp:** fix decoding protocol version varint error to match previous implementation ([#849](https://github.com/dashpay/platform/issues/849))
+* **ci:** fix release workflow syntax error ([#808](https://github.com/dashpay/platform/issues/808))
+* **dashmate:** make dashmate helper run commands as host user ([#765](https://github.com/dashpay/platform/issues/765))
+* **dashmate:** visual fixes for dashmate status ([#787](https://github.com/dashpay/platform/issues/787))
+* **dpp:** update jsonschema-rs and enable tests ([#780](https://github.com/dashpay/platform/issues/780))
+* **rs-dpp:** fetch latest core chain locked height misuse ([#789](https://github.com/dashpay/platform/issues/789))
+* update webpack to resolve npm audit error ([#822](https://github.com/dashpay/platform/issues/822))
+* **wasm-dpp:** Identifier and its tests ([#821](https://github.com/dashpay/platform/issues/821))
+* **dashmate:** Dash Core container is unable to restart properly under WSL ([#736](https://github.com/dashpay/platform/issues/736))
+* **dashmate:** fix migration for configs without platform ([#738](https://github.com/dashpay/platform/issues/738))
+* **dashmate:** migrations fixes ([#759](https://github.com/dashpay/platform/issues/759))
+* **dpp:** existing property in a new index ([#694](https://github.com/dashpay/platform/issues/694))
+* ua-parser-js vulnerability  ([#756](https://github.com/dashpay/platform/issues/756))
+* **dashmate:** ZeroSSL certificate cannot be downloaded ([#718](https://github.com/dashpay/platform/issues/718))
+* **dpp:** can’t create fingerprint from a document transition ([#723](https://github.com/dashpay/platform/issues/723))
+* **drive:** merk caching in contract caching (irony) ([#710](https://github.com/dashpay/platform/issues/710))
+* find_duplicates_by_id.rs not compiling ([#702](https://github.com/dashpay/platform/issues/702))
+* Starcounter-Jack JSON-Patch Prototype Pollution vulnerability ([#708](https://github.com/dashpay/platform/issues/708))
+* **dashmate:** setDay is not a function ([#677](https://github.com/dashpay/platform/issues/677))
+* **dashmate:** ZeroSSL certificates are not saved in WSL ([#676](https://github.com/dashpay/platform/issues/676))
+* **drive:** initChain handler is not idempotent ([#675](https://github.com/dashpay/platform/issues/675))
+* **dashmate:** SSL domain verification config could not be generated in WSL ([#673](https://github.com/dashpay/platform/issues/673))
+* build not working because of deprecated wasm-bindgen feature ([#639](https://github.com/dashpay/platform/issues/639))
+* **dapi:** fail to reconnect to tenderdash in case of ENOTFOUND ([#621](https://github.com/dashpay/platform/issues/621))
+* **dashmate:** broken helper docker image ([#630](https://github.com/dashpay/platform/issues/630))
+* **dashmate:** outdated Drive and DAPI images ([#668](https://github.com/dashpay/platform/issues/668))
+* **dashmate:** ZeroSSL certificate renewal ([#624](https://github.com/dashpay/platform/issues/624))
+* **drive:** invalid create name
+* **drive:** multi transactions doesn't work properly ([#636](https://github.com/dashpay/platform/issues/636))
+* **drive:** remove ambiguous use
+* DataContract.spec.js in wasm-dpp ([#618](https://github.com/dashpay/platform/issues/618))
+* **dpp:**  [v23 port] cannot read properties of null (reading 'getBalance') (dashpay/rs-platform[#163](https://github.com/dashpay/platform/issues/163))
+* **dpp:** [v23 port] non-deterministic fees due to data contract cache (dashpay/rs-platform[#161](https://github.com/dashpay/platform/issues/161))
+* **dpp:** [v23 port] repeated disabling of already disabled identity key (dashpay/rs-platform[#162](https://github.com/dashpay/platform/issues/162))
+* renamed method from rs-dpp ([#623](https://github.com/dashpay/platform/issues/623))
+* `featureFlags` test was awaiting blocks that have not been produced ([#602](https://github.com/dashpay/platform/issues/602))
+* **dapi:** `getConsensusParamsHandler` was handling wrong Tendermint error ([#601](https://github.com/dashpay/platform/issues/601))
+* **dashmate:** invalid testnet TenderDash genesis ([#608](https://github.com/dashpay/platform/issues/608))
+* **dashmate:** SSL verification server cannot be started ([#606](https://github.com/dashpay/platform/issues/606))
+* typo `dash-amte` to `dashmate` ([#599](https://github.com/dashpay/platform/issues/599))
+* **dapi-client:** temporary use http protocol by default ([#573](https://github.com/dashpay/platform/issues/573))
+* using `ProtocolError ` in `cbor_value_to_json_value ` could lead to a stackoverflow error (dashpay/rs-platform[#164](https://github.com/dashpay/platform/issues/164))
 * "number" property type is not implemented (dashpay/rs-platform[#47](https://github.com/dashpay/platform/issues/47))
 * `Identity.balance` was of type `i64` but should be `u64` (dashpay/rs-platform[#23](https://github.com/dashpay/platform/issues/23))
 * appendStack is not present in NPM package (dashpay/rs-platform[#41](https://github.com/dashpay/platform/issues/41))
@@ -1021,21 +299,35 @@
 * use slices instead of binary strings to represent the values we intend
 
 
-### Styles
-
-* extract field_type
-* fix formatting
-* format json
-* remove commented code
-* remove commented code
-* remove todo
-* run cargo fmt
-* sam's *** naming
-* use explicit xor (dashpay/rs-platform[#57](https://github.com/dashpay/platform/issues/57))
-
-
 ### Continuous Integration
 
+* increase release timeouts ([#1032](https://github.com/dashpay/platform/issues/1032))
+* add PR linter ([#1025](https://github.com/dashpay/platform/issues/1025))
+* add timeouts to self-hosted ci runs ([#1026](https://github.com/dashpay/platform/issues/1026))
+* remove drive node.js binding release
+* sign MacOs Dashmate release ([#890](https://github.com/dashpay/platform/issues/890))
+* dashmate release script fix ([#846](https://github.com/dashpay/platform/issues/846), [#836](https://github.com/dashpay/platform/issues/836))
+* increase cache-max-size ([#704](https://github.com/dashpay/platform/issues/704))
+* add rust toolchain with wasm target to release workflow
+* integrate rust and js build process
+* add toolchain to setup rust actions
+* build package before lining
+* checks for JS and Rust packages
+* code scanning ([#626](https://github.com/dashpay/platform/issues/626))
+* do not build everything everytime
+* fix concurrency for js checks
+* fix env syntax in release workflow ([#664](https://github.com/dashpay/platform/issues/664))
+* fix rs-checks
+* fix workflow names
+* increase JS linting timeout
+* increase timeouts
+* move concurrency to package workflows
+* move out workflows from include
+* set concurrency based on workflow
+* shorten workflow
+* release.yml contained wrong indentation ([#597](https://github.com/dashpay/platform/issues/597))
+* publish envoy and dashmate-helper docker images after release ([#595](https://github.com/dashpay/platform/issues/595))
+* update workflows to use stable toolchain (dashpay/rs-platform[#167](https://github.com/dashpay/platform/issues/167))
 * `musl` binaries were not built correctly (dashpay/rs-platform[#58](https://github.com/dashpay/platform/issues/58))
 * add deps security check
 * add Node.JS workflow
@@ -1051,6 +343,10 @@
 
 ### Tests
 
+* **dpp:** remove old dpp fixtures from tests ([#971](https://github.com/dashpay/platform/issues/971))
+* **rs-drive:** fix path to EntropyGenerator ([#856](https://github.com/dashpay/platform/issues/856))
+* **wasm-dpp:** decodeProtocolEntity test ([#834](https://github.com/dashpay/platform/issues/834))
+* **drive:** synchronizeMasternodeIdentitiesFactory ([#586](https://github.com/dashpay/platform/issues/586))
 * add test with fetching non exist document
 * added test for in with only some elements (dashpay/rs-platform[#81](https://github.com/dashpay/platform/issues/81))
 * dpns tests (dashpay/rs-platform[#89](https://github.com/dashpay/platform/issues/89))
@@ -1058,8 +354,37 @@
 * refactor and implementation of document's validator tests
 
 
+### Build System
+
+* **dashmate:** better versioning ([#988](https://github.com/dashpay/platform/issues/988))
+* **dashmate:** prepare MacOs build for notarization ([#985](https://github.com/dashpay/platform/issues/985))
+* **dashmate:** remove MacOs malicious software warning ([#977](https://github.com/dashpay/platform/issues/977))
+* **dashmate:** fix removing unnecessary packages
+* **dashamte:** build arm64 deb file instead of armel ([#943](https://github.com/dashpay/platform/issues/943))
+* **dashamte:** remove deb release docker dependencies ([#934](https://github.com/dashpay/platform/issues/934))
+* **dashmate:** build only linux tarballs ([#936](https://github.com/dashpay/platform/issues/936))
+* **dashmate:** fix deb package release  ([#864](https://github.com/dashpay/platform/issues/864))
+* operations in configure.sh script were in a wrong order ([#876](https://github.com/dashpay/platform/issues/876))
+* add missing deps ([#824](https://github.com/dashpay/platform/issues/824))
+* add bash to Drive's Dockerfile
+* continuation of build profile fixing
+* fix cargo build profile option
+* use debug profile for development
+* release script could not find previous tag in some cases ([#558](https://github.com/dashpay/platform/issues/558))
+
+
 ### Code Refactoring
 
+* **dashmate:** always keep platform config ([#868](https://github.com/dashpay/platform/issues/868))
+* **dashmate:** move core devnet options to subsection ([#867](https://github.com/dashpay/platform/issues/867))
+* change dpp to be based on platform value ([#809](https://github.com/dashpay/platform/issues/809))
+* remove various Clippy warnings ([#793](https://github.com/dashpay/platform/issues/793))
+* **rs-dpp:** bring error type to one format ([#804](https://github.com/dashpay/platform/issues/804))
+* initial cleanup of Drive and DPP document types ([#750](https://github.com/dashpay/platform/issues/750))
+* use a trait to remove the need for some functions ([#747](https://github.com/dashpay/platform/issues/747))
+* **dashmate:** status command ([#660](https://github.com/dashpay/platform/issues/660))
+* **drive:** remove redundant genesis time key ([#722](https://github.com/dashpay/platform/issues/722))
+* use FeeResult to collect block fees ([#652](https://github.com/dashpay/platform/issues/652))
 * accept DPP entities
 * adjust how left_to_right is assigned
 * documents refactoring, with batching and fee work (dashpay/rs-platform[#118](https://github.com/dashpay/platform/issues/118))
@@ -1077,53 +402,66 @@
 * use 32 byte identity fields
 
 
-### Build System
+### Performance Improvements
 
-* release script could not find previous tag in some cases ([#558](https://github.com/dashpay/platform/issues/558))
+* **drive:** do not call process proposal after prepare ([#656](https://github.com/dashpay/platform/issues/656))
 
 
 ### Miscellaneous Chores
 
-* add PR and issue templates (dashpay/rs-platform[#84](https://github.com/dashpay/platform/issues/84))
-* bump version
-* bump version of main package
-* bump versions
-* change the file name of document validator
+* bump sentinel to 1.7.3 ([#1057](https://github.com/dashpay/platform/issues/1057))
+* **dashmate:** rename compose project name ([#1055](https://github.com/dashpay/platform/issues/1055))
+* **dashmate:** update testnet preset ([#1054](https://github.com/dashpay/platform/issues/1054))
+* increase client side timeouts ([#1050](https://github.com/dashpay/platform/issues/1050))
+* **dapi-client:** upate testnet masternode addresses whitelist ([#1023](https://github.com/dashpay/platform/issues/1023))
+* disable protocol version signaling ([#1029](https://github.com/dashpay/platform/issues/1029))
+* **dashamte:** remove deprecation warning on start ([#925](https://github.com/dashpay/platform/issues/925))
+* **dashmate:** update production dashcore versions for mainnet and testnet ([#840](https://github.com/dashpay/platform/issues/840))
+* **sdk:** add eslint ([#829](https://github.com/dashpay/platform/issues/829))
+* `rs-dpp` and `wasm-dpp` updates for integration ([#875](https://github.com/dashpay/platform/issues/875))
+* **wasm-dpp:** proper identifier buffer inheritance ([#879](https://github.com/dashpay/platform/issues/879))
+* **dashmate:** upgrade dashcore version for local networks ([#843](https://github.com/dashpay/platform/issues/843))
+* **drive:** temporary disable payout script ([#835](https://github.com/dashpay/platform/issues/835))
+* **drive:** temporary disable unstable withdrawal logic ([#831](https://github.com/dashpay/platform/issues/831))
+* **sdk:** add eslint ([#827](https://github.com/dashpay/platform/issues/827))
+* **dashmate:** sync Tenderdash config with Tenderdash v0.10.0-dev.8 ([#746](https://github.com/dashpay/platform/issues/746))
+* update Tenderdash to 0.10.0-dev.8 ([#741](https://github.com/dashpay/platform/issues/741))
+* **dpp:** wasm dpp data contract test error types ([#684](https://github.com/dashpay/platform/issues/684))
+* **drive:** log synchronize identities properly ([#686](https://github.com/dashpay/platform/issues/686))
+* **dashmate:** update tenderdash up to 0.10.0-dev.6 ([#674](https://github.com/dashpay/platform/issues/674))
+* **drive:** remove txs from logs ([#683](https://github.com/dashpay/platform/issues/683))
+* **dashmate:** update tenderdash up to 0.10.0-dev.6 ([#674](https://github.com/dashpay/platform/issues/674))
+* **drive:** remove txs from logs ([#683](https://github.com/dashpay/platform/issues/683))
+* add yarn cache
+* **dpp:** switch dpp to working revision
+* **drive:** comprehensive logging for same block execution ([#657](https://github.com/dashpay/platform/issues/657))
+* ensure consistent Rust dependencies ([#658](https://github.com/dashpay/platform/issues/658))
+* fix NPM security vulnerabilities
+* ignore target dir for docker
+* **release:** bump package version
+* **release:** update changelog and bump version to 0.24.0-dev.9 ([#667](https://github.com/dashpay/platform/issues/667))
+* remove js-abci from workspaces
+* remove lodash per-method deps ([#661](https://github.com/dashpay/platform/issues/661))
+* remove package-lock.json
+* update to yarn 3.3.0
+* update bls-signatures to fix dependencies conflict (dashpay/rs-platform[#184](https://github.com/dashpay/platform/issues/184))
+* **dpp:** re-enable limited array support for data contracts (dashpay/rs-platform[#165](https://github.com/dashpay/platform/issues/165))
 * **dpp:** [v23 port] allow only asc order for indices (dashpay/rs-platform[#135](https://github.com/dashpay/platform/issues/135))
-* enable aarch64 gnu target
-* fix comments to an unfinished PR (dashpay/rs-platform[#132](https://github.com/dashpay/platform/issues/132))
-* install and use gnu linker and libstc++ if needed
-* **release:** bump npm package version to 0.23.0-dev.6
-* **release:** bump NPM package version to 0.23.0-dev.7
-* **release:** bump NPM package version to 0.23.0-dev.8
-* **release:** bump version to 0.23.0-dev.1
-* **release:** bump version to 0.23.0-dev.2
-* **release:** bump version to 0.23.0-dev.3
-* **release:** bump version to 0.23.0-dev.5
-* **release:** bump version to v0.22.0-dev.1 (dashpay/rs-platform[#35](https://github.com/dashpay/platform/issues/35))
-* **release:** bump version to v0.22.0-dev.11 (dashpay/rs-platform[#66](https://github.com/dashpay/platform/issues/66))
-* **release:** bump version to v0.22.0-dev.13 (dashpay/rs-platform[#71](https://github.com/dashpay/platform/issues/71))
-* **release:** bump version to v0.22.0-dev.14 (dashpay/rs-platform[#73](https://github.com/dashpay/platform/issues/73))
-* **release:** bump version to v0.22.0-dev.15 (dashpay/rs-platform[#75](https://github.com/dashpay/platform/issues/75))
-* **release:** bump version to v0.22.0-dev.16 (dashpay/rs-platform[#78](https://github.com/dashpay/platform/issues/78))
-* **release:** bump version to v0.22.0-dev.17
-* **release:** bump version to v0.22.0-dev.2 (dashpay/rs-platform[#40](https://github.com/dashpay/platform/issues/40))
-* **release:** bump version to v0.22.0-dev.3
-* **release:** bump version to v0.22.0-dev.4 (dashpay/rs-platform[#48](https://github.com/dashpay/platform/issues/48))
-* **release:** bump version to v0.22.0-dev.5 (dashpay/rs-platform[#50](https://github.com/dashpay/platform/issues/50))
-* **release:** bump version to v0.22.0-dev.6 (dashpay/rs-platform[#51](https://github.com/dashpay/platform/issues/51))
-* **release:** bump version to v0.22.0-dev.7 (dashpay/rs-platform[#55](https://github.com/dashpay/platform/issues/55))
-* **release:** bump version to v0.22.0-dev.8 (dashpay/rs-platform[#60](https://github.com/dashpay/platform/issues/60))
-* **release:** bump version to v0.22.0-dev.9 (dashpay/rs-platform[#62](https://github.com/dashpay/platform/issues/62))
-* **release:** bump versions
-* **release:** update changelog and bump version to 0.24.0-dev.1 ([#565](https://github.com/dashpay/platform/issues/565))
-* remove clippy warnings
-* remove unnecessary crates
-* rename package to test publish
-* revert package version change
-* switch grovedb to develop branch
 * update error prefix (dashpay/rs-platform[#67](https://github.com/dashpay/platform/issues/67))
 * update to new GroveDB (dashpay/rs-platform[#108](https://github.com/dashpay/platform/issues/108)), closes [dashpay/rs-platform#107](https://github.com/dashpay/rs-platform/issues/107)
+
+
+### Styles
+
+* fix formatting
+* extract field_type
+* format json
+* remove commented code
+* remove todo
+* run cargo fmt
+* sam's *** naming
+* use explicit xor (dashpay/rs-platform[#57](https://github.com/dashpay/platform/issues/57))
+
 
 ## [0.24.0-dev.34](https://github.com/dashpay/platform/compare/v0.24.0-dev.33...v0.24.0-dev.34) (2023-05-08)
 
