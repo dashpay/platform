@@ -1,3 +1,17 @@
+## [0.24.0-dev.35](https://github.com/dashpay/platform/compare/v0.24.0-dev.34...v0.24.0-dev.35) (2023-05-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **dashmate:** rename compose project name (#1055)
+
+### Miscellaneous Chores
+
+* bump sentinel to 1.7.3 ([#1057](https://github.com/dashpay/platform/issues/1057))
+* **dashmate:** rename compose project name ([#1055](https://github.com/dashpay/platform/issues/1055))
+* **dashmate:** update testnet preset ([#1054](https://github.com/dashpay/platform/issues/1054))
+* increase client side timeouts ([#1050](https://github.com/dashpay/platform/issues/1050))
+
 ## [0.24.0-dev.34](https://github.com/dashpay/platform/compare/v0.24.0-dev.33...v0.24.0-dev.34) (2023-05-08)
 
 
