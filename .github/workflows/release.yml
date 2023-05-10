@@ -195,46 +195,12 @@ jobs:
       #     cache-path: /tmp/buildkit-cache
       #     cache-max-size: 3g
 
-      - name: Show tag
-        uses: actions/github-script@v6
-        with:
-          script: "console.log(${{ github.event.inputs.tag }})"
-
-      - name: View context attributes
-        uses: actions/github-script@v6
-        with:
-          script: console.log(context)
-
-      - name: View context attributes
-        uses: actions/github-script@v6
-        with:
-          script: console.log(core)
-
-      - name: Show eventName value
-        uses: actions/github-script@v6
-        with:
-          script: console.log(context.eventName)
-
-      - name: Try to echo input
-        run: echo
-
-      - name: Show input result
-        uses: actions/github-script@v6
-        with:
-          script: |
-            console.log("getting data");
-            const result = ${{ github.event.inputs.tag }};
-            console.log(result);
-
       - name: Get tag
         uses: actions/github-script@v6
         id: tag
         with:
           result-encoding: string
           script: "return context.eventName === 'workflow_dispatch' ? ${{ github.event.inputs.tag }} : context.payload.release.tag_name;"
-
-      - name: Show tag
-        run: echo ${{ steps.tag.outputs.result }}
 
       - name: Set suffix
         uses: actions/github-script@v6
