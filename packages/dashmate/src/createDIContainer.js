@@ -9,6 +9,7 @@ const {
 const Docker = require('dockerode');
 
 const ensureHomeDirFactory = require('./config/ensureHomeDirFactory');
+const ensureFileMountExistsFactory = require('./docker/ensureFileMountExistsFactory');
 const getConnectionHostFactory = require('./docker/getConnectionHostFactory');
 const ConfigFileJsonRepository = require('./config/configFile/ConfigFileJsonRepository');
 const createSystemConfigsFactory = require('./config/systemConfigs/createSystemConfigsFactory');
@@ -112,6 +113,7 @@ async function createDIContainer() {
     migrateConfigFile: asValue(migrateConfigFile),
     isHelper: asValue(process.env.DASHMATE_HELPER === '1'),
     getConnectionHost: asClass(getConnectionHostFactory).singleton(),
+    ensureFileMountExists: asFunction(ensureFileMountExistsFactory).singleton(),
     // `configFile` and `config` are registering on command init
   });
 
