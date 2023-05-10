@@ -1,11 +1,9 @@
-const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
-const ValidationResult = require('@dashevo/dpp/lib/validation/ValidationResult');
-const SomeConsensusError = require('@dashevo/dpp/lib/test/mocks/SomeConsensusError');
+const identitySchema = require('../../../../../../../../rs-dpp/src/schema/identity/identity.json');
+const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/createStateRepositoryMock');
+const getIdentityFixture = require('../../../../../../../lib/test/fixtures/getIdentityFixture');
 const getIdentityUpdateTransitionFixture = require('../../../../../../../lib/test/fixtures/getIdentityUpdateTransitionFixture');
 
-const { default: loadWasmDpp } = require('../../../../../../../dist');
+const { default: loadWasmDpp } = require('../../../../../../..');
 const { expectValidationError } = require('../../../../../../../lib/test/expect/expectError');
 const generateRandomIdentifierAsync = require('../../../../../../../lib/test/utils/generateRandomIdentifierAsync');
 const getBlsAdapterMock = require('../../../../../../../lib/test/mocks/getBlsAdapterMock');
@@ -16,7 +14,6 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
   let stateTransition;
   let identity;
   let rawIdentity;
-  let validatePublicKeysMock;
   let blockTime;
   let executionContext;
 
@@ -49,7 +46,7 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
   });
 
   beforeEach(async function beforeEach() {
-    rawIdentity = getIdentityFixture().toObject();
+    rawIdentity = (await getIdentityFixture()).toObject();
     // Patch identity id to be acceptable by wasm-dpp
     rawIdentity.id = await generateRandomIdentifierAsync();
     identity = new Identity(rawIdentity);
@@ -248,21 +245,21 @@ describe('validateIdentityUpdateTransitionStateFactory', () => {
   // TODO: remove?
   // Skipped, because two tests above are seem to be enough
   it.skip('should validate resulting identity public keys', async () => {
-    const publicKeysError = new SomeConsensusError('test');
-
-    validatePublicKeysMock.returns(new ValidationResult([publicKeysError]));
-
-    const result = await validateIdentityUpdateTransitionState(stateTransition);
-
-    expectValidationError(result, SomeConsensusError);
-
-    expect(validatePublicKeysMock).to.be.calledOnce();
-
-    const publicKeys = [...identity.getPublicKeys(), ...stateTransition.getPublicKeysToAdd()];
-
-    expect(validatePublicKeysMock).to.be.calledWithExactly(
-      publicKeys.map((pk) => pk.toObject()),
-    );
+    // const publicKeysError = new SomeConsensusError('test');
+    //
+    // validatePublicKeysMock.returns(new ValidationResult([publicKeysError]));
+    //
+    // const result = await validateIdentityUpdateTransitionState(stateTransition);
+    //
+    // expectValidationError(result, SomeConsensusError);
+    //
+    // expect(validatePublicKeysMock).to.be.calledOnce();
+    //
+    // const publicKeys = [...identity.getPublicKeys(), ...stateTransition.getPublicKeysToAdd()];
+    //
+    // expect(validatePublicKeysMock).to.be.calledWithExactly(
+    //   publicKeys.map((pk) => pk.toObject()),
+    // );
   });
 
   it('should return valid result on dry run', async function () {

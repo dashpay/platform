@@ -1,4 +1,4 @@
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const getIdentityFixture = require('../../../../lib/test/fixtures/getIdentityFixture');
 const { expectValidationError, expectJsonSchemaError } = require('../../../../lib/test/expect/expectError');
 
 const { default: loadWasmDpp } = require('../../../../dist');
@@ -18,16 +18,17 @@ describe('validateIdentityFactory', () => {
     ({ IdentityValidator, Identity, UnsupportedProtocolVersionError } = await loadWasmDpp());
   });
 
-  beforeEach(async () => {
+  beforeEach(async function () {
+    this.timeout(20000);
     const blsAdapter = await getBlsAdapterMock();
 
     const validator = new IdentityValidator(blsAdapter);
 
     validateIdentity = (value) => validator.validate(value);
 
-    const identityObjectJS = getIdentityFixture().toObject();
-    identityObjectJS.id = await generateRandomIdentifierAsync();
-    identity = new Identity(identityObjectJS);
+    const identityObject = (await getIdentityFixture()).toObject();
+    identityObject.id = await generateRandomIdentifierAsync();
+    identity = new Identity(identityObject);
 
     rawIdentity = identity.toObject();
   });

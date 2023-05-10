@@ -13,10 +13,16 @@ use dpp::state_transition::{
 use dpp::version::ProtocolVersionValidator;
 use serde::Deserialize;
 
+use crate::errors::consensus::basic::state_transition::InvalidStateTransitionTypeErrorWasm;
 use crate::errors::protocol_error::from_protocol_error;
 use crate::errors::value_error::PlatformValueErrorWasm;
+use crate::state_transition::errors::invalid_state_transition_error::InvalidStateTransitionErrorWasm;
 use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
+use dpp::document::DocumentsBatchTransition;
+use dpp::ProtocolError;
+use dpp::ProtocolError::InvalidStateTransitionTypeError;
+use num_enum::TryFromPrimitiveError;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
@@ -65,7 +71,9 @@ impl StateTransitionFacadeWasm {
             .get_integer::<u8>("type")
             .map_err(PlatformValueErrorWasm::from)?
             .try_into()
-            .map_err(|_| JsValue::from_str("Invalid state transition type"))?;
+            .map_err(|e: TryFromPrimitiveError<StateTransitionType>| {
+                InvalidStateTransitionTypeErrorWasm::new(e.number as u8)
+            })?;
 
         if state_transition_type == StateTransitionType::DataContractUpdate {
             DataContractUpdateTransition::clean_value(&mut raw_state_transition)
