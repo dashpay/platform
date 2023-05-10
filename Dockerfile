@@ -111,7 +111,8 @@ ENV CARGO_BUILD_PROFILE ${CARGO_BUILD_PROFILE}
 ARG NODE_ENV=production
 ENV NODE_ENV ${NODE_ENV}
 
-# Install wasm-bindgen-cli
+# Install wasm-bindgen-cli in the same profile as other components, to sacrifice some performance & disk space to gain
+# better build caching
 WORKDIR /platform
 RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
@@ -120,13 +121,12 @@ RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
     --mount=type=cache,sharing=shared,target=/platform/target \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
-    cargo install wasm-bindgen-cli
+    CARGO_TARGET_DIR=/platform/target cargo install --profile "$CARGO_BUILD_PROFILE" wasm-bindgen-cli@0.2.85
 
 #
 # EXECUTE BUILD
 #
 FROM deps as sources
-
 
 # We run builds with extensive caching.
 # 
@@ -161,7 +161,9 @@ RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
     --mount=type=cache,sharing=shared,target=/platform/target \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
-    cargo build -p drive-abci \
+    cargo build \
+        --profile "$CARGO_BUILD_PROFILE" \
+        -p drive-abci \
        --config net.git-fetch-with-cli=true && \
     cp /platform/target/*/drive-abci /artifacts/drive-abci && \
     sccache --show-stats
@@ -180,7 +182,9 @@ RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
     --mount=type=cache,sharing=shared,id=wasm_dpp_target,target=/platform/target \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
-    yarn workspace @dashevo/wasm-dpp build && \
+    export SKIP_GRPC_PROTO_BUILD=1 && \
+    yarn install && \
+    yarn build && \
     sccache --show-stats
 
 #
@@ -311,7 +315,12 @@ FROM build-wasm-dpp AS build-dashmate
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN --mount=type=cache,target=/tmp/unplugged \
+RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
+    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
+    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
+    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=shared,id=wasm_dpp_target,target=/platform/target \
+    --mount=type=cache,target=/tmp/unplugged \
     cp -R /tmp/unplugged /platform/.yarn/ && \
     yarn workspaces focus --production dashmate && \
     cp -R /platform/.yarn/unplugged /tmp/
@@ -347,7 +356,12 @@ FROM build-wasm-dpp AS build-testsuite
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN --mount=type=cache,target=/tmp/unplugged \
+RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
+    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
+    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
+    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=shared,id=wasm_dpp_target,target=/platform/target \
+    --mount=type=cache,target=/tmp/unplugged \
     cp -R /tmp/unplugged /platform/.yarn/ && \
     yarn workspaces focus --production @dashevo/platform-test-suite && \
     cp -R /platform/.yarn/unplugged /tmp/
@@ -384,7 +398,12 @@ FROM build-wasm-dpp AS build-dapi
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN --mount=type=cache,target=/tmp/unplugged \
+RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
+    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
+    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
+    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=shared,id=wasm_dpp_target,target=/platform/target \
+    --mount=type=cache,target=/tmp/unplugged \
     cp -R /tmp/unplugged /platform/.yarn/ && \
     yarn workspaces focus --production @dashevo/dapi && \
     cp -R /platform/.yarn/unplugged /tmp/

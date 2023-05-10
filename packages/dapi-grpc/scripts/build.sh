@@ -1,5 +1,12 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2250
+#
+
+SKIP_GRPC_PROTO_BUILD=${SKIP_GRPC_PROTO_BUILD:-0}
+if [[ "${SKIP_GRPC_PROTO_BUILD}" == "1" ]]; then
+  echo WARN: Skipping GRPC protobuf definitions rebuild
+  exit 0
+fi
 
 CORE_PROTO_PATH="$PWD/protos/core/v0"
 CORE_CLIENTS_PATH="$PWD/clients/core/v0"
