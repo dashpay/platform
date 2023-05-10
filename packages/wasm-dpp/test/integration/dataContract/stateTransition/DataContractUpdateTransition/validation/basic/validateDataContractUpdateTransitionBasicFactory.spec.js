@@ -1,9 +1,9 @@
-const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/createStateRepositoryMock');
+const getDataContractFixture = require('../../../../../../../lib/test/fixtures/getDataContractFixture');
 const { expectJsonSchemaError, expectValidationError, expectValueError } = require('../../../../../../../lib/test/expect/expectError');
 
-const { default: loadWasmDpp } = require('../../../../../../../dist');
+const { default: loadWasmDpp } = require('../../../../../../..');
+const { getLatestProtocolVersion } = require('../../../../../../..');
 
 describe('validateDataContractUpdateTransitionBasicFactory', () => {
   let DataContractUpdateTransition;
@@ -39,13 +39,13 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
   });
 
   beforeEach(async function beforeEach() {
-    dataContract = getDataContractFixture();
+    dataContract = await getDataContractFixture();
 
     rawDataContract = dataContract.toObject();
     rawDataContract.version += 1;
 
     stateTransition = new DataContractUpdateTransition({
-      protocolVersion: protocolVersion.latestVersion,
+      protocolVersion: getLatestProtocolVersion(),
       dataContract: rawDataContract,
       signature: Buffer.alloc(65),
       signaturePublicKeyId: 0,
@@ -54,7 +54,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
     rawStateTransition = stateTransition.toObject();
 
     const validator = new DataContractValidator();
-    const dataContractFactory = new DataContractFactory(protocolVersion.latestVersion, validator);
+    const dataContractFactory = new DataContractFactory(getLatestProtocolVersion(), validator);
     const wasmDataContract = await dataContractFactory.createFromBuffer(dataContract.toBuffer());
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchDataContract.resolves(wasmDataContract);

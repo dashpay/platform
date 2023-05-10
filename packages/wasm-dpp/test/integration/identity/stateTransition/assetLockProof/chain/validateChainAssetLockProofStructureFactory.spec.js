@@ -1,9 +1,9 @@
 const { Transaction, Script, PrivateKey } = require('@dashevo/dashcore-lib');
 
-const getChainAssetLockFixture = require('@dashevo/dpp/lib/test/fixtures/getChainAssetLockProofFixture');
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
-
 const { expect } = require('chai');
+const getChainAssetLockFixture = require('../../../../../../lib/test/fixtures/getChainAssetLockProofFixture');
+const createStateRepositoryMock = require('../../../../../../lib/test/mocks/createStateRepositoryMock');
+
 const { expectJsonSchemaError, expectValidationError } = require('../../../../../../lib/test/expect/expectError');
 
 const { default: loadWasmDpp } = require('../../../../../../dist');

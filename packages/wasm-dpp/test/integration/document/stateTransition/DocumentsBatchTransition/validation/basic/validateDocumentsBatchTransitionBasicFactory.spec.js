@@ -1,12 +1,12 @@
-const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
-const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
+const getDocumentTransitionsFixture = require('../../../../../../../lib/test/fixtures/getDocumentTransitionsFixture');
+const getDocumentsFixture = require('../../../../../../../lib/test/fixtures/js/getDocumentsFixture');
+const getDataContractFixture = require('../../../../../../../lib/test/fixtures/js/getDataContractFixture');
+const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/createStateRepositoryMock');
 
-const { default: loadWasmDpp } = require('../../../../../../../dist');
+const { default: loadWasmDpp } = require('../../../../../../..');
+const { getLatestProtocolVersion } = require('../../../../../../..');
 const { expectJsonSchemaError, expectValidationError, expectValueError } = require('../../../../../../../lib/test/expect/expectError');
+const generateRandomIdentifierAsync = require('../../../../../../../lib/test/utils/generateRandomIdentifierAsync');
 
 let DataContract;
 let DocumentsBatchTransition;
@@ -71,7 +71,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
     executionContext = new StateTransitionExecutionContext();
 
     stateTransition = new DocumentsBatchTransition({
-      protocolVersion: protocolVersion.latestVersion,
+      protocolVersion: getLatestProtocolVersion(),
       ownerId,
       contractId: dataContract.getId(),
       transitions: documentTransitions.map((t) => t.toObject()),
@@ -425,7 +425,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
           const [documentTransition] = documentTransitions.map((t) => t.toObject());
 
           stateTransition = new DocumentsBatchTransition({
-            protocolVersion: protocolVersion.latestVersion,
+            protocolVersion: getLatestProtocolVersion(),
             ownerId,
             contractId: dataContract.getId(),
             transitions: [documentTransition, documentTransition],
@@ -627,7 +627,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
             const [firstTransition] = rawStateTransition.transitions;
 
             const expectedId = firstTransition.$id;
-            firstTransition.$id = generateRandomIdentifier().toBuffer();
+            firstTransition.$id = (await generateRandomIdentifierAsync()).toBuffer();
 
             const result = await validateDocumentsBatchTransitionBasic(
               protocolVersionValidator,
@@ -745,7 +745,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
           });
 
           stateTransition = new DocumentsBatchTransition({
-            protocolVersion: protocolVersion.latestVersion,
+            protocolVersion: getLatestProtocolVersion(),
             ownerId,
             contractId: dataContract.getId(),
             transitions: documentTransitions.map((t) => t.toObject()),
@@ -848,7 +848,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
           });
 
           stateTransition = new DocumentsBatchTransition({
-            protocolVersion: protocolVersion.latestVersion,
+            protocolVersion: getLatestProtocolVersion(),
             ownerId,
             contractId: dataContract.getId(),
             transitions: documentTransitions.map((t) => t.toObject()),
@@ -895,7 +895,7 @@ describe('validateDocumentsBatchTransitionBasicFactory', () => {
         const duplicates = [duplicatedTransition, indexedTransition];
 
         stateTransition = new DocumentsBatchTransition({
-          protocolVersion: protocolVersion.latestVersion,
+          protocolVersion: getLatestProtocolVersion(),
           ownerId,
           contractId: dataContract.getId(),
           transitions: duplicates,

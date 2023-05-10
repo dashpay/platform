@@ -1,10 +1,9 @@
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
+const getDataContractFixture = require('../../../../../lib/test/fixtures/js/getDataContractFixture');
+const getDocumentsFixture = require('../../../../../lib/test/fixtures/js/getDocumentsFixture');
 
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
-
-const { default: loadWasmDpp } = require('../../../../../dist');
+const { default: loadWasmDpp } = require('../../../../..');
+const { IdentityPublicKey } = require('../../../../..');
 
 let ExtendedDocument;
 let DataContract;

@@ -1,9 +1,8 @@
-const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
-const getChainAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getChainAssetLockProofFixture');
+const getIdentityCreateTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityCreateTransitionFixture');
+const getChainAssetLockProofFixture = require('../../../../../lib/test/fixtures/getChainAssetLockProofFixture');
 
-const stateTransitionTypes = require('@dashevo/dpp/lib/stateTransition/stateTransitionTypes');
-const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
-const { default: loadWasmDpp } = require('../../../../../dist');
+const { default: loadWasmDpp } = require('../../../../..');
+const { getLatestProtocolVersion, StateTransitionTypes } = require('../../../../..');
 
 describe('IdentityCreateTransition', () => {
   let rawStateTransition;
@@ -39,8 +38,8 @@ describe('IdentityCreateTransition', () => {
     } = await loadWasmDpp());
   });
 
-  beforeEach(() => {
-    rawStateTransition = getIdentityCreateTransitionFixture().toObject();
+  beforeEach(async () => {
+    rawStateTransition = (await getIdentityCreateTransitionFixture()).toObject();
     stateTransition = new IdentityCreateTransition(
       rawStateTransition,
     );
@@ -68,7 +67,7 @@ describe('IdentityCreateTransition', () => {
 
   describe('#getType', () => {
     it('should return IDENTITY_CREATE type', () => {
-      expect(stateTransition.getType()).to.equal(stateTransitionTypes.IDENTITY_CREATE);
+      expect(stateTransition.getType()).to.equal(StateTransitionTypes.IdentityCreate);
     });
   });
 
@@ -159,8 +158,8 @@ describe('IdentityCreateTransition', () => {
       rawStateTransition = stateTransition.toObject();
 
       expect(rawStateTransition).to.deep.equal({
-        protocolVersion: protocolVersion.latestVersion,
-        type: stateTransitionTypes.IDENTITY_CREATE,
+        protocolVersion: getLatestProtocolVersion(),
+        type: StateTransitionTypes.IdentityCreate,
         assetLockProof: rawStateTransition.assetLockProof,
         publicKeys: rawStateTransition.publicKeys,
         signature: undefined,
@@ -171,8 +170,8 @@ describe('IdentityCreateTransition', () => {
       rawStateTransition = stateTransition.toObject({ skipSignature: true });
 
       expect(rawStateTransition).to.deep.equal({
-        protocolVersion: protocolVersion.latestVersion,
-        type: stateTransitionTypes.IDENTITY_CREATE,
+        protocolVersion: getLatestProtocolVersion(),
+        type: StateTransitionTypes.IdentityCreate,
         assetLockProof: rawStateTransition.assetLockProof,
         publicKeys: rawStateTransition.publicKeys,
       });
@@ -184,8 +183,8 @@ describe('IdentityCreateTransition', () => {
       const jsonStateTransition = stateTransition.toJSON();
 
       expect(jsonStateTransition).to.deep.equal({
-        protocolVersion: protocolVersion.latestVersion,
-        type: stateTransitionTypes.IDENTITY_CREATE,
+        protocolVersion: getLatestProtocolVersion(),
+        type: StateTransitionTypes.IdentityCreate,
         assetLockProof: stateTransition.getAssetLockProof().toJSON(),
         publicKeys: stateTransition.getPublicKeys().map((k) => k.toJSON()),
         signature: undefined,
