@@ -171,7 +171,7 @@ RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
 #
 # STAGE: BUILD WASM-DPP
 #
-FROM sources AS build-wasm-dpp
+FROM sources AS build-js
 
 RUN mkdir /artifacts
 
@@ -205,85 +205,6 @@ COPY --from=build-drive-abci /platform/packages/rs-drive-abci/.env.example /var/
 # Double-check that we don't have missing deps
 RUN ldd /usr/bin/drive-abci
 
-#
-# CONFIGURATION 
-# Hint: generated with:
-# ``
-#   sed -E 's/^([A-Z].+$)/ENV \1/g' packages/rs-drive-abci/.env.example 
-# ``
-#
-
-# ABCI host and port to listen
-ENV ABCI_BIND_ADDRESS="tcp://0.0.0.0:26658"
-
-ENV DB_PATH=/tmp/db
-
-# GroveDB database file
-ENV GROVEDB_LATEST_FILE=${DB_PATH}/latest_state
-
-# Cache size for Data Contracts
-ENV DATA_CONTRACTS_GLOBAL_CACHE_SIZE=500
-ENV DATA_CONTRACTS_BLOCK_CACHE_SIZE=200
-
-# DashCore JSON-RPC host, port and credentials
-# Read more: https://dashcore.readme.io/docs/core-api-ref-remote-procedure-calls
-ENV CORE_JSON_RPC_HOST=127.0.0.1
-ENV CORE_JSON_RPC_PORT=9998
-ENV CORE_JSON_RPC_USERNAME=dashrpc
-ENV CORE_JSON_RPC_PASSWORD=password
-
-# DashCore ZMQ host and port
-ENV CORE_ZMQ_HOST=127.0.0.1
-ENV CORE_ZMQ_PORT=29998
-ENV CORE_ZMQ_CONNECTION_RETRIES=16
-
-ENV NETWORK=testnet
-
-ENV INITIAL_CORE_CHAINLOCKED_HEIGHT=1243
-
-# https://github.com/dashevo/dashcore-lib/blob/286c33a9d29d33f05d874c47a9b33764a0be0cf1/lib/constants/index.js#L42-L57
-ENV VALIDATOR_SET_LLMQ_TYPE=100
-ENV VALIDATOR_SET_QUORUM_ROTATION_BLOCK_COUNT=64
-
-ENV DKG_INTERVAL=24
-ENV MIN_QUORUM_VALID_MEMBERS=3
-
-# DPNS Contract
-
-ENV DPNS_MASTER_PUBLIC_KEY=02649a81b760e8635dd3a4fad8911388ed09d7c1680558a890180d4edc8bcece7e
-ENV DPNS_SECOND_PUBLIC_KEY=03f5ea3ab4bf594c28997eb8f83873532275ac2edd36e586b137ed42d15d510948
-
-# Dashpay Contract
-
-ENV DASHPAY_MASTER_PUBLIC_KEY=022d6d70c9d24d03904713db17fb74c9201801ba0e3aed0f5d91e89df388e94aa6
-ENV DASHPAY_SECOND_PUBLIC_KEY=028c0a26c87b2e7f1aebbbeace9e687d774e037f5b50a6905b5f6fa24495b502cd
-
-# Feature flags contract
-
-ENV FEATURE_FLAGS_MASTER_PUBLIC_KEY=034ee04c509083ecd09e76fa53e0b5331b39120c19607cd04c4f167707dbb42302
-ENV FEATURE_FLAGS_SECOND_PUBLIC_KEY=03c755ae1b79dbcc79020aad3ccdfcb142fc6e74f1afc220fca1e275a87aa12cf8
-
-# Masternode reward shares contract
-
-ENV MASTERNODE_REWARD_SHARES_MASTER_PUBLIC_KEY=02099cc210c7b6c7f566099046ddc92615342db326184940bf3811026ea328c85e
-ENV MASTERNODE_REWARD_SHARES_SECOND_PUBLIC_KEY=02bf55f97f189895da29824781053140ee66b2bf47760246504fbe502985096af5
-
-# Withdrawals contract
-
-ENV WITHDRAWALS_MASTER_PUBLIC_KEY=027057cdf58628635ef7b75e6b6c90dd996a16929cd68130e16b9328d429e5e03a
-ENV WITHDRAWALS_SECOND_PUBLIC_KEY=022084d827fea4823a69aa7c8d3e02fe780eaa0ef1e5e9841af395ba7e40465ab6
-
-ENV TENDERDASH_P2P_PORT=26656
-
-ENV QUORUM_SIZE=5
-ENV QUORUM_TYPE=llmq_25_67
-ENV CHAIN_ID=devnet
-ENV BLOCK_SPACING_MS=3000
-
-#
-# END OF CONFIGURATION
-#
-
 # Create a volume
 VOLUME /var/lib/dash
 
@@ -311,7 +232,7 @@ EXPOSE 26658
 #
 # STAGE: DASHMATE BUILD
 #
-FROM build-wasm-dpp AS build-dashmate
+FROM build-js AS build-dashmate
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
@@ -325,7 +246,6 @@ RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
     yarn workspaces focus --production dashmate && \
     cp -R /platform/.yarn/unplugged /tmp/
 
-# Remove Rust sources
 RUN rm -fr ./packages/rs-*
 # TODO: Clean all other files not needed by dapi
 
@@ -352,7 +272,7 @@ ENTRYPOINT ["/platform/packages/dashmate/docker/entrypoint.sh"]
 #
 # STAGE: TEST SUITE BUILD
 #
-FROM build-wasm-dpp AS build-testsuite
+FROM build-js AS build-testsuite
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
@@ -394,7 +314,7 @@ ENTRYPOINT ["/platform/packages/platform-test-suite/bin/test.sh"]
 #
 # STAGE: DAPI BUILD
 #
-FROM build-wasm-dpp AS build-dapi
+FROM build-js AS build-dapi
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
