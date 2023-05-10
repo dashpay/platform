@@ -50,18 +50,20 @@ function getServicesScopeFactory(dockerCompose) {
             Image: image,
           },
         } = await dockerCompose.inspectService(config.toEnvs(), serviceName));
+
+        services[serviceName] = {
+          humanName: serviceDescription,
+          containerId: containerId ? containerId.slice(0, 12) : null,
+          image,
+          status,
+        };
       } catch (e) {
         if (e instanceof ContainerIsNotPresentError) {
           status = 'not_started';
         }
       }
 
-      services[serviceName] = {
-        humanName: serviceDescription,
-        containerId: containerId ? containerId.slice(0, 12) : null,
-        image,
-        status,
-      };
+      services[serviceName] = null;
     }
 
     return services;

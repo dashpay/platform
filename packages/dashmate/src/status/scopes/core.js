@@ -14,7 +14,7 @@ const ServiceIsNotRunningError = require('../../docker/errors/ServiceIsNotRunnin
  */
 function getCoreScopeFactory(dockerCompose,
   createRpcClient, getConnectionHost) {
-  /**
+  /*
    * Get core status scope
    *
    * @typedef {Promise} getCoreScope
@@ -23,24 +23,13 @@ function getCoreScopeFactory(dockerCompose,
    */
   async function getCoreScope(config) {
     const network = config.get('network');
-    const rpcService = `127.0.0.1:${config.get('core.rpc.port')}`;
-    const p2pService = `${config.get('externalIp')}:${config.get('core.p2p.port')}`;
-
-    if (!(await dockerCompose.isServiceRunning(config.toEnvs(), 'core'))) {
-      throw new ServiceIsNotRunningError(config.name, 'core');
-    }
-
-    const rpcClient = createRpcClient({
-      port: config.get('core.rpc.port'),
-      user: config.get('core.rpc.user'),
-      pass: config.get('core.rpc.password'),
-      host: await getConnectionHost(config, 'core'),
-    });
+    const rpcServiceUrl = `127.0.0.1:${config.get('core.rpc.port')}`;
+    const p2pServiceUrl = `${config.get('externalIp')}:${config.get('core.p2p.port')}`;
 
     const core = {
       network,
-      p2pService,
-      rpcService,
+      p2pServiceUrl,
+      rpcServiceUrl,
       version: null,
       chain: null,
       latestVersion: null,
@@ -56,6 +45,17 @@ function getCoreScopeFactory(dockerCompose,
       sizeOnDisk: null,
       syncAsset: null,
     };
+
+    if (!(await dockerCompose.isServiceRunning(config.toEnvs(), 'core'))) {
+      throw new ServiceIsNotRunningError(config.name, 'core');
+    }
+
+    const rpcClient = createRpcClient({
+      port: config.get('core.rpc.port'),
+      user: config.get('core.rpc.user'),
+      pass: config.get('core.rpc.password'),
+      host: await getConnectionHost(config, 'core'),
+    });
 
     core.dockerStatus = await determineStatus.docker(dockerCompose, config, 'core');
 

@@ -31,14 +31,14 @@ module.exports = {
     return ServiceStatusEnum.error;
   },
   /**
-   * Determine ServiceStatus based on DockerStatusEnum and MasternodeSyncAssetEnum
+   * Determine platform ServiceStatus based on DockerStatusEnum and masternode readiness
    * @param dockerStatus {DockerStatusEnum}
-   * @param coreIsSynced {boolean}
+   * @param masternodeReady {boolean}
    * @returns {ServiceStatusEnum}
    */
-  platform: (dockerStatus, coreIsSynced) => {
+  platform: (dockerStatus, masternodeReady) => {
     if (dockerStatus === DockerStatusEnum.running) {
-      return coreIsSynced ? ServiceStatusEnum.up : ServiceStatusEnum.wait_for_core;
+      return masternodeReady ? ServiceStatusEnum.up : ServiceStatusEnum.wait_for_core;
     }
 
     return ServiceStatusEnum.error;

@@ -38,11 +38,6 @@ class PlatformStatusCommand extends ConfigBaseCommand {
     // Collect platform data
     const scope = await getPlatformScope(config);
 
-    // Collecting platform data fails if Tenderdash is waiting for core to sync
-    if (!scope.coreIsSynced) {
-      throw new Error('Platform status is not available until core sync is complete!');
-    }
-
     if (flags.format === OUTPUT_FORMATS.PLAIN) {
       const {
         httpService,
