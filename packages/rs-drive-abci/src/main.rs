@@ -57,14 +57,14 @@ enum Commands {
     #[command()]
     Config {},
 
-/// Check status. 
-/// 
-/// Returns 0 on success.
+    /// Check status.
+    ///
+    /// Returns 0 on success.
     #[command()]
     Status {},
 }
 
-pub fn main() ->Result<(),String> {
+pub fn main() -> Result<(), String> {
     let cli = Cli::parse();
     let config = load_config(&cli.config);
 
@@ -88,7 +88,7 @@ pub fn main() ->Result<(),String> {
     }
 }
 
-fn dump_config(config: &PlatformConfig)->Result<(),String> {
+fn dump_config(config: &PlatformConfig) -> Result<(), String> {
     let serialized =
         serde_json::to_string_pretty(config).expect("failed to generate configuration");
 
@@ -98,11 +98,11 @@ fn dump_config(config: &PlatformConfig)->Result<(),String> {
 }
 
 /// Check status of ABCI server.
-/// 
-/// Returns 0 
+///
+/// Returns 0
 /// TODO: For now, it's just a placeholder.
-fn check_status(_config: &PlatformConfig) ->Result<(),String>{
-  Ok(())
+fn check_status(_config: &PlatformConfig) -> Result<(), String> {
+    Ok(())
 }
 
 fn load_config(path: &Option<PathBuf>) -> PlatformConfig {
