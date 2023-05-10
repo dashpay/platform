@@ -266,7 +266,7 @@ impl<C> Platform<C> {
                 } else {
                     let contract = check_validation_result_with_data!(self
                         .drive
-                        .fetch_contract(contract_id.into_buffer(), None, None,)
+                        .fetch_contract(contract_id.into_buffer(), None, None, None)
                         .unwrap())
                     .map(|contract| contract.contract.serialize())
                     .transpose()?;

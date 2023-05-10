@@ -1,5 +1,7 @@
 use crate::common::encode::encode_u64;
-use crate::drive::contract::paths::{contract_root_path_vec, contract_storage_path_vec};
+use crate::drive::contract::paths::{
+    contract_keeping_history_storage_path_vec, contract_root_path_vec, contract_storage_path_vec,
+};
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::error::Error::GroveDB;
@@ -20,6 +22,23 @@ impl Drive {
     /// * `PathQuery` - A `PathQuery` object representing the query for fetching the contract data.
     pub fn fetch_contract_query(contract_id: [u8; 32]) -> PathQuery {
         let contract_path = contract_root_path_vec(contract_id.as_slice());
+        PathQuery::new_single_key(contract_path, vec![0])
+    }
+
+    /// Creates a path query for a specified contract.
+    ///
+    /// This function takes a contract ID and creates a path query for fetching the contract data.
+    ///
+    /// # Arguments
+    ///
+    /// * `contract_id` - A contract ID as a 32-byte array. The contract ID is used to
+    ///   create the path query.
+    ///
+    /// # Returns
+    ///
+    /// * `PathQuery` - A `PathQuery` object representing the query for fetching the contract data.
+    pub fn fetch_contract_with_history_latest_query(contract_id: [u8; 32]) -> PathQuery {
+        let contract_path = contract_keeping_history_storage_path_vec(contract_id.as_slice());
         PathQuery::new_single_key(contract_path, vec![0])
     }
 
