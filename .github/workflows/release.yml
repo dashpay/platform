@@ -200,7 +200,7 @@ jobs:
         id: tag
         with:
           result-encoding: string
-          script: "return context.eventName === 'workflow_dispatch' ? ${{ github.event.inputs.tag }} : context.payload.release.tag_name;"
+          script: "return context.eventName === 'workflow_dispatch' ? '${{ github.event.inputs.tag }}' : context.payload.release.tag_name;"
 
       - name: Set suffix
         uses: actions/github-script@v6
