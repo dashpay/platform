@@ -1,3 +1,5 @@
+/// Contract verification methods on proofs
+pub mod contract;
 /// Document verification methods on proofs
 pub mod document;
 /// Identity verification methods on proofs

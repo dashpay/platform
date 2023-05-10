@@ -2844,6 +2844,31 @@ fn test_query_with_cached_contract() {
 
 #[cfg(feature = "full")]
 #[test]
+fn test_dpns_query_contract_verification() {
+    let (drive, contract) = setup_dpns_tests_with_batches(10, 11456);
+
+    let root_hash = drive
+        .grove
+        .root_hash(None)
+        .unwrap()
+        .expect("there is always a root hash");
+
+    let contract_proof = drive
+        .prove_contract(contract.id.into_buffer(), None)
+        .expect("expected to get proof");
+    let (proof_root_hash, proof_returned_contract) =
+        Drive::verify_contract(contract_proof.as_slice(), false, contract.id.into_buffer())
+            .expect("expected to get contract from proof");
+
+    assert_eq!(root_hash, proof_root_hash);
+    assert_eq!(
+        contract,
+        proof_returned_contract.expect("expected to get a contract")
+    );
+}
+
+#[cfg(feature = "full")]
+#[test]
 fn test_dpns_query() {
     let (drive, contract) = setup_dpns_tests_with_batches(10, 11456);
 
