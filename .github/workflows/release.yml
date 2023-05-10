@@ -111,7 +111,7 @@ jobs:
 
   release-drive-docker-image:
     name: Release Drive to Docker Hub
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     env:
       SCCACHE_GHA_ENABLED: "false"
       RUSTC_WRAPPER: ""
