@@ -115,7 +115,7 @@ function configureSSLCertificateTaskFactory(
           const isSelfSignedEnabled = ctx.preset !== PRESET_MAINNET
             || ctx.nodeType === NODE_TYPE_FULLNODE;
 
-          let header = `  Evo masternodes are required use TLS encryption on the DAPI
+          let header = `  Evonodes are required use TLS encryption on the DAPI
   endpoint through which they service the network. This encryption is achieved
   by loading an SSL certificate signed against the IP address specified in the
   registration transaction. The certificate should be recognized by common web
