@@ -198,7 +198,7 @@ jobs:
       - name: Show tag
         uses: actions/github-script@v6
         with:
-          script: "console.log(core.getInput('tag'))"
+          script: "console.log(${{ github.event.inputs.tag }})"
 
       - name: View context attributes
         uses: actions/github-script@v6
@@ -216,14 +216,14 @@ jobs:
           script: console.log(context.eventName)
 
       - name: Try to echo input
-        run: echo ${{ github.event.inputs.tag }}
+        run: echo
 
       - name: Show input result
         uses: actions/github-script@v6
         with:
           script: |
             console.log("getting data");
-            const result = core.getInput('tag');
+            const result = ${{ github.event.inputs.tag }};
             console.log(result);
 
       - name: Get tag
@@ -231,7 +231,7 @@ jobs:
         id: tag
         with:
           result-encoding: string
-          script: "return context.eventName === 'workflow_dispatch' ? core.getInput('tag') : context.payload.release.tag_name;"
+          script: "return context.eventName === 'workflow_dispatch' ? ${{ github.event.inputs.tag }} : context.payload.release.tag_name;"
 
       - name: Show tag
         run: echo ${{ steps.tag.outputs.result }}
