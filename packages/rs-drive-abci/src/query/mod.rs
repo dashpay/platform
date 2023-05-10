@@ -88,7 +88,6 @@ impl<C> Platform<C> {
         &self,
         query_path: &str,
         query_data: &[u8],
-        _prove: bool,
     ) -> Result<QueryValidationResult<Vec<u8>>, Error> {
         let state = self.state.read().unwrap();
         let metadata = ResponseMetadata {

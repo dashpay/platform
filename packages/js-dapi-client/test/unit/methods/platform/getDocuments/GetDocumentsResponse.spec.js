@@ -67,7 +67,7 @@ describe('GetDocumentsResponse', () => {
     expect(documents).to.deep.equal([]);
 
     expect(proof).to.be.an.instanceOf(Proof);
-    expect(proof.getMerkleProof()).to.deep.equal(proofFixture.merkleProof);
+    expect(proof.getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
     expect(proof.getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
     expect(proof.getSignature()).to.deep.equal(proofFixture.signature);
   });
@@ -92,7 +92,7 @@ describe('GetDocumentsResponse', () => {
 
     proofProto.setQuorumHash(proofFixture.quorumHash);
     proofProto.setSignature(proofFixture.signature);
-    proofProto.setMerkleProof(proofFixture.merkleProof);
+    proofProto.setGrovedbProof(proofFixture.merkleProof);
 
     proto.setDocumentsList([]);
     proto.setProof(proofProto);
@@ -111,7 +111,7 @@ describe('GetDocumentsResponse', () => {
 
     const proof = getDocumentsResponse.getProof();
     expect(proof).to.be.an.instanceOf(Proof);
-    expect(proof.getMerkleProof()).to.deep.equal(proofFixture.merkleProof);
+    expect(proof.getGrovedbProof()).to.deep.equal(proofFixture.merkleProof);
     expect(proof.getQuorumHash()).to.deep.equal(proofFixture.quorumHash);
     expect(proof.getSignature()).to.deep.equal(proofFixture.signature);
   });

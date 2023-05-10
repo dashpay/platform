@@ -71,7 +71,7 @@ describe('waitForStateTransitionResultFactory', () => {
   it('should return response with proof', async () => {
     const proof = new Proof();
 
-    proof.setMerkleProof(Buffer.from('merkleProof'));
+    proof.setGrovedbProof(Buffer.from('merkleProof'));
     proof.setQuorumHash(Buffer.from('quorumHash'));
     proof.setSignature(Buffer.from('signature'));
     proof.setRound(42);
@@ -91,7 +91,7 @@ describe('waitForStateTransitionResultFactory', () => {
       round: 42,
     });
     expect(result.getProof().getSignature()).to.deep.equal(Buffer.from('signature'));
-    expect(result.getProof().getMerkleProof()).to.deep.equal(Buffer.from('merkleProof'));
+    expect(result.getProof().getGrovedbProof()).to.deep.equal(Buffer.from('merkleProof'));
     expect(result.getProof().getQuorumHash()).to.deep.equal(Buffer.from('quorumHash'));
     expect(result.getProof().getRound()).to.deep.equal(42);
 

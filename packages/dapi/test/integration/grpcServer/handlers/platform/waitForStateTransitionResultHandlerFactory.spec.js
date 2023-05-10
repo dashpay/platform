@@ -267,7 +267,7 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
     const proof = result.getProof();
 
     expect(proof).to.be.an.instanceOf(Proof);
-    const merkleProof = proof.getMerkleProof();
+    const merkleProof = proof.getGrovedbProof();
 
     expect(merkleProof).to.deep.equal(proofFixture.merkleProof);
 

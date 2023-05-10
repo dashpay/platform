@@ -52,7 +52,7 @@ impl From<Quorum> for ValidatorSetUpdate {
                     );
 
                     abci::ValidatorUpdate {
-                        pub_key: Some(crypto::PublicKey {
+                        pub_key: public_key.map(|public_key| crypto::PublicKey {
                             sum: Some(Bls12381(public_key.to_bytes().to_vec())),
                         }),
                         power: 100,
@@ -106,7 +106,7 @@ impl From<&Quorum> for ValidatorSetUpdate {
                         platform_p2p_port
                     );
                     abci::ValidatorUpdate {
-                        pub_key: Some(crypto::PublicKey {
+                        pub_key: public_key.as_ref().map(|public_key| crypto::PublicKey {
                             sum: Some(Bls12381(public_key.to_bytes().to_vec())),
                         }),
                         power: 100,
@@ -138,23 +138,32 @@ impl Quorum {
             ..
         } = value;
 
-        let validator_set = members.into_iter().filter_map(|quorum_member| {
-            if !quorum_member.valid {
-                return None;
-            }
+        let validator_set = members
+            .into_iter()
+            .filter_map(|quorum_member| {
+                if !quorum_member.valid {
+                    return None;
+                }
 
-            let Some(pub_key_share) = quorum_member.pub_key_share else {
-                tracing::debug!(method = "quorum::try_from_info_result", "No public key share for quorum member {}", quorum_member.pro_tx_hash);
-                return None;
-            };
+                let public_key = if let Some(public_key_share) = quorum_member.pub_key_share {
+                    match BlsPublicKey::from_bytes(public_key_share.as_slice())
+                        .map_err(ExecutionError::BlsErrorFromDashCoreResponse)
+                    {
+                        Ok(public_key) => Some(public_key),
+                        Err(e) => return Some(Err(e.into())),
+                    }
+                } else {
+                    None
+                };
 
-            let public_key = match BlsPublicKey::from_bytes(pub_key_share.as_slice()).map_err(ExecutionError::BlsErrorFromDashCoreResponse) {
-                Ok(public_key) => public_key,
-                Err(e) => return Some(Err(e.into())),
-            };
-            let validator = Validator::new_validator_if_masternode_in_state(quorum_member.pro_tx_hash, public_key, state)?;
-            Some(Ok((quorum_member.pro_tx_hash, validator)))
-        }).collect::<Result<BTreeMap<ProTxHash, Validator>, Error>>()?;
+                let validator = Validator::new_validator_if_masternode_in_state(
+                    quorum_member.pro_tx_hash,
+                    public_key,
+                    state,
+                )?;
+                Some(Ok((quorum_member.pro_tx_hash, validator)))
+            })
+            .collect::<Result<BTreeMap<ProTxHash, Validator>, Error>>()?;
 
         let threshold_public_key = BlsPublicKey::from_bytes(quorum_public_key.as_slice())
             .map_err(ExecutionError::BlsErrorFromDashCoreResponse)?;
@@ -174,7 +183,7 @@ pub struct Validator {
     /// The proTxHash
     pub pro_tx_hash: ProTxHash,
     /// The public key share of this validator for this quorum
-    pub public_key: BlsPublicKey,
+    pub public_key: Option<BlsPublicKey>,
     /// The node address
     pub node_ip: String,
     /// The node id
@@ -191,7 +200,7 @@ impl Validator {
     /// Makes a validator if the masternode is in the list and is valid
     pub fn new_validator_if_masternode_in_state(
         pro_tx_hash: ProTxHash,
-        public_key: BlsPublicKey,
+        public_key: Option<BlsPublicKey>,
         state: &PlatformState,
     ) -> Option<Self> {
         let MasternodeListItem { state, .. } = state.hpmn_masternode_list.get(&pro_tx_hash)?;

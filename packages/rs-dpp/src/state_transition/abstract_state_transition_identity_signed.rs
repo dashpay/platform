@@ -68,7 +68,7 @@ where
                 let public_key_compressed = get_compressed_public_ec_key(private_key)?;
                 let pub_key_hash = ripemd160_sha256(&public_key_compressed);
 
-                if pub_key_hash != identity_public_key.data {
+                if identity_public_key.data != pub_key_hash {
                     return Err(ProtocolError::InvalidSignaturePublicKeyError(
                         InvalidSignaturePublicKeyError::new(identity_public_key.data.to_vec()),
                     ));
@@ -473,7 +473,7 @@ mod test {
         let mut keys = get_test_keys();
         keys.identity_public_key.key_type = KeyType::ECDSA_HASH160;
         keys.identity_public_key.data =
-            BinaryData::new(ripemd160_sha256(keys.identity_public_key.data.as_slice()));
+            BinaryData::new(ripemd160_sha256(keys.identity_public_key.data.as_slice()).to_vec());
 
         st.sign(&keys.identity_public_key, &keys.ec_private, &bls)
             .unwrap();

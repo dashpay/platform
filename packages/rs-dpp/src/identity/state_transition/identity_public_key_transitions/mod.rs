@@ -226,7 +226,9 @@ impl IdentityPublicKeyInCreation {
 
     /// Get the original public key hash
     pub fn hash_as_vec(&self) -> Result<Vec<u8>, ProtocolError> {
-        Into::<IdentityPublicKey>::into(self).hash()
+        Into::<IdentityPublicKey>::into(self)
+            .hash()
+            .map(|hash| hash.to_vec())
     }
 
     /// Get the original public key hash

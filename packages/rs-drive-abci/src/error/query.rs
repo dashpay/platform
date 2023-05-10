@@ -4,6 +4,7 @@ use drive::error::proof::ProofError;
 use drive::error::query::QuerySyntaxError as SyntaxError;
 use drive::error::Error as DriveError;
 use prost::DecodeError;
+use tenderdash_abci::proto::abci::ResponseException;
 
 /// Errors
 #[derive(Debug, thiserror::Error)]
@@ -30,4 +31,12 @@ pub enum QueryError {
     /// Decoding error Error
     #[error("protobuf decoding error: {0}")]
     ProtobufDecode(#[from] DecodeError),
+}
+
+impl From<QueryError> for ResponseException {
+    fn from(value: QueryError) -> Self {
+        Self {
+            error: value.to_string(),
+        }
+    }
 }
