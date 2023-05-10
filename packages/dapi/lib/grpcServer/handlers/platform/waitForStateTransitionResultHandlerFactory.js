@@ -11,8 +11,6 @@ const {
   v0: {
     WaitForStateTransitionResultResponse,
     StateTransitionBroadcastError,
-    Proof,
-    ResponseMetadata,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -113,24 +111,9 @@ function waitForStateTransitionResultHandlerFactory(
         { skipValidation: true },
       );
 
-      const { proof: proofObject, metadata } = await fetchProofForStateTransition(stateTransition);
-      const responseMetadata = new ResponseMetadata();
-
-      responseMetadata.setHeight(metadata.height);
-      responseMetadata.setCoreChainLockedHeight(metadata.coreChainLockedHeight);
-      responseMetadata.setTimeMs(metadata.timeMs);
-      responseMetadata.setProtocolVersion(metadata.protocolVersion);
-
-      response.setMetadata(responseMetadata);
-
-      const proof = new Proof();
-
-      proof.setGrovedbProof(proofObject.merkleProof);
-      proof.setQuorumHash(proofObject.quorumHash);
-      proof.setSignature(proofObject.signature);
-      proof.setRound(proofObject.round);
-
-      response.setProof(proof);
+      const stateTransitionProof = await fetchProofForStateTransition(stateTransition);
+      response.setMetadata(stateTransitionProof.getMetadata());
+      response.setProof(stateTransitionProof.getProof());
     }
 
     return response;

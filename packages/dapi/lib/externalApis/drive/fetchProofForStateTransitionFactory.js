@@ -1,3 +1,10 @@
+const {
+  v0: {
+    GetProofsRequest,
+    GetProofsResponse,
+  },
+} = require('@dashevo/dapi-grpc');
+
 /**
  * @param {DriveClient} driveClient
  * @return {fetchProofForStateTransition}
@@ -6,38 +13,46 @@ function fetchProofForStateTransitionFactory(driveClient) {
   /**
    * @typedef {fetchProofForStateTransition}
    * @param {AbstractStateTransition} stateTransition
-   * @return {Promise<Object>}
+   * @return {Promise<GetProofsResponse>}
    */
   async function fetchProofForStateTransition(stateTransition) {
+    const getProofsRequest = new GetProofsRequest();
+
     const modifiedIds = stateTransition.getModifiedDataIds();
 
-    let proof;
-    let metadata;
     if (stateTransition.isDocumentStateTransition()) {
-      ({ documentsProof: proof, metadata } = await driveClient.fetchProofs(
-        {
-          documents: stateTransition.getTransitions().map((documentTransition) => ({
-            dataContractId: documentTransition.getDataContractId().toBuffer(),
-            documentId: documentTransition.getId().toBuffer(),
-            type: documentTransition.getType(),
-          })),
-        },
-      ));
-    } else if (stateTransition.isIdentityStateTransition()) {
-      ({ identitiesProof: proof, metadata } = await driveClient.fetchProofs(
-        {
-          identityIds: modifiedIds.map((identifier) => identifier.toBuffer()),
-        },
-      ));
-    } else if (stateTransition.isDataContractStateTransition()) {
-      ({ dataContractsProof: proof, metadata } = await driveClient.fetchProofs(
-        {
-          dataContractIds: modifiedIds.map((identifier) => identifier.toBuffer()),
-        },
-      ));
+      const { DocumentProofRequest } = GetProofsRequest;
+
+      const documentsList = stateTransition.getTransitions().map((documentTransition) => {
+        const documentRequest = new DocumentProofRequest();
+        documentRequest.setContractId(documentTransition.getDataContractId().toBuffer());
+        documentRequest.setDocumentType(documentTransition.getType());
+        documentRequest.setDocumentId(documentTransition.getId().toBuffer());
+        return documentRequest;
+      });
+
+      getProofsRequest.setDocumentsList(documentsList);
+    } if (stateTransition.isIdentityStateTransition()) {
+      const { IdentityRequest } = GetProofsRequest;
+
+      getProofsRequest.setIdentitiesList(modifiedIds.map((id) => {
+        const identityRequest = new IdentityRequest();
+        identityRequest.setIdentityId(id.toBuffer());
+        identityRequest.setRequestType(IdentityRequest.Type.FULL_IDENTITY);
+        return identityRequest;
+      }));
+    } if (stateTransition.isDataContractStateTransition()) {
+      const { ContractRequest } = GetProofsRequest;
+
+      getProofsRequest.setContractsList(modifiedIds.map((id) => {
+        const identityRequest = new ContractRequest();
+        identityRequest.setContractId(id.toBuffer());
+        return identityRequest;
+      }));
     }
 
-    return { proof, metadata };
+    const responseBytes = await driveClient.fetchProofs(getProofsRequest);
+    return GetProofsResponse.deserializeBinary(responseBytes);
   }
 
   return fetchProofForStateTransition;

@@ -109,20 +109,14 @@ class DriveClient {
   /**
    *  Fetch proofs by ids
    *
-   * @param {{dataContractId: Identifier, documentId: Identifier, type: string}[]} [documents]
-   * @param {Buffer[]} [identityIds]
-   * @param {Buffer[]} [dataContractIds]
+   * @param {GetProofsRequest} request
+
    * @return {Promise<{data: Buffer}>}
    */
-  async fetchProofs({ documents, identityIds, dataContractIds }) {
-    // TBD:
+  async fetchProofs(request) {
     return this.request(
       '/proofs',
-      {
-        documents,
-        identityIds,
-        dataContractIds,
-      },
+      request.serializeBinary(),
     );
   }
 }

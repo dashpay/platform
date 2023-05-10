@@ -18,6 +18,10 @@ const {
     GetDocumentsResponse,
     GetIdentityRequest,
     GetIdentityResponse,
+    GetProofsRequest,
+    GetProofsResponse,
+    Proof,
+    ResponseMetadata,
   },
 } = require('@dashevo/dapi-grpc');
 
@@ -221,40 +225,43 @@ describe('DriveClient', () => {
     });
   });
 
-  // TODO: restore
-  describe.skip('#fetchProofs', () => {
+  describe('#fetchProofs', () => {
     it('should call \'fetchProofs\' RPC with the given parameters', async () => {
       const drive = new DriveClient({ host: '127.0.0.1', port: 3000 });
 
-      const documents = undefined;
       const identityIds = [Buffer.from('id')];
-      const dataContractIds = [Buffer.from('anotherId')];
 
-      const proof = Buffer.from('proof');
-      const buffer = cbor.encode({ data: proof });
+      const request = new GetProofsRequest();
+      request.setIdentitiesList(identityIds.map((id) => {
+        const { IdentityRequest } = GetProofsRequest;
+        const identityRequest = new IdentityRequest();
+        identityRequest.setIdentityId(id);
+        identityRequest.setRequestType(IdentityRequest.Type.FULL_IDENTITY);
+        return identityRequest;
+      }));
+
+      const response = new GetProofsResponse();
+      response.setProof(new Proof());
+      response.setMetadata(new ResponseMetadata());
+      const responseBytes = response.serializeBinary();
 
       sinon.stub(drive.client, 'request')
         .resolves({
           result: {
-            response: { code: 0, value: buffer },
+            response: { code: 0, value: responseBytes },
           },
         });
 
-      const result = await drive.fetchProofs({ documents, identityIds, dataContractIds });
+      const result = await drive.fetchProofs(request);
 
       expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
         path: '/proofs',
-        data: cbor.encode({
-          documents,
-          identityIds,
-          dataContractIds,
-        }).toString('hex'),
-        prove: false,
+        data: Buffer.from(request.serializeBinary()).toString('hex'),
       });
 
-      expect(result).to.be.deep.equal({
-        data: proof,
-      });
+      expect(result).to.be.deep.equal(
+        responseBytes,
+      );
     });
   });
 });
