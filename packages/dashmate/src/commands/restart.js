@@ -1,5 +1,6 @@
 const { Listr } = require('listr2');
 
+const { Flags } = require('@oclif/core');
 const ConfigBaseCommand = require('../oclif/command/ConfigBaseCommand');
 
 const MuteOneLineError = require('../oclif/errors/MuteOneLineError');
@@ -17,6 +18,7 @@ class RestartCommand extends ConfigBaseCommand {
     args,
     {
       verbose: isVerbose,
+      platform: platformOnly,
     },
     dockerCompose,
     restartNodeTask,
@@ -26,7 +28,7 @@ class RestartCommand extends ConfigBaseCommand {
       [
         {
           title: `Restarting ${config.getName()} node`,
-          task: () => restartNodeTask(config),
+          task: () => restartNodeTask(config, { platformOnly }),
         },
       ],
       {
@@ -54,6 +56,7 @@ RestartCommand.description = 'Restart node';
 
 RestartCommand.flags = {
   ...ConfigBaseCommand.flags,
+  platform: Flags.boolean({ char: 'p', description: 'start only platform', default: false }),
 };
 
 module.exports = RestartCommand;

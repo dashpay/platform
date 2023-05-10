@@ -15,16 +15,18 @@ function stopNodeTaskFactory(
    * Stop node
    * @typedef stopNodeTask
    * @param {Config} config
+   * @param {Object} [options={}]
+   * @param {boolean} [options.platformOnly=false]
    *
    * @return {Listr}
    */
-  function stopNodeTask(config) {
+  function stopNodeTask(config, options = {}) {
     return new Listr([
       {
         title: 'Check node is running',
         skip: (ctx) => ctx.isForce,
         task: async () => {
-          if (!await dockerCompose.isServiceRunning(config.toEnvs())) {
+          if (!await dockerCompose.isServiceRunning(config.toEnvs(options))) {
             throw new Error('Node is not running');
           }
         },
@@ -48,7 +50,7 @@ function stopNodeTaskFactory(
       },
       {
         title: `Stopping ${config.getName()} node`,
-        task: async () => dockerCompose.stop(config.toEnvs()),
+        task: async () => dockerCompose.stop(config.toEnvs(options)),
       },
     ]);
   }
