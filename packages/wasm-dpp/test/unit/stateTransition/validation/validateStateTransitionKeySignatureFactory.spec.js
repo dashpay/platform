@@ -16,7 +16,6 @@ describe('validateStateTransitionKeySignatureFactory', () => {
   let StateTransitionKeySignatureValidator;
   let StateTransitionExecutionContext;
   let IdentityCreateTransition;
-  let IdentityTopUpTransition;
   let IdentityNotFoundError;
   let ValidationResult;
 
@@ -26,7 +25,6 @@ describe('validateStateTransitionKeySignatureFactory', () => {
       StateTransitionKeySignatureValidator,
       StateTransitionExecutionContext,
       IdentityCreateTransition,
-      IdentityTopUpTransition,
       IdentityNotFoundError,
       ValidationResult,
     } = await loadWasmDpp());
@@ -86,8 +84,7 @@ describe('validateStateTransitionKeySignatureFactory', () => {
   });
 
   it('should return IdentityNotFoundError if identity not exist on topup transaction', async function () {
-    const stateTransitionJS = getIdentityTopUpTransitionFixture();
-    stateTransition = new IdentityTopUpTransition(stateTransitionJS.toObject());
+    stateTransition = await getIdentityTopUpTransitionFixture();
     stateRepositoryMock.fetchIdentityBalance.resolves(undefined);
 
     const result = await validateStateTransitionKeySignature(

@@ -8,22 +8,18 @@ describe('validateIdentityTopUpTransitionStateFactory', () => {
   let stateTransition;
   let stateRepositoryMock;
 
-  let IdentityTopUpTransition;
   let IdentityTopUpTransitionStateValidator;
 
   before(async () => {
     ({
-      IdentityTopUpTransition,
       IdentityTopUpTransitionStateValidator,
     } = await loadWasmDpp());
   });
 
-  beforeEach(function () {
+  beforeEach(async function () {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 
-    stateTransition = new IdentityTopUpTransition(
-      getIdentityTopUpTransitionFixture().toObject(),
-    );
+    stateTransition = await getIdentityTopUpTransitionFixture();
 
     const validator = new IdentityTopUpTransitionStateValidator(stateRepositoryMock);
 

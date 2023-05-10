@@ -13,14 +13,12 @@ describe('applyIdentityTopUpTransitionFactory', () => {
   let executionContext;
 
   let StateTransitionExecutionContext;
-  let IdentityTopUpTransition;
 
   let applyIdentityTopUpTransitionDPP;
 
   before(async () => {
     ({
       StateTransitionExecutionContext,
-      IdentityTopUpTransition,
       applyIdentityTopUpTransition: applyIdentityTopUpTransitionDPP,
     } = await loadWasmDpp());
   });
@@ -39,9 +37,7 @@ describe('applyIdentityTopUpTransitionFactory', () => {
       height: 42,
     });
 
-    stateTransition = new IdentityTopUpTransition(
-      getIdentityTopUpTransitionFixture().toObject(),
-    );
+    stateTransition = await getIdentityTopUpTransitionFixture();
 
     executionContext = new StateTransitionExecutionContext();
 

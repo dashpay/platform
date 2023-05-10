@@ -18,8 +18,8 @@ describe('IdentityTopUpTransition', () => {
     } = await loadWasmDpp());
   });
 
-  beforeEach(() => {
-    rawStateTransition = getIdentityTopUpTransitionFixture().toObject();
+  beforeEach(async () => {
+    rawStateTransition = (await getIdentityTopUpTransitionFixture()).toObject();
 
     stateTransition = new IdentityTopUpTransition(
       rawStateTransition,
