@@ -123,7 +123,7 @@ RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
     --mount=type=cache,sharing=shared,target=/platform/target \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
-    cargo install wasm-bindgen-cli
+    cargo install --version 0.2.84 wasm-bindgen-cli
 
 #
 # EXECUTE BUILD
