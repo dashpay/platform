@@ -171,6 +171,18 @@ impl From<&BinaryData> for String {
     }
 }
 
+impl PartialEq<&[u8; 20]> for BinaryData {
+    fn eq(&self, other: &&[u8; 20]) -> bool {
+        self.as_slice() == *other
+    }
+}
+
+impl PartialEq<[u8; 20]> for BinaryData {
+    fn eq(&self, other: &[u8; 20]) -> bool {
+        self.as_slice() == *other
+    }
+}
+
 impl PartialEq<&[u8]> for BinaryData {
     fn eq(&self, other: &&[u8]) -> bool {
         self.as_slice() == *other

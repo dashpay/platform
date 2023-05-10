@@ -67,7 +67,7 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else e
 # Install sccache for caching
 RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else export SCC_ARCH=x86_64; fi; \
     curl -Ls \
-        https://github.com/mozilla/sccache/releases/download/v0.4.2/sccache-v0.4.2-${SCC_ARCH}-unknown-linux-musl.tar.gz | \
+        https://github.com/mozilla/sccache/releases/download/v0.4.1/sccache-v0.4.1-${SCC_ARCH}-unknown-linux-musl.tar.gz | \
         tar -C /tmp -xz && \
         mv /tmp/sccache-*/sccache /usr/bin/
 
@@ -99,9 +99,6 @@ RUN rm /usr/bin/cc && ln -s /usr/bin/clang /usr/bin/cc
 ENV RUSTC_WRAPPER=/usr/bin/sccache
 # Set args below to use Github Actions cache; see https://github.com/mozilla/sccache/blob/main/docs/GHA.md
 ARG SCCACHE_GHA_ENABLED
-ARG SCCACHE_BUCKET
-ARG SCCACHE_LOG=debug
-ARG SCCACHE_NO_DAEMON=1
 ARG ACTIONS_CACHE_URL
 ARG ACTIONS_RUNTIME_TOKEN
 # Alternative solution is to use memcache

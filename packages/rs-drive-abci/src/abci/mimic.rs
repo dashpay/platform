@@ -36,6 +36,14 @@ pub struct MimicExecuteBlockOutcome {
     pub withdrawal_transactions: Vec<dashcore_rpc::dashcore::Transaction>,
     /// The next validators hash
     pub next_validator_set_hash: Vec<u8>,
+    /// Root App hash
+    pub root_app_hash: [u8; 32],
+}
+
+/// Options for execution
+pub struct MimicExecuteBlockOptions {
+    /// don't finalize block
+    pub dont_finalize_block: bool,
 }
 
 impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
@@ -49,6 +57,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
         block_info: BlockInfo,
         expect_validation_errors: bool,
         state_transitions: Vec<StateTransition>,
+        options: MimicExecuteBlockOptions,
     ) -> Result<MimicExecuteBlockOutcome, Error> {
         let mut rng = StdRng::seed_from_u64(block_info.height);
         let block_hash: [u8; 32] = rng.gen(); // We fake a block hash for the test
@@ -319,7 +328,7 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                     next_validators_hash: next_validator_set_hash.clone(),
                     consensus_hash: [0; 32].to_vec(),
                     next_consensus_hash: [0; 32].to_vec(),
-                    app_hash,
+                    app_hash: app_hash.clone(),
                     results_hash: [0; 32].to_vec(),
                     evidence_hash: vec![],
                     proposed_app_version: 0,
@@ -336,17 +345,22 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             block_id: Some(block_id),
         };
 
-        self.finalize_block(request_finalize_block)
-            .unwrap_or_else(|e| {
-                panic!(
-                    "should finalize block #{} at time #{} : {:?}",
-                    block_info.height, block_info.time_ms, e
-                )
-            });
+        if !options.dont_finalize_block {
+            self.finalize_block(request_finalize_block)
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "should finalize block #{} at time #{} : {:?}",
+                        block_info.height, block_info.time_ms, e
+                    )
+                });
+        }
 
         Ok(MimicExecuteBlockOutcome {
             withdrawal_transactions: withdrawals,
             next_validator_set_hash,
+            root_app_hash: app_hash
+                .try_into()
+                .expect("expected 32 bytes for the root hash"),
         })
     }
 }
