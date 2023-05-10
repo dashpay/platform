@@ -104,16 +104,7 @@ describe('getDocumentsHandlerFactory', () => {
     expect(documentsBinary).to.have.lengthOf(documentsFixture.length);
 
     expect(driveStateRepositoryMock.fetchDocuments).to.be.calledOnceWith(
-      dataContractId.toBuffer(),
-      documentType,
-      {
-        where,
-        orderBy,
-        limit,
-        startAfter: Buffer.from(startAfter),
-        startAt: undefined,
-      },
-      false,
+      call.request,
     );
 
     expect(documentsBinary[0]).to.deep.equal(documentsSerialized[0]);
@@ -131,16 +122,7 @@ describe('getDocumentsHandlerFactory', () => {
     expect(result).to.be.an.instanceOf(GetDocumentsResponse);
 
     expect(driveStateRepositoryMock.fetchDocuments).to.be.calledOnceWith(
-      dataContractId.toBuffer(),
-      documentType,
-      {
-        where,
-        orderBy,
-        limit,
-        startAfter: Buffer.from(startAfter),
-        startAt: undefined,
-      },
-      true,
+      call.request,
     );
 
     const proof = result.getProof();

@@ -28,16 +28,12 @@ function getIdentitiesByPublicKeyHashesHandlerFactory(
   async function getIdentitiesByPublicKeyHashesHandler(call) {
     const { request } = call;
 
-    const publicKeyHashes = request.getPublicKeyHashesList();
-
-    if (publicKeyHashes.length === 0) {
+    if (request.getPublicKeyHashesList().length === 0) {
       throw new InvalidArgumentGrpcError('No public key hashes were provided');
     }
 
-    const prove = request.getProve();
-
     const identitiesResponseBuffer = await driveClient
-      .fetchIdentitiesByPublicKeyHashes(publicKeyHashes.map(Buffer.from), prove);
+      .fetchIdentitiesByPublicKeyHashes(request);
 
     return GetIdentitiesByPublicKeyHashesResponse.deserializeBinary(identitiesResponseBuffer);
   }

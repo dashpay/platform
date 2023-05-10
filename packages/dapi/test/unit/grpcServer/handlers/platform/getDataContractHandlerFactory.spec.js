@@ -26,7 +26,7 @@ const getDataContractHandlerFactory = require(
 describe('getDataContractHandlerFactory', () => {
   let call;
   let getDataContractHandler;
-  let driveStateRepositoryMock;
+  let driveClientMock;
   let request;
   let id;
   let dataContractFixture;
@@ -55,12 +55,12 @@ describe('getDataContractHandlerFactory', () => {
     response.setProof(proofMock);
     response.setDataContract(dataContractFixture.toBuffer());
 
-    driveStateRepositoryMock = {
+    driveClientMock = {
       fetchDataContract: this.sinon.stub().resolves(response.serializeBinary()),
     };
 
     getDataContractHandler = getDataContractHandlerFactory(
-      driveStateRepositoryMock,
+      driveClientMock,
     );
   });
 
@@ -81,13 +81,13 @@ describe('getDataContractHandlerFactory', () => {
 
     expect(merkleProof).to.deep.equal(proofFixture.merkleProof);
 
-    expect(driveStateRepositoryMock.fetchDataContract).to.be.calledOnceWith(id.toBuffer(), true);
+    expect(driveClientMock.fetchDataContract).to.be.calledOnceWith(call.request);
   });
 
   it('should not include proof', async () => {
     request.getProve.returns(false);
     response.setProof(null);
-    driveStateRepositoryMock.fetchDataContract.resolves(response.serializeBinary());
+    driveClientMock.fetchDataContract.resolves(response.serializeBinary());
 
     const result = await getDataContractHandler(call);
 
@@ -96,7 +96,7 @@ describe('getDataContractHandlerFactory', () => {
 
     expect(proof).to.be.undefined();
 
-    expect(driveStateRepositoryMock.fetchDataContract).to.be.calledOnceWith(id.toBuffer(), false);
+    expect(driveClientMock.fetchDataContract).to.be.calledOnceWith(call.request);
   });
 
   it('should throw InvalidArgumentGrpcError error if id is not specified', async () => {
@@ -110,7 +110,7 @@ describe('getDataContractHandlerFactory', () => {
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
       expect(e.getMessage()).to.equal('id is not specified');
-      expect(driveStateRepositoryMock.fetchDataContract).to.be.not.called();
+      expect(driveClientMock.fetchDataContract).to.be.not.called();
     }
   });
 
@@ -118,7 +118,7 @@ describe('getDataContractHandlerFactory', () => {
     const message = 'Some error';
     const abciResponseError = new Error(message);
 
-    driveStateRepositoryMock.fetchDataContract.throws(abciResponseError);
+    driveClientMock.fetchDataContract.throws(abciResponseError);
 
     try {
       await getDataContractHandler(call);

@@ -27,14 +27,12 @@ function getDataContractHandlerFactory(driveClient) {
    */
   async function getDataContractHandler(call) {
     const { request } = call;
-    const id = request.getId();
-    const prove = request.getProve();
 
-    if (id === null) {
+    if (request.getId() === null) {
       throw new InvalidArgumentGrpcError('id is not specified');
     }
 
-    const dataContractResponseBuffer = await driveClient.fetchDataContract(Buffer.from(id), prove);
+    const dataContractResponseBuffer = await driveClient.fetchDataContract(request);
 
     return GetDataContractResponse.deserializeBinary(dataContractResponseBuffer);
   }
