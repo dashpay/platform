@@ -20,7 +20,7 @@ impl Drive {
     /// * `PathQuery` - A `PathQuery` object representing the query for fetching the contract data.
     pub fn fetch_contract_query(contract_id: [u8; 32]) -> PathQuery {
         let contract_path = contract_root_path_vec(contract_id.as_slice());
-        PathQuery::new_single_key(contract_path, encode_u64(0).unwrap())
+        PathQuery::new_single_key(contract_path, vec![0])
     }
 
     /// Creates a merged path query for multiple contracts.

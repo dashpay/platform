@@ -28,7 +28,7 @@ impl Drive {
                     "we did not get back an element for the correct path for the contract",
                 )));
             }
-            if key != encode_u64(0).unwrap() {
+            if key != vec![0] {
                 return Err(Error::Proof(ProofError::CorruptedProof(
                     "we did not get back an element for the correct key for the contract",
                 )));
