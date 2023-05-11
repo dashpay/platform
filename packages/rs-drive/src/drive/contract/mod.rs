@@ -47,7 +47,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 #[cfg(feature = "full")]
 use std::collections::{HashMap, HashSet};
-use std::ops::{Add, AddAssign};
+use std::ops::AddAssign;
 #[cfg(feature = "full")]
 use std::sync::Arc;
 

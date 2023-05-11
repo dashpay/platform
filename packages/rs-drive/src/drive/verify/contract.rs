@@ -1,5 +1,3 @@
-use crate::common::encode::encode_u64;
-use crate::contract::Contract;
 use crate::drive::contract::paths::{contract_keeping_history_storage_path, contract_root_path};
 use crate::drive::verify::RootHash;
 use crate::drive::Drive;
@@ -7,8 +5,7 @@ use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::error::Error::GroveDB;
 use dpp::prelude::DataContract;
-use dpp::serialization_traits::PlatformDeserializable;
-use grovedb::query_result_type::PathKeyOptionalElementTrio;
+
 use grovedb::GroveDb;
 
 impl Drive {

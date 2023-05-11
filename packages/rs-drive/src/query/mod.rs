@@ -42,8 +42,7 @@ pub use grovedb::{PathQuery, Query, QueryItem, SizedQuery};
 
 #[cfg(any(feature = "full", feature = "verify"))]
 use indexmap::IndexMap;
-#[cfg(feature = "full")]
-use integer_encoding::VarInt;
+
 #[cfg(any(feature = "full", feature = "verify"))]
 use sqlparser::ast;
 #[cfg(any(feature = "full", feature = "verify"))]

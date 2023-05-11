@@ -1,20 +1,20 @@
 use crate::frequency::Frequency;
-use crate::strategy::{ChainExecutionParameters, StrategyRandomness};
+use crate::strategy::StrategyRandomness;
 use dapi_grpc::platform::v0::{
     GetIdentitiesByPublicKeyHashesRequest, GetIdentitiesByPublicKeyHashesResponse,
 };
-use dpp::identity::{Identity, KeyID, PartialIdentity};
+use dpp::identity::{Identity, PartialIdentity};
 use dpp::serialization_traits::PlatformDeserializable;
 use drive::drive::verify::RootHash;
 use drive::drive::Drive;
 use drive_abci::abci::AbciApplication;
-use drive_abci::config::PlatformConfig;
+
 use drive_abci::rpc::core::MockCoreRPCLike;
 use prost::Message;
 use rand::prelude::SliceRandom;
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Debug, Default)]
 pub struct QueryStrategy {

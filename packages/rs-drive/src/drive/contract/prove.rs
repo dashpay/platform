@@ -1,7 +1,6 @@
-use crate::drive::verify::RootHash;
 use crate::drive::Drive;
 use crate::error::Error;
-use grovedb::query_result_type::QueryResultType;
+
 use grovedb::TransactionArg;
 
 impl Drive {

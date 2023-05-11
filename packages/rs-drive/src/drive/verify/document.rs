@@ -1,5 +1,5 @@
 use crate::drive::verify::RootHash;
-use crate::drive::Drive;
+
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::query::DriveQuery;
@@ -30,7 +30,7 @@ impl<'a> DriveQuery<'a> {
 
         let documents = proved_key_values
             .into_iter()
-            .filter_map(|(path, key, element)| element)
+            .filter_map(|(_path, _key, element)| element)
             .map(|element| element.into_item_bytes().map_err(Error::GroveDB))
             .collect::<Result<Vec<Vec<u8>>, Error>>()?;
         Ok((root_hash, documents))

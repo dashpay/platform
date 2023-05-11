@@ -659,7 +659,7 @@ pub fn setup_dpns_tests_with_batches(count: u32, seed: u64) -> (Drive, Contract)
 
 #[cfg(feature = "full")]
 /// Sets up the References contract to test queries on.
-pub fn setup_references_tests(count: u32, seed: u64) -> (Drive, Contract) {
+pub fn setup_references_tests(_count: u32, _seed: u64) -> (Drive, Contract) {
     let drive = setup_drive(Some(DriveConfig::default()));
 
     let db_transaction = drive.grove.start_transaction();

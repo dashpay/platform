@@ -1,6 +1,5 @@
-use crate::common::encode::encode_u64;
 use crate::drive::contract::paths::{
-    contract_keeping_history_storage_path_vec, contract_root_path_vec, contract_storage_path_vec,
+    contract_keeping_history_storage_path_vec, contract_root_path_vec,
 };
 use crate::drive::Drive;
 use crate::error::Error;
