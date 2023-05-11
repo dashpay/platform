@@ -87,7 +87,7 @@ class DriveClient {
    */
   async fetchIdentity(request) {
     return this.request(
-      '/identities',
+      '/identity',
       request.serializeBinary(),
     );
   }

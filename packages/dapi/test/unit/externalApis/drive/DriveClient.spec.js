@@ -185,7 +185,7 @@ describe('DriveClient', () => {
       const result = await drive.fetchIdentity(request);
 
       expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
-        path: '/identities',
+        path: '/identity',
         data: Buffer.from(request.serializeBinary()).toString('hex'),
       });
       expect(result).to.be.deep.equal(responseBytes);

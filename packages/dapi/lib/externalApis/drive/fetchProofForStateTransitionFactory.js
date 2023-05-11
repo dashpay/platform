@@ -21,10 +21,10 @@ function fetchProofForStateTransitionFactory(driveClient) {
     const modifiedIds = stateTransition.getModifiedDataIds();
 
     if (stateTransition.isDocumentStateTransition()) {
-      const { DocumentProofRequest } = GetProofsRequest;
+      const { DocumentRequest } = GetProofsRequest;
 
       const documentsList = stateTransition.getTransitions().map((documentTransition) => {
-        const documentRequest = new DocumentProofRequest();
+        const documentRequest = new DocumentRequest();
         documentRequest.setContractId(documentTransition.getDataContractId().toBuffer());
         documentRequest.setDocumentType(documentTransition.getType());
         documentRequest.setDocumentId(documentTransition.getId().toBuffer());
