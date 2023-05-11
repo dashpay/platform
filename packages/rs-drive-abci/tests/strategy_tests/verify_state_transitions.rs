@@ -62,9 +62,32 @@ pub(crate) fn verify_state_transitions_were_executed(
                     .platform
                     .query("/proofs", &proofs_request.encode_to_vec())
                     .expect("expected to query proofs");
-                let response_proof = result.into_data().expect("expected queries to be valid");
-                // we expect to get a data contract that matches the state transition
-                //todo
+                let serialized_get_proofs_response =
+                    result.into_data().expect("expected queries to be valid");
+
+                let GetProofsResponse { proof, metadata } =
+                    GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
+                        .expect("expected to decode proof response");
+
+                let response_proof = proof.expect("proof should be present");
+
+                // we expect to get an identity that matches the state transition
+                let (root_hash, contract) = Drive::verify_contract(
+                    &response_proof.grovedb_proof,
+                    None,
+                    false,
+                    data_contract_create.data_contract.id.into_buffer(),
+                )
+                .expect("expected to verify full identity");
+                assert_eq!(
+                    &root_hash, expected_root_hash,
+                    "state last block info {:?}",
+                    platform.state.last_committed_block_info
+                );
+                assert_eq!(
+                    &contract.expect("expected a contract"),
+                    &data_contract_create.data_contract,
+                )
             }
             StateTransitionAction::DataContractUpdateAction(data_contract_update) => {
                 proofs_request
@@ -76,9 +99,32 @@ pub(crate) fn verify_state_transitions_were_executed(
                     .platform
                     .query("/proofs", &proofs_request.encode_to_vec())
                     .expect("expected to query proofs");
-                let response_proof = result.into_data().expect("expected queries to be valid");
-                // we expect to get a data contract that matches the state transition
-                //todo
+                let serialized_get_proofs_response =
+                    result.into_data().expect("expected queries to be valid");
+
+                let GetProofsResponse { proof, metadata } =
+                    GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
+                        .expect("expected to decode proof response");
+
+                let response_proof = proof.expect("proof should be present");
+
+                // we expect to get an identity that matches the state transition
+                let (root_hash, contract) = Drive::verify_contract(
+                    &response_proof.grovedb_proof,
+                    None,
+                    false,
+                    data_contract_update.data_contract.id.into_buffer(),
+                )
+                .expect("expected to verify full identity");
+                assert_eq!(
+                    &root_hash, expected_root_hash,
+                    "state last block info {:?}",
+                    platform.state.last_committed_block_info
+                );
+                assert_eq!(
+                    &contract.expect("expected a contract"),
+                    &data_contract_update.data_contract,
+                )
             }
             StateTransitionAction::DocumentsBatchAction(_) => {}
             StateTransitionAction::IdentityCreateAction(identity_create_transition) => {
@@ -109,7 +155,11 @@ pub(crate) fn verify_state_transitions_were_executed(
                     identity_create_transition.identity_id.into_buffer(),
                 )
                 .expect("expected to verify full identity");
-                assert_eq!(&root_hash, expected_root_hash, "state last block info {:?}",  platform.state.last_committed_block_info);
+                assert_eq!(
+                    &root_hash, expected_root_hash,
+                    "state last block info {:?}",
+                    platform.state.last_committed_block_info
+                );
                 assert_eq!(
                     identity
                         .expect("expected an identity")
@@ -138,9 +188,31 @@ pub(crate) fn verify_state_transitions_were_executed(
                     .platform
                     .query("/proofs", &proofs_request.encode_to_vec())
                     .expect("expected to query proofs");
-                let response_proof = result.into_data().expect("expected queries to be valid");
+                let serialized_get_proofs_response =
+                    result.into_data().expect("expected queries to be valid");
+
+                let GetProofsResponse { proof, metadata } =
+                    GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
+                        .expect("expected to decode proof response");
+
+                let response_proof = proof.expect("proof should be present");
+
                 // we expect to get an identity that matches the state transition
-                //todo
+                let (root_hash, balance) = Drive::verify_identity_balance_for_identity_id(
+                    &response_proof.grovedb_proof,
+                    identity_top_up_transition.identity_id.into_buffer(),
+                )
+                .expect("expected to verify balance identity");
+                let balance = balance.expect("expected a balance");
+                assert_eq!(
+                    &root_hash, expected_root_hash,
+                    "state last block info {:?}",
+                    platform.state.last_committed_block_info
+                );
+
+                //while this isn't 100% sure to be true (in the case of debt,
+                // for the tests we have we can use it
+                assert!(identity_top_up_transition.top_up_balance_amount <= balance);
             }
             StateTransitionAction::IdentityCreditWithdrawalAction(
                 identity_credit_withdrawal_transition,
@@ -171,8 +243,39 @@ pub(crate) fn verify_state_transitions_were_executed(
                     .platform
                     .query("/proofs", &proofs_request.encode_to_vec())
                     .expect("expected to query proofs");
-                let response_proof = result.into_data().expect("expected queries to be valid");
+                let serialized_get_proofs_response =
+                    result.into_data().expect("expected queries to be valid");
+
+                let GetProofsResponse { proof, metadata } =
+                    GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
+                        .expect("expected to decode proof response");
+
+                let response_proof = proof.expect("proof should be present");
+
                 // we expect to get an identity that matches the state transition
+                let (root_hash, identity) = Drive::verify_identity_keys_by_identity_id(
+                    &response_proof.grovedb_proof,
+                    false,
+                    identity_update_transition.identity_id.into_buffer(),
+                )
+                .expect("expected to verify identity keys");
+                let identity = identity.expect("expected an identity");
+                assert_eq!(
+                    &root_hash, expected_root_hash,
+                    "state last block info {:?}",
+                    platform.state.last_committed_block_info
+                );
+                // we need to verify that the partial identity has all keys we added
+                let has_all_keys = identity_update_transition
+                    .add_public_keys
+                    .iter()
+                    .all(|added| identity.loaded_public_keys.contains_key(&added.id));
+                let has_no_removed_key = !identity_update_transition
+                    .disable_public_keys
+                    .iter()
+                    .any(|removed| identity.loaded_public_keys.contains_key(removed));
+                assert!(has_all_keys);
+                assert!(has_no_removed_key);
             }
         }
     }

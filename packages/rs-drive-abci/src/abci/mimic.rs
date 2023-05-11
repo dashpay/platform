@@ -353,7 +353,13 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             ),
         ))?;
 
-        let root_hash_before_finalization = self.platform.drive.grove.root_hash(Some(transaction)).unwrap().unwrap();
+        let root_hash_before_finalization = self
+            .platform
+            .drive
+            .grove
+            .root_hash(Some(transaction))
+            .unwrap()
+            .unwrap();
         assert_eq!(app_hash, root_hash_before_finalization);
         drop(transaction_guard);
 
@@ -365,7 +371,8 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                         block_info.height, block_info.time_ms, e
                     )
                 });
-            let root_hash_after_finalization = self.platform.drive.grove.root_hash(None).unwrap().unwrap();
+            let root_hash_after_finalization =
+                self.platform.drive.grove.root_hash(None).unwrap().unwrap();
             assert_eq!(app_hash, root_hash_after_finalization);
         }
 

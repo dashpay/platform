@@ -230,25 +230,29 @@ where
         {
             // Set current protocol version to the version from upcoming epoch
             block_execution_context
-                .block_platform_state.current_protocol_version_in_consensus =
-                block_execution_context
-                    .block_platform_state.next_epoch_protocol_version;
+                .block_platform_state
+                .current_protocol_version_in_consensus = block_execution_context
+                .block_platform_state
+                .next_epoch_protocol_version;
 
             // Determine new protocol version based on votes for the next epoch
             let maybe_new_protocol_version = self.check_for_desired_protocol_upgrade(
                 block_execution_context.hpmn_count,
                 block_execution_context
-                    .block_platform_state.current_protocol_version_in_consensus,
+                    .block_platform_state
+                    .current_protocol_version_in_consensus,
                 transaction,
             )?;
             if let Some(new_protocol_version) = maybe_new_protocol_version {
                 block_execution_context
-                    .block_platform_state.next_epoch_protocol_version = new_protocol_version;
+                    .block_platform_state
+                    .next_epoch_protocol_version = new_protocol_version;
             } else {
                 block_execution_context
-                    .block_platform_state.next_epoch_protocol_version =
-                    block_execution_context
-                        .block_platform_state.current_protocol_version_in_consensus;
+                    .block_platform_state
+                    .next_epoch_protocol_version = block_execution_context
+                    .block_platform_state
+                    .current_protocol_version_in_consensus;
             }
         }
 
