@@ -32,7 +32,7 @@ class StartCommand extends ConfigBaseCommand {
       [
         {
           title: `Start ${config.getName()} node`,
-          task: () => startNodeTask(config, { platformOnly }),
+          task: () => startNodeTask(config),
         },
         {
           title: 'Wait for nodes to be ready',
@@ -54,6 +54,7 @@ class StartCommand extends ConfigBaseCommand {
     try {
       await tasks.run({
         isVerbose,
+        platformOnly: platformOnly === true,
       });
     } catch (e) {
       throw new MuteOneLineError(e);
