@@ -9,7 +9,7 @@ const providers = require('../../../../src/status/providers');
 const ServiceStatusEnum = require('../../../../src/status/enums/serviceStatus');
 const PortStateEnum = require("../../../../src/status/enums/portState");
 
-describe.only('getPlatformScopeFactory', () => {
+describe('getPlatformScopeFactory', () => {
   describe('#getPlatformScope', () => {
     let mockRpcClient;
     let mockCreateRpcClient;

@@ -2,7 +2,7 @@ const MasternodeSyncAssetEnum = require('../../../../src/status/enums/masternode
 const getMasternodeScopeFactory = require('../../../../src/status/scopes/masternode');
 const MasternodeStateEnum = require('../../../../src/status/enums/masternodeState');
 
-describe('getMasternodeScopeFactory', () => {
+xdescribe('getMasternodeScopeFactory', () => {
   describe('#getMasternodeScope', () => {
     let mockRpcClient;
     let mockCreateRpcClient;

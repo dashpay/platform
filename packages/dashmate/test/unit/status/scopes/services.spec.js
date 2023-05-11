@@ -37,5 +37,17 @@ describe('getServicesScopeFactory', () => {
         expect(service.status).to.be.equal('running');
       }
     });
+
+    it('should work if docker throws', async () => {
+      mockDockerCompose.inspectService.throws()
+
+      const scope = await getServicesScope(config);
+
+      for (const [, service] of Object.entries(scope)) {
+        expect(service.containerId).to.be.equal(null);
+        expect(service.image).to.be.equal(null);
+        expect(service.status).to.be.equal(null);
+      }
+    });
   });
 });

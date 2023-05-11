@@ -58,12 +58,19 @@ function getServicesScopeFactory(dockerCompose) {
           status,
         };
       } catch (e) {
+        status = null
+
         if (e instanceof ContainerIsNotPresentError) {
           status = 'not_started';
         }
-      }
 
-      services[serviceName] = null;
+        services[serviceName] = {
+          humanName: null,
+          containerId: null,
+          image: null,
+          status: status,
+        };
+      }
     }
 
     return services;

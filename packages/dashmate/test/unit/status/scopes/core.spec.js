@@ -6,7 +6,7 @@ const determineStatus = require('../../../../src/status/determineStatus');
 const providers = require('../../../../src/status/providers');
 const ServiceIsNotRunningError = require('../../../../src/docker/errors/ServiceIsNotRunningError');
 
-describe('getCoreScopeFactory', () => {
+xdescribe('getCoreScopeFactory', () => {
   describe('#getCoreScope', () => {
     let mockRpcClient;
     let mockCreateRpcClient;

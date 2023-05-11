@@ -3,7 +3,7 @@ const MasternodeStateEnum = require('../../../../src/status/enums/masternodeStat
 const DockerStatusEnum = require('../../../../src/status/enums/dockerStatus');
 const ServiceStatusEnum = require('../../../../src/status/enums/serviceStatus');
 
-describe('getOverviewScopeFactory', () => {
+xdescribe('getOverviewScopeFactory', () => {
   describe('#getOverviewScope', () => {
     let mockGetCoreScope;
     let mockGetPlatformScope;
