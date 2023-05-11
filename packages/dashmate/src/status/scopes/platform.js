@@ -1,7 +1,6 @@
 const fetch = require('node-fetch');
 const determineStatus = require('../determineStatus');
 const ServiceStatusEnum = require('../enums/serviceStatus');
-const MasternodeStateEnum = require('../enums/masternodeState');
 const providers = require('../providers');
 
 /**
@@ -11,7 +10,7 @@ const providers = require('../providers');
  * @param getConnectionHost {getConnectionHost}
  */
 function getPlatformScopeFactory(dockerCompose,
-                                 createRpcClient, getConnectionHost) {
+  createRpcClient, getConnectionHost) {
   async function getMNSync(config) {
     const rpcClient = createRpcClient({
       port: config.get('core.rpc.port'),
@@ -26,8 +25,7 @@ function getPlatformScopeFactory(dockerCompose,
       },
     } = await rpcClient.mnsync('status');
 
-
-    return isSynced
+    return isSynced;
   }
 
   async function getTenderdashInfo(config, isCoreSynced) {
@@ -44,13 +42,13 @@ function getPlatformScopeFactory(dockerCompose,
       peers: null,
       moniker: null,
       network: null,
-    }
+    };
 
     const dockerStatus = await determineStatus.docker(dockerCompose, config, 'drive_tenderdash');
     const serviceStatus = determineStatus.platform(dockerStatus, isCoreSynced);
 
-    info.dockerStatus = dockerStatus
-    info.serviceStatus = serviceStatus
+    info.dockerStatus = dockerStatus;
+    info.serviceStatus = serviceStatus;
 
     // Collecting platform data fails if Tenderdash is waiting for core to sync
     if (serviceStatus === ServiceStatusEnum.up) {
@@ -58,13 +56,13 @@ function getPlatformScopeFactory(dockerCompose,
         providers.mnowatch.checkPortStatus(config.get('platform.dapi.envoy.http.port')),
         providers.mnowatch.checkPortStatus(config.get('platform.drive.tenderdash.p2p.port')),
       ]);
-      const [httpPortState, p2pPortState] = portStatusResult.map(result => result.status === 'fulfilled' ? result.value : null)
+      const [httpPortState, p2pPortState] = portStatusResult.map((result) => (result.status === 'fulfilled' ? result.value : null));
 
       info.httpPortState = httpPortState;
       info.p2pPortState = p2pPortState;
 
       try {
-        const tenderdashHost = await getConnectionHost(config, 'drive_tenderdash')
+        const tenderdashHost = await getConnectionHost(config, 'drive_tenderdash');
 
         const [tenderdashStatusResponse, tenderdashNetInfoResponse] = await Promise.all([
           fetch(`http://${tenderdashHost}:${config.get('platform.drive.tenderdash.rpc.port')}/status`),
@@ -76,7 +74,7 @@ function getPlatformScopeFactory(dockerCompose,
           tenderdashNetInfoResponse.json(),
         ]);
 
-        const {version, network, moniker} = tenderdashStatus.node_info;
+        const { version, network, moniker } = tenderdashStatus.node_info;
 
         const catchingUp = tenderdashStatus.sync_info.catching_up;
         const latestBlockHeight = tenderdashStatus.sync_info.latest_block_height;
@@ -85,7 +83,7 @@ function getPlatformScopeFactory(dockerCompose,
         const latestAppHash = tenderdashStatus.sync_info.latest_app_hash;
 
         const platformPeers = parseInt(tenderdashNetInfo.n_peers, 10);
-        const {listening} = tenderdashNetInfo;
+        const { listening } = tenderdashNetInfo;
 
         info.version = version;
         info.listening = listening;
@@ -98,15 +96,11 @@ function getPlatformScopeFactory(dockerCompose,
         info.moniker = moniker;
         info.network = network;
       } catch (e) {
-        if (e.name === 'FetchError') {
-          info.serviceStatus = ServiceStatusEnum.error;
-        } else {
-          throw e;
-        }
+        info.serviceStatus = ServiceStatusEnum.error;
       }
-
-      return info
     }
+
+    return info;
   }
 
   const getDriveInfo = async (config, isCoreSynced) => {
@@ -120,8 +114,8 @@ function getPlatformScopeFactory(dockerCompose,
       serviceStatus = ServiceStatusEnum.error;
     }
 
-    return {dockerStatus, serviceStatus}
-  }
+    return { dockerStatus, serviceStatus };
+  };
 
   /**
    * Get platform status scope
@@ -174,9 +168,9 @@ function getPlatformScopeFactory(dockerCompose,
       scope.coreIsSynced = coreIsSynced;
 
       if (!coreIsSynced) {
-        console.error(`Platform status is not available until masternode state is 'READY'`)
+        console.error('Platform status is not available until masternode state is \'READY\'');
 
-        return scope
+        return scope;
       }
 
       const response = await Promise.allSettled([
@@ -184,23 +178,23 @@ function getPlatformScopeFactory(dockerCompose,
         getDriveInfo(config, coreIsSynced),
       ]);
 
-      const [tenderdash, drive] = response.map(result => result.status === 'fulfilled' ? result.value : null)
+      const [tenderdash, drive] = response.map((result) => (result.status === 'fulfilled' ? result.value : null));
 
       if (tenderdash) {
-        scope.tenderdash = tenderdash
+        scope.tenderdash = tenderdash;
 
-        scope.httpPortState = tenderdash.httpPortState
-        scope.p2pPortState = tenderdash.p2pPortState
+        scope.httpPortState = tenderdash.httpPortState;
+        scope.p2pPortState = tenderdash.p2pPortState;
       }
 
       if (drive) {
-        scope.drive = drive
+        scope.drive = drive;
       }
     } catch (e) {
-      console.error(e)
+      console.error(e);
     }
 
-    return scope
+    return scope;
   }
 
   return getPlatformScope;

@@ -4,7 +4,6 @@ const determineStatus = require('../determineStatus');
 const providers = require('../providers');
 const extractCoreVersion = require('../../core/extractCoreVersion');
 const ServiceStatusEnum = require('../enums/serviceStatus');
-const ServiceIsNotRunningError = require('../../docker/errors/ServiceIsNotRunningError');
 
 /**
  * @returns {getCoreScopeFactory}
@@ -13,7 +12,7 @@ const ServiceIsNotRunningError = require('../../docker/errors/ServiceIsNotRunnin
  * @param getConnectionHost {getConnectionHost}
  */
 function getCoreScopeFactory(dockerCompose,
-                             createRpcClient, getConnectionHost) {
+  createRpcClient, getConnectionHost) {
   /*
    * Get core status scope
    *
@@ -58,7 +57,7 @@ function getCoreScopeFactory(dockerCompose,
       if (!(await dockerCompose.isServiceRunning(config.toEnvs(), 'core'))) {
         core.serviceStatus = ServiceStatusEnum.stopped;
 
-        return core
+        return core;
       }
 
       core.dockerStatus = await determineStatus.docker(dockerCompose, config, 'core');
@@ -76,7 +75,7 @@ function getCoreScopeFactory(dockerCompose,
           rpcClient.getBlockchainInfo(),
         ]);
 
-        const {AssetName: syncAsset} = mnsyncStatus.result;
+        const { AssetName: syncAsset } = mnsyncStatus.result;
         core.serviceStatus = determineStatus.core(core.dockerStatus, syncAsset);
         core.syncAsset = syncAsset;
 
@@ -91,13 +90,12 @@ function getCoreScopeFactory(dockerCompose,
         core.verificationProgress = verificationprogress;
         core.sizeOnDisk = size_on_disk;
 
-        const {subversion, connections} = networkInfo.result;
+        const { subversion, connections } = networkInfo.result;
 
         core.peersCount = connections;
         core.version = extractCoreVersion(subversion);
-
       } catch (e) {
-        core.serviceStatus = ServiceStatusEnum.error
+        core.serviceStatus = ServiceStatusEnum.error;
       }
 
       const providersResult = await Promise.allSettled([
@@ -115,8 +113,8 @@ function getCoreScopeFactory(dockerCompose,
 
       return core;
     } catch (e) {
-      console.error(e)
-      return core
+      console.error(e);
+      return core;
     }
   }
 

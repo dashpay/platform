@@ -19,10 +19,10 @@ describe('getMasternodeScopeFactory', () => {
         masternode: this.sinon.stub(),
       };
       mockCreateRpcClient = () => mockRpcClient;
-      mockDockerCompose = {execCommand: this.sinon.stub()};
+      mockDockerCompose = { execCommand: this.sinon.stub() };
       mockGetConnectionHost = this.sinon.stub();
 
-      config = {get: this.sinon.stub(), toEnvs: this.sinon.stub()};
+      config = { get: this.sinon.stub(), toEnvs: this.sinon.stub() };
       getMasternodeScope = getMasternodeScopeFactory(mockDockerCompose,
         mockCreateRpcClient, mockGetConnectionHost);
     });
@@ -37,10 +37,10 @@ describe('getMasternodeScopeFactory', () => {
       });
       mockDockerCompose.execCommand
         .withArgs(config.toEnvs(), 'sentinel', 'python bin/sentinel.py')
-        .returns({out: ''});
+        .returns({ out: '' });
       mockDockerCompose.execCommand
         .withArgs(config.toEnvs(), 'sentinel', 'python bin/sentinel.py -v')
-        .returns({out: 'Dash Sentinel v1.7.3'});
+        .returns({ out: 'Dash Sentinel v1.7.3' });
 
       const mockProTxHash = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
       const mockDmnState = {
@@ -50,8 +50,8 @@ describe('getMasternodeScopeFactory', () => {
         registeredHeight: 400,
       };
 
-      mockRpcClient.getBlockchainInfo.returns({result: {blocks: 1337}});
-      mockRpcClient.masternode.withArgs('count').returns({result: {enabled: 666}});
+      mockRpcClient.getBlockchainInfo.returns({ result: { blocks: 1337 } });
+      mockRpcClient.masternode.withArgs('count').returns({ result: { enabled: 666 } });
       mockRpcClient.masternode.withArgs('status').returns({
         result: {
           dmnState: mockDmnState,
@@ -79,16 +79,16 @@ describe('getMasternodeScopeFactory', () => {
           // ignore these 3
           lastPaidTime: scope.nodeState.lastPaidTime,
           nextPaymentTime: scope.nodeState.nextPaymentTime,
-          paymentQueuePosition: scope.nodeState.paymentQueuePosition
+          paymentQueuePosition: scope.nodeState.paymentQueuePosition,
         },
       };
 
-      expect(scope).to.deep.equal(expectedScope)
+      expect(scope).to.deep.equal(expectedScope);
     });
 
     it('should set mnsync null', async () => {
       // simulate failed request to dashcore
-      mockRpcClient.mnsync.throws(new Error())
+      mockRpcClient.mnsync.throws(new Error());
 
       // and lets say sentinel is working
       mockDockerCompose.execCommand
@@ -98,7 +98,7 @@ describe('getMasternodeScopeFactory', () => {
         .withArgs(config.toEnvs(), 'sentinel', 'python bin/sentinel.py -v')
         .returns({ out: 'Dash Sentinel v1.7.3' });
 
-      const scope = await getMasternodeScope(config)
+      const scope = await getMasternodeScope(config);
 
       // should return scope with no info, but sentinel is in there
       const expectedScope = {
@@ -120,7 +120,7 @@ describe('getMasternodeScopeFactory', () => {
         },
       };
 
-      expect(scope).to.deep.equal(expectedScope)
+      expect(scope).to.deep.equal(expectedScope);
 
       // and also should not be trying to obtain masternode info
       expect(mockRpcClient.getBlockchainInfo.notCalled).to.be.true();
@@ -137,11 +137,11 @@ describe('getMasternodeScopeFactory', () => {
 
       mockDockerCompose.execCommand
         .withArgs(config.toEnvs(), 'sentinel', 'python bin/sentinel.py')
-        .returns({out: 'Waiting for dash core sync'});
+        .returns({ out: 'Waiting for dash core sync' });
 
       mockDockerCompose.execCommand
         .withArgs(config.toEnvs(), 'sentinel', 'python bin/sentinel.py -v')
-        .returns({out: 'Dash Sentinel v1.7.3'});
+        .returns({ out: 'Dash Sentinel v1.7.3' });
 
       const scope = await getMasternodeScope(config);
 
@@ -164,7 +164,7 @@ describe('getMasternodeScopeFactory', () => {
         },
       };
 
-      expect(scope).to.deep.equal(expectedScope)
+      expect(scope).to.deep.equal(expectedScope);
 
       expect(mockRpcClient.getBlockchainInfo.notCalled).to.be.true();
       expect(mockRpcClient.masternode.notCalled).to.be.true();

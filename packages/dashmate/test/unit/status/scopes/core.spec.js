@@ -4,7 +4,6 @@ const DockerStatusEnum = require('../../../../src/status/enums/dockerStatus');
 const getCoreScopeFactory = require('../../../../src/status/scopes/core');
 const determineStatus = require('../../../../src/status/determineStatus');
 const providers = require('../../../../src/status/providers');
-const ServiceIsNotRunningError = require('../../../../src/docker/errors/ServiceIsNotRunningError');
 
 describe('getCoreScopeFactory', () => {
   describe('#getCoreScope', () => {
@@ -17,9 +16,9 @@ describe('getCoreScopeFactory', () => {
     let mockInsightProvider;
     let mockGetConnectionHost;
 
-    let network
-    let p2pServiceUrl
-    let rpcServiceUrl
+    let network;
+    let p2pServiceUrl;
+    let rpcServiceUrl;
 
     let config;
     let getCoreScope;
@@ -31,20 +30,19 @@ describe('getCoreScopeFactory', () => {
         getNetworkInfo: this.sinon.stub(),
       };
       mockCreateRpcClient = () => mockRpcClient;
-      mockDockerCompose = {isServiceRunning: this.sinon.stub()};
+      mockDockerCompose = { isServiceRunning: this.sinon.stub() };
       mockDetermineDockerStatus = this.sinon.stub(determineStatus, 'docker');
       mockGithubProvider = this.sinon.stub(providers.github, 'release');
       mockMNOWatchProvider = this.sinon.stub(providers.mnowatch, 'checkPortStatus');
       mockInsightProvider = this.sinon.stub(providers, 'insight');
       mockGetConnectionHost = this.sinon.stub();
 
-      config = {get: this.sinon.stub(), toEnvs: this.sinon.stub()};
+      config = { get: this.sinon.stub(), toEnvs: this.sinon.stub() };
 
       config.get.withArgs('network').returns('testnet');
       config.get.withArgs('core.rpc.port').returns('8080');
       config.get.withArgs('core.p2p.port').returns('8081');
       config.get.withArgs('externalIp').returns('127.0.0.1');
-
 
       network = config.get('network');
       rpcServiceUrl = `127.0.0.1:${config.get('core.rpc.port')}`;
@@ -60,9 +58,9 @@ describe('getCoreScopeFactory', () => {
 
       mockRpcClient.mnsync.returns({
         result:
-          {AssetName: MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED},
+          { AssetName: MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED },
       });
-      mockRpcClient.getNetworkInfo.returns({result: {subversion: '/Dash Core:0.17.0.3/', connections: 1}});
+      mockRpcClient.getNetworkInfo.returns({ result: { subversion: '/Dash Core:0.17.0.3/', connections: 1 } });
       mockRpcClient.getBlockchainInfo.returns({
         result: {
           difficulty: 1,
@@ -78,7 +76,7 @@ describe('getCoreScopeFactory', () => {
       mockMNOWatchProvider.returns('OPEN');
       mockInsightProvider.returns({
         status: this.sinon.stub().returns({
-          info: {blocks: 1337},
+          info: { blocks: 1337 },
         }),
       });
 
@@ -104,8 +102,7 @@ describe('getCoreScopeFactory', () => {
         syncAsset: MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED,
       };
 
-      expect(scope).to.deep.equal(expectedScope)
-
+      expect(scope).to.deep.equal(expectedScope);
     });
 
     it('should return status stopped if no service is running', async () => {
@@ -131,7 +128,7 @@ describe('getCoreScopeFactory', () => {
         verificationProgress: null,
         sizeOnDisk: null,
         syncAsset: null,
-      }
+      };
 
       expect(scope).to.deep.equal(expectedScope);
     });
@@ -160,7 +157,7 @@ describe('getCoreScopeFactory', () => {
         verificationProgress: null,
         sizeOnDisk: null,
         syncAsset: null,
-      }
+      };
 
       expect(scope).to.be.deep.equal(expectedScope);
     });
@@ -168,7 +165,7 @@ describe('getCoreScopeFactory', () => {
     it('should not make any requests if docker status is bad', async function it() {
       mockDockerCompose.isServiceRunning.resolves(true);
       mockDetermineDockerStatus.returns(DockerStatusEnum.restarting);
-      mockInsightProvider.returns({status: this.sinon.stub()});
+      mockInsightProvider.returns({ status: this.sinon.stub() });
 
       const scope = await getCoreScope(config);
 
@@ -190,7 +187,7 @@ describe('getCoreScopeFactory', () => {
         verificationProgress: null,
         sizeOnDisk: null,
         syncAsset: null,
-      }
+      };
 
       expect(scope).to.be.deep.equal(expectedScope);
 
@@ -207,12 +204,12 @@ describe('getCoreScopeFactory', () => {
       mockDockerCompose.isServiceRunning.resolves(true);
       mockDetermineDockerStatus.returns(DockerStatusEnum.running);
       mockRpcClient.mnsync.returns(Promise.reject());
-      mockRpcClient.getNetworkInfo.returns({result: {subversion: ''}});
+      mockRpcClient.getNetworkInfo.returns({ result: { subversion: '' } });
       mockRpcClient.getBlockchainInfo.returns({
         result:
           {
             size_on_disk: 1337,
-            verificationprogress: 1
+            verificationprogress: 1,
           },
       });
 
@@ -220,7 +217,7 @@ describe('getCoreScopeFactory', () => {
       mockMNOWatchProvider.returns('OPEN');
       mockInsightProvider.returns({
         status: this.sinon.stub().returns({
-          info: {blocks: 1337},
+          info: { blocks: 1337 },
         }),
       });
 
@@ -244,19 +241,19 @@ describe('getCoreScopeFactory', () => {
         verificationProgress: null,
         sizeOnDisk: null,
         syncAsset: null,
-      }
+      };
 
       expect(scope).to.be.deep.equal(expectedScope);
-    })
+    });
 
-    it('should omit providers data if error is thrown', async function it() {
+    it('should omit providers data if error is thrown', async () => {
       mockDockerCompose.isServiceRunning.resolves(true);
       mockDetermineDockerStatus.returns(DockerStatusEnum.running);
       mockRpcClient.mnsync.returns({
         result:
-          {AssetName: MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED},
+          { AssetName: MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED },
       });
-      mockRpcClient.getNetworkInfo.returns({result: {subversion: '/Dash Core:0.17.0.3/', connections: 1}});
+      mockRpcClient.getNetworkInfo.returns({ result: { subversion: '/Dash Core:0.17.0.3/', connections: 1 } });
       mockRpcClient.getBlockchainInfo.returns({
         result: {
           difficulty: 1,
@@ -290,7 +287,7 @@ describe('getCoreScopeFactory', () => {
         syncAsset: MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED,
       };
 
-      expect(scope).to.deep.equal(expectedScope)
+      expect(scope).to.deep.equal(expectedScope);
     });
-  })
+  });
 });

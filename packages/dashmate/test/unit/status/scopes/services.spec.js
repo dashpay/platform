@@ -39,7 +39,7 @@ describe('getServicesScopeFactory', () => {
     });
 
     it('should work if docker throws', async () => {
-      mockDockerCompose.inspectService.throws()
+      mockDockerCompose.inspectService.throws();
 
       const scope = await getServicesScope(config);
 

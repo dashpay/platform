@@ -1,13 +1,13 @@
 const fetch = require('node-fetch');
 
-const {FetchError} = fetch;
+const { FetchError } = fetch;
 
 const getPlatformScopeFactory = require('../../../../src/status/scopes/platform');
 const determineStatus = require('../../../../src/status/determineStatus');
 const DockerStatusEnum = require('../../../../src/status/enums/dockerStatus');
 const providers = require('../../../../src/status/providers');
 const ServiceStatusEnum = require('../../../../src/status/enums/serviceStatus');
-const PortStateEnum = require("../../../../src/status/enums/portState");
+const PortStateEnum = require('../../../../src/status/enums/portState');
 
 describe('getPlatformScopeFactory', () => {
   describe('#getPlatformScope', () => {
@@ -20,12 +20,12 @@ describe('getPlatformScopeFactory', () => {
     let mockGetConnectionHost;
 
     let config;
-    let httpPort
-    let httpService
-    let p2pPort
-    let p2pService
-    let rpcPort
-    let rpcService
+    let httpPort;
+    let httpService;
+    let p2pPort;
+    let p2pService;
+    let rpcPort;
+    let rpcService;
 
     let getPlatformScope;
 
@@ -68,8 +68,8 @@ describe('getPlatformScopeFactory', () => {
 
     it('should just work', async () => {
       mockDetermineDockerStatus.returns(DockerStatusEnum.running);
-      mockRpcClient.mnsync.withArgs('status').returns({result: {IsSynced: true}});
-      mockDockerCompose.execCommand.returns({exitCode: 0, out: ''});
+      mockRpcClient.mnsync.withArgs('status').returns({ result: { IsSynced: true } });
+      mockDockerCompose.execCommand.returns({ exitCode: 0, out: '' });
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
 
       const mockStatus = {
@@ -86,7 +86,7 @@ describe('getPlatformScopeFactory', () => {
           latest_block_time: 1337,
         },
       };
-      const mockNetInfo = {n_peers: 6, listening: true};
+      const mockNetInfo = { n_peers: 6, listening: true };
 
       const expectedScope = {
         coreIsSynced: true,
@@ -101,7 +101,7 @@ describe('getPlatformScopeFactory', () => {
           httpPortState: PortStateEnum.OPEN,
           p2pPortState: PortStateEnum.OPEN,
           dockerStatus: DockerStatusEnum.running,
-          serviceStatus:  ServiceStatusEnum.up,
+          serviceStatus: ServiceStatusEnum.up,
           version: '0',
           listening: true,
           catchingUp: false,
@@ -121,9 +121,9 @@ describe('getPlatformScopeFactory', () => {
 
       mockFetch
         .onFirstCall()
-        .returns(Promise.resolve({json: () => Promise.resolve(mockStatus)}))
+        .returns(Promise.resolve({ json: () => Promise.resolve(mockStatus) }))
         .onSecondCall()
-        .returns(Promise.resolve({json: () => Promise.resolve(mockNetInfo)}));
+        .returns(Promise.resolve({ json: () => Promise.resolve(mockNetInfo) }));
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
 
       const scope = await getPlatformScope(config);
@@ -171,7 +171,7 @@ describe('getPlatformScopeFactory', () => {
     });
 
     it('should return empty scope if core is not synced', async () => {
-      mockRpcClient.mnsync.withArgs('status').returns({result: {IsSynced: false}});
+      mockRpcClient.mnsync.withArgs('status').returns({ result: { IsSynced: false } });
 
       const expectedScope = {
         coreIsSynced: false,
@@ -210,10 +210,10 @@ describe('getPlatformScopeFactory', () => {
     });
 
     it('should return drive info if tenderdash is failed', async () => {
-      mockRpcClient.mnsync.withArgs('status').returns({result: {IsSynced: true}});
+      mockRpcClient.mnsync.withArgs('status').returns({ result: { IsSynced: true } });
       mockDetermineDockerStatus.onFirstCall().throws();
       mockDetermineDockerStatus.onSecondCall().returns(DockerStatusEnum.running);
-      mockDockerCompose.execCommand.returns({exitCode: 0, out: ''});
+      mockDockerCompose.execCommand.returns({ exitCode: 0, out: '' });
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
 
       const expectedScope = {
@@ -253,10 +253,10 @@ describe('getPlatformScopeFactory', () => {
     });
 
     it('should still return scope with tenderdash if drive is failed', async () => {
-      mockRpcClient.mnsync.withArgs('status').returns({result: {IsSynced: true}});
+      mockRpcClient.mnsync.withArgs('status').returns({ result: { IsSynced: true } });
       mockDetermineDockerStatus.onFirstCall().returns(DockerStatusEnum.running);
       mockDetermineDockerStatus.onSecondCall().throws();
-      mockDockerCompose.execCommand.returns({exitCode: 0, out: ''});
+      mockDockerCompose.execCommand.returns({ exitCode: 0, out: '' });
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
 
       const mockStatus = {
@@ -273,14 +273,13 @@ describe('getPlatformScopeFactory', () => {
           latest_block_time: 1337,
         },
       };
-      const mockNetInfo = {n_peers: 6, listening: true};
+      const mockNetInfo = { n_peers: 6, listening: true };
 
       mockFetch
         .onFirstCall()
-        .returns(Promise.resolve({json: () => Promise.resolve(mockStatus)}))
+        .returns(Promise.resolve({ json: () => Promise.resolve(mockStatus) }))
         .onSecondCall()
-        .returns(Promise.resolve({json: () => Promise.resolve(mockNetInfo)}));
-
+        .returns(Promise.resolve({ json: () => Promise.resolve(mockNetInfo) }));
 
       const expectedScope = {
         coreIsSynced: true,
@@ -295,7 +294,7 @@ describe('getPlatformScopeFactory', () => {
           httpPortState: 'OPEN',
           p2pPortState: 'OPEN',
           dockerStatus: DockerStatusEnum.running,
-          serviceStatus:  ServiceStatusEnum.up,
+          serviceStatus: ServiceStatusEnum.up,
           version: '0',
           listening: true,
           catchingUp: false,
@@ -308,7 +307,7 @@ describe('getPlatformScopeFactory', () => {
           network: 'test',
         },
         drive: {
-          dockerStatus:  null,
+          dockerStatus: null,
           serviceStatus: null,
         },
       };
@@ -318,10 +317,9 @@ describe('getPlatformScopeFactory', () => {
       expect(scope).to.deep.equal(expectedScope);
     });
 
-
     it('should have error service status in case FetchError to tenderdash', async () => {
       mockDetermineDockerStatus.returns(DockerStatusEnum.running);
-      mockRpcClient.mnsync.returns({result: {IsSynced: true}});
+      mockRpcClient.mnsync.returns({ result: { IsSynced: true } });
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
       mockFetch.returns(Promise.reject(new FetchError('test')));
 
@@ -338,7 +336,7 @@ describe('getPlatformScopeFactory', () => {
           httpPortState: 'OPEN',
           p2pPortState: 'OPEN',
           dockerStatus: DockerStatusEnum.running,
-          serviceStatus:  ServiceStatusEnum.error,
+          serviceStatus: ServiceStatusEnum.error,
           version: null,
           listening: null,
           catchingUp: null,
@@ -351,7 +349,7 @@ describe('getPlatformScopeFactory', () => {
           network: null,
         },
         drive: {
-          dockerStatus:  null,
+          dockerStatus: null,
           serviceStatus: null,
         },
       };
