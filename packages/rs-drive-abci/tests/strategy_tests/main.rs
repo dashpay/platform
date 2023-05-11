@@ -868,6 +868,7 @@ mod tests {
                     .to_buffer(),
                 None,
                 None,
+                None,
             )
             .unwrap()
             .expect("expected to execute the fetch of a contract")
@@ -959,6 +960,7 @@ mod tests {
                     .0
                     .id
                     .to_buffer(),
+                None,
                 None,
                 None,
             )

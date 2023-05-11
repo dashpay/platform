@@ -34,7 +34,7 @@
 
 use crate::abci::server::AbciApplication;
 use crate::error::execution::ExecutionError;
-use crate::error::query::QueryError;
+
 use crate::error::Error;
 use crate::execution::block_proposal::BlockProposal;
 use crate::execution::engine::BlockExecutionOutcome;
