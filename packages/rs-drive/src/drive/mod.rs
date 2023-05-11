@@ -79,7 +79,7 @@ pub mod contract;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod defaults;
 /// Document module
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 pub mod document;
 #[cfg(feature = "full")]
 mod estimation_costs;

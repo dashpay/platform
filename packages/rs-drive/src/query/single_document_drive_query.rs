@@ -4,7 +4,6 @@ use crate::drive::document::contract_document_type_path;
 use crate::query::Query;
 use grovedb::{PathQuery, SizedQuery};
 
-#[cfg(any(feature = "full", feature = "verify"))]
 /// Drive query struct
 #[derive(Debug, PartialEq, Clone)]
 pub struct SingleDocumentDriveQuery {
@@ -21,7 +20,6 @@ pub struct SingleDocumentDriveQuery {
 }
 
 impl SingleDocumentDriveQuery {
-    #[cfg(feature = "full")]
     /// Operations to construct a path query.
     pub fn construct_path_query(&self) -> PathQuery {
         // First we should get the overall document_type_path

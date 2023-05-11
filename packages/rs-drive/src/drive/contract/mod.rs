@@ -35,11 +35,11 @@
 #[cfg(feature = "full")]
 mod estimation_costs;
 /// Various paths for contract operations
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 pub(crate) mod paths;
 #[cfg(feature = "full")]
 pub(crate) mod prove;
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 pub(crate) mod queries;
 
 #[cfg(feature = "full")]

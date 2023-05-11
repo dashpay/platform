@@ -66,7 +66,7 @@ use dpp::block::block_info::BlockInfo;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::data_contract::document_type::DocumentType;
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 use dpp::data_contract::document_type::{Index, IndexProperty};
 #[cfg(any(feature = "full", feature = "verify"))]
 
@@ -80,7 +80,7 @@ use crate::contract::Contract;
 use crate::drive::grove_operations::QueryType::StatefulQuery;
 #[cfg(feature = "full")]
 use crate::drive::Drive;
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 use crate::error::drive::DriveError;
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::error::query::QuerySyntaxError;
@@ -91,7 +91,7 @@ use crate::fee::calculate_fee;
 #[cfg(feature = "full")]
 use crate::fee::op::LowLevelDriveOperation;
 
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::contract::paths::ContractPaths;
 
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -158,13 +158,13 @@ impl InternalClauses {
         }
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// Returns true if the query clause is for primary keys.
     pub fn is_for_primary_key(&self) -> bool {
         self.primary_key_in_clause.is_some() || self.primary_key_equal_clause.is_some()
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// Returns true if self is empty.
     pub fn is_empty(&self) -> bool {
         self.in_clause.is_none()
@@ -315,7 +315,7 @@ impl<'a> DriveQuery<'a> {
         }
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// Returns true if the query clause if for primary keys.
     pub fn is_for_primary_key(&self) -> bool {
         self.internal_clauses.is_for_primary_key()
@@ -849,7 +849,6 @@ impl<'a> DriveQuery<'a> {
         }
     }
 
-    // #[cfg(feature = "full")]
     #[cfg(any(feature = "full", feature = "verify"))]
     /// Returns a path query given a document type path and starting document.
     pub fn get_primary_key_path_query(
@@ -1002,7 +1001,7 @@ impl<'a> DriveQuery<'a> {
         }
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// Finds the best index for the query.
     pub fn find_best_index(&self) -> Result<&Index, Error> {
         let equal_fields = self
@@ -1058,7 +1057,7 @@ impl<'a> DriveQuery<'a> {
         Ok(index)
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// Returns a `QueryItem` given a start key and query direction.
     fn query_item_for_starts_at_key(starts_at_key: Vec<u8>, left_to_right: bool) -> QueryItem {
         if left_to_right {
@@ -1068,7 +1067,7 @@ impl<'a> DriveQuery<'a> {
         }
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// Returns a `Query` that either starts at or after the given document ID if given.
     fn inner_query_from_starts_at_for_id(
         starts_at_document: &Option<(Document, &DocumentType, &IndexProperty, bool)>,
@@ -1091,7 +1090,7 @@ impl<'a> DriveQuery<'a> {
         inner_query
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// Returns a `Query` that either starts at or after the given key.
     fn inner_query_starts_from_key(
         start_at_key: Vec<u8>,
@@ -1114,7 +1113,7 @@ impl<'a> DriveQuery<'a> {
         inner_query
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// Returns a `Query` that either starts at or after the given document if given.
     // We are passing in starts_at_document 4 parameters
     // The document
@@ -1158,7 +1157,7 @@ impl<'a> DriveQuery<'a> {
         Ok(inner_query)
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// Recursively queries as long as there are leftover index properties.
     fn recursive_insert_on_query(
         query: Option<&mut Query>,
@@ -1284,7 +1283,7 @@ impl<'a> DriveQuery<'a> {
         }
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// Returns a path query for non-primary keys given a document type path and starting document.
     pub fn get_non_primary_key_path_query(
         &self,
