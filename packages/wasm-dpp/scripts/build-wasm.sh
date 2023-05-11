@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2312
+set -ex
 
 TARGET=wasm32-unknown-unknown
 
