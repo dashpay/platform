@@ -116,7 +116,7 @@ function getCoreScopeFactory(dockerCompose,
       return core;
     } catch (e) {
       console.error(e)
-      return scope
+      return core
     }
   }
 
