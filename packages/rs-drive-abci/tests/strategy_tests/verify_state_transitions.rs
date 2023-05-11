@@ -135,7 +135,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                     .for_each(|transition| {
                         proofs_request
                             .documents
-                            .push(get_proofs_request::DocumentProofRequest {
+                            .push(get_proofs_request::DocumentRequest {
                                 contract_id: transition.base().data_contract_id.to_vec(),
                                 document_type: transition.base().document_type_name.clone(),
                                 document_type_keeps_history: transition

@@ -40,7 +40,7 @@ CF_EXTERN_C_BEGIN
 @class GetIdentitiesKeysResponse_PublicKeyEntry;
 @class GetIdentityKeysResponse_Keys;
 @class GetProofsRequest_ContractRequest;
-@class GetProofsRequest_DocumentProofRequest;
+@class GetProofsRequest_DocumentRequest;
 @class GetProofsRequest_IdentityRequest;
 @class KeyRequestType;
 @class Proof;
@@ -597,22 +597,22 @@ GPB_FINAL @interface GetProofsRequest : GPBMessage
 /** The number of items in @c contractsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger contractsArray_Count;
 
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetProofsRequest_DocumentProofRequest*> *documentsArray;
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetProofsRequest_DocumentRequest*> *documentsArray;
 /** The number of items in @c documentsArray without causing the array to be created. */
 @property(nonatomic, readonly) NSUInteger documentsArray_Count;
 
 @end
 
-#pragma mark - GetProofsRequest_DocumentProofRequest
+#pragma mark - GetProofsRequest_DocumentRequest
 
-typedef GPB_ENUM(GetProofsRequest_DocumentProofRequest_FieldNumber) {
-  GetProofsRequest_DocumentProofRequest_FieldNumber_ContractId = 1,
-  GetProofsRequest_DocumentProofRequest_FieldNumber_DocumentType = 2,
-  GetProofsRequest_DocumentProofRequest_FieldNumber_DocumentTypeKeepsHistory = 3,
-  GetProofsRequest_DocumentProofRequest_FieldNumber_DocumentId = 4,
+typedef GPB_ENUM(GetProofsRequest_DocumentRequest_FieldNumber) {
+  GetProofsRequest_DocumentRequest_FieldNumber_ContractId = 1,
+  GetProofsRequest_DocumentRequest_FieldNumber_DocumentType = 2,
+  GetProofsRequest_DocumentRequest_FieldNumber_DocumentTypeKeepsHistory = 3,
+  GetProofsRequest_DocumentRequest_FieldNumber_DocumentId = 4,
 };
 
-GPB_FINAL @interface GetProofsRequest_DocumentProofRequest : GPBMessage
+GPB_FINAL @interface GetProofsRequest_DocumentRequest : GPBMessage
 
 @property(nonatomic, readwrite, copy, null_resettable) NSData *contractId;
 

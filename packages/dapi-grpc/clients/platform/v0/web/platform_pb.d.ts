@@ -708,9 +708,9 @@ export class GetProofsRequest extends jspb.Message {
   addContracts(value?: GetProofsRequest.ContractRequest, index?: number): GetProofsRequest.ContractRequest;
 
   clearDocumentsList(): void;
-  getDocumentsList(): Array<GetProofsRequest.DocumentProofRequest>;
-  setDocumentsList(value: Array<GetProofsRequest.DocumentProofRequest>): void;
-  addDocuments(value?: GetProofsRequest.DocumentProofRequest, index?: number): GetProofsRequest.DocumentProofRequest;
+  getDocumentsList(): Array<GetProofsRequest.DocumentRequest>;
+  setDocumentsList(value: Array<GetProofsRequest.DocumentRequest>): void;
+  addDocuments(value?: GetProofsRequest.DocumentRequest, index?: number): GetProofsRequest.DocumentRequest;
 
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): GetProofsRequest.AsObject;
@@ -726,10 +726,10 @@ export namespace GetProofsRequest {
   export type AsObject = {
     identitiesList: Array<GetProofsRequest.IdentityRequest.AsObject>,
     contractsList: Array<GetProofsRequest.ContractRequest.AsObject>,
-    documentsList: Array<GetProofsRequest.DocumentProofRequest.AsObject>,
+    documentsList: Array<GetProofsRequest.DocumentRequest.AsObject>,
   }
 
-  export class DocumentProofRequest extends jspb.Message {
+  export class DocumentRequest extends jspb.Message {
     getContractId(): Uint8Array | string;
     getContractId_asU8(): Uint8Array;
     getContractId_asB64(): string;
@@ -747,16 +747,16 @@ export namespace GetProofsRequest {
     setDocumentId(value: Uint8Array | string): void;
 
     serializeBinary(): Uint8Array;
-    toObject(includeInstance?: boolean): DocumentProofRequest.AsObject;
-    static toObject(includeInstance: boolean, msg: DocumentProofRequest): DocumentProofRequest.AsObject;
+    toObject(includeInstance?: boolean): DocumentRequest.AsObject;
+    static toObject(includeInstance: boolean, msg: DocumentRequest): DocumentRequest.AsObject;
     static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
     static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-    static serializeBinaryToWriter(message: DocumentProofRequest, writer: jspb.BinaryWriter): void;
-    static deserializeBinary(bytes: Uint8Array): DocumentProofRequest;
-    static deserializeBinaryFromReader(message: DocumentProofRequest, reader: jspb.BinaryReader): DocumentProofRequest;
+    static serializeBinaryToWriter(message: DocumentRequest, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): DocumentRequest;
+    static deserializeBinaryFromReader(message: DocumentRequest, reader: jspb.BinaryReader): DocumentRequest;
   }
 
-  export namespace DocumentProofRequest {
+  export namespace DocumentRequest {
     export type AsObject = {
       contractId: Uint8Array | string,
       documentType: string,

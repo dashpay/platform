@@ -160,7 +160,7 @@ message GetIdentitiesKeysResponse {
 }
 
 message GetProofsRequest {
-  message DocumentProofRequest {
+  message DocumentRequest {
     bytes contract_id = 1;
     string document_type = 2;
     bool document_type_keeps_history = 3;
@@ -183,7 +183,7 @@ message GetProofsRequest {
 
   repeated IdentityRequest identities = 1;
   repeated ContractRequest contracts = 2;
-  repeated DocumentProofRequest documents = 3;
+  repeated DocumentRequest documents = 3;
 }
 
 message GetProofsResponse {

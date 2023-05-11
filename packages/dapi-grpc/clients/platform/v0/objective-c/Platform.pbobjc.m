@@ -46,7 +46,7 @@ GPBObjCClassDeclaration(GetIdentityKeysResponse);
 GPBObjCClassDeclaration(GetIdentityKeysResponse_Keys);
 GPBObjCClassDeclaration(GetProofsRequest);
 GPBObjCClassDeclaration(GetProofsRequest_ContractRequest);
-GPBObjCClassDeclaration(GetProofsRequest_DocumentProofRequest);
+GPBObjCClassDeclaration(GetProofsRequest_DocumentRequest);
 GPBObjCClassDeclaration(GetProofsRequest_IdentityRequest);
 GPBObjCClassDeclaration(KeyRequestType);
 GPBObjCClassDeclaration(Proof);
@@ -1577,7 +1577,7 @@ typedef struct GetProofsRequest__storage_ {
       },
       {
         .name = "documentsArray",
-        .dataTypeSpecific.clazz = GPBObjCClass(GetProofsRequest_DocumentProofRequest),
+        .dataTypeSpecific.clazz = GPBObjCClass(GetProofsRequest_DocumentRequest),
         .number = GetProofsRequest_FieldNumber_DocumentsArray,
         .hasIndex = GPBNoHasBit,
         .offset = (uint32_t)offsetof(GetProofsRequest__storage_, documentsArray),
@@ -1603,21 +1603,21 @@ typedef struct GetProofsRequest__storage_ {
 
 @end
 
-#pragma mark - GetProofsRequest_DocumentProofRequest
+#pragma mark - GetProofsRequest_DocumentRequest
 
-@implementation GetProofsRequest_DocumentProofRequest
+@implementation GetProofsRequest_DocumentRequest
 
 @dynamic contractId;
 @dynamic documentType;
 @dynamic documentTypeKeepsHistory;
 @dynamic documentId;
 
-typedef struct GetProofsRequest_DocumentProofRequest__storage_ {
+typedef struct GetProofsRequest_DocumentRequest__storage_ {
   uint32_t _has_storage_[1];
   NSData *contractId;
   NSString *documentType;
   NSData *documentId;
-} GetProofsRequest_DocumentProofRequest__storage_;
+} GetProofsRequest_DocumentRequest__storage_;
 
 // This method is threadsafe because it is initially called
 // in +initialize for each subclass.
@@ -1628,25 +1628,25 @@ typedef struct GetProofsRequest_DocumentProofRequest__storage_ {
       {
         .name = "contractId",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetProofsRequest_DocumentProofRequest_FieldNumber_ContractId,
+        .number = GetProofsRequest_DocumentRequest_FieldNumber_ContractId,
         .hasIndex = 0,
-        .offset = (uint32_t)offsetof(GetProofsRequest_DocumentProofRequest__storage_, contractId),
+        .offset = (uint32_t)offsetof(GetProofsRequest_DocumentRequest__storage_, contractId),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBytes,
       },
       {
         .name = "documentType",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetProofsRequest_DocumentProofRequest_FieldNumber_DocumentType,
+        .number = GetProofsRequest_DocumentRequest_FieldNumber_DocumentType,
         .hasIndex = 1,
-        .offset = (uint32_t)offsetof(GetProofsRequest_DocumentProofRequest__storage_, documentType),
+        .offset = (uint32_t)offsetof(GetProofsRequest_DocumentRequest__storage_, documentType),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeString,
       },
       {
         .name = "documentTypeKeepsHistory",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetProofsRequest_DocumentProofRequest_FieldNumber_DocumentTypeKeepsHistory,
+        .number = GetProofsRequest_DocumentRequest_FieldNumber_DocumentTypeKeepsHistory,
         .hasIndex = 2,
         .offset = 3,  // Stored in _has_storage_ to save space.
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
@@ -1655,20 +1655,20 @@ typedef struct GetProofsRequest_DocumentProofRequest__storage_ {
       {
         .name = "documentId",
         .dataTypeSpecific.clazz = Nil,
-        .number = GetProofsRequest_DocumentProofRequest_FieldNumber_DocumentId,
+        .number = GetProofsRequest_DocumentRequest_FieldNumber_DocumentId,
         .hasIndex = 4,
-        .offset = (uint32_t)offsetof(GetProofsRequest_DocumentProofRequest__storage_, documentId),
+        .offset = (uint32_t)offsetof(GetProofsRequest_DocumentRequest__storage_, documentId),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeBytes,
       },
     };
     GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[GetProofsRequest_DocumentProofRequest class]
+        [GPBDescriptor allocDescriptorForClass:[GetProofsRequest_DocumentRequest class]
                                      rootClass:[PlatformRoot class]
                                           file:PlatformRoot_FileDescriptor()
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(GetProofsRequest_DocumentProofRequest__storage_)
+                                   storageSize:sizeof(GetProofsRequest_DocumentRequest__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
     [localDescriptor setupContainingMessageClass:GPBObjCClass(GetProofsRequest)];
     #if defined(DEBUG) && DEBUG
