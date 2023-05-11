@@ -38,6 +38,9 @@ CF_EXTERN_C_BEGIN
 @class GetIdentitiesKeysResponse_PublicKey;
 @class GetIdentitiesKeysResponse_PublicKeyEntries;
 @class GetIdentitiesKeysResponse_PublicKeyEntry;
+@class GetIdentitiesResponse_Identities;
+@class GetIdentitiesResponse_IdentityEntry;
+@class GetIdentitiesResponse_IdentityValue;
 @class GetIdentityKeysResponse_Keys;
 @class GetProofsRequest_ContractRequest;
 @class GetProofsRequest_DocumentRequest;
@@ -242,6 +245,99 @@ GPB_FINAL @interface GetIdentityResponse : GPBMessage
 @property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
 /** Test to see if @c metadata has been set. */
 @property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+#pragma mark - GetIdentitiesRequest
+
+typedef GPB_ENUM(GetIdentitiesRequest_FieldNumber) {
+  GetIdentitiesRequest_FieldNumber_IdsArray = 1,
+  GetIdentitiesRequest_FieldNumber_Prove = 2,
+};
+
+GPB_FINAL @interface GetIdentitiesRequest : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *idsArray;
+/** The number of items in @c idsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger idsArray_Count;
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetIdentitiesResponse
+
+typedef GPB_ENUM(GetIdentitiesResponse_FieldNumber) {
+  GetIdentitiesResponse_FieldNumber_Identities = 1,
+  GetIdentitiesResponse_FieldNumber_Proof = 2,
+  GetIdentitiesResponse_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetIdentitiesResponse_Result_OneOfCase) {
+  GetIdentitiesResponse_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentitiesResponse_Result_OneOfCase_Identities = 1,
+  GetIdentitiesResponse_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetIdentitiesResponse : GPBMessage
+
+@property(nonatomic, readonly) GetIdentitiesResponse_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentitiesResponse_Identities *identities;
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetIdentitiesResponse_ClearResultOneOfCase(GetIdentitiesResponse *message);
+
+#pragma mark - GetIdentitiesResponse_IdentityValue
+
+typedef GPB_ENUM(GetIdentitiesResponse_IdentityValue_FieldNumber) {
+  GetIdentitiesResponse_IdentityValue_FieldNumber_Value = 1,
+};
+
+GPB_FINAL @interface GetIdentitiesResponse_IdentityValue : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *value;
+
+@end
+
+#pragma mark - GetIdentitiesResponse_IdentityEntry
+
+typedef GPB_ENUM(GetIdentitiesResponse_IdentityEntry_FieldNumber) {
+  GetIdentitiesResponse_IdentityEntry_FieldNumber_Key = 1,
+  GetIdentitiesResponse_IdentityEntry_FieldNumber_Value = 2,
+};
+
+GPB_FINAL @interface GetIdentitiesResponse_IdentityEntry : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *key;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentitiesResponse_IdentityValue *value;
+/** Test to see if @c value has been set. */
+@property(nonatomic, readwrite) BOOL hasValue;
+
+@end
+
+#pragma mark - GetIdentitiesResponse_Identities
+
+typedef GPB_ENUM(GetIdentitiesResponse_Identities_FieldNumber) {
+  GetIdentitiesResponse_Identities_FieldNumber_IdentityEntriesArray = 1,
+};
+
+GPB_FINAL @interface GetIdentitiesResponse_Identities : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetIdentitiesResponse_IdentityEntry*> *identityEntriesArray;
+/** The number of items in @c identityEntriesArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger identityEntriesArray_Count;
 
 @end
 

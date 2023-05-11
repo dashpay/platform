@@ -46,7 +46,7 @@ impl SingleDocumentDriveQuery {
             }
         }
 
-        PathQuery::new(path, SizedQuery::new(query, None, None))
+        PathQuery::new(path, SizedQuery::new(query, Some(1), None))
     }
 }
 

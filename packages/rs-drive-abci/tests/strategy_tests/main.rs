@@ -673,7 +673,8 @@ mod tests {
                 proposers
                     .into_iter()
                     .map(|proposer| proposer.masternode.pro_tx_hash.into_inner())
-                    .collect(),
+                    .collect::<Vec<_>>()
+                    .as_slice(),
                 None,
             )
             .expect("expected to fetch identities");
@@ -1650,7 +1651,8 @@ mod tests {
                     .identities
                     .into_iter()
                     .map(|identity| identity.id.to_buffer())
-                    .collect(),
+                    .collect::<Vec<_>>()
+                    .as_slice(),
                 None,
             )
             .expect("expected to fetch balances");
@@ -1725,7 +1727,8 @@ mod tests {
                     .identities
                     .into_iter()
                     .map(|identity| identity.id.to_buffer())
-                    .collect(),
+                    .collect::<Vec<_>>()
+                    .as_slice(),
                 None,
             )
             .expect("expected to fetch balances");

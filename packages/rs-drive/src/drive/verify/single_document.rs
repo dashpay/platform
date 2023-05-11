@@ -17,15 +17,10 @@ impl SingleDocumentDriveQuery {
     ) -> Result<(RootHash, Option<Vec<u8>>), Error> {
         let path_query = self.construct_path_query();
         let (root_hash, mut proved_key_values) = if is_subset {
-            GroveDb::verify_subset_query(proof, &path_query)?
+            GroveDb::verify_subset_query_with_absence_proof(proof, &path_query)?
         } else {
-            GroveDb::verify_query(proof, &path_query)?
+            GroveDb::verify_query_with_absence_proof(proof, &path_query)?
         };
-
-        // todo remove this (it shouldn't be needed)
-        if proved_key_values.is_empty() {
-            return Ok((root_hash, None));
-        }
 
         if proved_key_values.len() != 1 {
             return Err(Error::Proof(ProofError::CorruptedProof(
