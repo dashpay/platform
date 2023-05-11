@@ -249,7 +249,7 @@ describe('getCoreScopeFactory', () => {
       expect(scope).to.be.deep.equal(expectedScope);
     })
 
-    it.only('should omit providers data if error is thrown', async function it() {
+    it('should omit providers data if error is thrown', async function it() {
       mockDockerCompose.isServiceRunning.resolves(true);
       mockDetermineDockerStatus.returns(DockerStatusEnum.running);
       mockRpcClient.mnsync.returns({

@@ -11,7 +11,7 @@ const providers = require("../providers");
  * @param getConnectionHost {getConnectionHost}
  */
 function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnectionHost) {
-  async function getMNSync() {
+  async function getSyncAsset(config) {
     const rpcClient = createRpcClient({
       port: config.get('core.rpc.port'),
       user: config.get('core.rpc.user'),
@@ -25,7 +25,7 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
     return syncAsset
   }
 
-  async function getMasternodeInfo() {
+  async function getMasternodeInfo(config) {
     const rpcClient = createRpcClient({
       port: config.get('core.rpc.port'),
       user: config.get('core.rpc.user'),
@@ -33,7 +33,19 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
       host: await getConnectionHost(config, 'core'),
     });
 
-    const masternodeInfo = {nodeState: {}}
+    const info = {
+      proTxHash: null,
+      state: null,
+      status: null,
+      nodeState: {
+        dmnState: null,
+        poSePenalty: null,
+        lastPaidHeight: null,
+        lastPaidTime: null,
+        paymentQueuePosition: null,
+        nextPaymentTime: null,
+      }
+    }
 
     const [blockchainInfo, masternodeCount, masternodeStatus] = await Promise.all([
       rpcClient.getBlockchainInfo(),
@@ -47,9 +59,9 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
 
     const {state, status, proTxHash} = masternodeStatus.result;
 
-    masternodeInfo.proTxHash = proTxHash;
-    masternodeInfo.status = status;
-    masternodeInfo.state = state;
+    info.proTxHash = proTxHash;
+    info.status = status;
+    info.state = state;
 
     if (state === MasternodeStateEnum.READY) {
       const {dmnState} = masternodeStatus.result;
@@ -61,18 +73,18 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
       const paymentQueuePosition = position / enabled;
       const nextPaymentTime = `${blocksToTime(paymentQueuePosition)}`;
 
-      masternodeInfo.nodeState.dmnState = dmnState;
-      masternodeInfo.nodeState.poSePenalty = poSePenalty;
-      masternodeInfo.nodeState.lastPaidHeight = lastPaidHeight;
-      masternodeInfo.nodeState.lastPaidTime = lastPaidTime;
-      masternodeInfo.nodeState.paymentQueuePosition = paymentQueuePosition;
-      masternodeInfo.nodeState.nextPaymentTime = nextPaymentTime;
+      info.nodeState.dmnState = dmnState;
+      info.nodeState.poSePenalty = poSePenalty;
+      info.nodeState.lastPaidHeight = lastPaidHeight;
+      info.nodeState.lastPaidTime = lastPaidTime;
+      info.nodeState.paymentQueuePosition = paymentQueuePosition;
+      info.nodeState.nextPaymentTime = nextPaymentTime;
     }
 
-    return masternodeInfo
+    return info
   }
 
-  async function getSentinelInfo() {
+  async function getSentinelInfo(config) {
     // cannot be put in Promise.all, because sentinel will cause exit 1 with simultaneous requests
     const sentinelStateResponse = await dockerCompose
       .execCommand(config.toEnvs(), 'sentinel', 'python bin/sentinel.py');
@@ -116,15 +128,15 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
     };
 
     const basicResult = await Promise.allSettled([
-      getMNSync(),
-      getSentinelInfo(),
+      getSyncAsset(config),
+      getSentinelInfo(config),
     ]);
 
-    const [mnSync, sentinelInfo] = basicResult
+    const [syncAsset, sentinelInfo] = basicResult
       .map((result) => (result.status === 'fulfilled' ? result.value : null));
 
-    if (mnSync) {
-      scope.syncAsset = mnSync
+    if (syncAsset) {
+      scope.syncAsset = syncAsset
     }
 
     if (sentinelInfo) {
@@ -134,13 +146,14 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
 
     if (scope.syncAsset === MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED) {
       try {
-        const masternodeInfo = await getMasternodeInfo()
+        const masternodeInfo = await getMasternodeInfo(config)
 
         scope.proTxHash = masternodeInfo.proTxHash
         scope.state = masternodeInfo.state
         scope.status = masternodeInfo.status
         scope.nodeState = masternodeInfo.nodeState
       } catch (e) {
+        console.error(e)
       }
     }
 
