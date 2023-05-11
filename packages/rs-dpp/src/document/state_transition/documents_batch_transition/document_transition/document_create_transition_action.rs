@@ -3,7 +3,6 @@ use crate::document::document_transition::DocumentCreateTransition;
 use crate::identity::TimestampMillis;
 use platform_value::{Identifier, Value};
 use std::collections::BTreeMap;
-use std::convert::TryFrom;
 
 use crate::document::Document;
 use crate::ProtocolError;

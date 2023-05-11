@@ -5,8 +5,8 @@ use crate::error::Error;
 use crate::query::SingleDocumentDriveQuery;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::document::Document;
-use dpp::prelude::DataContract;
-use grovedb::{GroveDb, PathQuery};
+
+use grovedb::GroveDb;
 
 impl SingleDocumentDriveQuery {
     /// Verifies the document

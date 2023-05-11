@@ -1,6 +1,5 @@
 use dapi_grpc::platform::v0::{get_proofs_request, GetProofsRequest, GetProofsResponse};
-use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransitionAction;
-use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransitionAction;
+
 use dpp::document::document_transition::DocumentTransitionAction;
 use dpp::document::Document;
 use dpp::identity::PartialIdentity;
@@ -8,12 +7,12 @@ use dpp::state_transition::{StateTransition, StateTransitionAction, StateTransit
 use drive::drive::Drive;
 use drive::query::SingleDocumentDriveQuery;
 use drive_abci::abci::AbciApplication;
-use drive_abci::platform::{Platform, PlatformRef};
+use drive_abci::platform::PlatformRef;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use drive_abci::validation::state_transition::StateTransitionValidation;
-use mockall::Any;
+
 use prost::Message;
-use tenderdash_abci::proto::abci::RequestQuery;
+
 use tenderdash_abci::Application;
 
 pub(crate) fn verify_state_transitions_were_executed(
@@ -68,7 +67,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
 
-                let GetProofsResponse { proof, metadata } =
+                let GetProofsResponse { proof, metadata: _ } =
                     GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
                         .expect("expected to decode proof response");
 
@@ -105,7 +104,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
 
-                let GetProofsResponse { proof, metadata } =
+                let GetProofsResponse { proof, metadata: _ } =
                     GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
                         .expect("expected to decode proof response");
 
@@ -157,7 +156,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
 
-                let GetProofsResponse { proof, metadata } =
+                let GetProofsResponse { proof, metadata: _ } =
                     GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
                         .expect("expected to decode proof response");
 
@@ -245,7 +244,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
 
-                let GetProofsResponse { proof, metadata } =
+                let GetProofsResponse { proof, metadata: _ } =
                     GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
                         .expect("expected to decode proof response");
 
@@ -294,7 +293,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
 
-                let GetProofsResponse { proof, metadata } =
+                let GetProofsResponse { proof, metadata: _ } =
                     GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
                         .expect("expected to decode proof response");
 
@@ -343,7 +342,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
 
-                let GetProofsResponse { proof, metadata } =
+                let GetProofsResponse { proof, metadata: _ } =
                     GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
                         .expect("expected to decode proof response");
 
@@ -357,7 +356,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                         .into_buffer(),
                 )
                 .expect("expected to verify balance identity");
-                let balance = balance.expect("expected a balance");
+                let _balance = balance.expect("expected a balance");
                 assert_eq!(
                     &root_hash, expected_root_hash,
                     "state last block info {:?}",
@@ -380,7 +379,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                 let serialized_get_proofs_response =
                     result.into_data().expect("expected queries to be valid");
 
-                let GetProofsResponse { proof, metadata } =
+                let GetProofsResponse { proof, metadata: _ } =
                     GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
                         .expect("expected to decode proof response");
 

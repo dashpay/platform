@@ -179,7 +179,7 @@ impl Drive {
         let mut keys = BTreeMap::<KeyID, IdentityPublicKey>::new();
         let identity_keys_path = identity_key_tree_path(identity_id.as_slice());
         for proved_key_value in proved_key_values {
-            let (path, key, maybe_element) = proved_key_value;
+            let (path, _key, maybe_element) = proved_key_value;
             if path == identity_keys_path {
                 if let Some(element) = maybe_element {
                     let item_bytes = element.into_item_bytes().map_err(Error::GroveDB)?;

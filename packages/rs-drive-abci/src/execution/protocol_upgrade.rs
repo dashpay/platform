@@ -2,7 +2,7 @@ use crate::constants::PROTOCOL_VERSION_UPGRADE_PERCENTAGE_NEEDED;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform::Platform;
-use crate::state::PlatformState;
+
 use drive::dpp::util::deserializer::ProtocolVersion;
 use drive::grovedb::Transaction;
 

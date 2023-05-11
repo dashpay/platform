@@ -32,7 +32,6 @@
 //! This module defines encoding functions.
 //!
 
-use crate::error::Error;
 use byteorder::{BigEndian, WriteBytesExt};
 
 /// Encodes an unsigned integer on 64 bits.

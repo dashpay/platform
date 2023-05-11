@@ -2,7 +2,7 @@ use crate::drive::identity::{IdentityDriveQuery, IdentityProveRequestType};
 use crate::drive::Drive;
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
-use crate::query::{DriveQuery, SingleDocumentDriveQuery};
+use crate::query::SingleDocumentDriveQuery;
 use grovedb::{PathQuery, TransactionArg};
 
 impl Drive {

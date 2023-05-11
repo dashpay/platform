@@ -1,6 +1,6 @@
 use crate::common::encode::encode_u64;
 use crate::drive::document::contract_document_type_path;
-use crate::error::Error;
+
 use crate::query::Query;
 use grovedb::{PathQuery, SizedQuery};
 
