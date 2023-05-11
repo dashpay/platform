@@ -27,6 +27,8 @@ const {
   HOME_DIR_PATH,
 } = require('../../src/constants');
 
+const { version } = require('../../package.json');
+
 module.exports = {
   description: 'base config for use as template',
   group: null,
@@ -96,7 +98,7 @@ module.exports = {
     dapi: {
       envoy: {
         docker: {
-          image: 'dashpay/envoy:0.24-dev',
+          image: `dashpay/envoy:${version}`,
         },
         http: {
           port: 443,
@@ -120,14 +122,14 @@ module.exports = {
       },
       api: {
         docker: {
-          image: 'dashpay/dapi:0.24.0-dev',
+          image: `dashpay/dapi:${version}`,
         },
       },
     },
     drive: {
       abci: {
         docker: {
-          image: 'dashpay/drive:0.24.0-dev',
+          image: `dashpay/drive:${version}`,
         },
         log: {
           stdout: {
@@ -238,7 +240,7 @@ module.exports = {
   dashmate: {
     helper: {
       docker: {
-        image: 'dashpay/dashmate-helper:0.24-dev',
+        image: `dashpay/dashmate-helper:${version}`,
       },
       api: {
         enable: false,
