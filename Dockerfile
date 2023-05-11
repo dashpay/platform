@@ -169,7 +169,7 @@ RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
     sccache --show-stats
 
 #
-# STAGE: BUILD WASM-DPP
+# STAGE: BUILD JAVASCRIPT INTERMEDIATE IMAGE
 #
 FROM sources AS build-js
 
@@ -180,11 +180,14 @@ RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=wasm_dpp_target,target=/platform/target \
+    --mount=type=cache,target=/tmp/unplugged \
+    cp -R /tmp/unplugged /platform/.yarn/ && \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     export SKIP_GRPC_PROTO_BUILD=1 && \
     yarn install && \
     yarn build && \
+    cp -R /platform/.yarn/unplugged /tmp/ && \
     sccache --show-stats
 
 #
@@ -240,7 +243,7 @@ RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=shared,id=wasm_dpp_target,target=/platform/target \
+    --mount=type=cache,sharing=shared,target=/platform/target \
     --mount=type=cache,target=/tmp/unplugged \
     cp -R /tmp/unplugged /platform/.yarn/ && \
     yarn workspaces focus --production dashmate && \
@@ -254,9 +257,7 @@ RUN rm -fr ./packages/rs-*
 #
 FROM node:16-alpine${ALPINE_VERSION} AS dashmate
 
-RUN apk update && \
-    apk --no-cache upgrade && \
-    apk add --no-cache docker-cli docker-cli-compose curl
+RUN apk add --no-cache docker-cli docker-cli-compose curl
 
 LABEL maintainer="Dash Developers <dev@dash.org>"
 LABEL description="Dashmate Helper Node.JS"
@@ -341,7 +342,7 @@ LABEL maintainer="Dash Developers <dev@dash.org>"
 LABEL description="DAPI Node.JS"
 
 # Install ZMQ shared library
-RUN apk update && apk add --no-cache zeromq-dev
+RUN apk add --no-cache zeromq-dev
 
 WORKDIR /platform
 
