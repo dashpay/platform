@@ -244,8 +244,13 @@ jobs:
       #     restore-keys: |
       #       ${{ runner.os }}-cache-mount-cache
 
-      - name: Set-up s5cmd
-        uses: peak/action-setup-s5cmd@main
+      # - name: Set-up s5cmd
+      #   uses: peak/action-setup-s5cmd@main
+
+      - name: Setup s5cmd
+        run: |
+          curl -sL -o /tmp/s5cmd.tar.gz https://github.com/peak/s5cmd/releases/download/v2.0.0/s5cmd_2.0.0_Linux-64bit.tar.gz
+          tar -xf /tmp/s5cmd.tar.gz -C /usr/local/bin s5cmd
 
       - name: Sync files
         run: |
