@@ -28,7 +28,11 @@ export async function get(this: Platform, id: Identifier | string): Promise<any>
     throw e;
   }
 
-  const identity = this.dpp.identity.createFromBuffer(identityResponse.getIdentity());
+  // TODO: Remove skipValidation when non-unique keys are supported
+  const identity = this.dpp.identity.createFromBuffer(
+    identityResponse.getIdentity(),
+    { skipValidation: true },
+  );
 
   let metadata;
   const responseMetadata = identityResponse.getMetadata();

@@ -54,18 +54,21 @@ describe('createMasternodeIdentityFactory', () => {
 
     const result = await createMasternodeIdentity(blockInfo, identityId, pubKeyData, pubKeyType);
 
+    // TODO: Enable keys when we have support of non unique keys in DPP
+    // {
+    //   id: 0,
+    //     type: pubKeyType,
+    //   purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+    //   securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+    //   readOnly: true,
+    //   // Copy data buffer
+    //   data: pubKeyData,
+    // }
+
     const identity = new Identity({
       protocolVersion: 1,
       id: identityId,
-      publicKeys: [{
-        id: 0,
-        type: pubKeyType,
-        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-        readOnly: true,
-        // Copy data buffer
-        data: pubKeyData,
-      }],
+      publicKeys: [],
       balance: 0,
       revision: 0,
     });
@@ -82,7 +85,8 @@ describe('createMasternodeIdentityFactory', () => {
 
     expect(getPublicKeyFromPayoutScriptMock).to.not.be.called();
 
-    expect(dppMock.identity.validate).to.be.calledOnceWithExactly(identity);
+    // TODO: Enable keys when we have support of non unique keys in DPP
+    // expect(dppMock.identity.validate).to.be.calledOnceWithExactly(identity);
   });
 
   it('should store identity and public key hashed to the previous store', async () => {
@@ -92,18 +96,21 @@ describe('createMasternodeIdentityFactory', () => {
 
     const result = await createMasternodeIdentity(blockInfo, identityId, pubKeyData, pubKeyType);
 
+    // TODO: Enable keys when we have support of non unique keys in DPP
+    // {
+    //   id: 0,
+    //     type: pubKeyType,
+    //   purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+    //   securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+    //   readOnly: true,
+    //   // Copy data buffer
+    //   data: pubKeyData,
+    // }
+
     const identity = new Identity({
       protocolVersion: 1,
       id: identityId,
-      publicKeys: [{
-        id: 0,
-        type: pubKeyType,
-        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-        readOnly: true,
-        // Copy data buffer
-        data: pubKeyData,
-      }],
+      publicKeys: [],
       balance: 0,
       revision: 0,
     });
@@ -117,7 +124,8 @@ describe('createMasternodeIdentityFactory', () => {
     );
   });
 
-  it('should throw DPPValidationAbciError if identity is not valid', async () => {
+  // TODO: Enable keys when we have support of non unique keys in DPP
+  it.skip('should throw DPPValidationAbciError if identity is not valid', async () => {
     const validationError = new MissingStateTransitionTypeError();
 
     validationResult.addError(validationError.serialize());
