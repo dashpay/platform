@@ -1,4 +1,3 @@
-const varint = require('varint');
 const JsDataContractUpdateTransition = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractUpdateTransition/DataContractUpdateTransition');
 
 const getDataContractFixture = require('../../../../../lib/test/fixtures/getDataContractFixture');

@@ -1,7 +1,5 @@
 const varint = require('varint');
 
-const JSIdentity = require('@dashevo/dpp/lib/identity/Identity');
-
 const { hash: hashFunction } = require('@dashevo/dpp/lib/util/hash');
 const { expect } = require('chai');
 const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');

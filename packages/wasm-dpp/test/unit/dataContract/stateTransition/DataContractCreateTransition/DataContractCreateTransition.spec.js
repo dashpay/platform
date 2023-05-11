@@ -1,5 +1,3 @@
-const varint = require('varint');
-
 const getDataContractFixture = require('../../../../../lib/test/fixtures/getDataContractFixture');
 const { default: loadWasmDpp } = require('../../../../..');
 const { getLatestProtocolVersion, StateTransitionTypes } = require('../../../../..');
