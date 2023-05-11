@@ -22,10 +22,17 @@ const {
   contractId: withdrawalsContractId,
 } = require('@dashevo/withdrawals-contract/lib/systemIds');
 
+const semver = require('semver');
+
 const {
   NETWORK_TESTNET,
   HOME_DIR_PATH,
 } = require('../../src/constants');
+
+const { version } = require('../../package.json');
+
+const prereleaseTag = semver.prerelease(version) === null ? '' : `-${semver.prerelease(version)[0]}`;
+const dockerImageVersion = `${semver.major(version)}.${semver.minor(version)}${prereleaseTag}`;
 
 module.exports = {
   description: 'base config for use as template',
@@ -96,7 +103,7 @@ module.exports = {
     dapi: {
       envoy: {
         docker: {
-          image: 'dashpay/envoy:0.24-dev',
+          image: `dashpay/envoy:${dockerImageVersion}`,
         },
         http: {
           port: 443,
@@ -120,14 +127,14 @@ module.exports = {
       },
       api: {
         docker: {
-          image: 'dashpay/dapi:0.24.0-dev',
+          image: `dashpay/dapi:${dockerImageVersion}`,
         },
       },
     },
     drive: {
       abci: {
         docker: {
-          image: 'dashpay/drive:0.24.0-dev',
+          image: `dashpay/drive:${dockerImageVersion}`,
         },
         log: {
           stdout: {
@@ -241,7 +248,7 @@ module.exports = {
   dashmate: {
     helper: {
       docker: {
-        image: 'dashpay/dashmate-helper:0.24-dev',
+        image: `dashpay/dashmate-helper:${dockerImageVersion}`,
       },
       api: {
         enable: false,
