@@ -1,6 +1,6 @@
 const fetch = require('node-fetch');
 
-const { FetchError } = fetch;
+const {FetchError} = fetch;
 
 const getPlatformScopeFactory = require('../../../../src/status/scopes/platform');
 const determineStatus = require('../../../../src/status/determineStatus');
@@ -19,6 +19,13 @@ describe('getPlatformScopeFactory', () => {
     let mockGetConnectionHost;
 
     let config;
+    let httpPort
+    let httpServiceUrl
+    let p2pPort
+    let p2pServiceUrl
+    let rpcPort
+    let rpcServiceUrl
+
     let getPlatformScope;
 
     beforeEach(async function it() {
@@ -42,14 +49,21 @@ describe('getPlatformScopeFactory', () => {
         toEnvs: this.sinon.stub(),
       };
 
+      httpPort = config.get('platform.dapi.envoy.http.port');
+      httpServiceUrl = `${config.get('externalIp')}:${httpPort}`;
+      p2pPort = config.get('platform.drive.tenderdash.p2p.port');
+      p2pServiceUrl = `${config.get('externalIp')}:${p2pPort}`;
+      rpcPort = config.get('platform.drive.tenderdash.rpc.port');
+      rpcServiceUrl = `127.0.0.1:${rpcPort}`;
+
       getPlatformScope = getPlatformScopeFactory(mockDockerCompose,
         mockCreateRpcClient, mockGetConnectionHost);
     });
 
     it('should just work', async () => {
       mockDetermineDockerStatus.returns(DockerStatusEnum.running);
-      mockRpcClient.mnsync.returns({ result: { IsSynced: true } });
-      mockDockerCompose.execCommand.returns({ exitCode: 0, out: '' });
+      mockRpcClient.mnsync.returns({result: {IsSynced: true}});
+      mockDockerCompose.execCommand.returns({exitCode: 0, out: ''});
 
       const externalIp = '192.168.0.1';
 
@@ -68,13 +82,13 @@ describe('getPlatformScopeFactory', () => {
           latestAppHash: '',
         },
       };
-      const mockNetInfo = { n_peer: 3 };
+      const mockNetInfo = {n_peer: 3};
 
       mockFetch
         .onFirstCall()
-        .returns(Promise.resolve({ json: () => Promise.resolve(mockStatus) }))
+        .returns(Promise.resolve({json: () => Promise.resolve(mockStatus)}))
         .onSecondCall()
-        .returns(Promise.resolve({ json: () => Promise.resolve(mockNetInfo) }));
+        .returns(Promise.resolve({json: () => Promise.resolve(mockNetInfo)}));
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
 
       const scope = await getPlatformScope(config);
@@ -88,36 +102,192 @@ describe('getPlatformScopeFactory', () => {
       expect(scope.p2pPortState).to.be.equal('OPEN');
     });
 
-    it('should throw if error during request to docker', async () => {
+    it('should return scope if error during request to docker', async () => {
       mockDetermineDockerStatus.throws(new Error());
 
-      try {
-        await getPlatformScope(config);
+      const httpPort = config.get('platform.dapi.envoy.http.port');
+      const httpServiceUrl = `${config.get('externalIp')}:${httpPort}`;
+      const p2pPort = config.get('platform.drive.tenderdash.p2p.port');
+      const p2pServiceUrl = `${config.get('externalIp')}:${p2pPort}`;
+      const rpcPort = config.get('platform.drive.tenderdash.rpc.port');
+      const rpcServiceUrl = `127.0.0.1:${rpcPort}`;
 
-        expect.fail('should throw error');
-      } catch (e) {
-        expect(e instanceof Error).to.be.true();
-      }
+      const expectedScope = {
+        dapi: {
+          httpPort,
+          httpServiceUrl,
+        },
+        tenderdash: {
+          p2pPort,
+          p2pServiceUrl,
+          rpcPort,
+          rpcServiceUrl,
+          httpPortState: null,
+          p2pPortState: null,
+          dockerStatus: null,
+          serviceStatus: null,
+          version: null,
+          listening: null,
+          catchingUp: null,
+          latestBlockHash: null,
+          latestBlockHeight: null,
+          latestBlockTime: null,
+          latestAppHash: null,
+          peers: null,
+          moniker: null,
+          network: null,
+        },
+        drive: {
+          dockerStatus: null,
+          serviceStatus: null,
+        },
+      };
+
+      const scope = await getPlatformScope(config);
+      expect(scope).to.be.deepEqual(expectedScope);
     });
 
-    it('should throw if error during mnsync', async () => {
-      mockRpcClient.mnsync.throws(new Error());
+    it('should return scope if error during mnsync', async () => {
+      mockRpcClient.masternode.throws(new Error());
 
-      try {
-        await getPlatformScope(config);
+      const httpPort = config.get('platform.dapi.envoy.http.port');
+      const httpServiceUrl = `${config.get('externalIp')}:${httpPort}`;
+      const p2pPort = config.get('platform.drive.tenderdash.p2p.port');
+      const p2pServiceUrl = `${config.get('externalIp')}:${p2pPort}`;
+      const rpcPort = config.get('platform.drive.tenderdash.rpc.port');
+      const rpcServiceUrl = `127.0.0.1:${rpcPort}`;
 
-        expect.fail('should throw error');
-      } catch (e) {
-        expect(e instanceof Error).to.be.true();
-      }
+      const expectedScope = {
+        dapi: {
+          httpPort,
+          httpServiceUrl,
+        },
+        tenderdash: {
+          p2pPort,
+          p2pServiceUrl,
+          rpcPort,
+          rpcServiceUrl,
+          httpPortState: null,
+          p2pPortState: null,
+          dockerStatus: null,
+          serviceStatus: null,
+          version: null,
+          listening: null,
+          catchingUp: null,
+          latestBlockHash: null,
+          latestBlockHeight: null,
+          latestBlockTime: null,
+          latestAppHash: null,
+          peers: null,
+          moniker: null,
+          network: null,
+        },
+        drive: {
+          dockerStatus: null,
+          serviceStatus: null,
+        },
+      };
+
+      const scope = await getPlatformScope(config);
+      expect(scope).to.be.deepEqual(expectedScope);
+    });
+
+    it('should return drive info even if tenderdash failed', async () => {
+      mockRpcClient.masternode.throws(new Error());
+
+      const httpPort = config.get('platform.dapi.envoy.http.port');
+      const httpServiceUrl = `${config.get('externalIp')}:${httpPort}`;
+      const p2pPort = config.get('platform.drive.tenderdash.p2p.port');
+      const p2pServiceUrl = `${config.get('externalIp')}:${p2pPort}`;
+      const rpcPort = config.get('platform.drive.tenderdash.rpc.port');
+      const rpcServiceUrl = `127.0.0.1:${rpcPort}`;
+
+      const expectedScope = {
+        dapi: {
+          httpPort,
+          httpServiceUrl,
+        },
+        tenderdash: {
+          p2pPort,
+          p2pServiceUrl,
+          rpcPort,
+          rpcServiceUrl,
+          httpPortState: null,
+          p2pPortState: null,
+          dockerStatus: null,
+          serviceStatus: null,
+          version: null,
+          listening: null,
+          catchingUp: null,
+          latestBlockHash: null,
+          latestBlockHeight: null,
+          latestBlockTime: null,
+          latestAppHash: null,
+          peers: null,
+          moniker: null,
+          network: null,
+        },
+        drive: {
+          dockerStatus: 'running',
+          serviceStatus: 'up',
+        },
+      };
+
+      const scope = await getPlatformScope(config);
+      expect(scope).to.be.deepEqual(expectedScope);
+    });
+
+    it('should return tenderdash info even if drive failed', async () => {
+      mockRpcClient.masternode.throws(new Error());
+
+      const httpPort = config.get('platform.dapi.envoy.http.port');
+      const httpServiceUrl = `${config.get('externalIp')}:${httpPort}`;
+      const p2pPort = config.get('platform.drive.tenderdash.p2p.port');
+      const p2pServiceUrl = `${config.get('externalIp')}:${p2pPort}`;
+      const rpcPort = config.get('platform.drive.tenderdash.rpc.port');
+      const rpcServiceUrl = `127.0.0.1:${rpcPort}`;
+
+      const expectedScope = {
+        dapi: {
+          httpPort,
+          httpServiceUrl,
+        },
+        tenderdash: {
+          p2pPort,
+          p2pServiceUrl,
+          rpcPort,
+          rpcServiceUrl,
+          httpPortState: null,
+          p2pPortState: null,
+          dockerStatus: null,
+          serviceStatus: null,
+          version: null,
+          listening: null,
+          catchingUp: null,
+          latestBlockHash: null,
+          latestBlockHeight: null,
+          latestBlockTime: null,
+          latestAppHash: null,
+          peers: null,
+          moniker: null,
+          network: null,
+        },
+        drive: {
+          dockerStatus: 'running',
+          serviceStatus: 'up',
+        },
+      };
+
+      const scope = await getPlatformScope(config);
+      expect(scope).to.be.deepEqual(expectedScope);
     });
 
     it('should have error service status in case FetchError to tenderdash', async () => {
       mockDetermineDockerStatus.returns(DockerStatusEnum.running);
-      mockRpcClient.mnsync.returns({ result: { IsSynced: true } });
+      mockRpcClient.mnsync.returns({result: {IsSynced: true}});
       mockMNOWatchProvider.returns(Promise.resolve('OPEN'));
       mockFetch.returns(Promise.reject(new FetchError('test')));
-      mockDockerCompose.execCommand.returns({ exitCode: 0, out: '' });
+      mockDockerCompose.execCommand.returns({exitCode: 0, out: ''});
 
       const scope = await getPlatformScope(config);
 

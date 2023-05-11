@@ -12,7 +12,7 @@ const providers = require('../providers');
  */
 function getPlatformScopeFactory(dockerCompose,
                                  createRpcClient, getConnectionHost) {
-  async function getMasternodeState() {
+  async function getMasternodeState(config) {
     const rpcClient = createRpcClient({
       port: config.get('core.rpc.port'),
       user: config.get('core.rpc.user'),
@@ -30,21 +30,25 @@ function getPlatformScopeFactory(dockerCompose,
     return state
   }
 
-  async function handleTenderdash(scope, masternodeReady) {
-    scope.tenderdash.docker.status = await determineStatus
-      .docker(dockerCompose, config, 'drive_tenderdash');
-    scope.tenderdash.service.status = determineStatus
-      .platform(scope.tenderdash.docker.status, masternodeReady);
+  async function getTenderdashInfo(scope, config, masternodeReady) {
+    const info = {}
+
+    const dockerStatus = await determineStatus.docker(dockerCompose, config, 'drive_tenderdash');
+    const serviceStatus = determineStatus.platform(scope.tenderdash.docker.status, masternodeReady);
+
+    info.dockerStatus = dockerStatus
+    info.serviceStatus = serviceStatus
 
     // Collecting platform data fails if Tenderdash is waiting for core to sync
-    if (scope.tenderdash.service.status === ServiceStatusEnum.up) {
-      const [httpPortState, p2pPortState] = await Promise.all([
+    if (serviceStatus === ServiceStatusEnum.up) {
+      const portStatusResult = await Promise.allSettled([
         providers.mnowatch.checkPortStatus(config.get('platform.dapi.envoy.http.port')),
         providers.mnowatch.checkPortStatus(config.get('platform.drive.tenderdash.p2p.port')),
       ]);
+      const [httpPortState, p2pPortState] = portStatusResult.map(result => result.status === 'fulfilled' ? result.value : null)
 
-      scope.httpPortState = httpPortState;
-      scope.p2pPortState = p2pPortState;
+      info.httpPortState = httpPortState;
+      info.p2pPortState = p2pPortState;
 
       try {
         const tenderdashHost = await getConnectionHost(config, 'drive_tenderdash')
@@ -69,35 +73,39 @@ function getPlatformScopeFactory(dockerCompose,
         const platformPeers = parseInt(tenderdashNetInfo.n_peers, 10);
         const {listening} = tenderdashNetInfo;
 
-        scope.tenderdash.version = version;
-        scope.tenderdash.listening = listening;
-        scope.tenderdash.lastBlockHeight = lastBlockHeight;
-        scope.tenderdash.lastBlockHash = lastBlockHash;
-        scope.tenderdash.catchingUp = catchingUp;
-        scope.tenderdash.peers = platformPeers;
-        scope.tenderdash.moniker = moniker;
-        scope.tenderdash.network = network;
-        scope.tenderdash.latestAppHash = latestAppHash;
+        info.version = version;
+        info.listening = listening;
+        info.lastBlockHeight = lastBlockHeight;
+        info.lastBlockHash = lastBlockHash;
+        info.catchingUp = catchingUp;
+        info.peers = platformPeers;
+        info.moniker = moniker;
+        info.network = network;
+        info.latestAppHash = latestAppHash;
       } catch (e) {
         if (e.name === 'FetchError') {
-          scope.tenderdash.serviceStatus = ServiceStatusEnum.error;
+          info.serviceStatus = ServiceStatusEnum.error;
         } else {
           throw e;
         }
       }
+
+      return info
     }
   }
 
-  const handleDrive = async (scope, config, dockerCompose, masternodeReady) => {
-    scope.drive.dockerStatus = await determineStatus.docker(dockerCompose, config, 'drive_abci');
-    scope.drive.serviceStatus = determineStatus.platform(scope.drive.dockerStatus, masternodeReady);
+  const getDriveInfo = async (scope, config, dockerCompose, masternodeReady) => {
+    const dockerStatus = await determineStatus.docker(dockerCompose, config, 'drive_abci');
+    let serviceStatus = determineStatus.platform(scope.drive.dockerStatus, masternodeReady);
 
     const driveEchoResult = await dockerCompose.execCommand(config.toEnvs(),
       'drive_abci', 'yarn workspace @dashevo/drive echo');
 
     if (driveEchoResult.exitCode !== 0) {
-      scope.drive.serviceStatus = ServiceStatusEnum.error;
+      serviceStatus = ServiceStatusEnum.error;
     }
+
+    return {dockerStatus, serviceStatus}
   }
 
   /**
@@ -146,24 +154,30 @@ function getPlatformScopeFactory(dockerCompose,
       },
     };
 
-    const state = await getMasternodeState(scope, config, createRpcClient, getConnectionHost);
-    const masternodeReady = state === MasternodeStateEnum.READY;
+    try {
+      const state = await getMasternodeState(scope, config, createRpcClient, getConnectionHost);
+      const masternodeReady = state === MasternodeStateEnum.READY;
 
-    if (!masternodeReady) {
-      console.error(`Platform status is not available until masternode state is 'READY'`)
+      if (!masternodeReady) {
+        console.error(`Platform status is not available until masternode state is 'READY'`)
 
-      return scope
-    }
+        return scope
+      }
 
-    // handle simultaneously and mutate `scope`
-    const result = await Promise.allSettled([
-      handleTenderdash(scope, masternodeReady),
-      handleDrive(scope, masternodeReady),
-    ]);
+      const [tenderdash, drive] = await Promise.all([
+        getTenderdashInfo(scope),
+        getDriveInfo(scope),
+      ]);
 
-    for (const error of result.filter(e => e.status === 'rejected')) {
-      // eslint-disable-next-line no-console
-      console.error(error.reason)
+      if (tenderdash) {
+        scope.tenderdash = tenderdash
+      }
+
+      if (drive) {
+        scope.drive = drive
+      }
+    } catch (e) {
+      console.error(e)
     }
 
     return scope
