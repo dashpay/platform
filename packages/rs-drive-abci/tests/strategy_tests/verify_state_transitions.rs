@@ -2,12 +2,13 @@ use dapi_grpc::platform::v0::{get_proofs_request, GetProofsRequest, GetProofsRes
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransitionAction;
 use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransitionAction;
 use dpp::identity::PartialIdentity;
-use dpp::state_transition::{StateTransition, StateTransitionAction};
+use dpp::state_transition::{StateTransition, StateTransitionAction, StateTransitionLike};
 use drive::drive::Drive;
 use drive_abci::abci::AbciApplication;
 use drive_abci::platform::{Platform, PlatformRef};
 use drive_abci::rpc::core::MockCoreRPCLike;
 use drive_abci::validation::state_transition::StateTransitionValidation;
+use mockall::Any;
 use prost::Message;
 use tenderdash_abci::proto::abci::RequestQuery;
 use tenderdash_abci::Application;
@@ -33,7 +34,13 @@ pub(crate) fn verify_state_transitions_were_executed(
                 .transform_into_action(&platform, None)
                 .expect("expected state transitions to validate")
                 .into_data()
-                .expect("expected state transitions to be valid")
+                .expect(
+                    format!(
+                        "expected state transitions to be valid {}",
+                        state_transition.get_type()
+                    )
+                    .as_str(),
+                )
         })
         .collect::<Vec<_>>();
 

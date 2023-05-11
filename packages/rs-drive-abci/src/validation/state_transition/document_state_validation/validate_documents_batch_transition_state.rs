@@ -342,7 +342,7 @@ fn validate_transition(
             let mut result = ConsensusValidationResult::<DocumentTransitionAction>::new_with_data(
                 DocumentTransitionAction::ReplaceAction(DocumentReplaceTransitionAction::default()),
             );
-            if !bypass_validation {
+            let document_replace_action = if !bypass_validation {
                 // We do not need to perform this check on genesis
                 if let Some(latest_block_time_ms) = latest_block_time_ms {
                     let validation_result = check_updated_inside_time_window(
@@ -356,19 +356,18 @@ fn validate_transition(
                         return Ok(result);
                     }
                 }
-            }
 
-            let validation_result = check_if_document_can_be_found(transition, fetched_documents);
-            // we only do is_valid on purpose because it would be a system error if it didn't have
-            // data
-            let original_document = if validation_result.is_valid() {
-                validation_result.into_data()?
-            } else {
-                result.add_errors(validation_result.errors);
-                return Ok(result);
-            };
+                let validation_result =
+                    check_if_document_can_be_found(transition, fetched_documents);
+                // we only do is_valid on purpose because it would be a system error if it didn't have
+                // data
+                let original_document = if validation_result.is_valid() {
+                    validation_result.into_data()?
+                } else {
+                    result.add_errors(validation_result.errors);
+                    return Ok(result);
+                };
 
-            if !bypass_validation {
                 // we check the revision first because it is a more common issue
                 let validation_result =
                     check_revision_is_bumped_by_one(document_replace_transition, original_document);
@@ -384,15 +383,12 @@ fn validate_transition(
                 if !result.is_valid() {
                     return Ok(result);
                 }
-            }
+                let document_replace_action =
+                    DocumentReplaceTransitionAction::from_document_replace_transition(
+                        document_replace_transition,
+                        original_document.created_at,
+                    );
 
-            let document_replace_action: DocumentReplaceTransitionAction =
-                DocumentReplaceTransitionAction::from_document_replace_transition(
-                    document_replace_transition,
-                    original_document.created_at,
-                );
-
-            if !bypass_validation {
                 let validation_result = platform
                     .drive
                     .validate_document_replace_transition_action_uniqueness(
@@ -403,7 +399,23 @@ fn validate_transition(
                         transaction,
                     )?;
                 result.merge(validation_result);
-            }
+                document_replace_action
+            } else {
+                let validation_result =
+                    check_if_document_can_be_found(transition, fetched_documents);
+                // There is a case where we updated a just deleted document
+                // In this case we don't care about the created at
+                let original_document_created_at = if validation_result.is_valid() {
+                    validation_result.into_data()?.created_at
+                } else {
+                    None
+                };
+
+                DocumentReplaceTransitionAction::from_document_replace_transition(
+                    document_replace_transition,
+                    original_document_created_at,
+                )
+            };
 
             if result.is_valid() {
                 Ok(DocumentTransitionAction::ReplaceAction(document_replace_action).into())
@@ -415,18 +427,19 @@ fn validate_transition(
             let mut result = ConsensusValidationResult::<DocumentTransitionAction>::new_with_data(
                 DocumentTransitionAction::DeleteAction(DocumentDeleteTransitionAction::default()),
             );
-            let validation_result = check_if_document_can_be_found(transition, fetched_documents);
-
-            // we only do is_valid on purpose because it would be a system error if it didn't have
-            // data
-            let original_document = if validation_result.is_valid() {
-                validation_result.into_data()?
-            } else {
-                result.add_errors(validation_result.errors);
-                return Ok(result);
-            };
 
             if !bypass_validation {
+                let validation_result =
+                    check_if_document_can_be_found(transition, fetched_documents);
+
+                // we only do is_valid on purpose because it would be a system error if it didn't have
+                // data
+                let original_document = if validation_result.is_valid() {
+                    validation_result.into_data()?
+                } else {
+                    result.add_errors(validation_result.errors);
+                    return Ok(result);
+                };
                 let validation_result = check_ownership(transition, original_document, owner_id);
                 if !validation_result.is_valid() {
                     result.add_errors(validation_result.errors);
