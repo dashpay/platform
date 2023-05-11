@@ -8,6 +8,9 @@ use js_sys::Array;
 use serde_json::Value;
 use wasm_bindgen::prelude::*;
 
+use dpp::consensus::basic::decode::SerializedObjectParsingError;
+use dpp::consensus::basic::BasicError;
+use dpp::consensus::ConsensusError;
 use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 use dpp::identity::IdentityPublicKey;
 use dpp::identity::{Identity, KeyID};
