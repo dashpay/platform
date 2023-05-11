@@ -82,7 +82,7 @@ class SetupCommand extends BaseCommand {
 
           if (isAlreadyConfigured) {
             const resetCommand = ctx.preset === PRESET_LOCAL
-              ? 'dashmate group reset --hard' : `dashmate reset --config ${ctx.preset} --hard`;
+              ? `dashmate group reset --group ${ctx.preset} --hard` : `dashmate reset --config ${ctx.preset} --hard`;
 
             // eslint-disable-next-line no-param-reassign
             task.output = chalk`Preset {bold ${ctx.preset}} already configured.
