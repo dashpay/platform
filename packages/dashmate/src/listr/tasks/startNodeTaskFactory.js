@@ -26,9 +26,11 @@ function startNodeTaskFactory(
   /**
    * @typedef {startNodeTask}
    * @param {Config} config
+   * @param {Object} [options={}]
+   * @param {boolean} [options.platformOnly=false]
    * @return {Object}
    */
-  function startNodeTask(config) {
+  function startNodeTask(config, options = {}) {
     // check core is not reindexing
     if (config.get('core.reindex.enable', true)) {
       throw new Error(`Your dashcore node in config [${config.name}] is reindexing, please allow the process to complete first`);
@@ -61,8 +63,17 @@ function startNodeTaskFactory(
       {
         title: 'Check node is not started',
         task: async () => {
-          if (await dockerCompose.isServiceRunning(config.toEnvs())) {
+          if (await dockerCompose.isServiceRunning(config.toEnvs(options))) {
             throw new Error('Running services detected. Please ensure all services are stopped for this config before starting');
+          }
+        },
+      },
+      {
+        title: 'Check core is started',
+        enabled: options.platformOnly,
+        task: async () => {
+          if (!await dockerCompose.isServiceRunning(config.toEnvs(), 'core')) {
+            throw new Error('Core service is not running. Please ensure core service is running before starting');
           }
         },
       },
@@ -81,7 +92,7 @@ function startNodeTaskFactory(
             config.get('core.masternode.operator.privateKey', true);
           }
 
-          const envs = config.toEnvs();
+          const envs = config.toEnvs(options);
 
           await dockerCompose.up(envs);
         },

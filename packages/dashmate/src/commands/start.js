@@ -21,6 +21,7 @@ class StartCommand extends ConfigBaseCommand {
     {
       'wait-for-readiness': waitForReadiness,
       verbose: isVerbose,
+      platform: platformOnly,
     },
     dockerCompose,
     startNodeTask,
@@ -31,7 +32,7 @@ class StartCommand extends ConfigBaseCommand {
       [
         {
           title: `Start ${config.getName()} node`,
-          task: () => startNodeTask(config),
+          task: () => startNodeTask(config, { platformOnly }),
         },
         {
           title: 'Wait for nodes to be ready',
@@ -65,6 +66,7 @@ StartCommand.description = 'Start node';
 StartCommand.flags = {
   ...ConfigBaseCommand.flags,
   'wait-for-readiness': Flags.boolean({ char: 'w', description: 'wait for nodes to be ready', default: false }),
+  platform: Flags.boolean({ char: 'p', description: 'start only platform', default: false }),
 };
 
 module.exports = StartCommand;
