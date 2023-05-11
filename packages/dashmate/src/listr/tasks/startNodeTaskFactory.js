@@ -70,7 +70,7 @@ function startNodeTaskFactory(
       },
       {
         title: 'Check core is started',
-        enabled: options.platformOnly,
+        enabled: options.platformOnly === true,
         task: async () => {
           if (!await dockerCompose.isServiceRunning(config.toEnvs(), 'core')) {
             throw new Error('Core service is not running. Please ensure core service is running before starting');
