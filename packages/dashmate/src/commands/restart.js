@@ -28,7 +28,7 @@ class RestartCommand extends ConfigBaseCommand {
       [
         {
           title: `Restarting ${config.getName()} node`,
-          task: () => restartNodeTask(config, { platformOnly }),
+          task: () => restartNodeTask(config),
         },
       ],
       {
@@ -45,6 +45,7 @@ class RestartCommand extends ConfigBaseCommand {
     try {
       await tasks.run({
         isVerbose,
+        platformOnly: platformOnly === true,
       });
     } catch (e) {
       throw new MuteOneLineError(e);

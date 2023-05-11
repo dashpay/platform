@@ -26,11 +26,9 @@ function startNodeTaskFactory(
   /**
    * @typedef {startNodeTask}
    * @param {Config} config
-   * @param {Object} [options={}]
-   * @param {boolean} [options.platformOnly=false]
    * @return {Object}
    */
-  function startNodeTask(config, options = {}) {
+  function startNodeTask(config) {
     // check core is not reindexing
     if (config.get('core.reindex.enable', true)) {
       throw new Error(`Your dashcore node in config [${config.name}] is reindexing, please allow the process to complete first`);
@@ -62,15 +60,17 @@ function startNodeTaskFactory(
     return new Listr([
       {
         title: 'Check node is not started',
-        task: async () => {
-          if (await dockerCompose.isServiceRunning(config.toEnvs(options))) {
+        task: async (ctx) => {
+          if (await dockerCompose.isServiceRunning(
+            config.toEnvs({ platformOnly: ctx.platformOnly }),
+          )) {
             throw new Error('Running services detected. Please ensure all services are stopped for this config before starting');
           }
         },
       },
       {
         title: 'Check core is started',
-        enabled: options.platformOnly === true,
+        enabled: (ctx) => ctx.platformOnly === true,
         task: async () => {
           if (!await dockerCompose.isServiceRunning(config.toEnvs(), 'core')) {
             throw new Error('Platform services depend on Core and can\'t be started without it. Please run "dashmate start" without "--platform" flag');
@@ -85,14 +85,14 @@ function startNodeTaskFactory(
       },
       {
         title: 'Start services',
-        task: async () => {
+        task: async (ctx) => {
           const isMasternode = config.get('core.masternode.enable');
           if (isMasternode) {
             // Check operatorPrivateKey is set
             config.get('core.masternode.operator.privateKey', true);
           }
 
-          const envs = config.toEnvs(options);
+          const envs = config.toEnvs({ platformOnly: ctx.platformOnly });
 
           await dockerCompose.up(envs);
         },
