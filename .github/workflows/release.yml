@@ -244,6 +244,12 @@ jobs:
       #     restore-keys: |
       #       ${{ runner.os }}-cache-mount-cache
 
+      - name: Set-up s5cmd
+        uses: peak/action-setup-s5cmd@main
+
+      - name: Sync files
+        run: |
+          s5cmd sync 's3://platform-runner-cache/cache-mounts/*' 'cache'
 
       - name: Retrieve cache mount data for Docker
         uses: actions/cache@v3
@@ -277,6 +283,10 @@ jobs:
         uses: overmindtech/buildkit-cache-dance/extract@main
         with:
           cache-target: /platform/target
+
+      - name: Sync files
+        run: |
+          s5cmd sync 'cache/*' 's3://platform-runner-cache/cache-mounts/'
 
       - name: Setup tmate session
         if: ${{ failure() }}
