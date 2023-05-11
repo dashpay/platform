@@ -13,7 +13,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
     pub fn check_for_desired_protocol_upgrade(
         &self,
         total_hpmns: u32,
-        platform_state: &PlatformState,
+        current_protocol_version_in_consensus: ProtocolVersion,
         transaction: &Transaction,
     ) -> Result<Option<ProtocolVersion>, Error> {
         let required_upgraded_hpns = 1
@@ -58,7 +58,7 @@ impl<CoreRPCLike> Platform<CoreRPCLike> {
             // we also drop all protocol version votes information
             self.drive
                 .change_to_new_version_and_clear_version_information(
-                    platform_state.current_protocol_version_in_consensus,
+                    current_protocol_version_in_consensus,
                     new_version,
                     Some(transaction),
                 )

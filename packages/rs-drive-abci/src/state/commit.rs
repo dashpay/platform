@@ -35,7 +35,7 @@ where
         // we need to serialize the block info
         let serialized_block_info = block_info.serialize()?;
 
-        // next we need to store this data in groveb
+        // next we need to store this data in grovedb
         self.drive
             .grove
             .put_aux(

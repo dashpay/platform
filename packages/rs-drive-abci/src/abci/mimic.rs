@@ -345,6 +345,18 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
             block_id: Some(block_id),
         };
 
+        let transaction_guard = self.transaction.read().unwrap();
+
+        let transaction = transaction_guard.as_ref().ok_or(Error::Execution(
+            ExecutionError::NotInTransaction(
+                "trying to finalize block without a current transaction",
+            ),
+        ))?;
+
+        let root_hash_before_finalization = self.platform.drive.grove.root_hash(Some(transaction)).unwrap().unwrap();
+        assert_eq!(app_hash, root_hash_before_finalization);
+        drop(transaction_guard);
+
         if !options.dont_finalize_block {
             self.finalize_block(request_finalize_block)
                 .unwrap_or_else(|e| {
@@ -353,6 +365,8 @@ impl<'a, C: CoreRPCLike> AbciApplication<'a, C> {
                         block_info.height, block_info.time_ms, e
                     )
                 });
+            let root_hash_after_finalization = self.platform.drive.grove.root_hash(None).unwrap().unwrap();
+            assert_eq!(app_hash, root_hash_after_finalization);
         }
 
         Ok(MimicExecuteBlockOutcome {

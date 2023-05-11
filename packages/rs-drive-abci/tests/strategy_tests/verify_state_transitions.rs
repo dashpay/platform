@@ -109,7 +109,7 @@ pub(crate) fn verify_state_transitions_were_executed(
                     identity_create_transition.identity_id.into_buffer(),
                 )
                 .expect("expected to verify full identity");
-                assert_eq!(&root_hash, expected_root_hash);
+                assert_eq!(&root_hash, expected_root_hash, "state last block info {:?}",  platform.state.last_committed_block_info);
                 assert_eq!(
                     identity
                         .expect("expected an identity")

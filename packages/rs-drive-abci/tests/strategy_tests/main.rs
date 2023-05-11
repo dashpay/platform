@@ -1614,7 +1614,9 @@ mod tests {
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
-            verify_state_transition_results: true,
+            // because we can add an identity and add keys to it in the same block
+            // the result would be different then expected
+            verify_state_transition_results: false,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -1687,7 +1689,9 @@ mod tests {
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
-            verify_state_transition_results: true,
+            // because we can add an identity and remove keys to it in the same block
+            // the result would be different then expected
+            verify_state_transition_results: false,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -1771,7 +1775,9 @@ mod tests {
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
-            verify_state_transition_results: true,
+            // because we can add an identity and withdraw from it in the same block
+            // the result would be different then expected
+            verify_state_transition_results: false,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
