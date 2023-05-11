@@ -1,4 +1,4 @@
-const { default: loadDpp, Identity, decodeProtocolEntity } = require('@dashevo/wasm-dpp');
+const { default: loadDpp, Identity } = require('@dashevo/wasm-dpp');
 
 const Worker = require('../Worker');
 
@@ -99,13 +99,7 @@ class IdentitySyncWorker extends Worker {
       // it means gaps are not sequential
       gapCount = 0;
 
-      const [protocolVersion, rawIdentity] = decodeProtocolEntity(
-        identityBuffer,
-      );
-
-      rawIdentity.protocolVersion = protocolVersion;
-
-      const identity = new Identity(rawIdentity);
+      const identity = Identity.fromBuffer(identityBuffer);
 
       // eslint-disable-next-line no-await-in-loop
       await this.storage
