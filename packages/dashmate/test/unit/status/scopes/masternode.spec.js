@@ -81,23 +81,50 @@ describe('getMasternodeScopeFactory', () => {
       expect(scope.nodeState.nextPaymentTime).to.exist();
     });
 
-    it('should throw if error with calls to core', async () => {
-      mockRpcClient.mnsync.throws(new Error());
 
-      try {
-        await getMasternodeScope(config);
+    it('should set mnsync null', async () => {
+      // simulate failed request to dashcore
+      mockRpcClient.mnsync.throws(new Error())
 
-        expect.fail('should throw error');
-      } catch (e) {
-        expect(e instanceof Error).to.be.true();
-      }
+      // and lets say sentinel is working
+      mockDockerCompose.execCommand
+        .withArgs(config.toEnvs(), 'sentinel', 'python bin/sentinel.py')
+        .returns({ out: 'Waiting for dash core sync' });
+      mockDockerCompose.execCommand
+        .withArgs(config.toEnvs(), 'sentinel', 'python bin/sentinel.py -v')
+        .returns({ out: 'Dash Sentinel v1.7.3' });
 
+      const scope = await getMasternodeScope(config)
+
+
+    // should return scope with no info, but sentinel is in there
+      const expectedScope = {
+        syncAsset: null,
+        sentinel: {
+          state: 'ok',
+          version: '1.7.3',
+        },
+        proTxHash: null,
+        state: MasternodeStateEnum.UNKNOWN,
+        status: null,
+        nodeState: {
+          dmnState: null,
+          poSePenalty: null,
+          lastPaidHeight: null,
+          lastPaidTime: null,
+          paymentQueuePosition: null,
+          nextPaymentTime: null,
+        },
+      };
+
+      expect(scope).to.be.deepEqual(expectedScope)
+
+      // and also should not be trying to obtain masternode info
       expect(mockDockerCompose.execCommand.notCalled).to.be.true();
       expect(mockRpcClient.getBlockchainInfo.notCalled).to.be.true();
-      expect(mockRpcClient.masternode.notCalled).to.be.true();
     });
 
-    it('should not make calls if syncing', async () => {
+    it('should not request masternode info if syncing', async () => {
       config.toEnvs.returns({});
 
       mockRpcClient.mnsync.returns({
@@ -130,44 +157,6 @@ describe('getMasternodeScopeFactory', () => {
 
       expect(mockRpcClient.getBlockchainInfo.notCalled).to.be.true();
       expect(mockRpcClient.masternode.notCalled).to.be.true();
-    });
-
-    it('should not load sentinel version if exited with error', async () => {
-      config.toEnvs.returns({});
-
-      mockRpcClient.mnsync.returns({
-        result: {
-          AssetName: MasternodeSyncAssetEnum.MASTERNODE_SYNC_BLOCKCHAIN,
-        },
-      });
-
-      mockDockerCompose.execCommand
-        .withArgs(config.toEnvs(), 'sentinel', 'python bin/sentinel.py')
-        .throws(new Error());
-
-      const mockProTxHash = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
-      const mockDmnState = {
-        PoSePenalty: 0,
-        PoSeRevivedHeight: 500,
-        lastPaidHeight: 555,
-        registeredHeight: 400,
-      };
-
-      mockRpcClient.getBlockchainInfo.returns({ result: { blocks: 1337 } });
-      mockRpcClient.masternode.withArgs('count').returns({ result: { enabled: 666 } });
-      mockRpcClient.masternode.withArgs('status').returns({
-        result: {
-          dmnState: mockDmnState,
-          state: MasternodeStateEnum.READY,
-          status: 'Ready',
-          proTxHash: mockProTxHash,
-        },
-      });
-
-      const scope = await getMasternodeScope(config);
-
-      expect(scope.sentinel.state).to.be.equal(null);
-      expect(scope.sentinel.version).to.be.equal(null);
     });
   });
 });
