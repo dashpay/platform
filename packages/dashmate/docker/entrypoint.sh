@@ -6,7 +6,7 @@ USERNAME=dashmate
 GROUP=docker
 
 # check if user with our uid exists in the system
-if ! (getent passwd $USER_ID | grep $USER_ID -q); then
+if ! (getent passwd $USER_ID | grep -q $USER_ID); then
   echo "Creating user $USERNAME ($USER_ID)"
   adduser -u $USER_ID -D -H $USERNAME
 else
