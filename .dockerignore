@@ -2,21 +2,28 @@
 .idea
 .vscode
 .nyc_output
+*.log
 Dockerfile
 
+tmp
 logs
 db
 scripts
 node_modules
 
+# File below breaks build when tests are not built
+packages/js-dash-sdk/src/SDK/Client/Platform/methods/contracts/get.spec.ts
+
 packages/*/.nyc_output
 packages/*/.ultra.cache.json
 packages/*/test
 packages/*/tests
+packages/*/build
 packages/*/doc
 packages/*/docs
 packages/*/dist
 packages/*/wasm
+packages/*/lib/wasm
 packages/*/node_modules
 
 !packages/platform-test-suite/test
@@ -25,6 +32,8 @@ packages/*/node_modules
 .yarn/build-state.yml
 .yarn/install-state.gz
 .yarn/unplugged
+
+.yo-repository
 
 # Rust
 target

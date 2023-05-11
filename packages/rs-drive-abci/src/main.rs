@@ -56,9 +56,15 @@ enum Commands {
     /// WARNING: output can contain sensitive data!
     #[command()]
     Config {},
+
+    /// Check status.
+    ///
+    /// Returns 0 on success.
+    #[command()]
+    Status {},
 }
 
-pub fn main() {
+pub fn main() -> Result<(), String> {
     let cli = Cli::parse();
     let config = load_config(&cli.config);
 
@@ -74,17 +80,29 @@ pub fn main() {
                 config.core.rpc.password.clone(),
             )
             .unwrap();
-            drive_abci::abci::start(&config, core_rpc).unwrap()
+            drive_abci::abci::start(&config, core_rpc).unwrap();
+            Ok(())
         }
         Commands::Config {} => dump_config(&config),
+        Commands::Status {} => check_status(&config),
     }
 }
 
-fn dump_config(config: &PlatformConfig) {
+fn dump_config(config: &PlatformConfig) -> Result<(), String> {
     let serialized =
         serde_json::to_string_pretty(config).expect("failed to generate configuration");
 
     println!("{}", serialized);
+
+    Ok(())
+}
+
+/// Check status of ABCI server.
+///
+/// Returns 0
+/// TODO: For now, it's just a placeholder.
+fn check_status(_config: &PlatformConfig) -> Result<(), String> {
+    Ok(())
 }
 
 fn load_config(path: &Option<PathBuf>) -> PlatformConfig {
