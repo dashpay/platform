@@ -66,7 +66,8 @@ describe('Masternode Reward Shares', () => {
     });
   });
 
-  describe('Masternode owner', () => {
+  // TODO: Enable keys when we have support of non unique keys in DPP
+  describe.skip('Masternode owner', () => {
     let anotherIdentity;
     let rewardShare;
     let anotherRewardShare;

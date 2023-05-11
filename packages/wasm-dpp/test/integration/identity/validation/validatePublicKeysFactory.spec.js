@@ -1,8 +1,7 @@
 const crypto = require('crypto');
 
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
-
-const BlsSignatures = require('@dashevo/dpp/lib/bls/bls');
+const getIdentityFixture = require('../../../../lib/test/fixtures/getIdentityFixture');
+const getBlsMock = require('../../../../lib/test/mocks/getBlsAdapterMock');
 
 const {
   expectValidationError,
@@ -16,7 +15,6 @@ describe('validatePublicKeysFactory', function main() {
 
   let rawPublicKeys;
   let validatePublicKeys;
-  let bls;
   let publicKeysValidator;
 
   let PublicKeysValidator;
@@ -28,7 +26,7 @@ describe('validatePublicKeysFactory', function main() {
   let InvalidIdentityPublicKeySecurityLevelError;
 
   beforeEach(async () => {
-    ({ publicKeys: rawPublicKeys } = getIdentityFixture().toObject());
+    ({ publicKeys: rawPublicKeys } = (await getIdentityFixture()).toObject());
 
     ({
       PublicKeysValidator, IdentityPublicKey,
@@ -37,25 +35,7 @@ describe('validatePublicKeysFactory', function main() {
       InvalidIdentityPublicKeyDataError, InvalidIdentityPublicKeySecurityLevelError,
     } = await loadWasmDpp());
 
-    bls = await BlsSignatures.getInstance();
-
-    const blsAdapter = {
-      validatePublicKey(publicKeyBuffer) {
-        let pk;
-
-        try {
-          pk = bls.G1Element.fromBytes(publicKeyBuffer);
-        } catch (e) {
-          return false;
-        } finally {
-          if (pk) {
-            pk.delete();
-          }
-        }
-
-        return Boolean(pk);
-      },
-    };
+    const blsAdapter = await getBlsMock();
 
     publicKeysValidator = new PublicKeysValidator(blsAdapter);
 

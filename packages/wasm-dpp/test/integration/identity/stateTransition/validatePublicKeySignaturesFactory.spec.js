@@ -2,10 +2,10 @@ const { PrivateKey, crypto: { Hash } } = require('@dashevo/dashcore-lib');
 
 const crypto = require('crypto');
 
-const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
 const BlsSignatures = require('@dashevo/dpp/lib/bls/bls');
 
 const { expect } = require('chai');
+const getIdentityCreateTransitionFixture = require('../../../../lib/test/fixtures/getIdentityCreateTransitionFixture');
 const { expectValidationError } = require('../../../../lib/test/expect/expectError');
 const getBlsAdapterMock = require('../../../../lib/test/mocks/getBlsAdapterMock');
 
@@ -16,7 +16,6 @@ describe('validatePublicKeySignaturesFactory', () => {
   let rawIdentityCreateTransition;
   let validatePublicKeySignatures;
 
-  let IdentityCreateTransition;
   let IdentityPublicKey;
   let IdentityPublicKeyWithWitness;
   let InvalidIdentityKeySignatureError;
@@ -26,7 +25,6 @@ describe('validatePublicKeySignaturesFactory', () => {
 
   before(async () => {
     ({
-      IdentityCreateTransition,
       IdentityPublicKey,
       IdentityPublicKeyWithWitness,
       InvalidIdentityKeySignatureError,
@@ -36,9 +34,7 @@ describe('validatePublicKeySignaturesFactory', () => {
   });
 
   beforeEach(async () => {
-    identityCreateTransition = new IdentityCreateTransition(
-      getIdentityCreateTransitionFixture().toObject(),
-    );
+    identityCreateTransition = await getIdentityCreateTransitionFixture();
 
     const privateKey1 = new PrivateKey('17e0b1703e226204c557bce68b0871683ea409ae90c7a733b72a33f7c129c959');
     const publicKey1 = privateKey1.toPublicKey();
