@@ -75,7 +75,9 @@ mod tests {
     use dpp::data_contract::extra::common::json_document_to_contract;
     use drive_abci::config::PlatformTestConfig;
     use drive_abci::rpc::core::QuorumListExtendedInfo;
+    use tenderdash_abci::proto::abci::{RequestInfo, ResponseInfo};
     use tenderdash_abci::proto::types::CoreChainLock;
+    use tenderdash_abci::Application;
 
     pub fn generate_quorums_extended_info(n: u32) -> QuorumListExtendedInfo {
         let mut quorums = QuorumListExtendedInfo::new();
@@ -255,10 +257,36 @@ mod tests {
             ..
         } = run_chain_for_strategy(&mut platform, 15, strategy.clone(), config.clone(), 40);
 
+        let known_root_hash = abci_app
+            .platform
+            .drive
+            .grove
+            .root_hash(None)
+            .unwrap()
+            .expect("expected root hash");
+
         abci_app
             .platform
             .recreate_state()
             .expect("expected to recreate state");
+
+        let ResponseInfo {
+            data,
+            version,
+            app_version,
+            last_block_height,
+            last_block_app_hash,
+        } = abci_app
+            .info(RequestInfo {
+                version: "0.12.0".to_string(),
+                block_version: 0,
+                p2p_version: 0,
+                abci_version: "0.20.0".to_string(),
+            })
+            .expect("expected to call info");
+
+        assert_eq!(last_block_height, 15);
+        assert_eq!(last_block_app_hash, known_root_hash);
 
         let block_start = abci_app
             .platform
