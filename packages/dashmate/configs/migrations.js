@@ -555,22 +555,22 @@ module.exports = {
       .forEach(([, config]) => {
         // Update images
         config.core.docker.image = systemConfigs.base.core.docker.image;
+
         config.core.sentinel.docker.image = systemConfigs.base.core.sentinel.docker.image;
+
         config.dashmate.helper.docker.image = systemConfigs.base.dashmate.helper.docker.image;
 
-        if (config.platform) {
-          config.platform.drive.tenderdash.docker.image = systemConfigs.base.platform
-            .drive.tenderdash.docker.image;
+        config.platform.drive.tenderdash.docker.image = systemConfigs.base.platform
+          .drive.tenderdash.docker.image;
 
-          config.platform.drive.abci.docker.image = systemConfigs.base.platform
-            .drive.abci.docker.image;
+        config.platform.drive.abci.docker.image = systemConfigs.base.platform
+          .drive.abci.docker.image;
 
-          config.platform.dapi.api.docker.image = systemConfigs.base.platform
-            .dapi.api.docker.image;
+        config.platform.dapi.api.docker.image = systemConfigs.base.platform
+          .dapi.api.docker.image;
 
-          config.platform.dapi.envoy.docker.image = systemConfigs.base.platform
-            .dapi.envoy.docker.image;
-        }
+        config.platform.dapi.envoy.docker.image = systemConfigs.base.platform
+          .dapi.envoy.docker.image;
       });
     return configFile;
   },
