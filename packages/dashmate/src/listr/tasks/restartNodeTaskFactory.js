@@ -12,10 +12,12 @@ function restartNodeTaskFactory(startNodeTask, stopNodeTask, buildServicesTask) 
    * @typedef {restartNodeTask}
    *
    * @param {Config} config
+   * @param {Object} [options={}]
+   * @param {boolean} [options.platformOnly=false]
    *
    * @return {Listr}
    */
-  function restartNodeTask(config) {
+  function restartNodeTask(config, options = {}) {
     return new Listr([
       {
         enabled: () => config.get('platform.enable') && config.get('platform.sourcePath') !== null,
@@ -26,10 +28,10 @@ function restartNodeTaskFactory(startNodeTask, stopNodeTask, buildServicesTask) 
         },
       },
       {
-        task: () => stopNodeTask(config),
+        task: () => stopNodeTask(config, options),
       },
       {
-        task: () => startNodeTask(config),
+        task: () => startNodeTask(config, options),
       },
     ]);
   }
