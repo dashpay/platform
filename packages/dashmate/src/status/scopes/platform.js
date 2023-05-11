@@ -31,7 +31,20 @@ function getPlatformScopeFactory(dockerCompose,
   }
 
   async function getTenderdashInfo(config, isCoreSynced) {
-    const info = {}
+    const info = {
+      dockerStatus: null,
+      serviceStatus: null,
+      version: null,
+      listening: null,
+      catchingUp: null,
+      latestBlockHash: null,
+      latestBlockHeight: null,
+      latestBlockTime: null,
+      latestAppHash: null,
+      peers: null,
+      moniker: null,
+      network: null,
+    }
 
     const dockerStatus = await determineStatus.docker(dockerCompose, config, 'drive_tenderdash');
     const serviceStatus = determineStatus.platform(dockerStatus, isCoreSynced);
@@ -135,6 +148,8 @@ function getPlatformScopeFactory(dockerCompose,
       httpPortState: null,
       p2pPortState: null,
       tenderdash: {
+        httpPortState: null,
+        p2pPortState: null,
         dockerStatus: null,
         serviceStatus: null,
         version: null,
@@ -164,10 +179,12 @@ function getPlatformScopeFactory(dockerCompose,
         return scope
       }
 
-      const [tenderdash, drive] = await Promise.all([
+      const response = await Promise.allSettled([
         getTenderdashInfo(config, coreIsSynced),
         getDriveInfo(config, coreIsSynced),
       ]);
+
+      const [tenderdash, drive] = response.map(result => result.status === 'fulfilled' ? result.value : null)
 
       if (tenderdash) {
         scope.tenderdash = tenderdash
