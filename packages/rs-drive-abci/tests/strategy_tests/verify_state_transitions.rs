@@ -1,9 +1,12 @@
 use dapi_grpc::platform::v0::{get_proofs_request, GetProofsRequest, GetProofsResponse};
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransitionAction;
 use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransitionAction;
+use dpp::document::document_transition::DocumentTransitionAction;
+use dpp::document::Document;
 use dpp::identity::PartialIdentity;
 use dpp::state_transition::{StateTransition, StateTransitionAction, StateTransitionLike};
 use drive::drive::Drive;
+use drive::query::SingleDocumentDriveQuery;
 use drive_abci::abci::AbciApplication;
 use drive_abci::platform::{Platform, PlatformRef};
 use drive_abci::rpc::core::MockCoreRPCLike;
@@ -126,7 +129,107 @@ pub(crate) fn verify_state_transitions_were_executed(
                     &data_contract_update.data_contract,
                 )
             }
-            StateTransitionAction::DocumentsBatchAction(_) => {}
+            StateTransitionAction::DocumentsBatchAction(documents_batch_transition) => {
+                documents_batch_transition
+                    .transitions
+                    .iter()
+                    .for_each(|transition| {
+                        proofs_request
+                            .documents
+                            .push(get_proofs_request::DocumentProofRequest {
+                                contract_id: transition.base().data_contract_id.to_vec(),
+                                document_type: transition.base().document_type_name.clone(),
+                                document_type_keeps_history: transition
+                                    .base()
+                                    .data_contract
+                                    .document_type_for_name(
+                                        transition.base().document_type_name.as_str(),
+                                    )
+                                    .expect("get document type")
+                                    .documents_keep_history,
+                                document_id: transition.base().id.to_vec(),
+                            });
+                    });
+                let result = abci_app
+                    .platform
+                    .query("/proofs", &proofs_request.encode_to_vec())
+                    .expect("expected to query proofs");
+                let serialized_get_proofs_response =
+                    result.into_data().expect("expected queries to be valid");
+
+                let GetProofsResponse { proof, metadata } =
+                    GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
+                        .expect("expected to decode proof response");
+
+                let response_proof = proof.expect("proof should be present");
+
+                for document_transition_action in documents_batch_transition.transitions.iter() {
+                    let document_type = document_transition_action
+                        .base()
+                        .data_contract
+                        .document_type_for_name(
+                            document_transition_action
+                                .base()
+                                .document_type_name
+                                .as_str(),
+                        )
+                        .expect("get document type");
+                    let query = SingleDocumentDriveQuery {
+                        contract_id: document_transition_action
+                            .base()
+                            .data_contract_id
+                            .into_buffer(),
+                        document_type_name: document_transition_action
+                            .base()
+                            .document_type_name
+                            .clone(),
+                        document_type_keeps_history: document_type.documents_keep_history,
+                        document_id: document_transition_action.base().id.into_buffer(),
+                        block_time_ms: None, //None because we want latest
+                    };
+
+                    let (root_hash, document) = query
+                        .verify_proof(false, &response_proof.grovedb_proof, document_type)
+                        .expect("expected to verify a document");
+
+                    assert_eq!(
+                        &root_hash, expected_root_hash,
+                        "state last block info {:?}",
+                        platform.state.last_committed_block_info
+                    );
+
+                    match document_transition_action {
+                        DocumentTransitionAction::CreateAction(creation_action) => {
+                            let document = document.expect("expected a document");
+                            assert_eq!(
+                                document,
+                                Document::try_from_create_transition(
+                                    creation_action,
+                                    documents_batch_transition.owner_id
+                                )
+                                .expect("expected to get document")
+                            );
+                        }
+                        DocumentTransitionAction::ReplaceAction(replace_action) => {
+                            // it's also possible we deleted something we replaced
+                            if let Some(document) = document {
+                                assert_eq!(
+                                    document,
+                                    Document::try_from_replace_transition(
+                                        replace_action,
+                                        documents_batch_transition.owner_id
+                                    )
+                                    .expect("expected to get document")
+                                );
+                            }
+                        }
+                        DocumentTransitionAction::DeleteAction(_) => {
+                            // we expect no document
+                            assert!(document.is_none());
+                        }
+                    }
+                }
+            }
             StateTransitionAction::IdentityCreateAction(identity_create_transition) => {
                 proofs_request
                     .identities
@@ -231,6 +334,37 @@ pub(crate) fn verify_state_transitions_were_executed(
                 //     document_id: vec![],
                 // } );
                 // we expect to get an identity that matches the state transition
+
+                let result = abci_app
+                    .platform
+                    .query("/proofs", &proofs_request.encode_to_vec())
+                    .expect("expected to query proofs");
+
+                let serialized_get_proofs_response =
+                    result.into_data().expect("expected queries to be valid");
+
+                let GetProofsResponse { proof, metadata } =
+                    GetProofsResponse::decode(serialized_get_proofs_response.as_slice())
+                        .expect("expected to decode proof response");
+
+                let response_proof = proof.expect("proof should be present");
+
+                // we expect to get an identity that matches the state transition
+                let (root_hash, balance) = Drive::verify_identity_balance_for_identity_id(
+                    &response_proof.grovedb_proof,
+                    identity_credit_withdrawal_transition
+                        .identity_id
+                        .into_buffer(),
+                )
+                .expect("expected to verify balance identity");
+                let balance = balance.expect("expected a balance");
+                assert_eq!(
+                    &root_hash, expected_root_hash,
+                    "state last block info {:?}",
+                    platform.state.last_committed_block_info
+                );
+
+                //todo: we need to do more here
             }
             StateTransitionAction::IdentityUpdateAction(identity_update_transition) => {
                 proofs_request

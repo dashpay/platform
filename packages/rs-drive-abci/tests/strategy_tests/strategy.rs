@@ -339,6 +339,12 @@ impl Strategy {
                         documents
                             .into_iter()
                             .for_each(|(document, identity, entropy)| {
+                                let updated_at =
+                                    if document_type.required_fields.contains("$updatedAt") {
+                                        document.created_at
+                                    } else {
+                                        None
+                                    };
                                 let document_create_transition = DocumentCreateTransition {
                                     base: DocumentBaseTransition {
                                         id: document.id,
@@ -349,7 +355,7 @@ impl Strategy {
                                     },
                                     entropy: entropy.to_buffer(),
                                     created_at: document.created_at,
-                                    updated_at: document.created_at,
+                                    updated_at,
                                     data: document.properties.into(),
                                 };
 

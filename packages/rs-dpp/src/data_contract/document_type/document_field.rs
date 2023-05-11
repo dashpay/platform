@@ -200,7 +200,22 @@ impl DocumentFieldType {
             }
             DocumentFieldType::ByteArray(_, _) => {
                 let size = self.random_size(rng);
-                Value::Bytes(rng.sample_iter(Standard).take(size as usize).collect())
+                if self.min_size() == self.max_size() {
+                    match size {
+                        20 => Value::Bytes20(rng.gen()),
+                        32 => Value::Bytes32(rng.gen()),
+                        36 => Value::Bytes36(
+                            rng.sample_iter(Standard)
+                                .take(size as usize)
+                                .collect::<Vec<_>>()
+                                .try_into()
+                                .unwrap(),
+                        ),
+                        _ => Value::Bytes(rng.sample_iter(Standard).take(size as usize).collect()),
+                    }
+                } else {
+                    Value::Bytes(rng.sample_iter(Standard).take(size as usize).collect())
+                }
             }
             DocumentFieldType::Boolean => Value::Bool(rng.gen::<bool>()),
             DocumentFieldType::Date => {

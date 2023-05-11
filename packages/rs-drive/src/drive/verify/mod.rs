@@ -4,6 +4,8 @@ pub mod contract;
 pub mod document;
 /// Identity verification methods on proofs
 pub mod identity;
+/// Single Document verification methods on proofs
+pub mod single_document;
 
 /// Represents the root hash of the grovedb tree
 pub type RootHash = [u8; 32];
