@@ -5,9 +5,9 @@ const {
 
 const NODE_TYPE_NAMES = {
   MASTERNODE: 'masternode',
-  HP_MASTERNODE: 'evo masternode',
+  HP_MASTERNODE: 'evolution masternode',
   FULLNODE: 'fullnode',
-  HP_FULLNODE: 'evo fullnode',
+  HP_FULLNODE: 'evolution fullnode',
 };
 
 const NODE_TYPE_NAME_TYPES = {
