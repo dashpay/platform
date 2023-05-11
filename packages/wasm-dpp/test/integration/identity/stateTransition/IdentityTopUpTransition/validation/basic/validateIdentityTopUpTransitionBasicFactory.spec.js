@@ -1,4 +1,4 @@
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
+const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/createStateRepositoryMock');
 const getIdentityTopUpTransitionFixture = require('../../../../../../../lib/test/fixtures/getIdentityTopUpTransitionFixture');
 
 const {
@@ -17,7 +17,6 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
   let validateIdentityTopUpTransitionBasic;
 
   let StateTransitionExecutionContext;
-  let IdentityTopUpTransition;
   let IdentityPublicKey;
   let UnsupportedProtocolVersionError;
   let InvalidInstantAssetLockProofSignatureError;
@@ -26,7 +25,6 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
   before(async () => {
     ({
       IdentityTopUpTransitionBasicValidator,
-      IdentityTopUpTransition,
       StateTransitionExecutionContext,
       IdentityPublicKey,
       UnsupportedProtocolVersionError,
@@ -47,8 +45,7 @@ describe('validateIdentityTopUpTransitionBasicFactory', () => {
       context,
     );
 
-    const stateTransitionJS = getIdentityTopUpTransitionFixture();
-    stateTransition = new IdentityTopUpTransition(stateTransitionJS.toObject());
+    stateTransition = await getIdentityTopUpTransitionFixture();
 
     const privateKey = '9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2';
 

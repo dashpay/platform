@@ -63,6 +63,8 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
     } catch (e) {
     }
 
+    masternode.state = MasternodeStateEnum.UNKNOWN;
+
     if (syncAsset === MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED) {
       const [blockchainInfo, masternodeCount, masternodeStatus] = await Promise.all([
         rpcClient.getBlockchainInfo(),

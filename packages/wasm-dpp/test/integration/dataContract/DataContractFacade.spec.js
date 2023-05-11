@@ -1,5 +1,5 @@
-const getDataContractJSFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 const crypto = require('crypto');
+const getDataContractJSFixture = require('../../../lib/test/fixtures/js/getDataContractFixture');
 const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
 const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRepositoryMock');
 const getPrivateAndPublicKey = require('../../../lib/test/fixtures/getPrivateAndPublicKeyForSigningFixture');

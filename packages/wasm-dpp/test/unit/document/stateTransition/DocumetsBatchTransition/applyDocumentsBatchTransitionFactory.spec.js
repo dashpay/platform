@@ -7,18 +7,17 @@ const applyDocumentsBatchTransitionFactory = require(
   '@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/applyDocumentsBatchTransitionFactory',
 );
 
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const StateTransitionExecutionContextJs = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
+const getDataContractFixture = require('../../../../../lib/test/fixtures/js/getDataContractFixture');
+const getDocumentsFixture = require('../../../../../lib/test/fixtures/js/getDocumentsFixture');
 const getDocumentTransitionsFixture = require(
-  '@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture',
+  '../../../../../lib/test/fixtures/js/getDocumentTransitionsFixture',
 );
 
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
+const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
 
-const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
-const StateTransitionExecutionContextJs = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
-
-const { default: loadWasmDpp } = require('../../../../../dist');
+const { default: loadWasmDpp } = require('../../../../..');
+const { getLatestProtocolVersion } = require('../../../../..');
 
 let ExtendedDocument;
 let DocumentsBatchTransition;
@@ -89,13 +88,13 @@ describe('applyDocumentsBatchTransitionFactory', () => {
     });
 
     stateTransitionJs = new DocumentsBatchTransitionJs({
-      protocolVersion: protocolVersion.latestVersion,
+      protocolVersion: getLatestProtocolVersion(),
       ownerId,
       transitions: documentTransitionsJs.map((t) => t.toObject()),
     }, [dataContractJs]);
 
     stateTransition = new DocumentsBatchTransition({
-      protocolVersion: protocolVersion.latestVersion,
+      protocolVersion: getLatestProtocolVersion(),
       ownerId,
       transitions: documentTransitionsJs.map((t) => t.toObject()),
     }, [dataContract]);
@@ -222,7 +221,7 @@ describe('applyDocumentsBatchTransitionFactory', () => {
     });
 
     stateTransition = new DocumentsBatchTransition({
-      protocolVersion: protocolVersion.latestVersion,
+      protocolVersion: getLatestProtocolVersion(),
       ownerId,
       transitions: documentTransitionsJs.map((t) => t.toObject()),
     }, [dataContract]);

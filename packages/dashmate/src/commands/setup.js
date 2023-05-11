@@ -25,6 +25,7 @@ class SetupCommand extends BaseCommand {
    * @param {ConfigFile} configFile
    * @param {setupLocalPresetTask} setupLocalPresetTask
    * @param {setupRegularPresetTask} setupRegularPresetTask
+   * @param {DockerCompose} dockerCompose
    * @return {Promise<void>}
    */
   async runWithDependencies(
@@ -40,12 +41,17 @@ class SetupCommand extends BaseCommand {
     configFile,
     setupLocalPresetTask,
     setupRegularPresetTask,
+    dockerCompose,
   ) {
     if (nodeCount !== null && (nodeCount < 3)) {
       throw new Error('node-count flag should be not less than 3');
     }
 
     const tasks = new Listr([
+      {
+        title: 'System requirements',
+        task: async () => dockerCompose.throwErrorIfNotInstalled(),
+      },
       {
         title: 'Configuration preset',
         task: async (ctx, task) => {
@@ -63,32 +69,30 @@ class SetupCommand extends BaseCommand {
                 initial: PRESET_MAINNET,
               },
             ]);
+          }
 
-            let isAlreadyConfigured;
-            if (ctx.preset === PRESET_LOCAL) {
-              isAlreadyConfigured = configFile.isGroupExists(ctx.preset);
-            } else {
-              const systemConfig = new Config(ctx.preset, systemConfigs[ctx.preset]);
+          let isAlreadyConfigured;
+          if (ctx.preset === PRESET_LOCAL) {
+            isAlreadyConfigured = configFile.isGroupExists(ctx.preset);
+          } else {
+            const systemConfig = new Config(ctx.preset, systemConfigs[ctx.preset]);
 
-              isAlreadyConfigured = !configFile.getConfig(ctx.preset).isEqual(systemConfig);
-            }
+            isAlreadyConfigured = !configFile.getConfig(ctx.preset).isEqual(systemConfig);
+          }
 
-            if (isAlreadyConfigured) {
-              // eslint-disable-next-line no-param-reassign
-              task.output = chalk`Preset {bold ${ctx.preset}} already configured.
+          if (isAlreadyConfigured) {
+            // eslint-disable-next-line no-param-reassign
+            task.output = chalk`Preset {bold ${ctx.preset}} already configured.
 
   To set up a node with this preset from scratch use {bold.cyanBright dashmate reset --config ${ctx.preset} --hard}.
   Previous data and configuration for this preset will be lost.
 
   If you want to keep the existing data and configuration, please use the {bold.cyanBright dashmate config create}
   command to create a new configuration for this preset.`;
-              throw new Error(`Preset ${ctx.preset} already configured`);
-            } else {
-              // eslint-disable-next-line no-param-reassign
-
-              // eslint-disable-next-line no-param-reassign
-              task.output = ctx.preset;
-            }
+            throw new Error(`Preset ${ctx.preset} already configured`);
+          } else {
+            // eslint-disable-next-line no-param-reassign
+            task.output = ctx.preset;
           }
         },
         options: {
@@ -119,7 +123,8 @@ class SetupCommand extends BaseCommand {
     });
 
     if (!isVerbose) { // TODO: We need to print it only with default renderer
-      const { begoo } = await import('begoo/index'); // don't remove index!
+      // eslint-disable-next-line import/extensions
+      const { begoo } = await import('begoo/index.js'); // don't remove index!
 
       const welcomeText = begoo(
         chalk`Hello! I'm your {bold.cyanBright Dash} mate!

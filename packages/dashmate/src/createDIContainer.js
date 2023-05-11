@@ -9,6 +9,7 @@ const {
 const Docker = require('dockerode');
 
 const ensureHomeDirFactory = require('./config/ensureHomeDirFactory');
+const ensureFileMountExistsFactory = require('./docker/ensureFileMountExistsFactory');
 const getConnectionHostFactory = require('./docker/getConnectionHostFactory');
 const ConfigFileJsonRepository = require('./config/configFile/ConfigFileJsonRepository');
 const createSystemConfigsFactory = require('./config/systemConfigs/createSystemConfigsFactory');
@@ -93,6 +94,7 @@ const registerMasternodeGuideTaskFactory = require('./listr/tasks/setup/regular/
 const configureNodeTaskFactory = require('./listr/tasks/setup/regular/configureNodeTaskFactory');
 const configureSSLCertificateTaskFactory = require('./listr/tasks/setup/regular/configureSSLCertificateTaskFactory');
 const createHttpApiServerFactory = require('./helper/api/createHttpApiServerFactory');
+const resolveDockerSocketPath = require('./docker/resolveDockerSocketPath');
 
 async function createDIContainer() {
   const container = createAwilixContainer({
@@ -111,6 +113,7 @@ async function createDIContainer() {
     migrateConfigFile: asValue(migrateConfigFile),
     isHelper: asValue(process.env.DASHMATE_HELPER === '1'),
     getConnectionHost: asClass(getConnectionHostFactory).singleton(),
+    ensureFileMountExists: asFunction(ensureFileMountExistsFactory).singleton(),
     // `configFile` and `config` are registering on command init
   });
 
@@ -147,9 +150,18 @@ async function createDIContainer() {
   /**
    * Docker
    */
+
+  const dockerOptions = {};
+  try {
+    dockerOptions.socketPath = await resolveDockerSocketPath();
+  } catch (e) {
+    // Here we skip possible error which is happening if docker is not installed or not running
+    // It will be handled in the logic below
+  }
+
   container.register({
     docker: asFunction(() => (
-      new Docker()
+      new Docker(dockerOptions)
     )).singleton(),
     dockerCompose: asClass(DockerCompose).singleton(),
     startedContainers: asFunction(() => (
