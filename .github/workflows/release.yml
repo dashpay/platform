@@ -244,10 +244,17 @@ jobs:
       #     restore-keys: |
       #       ${{ runner.os }}-cache-mount-cache
 
-      # - name: inject go-build-cache into docker
-      #   uses: overmindtech/buildkit-cache-dance/inject@main
-      #   with:
-      #     cache-source: cache-mount-cache
+
+      - name: Retrieve cache mount data for Docker
+        uses: actions/cache@v3
+        with:
+          path: cache
+          key: ${{ runner.os }}-docker-cache-${{ hashFiles('**/package.json') }}
+
+      - name: inject go-build-cache into docker
+        uses: overmindtech/buildkit-cache-dance/inject@main
+        with:
+          cache-target: /platform/target
 
       - name: Build and push Docker image for Drive
         uses: docker/build-push-action@v3
@@ -266,14 +273,14 @@ jobs:
           cache-from: type=s3,region=eu-west-1,bucket=platform-runner-cache
           cache-to: type=s3,region=eu-west-1,bucket=platform-runner-cache
 
+      - name: extract go-build-cache from docker
+        uses: overmindtech/buildkit-cache-dance/extract@main
+        with:
+          cache-target: /platform/target
+
       - name: Setup tmate session
         if: ${{ failure() }}
         uses: mxschmitt/action-tmate@v3
-
-      # - name: extract go-build-cache from docker
-      #   uses: overmindtech/buildkit-cache-dance/extract@main
-      #   with:
-      #     cache-source: cache-mount-cache
 
   release-dapi-docker-image:
     name: Release DAPI to Docker Hub
