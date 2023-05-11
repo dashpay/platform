@@ -51,7 +51,7 @@ function broadcastStateTransitionHandlerFactory(rpcClient, createGrpcErrorFromDr
     }
 
     if (result.code !== 0) {
-      throw await createGrpcErrorFromDriveResponse(result.code, result.info);
+      throw await createGrpcErrorFromDriveResponse(result.code, result.data);
     }
 
     return new BroadcastStateTransitionResponse();
