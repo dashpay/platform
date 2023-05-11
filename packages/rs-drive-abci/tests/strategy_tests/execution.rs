@@ -433,7 +433,7 @@ pub(crate) fn create_chain_for_strategy(
     quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
     strategy: Strategy,
     config: PlatformConfig,
-    mut rng: StdRng,
+    rng: StdRng,
 ) -> ChainExecutionOutcome {
     let abci_application = AbciApplication::new(platform).expect("expected new abci application");
     let seed = strategy

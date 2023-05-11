@@ -658,6 +658,39 @@ pub fn setup_dpns_tests_with_batches(count: u32, seed: u64) -> (Drive, Contract)
 }
 
 #[cfg(feature = "full")]
+/// Sets up the References contract to test queries on.
+pub fn setup_references_tests(_count: u32, _seed: u64) -> (Drive, Contract) {
+    let drive = setup_drive(Some(DriveConfig::default()));
+
+    let db_transaction = drive.grove.start_transaction();
+
+    // Create contracts tree
+    let mut batch = GroveDbOpBatch::new();
+
+    add_init_contracts_structure_operations(&mut batch);
+
+    drive
+        .grove_apply_batch(batch, false, Some(&db_transaction))
+        .expect("expected to create contracts tree successfully");
+
+    // setup code
+    let contract = setup_contract(
+        &drive,
+        "tests/supporting_files/contract/references/references_with_contract_history.json",
+        None,
+        Some(&db_transaction),
+    );
+
+    drive
+        .grove
+        .commit_transaction(db_transaction)
+        .unwrap()
+        .expect("transaction should be committed");
+
+    (drive, contract)
+}
+
+#[cfg(feature = "full")]
 /// Sets up and inserts random domain name data to the DPNS contract to test queries on.
 pub fn setup_dpns_tests_label_not_required(count: u32, seed: u64) -> (Drive, Contract) {
     let drive = setup_drive(Some(DriveConfig::default()));
@@ -2840,6 +2873,69 @@ fn test_query_with_cached_contract() {
         .expect("expected a reference counter to the contract");
 
     assert_eq!(Arc::strong_count(&contract_ref), 2);
+}
+
+#[cfg(feature = "full")]
+#[test]
+fn test_dpns_query_contract_verification() {
+    let (drive, contract) = setup_dpns_tests_with_batches(10, 11456);
+
+    let root_hash = drive
+        .grove
+        .root_hash(None)
+        .unwrap()
+        .expect("there is always a root hash");
+
+    let contract_proof = drive
+        .prove_contract(contract.id.into_buffer(), None)
+        .expect("expected to get proof");
+    let (proof_root_hash, proof_returned_contract) = Drive::verify_contract(
+        contract_proof.as_slice(),
+        None,
+        false,
+        contract.id.into_buffer(),
+    )
+    .expect("expected to get contract from proof");
+
+    assert_eq!(root_hash, proof_root_hash);
+    assert_eq!(
+        contract,
+        proof_returned_contract.expect("expected to get a contract")
+    );
+}
+
+#[test]
+fn test_contract_keeps_history_fetch_and_verification() {
+    let (drive, contract) = setup_references_tests(10, 3334);
+
+    let root_hash = drive
+        .grove
+        .root_hash(None)
+        .unwrap()
+        .expect("there is always a root hash");
+
+    drive
+        .fetch_contract(contract.id.to_buffer(), None, None, None)
+        .unwrap()
+        .expect("expected to be able to fetch a contract")
+        .expect("expected a contract to be present");
+
+    let contract_proof = drive
+        .prove_contract(contract.id.into_buffer(), None)
+        .expect("expected to get proof");
+    let (proof_root_hash, proof_returned_contract) = Drive::verify_contract(
+        contract_proof.as_slice(),
+        None,
+        false,
+        contract.id.into_buffer(),
+    )
+    .expect("expected to get contract from proof");
+
+    assert_eq!(root_hash, proof_root_hash);
+    assert_eq!(
+        contract,
+        proof_returned_contract.expect("expected to get a contract")
+    );
 }
 
 #[cfg(feature = "full")]

@@ -42,8 +42,7 @@ pub use grovedb::{PathQuery, Query, QueryItem, SizedQuery};
 
 #[cfg(any(feature = "full", feature = "verify"))]
 use indexmap::IndexMap;
-#[cfg(feature = "full")]
-use integer_encoding::VarInt;
+
 #[cfg(any(feature = "full", feature = "verify"))]
 use sqlparser::ast;
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -106,6 +105,7 @@ use dpp::platform_value::Value;
 
 use crate::common::encode::encode_u64;
 use crate::drive::config::DriveConfig;
+use crate::error::Error::GroveDB;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::ProtocolError;
 
@@ -278,13 +278,13 @@ pub struct DriveQuery<'a> {
     /// Internal clauses
     pub internal_clauses: InternalClauses,
     /// Offset
-    pub offset: u16,
+    pub offset: Option<u16>,
     /// Limit
     pub limit: u16,
     /// Order by
     pub order_by: IndexMap<String, OrderClause>,
     /// Start at
-    pub start_at: Option<Vec<u8>>,
+    pub start_at: Option<[u8; 32]>,
     /// Start at included
     pub start_at_included: bool,
     /// Block time
@@ -301,7 +301,7 @@ impl<'a> DriveQuery<'a> {
             contract,
             document_type,
             internal_clauses: Default::default(),
-            offset: 0,
+            offset: None,
             limit: 1,
             order_by: Default::default(),
             start_at: None,
@@ -430,10 +430,11 @@ impl<'a> DriveQuery<'a> {
             start_at_included = true;
         }
 
-        let start_at: Option<Vec<u8>> = start_option
+        let start_at: Option<[u8; 32]> = start_option
             .map(|v| {
-                v.into_identifier_bytes()
+                v.into_identifier()
                     .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))
+                    .map(|identifier| identifier.into_buffer())
             })
             .transpose()?;
 
@@ -469,7 +470,7 @@ impl<'a> DriveQuery<'a> {
             contract,
             document_type,
             internal_clauses,
-            offset: 0,
+            offset: None,
             limit,
             order_by,
             start_at,
@@ -484,7 +485,7 @@ impl<'a> DriveQuery<'a> {
         where_clause: Value,
         order_by: Option<Value>,
         maybe_limit: Option<u16>,
-        start_at: Option<Vec<u8>>,
+        start_at: Option<[u8; 32]>,
         start_at_included: bool,
         block_time_ms: Option<u64>,
         contract: &'a Contract,
@@ -550,7 +551,7 @@ impl<'a> DriveQuery<'a> {
             contract,
             document_type,
             internal_clauses,
-            offset: 0,
+            offset: None,
             limit,
             order_by,
             start_at,
@@ -684,10 +685,11 @@ impl<'a> DriveQuery<'a> {
             start_at_included = true;
         }
 
-        let start_at: Option<Vec<u8>> = start_option
+        let start_at: Option<[u8; 32]> = start_option
             .map(|v| {
-                v.into_identifier_bytes()
+                v.into_identifier()
                     .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))
+                    .map(|identifier| identifier.into_buffer())
             })
             .transpose()?;
 
@@ -695,7 +697,7 @@ impl<'a> DriveQuery<'a> {
             contract,
             document_type,
             internal_clauses,
-            offset: 0,
+            offset: None,
             limit,
             order_by,
             start_at,
@@ -704,11 +706,41 @@ impl<'a> DriveQuery<'a> {
         })
     }
 
+    #[cfg(any(feature = "full", feature = "verify"))]
+    /// Operations to construct a path query.
+    pub fn start_at_document_path_and_key(&self, starts_at: &[u8; 32]) -> (Vec<Vec<u8>>, Vec<u8>) {
+        if self.document_type.documents_keep_history {
+            let document_holding_path = self.contract.documents_with_history_primary_key_path(
+                self.document_type.name.as_str(),
+                starts_at,
+            );
+            (
+                document_holding_path
+                    .into_iter()
+                    .map(|key| key.to_vec())
+                    .collect::<Vec<_>>(),
+                vec![0],
+            )
+        } else {
+            let document_holding_path = self
+                .contract
+                .documents_primary_key_path(self.document_type.name.as_str());
+            (
+                document_holding_path
+                    .into_iter()
+                    .map(|key| key.to_vec())
+                    .collect::<Vec<_>>(),
+                starts_at.to_vec(),
+            )
+        }
+    }
+
     #[cfg(feature = "full")]
     /// Operations to construct a path query.
     pub fn construct_path_query_operations(
         &self,
         drive: &Drive,
+        include_start_at_for_proof: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<PathQuery, Error> {
@@ -720,33 +752,20 @@ impl<'a> DriveQuery<'a> {
             .map(|a| a.to_vec())
             .collect::<Vec<Vec<u8>>>();
 
-        let starts_at_document: Option<(Document, bool)> = match &self.start_at {
-            None => Ok(None),
+        let (starts_at_document, start_at_path_query) = match &self.start_at {
+            None => Ok((None, None)),
             Some(starts_at) => {
                 // First if we have a startAt or or startsAfter we must get the element
                 // from the backing store
 
                 let (start_at_document_path, start_at_document_key) =
-                    if self.document_type.documents_keep_history {
-                        let document_holding_path =
-                            self.contract.documents_with_history_primary_key_path(
-                                self.document_type.name.as_str(),
-                                starts_at,
-                            );
-                        (Vec::from(document_holding_path), vec![0])
-                    } else {
-                        let document_holding_path = self
-                            .contract
-                            .documents_primary_key_path(self.document_type.name.as_str());
-                        (
-                            Vec::from(document_holding_path.as_slice()),
-                            starts_at.clone(),
-                        )
-                    };
-
+                    self.start_at_document_path_and_key(starts_at);
                 let start_at_document = drive
                     .grove_get(
-                        start_at_document_path,
+                        start_at_document_path
+                            .iter()
+                            .map(|a| a.as_slice())
+                            .collect::<Vec<_>>(),
                         &start_at_document_key,
                         StatefulQuery,
                         transaction,
@@ -770,9 +789,12 @@ impl<'a> DriveQuery<'a> {
                         "expected a value",
                     )))?;
 
+                let path_query =
+                    PathQuery::new_single_key(start_at_document_path, start_at_document_key);
+
                 if let Element::Item(item, _) = start_at_document {
                     let document = Document::from_bytes(item.as_slice(), self.document_type)?;
-                    Ok(Some((document, self.start_at_included)))
+                    Ok((Some((document, self.start_at_included)), Some(path_query)))
                 } else {
                     Err(Error::Drive(DriveError::CorruptedDocumentPath(
                         "Holding paths should only have items",
@@ -780,6 +802,41 @@ impl<'a> DriveQuery<'a> {
                 }
             }
         }?;
+        let mut main_path_query = if self.is_for_primary_key() {
+            self.get_primary_key_path_query(document_type_path, starts_at_document)
+        } else {
+            self.get_non_primary_key_path_query(document_type_path, starts_at_document)
+        }?;
+        if !include_start_at_for_proof {
+            return Ok(main_path_query);
+        }
+
+        if let Some(start_at_path_query) = start_at_path_query {
+            let limit = main_path_query.query.limit.take();
+            let mut merged =
+                PathQuery::merge(vec![&start_at_path_query, &main_path_query]).map_err(GroveDB)?;
+            merged.query.limit = limit.map(|a| a.saturating_add(1));
+            Ok(merged)
+        } else {
+            Ok(main_path_query)
+        }
+    }
+
+    #[cfg(any(feature = "full", feature = "verify"))]
+    /// Operations to construct a path query.
+    pub fn construct_path_query(
+        &self,
+        starts_at_document: Option<Document>,
+    ) -> Result<PathQuery, Error> {
+        // First we should get the overall document_type_path
+        let document_type_path = self
+            .contract
+            .document_type_path(self.document_type.name.as_str())
+            .into_iter()
+            .map(|a| a.to_vec())
+            .collect::<Vec<Vec<u8>>>();
+        let starts_at_document = starts_at_document
+            .map(|starts_at_document| (starts_at_document, self.start_at_included));
         if self.is_for_primary_key() {
             self.get_primary_key_path_query(document_type_path, starts_at_document)
         } else {
@@ -894,7 +951,7 @@ impl<'a> DriveQuery<'a> {
 
                 Ok(PathQuery::new(
                     path,
-                    SizedQuery::new(query, Some(self.limit), Some(self.offset)),
+                    SizedQuery::new(query, Some(self.limit), self.offset),
                 ))
             } else {
                 // this is a range on all elements
@@ -934,7 +991,7 @@ impl<'a> DriveQuery<'a> {
 
                 Ok(PathQuery::new(
                     path,
-                    SizedQuery::new(query, Some(self.limit), Some(self.offset)),
+                    SizedQuery::new(query, Some(self.limit), self.offset),
                 ))
             }
         }
@@ -1420,7 +1477,7 @@ impl<'a> DriveQuery<'a> {
 
         Ok(PathQuery::new(
             path,
-            SizedQuery::new(final_query, Some(self.limit), Some(self.offset)),
+            SizedQuery::new(final_query, Some(self.limit), self.offset),
         ))
     }
 
@@ -1452,7 +1509,7 @@ impl<'a> DriveQuery<'a> {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<Vec<u8>, Error> {
         let path_query =
-            self.construct_path_query_operations(drive, transaction, drive_operations)?;
+            self.construct_path_query_operations(drive, true, transaction, drive_operations)?;
         drive.grove_get_proved_path_query(&path_query, false, transaction, drive_operations)
     }
 
@@ -1488,33 +1545,15 @@ impl<'a> DriveQuery<'a> {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<([u8; 32], Vec<Vec<u8>>), Error> {
         let path_query =
-            self.construct_path_query_operations(drive, transaction, drive_operations)?;
+            self.construct_path_query_operations(drive, true, transaction, drive_operations)?;
 
-        let proof =
-            drive.grove_get_proved_path_query(&path_query, false, transaction, drive_operations)?;
-        let (root_hash, key_value_elements) =
-            GroveDb::verify_query(proof.as_slice(), &path_query).map_err(Error::GroveDB)?;
-
-        let values = key_value_elements
-            .into_iter()
-            .filter_map(|proved_key_value| {
-                let Some(element) = proved_key_value.2 else {
-                return None;
-            };
-
-                match element {
-                    Element::Item(val, _) => Some(Ok(val)),
-                    Element::SumItem(val, _) => Some(Ok(val.encode_var_vec())),
-                    Element::Tree(..) | Element::SumTree(..) | Element::Reference(..) => {
-                        Some(Err(Error::GroveDB(GroveError::InvalidQuery(
-                            "path query should only point to items: got trees",
-                        ))))
-                    }
-                }
-            })
-            .collect::<Result<Vec<Vec<u8>>, Error>>()?;
-
-        Ok((root_hash, values))
+        let proof = drive.grove_get_proved_path_query(
+            &path_query,
+            self.start_at.is_some(),
+            transaction,
+            drive_operations,
+        )?;
+        self.verify_proof_keep_serialized(proof.as_slice())
     }
 
     #[cfg(feature = "full")]
@@ -1569,7 +1608,7 @@ impl<'a> DriveQuery<'a> {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
         let path_query =
-            self.construct_path_query_operations(drive, transaction, drive_operations)?;
+            self.construct_path_query_operations(drive, false, transaction, drive_operations)?;
         let query_result = drive.grove_get_path_query_serialized_results(
             &path_query,
             transaction,
@@ -1598,7 +1637,7 @@ impl<'a> DriveQuery<'a> {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(QueryResultElements, u16), Error> {
         let path_query =
-            self.construct_path_query_operations(drive, transaction, drive_operations)?;
+            self.construct_path_query_operations(drive, false, transaction, drive_operations)?;
         let query_result =
             drive.grove_get_path_query(&path_query, transaction, result_type, drive_operations);
         match query_result {

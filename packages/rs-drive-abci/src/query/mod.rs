@@ -266,7 +266,7 @@ impl<C> Platform<C> {
                 } else {
                     let contract = check_validation_result_with_data!(self
                         .drive
-                        .fetch_contract(contract_id.into_buffer(), None, None,)
+                        .fetch_contract(contract_id.into_buffer(), None, None, None)
                         .unwrap())
                     .map(|contract| contract.contract.serialize())
                     .transpose()?;
@@ -389,8 +389,24 @@ impl<C> Platform<C> {
 
                 let (start_at_included, start_at) = if let Some(start) = start {
                     match start {
-                        Start::StartAfter(after) => (false, Some(after)),
-                        Start::StartAt(at) => (true, Some(at)),
+                        Start::StartAfter(after) => (
+                            false,
+                            Some(check_validation_result_with_data!(after
+                                .try_into()
+                                .map_err(|_| QueryError::Query(
+                                    QuerySyntaxError::InvalidStartsWithClause(
+                                        "start after should be a 32 byte identifier",
+                                    )
+                                )))),
+                        ),
+                        Start::StartAt(at) => (
+                            true,
+                            Some(check_validation_result_with_data!(at.try_into().map_err(
+                                |_| QueryError::Query(QuerySyntaxError::InvalidStartsWithClause(
+                                    "start at should be a 32 byte identifier",
+                                ))
+                            ))),
+                        ),
                     }
                 } else {
                     (true, None)

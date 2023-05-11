@@ -213,7 +213,7 @@ impl Drive {
                                 range_clause: None,
                                 equal_clauses: where_queries,
                             },
-                            offset: 0,
+                            offset: None,
                             limit: 0,
                             order_by: Default::default(),
                             start_at: None,

@@ -47,6 +47,7 @@ use std::borrow::Cow;
 use std::collections::BTreeMap;
 #[cfg(feature = "full")]
 use std::collections::{HashMap, HashSet};
+use std::ops::AddAssign;
 #[cfg(feature = "full")]
 use std::sync::Arc;
 
@@ -965,7 +966,7 @@ impl Drive {
         //todo: there is a cost here that isn't returned on error
         // we should investigate if this could be a problem
         let maybe_contract_fetch_info = self
-            .fetch_contract(contract_id, epoch, transaction)
+            .fetch_contract(contract_id, epoch, None, transaction)
             .unwrap_add_cost(&mut cost)?;
 
         if let Some(contract_fetch_info) = &maybe_contract_fetch_info {
@@ -1028,17 +1029,29 @@ impl Drive {
         &self,
         contract_id: [u8; 32],
         epoch: Option<&Epoch>,
+        known_keeps_history: Option<bool>,
         transaction: TransactionArg,
     ) -> CostResult<Option<Arc<ContractFetchInfo>>, Error> {
         // As we want deterministic costs, we want the cost to always be the same for
         // fetching the contract.
         // We need to pass allow cache to false
-        let CostContext { value, cost } = self.grove.get_raw_caching_optional(
-            paths::contract_root_path(&contract_id),
-            &[0],
-            false,
-            transaction,
-        );
+        let (value, mut cost) = if known_keeps_history.unwrap_or_default() {
+            let CostContext { value, cost } = self.grove.get_caching_optional(
+                paths::contract_keeping_history_storage_path(&contract_id),
+                &[0],
+                false,
+                transaction,
+            );
+            (value, cost)
+        } else {
+            let CostContext { value, cost } = self.grove.get_raw_caching_optional(
+                paths::contract_root_path(&contract_id),
+                &[0],
+                false,
+                transaction,
+            );
+            (value, cost)
+        };
 
         match value {
             Ok(Element::Item(stored_contract_bytes, element_flag)) => {
@@ -1069,6 +1082,63 @@ impl Drive {
                 });
 
                 Ok(Some(Arc::clone(&contract_fetch_info))).wrap_with_cost(cost)
+            }
+            Ok(Element::Tree(..)) => {
+                // This contract might keep history, take the latest version
+                let CostContext {
+                    value,
+                    cost: secondary_cost,
+                } = self.grove.get_caching_optional(
+                    paths::contract_keeping_history_storage_path(&contract_id),
+                    &[0],
+                    false,
+                    transaction,
+                );
+
+                cost.add_assign(secondary_cost);
+
+                match value {
+                    Ok(Element::Item(stored_contract_bytes, element_flag)) => {
+                        let contract = cost_return_on_error_no_add!(
+                            &cost,
+                            DataContract::deserialize_no_limit(&stored_contract_bytes)
+                                .map_err(Error::Protocol)
+                        );
+                        let drive_operation = CalculatedCostOperation(cost.clone());
+                        let fee = if let Some(epoch) = epoch {
+                            Some(cost_return_on_error_no_add!(
+                                &cost,
+                                calculate_fee(None, Some(vec![drive_operation]), epoch)
+                            ))
+                        } else {
+                            None
+                        };
+
+                        let storage_flags = cost_return_on_error_no_add!(
+                            &cost,
+                            StorageFlags::map_some_element_flags_ref(&element_flag)
+                        );
+
+                        let contract_fetch_info = Arc::new(ContractFetchInfo {
+                            contract,
+                            storage_flags,
+                            cost: cost.clone(),
+                            fee,
+                        });
+
+                        Ok(Some(Arc::clone(&contract_fetch_info))).wrap_with_cost(cost)
+                    }
+                    Ok(_) => Err(Error::Drive(DriveError::CorruptedContractPath(
+                        "contract path did not refer to a contract element",
+                    )))
+                    .wrap_with_cost(cost),
+                    Err(
+                        grovedb::Error::PathKeyNotFound(_)
+                        | grovedb::Error::PathParentLayerNotFound(_)
+                        | grovedb::Error::PathNotFound(_),
+                    ) => Ok(None).wrap_with_cost(cost),
+                    Err(e) => Err(Error::GroveDB(e)).wrap_with_cost(cost),
+                }
             }
             Ok(_) => Err(Error::Drive(DriveError::CorruptedContractPath(
                 "contract path did not refer to a contract element",
