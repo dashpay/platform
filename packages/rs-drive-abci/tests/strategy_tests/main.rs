@@ -1808,4 +1808,58 @@ mod tests {
         assert_eq!(outcome.identities.len(), 10);
         assert_eq!(outcome.withdrawals.len(), 17);
     }
+
+    #[test]
+    fn propose_a_block_with_a_chainlock_and_remove_themselves_from_the_list() {
+        let strategy = Strategy {
+            contracts_with_updates: vec![],
+            operations: vec![],
+            identities_inserts: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+            total_hpmns: 500,
+            extra_normal_mns: 0,
+            quorum_count: 24,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: 1..2,
+                chance_per_block: Some(1.0),
+            },
+            proposer_strategy: MasternodeListChangesStrategy {
+                new_hpmns: Frequency {
+                    times_per_block_range: 1..5,
+                    chance_per_block: Some(1.0),
+                },
+                ..Default::default()
+            },
+            rotate_quorums: true,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: false,
+        };
+        let config = PlatformConfig {
+            verify_sum_trees: true,
+            quorum_size: 3,
+            validator_set_quorum_rotation_block_count: 1,
+            block_spacing_ms: 3000,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            ..Default::default()
+        };
+        let mut platform = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+
+        run_chain_for_strategy(&mut platform, 100, strategy, config, 7);
+    }
 }
