@@ -73,7 +73,7 @@ function startNodeTaskFactory(
         enabled: options.platformOnly === true,
         task: async () => {
           if (!await dockerCompose.isServiceRunning(config.toEnvs(), 'core')) {
-            throw new Error('Core service is not running. Please ensure core service is running before starting');
+            throw new Error('Platform services depend on Core and can\'t be started without it. Please run "dashmate start" without "--platform" flag');
           }
         },
       },
