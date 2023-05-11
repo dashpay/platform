@@ -59,13 +59,13 @@ function setupRegularPresetTaskFactory(
               type: 'select',
               // Keep this order, because each item references the text in the previous item
               header: `  The Dash network consists of several different node types:
-    Full node                   - Host the full Dash blockchain (no collateral)
-    Masternode                  - Full node features, plus Core services such as
-                                  ChainLocks and InstantSend (1000 DASH collateral)
-    High-performance full node  - Full node features, plus host a full copy of the
-                                  Platform blockchain (no collateral)
-    High-performance masternode - Masternode features, plus Platform services such
-                                  as DAPI and Drive (4000 DASH collateral)\n`,
+    Fullnode             - Host the full Dash blockchain (no collateral)
+    Masternode           - Fullnode features, plus Core services such as ChainLocks 
+                           and InstantSend (1000 DASH collateral)
+    Evolution fullnode   - Fullnode features, plus host a full copy of the Platform 
+                           blockchain (no collateral)
+    Evolution masternode - Masternode features, plus Platform services such as DAPI
+                           and Drive (4000 DASH collateral)\n`,
               message: 'Select node type',
               choices: [
                 { name: NODE_TYPE_NAMES.FULLNODE },
