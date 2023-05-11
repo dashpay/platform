@@ -39,7 +39,7 @@ function registerMasternodeTaskFactory(
   /**
    * @typedef {registerMasternodeTask}
    * @param {Config} config
-   * @param {boolean} [hp=false] - Register high-performance masternode
+   * @param {boolean} [hp=false] - Register high-performance(evo) masternode
    * @param {string} [operatorReward='0.00']
    * @return {Listr}
    */
