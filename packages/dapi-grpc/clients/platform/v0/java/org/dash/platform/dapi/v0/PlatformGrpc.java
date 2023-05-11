@@ -77,6 +77,37 @@ public final class PlatformGrpc {
     return getGetIdentityMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesResponse> getGetIdentitiesMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getIdentities",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesResponse> getGetIdentitiesMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesResponse> getGetIdentitiesMethod;
+    if ((getGetIdentitiesMethod = PlatformGrpc.getGetIdentitiesMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetIdentitiesMethod = PlatformGrpc.getGetIdentitiesMethod) == null) {
+          PlatformGrpc.getGetIdentitiesMethod = getGetIdentitiesMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getIdentities"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getIdentities"))
+              .build();
+        }
+      }
+    }
+    return getGetIdentitiesMethod;
+  }
+
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRequest,
       org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysResponse> getGetIdentityKeysMethod;
 
@@ -168,6 +199,37 @@ public final class PlatformGrpc {
       }
     }
     return getGetIdentityBalanceAndRevisionMethod;
+  }
+
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsResponse> getGetProofsMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "getProofs",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.UNARY)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsResponse> getGetProofsMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsResponse> getGetProofsMethod;
+    if ((getGetProofsMethod = PlatformGrpc.getGetProofsMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getGetProofsMethod = PlatformGrpc.getGetProofsMethod) == null) {
+          PlatformGrpc.getGetProofsMethod = getGetProofsMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsRequest, org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.UNARY)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "getProofs"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("getProofs"))
+              .build();
+        }
+      }
+    }
+    return getGetProofsMethod;
   }
 
   private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractRequest,
@@ -451,6 +513,13 @@ public final class PlatformGrpc {
 
     /**
      */
+    public void getIdentities(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetIdentitiesMethod(), responseObserver);
+    }
+
+    /**
+     */
     public void getIdentityKeys(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetIdentityKeysMethod(), responseObserver);
@@ -471,6 +540,13 @@ public final class PlatformGrpc {
     public void getIdentityBalanceAndRevision(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceAndRevisionResponse> responseObserver) {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetIdentityBalanceAndRevisionMethod(), responseObserver);
+    }
+
+    /**
+     */
+    public void getProofs(org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetProofsMethod(), responseObserver);
     }
 
     /**
@@ -539,6 +615,13 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityResponse>(
                   this, METHODID_GET_IDENTITY)))
           .addMethod(
+            getGetIdentitiesMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesResponse>(
+                  this, METHODID_GET_IDENTITIES)))
+          .addMethod(
             getGetIdentityKeysMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
               new MethodHandlers<
@@ -559,6 +642,13 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceAndRevisionResponse>(
                   this, METHODID_GET_IDENTITY_BALANCE_AND_REVISION)))
+          .addMethod(
+            getGetProofsMethod(),
+            io.grpc.stub.ServerCalls.asyncUnaryCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsResponse>(
+                  this, METHODID_GET_PROOFS)))
           .addMethod(
             getGetDataContractMethod(),
             io.grpc.stub.ServerCalls.asyncUnaryCall(
@@ -644,6 +734,14 @@ public final class PlatformGrpc {
 
     /**
      */
+    public void getIdentities(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetIdentitiesMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
     public void getIdentityKeys(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRequest request,
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
@@ -667,6 +765,14 @@ public final class PlatformGrpc {
         io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceAndRevisionResponse> responseObserver) {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetIdentityBalanceAndRevisionMethod(), getCallOptions()), request, responseObserver);
+    }
+
+    /**
+     */
+    public void getProofs(org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncUnaryCall(
+          getChannel().newCall(getGetProofsMethod(), getCallOptions()), request, responseObserver);
     }
 
     /**
@@ -756,6 +862,13 @@ public final class PlatformGrpc {
 
     /**
      */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesResponse getIdentities(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetIdentitiesMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysResponse getIdentityKeys(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetIdentityKeysMethod(), getCallOptions(), request);
@@ -776,6 +889,13 @@ public final class PlatformGrpc {
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceAndRevisionResponse getIdentityBalanceAndRevision(org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetIdentityBalanceAndRevisionMethod(), getCallOptions(), request);
+    }
+
+    /**
+     */
+    public org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsResponse getProofs(org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsRequest request) {
+      return io.grpc.stub.ClientCalls.blockingUnaryCall(
+          getChannel(), getGetProofsMethod(), getCallOptions(), request);
     }
 
     /**
@@ -860,6 +980,14 @@ public final class PlatformGrpc {
 
     /**
      */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesResponse> getIdentities(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetIdentitiesMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
     public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysResponse> getIdentityKeys(
         org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
@@ -883,6 +1011,14 @@ public final class PlatformGrpc {
         org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest request) {
       return io.grpc.stub.ClientCalls.futureUnaryCall(
           getChannel().newCall(getGetIdentityBalanceAndRevisionMethod(), getCallOptions()), request);
+    }
+
+    /**
+     */
+    public com.google.common.util.concurrent.ListenableFuture<org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsResponse> getProofs(
+        org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsRequest request) {
+      return io.grpc.stub.ClientCalls.futureUnaryCall(
+          getChannel().newCall(getGetProofsMethod(), getCallOptions()), request);
     }
 
     /**
@@ -944,16 +1080,18 @@ public final class PlatformGrpc {
 
   private static final int METHODID_BROADCAST_STATE_TRANSITION = 0;
   private static final int METHODID_GET_IDENTITY = 1;
-  private static final int METHODID_GET_IDENTITY_KEYS = 2;
-  private static final int METHODID_GET_IDENTITY_BALANCE = 3;
-  private static final int METHODID_GET_IDENTITY_BALANCE_AND_REVISION = 4;
-  private static final int METHODID_GET_DATA_CONTRACT = 5;
-  private static final int METHODID_GET_DATA_CONTRACTS = 6;
-  private static final int METHODID_GET_DOCUMENTS = 7;
-  private static final int METHODID_GET_IDENTITIES_BY_PUBLIC_KEY_HASHES = 8;
-  private static final int METHODID_GET_IDENTITY_BY_PUBLIC_KEY_HASHES = 9;
-  private static final int METHODID_WAIT_FOR_STATE_TRANSITION_RESULT = 10;
-  private static final int METHODID_GET_CONSENSUS_PARAMS = 11;
+  private static final int METHODID_GET_IDENTITIES = 2;
+  private static final int METHODID_GET_IDENTITY_KEYS = 3;
+  private static final int METHODID_GET_IDENTITY_BALANCE = 4;
+  private static final int METHODID_GET_IDENTITY_BALANCE_AND_REVISION = 5;
+  private static final int METHODID_GET_PROOFS = 6;
+  private static final int METHODID_GET_DATA_CONTRACT = 7;
+  private static final int METHODID_GET_DATA_CONTRACTS = 8;
+  private static final int METHODID_GET_DOCUMENTS = 9;
+  private static final int METHODID_GET_IDENTITIES_BY_PUBLIC_KEY_HASHES = 10;
+  private static final int METHODID_GET_IDENTITY_BY_PUBLIC_KEY_HASHES = 11;
+  private static final int METHODID_WAIT_FOR_STATE_TRANSITION_RESULT = 12;
+  private static final int METHODID_GET_CONSENSUS_PARAMS = 13;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -980,6 +1118,10 @@ public final class PlatformGrpc {
           serviceImpl.getIdentity((org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityResponse>) responseObserver);
           break;
+        case METHODID_GET_IDENTITIES:
+          serviceImpl.getIdentities((org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentitiesResponse>) responseObserver);
+          break;
         case METHODID_GET_IDENTITY_KEYS:
           serviceImpl.getIdentityKeys((org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityKeysResponse>) responseObserver);
@@ -991,6 +1133,10 @@ public final class PlatformGrpc {
         case METHODID_GET_IDENTITY_BALANCE_AND_REVISION:
           serviceImpl.getIdentityBalanceAndRevision((org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetIdentityBalanceAndRevisionResponse>) responseObserver);
+          break;
+        case METHODID_GET_PROOFS:
+          serviceImpl.getProofs((org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetProofsResponse>) responseObserver);
           break;
         case METHODID_GET_DATA_CONTRACT:
           serviceImpl.getDataContract((org.dash.platform.dapi.v0.PlatformOuterClass.GetDataContractRequest) request,
@@ -1083,9 +1229,11 @@ public final class PlatformGrpc {
               .setSchemaDescriptor(new PlatformFileDescriptorSupplier())
               .addMethod(getBroadcastStateTransitionMethod())
               .addMethod(getGetIdentityMethod())
+              .addMethod(getGetIdentitiesMethod())
               .addMethod(getGetIdentityKeysMethod())
               .addMethod(getGetIdentityBalanceMethod())
               .addMethod(getGetIdentityBalanceAndRevisionMethod())
+              .addMethod(getGetProofsMethod())
               .addMethod(getGetDataContractMethod())
               .addMethod(getGetDataContractsMethod())
               .addMethod(getGetDocumentsMethod())

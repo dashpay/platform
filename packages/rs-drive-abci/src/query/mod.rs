@@ -3,13 +3,15 @@ use crate::error::Error;
 use crate::platform::Platform;
 use dapi_grpc::platform::v0::get_documents_request::Start;
 use dapi_grpc::platform::v0::{
-    get_data_contracts_response, get_identity_by_public_key_hashes_response,
-    get_identity_keys_response, GetDataContractRequest, GetDataContractResponse,
-    GetDataContractsRequest, GetDataContractsResponse, GetDocumentsRequest, GetDocumentsResponse,
-    GetIdentitiesByPublicKeyHashesRequest, GetIdentitiesByPublicKeyHashesResponse,
+    get_data_contracts_response, get_identities_response,
+    get_identity_by_public_key_hashes_response, get_identity_keys_response, GetDataContractRequest,
+    GetDataContractResponse, GetDataContractsRequest, GetDataContractsResponse,
+    GetDocumentsRequest, GetDocumentsResponse, GetIdentitiesByPublicKeyHashesRequest,
+    GetIdentitiesByPublicKeyHashesResponse, GetIdentitiesRequest, GetIdentitiesResponse,
     GetIdentityBalanceAndRevisionResponse, GetIdentityBalanceResponse,
     GetIdentityByPublicKeyHashesRequest, GetIdentityByPublicKeyHashesResponse,
-    GetIdentityKeysRequest, GetIdentityKeysResponse, GetIdentityRequest, Proof, ResponseMetadata,
+    GetIdentityKeysRequest, GetIdentityKeysResponse, GetIdentityRequest, GetIdentityResponse,
+    GetProofsRequest, GetProofsResponse, Proof, ResponseMetadata,
 };
 use dpp::identifier::Identifier;
 use dpp::platform_value::{Bytes20, Bytes32};
@@ -18,15 +20,19 @@ use std::collections::BTreeMap;
 use dpp::serialization_traits::PlatformSerializable;
 use dpp::validation::ValidationResult;
 use dpp::{check_validation_result_with_data, ProtocolError};
+use drive::drive::identity::IdentityDriveQuery;
+use drive::drive::identity::IdentityProveRequestType;
 
+use crate::error::Error::{Drive, Protocol};
 use dapi_grpc::platform::v0::get_data_contracts_response::DataContractEntry;
+use dapi_grpc::platform::v0::get_identities_response::IdentityEntry;
 use dpp::identity::{KeyID, Purpose, SecurityLevel};
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyKindRequestType, KeyRequestType, PurposeU8, SecurityLevelU8,
     SerializedKeyVec,
 };
 use drive::error::query::QuerySyntaxError;
-use drive::query::DriveQuery;
+use drive::query::{DriveQuery, SingleDocumentDriveQuery};
 use prost::Message;
 
 /// A query validation result
@@ -97,6 +103,103 @@ impl<C> Platform<C> {
             protocol_version: state.current_protocol_version_in_consensus,
         };
         match query_path {
+            "/identity" => {
+                let GetIdentityRequest { id, prove } =
+                    check_validation_result_with_data!(GetIdentityRequest::decode(query_data));
+                let identity_id: Identifier = check_validation_result_with_data!(id.try_into());
+                let response_data = if prove {
+                    let proof = check_validation_result_with_data!(self
+                        .drive
+                        .prove_full_identity(identity_id.into_buffer(), None));
+                    GetIdentityResponse {
+                        identity: vec![],
+                        proof: Some(Proof {
+                            grovedb_proof: proof,
+                            quorum_hash: state.last_quorum_hash().to_vec(),
+                            signature: state.last_block_signature().to_vec(),
+                            round: state.last_block_round(),
+                        }),
+                        metadata: Some(metadata),
+                    }
+                    .encode_to_vec()
+                } else {
+                    let identity = check_validation_result_with_data!(self
+                        .drive
+                        .fetch_full_identity(identity_id.into_buffer(), None)
+                        .map_err(QueryError::Drive)
+                        .and_then(|identity| identity
+                            .map(|identity| identity
+                                .serialize_consume()
+                                .map_err(QueryError::Protocol))
+                            .transpose()))
+                    .unwrap_or_default();
+                    GetIdentityResponse {
+                        identity,
+                        proof: None,
+                        metadata: Some(metadata),
+                    }
+                    .encode_to_vec()
+                };
+                Ok(QueryValidationResult::new_with_data(response_data))
+            }
+            "/identities" => {
+                let GetIdentitiesRequest { ids, prove } =
+                    check_validation_result_with_data!(GetIdentitiesRequest::decode(query_data));
+                let identity_ids = check_validation_result_with_data!(ids
+                    .into_iter()
+                    .map(|identity_id_vec| {
+                        Bytes32::from_vec(identity_id_vec).map(|bytes| bytes.0)
+                    })
+                    .collect::<Result<Vec<[u8; 32]>, dpp::platform_value::Error>>());
+                let response_data = if prove {
+                    let proof = check_validation_result_with_data!(self
+                        .drive
+                        .prove_full_identities(identity_ids.as_slice(), None));
+                    GetIdentitiesResponse {
+                        metadata: Some(metadata),
+                        result: Some(get_identities_response::Result::Proof(Proof {
+                            grovedb_proof: proof,
+                            quorum_hash: state.last_quorum_hash().to_vec(),
+                            signature: state.last_block_signature().to_vec(),
+                            round: state.last_block_round(),
+                        })),
+                    }
+                    .encode_to_vec()
+                } else {
+                    let identities = check_validation_result_with_data!(self
+                        .drive
+                        .fetch_full_identities(identity_ids.as_slice(), None));
+
+                    let identities = check_validation_result_with_data!(identities
+                        .into_iter()
+                        .map(|(key, maybe_identity)| Ok::<IdentityEntry, ProtocolError>(
+                            get_identities_response::IdentityEntry {
+                                key: key.to_vec(),
+                                value: maybe_identity
+                                    .map(|identity| Ok::<
+                                        get_identities_response::IdentityValue,
+                                        ProtocolError,
+                                    >(
+                                        get_identities_response::IdentityValue {
+                                            value: identity.serialize_consume()?
+                                        }
+                                    ))
+                                    .transpose()?,
+                            }
+                        ))
+                        .collect());
+                    GetIdentitiesResponse {
+                        result: Some(get_identities_response::Result::Identities(
+                            get_identities_response::Identities {
+                                identity_entries: identities,
+                            },
+                        )),
+                        metadata: Some(metadata),
+                    }
+                    .encode_to_vec()
+                };
+                Ok(QueryValidationResult::new_with_data(response_data))
+            }
             "/identity/balance" => {
                 let GetIdentityRequest { id, prove } =
                     check_validation_result_with_data!(GetIdentityRequest::decode(query_data));
@@ -252,8 +355,8 @@ impl<C> Platform<C> {
                     let proof = check_validation_result_with_data!(self
                         .drive
                         .prove_contract(contract_id.into_buffer(), None));
-                    GetIdentityBalanceResponse {
-                        balance: None,
+                    GetDataContractResponse {
+                        data_contract: vec![],
                         proof: Some(Proof {
                             grovedb_proof: proof,
                             quorum_hash: state.last_quorum_hash().to_vec(),
@@ -555,6 +658,66 @@ impl<C> Platform<C> {
                     }
                     .encode_to_vec()
                 };
+                Ok(QueryValidationResult::new_with_data(response_data))
+            }
+            "/proofs" => {
+                let GetProofsRequest {
+                    identities,
+                    contracts,
+                    documents,
+                } = check_validation_result_with_data!(GetProofsRequest::decode(query_data));
+                let contract_ids = check_validation_result_with_data!(contracts
+                    .into_iter()
+                    .map(|contract_request| {
+                        Bytes32::from_vec(contract_request.contract_id).map(|bytes| bytes.0)
+                    })
+                    .collect::<Result<Vec<[u8; 32]>, dpp::platform_value::Error>>());
+                let identity_requests = check_validation_result_with_data!(identities
+                    .into_iter()
+                    .map(|identity_request| {
+                        Ok(IdentityDriveQuery {
+                            identity_id: Bytes32::from_vec(identity_request.identity_id)
+                                .map(|bytes| bytes.0)?,
+                            prove_request_type: IdentityProveRequestType::try_from(
+                                identity_request.request_type as u8,
+                            )?,
+                        })
+                    })
+                    .collect::<Result<Vec<IdentityDriveQuery>, QueryError>>());
+                let document_queries = check_validation_result_with_data!(documents
+                    .into_iter()
+                    .map(|document_proof_request| {
+                        let contract_id: Identifier =
+                            document_proof_request.contract_id.try_into()?;
+                        let document_id: Identifier =
+                            document_proof_request.document_id.try_into()?;
+
+                        Ok(SingleDocumentDriveQuery {
+                            contract_id: contract_id.into_buffer(),
+                            document_type_name: document_proof_request.document_type,
+                            document_type_keeps_history: document_proof_request
+                                .document_type_keeps_history,
+                            document_id: document_id.into_buffer(),
+                            block_time_ms: None, //None because we want latest
+                        })
+                    })
+                    .collect::<Result<Vec<_>, dpp::platform_value::Error>>());
+                let proof = check_validation_result_with_data!(self.drive.prove_multiple(
+                    &identity_requests,
+                    &contract_ids,
+                    &document_queries,
+                    None
+                ));
+                let response_data = GetProofsResponse {
+                    proof: Some(Proof {
+                        grovedb_proof: proof,
+                        quorum_hash: state.last_quorum_hash().to_vec(),
+                        signature: state.last_block_signature().to_vec(),
+                        round: state.last_block_round(),
+                    }),
+                    metadata: Some(metadata),
+                }
+                .encode_to_vec();
                 Ok(QueryValidationResult::new_with_data(response_data))
             }
             other => Ok(QueryValidationResult::new_with_error(QueryError::Query(

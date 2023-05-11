@@ -3,7 +3,54 @@ use crate::drive::{unique_key_hashes_tree_path_vec, Drive};
 
 use crate::error::Error;
 
+use crate::error::query::QuerySyntaxError;
 use grovedb::{PathQuery, Query};
+
+/// An enumeration representing the types of identity prove requests.
+///
+/// # Variants
+///
+/// * `FullIdentity`: Represents a request to prove the full identity (0).
+/// * `Balance`: Represents a request to prove the account balance (1).
+/// * `Keys`: Represents a request to prove the public keys (2).
+#[repr(u8)]
+pub enum IdentityProveRequestType {
+    /// FullIdentity: A variant representing full identity access, assigned the value 0.
+    FullIdentity = 0,
+    /// Balance: A variant representing balance access only, assigned the value 1.
+    Balance = 1,
+    /// Keys: A variant representing keys access only, assigned the value 2.
+    Keys = 2,
+}
+
+impl TryFrom<u8> for IdentityProveRequestType {
+    type Error = Error;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(IdentityProveRequestType::FullIdentity),
+            1 => Ok(IdentityProveRequestType::Balance),
+            2 => Ok(IdentityProveRequestType::Keys),
+            _ => Err(Error::Query(QuerySyntaxError::InvalidIdentityProveRequest(
+                "unknown prove request type",
+            ))),
+        }
+    }
+}
+
+/// A struct used for querying identity drives.
+///
+/// # Fields
+///
+/// * `identity_id`: An array of 32 bytes representing the unique identity ID.
+/// * `prove_request_type`: The type of identity proof requested, based on the `IdentityProveRequestType` enum.
+pub struct IdentityDriveQuery {
+    /// A 32-byte array representing the unique identifier for an identity.
+    pub identity_id: [u8; 32],
+    /// An instance of the `IdentityProveRequestType` enum that specifies
+    /// the type of prove request being made for the identity.
+    pub prove_request_type: IdentityProveRequestType,
+}
 
 impl Drive {
     /// The query for proving an identity id from a public key hash.
@@ -35,6 +82,14 @@ impl Drive {
         let all_keys_query = key_request.into_path_query();
         PathQuery::merge(vec![&balance_query, &revision_query, &all_keys_query])
             .map_err(Error::GroveDB)
+    }
+
+    /// The query getting all keys and revision
+    pub fn identity_all_keys_query(identity_id: &[u8; 32]) -> Result<PathQuery, Error> {
+        let revision_query = Self::identity_revision_query(identity_id);
+        let key_request = IdentityKeysRequest::new_all_keys_query(identity_id, None);
+        let all_keys_query = key_request.into_path_query();
+        PathQuery::merge(vec![&revision_query, &all_keys_query]).map_err(Error::GroveDB)
     }
 
     /// The query getting all balances and revision

@@ -33,25 +33,39 @@
 //! Namely functions to return the paths to certain objects and the path sizes.
 //!
 
+#[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::defaults::DEFAULT_HASH_SIZE_U8;
+#[cfg(feature = "full")]
 use crate::drive::flags::StorageFlags;
+#[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::{defaults, RootTree};
+#[cfg(any(feature = "full", feature = "verify"))]
 use dpp::data_contract::document_type::DocumentType;
+#[cfg(feature = "full")]
 use dpp::document::Document;
+#[cfg(feature = "full")]
 use grovedb::batch::key_info::KeyInfo;
+#[cfg(feature = "full")]
 use grovedb::batch::KeyInfoPath;
+#[cfg(feature = "full")]
 use grovedb::reference_path::ReferencePathType::UpstreamRootHeightReference;
+#[cfg(feature = "full")]
 use grovedb::Element;
-
+#[cfg(feature = "full")]
 mod delete;
+#[cfg(feature = "full")]
 mod estimation_costs;
+#[cfg(feature = "full")]
 mod index_uniqueness;
+#[cfg(feature = "full")]
 mod insert;
+#[cfg(feature = "full")]
 mod update;
 
+#[cfg(any(feature = "full", feature = "verify"))]
 /// Returns the path to a contract document type.
 pub(crate) fn contract_document_type_path<'a>(
-    contract_id: &'a [u8],
+    contract_id: &'a [u8; 32],
     document_type_name: &'a str,
 ) -> [&'a [u8]; 4] {
     [
@@ -62,6 +76,7 @@ pub(crate) fn contract_document_type_path<'a>(
     ]
 }
 
+#[cfg(any(feature = "full", feature = "verify"))]
 /// Returns the path to a contract document type.
 pub(crate) fn contract_document_type_path_vec(
     contract_id: &[u8],
@@ -75,6 +90,7 @@ pub(crate) fn contract_document_type_path_vec(
     ]
 }
 
+#[cfg(any(feature = "full", feature = "verify"))]
 /// Returns the path to the primary keys of a contract document type.
 pub(crate) fn contract_documents_primary_key_path<'a>(
     contract_id: &'a [u8],
@@ -89,6 +105,7 @@ pub(crate) fn contract_documents_primary_key_path<'a>(
     ]
 }
 
+#[cfg(any(feature = "full", feature = "verify"))]
 /// Returns the path to a contract document.
 fn contract_documents_keeping_history_primary_key_path_for_document_id<'a>(
     contract_id: &'a [u8],
@@ -105,6 +122,7 @@ fn contract_documents_keeping_history_primary_key_path_for_document_id<'a>(
     ]
 }
 
+#[cfg(feature = "full")]
 /// Returns the path to a contract document when the document id isn't known.
 fn contract_documents_keeping_history_primary_key_path_for_unknown_document_id(
     contract_id: &[u8],
@@ -121,6 +139,7 @@ fn contract_documents_keeping_history_primary_key_path_for_unknown_document_id(
     key_info_path
 }
 
+#[cfg(any(feature = "full", feature = "verify"))]
 /// Returns the size of the path to a contract document.
 fn contract_documents_keeping_history_primary_key_path_for_document_id_size(
     document_type_name_len: u32,
@@ -129,6 +148,7 @@ fn contract_documents_keeping_history_primary_key_path_for_document_id_size(
         + document_type_name_len
 }
 
+#[cfg(any(feature = "full", feature = "verify"))]
 /// Returns the size of the path to the time at which a document type was stored.
 fn contract_documents_keeping_history_storage_time_reference_path_size(
     document_type_name_len: u32,
@@ -137,6 +157,7 @@ fn contract_documents_keeping_history_storage_time_reference_path_size(
         + document_type_name_len
 }
 
+#[cfg(feature = "full")]
 /// Creates a reference to a document.
 fn make_document_reference(
     document: &Document,
@@ -171,6 +192,7 @@ fn make_document_reference(
     )
 }
 
+#[cfg(feature = "full")]
 /// size of a document reference.
 fn document_reference_size(document_type: &DocumentType) -> u32 {
     // we need to construct the reference from the split height of the contract document
@@ -195,6 +217,7 @@ fn document_reference_size(document_type: &DocumentType) -> u32 {
     6 + reference_path_size
 }
 
+#[cfg(feature = "full")]
 fn unique_event_id() -> [u8; 32] {
     rand::random::<[u8; 32]>()
 }

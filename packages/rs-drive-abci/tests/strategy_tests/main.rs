@@ -55,6 +55,7 @@ mod signer;
 mod strategy;
 mod transitions;
 mod upgrade_fork_tests;
+mod verify_state_transitions;
 
 pub type BlockHeight = u64;
 
@@ -120,6 +121,7 @@ mod tests {
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
+            verify_state_transition_results: false,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -167,6 +169,7 @@ mod tests {
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
+            verify_state_transition_results: false,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -214,6 +217,7 @@ mod tests {
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
+            verify_state_transition_results: false,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -307,6 +311,7 @@ mod tests {
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
+            verify_state_transition_results: true,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -363,6 +368,7 @@ mod tests {
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
+            verify_state_transition_results: true,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -410,6 +416,7 @@ mod tests {
             rotate_quorums: true,
             failure_testing: None,
             query_testing: None,
+            verify_state_transition_results: true,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -494,6 +501,7 @@ mod tests {
             rotate_quorums: true,
             failure_testing: None,
             query_testing: None,
+            verify_state_transition_results: true,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -560,6 +568,7 @@ mod tests {
             rotate_quorums: true,
             failure_testing: None,
             query_testing: None,
+            verify_state_transition_results: true,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -621,6 +630,7 @@ mod tests {
             rotate_quorums: true,
             failure_testing: None,
             query_testing: None,
+            verify_state_transition_results: true,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -663,7 +673,8 @@ mod tests {
                 proposers
                     .into_iter()
                     .map(|proposer| proposer.masternode.pro_tx_hash.into_inner())
-                    .collect(),
+                    .collect::<Vec<_>>()
+                    .as_slice(),
                 None,
             )
             .expect("expected to fetch identities");
@@ -708,6 +719,7 @@ mod tests {
                     chance_per_block: None,
                 },
             }),
+            verify_state_transition_results: true,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -756,6 +768,7 @@ mod tests {
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
+            verify_state_transition_results: true,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -816,6 +829,7 @@ mod tests {
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
+            verify_state_transition_results: true,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -909,6 +923,7 @@ mod tests {
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
+            verify_state_transition_results: true,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -996,6 +1011,7 @@ mod tests {
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
+            verify_state_transition_results: true,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -1062,6 +1078,7 @@ mod tests {
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
+            verify_state_transition_results: true,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -1156,6 +1173,7 @@ mod tests {
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
+            verify_state_transition_results: true,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -1250,6 +1268,7 @@ mod tests {
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
+            verify_state_transition_results: true,
         };
         let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
@@ -1345,6 +1364,7 @@ mod tests {
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
+            verify_state_transition_results: true,
         };
 
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -1458,6 +1478,7 @@ mod tests {
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
+            verify_state_transition_results: true,
         };
 
         let day_in_ms = 1000 * 60 * 60 * 24;
@@ -1522,6 +1543,7 @@ mod tests {
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
+            verify_state_transition_results: true,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -1593,6 +1615,9 @@ mod tests {
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
+            // because we can add an identity and add keys to it in the same block
+            // the result would be different then expected
+            verify_state_transition_results: false,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -1626,7 +1651,8 @@ mod tests {
                     .identities
                     .into_iter()
                     .map(|identity| identity.id.to_buffer())
-                    .collect(),
+                    .collect::<Vec<_>>()
+                    .as_slice(),
                 None,
             )
             .expect("expected to fetch balances");
@@ -1665,6 +1691,9 @@ mod tests {
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
+            // because we can add an identity and remove keys to it in the same block
+            // the result would be different then expected
+            verify_state_transition_results: false,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,
@@ -1698,7 +1727,8 @@ mod tests {
                     .identities
                     .into_iter()
                     .map(|identity| identity.id.to_buffer())
-                    .collect(),
+                    .collect::<Vec<_>>()
+                    .as_slice(),
                 None,
             )
             .expect("expected to fetch balances");
@@ -1748,6 +1778,9 @@ mod tests {
             rotate_quorums: false,
             failure_testing: None,
             query_testing: None,
+            // because we can add an identity and withdraw from it in the same block
+            // the result would be different then expected
+            verify_state_transition_results: false,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,

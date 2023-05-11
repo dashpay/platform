@@ -153,6 +153,39 @@ $root.org = (function() {
                          */
 
                         /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getIdentities}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getIdentitiesCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse} [response] GetIdentitiesResponse
+                         */
+
+                        /**
+                         * Calls getIdentities.
+                         * @function getIdentities
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesRequest} request GetIdentitiesRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getIdentitiesCallback} callback Node-style callback called with the error, if any, and GetIdentitiesResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getIdentities = function getIdentities(request, callback) {
+                            return this.rpcCall(getIdentities, $root.org.dash.platform.dapi.v0.GetIdentitiesRequest, $root.org.dash.platform.dapi.v0.GetIdentitiesResponse, request, callback);
+                        }, "name", { value: "getIdentities" });
+
+                        /**
+                         * Calls getIdentities.
+                         * @function getIdentities
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesRequest} request GetIdentitiesRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetIdentitiesResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
                          * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getIdentityKeys}.
                          * @memberof org.dash.platform.dapi.v0.Platform
                          * @typedef getIdentityKeysCallback
@@ -248,6 +281,39 @@ $root.org = (function() {
                          * @instance
                          * @param {org.dash.platform.dapi.v0.IGetIdentityRequest} request GetIdentityRequest message or plain object
                          * @returns {Promise<org.dash.platform.dapi.v0.GetIdentityBalanceAndRevisionResponse>} Promise
+                         * @variation 2
+                         */
+
+                        /**
+                         * Callback as used by {@link org.dash.platform.dapi.v0.Platform#getProofs}.
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @typedef getProofsCallback
+                         * @type {function}
+                         * @param {Error|null} error Error, if any
+                         * @param {org.dash.platform.dapi.v0.GetProofsResponse} [response] GetProofsResponse
+                         */
+
+                        /**
+                         * Calls getProofs.
+                         * @function getProofs
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetProofsRequest} request GetProofsRequest message or plain object
+                         * @param {org.dash.platform.dapi.v0.Platform.getProofsCallback} callback Node-style callback called with the error, if any, and GetProofsResponse
+                         * @returns {undefined}
+                         * @variation 1
+                         */
+                        Object.defineProperty(Platform.prototype.getProofs = function getProofs(request, callback) {
+                            return this.rpcCall(getProofs, $root.org.dash.platform.dapi.v0.GetProofsRequest, $root.org.dash.platform.dapi.v0.GetProofsResponse, request, callback);
+                        }, "name", { value: "getProofs" });
+
+                        /**
+                         * Calls getProofs.
+                         * @function getProofs
+                         * @memberof org.dash.platform.dapi.v0.Platform
+                         * @instance
+                         * @param {org.dash.platform.dapi.v0.IGetProofsRequest} request GetProofsRequest message or plain object
+                         * @returns {Promise<org.dash.platform.dapi.v0.GetProofsResponse>} Promise
                          * @variation 2
                          */
 
@@ -2113,6 +2179,1136 @@ $root.org = (function() {
                         };
 
                         return GetIdentityResponse;
+                    })();
+
+                    v0.GetIdentitiesRequest = (function() {
+
+                        /**
+                         * Properties of a GetIdentitiesRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetIdentitiesRequest
+                         * @property {Array.<Uint8Array>|null} [ids] GetIdentitiesRequest ids
+                         * @property {boolean|null} [prove] GetIdentitiesRequest prove
+                         */
+
+                        /**
+                         * Constructs a new GetIdentitiesRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetIdentitiesRequest.
+                         * @implements IGetIdentitiesRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesRequest=} [properties] Properties to set
+                         */
+                        function GetIdentitiesRequest(properties) {
+                            this.ids = [];
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetIdentitiesRequest ids.
+                         * @member {Array.<Uint8Array>} ids
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest
+                         * @instance
+                         */
+                        GetIdentitiesRequest.prototype.ids = $util.emptyArray;
+
+                        /**
+                         * GetIdentitiesRequest prove.
+                         * @member {boolean} prove
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest
+                         * @instance
+                         */
+                        GetIdentitiesRequest.prototype.prove = false;
+
+                        /**
+                         * Creates a new GetIdentitiesRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesRequest} GetIdentitiesRequest instance
+                         */
+                        GetIdentitiesRequest.create = function create(properties) {
+                            return new GetIdentitiesRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetIdentitiesRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesRequest} message GetIdentitiesRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetIdentitiesRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.ids != null && message.ids.length)
+                                for (var i = 0; i < message.ids.length; ++i)
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.ids[i]);
+                            if (message.prove != null && Object.hasOwnProperty.call(message, "prove"))
+                                writer.uint32(/* id 2, wireType 0 =*/16).bool(message.prove);
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetIdentitiesRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesRequest} message GetIdentitiesRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetIdentitiesRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetIdentitiesRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesRequest} GetIdentitiesRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetIdentitiesRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    if (!(message.ids && message.ids.length))
+                                        message.ids = [];
+                                    message.ids.push(reader.bytes());
+                                    break;
+                                case 2:
+                                    message.prove = reader.bool();
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetIdentitiesRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesRequest} GetIdentitiesRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetIdentitiesRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetIdentitiesRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetIdentitiesRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            if (message.ids != null && message.hasOwnProperty("ids")) {
+                                if (!Array.isArray(message.ids))
+                                    return "ids: array expected";
+                                for (var i = 0; i < message.ids.length; ++i)
+                                    if (!(message.ids[i] && typeof message.ids[i].length === "number" || $util.isString(message.ids[i])))
+                                        return "ids: buffer[] expected";
+                            }
+                            if (message.prove != null && message.hasOwnProperty("prove"))
+                                if (typeof message.prove !== "boolean")
+                                    return "prove: boolean expected";
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetIdentitiesRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesRequest} GetIdentitiesRequest
+                         */
+                        GetIdentitiesRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesRequest();
+                            if (object.ids) {
+                                if (!Array.isArray(object.ids))
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesRequest.ids: array expected");
+                                message.ids = [];
+                                for (var i = 0; i < object.ids.length; ++i)
+                                    if (typeof object.ids[i] === "string")
+                                        $util.base64.decode(object.ids[i], message.ids[i] = $util.newBuffer($util.base64.length(object.ids[i])), 0);
+                                    else if (object.ids[i].length >= 0)
+                                        message.ids[i] = object.ids[i];
+                            }
+                            if (object.prove != null)
+                                message.prove = Boolean(object.prove);
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetIdentitiesRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetIdentitiesRequest} message GetIdentitiesRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetIdentitiesRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.arrays || options.defaults)
+                                object.ids = [];
+                            if (options.defaults)
+                                object.prove = false;
+                            if (message.ids && message.ids.length) {
+                                object.ids = [];
+                                for (var j = 0; j < message.ids.length; ++j)
+                                    object.ids[j] = options.bytes === String ? $util.base64.encode(message.ids[j], 0, message.ids[j].length) : options.bytes === Array ? Array.prototype.slice.call(message.ids[j]) : message.ids[j];
+                            }
+                            if (message.prove != null && message.hasOwnProperty("prove"))
+                                object.prove = message.prove;
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetIdentitiesRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetIdentitiesRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        return GetIdentitiesRequest;
+                    })();
+
+                    v0.GetIdentitiesResponse = (function() {
+
+                        /**
+                         * Properties of a GetIdentitiesResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetIdentitiesResponse
+                         * @property {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentities|null} [identities] GetIdentitiesResponse identities
+                         * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetIdentitiesResponse proof
+                         * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetIdentitiesResponse metadata
+                         */
+
+                        /**
+                         * Constructs a new GetIdentitiesResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetIdentitiesResponse.
+                         * @implements IGetIdentitiesResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesResponse=} [properties] Properties to set
+                         */
+                        function GetIdentitiesResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetIdentitiesResponse identities.
+                         * @member {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentities|null|undefined} identities
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                         * @instance
+                         */
+                        GetIdentitiesResponse.prototype.identities = null;
+
+                        /**
+                         * GetIdentitiesResponse proof.
+                         * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                         * @instance
+                         */
+                        GetIdentitiesResponse.prototype.proof = null;
+
+                        /**
+                         * GetIdentitiesResponse metadata.
+                         * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                         * @instance
+                         */
+                        GetIdentitiesResponse.prototype.metadata = null;
+
+                        // OneOf field names bound to virtual getters and setters
+                        var $oneOfFields;
+
+                        /**
+                         * GetIdentitiesResponse result.
+                         * @member {"identities"|"proof"|undefined} result
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                         * @instance
+                         */
+                        Object.defineProperty(GetIdentitiesResponse.prototype, "result", {
+                            get: $util.oneOfGetter($oneOfFields = ["identities", "proof"]),
+                            set: $util.oneOfSetter($oneOfFields)
+                        });
+
+                        /**
+                         * Creates a new GetIdentitiesResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse} GetIdentitiesResponse instance
+                         */
+                        GetIdentitiesResponse.create = function create(properties) {
+                            return new GetIdentitiesResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetIdentitiesResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesResponse} message GetIdentitiesResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetIdentitiesResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.identities != null && Object.hasOwnProperty.call(message, "identities"))
+                                $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities.encode(message.identities, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                            if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetIdentitiesResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetIdentitiesResponse} message GetIdentitiesResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetIdentitiesResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetIdentitiesResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse} GetIdentitiesResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetIdentitiesResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.identities = $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities.decode(reader, reader.uint32());
+                                    break;
+                                case 2:
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                    break;
+                                case 3:
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetIdentitiesResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse} GetIdentitiesResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetIdentitiesResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetIdentitiesResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetIdentitiesResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            var properties = {};
+                            if (message.identities != null && message.hasOwnProperty("identities")) {
+                                properties.result = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities.verify(message.identities);
+                                    if (error)
+                                        return "identities." + error;
+                                }
+                            }
+                            if (message.proof != null && message.hasOwnProperty("proof")) {
+                                if (properties.result === 1)
+                                    return "result: multiple values";
+                                properties.result = 1;
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                    if (error)
+                                        return "proof." + error;
+                                }
+                            }
+                            if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                if (error)
+                                    return "metadata." + error;
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetIdentitiesResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse} GetIdentitiesResponse
+                         */
+                        GetIdentitiesResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesResponse();
+                            if (object.identities != null) {
+                                if (typeof object.identities !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesResponse.identities: object expected");
+                                message.identities = $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities.fromObject(object.identities);
+                            }
+                            if (object.proof != null) {
+                                if (typeof object.proof !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesResponse.proof: object expected");
+                                message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                            }
+                            if (object.metadata != null) {
+                                if (typeof object.metadata !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesResponse.metadata: object expected");
+                                message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetIdentitiesResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse} message GetIdentitiesResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetIdentitiesResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.defaults)
+                                object.metadata = null;
+                            if (message.identities != null && message.hasOwnProperty("identities")) {
+                                object.identities = $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities.toObject(message.identities, options);
+                                if (options.oneofs)
+                                    object.result = "identities";
+                            }
+                            if (message.proof != null && message.hasOwnProperty("proof")) {
+                                object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                                if (options.oneofs)
+                                    object.result = "proof";
+                            }
+                            if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetIdentitiesResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetIdentitiesResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetIdentitiesResponse.IdentityValue = (function() {
+
+                            /**
+                             * Properties of an IdentityValue.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                             * @interface IIdentityValue
+                             * @property {Uint8Array|null} [value] IdentityValue value
+                             */
+
+                            /**
+                             * Constructs a new IdentityValue.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                             * @classdesc Represents an IdentityValue.
+                             * @implements IIdentityValue
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentityValue=} [properties] Properties to set
+                             */
+                            function IdentityValue(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * IdentityValue value.
+                             * @member {Uint8Array} value
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue
+                             * @instance
+                             */
+                            IdentityValue.prototype.value = $util.newBuffer([]);
+
+                            /**
+                             * Creates a new IdentityValue instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentityValue=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue} IdentityValue instance
+                             */
+                            IdentityValue.create = function create(properties) {
+                                return new IdentityValue(properties);
+                            };
+
+                            /**
+                             * Encodes the specified IdentityValue message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentityValue} message IdentityValue message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            IdentityValue.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.value != null && Object.hasOwnProperty.call(message, "value"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.value);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified IdentityValue message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentityValue} message IdentityValue message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            IdentityValue.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes an IdentityValue message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue} IdentityValue
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            IdentityValue.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.value = reader.bytes();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes an IdentityValue message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue} IdentityValue
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            IdentityValue.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies an IdentityValue message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            IdentityValue.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.value != null && message.hasOwnProperty("value"))
+                                    if (!(message.value && typeof message.value.length === "number" || $util.isString(message.value)))
+                                        return "value: buffer expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates an IdentityValue message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue} IdentityValue
+                             */
+                            IdentityValue.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue();
+                                if (object.value != null)
+                                    if (typeof object.value === "string")
+                                        $util.base64.decode(object.value, message.value = $util.newBuffer($util.base64.length(object.value)), 0);
+                                    else if (object.value.length >= 0)
+                                        message.value = object.value;
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from an IdentityValue message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue} message IdentityValue
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            IdentityValue.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    if (options.bytes === String)
+                                        object.value = "";
+                                    else {
+                                        object.value = [];
+                                        if (options.bytes !== Array)
+                                            object.value = $util.newBuffer(object.value);
+                                    }
+                                if (message.value != null && message.hasOwnProperty("value"))
+                                    object.value = options.bytes === String ? $util.base64.encode(message.value, 0, message.value.length) : options.bytes === Array ? Array.prototype.slice.call(message.value) : message.value;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this IdentityValue to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            IdentityValue.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return IdentityValue;
+                        })();
+
+                        GetIdentitiesResponse.IdentityEntry = (function() {
+
+                            /**
+                             * Properties of an IdentityEntry.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                             * @interface IIdentityEntry
+                             * @property {Uint8Array|null} [key] IdentityEntry key
+                             * @property {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentityValue|null} [value] IdentityEntry value
+                             */
+
+                            /**
+                             * Constructs a new IdentityEntry.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                             * @classdesc Represents an IdentityEntry.
+                             * @implements IIdentityEntry
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentityEntry=} [properties] Properties to set
+                             */
+                            function IdentityEntry(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * IdentityEntry key.
+                             * @member {Uint8Array} key
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry
+                             * @instance
+                             */
+                            IdentityEntry.prototype.key = $util.newBuffer([]);
+
+                            /**
+                             * IdentityEntry value.
+                             * @member {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentityValue|null|undefined} value
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry
+                             * @instance
+                             */
+                            IdentityEntry.prototype.value = null;
+
+                            /**
+                             * Creates a new IdentityEntry instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentityEntry=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry} IdentityEntry instance
+                             */
+                            IdentityEntry.create = function create(properties) {
+                                return new IdentityEntry(properties);
+                            };
+
+                            /**
+                             * Encodes the specified IdentityEntry message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentityEntry} message IdentityEntry message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            IdentityEntry.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.key != null && Object.hasOwnProperty.call(message, "key"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.key);
+                                if (message.value != null && Object.hasOwnProperty.call(message, "value"))
+                                    $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue.encode(message.value, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified IdentityEntry message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentityEntry} message IdentityEntry message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            IdentityEntry.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes an IdentityEntry message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry} IdentityEntry
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            IdentityEntry.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.key = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.value = $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue.decode(reader, reader.uint32());
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes an IdentityEntry message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry} IdentityEntry
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            IdentityEntry.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies an IdentityEntry message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            IdentityEntry.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.key != null && message.hasOwnProperty("key"))
+                                    if (!(message.key && typeof message.key.length === "number" || $util.isString(message.key)))
+                                        return "key: buffer expected";
+                                if (message.value != null && message.hasOwnProperty("value")) {
+                                    var error = $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue.verify(message.value);
+                                    if (error)
+                                        return "value." + error;
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates an IdentityEntry message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry} IdentityEntry
+                             */
+                            IdentityEntry.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry();
+                                if (object.key != null)
+                                    if (typeof object.key === "string")
+                                        $util.base64.decode(object.key, message.key = $util.newBuffer($util.base64.length(object.key)), 0);
+                                    else if (object.key.length >= 0)
+                                        message.key = object.key;
+                                if (object.value != null) {
+                                    if (typeof object.value !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry.value: object expected");
+                                    message.value = $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue.fromObject(object.value);
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from an IdentityEntry message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry} message IdentityEntry
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            IdentityEntry.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.key = "";
+                                    else {
+                                        object.key = [];
+                                        if (options.bytes !== Array)
+                                            object.key = $util.newBuffer(object.key);
+                                    }
+                                    object.value = null;
+                                }
+                                if (message.key != null && message.hasOwnProperty("key"))
+                                    object.key = options.bytes === String ? $util.base64.encode(message.key, 0, message.key.length) : options.bytes === Array ? Array.prototype.slice.call(message.key) : message.key;
+                                if (message.value != null && message.hasOwnProperty("value"))
+                                    object.value = $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityValue.toObject(message.value, options);
+                                return object;
+                            };
+
+                            /**
+                             * Converts this IdentityEntry to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            IdentityEntry.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return IdentityEntry;
+                        })();
+
+                        GetIdentitiesResponse.Identities = (function() {
+
+                            /**
+                             * Properties of an Identities.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                             * @interface IIdentities
+                             * @property {Array.<org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentityEntry>|null} [identityEntries] Identities identityEntries
+                             */
+
+                            /**
+                             * Constructs a new Identities.
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse
+                             * @classdesc Represents an Identities.
+                             * @implements IIdentities
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentities=} [properties] Properties to set
+                             */
+                            function Identities(properties) {
+                                this.identityEntries = [];
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * Identities identityEntries.
+                             * @member {Array.<org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentityEntry>} identityEntries
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities
+                             * @instance
+                             */
+                            Identities.prototype.identityEntries = $util.emptyArray;
+
+                            /**
+                             * Creates a new Identities instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentities=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities} Identities instance
+                             */
+                            Identities.create = function create(properties) {
+                                return new Identities(properties);
+                            };
+
+                            /**
+                             * Encodes the specified Identities message. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentities} message Identities message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            Identities.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.identityEntries != null && message.identityEntries.length)
+                                    for (var i = 0; i < message.identityEntries.length; ++i)
+                                        $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry.encode(message.identityEntries[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified Identities message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.IIdentities} message Identities message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            Identities.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes an Identities message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities} Identities
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            Identities.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        if (!(message.identityEntries && message.identityEntries.length))
+                                            message.identityEntries = [];
+                                        message.identityEntries.push($root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry.decode(reader, reader.uint32()));
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes an Identities message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities} Identities
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            Identities.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies an Identities message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            Identities.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.identityEntries != null && message.hasOwnProperty("identityEntries")) {
+                                    if (!Array.isArray(message.identityEntries))
+                                        return "identityEntries: array expected";
+                                    for (var i = 0; i < message.identityEntries.length; ++i) {
+                                        var error = $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry.verify(message.identityEntries[i]);
+                                        if (error)
+                                            return "identityEntries." + error;
+                                    }
+                                }
+                                return null;
+                            };
+
+                            /**
+                             * Creates an Identities message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities} Identities
+                             */
+                            Identities.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities();
+                                if (object.identityEntries) {
+                                    if (!Array.isArray(object.identityEntries))
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities.identityEntries: array expected");
+                                    message.identityEntries = [];
+                                    for (var i = 0; i < object.identityEntries.length; ++i) {
+                                        if (typeof object.identityEntries[i] !== "object")
+                                            throw TypeError(".org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities.identityEntries: object expected");
+                                        message.identityEntries[i] = $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry.fromObject(object.identityEntries[i]);
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from an Identities message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities} message Identities
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            Identities.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.arrays || options.defaults)
+                                    object.identityEntries = [];
+                                if (message.identityEntries && message.identityEntries.length) {
+                                    object.identityEntries = [];
+                                    for (var j = 0; j < message.identityEntries.length; ++j)
+                                        object.identityEntries[j] = $root.org.dash.platform.dapi.v0.GetIdentitiesResponse.IdentityEntry.toObject(message.identityEntries[j], options);
+                                }
+                                return object;
+                            };
+
+                            /**
+                             * Converts this Identities to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetIdentitiesResponse.Identities
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            Identities.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return Identities;
+                        })();
+
+                        return GetIdentitiesResponse;
                     })();
 
                     v0.GetIdentityBalanceResponse = (function() {
@@ -6007,6 +7203,1242 @@ $root.org = (function() {
                         })();
 
                         return GetIdentitiesKeysResponse;
+                    })();
+
+                    v0.GetProofsRequest = (function() {
+
+                        /**
+                         * Properties of a GetProofsRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetProofsRequest
+                         * @property {Array.<org.dash.platform.dapi.v0.GetProofsRequest.IIdentityRequest>|null} [identities] GetProofsRequest identities
+                         * @property {Array.<org.dash.platform.dapi.v0.GetProofsRequest.IContractRequest>|null} [contracts] GetProofsRequest contracts
+                         * @property {Array.<org.dash.platform.dapi.v0.GetProofsRequest.IDocumentRequest>|null} [documents] GetProofsRequest documents
+                         */
+
+                        /**
+                         * Constructs a new GetProofsRequest.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetProofsRequest.
+                         * @implements IGetProofsRequest
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetProofsRequest=} [properties] Properties to set
+                         */
+                        function GetProofsRequest(properties) {
+                            this.identities = [];
+                            this.contracts = [];
+                            this.documents = [];
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetProofsRequest identities.
+                         * @member {Array.<org.dash.platform.dapi.v0.GetProofsRequest.IIdentityRequest>} identities
+                         * @memberof org.dash.platform.dapi.v0.GetProofsRequest
+                         * @instance
+                         */
+                        GetProofsRequest.prototype.identities = $util.emptyArray;
+
+                        /**
+                         * GetProofsRequest contracts.
+                         * @member {Array.<org.dash.platform.dapi.v0.GetProofsRequest.IContractRequest>} contracts
+                         * @memberof org.dash.platform.dapi.v0.GetProofsRequest
+                         * @instance
+                         */
+                        GetProofsRequest.prototype.contracts = $util.emptyArray;
+
+                        /**
+                         * GetProofsRequest documents.
+                         * @member {Array.<org.dash.platform.dapi.v0.GetProofsRequest.IDocumentRequest>} documents
+                         * @memberof org.dash.platform.dapi.v0.GetProofsRequest
+                         * @instance
+                         */
+                        GetProofsRequest.prototype.documents = $util.emptyArray;
+
+                        /**
+                         * Creates a new GetProofsRequest instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetProofsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetProofsRequest=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetProofsRequest} GetProofsRequest instance
+                         */
+                        GetProofsRequest.create = function create(properties) {
+                            return new GetProofsRequest(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetProofsRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetProofsRequest.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetProofsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetProofsRequest} message GetProofsRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetProofsRequest.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.identities != null && message.identities.length)
+                                for (var i = 0; i < message.identities.length; ++i)
+                                    $root.org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest.encode(message.identities[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            if (message.contracts != null && message.contracts.length)
+                                for (var i = 0; i < message.contracts.length; ++i)
+                                    $root.org.dash.platform.dapi.v0.GetProofsRequest.ContractRequest.encode(message.contracts[i], writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                            if (message.documents != null && message.documents.length)
+                                for (var i = 0; i < message.documents.length; ++i)
+                                    $root.org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest.encode(message.documents[i], writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetProofsRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetProofsRequest.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetProofsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetProofsRequest} message GetProofsRequest message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetProofsRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetProofsRequest message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetProofsRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetProofsRequest} GetProofsRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetProofsRequest.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetProofsRequest();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    if (!(message.identities && message.identities.length))
+                                        message.identities = [];
+                                    message.identities.push($root.org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest.decode(reader, reader.uint32()));
+                                    break;
+                                case 2:
+                                    if (!(message.contracts && message.contracts.length))
+                                        message.contracts = [];
+                                    message.contracts.push($root.org.dash.platform.dapi.v0.GetProofsRequest.ContractRequest.decode(reader, reader.uint32()));
+                                    break;
+                                case 3:
+                                    if (!(message.documents && message.documents.length))
+                                        message.documents = [];
+                                    message.documents.push($root.org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest.decode(reader, reader.uint32()));
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetProofsRequest message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetProofsRequest
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetProofsRequest} GetProofsRequest
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetProofsRequest.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetProofsRequest message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetProofsRequest
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetProofsRequest.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            if (message.identities != null && message.hasOwnProperty("identities")) {
+                                if (!Array.isArray(message.identities))
+                                    return "identities: array expected";
+                                for (var i = 0; i < message.identities.length; ++i) {
+                                    var error = $root.org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest.verify(message.identities[i]);
+                                    if (error)
+                                        return "identities." + error;
+                                }
+                            }
+                            if (message.contracts != null && message.hasOwnProperty("contracts")) {
+                                if (!Array.isArray(message.contracts))
+                                    return "contracts: array expected";
+                                for (var i = 0; i < message.contracts.length; ++i) {
+                                    var error = $root.org.dash.platform.dapi.v0.GetProofsRequest.ContractRequest.verify(message.contracts[i]);
+                                    if (error)
+                                        return "contracts." + error;
+                                }
+                            }
+                            if (message.documents != null && message.hasOwnProperty("documents")) {
+                                if (!Array.isArray(message.documents))
+                                    return "documents: array expected";
+                                for (var i = 0; i < message.documents.length; ++i) {
+                                    var error = $root.org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest.verify(message.documents[i]);
+                                    if (error)
+                                        return "documents." + error;
+                                }
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetProofsRequest message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetProofsRequest
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetProofsRequest} GetProofsRequest
+                         */
+                        GetProofsRequest.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetProofsRequest)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetProofsRequest();
+                            if (object.identities) {
+                                if (!Array.isArray(object.identities))
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetProofsRequest.identities: array expected");
+                                message.identities = [];
+                                for (var i = 0; i < object.identities.length; ++i) {
+                                    if (typeof object.identities[i] !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetProofsRequest.identities: object expected");
+                                    message.identities[i] = $root.org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest.fromObject(object.identities[i]);
+                                }
+                            }
+                            if (object.contracts) {
+                                if (!Array.isArray(object.contracts))
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetProofsRequest.contracts: array expected");
+                                message.contracts = [];
+                                for (var i = 0; i < object.contracts.length; ++i) {
+                                    if (typeof object.contracts[i] !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetProofsRequest.contracts: object expected");
+                                    message.contracts[i] = $root.org.dash.platform.dapi.v0.GetProofsRequest.ContractRequest.fromObject(object.contracts[i]);
+                                }
+                            }
+                            if (object.documents) {
+                                if (!Array.isArray(object.documents))
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetProofsRequest.documents: array expected");
+                                message.documents = [];
+                                for (var i = 0; i < object.documents.length; ++i) {
+                                    if (typeof object.documents[i] !== "object")
+                                        throw TypeError(".org.dash.platform.dapi.v0.GetProofsRequest.documents: object expected");
+                                    message.documents[i] = $root.org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest.fromObject(object.documents[i]);
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetProofsRequest message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetProofsRequest
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetProofsRequest} message GetProofsRequest
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetProofsRequest.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.arrays || options.defaults) {
+                                object.identities = [];
+                                object.contracts = [];
+                                object.documents = [];
+                            }
+                            if (message.identities && message.identities.length) {
+                                object.identities = [];
+                                for (var j = 0; j < message.identities.length; ++j)
+                                    object.identities[j] = $root.org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest.toObject(message.identities[j], options);
+                            }
+                            if (message.contracts && message.contracts.length) {
+                                object.contracts = [];
+                                for (var j = 0; j < message.contracts.length; ++j)
+                                    object.contracts[j] = $root.org.dash.platform.dapi.v0.GetProofsRequest.ContractRequest.toObject(message.contracts[j], options);
+                            }
+                            if (message.documents && message.documents.length) {
+                                object.documents = [];
+                                for (var j = 0; j < message.documents.length; ++j)
+                                    object.documents[j] = $root.org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest.toObject(message.documents[j], options);
+                            }
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetProofsRequest to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetProofsRequest
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetProofsRequest.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        GetProofsRequest.DocumentRequest = (function() {
+
+                            /**
+                             * Properties of a DocumentRequest.
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest
+                             * @interface IDocumentRequest
+                             * @property {Uint8Array|null} [contractId] DocumentRequest contractId
+                             * @property {string|null} [documentType] DocumentRequest documentType
+                             * @property {boolean|null} [documentTypeKeepsHistory] DocumentRequest documentTypeKeepsHistory
+                             * @property {Uint8Array|null} [documentId] DocumentRequest documentId
+                             */
+
+                            /**
+                             * Constructs a new DocumentRequest.
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest
+                             * @classdesc Represents a DocumentRequest.
+                             * @implements IDocumentRequest
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetProofsRequest.IDocumentRequest=} [properties] Properties to set
+                             */
+                            function DocumentRequest(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * DocumentRequest contractId.
+                             * @member {Uint8Array} contractId
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest
+                             * @instance
+                             */
+                            DocumentRequest.prototype.contractId = $util.newBuffer([]);
+
+                            /**
+                             * DocumentRequest documentType.
+                             * @member {string} documentType
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest
+                             * @instance
+                             */
+                            DocumentRequest.prototype.documentType = "";
+
+                            /**
+                             * DocumentRequest documentTypeKeepsHistory.
+                             * @member {boolean} documentTypeKeepsHistory
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest
+                             * @instance
+                             */
+                            DocumentRequest.prototype.documentTypeKeepsHistory = false;
+
+                            /**
+                             * DocumentRequest documentId.
+                             * @member {Uint8Array} documentId
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest
+                             * @instance
+                             */
+                            DocumentRequest.prototype.documentId = $util.newBuffer([]);
+
+                            /**
+                             * Creates a new DocumentRequest instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetProofsRequest.IDocumentRequest=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest} DocumentRequest instance
+                             */
+                            DocumentRequest.create = function create(properties) {
+                                return new DocumentRequest(properties);
+                            };
+
+                            /**
+                             * Encodes the specified DocumentRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetProofsRequest.IDocumentRequest} message DocumentRequest message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            DocumentRequest.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.contractId != null && Object.hasOwnProperty.call(message, "contractId"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.contractId);
+                                if (message.documentType != null && Object.hasOwnProperty.call(message, "documentType"))
+                                    writer.uint32(/* id 2, wireType 2 =*/18).string(message.documentType);
+                                if (message.documentTypeKeepsHistory != null && Object.hasOwnProperty.call(message, "documentTypeKeepsHistory"))
+                                    writer.uint32(/* id 3, wireType 0 =*/24).bool(message.documentTypeKeepsHistory);
+                                if (message.documentId != null && Object.hasOwnProperty.call(message, "documentId"))
+                                    writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.documentId);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified DocumentRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetProofsRequest.IDocumentRequest} message DocumentRequest message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            DocumentRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a DocumentRequest message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest} DocumentRequest
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            DocumentRequest.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.contractId = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.documentType = reader.string();
+                                        break;
+                                    case 3:
+                                        message.documentTypeKeepsHistory = reader.bool();
+                                        break;
+                                    case 4:
+                                        message.documentId = reader.bytes();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a DocumentRequest message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest} DocumentRequest
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            DocumentRequest.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a DocumentRequest message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            DocumentRequest.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.contractId != null && message.hasOwnProperty("contractId"))
+                                    if (!(message.contractId && typeof message.contractId.length === "number" || $util.isString(message.contractId)))
+                                        return "contractId: buffer expected";
+                                if (message.documentType != null && message.hasOwnProperty("documentType"))
+                                    if (!$util.isString(message.documentType))
+                                        return "documentType: string expected";
+                                if (message.documentTypeKeepsHistory != null && message.hasOwnProperty("documentTypeKeepsHistory"))
+                                    if (typeof message.documentTypeKeepsHistory !== "boolean")
+                                        return "documentTypeKeepsHistory: boolean expected";
+                                if (message.documentId != null && message.hasOwnProperty("documentId"))
+                                    if (!(message.documentId && typeof message.documentId.length === "number" || $util.isString(message.documentId)))
+                                        return "documentId: buffer expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a DocumentRequest message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest} DocumentRequest
+                             */
+                            DocumentRequest.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest();
+                                if (object.contractId != null)
+                                    if (typeof object.contractId === "string")
+                                        $util.base64.decode(object.contractId, message.contractId = $util.newBuffer($util.base64.length(object.contractId)), 0);
+                                    else if (object.contractId.length >= 0)
+                                        message.contractId = object.contractId;
+                                if (object.documentType != null)
+                                    message.documentType = String(object.documentType);
+                                if (object.documentTypeKeepsHistory != null)
+                                    message.documentTypeKeepsHistory = Boolean(object.documentTypeKeepsHistory);
+                                if (object.documentId != null)
+                                    if (typeof object.documentId === "string")
+                                        $util.base64.decode(object.documentId, message.documentId = $util.newBuffer($util.base64.length(object.documentId)), 0);
+                                    else if (object.documentId.length >= 0)
+                                        message.documentId = object.documentId;
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a DocumentRequest message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest} message DocumentRequest
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            DocumentRequest.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.contractId = "";
+                                    else {
+                                        object.contractId = [];
+                                        if (options.bytes !== Array)
+                                            object.contractId = $util.newBuffer(object.contractId);
+                                    }
+                                    object.documentType = "";
+                                    object.documentTypeKeepsHistory = false;
+                                    if (options.bytes === String)
+                                        object.documentId = "";
+                                    else {
+                                        object.documentId = [];
+                                        if (options.bytes !== Array)
+                                            object.documentId = $util.newBuffer(object.documentId);
+                                    }
+                                }
+                                if (message.contractId != null && message.hasOwnProperty("contractId"))
+                                    object.contractId = options.bytes === String ? $util.base64.encode(message.contractId, 0, message.contractId.length) : options.bytes === Array ? Array.prototype.slice.call(message.contractId) : message.contractId;
+                                if (message.documentType != null && message.hasOwnProperty("documentType"))
+                                    object.documentType = message.documentType;
+                                if (message.documentTypeKeepsHistory != null && message.hasOwnProperty("documentTypeKeepsHistory"))
+                                    object.documentTypeKeepsHistory = message.documentTypeKeepsHistory;
+                                if (message.documentId != null && message.hasOwnProperty("documentId"))
+                                    object.documentId = options.bytes === String ? $util.base64.encode(message.documentId, 0, message.documentId.length) : options.bytes === Array ? Array.prototype.slice.call(message.documentId) : message.documentId;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this DocumentRequest to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.DocumentRequest
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            DocumentRequest.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return DocumentRequest;
+                        })();
+
+                        GetProofsRequest.IdentityRequest = (function() {
+
+                            /**
+                             * Properties of an IdentityRequest.
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest
+                             * @interface IIdentityRequest
+                             * @property {Uint8Array|null} [identityId] IdentityRequest identityId
+                             * @property {org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest.Type|null} [requestType] IdentityRequest requestType
+                             */
+
+                            /**
+                             * Constructs a new IdentityRequest.
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest
+                             * @classdesc Represents an IdentityRequest.
+                             * @implements IIdentityRequest
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetProofsRequest.IIdentityRequest=} [properties] Properties to set
+                             */
+                            function IdentityRequest(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * IdentityRequest identityId.
+                             * @member {Uint8Array} identityId
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest
+                             * @instance
+                             */
+                            IdentityRequest.prototype.identityId = $util.newBuffer([]);
+
+                            /**
+                             * IdentityRequest requestType.
+                             * @member {org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest.Type} requestType
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest
+                             * @instance
+                             */
+                            IdentityRequest.prototype.requestType = 0;
+
+                            /**
+                             * Creates a new IdentityRequest instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetProofsRequest.IIdentityRequest=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest} IdentityRequest instance
+                             */
+                            IdentityRequest.create = function create(properties) {
+                                return new IdentityRequest(properties);
+                            };
+
+                            /**
+                             * Encodes the specified IdentityRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetProofsRequest.IIdentityRequest} message IdentityRequest message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            IdentityRequest.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.identityId != null && Object.hasOwnProperty.call(message, "identityId"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.identityId);
+                                if (message.requestType != null && Object.hasOwnProperty.call(message, "requestType"))
+                                    writer.uint32(/* id 2, wireType 0 =*/16).int32(message.requestType);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified IdentityRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetProofsRequest.IIdentityRequest} message IdentityRequest message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            IdentityRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes an IdentityRequest message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest} IdentityRequest
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            IdentityRequest.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.identityId = reader.bytes();
+                                        break;
+                                    case 2:
+                                        message.requestType = reader.int32();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes an IdentityRequest message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest} IdentityRequest
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            IdentityRequest.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies an IdentityRequest message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            IdentityRequest.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.identityId != null && message.hasOwnProperty("identityId"))
+                                    if (!(message.identityId && typeof message.identityId.length === "number" || $util.isString(message.identityId)))
+                                        return "identityId: buffer expected";
+                                if (message.requestType != null && message.hasOwnProperty("requestType"))
+                                    switch (message.requestType) {
+                                    default:
+                                        return "requestType: enum value expected";
+                                    case 0:
+                                    case 1:
+                                    case 2:
+                                        break;
+                                    }
+                                return null;
+                            };
+
+                            /**
+                             * Creates an IdentityRequest message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest} IdentityRequest
+                             */
+                            IdentityRequest.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest();
+                                if (object.identityId != null)
+                                    if (typeof object.identityId === "string")
+                                        $util.base64.decode(object.identityId, message.identityId = $util.newBuffer($util.base64.length(object.identityId)), 0);
+                                    else if (object.identityId.length >= 0)
+                                        message.identityId = object.identityId;
+                                switch (object.requestType) {
+                                case "FULL_IDENTITY":
+                                case 0:
+                                    message.requestType = 0;
+                                    break;
+                                case "BALANCE":
+                                case 1:
+                                    message.requestType = 1;
+                                    break;
+                                case "KEYS":
+                                case 2:
+                                    message.requestType = 2;
+                                    break;
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from an IdentityRequest message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest} message IdentityRequest
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            IdentityRequest.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults) {
+                                    if (options.bytes === String)
+                                        object.identityId = "";
+                                    else {
+                                        object.identityId = [];
+                                        if (options.bytes !== Array)
+                                            object.identityId = $util.newBuffer(object.identityId);
+                                    }
+                                    object.requestType = options.enums === String ? "FULL_IDENTITY" : 0;
+                                }
+                                if (message.identityId != null && message.hasOwnProperty("identityId"))
+                                    object.identityId = options.bytes === String ? $util.base64.encode(message.identityId, 0, message.identityId.length) : options.bytes === Array ? Array.prototype.slice.call(message.identityId) : message.identityId;
+                                if (message.requestType != null && message.hasOwnProperty("requestType"))
+                                    object.requestType = options.enums === String ? $root.org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest.Type[message.requestType] : message.requestType;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this IdentityRequest to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            IdentityRequest.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            /**
+                             * Type enum.
+                             * @name org.dash.platform.dapi.v0.GetProofsRequest.IdentityRequest.Type
+                             * @enum {number}
+                             * @property {number} FULL_IDENTITY=0 FULL_IDENTITY value
+                             * @property {number} BALANCE=1 BALANCE value
+                             * @property {number} KEYS=2 KEYS value
+                             */
+                            IdentityRequest.Type = (function() {
+                                var valuesById = {}, values = Object.create(valuesById);
+                                values[valuesById[0] = "FULL_IDENTITY"] = 0;
+                                values[valuesById[1] = "BALANCE"] = 1;
+                                values[valuesById[2] = "KEYS"] = 2;
+                                return values;
+                            })();
+
+                            return IdentityRequest;
+                        })();
+
+                        GetProofsRequest.ContractRequest = (function() {
+
+                            /**
+                             * Properties of a ContractRequest.
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest
+                             * @interface IContractRequest
+                             * @property {Uint8Array|null} [contractId] ContractRequest contractId
+                             */
+
+                            /**
+                             * Constructs a new ContractRequest.
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest
+                             * @classdesc Represents a ContractRequest.
+                             * @implements IContractRequest
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.GetProofsRequest.IContractRequest=} [properties] Properties to set
+                             */
+                            function ContractRequest(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * ContractRequest contractId.
+                             * @member {Uint8Array} contractId
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.ContractRequest
+                             * @instance
+                             */
+                            ContractRequest.prototype.contractId = $util.newBuffer([]);
+
+                            /**
+                             * Creates a new ContractRequest instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.ContractRequest
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetProofsRequest.IContractRequest=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.GetProofsRequest.ContractRequest} ContractRequest instance
+                             */
+                            ContractRequest.create = function create(properties) {
+                                return new ContractRequest(properties);
+                            };
+
+                            /**
+                             * Encodes the specified ContractRequest message. Does not implicitly {@link org.dash.platform.dapi.v0.GetProofsRequest.ContractRequest.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.ContractRequest
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetProofsRequest.IContractRequest} message ContractRequest message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            ContractRequest.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.contractId != null && Object.hasOwnProperty.call(message, "contractId"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.contractId);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified ContractRequest message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetProofsRequest.ContractRequest.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.ContractRequest
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetProofsRequest.IContractRequest} message ContractRequest message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            ContractRequest.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a ContractRequest message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.ContractRequest
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.GetProofsRequest.ContractRequest} ContractRequest
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            ContractRequest.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetProofsRequest.ContractRequest();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.contractId = reader.bytes();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a ContractRequest message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.ContractRequest
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.GetProofsRequest.ContractRequest} ContractRequest
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            ContractRequest.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a ContractRequest message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.ContractRequest
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            ContractRequest.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.contractId != null && message.hasOwnProperty("contractId"))
+                                    if (!(message.contractId && typeof message.contractId.length === "number" || $util.isString(message.contractId)))
+                                        return "contractId: buffer expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a ContractRequest message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.ContractRequest
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.GetProofsRequest.ContractRequest} ContractRequest
+                             */
+                            ContractRequest.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.GetProofsRequest.ContractRequest)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.GetProofsRequest.ContractRequest();
+                                if (object.contractId != null)
+                                    if (typeof object.contractId === "string")
+                                        $util.base64.decode(object.contractId, message.contractId = $util.newBuffer($util.base64.length(object.contractId)), 0);
+                                    else if (object.contractId.length >= 0)
+                                        message.contractId = object.contractId;
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a ContractRequest message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.ContractRequest
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.GetProofsRequest.ContractRequest} message ContractRequest
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            ContractRequest.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    if (options.bytes === String)
+                                        object.contractId = "";
+                                    else {
+                                        object.contractId = [];
+                                        if (options.bytes !== Array)
+                                            object.contractId = $util.newBuffer(object.contractId);
+                                    }
+                                if (message.contractId != null && message.hasOwnProperty("contractId"))
+                                    object.contractId = options.bytes === String ? $util.base64.encode(message.contractId, 0, message.contractId.length) : options.bytes === Array ? Array.prototype.slice.call(message.contractId) : message.contractId;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this ContractRequest to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.GetProofsRequest.ContractRequest
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            ContractRequest.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return ContractRequest;
+                        })();
+
+                        return GetProofsRequest;
+                    })();
+
+                    v0.GetProofsResponse = (function() {
+
+                        /**
+                         * Properties of a GetProofsResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @interface IGetProofsResponse
+                         * @property {org.dash.platform.dapi.v0.IProof|null} [proof] GetProofsResponse proof
+                         * @property {org.dash.platform.dapi.v0.IResponseMetadata|null} [metadata] GetProofsResponse metadata
+                         */
+
+                        /**
+                         * Constructs a new GetProofsResponse.
+                         * @memberof org.dash.platform.dapi.v0
+                         * @classdesc Represents a GetProofsResponse.
+                         * @implements IGetProofsResponse
+                         * @constructor
+                         * @param {org.dash.platform.dapi.v0.IGetProofsResponse=} [properties] Properties to set
+                         */
+                        function GetProofsResponse(properties) {
+                            if (properties)
+                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                    if (properties[keys[i]] != null)
+                                        this[keys[i]] = properties[keys[i]];
+                        }
+
+                        /**
+                         * GetProofsResponse proof.
+                         * @member {org.dash.platform.dapi.v0.IProof|null|undefined} proof
+                         * @memberof org.dash.platform.dapi.v0.GetProofsResponse
+                         * @instance
+                         */
+                        GetProofsResponse.prototype.proof = null;
+
+                        /**
+                         * GetProofsResponse metadata.
+                         * @member {org.dash.platform.dapi.v0.IResponseMetadata|null|undefined} metadata
+                         * @memberof org.dash.platform.dapi.v0.GetProofsResponse
+                         * @instance
+                         */
+                        GetProofsResponse.prototype.metadata = null;
+
+                        /**
+                         * Creates a new GetProofsResponse instance using the specified properties.
+                         * @function create
+                         * @memberof org.dash.platform.dapi.v0.GetProofsResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetProofsResponse=} [properties] Properties to set
+                         * @returns {org.dash.platform.dapi.v0.GetProofsResponse} GetProofsResponse instance
+                         */
+                        GetProofsResponse.create = function create(properties) {
+                            return new GetProofsResponse(properties);
+                        };
+
+                        /**
+                         * Encodes the specified GetProofsResponse message. Does not implicitly {@link org.dash.platform.dapi.v0.GetProofsResponse.verify|verify} messages.
+                         * @function encode
+                         * @memberof org.dash.platform.dapi.v0.GetProofsResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetProofsResponse} message GetProofsResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetProofsResponse.encode = function encode(message, writer) {
+                            if (!writer)
+                                writer = $Writer.create();
+                            if (message.proof != null && Object.hasOwnProperty.call(message, "proof"))
+                                $root.org.dash.platform.dapi.v0.Proof.encode(message.proof, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+                            if (message.metadata != null && Object.hasOwnProperty.call(message, "metadata"))
+                                $root.org.dash.platform.dapi.v0.ResponseMetadata.encode(message.metadata, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+                            return writer;
+                        };
+
+                        /**
+                         * Encodes the specified GetProofsResponse message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.GetProofsResponse.verify|verify} messages.
+                         * @function encodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetProofsResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.IGetProofsResponse} message GetProofsResponse message or plain object to encode
+                         * @param {$protobuf.Writer} [writer] Writer to encode to
+                         * @returns {$protobuf.Writer} Writer
+                         */
+                        GetProofsResponse.encodeDelimited = function encodeDelimited(message, writer) {
+                            return this.encode(message, writer).ldelim();
+                        };
+
+                        /**
+                         * Decodes a GetProofsResponse message from the specified reader or buffer.
+                         * @function decode
+                         * @memberof org.dash.platform.dapi.v0.GetProofsResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @param {number} [length] Message length if known beforehand
+                         * @returns {org.dash.platform.dapi.v0.GetProofsResponse} GetProofsResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetProofsResponse.decode = function decode(reader, length) {
+                            if (!(reader instanceof $Reader))
+                                reader = $Reader.create(reader);
+                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.GetProofsResponse();
+                            while (reader.pos < end) {
+                                var tag = reader.uint32();
+                                switch (tag >>> 3) {
+                                case 1:
+                                    message.proof = $root.org.dash.platform.dapi.v0.Proof.decode(reader, reader.uint32());
+                                    break;
+                                case 2:
+                                    message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.decode(reader, reader.uint32());
+                                    break;
+                                default:
+                                    reader.skipType(tag & 7);
+                                    break;
+                                }
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Decodes a GetProofsResponse message from the specified reader or buffer, length delimited.
+                         * @function decodeDelimited
+                         * @memberof org.dash.platform.dapi.v0.GetProofsResponse
+                         * @static
+                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                         * @returns {org.dash.platform.dapi.v0.GetProofsResponse} GetProofsResponse
+                         * @throws {Error} If the payload is not a reader or valid buffer
+                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                         */
+                        GetProofsResponse.decodeDelimited = function decodeDelimited(reader) {
+                            if (!(reader instanceof $Reader))
+                                reader = new $Reader(reader);
+                            return this.decode(reader, reader.uint32());
+                        };
+
+                        /**
+                         * Verifies a GetProofsResponse message.
+                         * @function verify
+                         * @memberof org.dash.platform.dapi.v0.GetProofsResponse
+                         * @static
+                         * @param {Object.<string,*>} message Plain object to verify
+                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                         */
+                        GetProofsResponse.verify = function verify(message) {
+                            if (typeof message !== "object" || message === null)
+                                return "object expected";
+                            if (message.proof != null && message.hasOwnProperty("proof")) {
+                                var error = $root.org.dash.platform.dapi.v0.Proof.verify(message.proof);
+                                if (error)
+                                    return "proof." + error;
+                            }
+                            if (message.metadata != null && message.hasOwnProperty("metadata")) {
+                                var error = $root.org.dash.platform.dapi.v0.ResponseMetadata.verify(message.metadata);
+                                if (error)
+                                    return "metadata." + error;
+                            }
+                            return null;
+                        };
+
+                        /**
+                         * Creates a GetProofsResponse message from a plain object. Also converts values to their respective internal types.
+                         * @function fromObject
+                         * @memberof org.dash.platform.dapi.v0.GetProofsResponse
+                         * @static
+                         * @param {Object.<string,*>} object Plain object
+                         * @returns {org.dash.platform.dapi.v0.GetProofsResponse} GetProofsResponse
+                         */
+                        GetProofsResponse.fromObject = function fromObject(object) {
+                            if (object instanceof $root.org.dash.platform.dapi.v0.GetProofsResponse)
+                                return object;
+                            var message = new $root.org.dash.platform.dapi.v0.GetProofsResponse();
+                            if (object.proof != null) {
+                                if (typeof object.proof !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetProofsResponse.proof: object expected");
+                                message.proof = $root.org.dash.platform.dapi.v0.Proof.fromObject(object.proof);
+                            }
+                            if (object.metadata != null) {
+                                if (typeof object.metadata !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.GetProofsResponse.metadata: object expected");
+                                message.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.fromObject(object.metadata);
+                            }
+                            return message;
+                        };
+
+                        /**
+                         * Creates a plain object from a GetProofsResponse message. Also converts values to other types if specified.
+                         * @function toObject
+                         * @memberof org.dash.platform.dapi.v0.GetProofsResponse
+                         * @static
+                         * @param {org.dash.platform.dapi.v0.GetProofsResponse} message GetProofsResponse
+                         * @param {$protobuf.IConversionOptions} [options] Conversion options
+                         * @returns {Object.<string,*>} Plain object
+                         */
+                        GetProofsResponse.toObject = function toObject(message, options) {
+                            if (!options)
+                                options = {};
+                            var object = {};
+                            if (options.defaults) {
+                                object.proof = null;
+                                object.metadata = null;
+                            }
+                            if (message.proof != null && message.hasOwnProperty("proof"))
+                                object.proof = $root.org.dash.platform.dapi.v0.Proof.toObject(message.proof, options);
+                            if (message.metadata != null && message.hasOwnProperty("metadata"))
+                                object.metadata = $root.org.dash.platform.dapi.v0.ResponseMetadata.toObject(message.metadata, options);
+                            return object;
+                        };
+
+                        /**
+                         * Converts this GetProofsResponse to JSON.
+                         * @function toJSON
+                         * @memberof org.dash.platform.dapi.v0.GetProofsResponse
+                         * @instance
+                         * @returns {Object.<string,*>} JSON object
+                         */
+                        GetProofsResponse.prototype.toJSON = function toJSON() {
+                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                        };
+
+                        return GetProofsResponse;
                     })();
 
                     v0.GetDataContractRequest = (function() {

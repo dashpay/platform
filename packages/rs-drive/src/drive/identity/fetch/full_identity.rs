@@ -86,15 +86,15 @@ impl Drive {
     /// Fetches identities with all its information from storage.
     pub fn fetch_full_identities(
         &self,
-        identity_ids: Vec<[u8; 32]>,
+        identity_ids: &[[u8; 32]],
         transaction: TransactionArg,
     ) -> Result<BTreeMap<[u8; 32], Option<Identity>>, Error> {
         identity_ids
             .into_iter()
             .map(|identity_id| {
                 Ok((
-                    identity_id,
-                    self.fetch_full_identity(identity_id, transaction)?,
+                    *identity_id,
+                    self.fetch_full_identity(*identity_id, transaction)?,
                 ))
             })
             .collect()
@@ -179,7 +179,10 @@ mod tests {
                     .expect("expected to add an identity");
             }
             let fetched_identities = drive
-                .fetch_full_identities(identities.keys().copied().collect(), None)
+                .fetch_full_identities(
+                    identities.keys().copied().collect::<Vec<_>>().as_slice(),
+                    None,
+                )
                 .expect("should get identities");
 
             assert_eq!(identities, fetched_identities);

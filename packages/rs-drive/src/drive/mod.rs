@@ -79,7 +79,7 @@ pub mod contract;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod defaults;
 /// Document module
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 pub mod document;
 #[cfg(feature = "full")]
 mod estimation_costs;
@@ -109,6 +109,8 @@ mod system;
 #[cfg(test)]
 mod test_utils;
 
+#[cfg(feature = "full")]
+mod prove;
 #[cfg(feature = "full")]
 mod system_contracts_cache;
 /// Contains a set of useful grovedb proof verification functions

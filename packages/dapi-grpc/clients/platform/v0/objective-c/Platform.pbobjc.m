@@ -42,8 +42,16 @@ GPBObjCClassDeclaration(GetIdentitiesKeysResponse);
 GPBObjCClassDeclaration(GetIdentitiesKeysResponse_PublicKey);
 GPBObjCClassDeclaration(GetIdentitiesKeysResponse_PublicKeyEntries);
 GPBObjCClassDeclaration(GetIdentitiesKeysResponse_PublicKeyEntry);
+GPBObjCClassDeclaration(GetIdentitiesResponse);
+GPBObjCClassDeclaration(GetIdentitiesResponse_Identities);
+GPBObjCClassDeclaration(GetIdentitiesResponse_IdentityEntry);
+GPBObjCClassDeclaration(GetIdentitiesResponse_IdentityValue);
 GPBObjCClassDeclaration(GetIdentityKeysResponse);
 GPBObjCClassDeclaration(GetIdentityKeysResponse_Keys);
+GPBObjCClassDeclaration(GetProofsRequest);
+GPBObjCClassDeclaration(GetProofsRequest_ContractRequest);
+GPBObjCClassDeclaration(GetProofsRequest_DocumentRequest);
+GPBObjCClassDeclaration(GetProofsRequest_IdentityRequest);
 GPBObjCClassDeclaration(KeyRequestType);
 GPBObjCClassDeclaration(Proof);
 GPBObjCClassDeclaration(ResponseMetadata);
@@ -487,6 +495,289 @@ typedef struct GetIdentityResponse__storage_ {
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
                                    storageSize:sizeof(GetIdentityResponse__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetIdentitiesRequest
+
+@implementation GetIdentitiesRequest
+
+@dynamic idsArray, idsArray_Count;
+@dynamic prove;
+
+typedef struct GetIdentitiesRequest__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *idsArray;
+} GetIdentitiesRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "idsArray",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetIdentitiesRequest_FieldNumber_IdsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetIdentitiesRequest__storage_, idsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "prove",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetIdentitiesRequest_FieldNumber_Prove,
+        .hasIndex = 0,
+        .offset = 1,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetIdentitiesRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetIdentitiesRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetIdentitiesResponse
+
+@implementation GetIdentitiesResponse
+
+@dynamic resultOneOfCase;
+@dynamic identities;
+@dynamic proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetIdentitiesResponse__storage_ {
+  uint32_t _has_storage_[2];
+  GetIdentitiesResponse_Identities *identities;
+  Proof *proof;
+  ResponseMetadata *metadata;
+} GetIdentitiesResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "identities",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetIdentitiesResponse_Identities),
+        .number = GetIdentitiesResponse_FieldNumber_Identities,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetIdentitiesResponse__storage_, identities),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetIdentitiesResponse_FieldNumber_Proof,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(GetIdentitiesResponse__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetIdentitiesResponse_FieldNumber_Metadata,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetIdentitiesResponse__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetIdentitiesResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetIdentitiesResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    static const char *oneofs[] = {
+      "result",
+    };
+    [localDescriptor setupOneofs:oneofs
+                           count:(uint32_t)(sizeof(oneofs) / sizeof(char*))
+                   firstHasIndex:-1];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+void GetIdentitiesResponse_ClearResultOneOfCase(GetIdentitiesResponse *message) {
+  GPBDescriptor *descriptor = [GetIdentitiesResponse descriptor];
+  GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
+  GPBClearOneof(message, oneof);
+}
+#pragma mark - GetIdentitiesResponse_IdentityValue
+
+@implementation GetIdentitiesResponse_IdentityValue
+
+@dynamic value;
+
+typedef struct GetIdentitiesResponse_IdentityValue__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *value;
+} GetIdentitiesResponse_IdentityValue__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "value",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetIdentitiesResponse_IdentityValue_FieldNumber_Value,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetIdentitiesResponse_IdentityValue__storage_, value),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetIdentitiesResponse_IdentityValue class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetIdentitiesResponse_IdentityValue__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetIdentitiesResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetIdentitiesResponse_IdentityEntry
+
+@implementation GetIdentitiesResponse_IdentityEntry
+
+@dynamic key;
+@dynamic hasValue, value;
+
+typedef struct GetIdentitiesResponse_IdentityEntry__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *key;
+  GetIdentitiesResponse_IdentityValue *value;
+} GetIdentitiesResponse_IdentityEntry__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "key",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetIdentitiesResponse_IdentityEntry_FieldNumber_Key,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetIdentitiesResponse_IdentityEntry__storage_, key),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "value",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetIdentitiesResponse_IdentityValue),
+        .number = GetIdentitiesResponse_IdentityEntry_FieldNumber_Value,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetIdentitiesResponse_IdentityEntry__storage_, value),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetIdentitiesResponse_IdentityEntry class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetIdentitiesResponse_IdentityEntry__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetIdentitiesResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetIdentitiesResponse_Identities
+
+@implementation GetIdentitiesResponse_Identities
+
+@dynamic identityEntriesArray, identityEntriesArray_Count;
+
+typedef struct GetIdentitiesResponse_Identities__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *identityEntriesArray;
+} GetIdentitiesResponse_Identities__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "identityEntriesArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetIdentitiesResponse_IdentityEntry),
+        .number = GetIdentitiesResponse_Identities_FieldNumber_IdentityEntriesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetIdentitiesResponse_Identities__storage_, identityEntriesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetIdentitiesResponse_Identities class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetIdentitiesResponse_Identities__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetIdentitiesResponse)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
     #endif  // DEBUG
@@ -1522,6 +1813,359 @@ typedef struct GetIdentitiesKeysResponse_PublicKeyEntries__storage_ {
                                    storageSize:sizeof(GetIdentitiesKeysResponse_PublicKeyEntries__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
     [localDescriptor setupContainingMessageClass:GPBObjCClass(GetIdentitiesKeysResponse)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetProofsRequest
+
+@implementation GetProofsRequest
+
+@dynamic identitiesArray, identitiesArray_Count;
+@dynamic contractsArray, contractsArray_Count;
+@dynamic documentsArray, documentsArray_Count;
+
+typedef struct GetProofsRequest__storage_ {
+  uint32_t _has_storage_[1];
+  NSMutableArray *identitiesArray;
+  NSMutableArray *contractsArray;
+  NSMutableArray *documentsArray;
+} GetProofsRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "identitiesArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetProofsRequest_IdentityRequest),
+        .number = GetProofsRequest_FieldNumber_IdentitiesArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetProofsRequest__storage_, identitiesArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "contractsArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetProofsRequest_ContractRequest),
+        .number = GetProofsRequest_FieldNumber_ContractsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetProofsRequest__storage_, contractsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "documentsArray",
+        .dataTypeSpecific.clazz = GPBObjCClass(GetProofsRequest_DocumentRequest),
+        .number = GetProofsRequest_FieldNumber_DocumentsArray,
+        .hasIndex = GPBNoHasBit,
+        .offset = (uint32_t)offsetof(GetProofsRequest__storage_, documentsArray),
+        .flags = GPBFieldRepeated,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetProofsRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetProofsRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetProofsRequest_DocumentRequest
+
+@implementation GetProofsRequest_DocumentRequest
+
+@dynamic contractId;
+@dynamic documentType;
+@dynamic documentTypeKeepsHistory;
+@dynamic documentId;
+
+typedef struct GetProofsRequest_DocumentRequest__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *contractId;
+  NSString *documentType;
+  NSData *documentId;
+} GetProofsRequest_DocumentRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "contractId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetProofsRequest_DocumentRequest_FieldNumber_ContractId,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetProofsRequest_DocumentRequest__storage_, contractId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "documentType",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetProofsRequest_DocumentRequest_FieldNumber_DocumentType,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetProofsRequest_DocumentRequest__storage_, documentType),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeString,
+      },
+      {
+        .name = "documentTypeKeepsHistory",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetProofsRequest_DocumentRequest_FieldNumber_DocumentTypeKeepsHistory,
+        .hasIndex = 2,
+        .offset = 3,  // Stored in _has_storage_ to save space.
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBool,
+      },
+      {
+        .name = "documentId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetProofsRequest_DocumentRequest_FieldNumber_DocumentId,
+        .hasIndex = 4,
+        .offset = (uint32_t)offsetof(GetProofsRequest_DocumentRequest__storage_, documentId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetProofsRequest_DocumentRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetProofsRequest_DocumentRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetProofsRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetProofsRequest_IdentityRequest
+
+@implementation GetProofsRequest_IdentityRequest
+
+@dynamic identityId;
+@dynamic requestType;
+
+typedef struct GetProofsRequest_IdentityRequest__storage_ {
+  uint32_t _has_storage_[1];
+  GetProofsRequest_IdentityRequest_Type requestType;
+  NSData *identityId;
+} GetProofsRequest_IdentityRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "identityId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetProofsRequest_IdentityRequest_FieldNumber_IdentityId,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetProofsRequest_IdentityRequest__storage_, identityId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+      {
+        .name = "requestType",
+        .dataTypeSpecific.enumDescFunc = GetProofsRequest_IdentityRequest_Type_EnumDescriptor,
+        .number = GetProofsRequest_IdentityRequest_FieldNumber_RequestType,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetProofsRequest_IdentityRequest__storage_, requestType),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldHasEnumDescriptor | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeEnum,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetProofsRequest_IdentityRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetProofsRequest_IdentityRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetProofsRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+int32_t GetProofsRequest_IdentityRequest_RequestType_RawValue(GetProofsRequest_IdentityRequest *message) {
+  GPBDescriptor *descriptor = [GetProofsRequest_IdentityRequest descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetProofsRequest_IdentityRequest_FieldNumber_RequestType];
+  return GPBGetMessageRawEnumField(message, field);
+}
+
+void SetGetProofsRequest_IdentityRequest_RequestType_RawValue(GetProofsRequest_IdentityRequest *message, int32_t value) {
+  GPBDescriptor *descriptor = [GetProofsRequest_IdentityRequest descriptor];
+  GPBFieldDescriptor *field = [descriptor fieldWithNumber:GetProofsRequest_IdentityRequest_FieldNumber_RequestType];
+  GPBSetMessageRawEnumField(message, field, value);
+}
+
+#pragma mark - Enum GetProofsRequest_IdentityRequest_Type
+
+GPBEnumDescriptor *GetProofsRequest_IdentityRequest_Type_EnumDescriptor(void) {
+  static _Atomic(GPBEnumDescriptor*) descriptor = nil;
+  if (!descriptor) {
+    static const char *valueNames =
+        "FullIdentity\000Balance\000Keys\000";
+    static const int32_t values[] = {
+        GetProofsRequest_IdentityRequest_Type_FullIdentity,
+        GetProofsRequest_IdentityRequest_Type_Balance,
+        GetProofsRequest_IdentityRequest_Type_Keys,
+    };
+    GPBEnumDescriptor *worker =
+        [GPBEnumDescriptor allocDescriptorForName:GPBNSStringifySymbol(GetProofsRequest_IdentityRequest_Type)
+                                       valueNames:valueNames
+                                           values:values
+                                            count:(uint32_t)(sizeof(values) / sizeof(int32_t))
+                                     enumVerifier:GetProofsRequest_IdentityRequest_Type_IsValidValue];
+    GPBEnumDescriptor *expected = nil;
+    if (!atomic_compare_exchange_strong(&descriptor, &expected, worker)) {
+      [worker release];
+    }
+  }
+  return descriptor;
+}
+
+BOOL GetProofsRequest_IdentityRequest_Type_IsValidValue(int32_t value__) {
+  switch (value__) {
+    case GetProofsRequest_IdentityRequest_Type_FullIdentity:
+    case GetProofsRequest_IdentityRequest_Type_Balance:
+    case GetProofsRequest_IdentityRequest_Type_Keys:
+      return YES;
+    default:
+      return NO;
+  }
+}
+
+#pragma mark - GetProofsRequest_ContractRequest
+
+@implementation GetProofsRequest_ContractRequest
+
+@dynamic contractId;
+
+typedef struct GetProofsRequest_ContractRequest__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *contractId;
+} GetProofsRequest_ContractRequest__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "contractId",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetProofsRequest_ContractRequest_FieldNumber_ContractId,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetProofsRequest_ContractRequest__storage_, contractId),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetProofsRequest_ContractRequest class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetProofsRequest_ContractRequest__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(GetProofsRequest)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - GetProofsResponse
+
+@implementation GetProofsResponse
+
+@dynamic hasProof, proof;
+@dynamic hasMetadata, metadata;
+
+typedef struct GetProofsResponse__storage_ {
+  uint32_t _has_storage_[1];
+  Proof *proof;
+  ResponseMetadata *metadata;
+} GetProofsResponse__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "proof",
+        .dataTypeSpecific.clazz = GPBObjCClass(Proof),
+        .number = GetProofsResponse_FieldNumber_Proof,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(GetProofsResponse__storage_, proof),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "metadata",
+        .dataTypeSpecific.clazz = GPBObjCClass(ResponseMetadata),
+        .number = GetProofsResponse_FieldNumber_Metadata,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(GetProofsResponse__storage_, metadata),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[GetProofsResponse class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(GetProofsResponse__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
     #if defined(DEBUG) && DEBUG
       NSAssert(descriptor == nil, @"Startup recursed!");
     #endif  // DEBUG
