@@ -19,13 +19,14 @@ class StopCommand extends ConfigBaseCommand {
     {
       force: isForce,
       verbose: isVerbose,
+      platform: platformOnly,
     },
     stopNodeTask,
     config,
   ) {
     const tasks = new Listr([
       {
-        task: async () => stopNodeTask(config),
+        task: async () => stopNodeTask(config, { platformOnly }),
       },
     ],
     {
@@ -58,6 +59,12 @@ StopCommand.flags = {
     description: 'force stop even if any service is running',
     default: false,
   }),
+  platform: Flags.boolean({
+    char: 'p',
+    description: 'stop only platform',
+    default: false,
+  }),
+
 };
 
 module.exports = StopCommand;
