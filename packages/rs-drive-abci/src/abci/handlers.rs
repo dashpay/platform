@@ -513,19 +513,27 @@ where
         let RequestCheckTx { tx, .. } = request;
         let validation_result = self.platform.check_tx(tx)?;
 
-        // If there are no execution errors the code will be 0
-        let code = validation_result
-            .errors
-            .first()
-            .map(|error| error.code())
-            .unwrap_or_default();
+        let validation_error = validation_result.errors.first();
+
+        let (error_code, serialized_error) = if let Some(validation_error) = validation_error {
+            (
+                validation_error.code(),
+                validation_error
+                    .serialize()
+                    .map_err(|e| ResponseException::from(Error::Protocol(e)))?,
+            )
+        } else {
+            // If there are no execution errors the code will be 0
+            (0, vec![])
+        };
+
         let gas_wanted = validation_result
             .data
             .map(|fee_result| fee_result.total_base_fee())
             .unwrap_or_default();
         Ok(ResponseCheckTx {
-            code,
-            data: vec![],
+            code: error_code,
+            data: serialized_error,
             info: "".to_string(),
             gas_wanted: gas_wanted as SignedCredits,
             codespace: "".to_string(),
