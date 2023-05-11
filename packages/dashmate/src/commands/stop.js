@@ -26,7 +26,7 @@ class StopCommand extends ConfigBaseCommand {
   ) {
     const tasks = new Listr([
       {
-        task: async () => stopNodeTask(config, { platformOnly }),
+        task: async () => stopNodeTask(config),
       },
     ],
     {
@@ -43,6 +43,7 @@ class StopCommand extends ConfigBaseCommand {
       await tasks.run({
         isForce,
         isVerbose,
+        platformOnly: platformOnly === true,
       });
     } catch (e) {
       throw new MuteOneLineError(e);
