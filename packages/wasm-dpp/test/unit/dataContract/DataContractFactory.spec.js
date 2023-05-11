@@ -1,4 +1,4 @@
-const getDataContractFixture = require('../../../lib/test/fixtures/js/getDataContractFixture');
+const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 
 const { default: loadWasmDpp, UnsupportedProtocolVersionError } = require('../../..');
 const { getLatestProtocolVersion } = require('../../..');
