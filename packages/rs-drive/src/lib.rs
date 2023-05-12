@@ -46,3 +46,7 @@ pub mod tests;
 fn main() {
     println!("Hello, world!");
 }
+
+fn main2() {
+    println!("Hello, worlds!");
+}
