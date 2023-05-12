@@ -1,29 +1,50 @@
 #![allow(clippy::from_over_into)]
 
 use std::collections::BTreeMap;
-use std::convert::{TryFrom, TryInto};
+use std::convert::TryFrom;
 
 pub use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::*;
 
-use dpp::data_contract::{DataContract, SCHEMA_URI};
+use dpp::data_contract::{CreatedDataContract, DataContract, SCHEMA_URI};
 use dpp::platform_value::string_encoding::Encoding;
-use dpp::platform_value::{Bytes32, Value};
+use dpp::platform_value::Value;
 
 use dpp::serialization_traits::PlatformSerializable;
 use dpp::{platform_value, Convertible};
 
-use crate::errors::RustConversionError;
 use crate::identifier::identifier_from_js_value;
 use crate::metadata::MetadataWasm;
 use crate::utils::{IntoWasm, WithJsError};
 use crate::{bail_js, with_js_error};
 use crate::{buffer::Buffer, identifier::IdentifierWrapper};
 
+#[wasm_bindgen(js_name=CreatedDataContract)]
+#[derive(Debug, Clone)]
+pub struct CreatedDataContractWasm(pub(crate) CreatedDataContract);
+
 #[wasm_bindgen(js_name=DataContract)]
 #[derive(Debug, Clone)]
 pub struct DataContractWasm(pub(crate) DataContract);
+
+impl std::convert::From<CreatedDataContract> for CreatedDataContractWasm {
+    fn from(v: CreatedDataContract) -> Self {
+        CreatedDataContractWasm(v)
+    }
+}
+
+impl std::convert::From<&CreatedDataContractWasm> for CreatedDataContract {
+    fn from(v: &CreatedDataContractWasm) -> Self {
+        v.0.clone()
+    }
+}
+
+impl std::convert::Into<CreatedDataContract> for CreatedDataContractWasm {
+    fn into(self) -> CreatedDataContract {
+        self.0
+    }
+}
 
 impl std::convert::From<DataContract> for DataContractWasm {
     fn from(v: DataContract) -> Self {
@@ -41,6 +62,15 @@ impl std::convert::Into<DataContract> for DataContractWasm {
     fn into(self) -> DataContract {
         self.0
     }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CreatedDataContractParameters {
+    #[serde(flatten)]
+    data_contract: DataContractParameters,
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    entropy: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -230,23 +260,6 @@ impl DataContractWasm {
         with_js_error!(self.0.defs.serialize(&serializer))
     }
 
-    #[wasm_bindgen(js_name=setEntropy)]
-    pub fn set_entropy(&mut self, e: Vec<u8>) -> Result<(), JsValue> {
-        let entropy: [u8; 32] = e.try_into().map_err(|_| {
-            RustConversionError::Error(String::from(
-                "unable to turn the data into 32 bytes array of bytes",
-            ))
-            .to_js_value()
-        })?;
-        self.0.entropy = Bytes32::new(entropy);
-        Ok(())
-    }
-
-    #[wasm_bindgen(js_name=getEntropy)]
-    pub fn get_entropy(&mut self) -> Buffer {
-        Buffer::from_bytes_owned(self.0.entropy.to_vec())
-    }
-
     #[wasm_bindgen(js_name=getBinaryProperties)]
     pub fn get_binary_properties(&self, doc_type: &str) -> Result<JsValue, JsValue> {
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
@@ -333,6 +346,12 @@ impl DataContractWasm {
     }
 }
 
+impl DataContractWasm {
+    pub fn inner(&self) -> &DataContract {
+        &self.0
+    }
+}
+
 #[wasm_bindgen(js_name=DataContractDefaults)]
 pub struct DataContractDefaults;
 
@@ -344,9 +363,28 @@ impl DataContractDefaults {
     }
 }
 
-impl DataContractWasm {
-    pub fn inner(&self) -> &DataContract {
-        &self.0
+#[wasm_bindgen(js_class=CreatedDataContract)]
+impl CreatedDataContractWasm {
+    #[wasm_bindgen(constructor)]
+    pub fn new(raw_parameters: JsValue) -> Result<CreatedDataContractWasm, JsValue> {
+        let parameters: CreatedDataContractParameters =
+            with_js_error!(serde_wasm_bindgen::from_value(raw_parameters))?;
+
+        CreatedDataContract::from_raw_object(
+            platform_value::to_value(parameters).expect("Implements Serialize"),
+        )
+        .with_js_error()
+        .map(Into::into)
+    }
+
+    #[wasm_bindgen(js_name=getDataContract)]
+    pub fn get_data_contract(&self) -> DataContractWasm {
+        self.0.data_contract.clone().into()
+    }
+
+    #[wasm_bindgen(js_name=getEntropy)]
+    pub fn get_entropy(&self) -> Buffer {
+        Buffer::from_bytes(&self.0.entropy_used.to_vec())
     }
 }
 

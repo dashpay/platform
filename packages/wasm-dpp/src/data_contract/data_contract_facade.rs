@@ -1,7 +1,7 @@
 use crate::errors::protocol_error::from_protocol_error;
 
 use crate::{
-    js_value_to_data_contract_value, DataContractCreateTransitionWasm,
+    js_value_to_data_contract_value, CreatedDataContractWasm, DataContractCreateTransitionWasm,
     DataContractUpdateTransitionWasm, DataContractWasm,
 };
 use dpp::data_contract::{DataContract, DataContractFacade};
@@ -46,7 +46,7 @@ impl DataContractFacadeWasm {
         owner_id: Vec<u8>,
         documents: JsValue,
         definitions: Option<js_sys::Object>,
-    ) -> Result<DataContractWasm, JsValue> {
+    ) -> Result<CreatedDataContractWasm, JsValue> {
         let id = Identifier::from_bytes(&owner_id)
             .map_err(ProtocolError::ValueError)
             .with_js_error()?;
@@ -111,10 +111,10 @@ impl DataContractFacadeWasm {
     #[wasm_bindgen(js_name=createDataContractCreateTransition)]
     pub fn create_data_contract_create_transition(
         &self,
-        data_contract: &DataContractWasm,
+        created_data_contract: &CreatedDataContractWasm,
     ) -> Result<DataContractCreateTransitionWasm, JsValue> {
         self.0
-            .create_data_contract_create_transition(data_contract.clone().into())
+            .create_data_contract_create_transition(created_data_contract.clone().into())
             .map(DataContractCreateTransitionWasm::from)
             .with_js_error()
     }

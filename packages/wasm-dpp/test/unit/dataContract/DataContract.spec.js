@@ -291,14 +291,6 @@ describe('DataContract', () => {
     });
   });
 
-  describe('#setEntropy', () => {
-    it('should set entropy', () => {
-      dataContract.setEntropy(entropy);
-
-      expect(dataContract.getEntropy()).to.deep.equal(entropy);
-    });
-  });
-
   describe('#getBinaryProperties', () => {
     it('should return flat map of properties with `contentEncoding` keywords', () => {
       const result = dataContract.getBinaryProperties(documentType);
