@@ -22,13 +22,13 @@ function getCoreScopeFactory(dockerCompose,
    */
   async function getCoreScope(config) {
     const network = config.get('network');
-    const rpcServiceUrl = `127.0.0.1:${config.get('core.rpc.port')}`;
-    const p2pServiceUrl = `${config.get('externalIp')}:${config.get('core.p2p.port')}`;
+    const rpcService = `127.0.0.1:${config.get('core.rpc.port')}`;
+    const p2pService = `${config.get('externalIp')}:${config.get('core.p2p.port')}`;
 
     const core = {
       network,
-      p2pServiceUrl,
-      rpcServiceUrl,
+      rpcService,
+      p2pService,
       version: null,
       chain: null,
       latestVersion: null,
@@ -95,6 +95,7 @@ function getCoreScopeFactory(dockerCompose,
         core.peersCount = connections;
         core.version = extractCoreVersion(subversion);
       } catch (e) {
+        console.error(e);
         core.serviceStatus = ServiceStatusEnum.error;
       }
 
@@ -103,6 +104,10 @@ function getCoreScopeFactory(dockerCompose,
         providers.mnowatch.checkPortStatus(config.get('core.p2p.port')),
         providers.insight(config.get('network')).status(),
       ]);
+
+      for (const error of providersResult.filter((e) => e.status === 'rejected')) {
+        console.error(error.reason);
+      }
 
       const [latestVersion, p2pPortState, insightStatus] = providersResult
         .map((result) => (result.status === 'fulfilled' ? result.value : null));

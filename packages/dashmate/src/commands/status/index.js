@@ -23,14 +23,6 @@ class StatusCommand extends ConfigBaseCommand {
     getOverviewScope,
     config,
   ) {
-    if (!(await dockerCompose.isServiceRunning(config.toEnvs()))) {
-      const error = new Error('Node is not running, start it with `dashmate start`');
-
-      error.exitCode = 2;
-
-      throw error;
-    }
-
     const scope = await getOverviewScope(config);
 
     if (flags.format === OUTPUT_FORMATS.PLAIN) {

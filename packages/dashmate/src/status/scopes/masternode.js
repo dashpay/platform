@@ -131,6 +131,10 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
       getSentinelInfo(config),
     ]);
 
+    for (const error of basicResult.filter((e) => e.status === 'rejected')) {
+      console.error(error.reason);
+    }
+
     const [syncAsset, sentinelInfo] = basicResult
       .map((result) => (result.status === 'fulfilled' ? result.value : null));
 

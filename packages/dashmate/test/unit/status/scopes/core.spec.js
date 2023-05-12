@@ -17,8 +17,8 @@ describe('getCoreScopeFactory', () => {
     let mockGetConnectionHost;
 
     let network;
-    let p2pServiceUrl;
-    let rpcServiceUrl;
+    let p2pService;
+    let rpcService;
 
     let config;
     let getCoreScope;
@@ -45,8 +45,8 @@ describe('getCoreScopeFactory', () => {
       config.get.withArgs('externalIp').returns('127.0.0.1');
 
       network = config.get('network');
-      rpcServiceUrl = `127.0.0.1:${config.get('core.rpc.port')}`;
-      p2pServiceUrl = `${config.get('externalIp')}:${config.get('core.p2p.port')}`;
+      rpcService = `127.0.0.1:${config.get('core.rpc.port')}`;
+      p2pService = `${config.get('externalIp')}:${config.get('core.p2p.port')}`;
 
       getCoreScope = getCoreScopeFactory(mockDockerCompose,
         mockCreateRpcClient, mockGetConnectionHost);
@@ -84,8 +84,8 @@ describe('getCoreScopeFactory', () => {
 
       const expectedScope = {
         network,
-        p2pServiceUrl: '127.0.0.1:8081',
-        rpcServiceUrl: '127.0.0.1:8080',
+        p2pService: '127.0.0.1:8081',
+        rpcService: '127.0.0.1:8080',
         version: '0.17.0.3',
         chain: 'test',
         latestVersion: 'v1337-dev',
@@ -112,8 +112,8 @@ describe('getCoreScopeFactory', () => {
 
       const expectedScope = {
         network,
-        p2pServiceUrl,
-        rpcServiceUrl,
+        p2pService,
+        rpcService,
         version: null,
         chain: null,
         latestVersion: null,
@@ -141,8 +141,8 @@ describe('getCoreScopeFactory', () => {
 
       const expectedScope = {
         network,
-        p2pServiceUrl,
-        rpcServiceUrl,
+        p2pService,
+        rpcService,
         version: null,
         chain: null,
         latestVersion: null,
@@ -171,8 +171,8 @@ describe('getCoreScopeFactory', () => {
 
       const expectedScope = {
         network,
-        p2pServiceUrl,
-        rpcServiceUrl,
+        p2pService,
+        rpcService,
         version: null,
         chain: null,
         latestVersion: null,
@@ -225,8 +225,8 @@ describe('getCoreScopeFactory', () => {
 
       const expectedScope = {
         network,
-        p2pServiceUrl,
-        rpcServiceUrl,
+        p2pService,
+        rpcService,
         version: null,
         chain: null,
         latestVersion: 'v1337-dev',
@@ -269,8 +269,8 @@ describe('getCoreScopeFactory', () => {
 
       const expectedScope = {
         network,
-        p2pServiceUrl: '127.0.0.1:8081',
-        rpcServiceUrl: '127.0.0.1:8080',
+        p2pService: '127.0.0.1:8081',
+        rpcService: '127.0.0.1:8080',
         version: '0.17.0.3',
         chain: 'test',
         latestVersion: null,

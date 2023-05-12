@@ -96,6 +96,8 @@ function getPlatformScopeFactory(dockerCompose,
         info.moniker = moniker;
         info.network = network;
       } catch (e) {
+        console.error(e);
+
         info.serviceStatus = ServiceStatusEnum.error;
       }
     }
@@ -177,6 +179,10 @@ function getPlatformScopeFactory(dockerCompose,
         getTenderdashInfo(config, coreIsSynced),
         getDriveInfo(config, coreIsSynced),
       ]);
+
+      for (const error of response.filter((e) => e.status === 'rejected')) {
+        console.error(error.reason);
+      }
 
       const [tenderdash, drive] = response.map((result) => (result.status === 'fulfilled' ? result.value : null));
 
