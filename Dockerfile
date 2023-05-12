@@ -48,7 +48,7 @@ RUN apk add --no-cache \
         xz \
         zeromq-dev        
 
-SHELL ["/bin/bash", "-xc"]
+SHELL ["/bin/bash", "-c"]
 
 ARG TARGETARCH
 
@@ -114,8 +114,6 @@ ENV NODE_ENV ${NODE_ENV}
 # Install wasm-bindgen-cli in the same profile as other components, to sacrifice some performance & disk space to gain
 # better build caching
 WORKDIR /platform
-# TODO: refactor to not need the wasm-bindgen-cli and remove the copy below, as deps stage should be independent
-COPY Cargo.lock .
 RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
     --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
@@ -123,10 +121,7 @@ RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
     --mount=type=cache,sharing=shared,target=/platform/target \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
-    export CARGO_TARGET_DIR=/platform/target ; \
-    cargo install cargo-lock --features=cli --profile "$CARGO_BUILD_PROFILE" ; \
-    WASM_BINDGEN_VERSION=$(cargo-lock list -p wasm-bindgen | egrep -o '[0-9.]+') ; \
-    cargo install --profile "$CARGO_BUILD_PROFILE" "wasm-bindgen-cli@${WASM_BINDGEN_VERSION}"
+    CARGO_TARGET_DIR=/platform/target cargo install --profile "$CARGO_BUILD_PROFILE" wasm-bindgen-cli@0.2.85
 
 #
 # EXECUTE BUILD
