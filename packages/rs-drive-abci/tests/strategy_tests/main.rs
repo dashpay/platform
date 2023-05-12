@@ -1838,39 +1838,35 @@ mod tests {
     }
 
     #[test]
-    fn propose_a_block_with_a_chainlock_and_remove_themselves_from_the_list() {
+    fn run_chain_proposer_proposes_a_chainlock_that_would_remove_themselves_from_the_list() {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
             identities_inserts: Frequency {
-                times_per_block_range: Default::default(),
+                //we do this to create some paying transactions
+                times_per_block_range: 1..2,
                 chance_per_block: None,
             },
             total_hpmns: 500,
             extra_normal_mns: 0,
-            quorum_count: 24,
+            quorum_count: 100,
             upgrading_info: None,
             core_height_increase: Frequency {
                 times_per_block_range: 1..2,
-                chance_per_block: Some(1.0),
+                chance_per_block: None,
             },
-            proposer_strategy: MasternodeListChangesStrategy {
-                new_hpmns: Frequency {
-                    times_per_block_range: 1..5,
-                    chance_per_block: Some(1.0),
-                },
-                ..Default::default()
-            },
+            proposer_strategy: Default::default(),
             rotate_quorums: true,
             failure_testing: None,
             query_testing: None,
             verify_state_transition_results: false,
         };
+        let day_in_ms = 1000 * 60 * 60 * 24;
         let config = PlatformConfig {
             verify_sum_trees: true,
             quorum_size: 3,
             validator_set_quorum_rotation_block_count: 1,
-            block_spacing_ms: 3000,
+            block_spacing_ms: day_in_ms,
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
@@ -1888,6 +1884,15 @@ mod tests {
                 })
             });
 
-        run_chain_for_strategy(&mut platform, 100, strategy, config, 7);
+        let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 7);
+        assert_eq!(outcome.end_epoch_index, 5); // 100/18
+        assert_eq!(outcome.masternode_identity_balances.len(), 500); // 500 nodes
+        let balance_count = outcome
+            .masternode_identity_balances
+            .into_iter()
+            .filter(|(_, balance)| *balance != 0)
+            .count();
+        // we have a maximum 90 quorums, that could have been used, 8 were used twice
+        assert_eq!(balance_count, 78);
     }
 }
