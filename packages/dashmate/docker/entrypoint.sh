@@ -11,6 +11,7 @@ if ! (getent passwd $USER_ID | grep -q $USER_ID); then
   adduser -u $USER_ID -D -H $USERNAME
 else
   USERNAME=$(getent passwd $USER_ID | cut -d: -f1)
+  ln -s /home/dashmate/.dashmate /home/$USERNAME/.dashmate
   echo "User exist: $USERNAME $USER_ID"
 fi
 
