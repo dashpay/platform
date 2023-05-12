@@ -17,6 +17,16 @@
 #   image to be available
 # - USERNAME, USER_UID, USER_GID - specification of user used to run the binary
 #
+# BUILD PROCESS
+# 
+# 1. All these --mount... are to cache reusable info between runs.
+# See https://doc.rust-lang.org/cargo/guide/cargo-home.html#caching-the-cargo-home-in-ci
+# 2. We add `--config net.git-fetch-with-cli=true` to address ARM build issue,
+# see https://github.com/rust-lang/cargo/issues/10781#issuecomment-1441071052
+# 3. Github Actions have shared networking configured, so we need to set a random
+# SCCACHE_SERVER_PORT port to avoid conflicts in case of parallel compilation
+# 4. We also set RUSTC to include exact toolchain name in compilation command, and
+# include this in cache key
 ARG ALPINE_VERSION=3.16
 
 #
@@ -121,29 +131,19 @@ RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
     --mount=type=cache,sharing=shared,target=/platform/target \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
-    CARGO_TARGET_DIR=/platform/target cargo install --profile "$CARGO_BUILD_PROFILE" wasm-bindgen-cli@0.2.85
+    CARGO_TARGET_DIR=/platform/target cargo install --profile "$CARGO_BUILD_PROFILE" wasm-bindgen-cli@0.2.84
 
 #
-# EXECUTE BUILD
+# LOAD SOURCES
 #
 FROM deps as sources
 
-# We run builds with extensive caching.
-# 
-# Note:
-# 1. All these --mount... are to cache reusable info between runs.
-# See https://doc.rust-lang.org/cargo/guide/cargo-home.html#caching-the-cargo-home-in-ci
-# 2. We add `--config net.git-fetch-with-cli=true` to address ARM build issue,
-# see https://github.com/rust-lang/cargo/issues/10781#issuecomment-1441071052
-# 3. Github Actions have shared networking configured, so we need to set a random
-# SCCACHE_SERVER_PORT port to avoid conflicts in case of parallel compilation
-# 4. We also set RUSTC to include exact toolchain name in compilation command, and
-# include this in cache key
 
 WORKDIR /platform
 
 COPY . .
 
+# print the JS build output
 RUN yarn config set enableInlineBuilds true
 
 #
@@ -239,12 +239,7 @@ FROM build-js AS build-dashmate
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=shared,target=/platform/target \
-    --mount=type=cache,target=/tmp/unplugged \
+RUN --mount=type=cache,target=/tmp/unplugged \
     cp -R /tmp/unplugged /platform/.yarn/ && \
     yarn workspaces focus --production dashmate && \
     cp -R /platform/.yarn/unplugged /tmp/
@@ -277,12 +272,7 @@ FROM build-js AS build-test-site
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=shared,id=wasm_dpp_target,target=/platform/target \
-    --mount=type=cache,target=/tmp/unplugged \
+RUN --mount=type=cache,target=/tmp/unplugged \
     cp -R /tmp/unplugged /platform/.yarn/ && \
     yarn workspaces focus --production @dashevo/platform-test-suite && \
     cp -R /platform/.yarn/unplugged /tmp/
@@ -319,12 +309,7 @@ FROM build-js AS build-dapi
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=shared,id=wasm_dpp_target,target=/platform/target \
-    --mount=type=cache,target=/tmp/unplugged \
+RUN --mount=type=cache,target=/tmp/unplugged \
     cp -R /tmp/unplugged /platform/.yarn/ && \
     yarn workspaces focus --production @dashevo/dapi && \
     cp -R /platform/.yarn/unplugged /tmp/
