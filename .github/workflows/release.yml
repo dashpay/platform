@@ -180,21 +180,6 @@ jobs:
         with:
           install: true
 
-      # - name: Enable docker cache mount
-      #   uses: actions/cache@v3
-      #   with:
-      #     path: /tmp/buildkit-cache/buildkit-state.tar
-      #     key: ${{ runner.os }}-buildkit-${{ github.sha }}
-      #     restore-keys: |
-      #       ${{ runner.os }}-buildkit
-
-      # - name: Load docker cache mount
-      #   uses: dashevo/gh-action-cache-buildkit-state@master
-      #   with:
-      #     builder: buildx_buildkit_${{ steps.buildx.outputs.name }}0
-      #     cache-path: /tmp/buildkit-cache
-      #     cache-max-size: 3g
-
       - name: Get tag
         uses: actions/github-script@v6
         id: tag
@@ -244,9 +229,6 @@ jobs:
       #     restore-keys: |
       #       ${{ runner.os }}-cache-mount-cache
 
-      # - name: Set-up s5cmd
-      #   uses: peak/action-setup-s5cmd@main
-
       - name: Setup s5cmd
         run: |
           curl -sL -o /tmp/s5cmd.tar.gz https://github.com/peak/s5cmd/releases/download/v2.0.0/s5cmd_2.0.0_Linux-64bit.tar.gz
@@ -256,16 +238,8 @@ jobs:
         run: |
           s5cmd sync 's3://platform-runner-cache/cache-mounts/*' 'cache'
 
-      # - name: Retrieve cache mount data for Docker
-      #   uses: actions/cache@v3
-      #   with:
-      #     path: cache
-      #     key: ${{ runner.os }}-docker-cache-${{ hashFiles('**/package.json') }}
-
       - name: inject go-build-cache into docker
-        uses: overmindtech/buildkit-cache-dance/inject@main
-        with:
-          cache-target: /platform/target
+        uses: dcginfa/buildkit-cache-dance/inject@main
 
       - name: Build and push Docker image for Drive
         uses: docker/build-push-action@v3
@@ -285,17 +259,15 @@ jobs:
           cache-to: type=s3,region=eu-west-1,bucket=platform-runner-cache
 
       - name: extract go-build-cache from docker
-        uses: overmindtech/buildkit-cache-dance/extract@main
-        with:
-          cache-target: /platform/target
+        uses: dcginfa/buildkit-cache-dance/extract@main
 
       - name: Sync files
         run: |
           s5cmd sync 'cache/*' 's3://platform-runner-cache/cache-mounts/'
 
-      - name: Setup tmate session
-        if: always()
-        uses: mxschmitt/action-tmate@v3
+      # - name: Setup tmate session
+      #   if: always()
+      #   uses: mxschmitt/action-tmate@v3
 
   release-dapi-docker-image:
     name: Release DAPI to Docker Hub
