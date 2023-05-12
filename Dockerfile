@@ -81,15 +81,6 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else expor
         tar -C /tmp -xz && \
         mv /tmp/sccache-*/sccache /usr/bin/
 
-# Install emcmake, dependency of bls-signatures -> bls-dash-sys
-# TODO: Build ARM image to check if this is still needed
-# RUN curl -Ls \
-#         https://github.com/emscripten-core/emsdk/archive/refs/tags/3.1.36.tar.gz | \
-#         tar -C /opt -xz && \
-#         ln -s /opt/emsdk-* /opt/emsdk && \
-#         /opt/emsdk/emsdk install latest && \
-#         /opt/emsdk/emsdk activate latest
-
 # Configure Node.js
 RUN npm install -g npm@9.6.6 && \
     npm install -g corepack@latest && \
