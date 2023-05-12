@@ -523,7 +523,7 @@ jobs:
           context: .
           builder: ${{ steps.buildx.outputs.name }}
           file: ./Dockerfile
-          target: testsuite
+          target: test-suite
           push: true
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}

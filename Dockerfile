@@ -6,7 +6,7 @@
 # - deps - includes all dependencies and some libraries
 # - sources - includes full source code
 # - build-* - actual build process of given image
-# - drive-abci, dashmate, testsuite, dapi - final images
+# - drive-abci, dashmate, test-site, dapi - final images
 #
 # The following build arguments can be provided using --build-arg:
 # - CARGO_BUILD_PROFILE - set to `release` to build final binary, without debugging information
@@ -38,7 +38,7 @@ RUN apk add --no-cache \
         libc-dev \        
         linux-headers \
         llvm-static llvm-dev  \
-        nodejs \
+        'nodejs~=16' \
         npm \
         openssl-dev \
         perl \
@@ -278,7 +278,7 @@ ENTRYPOINT ["/platform/packages/dashmate/docker/entrypoint.sh"]
 #
 # STAGE: TEST SUITE BUILD
 #
-FROM build-js AS build-testsuite
+FROM build-js AS build-test-site
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
@@ -300,7 +300,7 @@ RUN rm -fr ./packages/rs-*
 #
 #  STAGE: FINAL TEST SUITE IMAGE
 #
-FROM node:16-alpine${ALPINE_VERSION} AS testsuite
+FROM node:16-alpine${ALPINE_VERSION} AS test-site
 
 RUN apk add --no-cache bash
 
@@ -309,7 +309,7 @@ LABEL description="Dash Platform test suite"
 
 WORKDIR /platform
 
-COPY --from=build-testsuite /platform /platform
+COPY --from=build-test-site /platform /platform
 
 RUN cp /platform/packages/platform-test-suite/.env.example /platform/packages/platform-test-suite/.env
 
