@@ -239,7 +239,7 @@ jobs:
           s5cmd sync 's3://platform-runner-cache/cache-mounts/*' 'cache'
 
       - name: inject go-build-cache into docker
-        uses: dcginfa/buildkit-cache-dance/inject@main
+        uses: dcginfra/buildkit-cache-dance/inject@main
 
       - name: Build and push Docker image for Drive
         uses: docker/build-push-action@v3
@@ -259,7 +259,7 @@ jobs:
           cache-to: type=s3,region=eu-west-1,bucket=platform-runner-cache
 
       - name: extract go-build-cache from docker
-        uses: dcginfa/buildkit-cache-dance/extract@main
+        uses: dcginfra/buildkit-cache-dance/extract@main
 
       - name: Sync files
         run: |
