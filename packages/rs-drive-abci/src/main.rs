@@ -10,8 +10,6 @@ use tracing::warn;
 use tracing_log::LogTracer;
 use tracing_subscriber::prelude::*;
 
-// struct aaa {}
-
 /// Server that accepts connections from Tenderdash, and
 /// executes Dash Platform logic as part of the ABCI++ protocol.
 ///
@@ -102,6 +100,7 @@ fn dump_config(config: &PlatformConfig) -> Result<(), String> {
 /// Returns 0
 /// TODO: For now, it's just a placeholder.
 fn check_status(_config: &PlatformConfig) -> Result<(), String> {
+    println!("OK");
     Ok(())
 }
 
