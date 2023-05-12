@@ -1,5 +1,9 @@
 ## [0.24.0](https://github.com/dashpay/platform/compare/v0.24.0-dev.34...v0.24.0) (2023-05-10)
 
+### Notes
+
+The masternode identities logic is partially disabled due to incomplete Identity V2 implementation and will be enabled back in v0.25.0
+
 
 ### ⚠ BREAKING CHANGES
 

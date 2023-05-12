@@ -60,9 +60,20 @@ function startNodeTaskFactory(
     return new Listr([
       {
         title: 'Check node is not started',
-        task: async () => {
-          if (await dockerCompose.isServiceRunning(config.toEnvs())) {
+        task: async (ctx) => {
+          if (await dockerCompose.isServiceRunning(
+            config.toEnvs({ platformOnly: ctx.platformOnly }),
+          )) {
             throw new Error('Running services detected. Please ensure all services are stopped for this config before starting');
+          }
+        },
+      },
+      {
+        title: 'Check core is started',
+        enabled: (ctx) => ctx.platformOnly === true,
+        task: async () => {
+          if (!await dockerCompose.isServiceRunning(config.toEnvs(), 'core')) {
+            throw new Error('Platform services depend on Core and can\'t be started without it. Please run "dashmate start" without "--platform" flag');
           }
         },
       },
@@ -74,14 +85,14 @@ function startNodeTaskFactory(
       },
       {
         title: 'Start services',
-        task: async () => {
+        task: async (ctx) => {
           const isMasternode = config.get('core.masternode.enable');
           if (isMasternode) {
             // Check operatorPrivateKey is set
             config.get('core.masternode.operator.privateKey', true);
           }
 
-          const envs = config.toEnvs();
+          const envs = config.toEnvs({ platformOnly: ctx.platformOnly });
 
           await dockerCompose.up(envs);
         },
