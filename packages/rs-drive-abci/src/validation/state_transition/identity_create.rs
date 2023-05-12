@@ -100,6 +100,16 @@ impl StateTransitionValidation for IdentityCreateTransition {
             return Ok(validation_result);
         }
 
+        self.transform_into_action(platform, tx)
+    }
+
+    fn transform_into_action<C: CoreRPCLike>(
+        &self,
+        platform: &PlatformRef<C>,
+        _tx: TransactionArg,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        let mut validation_result = ConsensusValidationResult::<StateTransitionAction>::default();
+
         let tx_out_validation = self
             .asset_lock_proof
             .fetch_asset_lock_transaction_output_sync(platform.core_rpc)?;

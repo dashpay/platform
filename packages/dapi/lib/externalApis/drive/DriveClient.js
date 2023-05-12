@@ -1,7 +1,5 @@
 const jayson = require('jayson/promise');
 
-const cbor = require('cbor');
-
 const RPCError = require('../../rpcServer/RPCError');
 const createGrpcErrorFromDriveResponse = require('../../grpcServer/handlers/createGrpcErrorFromDriveResponse');
 
@@ -19,20 +17,15 @@ class DriveClient {
    * Makes request to Drive and handle response
    *
    * @param {string} path
-   * @param {Object} data
-   * @param {boolean} prove
+   * @param {Uint8Array} data
    *
    * @return {Promise<Buffer>}
    */
-  async request(path, data = {}, prove = false) {
-    const encodedData = cbor.encode(data);
-
+  async request(path, data) {
     const requestOptions = {
       path,
-      data: encodedData.toString('hex'),
+      data: Buffer.from(data).toString('hex'),
     };
-
-    requestOptions.prove = prove;
 
     const { result, error } = await this.client.request(
       'abci_query',
@@ -58,118 +51,72 @@ class DriveClient {
   }
 
   /**
-   * Makes request to Drive and handle CBOR'ed response
-   *
-   * @param {string} path
-   * @param {Object} data
-   * @param {boolean} prove
-   *
-   * @return {Promise<{ data: Buffer, [proof]: {rootTreeProof: Buffer, storeTreeProof: Buffer}}>}
-   */
-  async requestCbor(path, data = {}, prove = false) {
-    const responseBuffer = await this.request(path, data, prove);
-
-    return cbor.decode(responseBuffer);
-  }
-
-  /**
    * Fetch serialized data contract
    *
-   * @param {Buffer|Identifier} contractId
-   * @param {boolean} prove - include proofs into the response
+   * @param {GetDataContractRequest} request
    *
    * @return {Promise<Buffer>}
    */
-  async fetchDataContract(contractId, prove) {
+  async fetchDataContract(request) {
     return this.request(
       '/dataContracts',
-      {
-        id: contractId,
-      },
-      prove,
+      request.serializeBinary(),
     );
   }
 
   /**
    * Fetch serialized documents
    *
-   * @param {Buffer} contractId
-   * @param {string} type - Documents type to fetch
-   *
-   * @param options
-   * @param {Object} options.where - Mongo-like query
-   * @param {Object} options.orderBy - Mongo-like sort field
-   * @param {number} options.limit - how many objects to fetch
-   * @param {Buffer} options.startAt - skip documents up to specific document ID
-   * @param {Buffer} options.startAfter - exclusive skip
-   * @param {boolean} prove - include proofs into the response
+   * @param {GetDocumentsRequest} request
    *
    * @return {Promise<Buffer[]>}
    */
-  async fetchDocuments(contractId, type, options, prove) {
+  async fetchDocuments(request) {
     return this.request(
       '/dataContracts/documents',
-      {
-        ...options,
-        contractId,
-        type,
-      },
-      prove,
+      request.serializeBinary(),
     );
   }
 
   /**
    * Fetch serialized identity
    *
-   * @param {Buffer} id
-   * @param {boolean} prove - include proofs into the response
+   * @param {GetIdentityRequest} request
    *
    * @return {Promise<Buffer>}
    */
-  async fetchIdentity(id, prove) {
+  async fetchIdentity(request) {
     return this.request(
-      '/identities',
-      {
-        id,
-      },
-      prove,
+      '/identity',
+      request.serializeBinary(),
     );
   }
 
   /**
-   * Fetch serialized identities by it's public key hashes
+   * Fetch serialized identities by its public key hashes
    *
-   * @param {Buffer[]} publicKeyHashes
-   * @param {boolean} prove - include proofs into the response
+   * @param {GetIdentitiesByPublicKeyHashesRequest} request
    *
    * @return {Promise<Buffer[]>}
    */
-  async fetchIdentitiesByPublicKeyHashes(publicKeyHashes, prove) {
+  async fetchIdentitiesByPublicKeyHashes(request) {
     return this.request(
       '/identities/by-public-key-hash',
-      {
-        publicKeyHashes,
-      },
-      prove,
+      request.serializeBinary(),
     );
   }
 
   /**
    *  Fetch proofs by ids
    *
-   * @param {{dataContractId: Identifier, documentId: Identifier, type: string}[]} [documents]
-   * @param {Buffer[]} [identityIds]
-   * @param {Buffer[]} [dataContractIds]
+   * @param {GetProofsRequest} request
+
    * @return {Promise<{data: Buffer}>}
    */
-  async fetchProofs({ documents, identityIds, dataContractIds }) {
-    return this.requestCbor(
+  async fetchProofs(request) {
+    return this.request(
       '/proofs',
-      {
-        documents,
-        identityIds,
-        dataContractIds,
-      },
+      request.serializeBinary(),
     );
   }
 }

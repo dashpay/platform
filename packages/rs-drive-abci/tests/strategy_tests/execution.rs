@@ -7,6 +7,7 @@ use crate::strategy::{
     ChainExecutionOutcome, ChainExecutionParameters, Strategy, StrategyRandomness,
     ValidatorVersionMigration,
 };
+use crate::verify_state_transitions::verify_state_transitions_were_executed;
 use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dashcore_rpc::dashcore::hashes::Hash;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
@@ -433,7 +434,7 @@ pub(crate) fn create_chain_for_strategy(
     quorums: BTreeMap<QuorumHash, TestQuorumInfo>,
     strategy: Strategy,
     config: PlatformConfig,
-    mut rng: StdRng,
+    rng: StdRng,
 ) -> ChainExecutionOutcome {
     let abci_application = AbciApplication::new(platform).expect("expected new abci application");
     let seed = strategy
@@ -664,7 +665,7 @@ pub(crate) fn continue_chain_for_strategy(
                 proposed_version,
                 block_info,
                 false,
-                state_transitions,
+                state_transitions.clone(),
                 MimicExecuteBlockOptions {
                     dont_finalize_block: strategy.dont_finalize_block(),
                 },
@@ -693,6 +694,11 @@ pub(crate) fn continue_chain_for_strategy(
         signer.commit_block_keys();
 
         current_time_ms += config.block_spacing_ms;
+
+        if strategy.verify_state_transition_results {
+            //we need to verify state transitions
+            verify_state_transitions_were_executed(&abci_app, &root_app_hash, &state_transitions);
+        }
 
         if let Some(query_strategy) = &strategy.query_testing {
             query_strategy.query_chain_for_strategy(

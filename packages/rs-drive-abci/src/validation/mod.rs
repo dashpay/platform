@@ -1,1 +1,2 @@
-pub(crate) mod state_transition;
+/// The `state_transition` module
+pub mod state_transition;

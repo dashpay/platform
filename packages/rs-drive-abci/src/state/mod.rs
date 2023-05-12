@@ -16,7 +16,7 @@ mod commit;
 mod genesis;
 
 /// Platform state
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PlatformState {
     /// Information about the last block
     pub last_committed_block_info: Option<ExtendedBlockInfo>,
@@ -46,7 +46,7 @@ pub struct PlatformState {
 }
 
 /// Platform state for the first block
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PlatformInitializationState {
     /// Core initialization height
     pub core_initialization_height: u32,

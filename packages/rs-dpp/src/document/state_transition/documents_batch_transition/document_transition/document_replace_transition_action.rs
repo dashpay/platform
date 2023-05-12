@@ -1,8 +1,10 @@
 use crate::document::document_transition::document_base_transition_action::DocumentBaseTransitionAction;
 use crate::document::document_transition::DocumentReplaceTransition;
+use crate::document::Document;
 use crate::identity::TimestampMillis;
 use crate::prelude::Revision;
-use platform_value::Value;
+use crate::ProtocolError;
+use platform_value::{Identifier, Value};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -39,5 +41,75 @@ impl DocumentReplaceTransitionAction {
             updated_at: *updated_at,
             data: data.clone().unwrap_or_default(),
         }
+    }
+}
+
+impl Document {
+    /// Attempts to create a new `Document` from the given `DocumentReplaceTransitionAction` reference and `owner_id`.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - A reference to the `DocumentReplaceTransitionAction` containing information about the document being created.
+    /// * `owner_id` - The `Identifier` of the document's owner.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
+    pub fn try_from_replace_transition(
+        value: &DocumentReplaceTransitionAction,
+        owner_id: Identifier,
+    ) -> Result<Self, ProtocolError> {
+        let DocumentReplaceTransitionAction {
+            base,
+            revision,
+            created_at,
+            updated_at,
+            data,
+        } = value;
+
+        let DocumentBaseTransitionAction { id, .. } = base;
+
+        Ok(Document {
+            id: *id,
+            owner_id,
+            properties: data.clone(),
+            revision: Some(*revision),
+            created_at: created_at.clone(),
+            updated_at: updated_at.clone(),
+        })
+    }
+
+    /// Attempts to create a new `Document` from the given `DocumentReplaceTransitionAction` instance and `owner_id`.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - A `DocumentReplaceTransitionAction` instance containing information about the document being created.
+    /// * `owner_id` - The `Identifier` of the document's owner.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<Self, ProtocolError>` - A new `Document` object if successful, otherwise a `ProtocolError`.
+    pub fn try_from_owned_replace_transition(
+        value: DocumentReplaceTransitionAction,
+        owner_id: Identifier,
+    ) -> Result<Self, ProtocolError> {
+        let DocumentReplaceTransitionAction {
+            base,
+            revision,
+            created_at,
+            updated_at,
+            data,
+        } = value;
+
+        let DocumentBaseTransitionAction { id, .. } = base;
+
+        Ok(Document {
+            id,
+            owner_id,
+            properties: data,
+            revision: Some(revision),
+            created_at,
+            updated_at,
+        })
     }
 }

@@ -9,11 +9,13 @@ import "google/protobuf/timestamp.proto";
 service Platform {
   rpc broadcastStateTransition (BroadcastStateTransitionRequest) returns (BroadcastStateTransitionResponse);
   rpc getIdentity (GetIdentityRequest) returns (GetIdentityResponse);
+  rpc getIdentities (GetIdentitiesRequest) returns (GetIdentitiesResponse);
   rpc getIdentityKeys (GetIdentityKeysRequest) returns (GetIdentityKeysResponse);
 //  rpc getIdentitiesKeys (GetIdentitiesKeysRequest) returns (GetIdentitiesKeysResponse);
   rpc getIdentityBalance(GetIdentityRequest) returns (GetIdentityBalanceResponse);
   rpc getIdentityBalanceAndRevision(GetIdentityRequest)
           returns (GetIdentityBalanceAndRevisionResponse);
+  rpc getProofs (GetProofsRequest) returns (GetProofsResponse);
   rpc getDataContract (GetDataContractRequest) returns (GetDataContractResponse);
   rpc getDataContracts (GetDataContractsRequest) returns (GetDataContractsResponse);
   rpc getDocuments (GetDocumentsRequest) returns (GetDocumentsResponse);
@@ -59,6 +61,32 @@ message GetIdentityRequest {
 message GetIdentityResponse {
   bytes identity = 1;
   Proof proof = 2;
+  ResponseMetadata metadata = 3;
+}
+
+message GetIdentitiesRequest {
+  repeated bytes ids = 1;
+  bool prove = 2;
+}
+
+message GetIdentitiesResponse {
+  message IdentityValue {
+    bytes value = 1;
+  }
+
+  message IdentityEntry {
+    bytes key = 1;
+    IdentityValue value = 2;
+  }
+
+  message Identities {
+    repeated IdentityEntry identity_entries = 1;
+  }
+
+  oneof result {
+    Identities identities = 1;
+    Proof proof = 2;
+  }
   ResponseMetadata metadata = 3;
 }
 
@@ -158,6 +186,37 @@ message GetIdentitiesKeysResponse {
   ResponseMetadata metadata = 3;
 }
 
+message GetProofsRequest {
+  message DocumentRequest {
+    bytes contract_id = 1;
+    string document_type = 2;
+    bool document_type_keeps_history = 3;
+    bytes document_id = 4;
+  }
+
+  message IdentityRequest {
+    enum Type {
+      FULL_IDENTITY = 0;
+      BALANCE = 1;
+      KEYS = 2;
+    }
+    bytes identity_id = 1;
+    Type request_type = 2;
+  }
+
+  message ContractRequest {
+    bytes contract_id = 1;
+  }
+
+  repeated IdentityRequest identities = 1;
+  repeated ContractRequest contracts = 2;
+  repeated DocumentRequest documents = 3;
+}
+
+message GetProofsResponse {
+  Proof proof = 1;
+  ResponseMetadata metadata = 2;
+}
 
 message GetDataContractRequest {
   bytes id = 1;

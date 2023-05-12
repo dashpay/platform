@@ -24,6 +24,11 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetIdentityRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetIdentityResponse.FromString,
                 )
+        self.getIdentities = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getIdentities',
+                request_serializer=platform__pb2.GetIdentitiesRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetIdentitiesResponse.FromString,
+                )
         self.getIdentityKeys = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getIdentityKeys',
                 request_serializer=platform__pb2.GetIdentityKeysRequest.SerializeToString,
@@ -38,6 +43,11 @@ class PlatformStub(object):
                 '/org.dash.platform.dapi.v0.Platform/getIdentityBalanceAndRevision',
                 request_serializer=platform__pb2.GetIdentityRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetIdentityBalanceAndRevisionResponse.FromString,
+                )
+        self.getProofs = channel.unary_unary(
+                '/org.dash.platform.dapi.v0.Platform/getProofs',
+                request_serializer=platform__pb2.GetProofsRequest.SerializeToString,
+                response_deserializer=platform__pb2.GetProofsResponse.FromString,
                 )
         self.getDataContract = channel.unary_unary(
                 '/org.dash.platform.dapi.v0.Platform/getDataContract',
@@ -91,6 +101,12 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def getIdentities(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def getIdentityKeys(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -105,6 +121,12 @@ class PlatformServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def getIdentityBalanceAndRevision(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def getProofs(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -165,6 +187,11 @@ def add_PlatformServicer_to_server(servicer, server):
                     request_deserializer=platform__pb2.GetIdentityRequest.FromString,
                     response_serializer=platform__pb2.GetIdentityResponse.SerializeToString,
             ),
+            'getIdentities': grpc.unary_unary_rpc_method_handler(
+                    servicer.getIdentities,
+                    request_deserializer=platform__pb2.GetIdentitiesRequest.FromString,
+                    response_serializer=platform__pb2.GetIdentitiesResponse.SerializeToString,
+            ),
             'getIdentityKeys': grpc.unary_unary_rpc_method_handler(
                     servicer.getIdentityKeys,
                     request_deserializer=platform__pb2.GetIdentityKeysRequest.FromString,
@@ -179,6 +206,11 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getIdentityBalanceAndRevision,
                     request_deserializer=platform__pb2.GetIdentityRequest.FromString,
                     response_serializer=platform__pb2.GetIdentityBalanceAndRevisionResponse.SerializeToString,
+            ),
+            'getProofs': grpc.unary_unary_rpc_method_handler(
+                    servicer.getProofs,
+                    request_deserializer=platform__pb2.GetProofsRequest.FromString,
+                    response_serializer=platform__pb2.GetProofsResponse.SerializeToString,
             ),
             'getDataContract': grpc.unary_unary_rpc_method_handler(
                     servicer.getDataContract,
@@ -260,6 +292,23 @@ class Platform(object):
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 
     @staticmethod
+    def getIdentities(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentities',
+            platform__pb2.GetIdentitiesRequest.SerializeToString,
+            platform__pb2.GetIdentitiesResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
     def getIdentityKeys(request,
             target,
             options=(),
@@ -307,6 +356,23 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getIdentityBalanceAndRevision',
             platform__pb2.GetIdentityRequest.SerializeToString,
             platform__pb2.GetIdentityBalanceAndRevisionResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def getProofs(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getProofs',
+            platform__pb2.GetProofsRequest.SerializeToString,
+            platform__pb2.GetProofsResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
 

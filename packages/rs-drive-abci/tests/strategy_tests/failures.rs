@@ -1,19 +1,13 @@
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
+
+    use crate::execution::run_chain_for_strategy;
     use crate::frequency::Frequency;
-    use crate::operations::DocumentAction::DocumentActionReplace;
-    use crate::operations::{
-        DocumentAction, DocumentOp, IdentityUpdateOp, Operation, OperationType,
-    };
-    use crate::strategy::{FailureStrategy, MasternodeListChangesStrategy, Strategy};
-    use dashcore_rpc::dashcore::hashes::Hash;
-    use dashcore_rpc::dashcore::BlockHash;
-    use dashcore_rpc::dashcore_rpc_json::ExtendedQuorumDetails;
-    use dpp::data_contract::extra::common::json_document_to_contract;
+
+    use crate::strategy::{FailureStrategy, Strategy};
+
     use drive_abci::config::{PlatformConfig, PlatformTestConfig};
-    use drive_abci::rpc::core::QuorumListExtendedInfo;
+
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use tenderdash_abci::proto::types::CoreChainLock;
 
@@ -41,6 +35,7 @@ mod tests {
                 dont_finalize_block: true,
             }),
             query_testing: None,
+            verify_state_transition_results: true,
         };
         let config = PlatformConfig {
             verify_sum_trees: true,

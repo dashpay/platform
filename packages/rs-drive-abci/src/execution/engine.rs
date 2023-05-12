@@ -37,7 +37,7 @@ pub struct BlockExecutionOutcome {
     /// after the block has been executed
     pub app_hash: [u8; 32],
     /// The results of the execution of each transaction
-    pub tx_results: Vec<ExecTxResult>,
+    pub tx_results: Vec<(Vec<u8>, ExecTxResult)>,
     /// The changes to the validator set
     pub validator_set_update: Option<ValidatorSetUpdate>,
 }
@@ -223,6 +223,39 @@ where
             transaction,
         )?;
 
+        // Determine a new protocol version if enough proposers voted
+        if block_execution_context
+            .epoch_info
+            .is_epoch_change_but_not_genesis()
+        {
+            // Set current protocol version to the version from upcoming epoch
+            block_execution_context
+                .block_platform_state
+                .current_protocol_version_in_consensus = block_execution_context
+                .block_platform_state
+                .next_epoch_protocol_version;
+
+            // Determine new protocol version based on votes for the next epoch
+            let maybe_new_protocol_version = self.check_for_desired_protocol_upgrade(
+                block_execution_context.hpmn_count,
+                block_execution_context
+                    .block_platform_state
+                    .current_protocol_version_in_consensus,
+                transaction,
+            )?;
+            if let Some(new_protocol_version) = maybe_new_protocol_version {
+                block_execution_context
+                    .block_platform_state
+                    .next_epoch_protocol_version = new_protocol_version;
+            } else {
+                block_execution_context
+                    .block_platform_state
+                    .next_epoch_protocol_version = block_execution_context
+                    .block_platform_state
+                    .current_protocol_version_in_consensus;
+            }
+        }
+
         let root_hash = self
             .drive
             .grove
@@ -283,29 +316,6 @@ where
         let mut state_cache = self.state.write().unwrap();
 
         *state_cache = block_execution_context.block_platform_state;
-
-        // Determine a new protocol version if enough proposers voted
-        if block_execution_context
-            .epoch_info
-            .is_epoch_change_but_not_genesis()
-        {
-            // Set current protocol version to the version from upcoming epoch
-            state_cache.current_protocol_version_in_consensus =
-                state_cache.next_epoch_protocol_version;
-
-            // Determine new protocol version based on votes for the next epoch
-            let maybe_new_protocol_version = self.check_for_desired_protocol_upgrade(
-                block_execution_context.hpmn_count,
-                &state_cache,
-                transaction,
-            )?;
-            if let Some(new_protocol_version) = maybe_new_protocol_version {
-                state_cache.next_epoch_protocol_version = new_protocol_version;
-            } else {
-                state_cache.next_epoch_protocol_version =
-                    state_cache.current_protocol_version_in_consensus;
-            }
-        }
 
         if let Some(next_validator_set_quorum_hash) =
             state_cache.next_validator_set_quorum_hash.take()

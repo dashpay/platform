@@ -11,8 +11,11 @@ const {
   v0: {
     WaitForStateTransitionResultResponse,
     WaitForStateTransitionResultRequest,
+    GetProofsResponse,
+    GetProofsRequest,
     StateTransitionBroadcastError,
     Proof,
+    ResponseMetadata,
   },
 } = require('@dashevo/dapi-grpc');
 const getIdentityCreateTransitionFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
@@ -159,11 +162,6 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
       },
     };
 
-    proofFixture = {
-      merkleProof: Buffer.alloc(1, 1),
-      round: 42,
-    };
-
     call = new GrpcCallMock(this.sinon, {
       getStateTransitionHash: this.sinon.stub().returns(hash),
       getProve: this.sinon.stub().returns(false),
@@ -174,16 +172,22 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
 
     const dpp = new DashPlatformProtocol({}, null, null);
 
+    proofFixture = new Proof();
+    proofFixture.setGrovedbProof(Buffer.alloc(1, 1));
+    proofFixture.setRound(42);
+
+    const metadataFixture = new ResponseMetadata();
+    metadataFixture.setHeight(42);
+    metadataFixture.setCoreChainLockedHeight(41);
+    metadataFixture.setTimeMs(new Date().getTime());
+    metadataFixture.setProtocolVersion(1);
+
+    const response = new GetProofsResponse();
+    response.setProof(proofFixture);
+    response.setMetadata(metadataFixture);
+
     driveClientMock = {
-      fetchProofs: this.sinon.stub().resolves({
-        identitiesProof: proofFixture,
-        metadata: {
-          height: 42,
-          coreChainLockedHeight: 41,
-          timeMs: new Date().getTime(),
-          protocolVersion: 1,
-        },
-      }),
+      fetchProofs: this.sinon.stub().resolves(response.serializeBinary()),
     };
 
     blockchainListener = new BlockchainListener(tenderDashWsClientMock);
@@ -269,12 +273,19 @@ describe('waitForStateTransitionResultHandlerFactory', () => {
     expect(proof).to.be.an.instanceOf(Proof);
     const merkleProof = proof.getGrovedbProof();
 
-    expect(merkleProof).to.deep.equal(proofFixture.merkleProof);
+    expect(merkleProof).to.deep.equal(proofFixture.getGrovedbProof());
 
-    expect(driveClientMock.fetchProofs).to.be.calledOnceWithExactly({
-      identityIds: stateTransitionFixture.getModifiedDataIds()
-        .map((identifier) => identifier.toBuffer()),
-    });
+    const getProofsRequest = new GetProofsRequest();
+    const { IdentityRequest } = GetProofsRequest;
+
+    getProofsRequest.setIdentitiesList(stateTransitionFixture.getModifiedDataIds().map((id) => {
+      const identityRequest = new IdentityRequest();
+      identityRequest.setIdentityId(id.toBuffer());
+      identityRequest.setRequestType(IdentityRequest.Type.FULL_IDENTITY);
+      return identityRequest;
+    }));
+
+    expect(driveClientMock.fetchProofs).to.be.calledOnceWithExactly(getProofsRequest);
   });
 
   it('should wait for state transition and return result with error', (done) => {

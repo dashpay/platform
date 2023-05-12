@@ -28,16 +28,12 @@ function getIdentityHandlerFactory(driveClient) {
   async function getIdentityHandler(call) {
     const { request } = call;
 
-    const id = request.getId();
-
-    if (!id) {
+    if (!request.getId()) {
       throw new InvalidArgumentGrpcError('id is not specified');
     }
 
-    const prove = request.getProve();
-
     const identityResponseBuffer = await driveClient
-      .fetchIdentity(Buffer.from(id), prove);
+      .fetchIdentity(request);
 
     return GetIdentityResponse.deserializeBinary(identityResponseBuffer);
   }

@@ -8,6 +8,23 @@ const dirtyChai = require('dirty-chai');
 const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 const InvalidArgumentGrpcError = require('@dashevo/grpc-common/lib/server/error/InvalidArgumentGrpcError');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
+const {
+  v0: {
+    GetIdentitiesByPublicKeyHashesRequest,
+    GetIdentitiesByPublicKeyHashesResponse,
+    GetDataContractRequest,
+    GetDataContractResponse,
+    GetDocumentsRequest,
+    GetDocumentsResponse,
+    GetIdentityRequest,
+    GetIdentityResponse,
+    GetProofsRequest,
+    GetProofsResponse,
+    Proof,
+    ResponseMetadata,
+  },
+} = require('@dashevo/dapi-grpc');
+
 const DriveClient = require('../../../../lib/externalApis/drive/DriveClient');
 
 const RPCError = require('../../../../lib/rpcServer/RPCError');
@@ -36,7 +53,7 @@ describe('DriveClient', () => {
       .resolves({ error });
 
     try {
-      await drive.fetchDataContract('someId');
+      await drive.fetchDataContract(new GetDataContractRequest());
     } catch (e) {
       expect(e).to.be.an.instanceOf(RPCError);
       expect(e.message).to.be.equal(error.message);
@@ -63,7 +80,7 @@ describe('DriveClient', () => {
       });
 
     try {
-      await drive.fetchDataContract('someId');
+      await drive.fetchDataContract(new GetDataContractRequest());
     } catch (e) {
       expect(e).to.be.an.instanceOf(InvalidArgumentGrpcError);
       expect(e.getCode()).to.equal(3);
@@ -82,25 +99,29 @@ describe('DriveClient', () => {
 
       const contractId = 'someId';
       const data = Buffer.from('someData');
-      const proof = Buffer.from('proof');
 
-      const buffer = cbor.encode({ data, proof });
+      const request = new GetDataContractRequest();
+      request.setId(contractId);
+      request.setProve(false);
+
+      const response = new GetDataContractResponse();
+      response.setDataContract(data);
+      const responseBytes = response.serializeBinary();
 
       sinon.stub(drive.client, 'request')
         .resolves({
           result: {
-            response: { code: 0, value: buffer.toString('base64') },
+            response: { code: 0, value: responseBytes },
           },
         });
 
-      const result = await drive.fetchDataContract(contractId, true);
+      const result = await drive.fetchDataContract(request);
 
       expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
         path: '/dataContracts',
-        data: cbor.encode({ id: contractId }).toString('hex'), // cbor encoded empty object
-        prove: true,
+        data: Buffer.from(request.serializeBinary()).toString('hex'),
       });
-      expect(result).to.be.deep.equal(buffer);
+      expect(result).to.be.deep.equal(responseBytes);
     });
   });
 
@@ -114,25 +135,29 @@ describe('DriveClient', () => {
         where: 'id === someId',
       };
 
-      const data = [];
-      const proof = Buffer.from('proof');
-      const buffer = cbor.encode({ data, proof });
+      const request = new GetDocumentsRequest();
+      request.setDataContractId(contractId);
+      request.setDocumentType(type);
+      request.setWhere(cbor.encode({ where: options.where }));
+
+      const response = new GetDocumentsResponse();
+      response.setDocumentsList([]);
+      const responseBytes = response.serializeBinary();
 
       sinon.stub(drive.client, 'request')
         .resolves({
           result: {
-            response: { code: 0, value: buffer.toString('base64') },
+            response: { code: 0, value: responseBytes },
           },
         });
 
-      const result = await drive.fetchDocuments(contractId, type, options, true);
+      const result = await drive.fetchDocuments(request);
 
       expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
         path: '/dataContracts/documents',
-        data: cbor.encode({ ...options, contractId, type }).toString('hex'), // cbor encoded empty object
-        prove: true,
+        data: Buffer.from(request.serializeBinary()).toString('hex'), // cbor encoded empty object
       });
-      expect(result).to.be.deep.equal(buffer);
+      expect(result).to.be.deep.equal(responseBytes);
     });
   });
 
@@ -142,23 +167,28 @@ describe('DriveClient', () => {
 
       const identityId = 'someId';
       const data = Buffer.from('someData');
-      const buffer = cbor.encode({ data });
+
+      const request = new GetIdentityRequest();
+      request.setId(identityId);
+
+      const response = new GetIdentityResponse();
+      response.setIdentity(data);
+      const responseBytes = response.serializeBinary();
 
       sinon.stub(drive.client, 'request')
         .resolves({
           result: {
-            response: { code: 0, value: buffer.toString('base64') },
+            response: { code: 0, value: responseBytes },
           },
         });
 
-      const result = await drive.fetchIdentity(identityId, false);
+      const result = await drive.fetchIdentity(request);
 
       expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
-        path: '/identities',
-        data: cbor.encode({ id: identityId }).toString('hex'),
-        prove: false, // cbor encoded empty object
+        path: '/identity',
+        data: Buffer.from(request.serializeBinary()).toString('hex'),
       });
-      expect(result).to.be.deep.equal(buffer);
+      expect(result).to.be.deep.equal(responseBytes);
     });
   });
 
@@ -167,26 +197,31 @@ describe('DriveClient', () => {
       const drive = new DriveClient({ host: '127.0.0.1', port: 3000 });
 
       const identity = await getIdentityFixture();
-      const proof = Buffer.from('proof');
 
-      const buffer = cbor.encode({ data: [identity], proof });
       const publicKeyHashes = [Buffer.alloc(1)];
+
+      const request = new GetIdentitiesByPublicKeyHashesRequest();
+      request.setPublicKeyHashesList(publicKeyHashes);
+      request.setProve(false);
+
+      const response = new GetIdentitiesByPublicKeyHashesResponse();
+      response.setIdentitiesList([identity.toBuffer()]);
+      const responseBytes = response.serializeBinary();
 
       sinon.stub(drive.client, 'request')
         .resolves({
           result: {
-            response: { code: 0, value: buffer },
+            response: { code: 0, value: responseBytes },
           },
         });
 
-      const result = await drive.fetchIdentitiesByPublicKeyHashes(publicKeyHashes, true);
+      const result = await drive.fetchIdentitiesByPublicKeyHashes(request);
 
       expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
         path: '/identities/by-public-key-hash',
-        data: cbor.encode({ publicKeyHashes }).toString('hex'),
-        prove: true,
+        data: Buffer.from(request.serializeBinary()).toString('hex'),
       });
-      expect(result).to.be.deep.equal(buffer);
+      expect(result).to.be.deep.equal(responseBytes);
     });
   });
 
@@ -194,35 +229,39 @@ describe('DriveClient', () => {
     it('should call \'fetchProofs\' RPC with the given parameters', async () => {
       const drive = new DriveClient({ host: '127.0.0.1', port: 3000 });
 
-      const documents = undefined;
       const identityIds = [Buffer.from('id')];
-      const dataContractIds = [Buffer.from('anotherId')];
 
-      const proof = Buffer.from('proof');
-      const buffer = cbor.encode({ data: proof });
+      const request = new GetProofsRequest();
+      request.setIdentitiesList(identityIds.map((id) => {
+        const { IdentityRequest } = GetProofsRequest;
+        const identityRequest = new IdentityRequest();
+        identityRequest.setIdentityId(id);
+        identityRequest.setRequestType(IdentityRequest.Type.FULL_IDENTITY);
+        return identityRequest;
+      }));
+
+      const response = new GetProofsResponse();
+      response.setProof(new Proof());
+      response.setMetadata(new ResponseMetadata());
+      const responseBytes = response.serializeBinary();
 
       sinon.stub(drive.client, 'request')
         .resolves({
           result: {
-            response: { code: 0, value: buffer },
+            response: { code: 0, value: responseBytes },
           },
         });
 
-      const result = await drive.fetchProofs({ documents, identityIds, dataContractIds });
+      const result = await drive.fetchProofs(request);
 
       expect(drive.client.request).to.have.been.calledOnceWithExactly('abci_query', {
         path: '/proofs',
-        data: cbor.encode({
-          documents,
-          identityIds,
-          dataContractIds,
-        }).toString('hex'),
-        prove: false,
+        data: Buffer.from(request.serializeBinary()).toString('hex'),
       });
 
-      expect(result).to.be.deep.equal({
-        data: proof,
-      });
+      expect(result).to.be.deep.equal(
+        responseBytes,
+      );
     });
   });
 });
