@@ -294,7 +294,7 @@ jobs:
           s5cmd sync 'cache/*' 's3://platform-runner-cache/cache-mounts/'
 
       - name: Setup tmate session
-        if: ${{ failure() }}
+        if: always()
         uses: mxschmitt/action-tmate@v3
 
   release-dapi-docker-image:
