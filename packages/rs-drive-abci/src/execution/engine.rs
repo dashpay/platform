@@ -216,12 +216,14 @@ where
         // while we have the state transitions executed, we now need to process the block fees
 
         // Process fees
-        self.process_block_fees(
+        let processed_block_fees = self.process_block_fees(
             &block_execution_context.block_state_info,
             &epoch_info,
             block_fees.into(),
             transaction,
         )?;
+
+        dbg!(processed_block_fees);
 
         // Determine a new protocol version if enough proposers voted
         if block_execution_context

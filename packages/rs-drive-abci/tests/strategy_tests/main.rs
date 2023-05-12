@@ -72,14 +72,14 @@ mod tests {
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::BlockHash;
     use dashcore_rpc::dashcore_rpc_json::ExtendedQuorumDetails;
-    use itertools::Itertools;
     use dpp::data_contract::extra::common::json_document_to_contract;
+    use dpp::util::hash::{hash, hash_to_hex_string};
     use drive_abci::config::PlatformTestConfig;
     use drive_abci::rpc::core::QuorumListExtendedInfo;
+    use itertools::Itertools;
     use tenderdash_abci::proto::abci::{RequestInfo, ResponseInfo};
     use tenderdash_abci::proto::types::CoreChainLock;
     use tenderdash_abci::Application;
-    use dpp::util::hash::{hash, hash_to_hex_string};
 
     pub fn generate_quorums_extended_info(n: u32) -> QuorumListExtendedInfo {
         let mut quorums = QuorumListExtendedInfo::new();
@@ -1889,8 +1889,35 @@ mod tests {
         let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 7);
         assert_eq!(outcome.end_epoch_index, 5); // 100/18
         assert_eq!(outcome.masternode_identity_balances.len(), 500); // 500 nodes
-        let masternodes_fingerprint = hash_to_hex_string(outcome.masternode_identity_balances.keys().map(|pro_tx_hash| hex::encode(pro_tx_hash)).join("|"));
-        assert_eq!(masternodes_fingerprint, "3f13e499c5c49b04ab1edf2bbddca733fd9cf6f92875ccf51e827a6f4bf044e8".to_string());
+        let masternodes_fingerprint = hash_to_hex_string(
+            outcome
+                .masternode_identity_balances
+                .keys()
+                .map(|pro_tx_hash| hex::encode(pro_tx_hash))
+                .join("|"),
+        );
+        assert_eq!(
+            masternodes_fingerprint,
+            "3f13e499c5c49b04ab1edf2bbddca733fd9cf6f92875ccf51e827a6f4bf044e8".to_string()
+        );
+
+        let last_app_hash = outcome
+            .abci_app
+            .platform
+            .drive
+            .grove
+            .root_hash(None)
+            .unwrap()
+            .expect("should return app hash");
+
+        assert_eq!(
+            last_app_hash,
+            [
+                155, 183, 128, 96, 204, 221, 190, 134, 216, 190, 69, 90, 204, 103, 5, 164, 4, 250,
+                50, 179, 112, 43, 139, 237, 109, 203, 144, 68, 3, 78, 32, 179
+            ]
+        );
+
         let balance_count = outcome
             .masternode_identity_balances
             .into_iter()
