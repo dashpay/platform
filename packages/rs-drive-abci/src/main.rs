@@ -1,6 +1,7 @@
 //! Main server process for RS-Drive-ABCI
 //!
 //! RS-Drive-ABCI server starts a single-threaded server and listens to connections from Tenderdash.
+
 use clap::{Parser, Subcommand};
 use drive_abci::config::{FromEnv, PlatformConfig};
 
@@ -9,6 +10,8 @@ use std::path::PathBuf;
 use tracing::warn;
 use tracing_log::LogTracer;
 use tracing_subscriber::prelude::*;
+
+use crate::logging::Logger;
 
 // struct aaa {}
 
@@ -114,22 +117,14 @@ fn load_config(path: &Option<PathBuf>) -> PlatformConfig {
 fn configure_logging(cli: &Cli) {
     use tracing_subscriber::*;
 
-    let env_filter = match cli.verbose {
-        0 => EnvFilter::builder()
-            .with_default_directive(
-                "error,tenderdash_abci=warn,drive_abci=warn"
-                    .parse()
-                    .unwrap(),
-            )
-            .from_env_lossy(),
-        1 => EnvFilter::new("error,tenderdash_abci=info,drive_abci=info"),
-        2 => EnvFilter::new("info,tenderdash_abci=debug,drive_abci=debug"),
-        3 => EnvFilter::new("debug"),
-        4 => EnvFilter::new("debug,tenderdash_abci=trace,drive_abci=trace"),
-        5 => EnvFilter::new("trace"),
-        _ => panic!("max verbosity level is 5"),
+    let stderr_config = Logger {
+        destination: logging::LogDestination::StdErr,
+        verbosity: cli.verbose,
+        color: cli.color,
     };
 
+    let env_filter = stderr_config.env_filter();
+ 
     let ansi = cli.color.unwrap_or(atty::is(atty::Stream::Stdout));
     let layer = fmt::layer().with_ansi(ansi);
 
