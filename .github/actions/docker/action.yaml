@@ -9,7 +9,13 @@ inputs:
     description: Name of image in Docker Hub, like `dashpay/drive`
     required: true
   target:
-    description: Target stage within Dockerfile, like `drive-abci`
+    description: Target stage within Dockerfile
+    type: choice
+    options:
+      - dapi
+      - drive-abci
+      - dashmate
+      - test-suite
     required: false
   push:
     description: Shall we push the image to Docker Hub?
