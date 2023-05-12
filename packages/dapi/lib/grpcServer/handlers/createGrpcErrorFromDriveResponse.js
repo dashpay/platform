@@ -111,14 +111,14 @@ async function createGrpcErrorFromDriveResponse(code, info) {
 
   // DPP errors
   if (code >= 1000 && code < 5000) {
-    const serializedConsensusError = Buffer.from(info, 'hex');
-    const consensusError = deserializeConsensusError(serializedConsensusError || []);
+    const serializedError = Buffer.from(info, 'hex');
+    const consensusError = deserializeConsensusError(serializedError || []);
 
     // Basic
     if (code >= 1000 && code < 2000) {
       return new InvalidArgumentGrpcError(
         consensusError.message,
-        { code, ...createRawMetadata({ serializedConsensusError }) },
+        { code, ...createRawMetadata({ serializedError }) },
       );
     }
 
@@ -127,7 +127,7 @@ async function createGrpcErrorFromDriveResponse(code, info) {
       return new GrpcError(
         GrpcErrorCodes.UNAUTHENTICATED,
         consensusError.message,
-        { code, ...createRawMetadata({ serializedConsensusError }) },
+        { code, ...createRawMetadata({ serializedError }) },
       );
     }
 
@@ -135,7 +135,7 @@ async function createGrpcErrorFromDriveResponse(code, info) {
     if (code >= 3000 && code < 4000) {
       return new FailedPreconditionGrpcError(
         consensusError.message,
-        { code, ...createRawMetadata({ serializedConsensusError }) },
+        { code, ...createRawMetadata({ serializedError }) },
       );
     }
 
@@ -143,7 +143,7 @@ async function createGrpcErrorFromDriveResponse(code, info) {
     if (code >= 4000 && code < 5000) {
       return new InvalidArgumentGrpcError(
         consensusError.message,
-        { code, ...createRawMetadata({ serializedConsensusError }) },
+        { code, ...createRawMetadata({ serializedError }) },
       );
     }
   }
