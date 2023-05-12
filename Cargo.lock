@@ -1054,6 +1054,7 @@ dependencies = [
  "drive",
  "hex",
  "itertools",
+ "masternode-reward-shares-contract",
  "mockall",
  "rand",
  "rust_decimal",

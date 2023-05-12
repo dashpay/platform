@@ -339,11 +339,15 @@ impl Platform {
                 masternode_reward_leftover
             };
 
-            let proposer = proposer_tx_hash.as_slice().try_into().map_err(|_| {
-                Error::Execution(ExecutionError::DriveIncoherence(
-                    "proposer_tx_hash is not 32 bytes long",
-                ))
-            })?;
+            // TODO: until https://dashpay.atlassian.net/browse/PLAN-14 is resolved
+            // we're paying out only to one pre-selected identity
+            let proposer: [u8; 32] = masternode_reward_shares_contract::OWNER_ID_BYTES;
+
+            // let proposer = proposer_tx_hash.as_slice().try_into().map_err(|_| {
+            //     Error::Execution(ExecutionError::DriveIncoherence(
+            //         "proposer_tx_hash is not 32 bytes long",
+            //     ))
+            // })?;
 
             drive_operations.push(IdentityOperation(AddToIdentityBalance {
                 identity_id: proposer,
