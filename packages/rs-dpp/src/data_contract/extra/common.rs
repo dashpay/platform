@@ -10,6 +10,7 @@ use std::convert::TryInto;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
+use crate::data_contract::CreatedDataContract;
 
 /// Reads a JSON file and converts it to serde_value.
 pub fn json_document_to_json_value(
@@ -65,6 +66,15 @@ pub fn json_document_to_contract(path: impl AsRef<Path>) -> Result<DataContract,
     let reader = BufReader::new(file);
     serde_json::from_reader(reader).map_err(|e| {
         ProtocolError::DecodingError(format!("error decoding contract from document {e}"))
+    })
+}
+
+/// Reads a JSON file and converts it a contract.
+pub fn json_document_to_created_contract(path: impl AsRef<Path>) -> Result<CreatedDataContract, ProtocolError> {
+    let data_contract = json_document_to_contract(path)?;
+    Ok(CreatedDataContract {
+        data_contract,
+        entropy_used: Default::default(),
     })
 }
 

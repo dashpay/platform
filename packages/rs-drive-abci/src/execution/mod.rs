@@ -1,3 +1,5 @@
+/// Check tx module
+mod check_tx;
 /// Data triggers
 pub mod data_trigger;
 /// Engine module

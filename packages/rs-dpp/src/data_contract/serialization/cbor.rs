@@ -76,7 +76,6 @@ impl DataContract {
             documents,
             defs,
             metadata: None,
-            entropy: Bytes32::default(),
             binary_properties: Default::default(),
             document_types,
             config: mutability,

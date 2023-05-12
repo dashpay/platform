@@ -35,6 +35,12 @@ pub struct DataContractFactory {
     entropy_generator: Box<dyn EntropyGenerator>,
 }
 
+#[derive(Clone, Debug)]
+pub struct CreatedDataContract {
+    pub data_contract: DataContract,
+    pub entropy_used: Bytes32,
+}
+
 impl DataContractFactory {
     pub fn new(protocol_version: u32, validate_data_contract: Arc<DataContractValidator>) -> Self {
         Self {
@@ -63,7 +69,7 @@ impl DataContractFactory {
         documents: Value,
         config: Option<ContractConfig>,
         definitions: Option<Value>,
-    ) -> Result<DataContract, ProtocolError> {
+    ) -> Result<CreatedDataContract, ProtocolError> {
         let entropy = Bytes32::new(self.entropy_generator.generate()?);
 
         let data_contract_id = generate_data_contract_id(owner_id.to_buffer(), entropy.to_buffer());
@@ -122,12 +128,14 @@ impl DataContractFactory {
             config,
             documents,
             defs: json_defs,
-            entropy,
             binary_properties: Default::default(),
         };
 
         data_contract.generate_binary_properties();
-        Ok(data_contract)
+        Ok(CreatedDataContract {
+            data_contract,
+            entropy_used: entropy,
+        })
     }
 
     /// Create Data Contract from plain object
@@ -187,15 +195,13 @@ impl DataContractFactory {
 
     pub fn create_data_contract_create_transition(
         &self,
-        data_contract: DataContract,
+        created_data_contract: CreatedDataContract,
     ) -> Result<DataContractCreateTransition, ProtocolError> {
-        //todo: is this right for entropy?
-        let entropy = data_contract.entropy;
         Ok(DataContractCreateTransition {
             protocol_version: self.protocol_version,
             transition_type: StateTransitionType::DataContractCreate,
-            data_contract,
-            entropy,
+            data_contract: created_data_contract.data_contract,
+            entropy: created_data_contract.entropy_used,
             signature_public_key_id: 0,
             signature: Default::default(),
         })
@@ -231,14 +237,14 @@ mod tests {
     use std::sync::Arc;
 
     pub struct TestData {
-        data_contract: DataContract,
+        created_data_contract: CreatedDataContract,
         raw_data_contract: Value,
         factory: DataContractFactory,
     }
 
     fn get_test_data() -> TestData {
-        let data_contract = get_data_contract_fixture(None);
-        let raw_data_contract = data_contract.to_object().unwrap();
+        let created_data_contract = get_data_contract_fixture(None);
+        let raw_data_contract = created_data_contract.data_contract.to_object().unwrap();
         let protocol_version_validator = ProtocolVersionValidator::new(
             LATEST_VERSION,
             LATEST_VERSION,
@@ -250,7 +256,7 @@ mod tests {
 
         let factory = DataContractFactory::new(1, data_contract_validator);
         TestData {
-            data_contract,
+            created_data_contract,
             raw_data_contract,
             factory,
         }
@@ -259,10 +265,12 @@ mod tests {
     #[test]
     fn should_create_data_contract_with_specified_name_and_docs_definition() {
         let TestData {
-            data_contract,
+            created_data_contract,
             raw_data_contract,
             factory,
         } = get_test_data();
+
+        let data_contract = created_data_contract.data_contract;
 
         let raw_defs = raw_data_contract
             .get_value(property_names::DEFINITIONS)
@@ -276,7 +284,8 @@ mod tests {
 
         let result = factory
             .create(data_contract.owner_id, raw_documents, None, Some(raw_defs))
-            .expect("Data Contract should be created");
+            .expect("Data Contract should be created")
+            .data_contract;
 
         assert_eq!(data_contract.protocol_version, result.protocol_version);
         // id is generated based on entropy which is different every time the `create` call is used
@@ -292,10 +301,12 @@ mod tests {
     #[tokio::test]
     async fn should_crate_data_contract_from_object() {
         let TestData {
-            data_contract,
+            created_data_contract,
             raw_data_contract,
             factory,
         } = get_test_data();
+
+        let data_contract = created_data_contract.data_contract;
 
         let result = factory
             .create_from_object(raw_data_contract.into(), true)
@@ -315,10 +326,13 @@ mod tests {
     #[tokio::test]
     async fn should_create_data_contract_from_buffer() {
         let TestData {
-            data_contract,
+            created_data_contract,
             factory,
             ..
         } = get_test_data();
+
+        let data_contract = created_data_contract.data_contract;
+
         let serialized_data_contract = data_contract
             .serialize()
             .expect("should be serialized to buffer");
@@ -340,17 +354,17 @@ mod tests {
     #[test]
     fn should_create_data_contract_create_transition_from_data_contract() {
         let TestData {
-            data_contract,
+            created_data_contract,
             factory,
             raw_data_contract,
         } = get_test_data();
 
         let result = factory
-            .create_data_contract_create_transition(data_contract.clone())
+            .create_data_contract_create_transition(created_data_contract.clone())
             .expect("Data Contract Transition should be created");
 
         assert_eq!(1, result.get_protocol_version());
-        assert_eq!(&data_contract.entropy, &result.entropy);
+        assert_eq!(&created_data_contract.entropy_used, &result.entropy);
         assert_eq!(raw_data_contract, result.data_contract.to_object().unwrap());
     }
 }

@@ -37,6 +37,18 @@ impl IdentityPublicKey {
     }
 
     // TODO: Move to a separate module under a feature
+    pub fn random_authentication_key(
+        key_id: KeyID,
+        seed: Option<u64>,
+    ) -> Self {
+        let mut rng = match seed {
+            None => StdRng::from_entropy(),
+            Some(seed_value) => StdRng::seed_from_u64(seed_value),
+        };
+        Self::random_authentication_key_with_rng(key_id, &mut rng, None).unwrap()
+    }
+
+    // TODO: Move to a separate module under a feature
     pub fn random_authentication_keys(
         first_id: KeyID,
         count: KeyCount,

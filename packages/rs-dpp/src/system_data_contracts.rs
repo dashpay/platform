@@ -1,5 +1,5 @@
 use crate::data_contract::validation::data_contract_validator::DataContractValidator;
-use crate::data_contract::DataContractFactory;
+use crate::data_contract::{CreatedDataContract, DataContractFactory};
 use crate::prelude::*;
 use crate::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
 use crate::ProtocolError;
@@ -41,9 +41,9 @@ fn create_data_contract(
         definitions.map(|def| def.into()),
     )?;
 
-    data_contract.id = id;
+    data_contract.data_contract.id = id;
 
-    Ok(data_contract)
+    Ok(data_contract.data_contract)
 }
 
 pub fn load_system_data_contract(

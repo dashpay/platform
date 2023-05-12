@@ -13,7 +13,9 @@ use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::document_type::random_document::CreateRandomDocument;
 use dpp::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use dpp::data_contract::{generate_data_contract_id, DataContract as Contract};
+use dpp::data_contract::{
+    generate_data_contract_id, CreatedDataContract, DataContract as Contract,
+};
 use dpp::document::document_transition::document_base_transition::DocumentBaseTransition;
 use dpp::document::document_transition::{
     Action, DocumentCreateTransition, DocumentDeleteTransition, DocumentReplaceTransition,
@@ -111,7 +113,10 @@ pub struct FailureStrategy {
 
 #[derive(Clone, Debug)]
 pub struct Strategy {
-    pub contracts_with_updates: Vec<(Contract, Option<BTreeMap<u64, Contract>>)>,
+    pub contracts_with_updates: Vec<(
+        CreatedDataContract,
+        Option<BTreeMap<u64, CreatedDataContract>>,
+    )>,
     pub operations: Vec<Operation>,
     pub identities_inserts: Frequency,
     pub total_hpmns: u16,
@@ -224,7 +229,7 @@ impl Strategy {
     ) -> Vec<StateTransition> {
         self.contracts_with_updates
             .iter_mut()
-            .map(|(contract, contract_updates)| {
+            .map(|(created_contract, contract_updates)| {
                 let identity_num = rng.gen_range(0..current_identities.len());
                 let identity = current_identities
                     .get(identity_num)
@@ -232,9 +237,11 @@ impl Strategy {
                     .clone()
                     .into_partial_identity_info();
 
+                let mut contract = &mut created_contract.data_contract;
+
                 contract.owner_id = identity.id;
                 let old_id = contract.id;
-                contract.id = generate_data_contract_id(identity.id, contract.entropy);
+                contract.id = generate_data_contract_id(identity.id, created_contract.entropy_used);
                 contract
                     .document_types
                     .iter_mut()
@@ -242,11 +249,15 @@ impl Strategy {
 
                 if let Some(contract_updates) = contract_updates {
                     for (_, updated_contract) in contract_updates.iter_mut() {
-                        updated_contract.id = contract.id;
-                        updated_contract.owner_id = contract.owner_id;
-                        updated_contract.document_types.iter_mut().for_each(
-                            |(_, document_type)| document_type.data_contract_id = contract.id,
-                        );
+                        updated_contract.data_contract.id = contract.id;
+                        updated_contract.data_contract.owner_id = contract.owner_id;
+                        updated_contract
+                            .data_contract
+                            .document_types
+                            .iter_mut()
+                            .for_each(|(_, document_type)| {
+                                document_type.data_contract_id = contract.id
+                            });
                     }
                 }
 
@@ -265,6 +276,7 @@ impl Strategy {
 
                 let state_transition = DataContractCreateTransition::new_from_data_contract(
                     contract.clone(),
+                    created_contract.entropy_used,
                     &identity,
                     1, //key id 1 should always be a high or critical auth key in these tests
                     signer,
@@ -292,13 +304,13 @@ impl Strategy {
                 };
                 let identity = current_identities
                     .iter()
-                    .find(|identity| identity.id == contract_update.owner_id)
+                    .find(|identity| identity.id == contract_update.data_contract.owner_id)
                     .expect("expected to find an identity")
                     .clone()
                     .into_partial_identity_info();
 
                 let state_transition = DataContractUpdateTransition::new_from_data_contract(
-                    contract_update.clone(),
+                    contract_update.data_contract.clone(),
                     &identity,
                     1, //key id 1 should always be a high or critical auth key in these tests
                     signer,

@@ -22,7 +22,7 @@ pub fn get_contact_request_document_fixture(
     additional_data: Option<Value>,
 ) -> ExtendedDocument {
     let owner_id = owner_id.unwrap_or_else(generate_random_identifier_struct);
-    let data_contract = get_dashpay_contract_fixture(None);
+    let data_contract = get_dashpay_contract_fixture(None).data_contract;
 
     let data_contract_fetcher_and_validator =
         DataContractFetcherAndValidator::new(Arc::new(MockStateRepositoryLike::new()));

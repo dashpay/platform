@@ -275,7 +275,7 @@ mod test {
     }
 
     fn get_test_data() -> TestData {
-        let data_contract = get_data_contract_fixture(None);
+        let data_contract = get_data_contract_fixture(None).data_contract;
 
         let value_map = BTreeMap::from([
             (
