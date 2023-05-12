@@ -256,11 +256,11 @@ jobs:
         run: |
           s5cmd sync 's3://platform-runner-cache/cache-mounts/*' 'cache'
 
-      - name: Retrieve cache mount data for Docker
-        uses: actions/cache@v3
-        with:
-          path: cache
-          key: ${{ runner.os }}-docker-cache-${{ hashFiles('**/package.json') }}
+      # - name: Retrieve cache mount data for Docker
+      #   uses: actions/cache@v3
+      #   with:
+      #     path: cache
+      #     key: ${{ runner.os }}-docker-cache-${{ hashFiles('**/package.json') }}
 
       - name: inject go-build-cache into docker
         uses: overmindtech/buildkit-cache-dance/inject@main
