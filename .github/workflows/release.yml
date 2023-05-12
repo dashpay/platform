@@ -280,7 +280,7 @@ jobs:
           build-args: |
             SCCACHE_GHA_ENABLED=false
             CARGO_BUILD_PROFILE=release
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           cache-from: type=s3,region=eu-west-1,bucket=platform-runner-cache
           cache-to: type=s3,region=eu-west-1,bucket=platform-runner-cache
 
