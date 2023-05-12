@@ -25,8 +25,7 @@
 # see https://github.com/rust-lang/cargo/issues/10781#issuecomment-1441071052
 # 3. Github Actions have shared networking configured, so we need to set a random
 # SCCACHE_SERVER_PORT port to avoid conflicts in case of parallel compilation
-# 4. We also set RUSTC to include exact toolchain name in compilation command, and
-# include this in cache key
+
 ARG ALPINE_VERSION=3.16
 
 #
