@@ -116,14 +116,10 @@ ENV NODE_ENV ${NODE_ENV}
 WORKDIR /platform
 # TODO: refactor to not need the wasm-bindgen-cli and remove the copy below, as deps stage should be independent
 COPY Cargo.lock .
-RUN echo ${CARGO_HOME}
-RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
+RUN --mount=type=cache,sharing=shared,target=/usr/local/cargo/registry/index \
+    --mount=type=cache,sharing=shared,target=/usr/local/cargo/registry/cache \
+    --mount=type=cache,sharing=shared,target=/usr/local/cargo/git/db \
     --mount=type=cache,sharing=shared,target=/platform/target \
-    export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
-    if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     export CARGO_TARGET_DIR=/platform/target ; \
     cargo install cargo-lock --features=cli --profile "$CARGO_BUILD_PROFILE" ; \
     WASM_BINDGEN_VERSION=$(cargo-lock list -p wasm-bindgen | egrep -o '[0-9.]+') ; \
