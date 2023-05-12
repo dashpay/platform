@@ -6,7 +6,7 @@
 # - deps - includes all dependencies and some libraries
 # - sources - includes full source code
 # - build-* - actual build process of given image
-# - drive-abci, dashmate, test-site, dapi - final images
+# - drive-abci, dashmate, test-suite, dapi - final images
 #
 # The following build arguments can be provided using --build-arg:
 # - CARGO_BUILD_PROFILE - set to `release` to build final binary, without debugging information
@@ -190,6 +190,9 @@ RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
     cp -R /platform/.yarn/unplugged /tmp/ && \
     sccache --show-stats
 
+# Remove Rust sources (not needed anymore)
+RUN rm -fr ./packages/rs-*
+
 #
 # STAGE: FINAL DRIVE-ABCI IMAGE
 #
@@ -244,9 +247,6 @@ RUN --mount=type=cache,target=/tmp/unplugged \
     yarn workspaces focus --production dashmate && \
     cp -R /platform/.yarn/unplugged /tmp/
 
-RUN rm -fr ./packages/rs-*
-# TODO: Clean all other files not needed by dapi
-
 #
 #  STAGE: FINAL DASHMATE IMAGE
 #
@@ -259,11 +259,28 @@ LABEL description="Dashmate Helper Node.JS"
 
 WORKDIR /platform
 
-COPY --from=build-dashmate /platform /platform
+COPY --from=build-dashmate /platform/.yarn /platform/.yarn
+COPY --from=build-dashmate /platform/package.json /platform/yarn.lock /platform/.yarnrc.yml /platform/.pnp* /platform/
+
+# Copy only necessary packages from monorepo
+COPY --from=build-dashmate /platform/packages/dashmate packages/dashmate
+COPY --from=build-dashmate /platform/packages/dashpay-contract packages/dashpay-contract
+COPY --from=build-dashmate /platform/packages/js-dpp packages/js-dpp
+COPY --from=build-dashmate /platform/packages/wallet-lib packages/wallet-lib
+COPY --from=build-dashmate /platform/packages/js-dash-sdk packages/js-dash-sdk
+COPY --from=build-dashmate /platform/packages/js-dapi-client packages/js-dapi-client
+COPY --from=build-dashmate /platform/packages/js-grpc-common packages/js-grpc-common
+COPY --from=build-dashmate /platform/packages/dapi-grpc packages/dapi-grpc
+COPY --from=build-dashmate /platform/packages/dash-spv packages/dash-spv
+COPY --from=build-dashmate /platform/packages/withdrawals-contract packages/withdrawals-contract
+COPY --from=build-dashmate /platform/packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
+COPY --from=build-dashmate /platform/packages/feature-flags-contract packages/feature-flags-contract
+COPY --from=build-dashmate /platform/packages/dpns-contract packages/dpns-contract
+COPY --from=build-dashmate /platform/packages/data-contracts packages/data-contracts
+COPY --from=build-dashmate /platform/packages/wasm-dpp packages/wasm-dpp
 
 USER node
 ENTRYPOINT ["/platform/packages/dashmate/docker/entrypoint.sh"]
-
 
 #
 # STAGE: TEST SUITE BUILD
