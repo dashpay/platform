@@ -12,7 +12,7 @@ use dpp::identity::state_transition::asset_lock_proof::AssetLockProof;
 use dpp::identity::IdentityPublicKey;
 use dpp::identity::{Identity, KeyID};
 use dpp::metadata::Metadata;
-use dpp::serialization_traits::PlatformSerializable;
+use dpp::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use dpp::{Convertible, ProtocolError};
 
 use crate::identifier::IdentifierWrapper;
@@ -253,5 +253,12 @@ impl IdentityWasm {
     #[wasm_bindgen(js_name=getPublicKeyMaxId)]
     pub fn get_public_ke_max_id(&self) -> f64 {
         self.0.get_public_key_max_id() as f64
+    }
+
+    #[wasm_bindgen(js_name=fromBuffer)]
+    pub fn from_buffer(buffer: Vec<u8>) -> Result<IdentityWasm, JsValue> {
+        let identity: Identity =
+            PlatformDeserializable::deserialize(buffer.as_slice()).with_js_error()?;
+        Ok(identity.into())
     }
 }
