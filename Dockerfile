@@ -285,7 +285,7 @@ ENTRYPOINT ["/platform/packages/dashmate/docker/entrypoint.sh"]
 #
 # STAGE: TEST SUITE BUILD
 #
-FROM build-js AS build-test-site
+FROM build-js AS build-test-suite
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
@@ -294,15 +294,10 @@ RUN --mount=type=cache,target=/tmp/unplugged \
     yarn workspaces focus --production @dashevo/platform-test-suite && \
     cp -R /platform/.yarn/unplugged /tmp/
 
-# Remove Rust sources
-RUN rm -fr ./packages/rs-*
-# TODO: Clean all other files not needed by dapi
-
-
 #
 #  STAGE: FINAL TEST SUITE IMAGE
 #
-FROM node:16-alpine${ALPINE_VERSION} AS test-site
+FROM node:16-alpine${ALPINE_VERSION} AS test-suite
 
 RUN apk add --no-cache bash
 
@@ -311,7 +306,7 @@ LABEL description="Dash Platform test suite"
 
 WORKDIR /platform
 
-COPY --from=build-test-site /platform /platform
+COPY --from=build-test-suite /platform /platform
 
 RUN cp /platform/packages/platform-test-suite/.env.example /platform/packages/platform-test-suite/.env
 
@@ -331,10 +326,6 @@ RUN --mount=type=cache,target=/tmp/unplugged \
     yarn workspaces focus --production @dashevo/dapi && \
     cp -R /platform/.yarn/unplugged /tmp/
 
-# Remove Rust sources
-RUN rm -fr ./packages/rs-*
-# TODO: Clean all other files not needed by dapi
-
 #
 # STAGE: FINAL DAPI IMAGE
 #
@@ -348,7 +339,16 @@ RUN apk add --no-cache zeromq-dev
 
 WORKDIR /platform
 
-COPY --from=build-dapi /platform /platform
+COPY --from=build-dapi /platform/.yarn /platform/.yarn 
+COPY --from=build-dapi /platform/package.json /platform/yarn.lock /platform/.yarnrc.yml /platform/.pnp* /platform/
+# List of required dependencies. Based on:
+# yarn run ultra --info --filter '@dashevo/dapi' |  sed -E 's/.*@dashevo\/(.*)/COPY --from=build-dapi \/platform\/packages\/\1 \/platform\/packages\/\1/'
+COPY --from=build-dapi /platform/packages/dapi /platform/packages/dapi
+COPY --from=build-dapi /platform/packages/dapi-grpc /platform/packages/dapi-grpc
+COPY --from=build-dapi /platform/packages/js-dpp /platform/packages/js-dpp
+COPY --from=build-dapi /platform/packages/js-grpc-common /platform/packages/js-grpc-common
+COPY --from=build-dapi /platform/packages/wasm-dpp /platform/packages/wasm-dpp
+COPY --from=build-dapi /platform/packages/js-dapi-client /platform/packages/js-dapi-client
 
 RUN cp /platform/packages/dapi/.env.example /platform/packages/dapi/.env
 
