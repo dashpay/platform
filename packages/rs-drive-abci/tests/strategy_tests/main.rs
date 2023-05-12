@@ -831,6 +831,7 @@ mod tests {
             .iter()
             .all(|(_, balance)| *balance != 0);
         assert!(all_have_balances, "all masternodes should have a balance");
+        assert_eq!(hex::encode(&outcome.abci_app.platform.drive.grove.root_hash(None).unwrap().unwrap()), "e26ca25e87dbacb2d691f81897a2fc0a7a36bbca4451e6d1a67226a29105dfbe".to_string())
     }
 
     #[test]
@@ -1332,6 +1333,7 @@ mod tests {
             .iter()
             .all(|(_, balance)| *balance != 0);
         assert!(all_have_balances, "all masternodes should have a balance");
+        assert_eq!(hex::encode(&outcome.abci_app.platform.drive.grove.root_hash(None).unwrap().unwrap()), "ac52bdd59bfa507c7904f3cf43ba75c12905685fe07ac3155450af6a797e3c44".to_string())
     }
 
     #[test]
