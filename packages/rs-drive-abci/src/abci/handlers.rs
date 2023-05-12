@@ -61,6 +61,8 @@ where
     C: CoreRPCLike,
 {
     fn info(&self, request: proto::RequestInfo) -> Result<proto::ResponseInfo, ResponseException> {
+        let state_guard = self.platform.state.read().unwrap();
+
         if !tenderdash_abci::check_version(&request.abci_version) {
             return Err(ResponseException::from(format!(
                 "tenderdash requires ABCI version {}, our version is {}",
@@ -70,9 +72,15 @@ where
         }
 
         let response = proto::ResponseInfo {
+            data: "".to_string(),
             app_version: 1,
+            last_block_height: state_guard.last_block_height() as i64,
             version: env!("CARGO_PKG_VERSION").to_string(),
-            ..Default::default()
+
+            last_block_app_hash: state_guard
+                .last_block_app_hash()
+                .map(|app_hash| app_hash.to_vec())
+                .unwrap_or_default(),
         };
 
         tracing::info!(method = "info", ?request, ?response, "info executed");

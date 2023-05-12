@@ -566,6 +566,7 @@ where
 
         let extended_block_info = ExtendedBlockInfo {
             basic_info: to_commit_block_info,
+            app_hash: block_header.app_hash,
             quorum_hash: current_quorum_hash,
             signature: commit_info.block_signature,
             round,
