@@ -1,5 +1,7 @@
+use std::convert::TryFrom;
 use std::sync::Arc;
 
+use dpp::data_contract::CreatedDataContract;
 use dpp::{
     data_contract::{
         validation::data_contract_validator::DataContractValidator, DataContractFactory,
@@ -11,8 +13,8 @@ use dpp::{
 };
 use wasm_bindgen::prelude::*;
 
+use crate::entropy_generator::ExternalEntropyGenerator;
 use crate::utils::WithJsError;
-use crate::{entropy_generator::ExternalEntropyGenerator, CreatedDataContractWasm};
 
 use crate::{
     data_contract::errors::InvalidDataContractError,
@@ -104,7 +106,7 @@ impl DataContractFactoryWasm {
         &self,
         owner_id: Vec<u8>,
         documents: JsValue,
-    ) -> Result<CreatedDataContractWasm, JsValue> {
+    ) -> Result<DataContractWasm, JsValue> {
         let documents_object: platform_value::Value =
             with_js_error!(serde_wasm_bindgen::from_value(documents))?;
         let identifier = Identifier::from_bytes(&owner_id)
@@ -153,10 +155,12 @@ impl DataContractFactoryWasm {
     #[wasm_bindgen(js_name=createDataContractCreateTransition)]
     pub async fn create_data_contract_create_transition(
         &self,
-        created_data_contract: &CreatedDataContractWasm,
+        data_contract: &DataContractWasm,
     ) -> Result<DataContractCreateTransitionWasm, JsValue> {
         self.0
-            .create_data_contract_create_transition(created_data_contract.clone().into())
+            .create_data_contract_create_transition(
+                CreatedDataContract::try_from(data_contract).with_js_error()?,
+            )
             .map(Into::into)
             .with_js_error()
     }

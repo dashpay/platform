@@ -1,5 +1,5 @@
 use crate::data_contract::validation::data_contract_validator::DataContractValidator;
-use crate::data_contract::{CreatedDataContract, DataContractFactory};
+use crate::data_contract::DataContractFactory;
 use crate::prelude::*;
 use crate::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
 use crate::ProtocolError;

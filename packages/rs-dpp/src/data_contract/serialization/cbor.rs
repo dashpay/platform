@@ -8,7 +8,7 @@ use ciborium::Value as CborValue;
 
 use integer_encoding::VarInt;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
-use platform_value::{Bytes32, Value};
+use platform_value::Value;
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 

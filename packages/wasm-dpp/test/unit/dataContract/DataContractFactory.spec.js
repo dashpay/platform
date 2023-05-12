@@ -8,7 +8,6 @@ describe('DataContractFactory', () => {
   let DataContractValidator;
   let DataContract;
   let InvalidDataContractError;
-  let CreatedDataContract;
   let JsonSchemaError;
 
   let factory;
@@ -23,15 +22,11 @@ describe('DataContractFactory', () => {
       DataContract,
       InvalidDataContractError,
       JsonSchemaError,
-      CreatedDataContract,
     } = await loadWasmDpp());
   });
 
   beforeEach(async () => {
-    const createdDataContract = await getDataContractFixture();
-
-    dataContract = createdDataContract.getDataContract();
-
+    dataContract = await getDataContractFixture();
     rawDataContract = dataContract.toObject();
 
     dataContractValidator = new DataContractValidator();
@@ -47,7 +42,7 @@ describe('DataContractFactory', () => {
       const result = factory.create(
         dataContract.getOwnerId(),
         rawDataContract.documents,
-      ).getDataContract().toObject();
+      ).toObject();
 
       expect(result).excluding('$id').to.deep.equal(rawDataContract);
     });
@@ -113,14 +108,9 @@ describe('DataContractFactory', () => {
     it('should return new DataContractCreateTransition with passed DataContract', async () => {
       // Create wasm version of DataContract
       const newDataContract = new DataContract(rawDataContract);
-      // newDataContract.setEntropy(dataContract.getEntropy());
+      newDataContract.setEntropy(dataContract.getEntropy());
 
-      const createdDataContract = new CreatedDataContract({
-        dataContract: rawDataContract,
-        entropy: Buffer.alloc(32),
-      });
-
-      const result = await factory.createDataContractCreateTransition(createdDataContract);
+      const result = await factory.createDataContractCreateTransition(newDataContract);
 
       expect(result.getProtocolVersion()).to.equal(protocolVersion.latestVersion);
       expect(result.getEntropy()).to.deep.equal(dataContract.getEntropy());
