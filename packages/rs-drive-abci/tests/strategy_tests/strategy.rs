@@ -678,6 +678,12 @@ pub struct ChainExecutionOutcome<'a> {
     pub withdrawals: Vec<dashcore::Transaction>,
 }
 
+impl<'a> ChainExecutionOutcome<'a> {
+    pub fn current_quorum(&self) -> &TestQuorumInfo {
+        self.quorums.get(&self.current_quorum_hash).unwrap()
+    }
+}
+
 pub struct ChainExecutionParameters {
     pub block_start: u64,
     pub core_height_start: u32,
