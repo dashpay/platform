@@ -121,6 +121,10 @@ RUN --mount=type=cache,sharing=shared,target=/usr/local/cargo/registry/index \
     --mount=type=cache,sharing=shared,target=/usr/local/cargo/git/db \
     --mount=type=cache,sharing=shared,target=/platform/target \
     export CARGO_TARGET_DIR=/platform/target ; \
+    ls -lha /usr/local/cargo/registry/index && \
+    ls -lha /usr/local/cargo/registry/cache && \
+    ls -lha /usr/local/cargo/git/db && \
+    ls -lha /platform/target && \
     cargo install cargo-lock --features=cli --profile "$CARGO_BUILD_PROFILE" ; \
     WASM_BINDGEN_VERSION=$(cargo-lock list -p wasm-bindgen | egrep -o '[0-9.]+') ; \
     cargo install --profile "$CARGO_BUILD_PROFILE" "wasm-bindgen-cli@${WASM_BINDGEN_VERSION}"
