@@ -216,19 +216,6 @@ jobs:
             suffix=${{ steps.suffix.outputs.result }},onlatest=true
             latest=${{ github.event_name == 'release' }}
 
-      # - uses: tespkg/actions-cache@v1
-      #   with:
-      #     accessKey: "Q3AM3UQ867SPQQA43P2F" # required
-      #     secretKey: "zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG" # required
-      #     sessionToken: "AQoDYXdzEJraDcqRtz123" # optional
-      #     bucket: platform-runner-cache # required
-      #     # actions/cache compatible properties: https://github.com/actions/cache
-      #     key: ${{ runner.os }}-cache-mount-cache-${{ hashFiles('**/go.sum') }}
-      #     path: |
-      #       cache-mount-cache
-      #     restore-keys: |
-      #       ${{ runner.os }}-cache-mount-cache
-
       - name: Setup s5cmd
         run: |
           curl -sL -o /tmp/s5cmd.tar.gz https://github.com/peak/s5cmd/releases/download/v2.0.0/s5cmd_2.0.0_Linux-64bit.tar.gz
