@@ -223,8 +223,6 @@ where
             transaction,
         )?;
 
-        dbg!(processed_block_fees);
-
         // Determine a new protocol version if enough proposers voted
         if block_execution_context
             .epoch_info

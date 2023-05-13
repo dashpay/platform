@@ -374,7 +374,7 @@ mod tests {
             .expect("expected to fetch balances")
             .expect("expected to have an identity to get balance from");
 
-        assert_eq!(balance, 99867074480)
+        assert_eq!(balance, 99870453070)
     }
 
     #[test]
@@ -831,7 +831,19 @@ mod tests {
             .iter()
             .all(|(_, balance)| *balance != 0);
         assert!(all_have_balances, "all masternodes should have a balance");
-        assert_eq!(hex::encode(&outcome.abci_app.platform.drive.grove.root_hash(None).unwrap().unwrap()), "e26ca25e87dbacb2d691f81897a2fc0a7a36bbca4451e6d1a67226a29105dfbe".to_string())
+        assert_eq!(
+            hex::encode(
+                &outcome
+                    .abci_app
+                    .platform
+                    .drive
+                    .grove
+                    .root_hash(None)
+                    .unwrap()
+                    .unwrap()
+            ),
+            "894c403bc33c60ae03341a7a286588d7a6d5aec88c0d01b154b4595f83b0961b".to_string()
+        )
     }
 
     #[test]
@@ -1333,7 +1345,19 @@ mod tests {
             .iter()
             .all(|(_, balance)| *balance != 0);
         assert!(all_have_balances, "all masternodes should have a balance");
-        assert_eq!(hex::encode(&outcome.abci_app.platform.drive.grove.root_hash(None).unwrap().unwrap()), "ac52bdd59bfa507c7904f3cf43ba75c12905685fe07ac3155450af6a797e3c44".to_string())
+        assert_eq!(
+            hex::encode(
+                &outcome
+                    .abci_app
+                    .platform
+                    .drive
+                    .grove
+                    .root_hash(None)
+                    .unwrap()
+                    .unwrap()
+            ),
+            "4a0620fcec40b35447b575562ef51359babd2714f3f79dfee7943760b98578fe".to_string()
+        )
     }
 
     #[test]
@@ -1838,11 +1862,160 @@ mod tests {
         let outcome = run_chain_for_strategy(&mut platform, 10, strategy, config, 15);
 
         assert_eq!(outcome.identities.len(), 10);
-        assert_eq!(outcome.withdrawals.len(), 17);
+        assert_eq!(outcome.withdrawals.len(), 14);
     }
 
     #[test]
-    fn run_chain_proposer_proposes_a_chainlock_that_would_remove_themselves_from_the_list() {
+    fn run_chain_rotation_is_deterministic_1_block() {
+        let strategy = Strategy {
+            contracts_with_updates: vec![],
+            operations: vec![],
+            identities_inserts: Frequency {
+                //we do this to create some paying transactions
+                times_per_block_range: 1..2,
+                chance_per_block: None,
+            },
+            total_hpmns: 50,
+            extra_normal_mns: 0,
+            quorum_count: 10,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: 1..2,
+                chance_per_block: None,
+            },
+            proposer_strategy: Default::default(),
+            rotate_quorums: true,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: false,
+        };
+        let day_in_ms = 1000 * 60 * 60 * 24;
+        let config = PlatformConfig {
+            verify_sum_trees: true,
+            quorum_size: 3,
+            validator_set_quorum_rotation_block_count: 1,
+            block_spacing_ms: day_in_ms,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            ..Default::default()
+        };
+
+        let mut platforms = Vec::new();
+        let mut outcomes = Vec::new();
+
+        for _ in 0..2 {
+            let platform = TestPlatformBuilder::new()
+                .with_config(config.clone())
+                .build_with_mock_rpc();
+            platforms.push(platform);
+        }
+
+        for platform in &mut platforms {
+            platform
+                .core_rpc
+                .expect_get_best_chain_lock()
+                .returning(move || {
+                    Ok(CoreChainLock {
+                        core_block_height: 10,
+                        core_block_hash: [1; 32].to_vec(),
+                        signature: [2; 96].to_vec(),
+                    })
+                });
+
+            let outcome = run_chain_for_strategy(platform, 1, strategy.clone(), config.clone(), 7);
+            outcomes.push(outcome);
+        }
+
+        let first_proposers_fingerprint = hash_to_hex_string(
+            outcomes[0]
+                .proposers
+                .iter()
+                .map(|masternode_list_item_with_updates| {
+                    hex::encode(masternode_list_item_with_updates.masternode.pro_tx_hash)
+                })
+                .join("|"),
+        );
+
+        assert!(outcomes.iter().all(|outcome| {
+            let last_proposers_fingerprint = hash_to_hex_string(
+                outcomes[0]
+                    .proposers
+                    .iter()
+                    .map(|masternode_list_item_with_updates| {
+                        hex::encode(masternode_list_item_with_updates.masternode.pro_tx_hash)
+                    })
+                    .join("|"),
+            );
+
+            first_proposers_fingerprint == last_proposers_fingerprint
+        }));
+
+        let first_masternodes_fingerprint = hash_to_hex_string(
+            outcomes[0]
+                .masternode_identity_balances
+                .keys()
+                .map(|pro_tx_hash| hex::encode(pro_tx_hash))
+                .join("|"),
+        );
+
+        assert!(outcomes.iter().all(|outcome| {
+            let last_masternodes_fingerprint = hash_to_hex_string(
+                outcomes[0]
+                    .masternode_identity_balances
+                    .keys()
+                    .map(|pro_tx_hash| hex::encode(pro_tx_hash))
+                    .join("|"),
+            );
+
+            first_masternodes_fingerprint == last_masternodes_fingerprint
+        }));
+
+        let first_validator_set_fingerprint = hash_to_hex_string(
+            outcomes[0]
+                .current_quorum()
+                .validator_set
+                .iter()
+                .map(|validator| hex::encode(validator.pro_tx_hash))
+                .join("|"),
+        );
+
+        assert!(outcomes.iter().all(|outcome| {
+            let last_validator_set_fingerprint = hash_to_hex_string(
+                outcomes[0]
+                    .current_quorum()
+                    .validator_set
+                    .iter()
+                    .map(|validator| hex::encode(validator.pro_tx_hash))
+                    .join("|"),
+            );
+
+            first_validator_set_fingerprint == last_validator_set_fingerprint
+        }));
+
+        let first_last_app_hash = outcomes[0]
+            .abci_app
+            .platform
+            .drive
+            .grove
+            .root_hash(None)
+            .unwrap()
+            .expect("should return app hash");
+
+        assert!(outcomes.iter().all(|outcome| {
+            let last_app_hash = outcome
+                .abci_app
+                .platform
+                .drive
+                .grove
+                .root_hash(None)
+                .unwrap()
+                .expect("should return app hash");
+
+            last_app_hash == first_last_app_hash
+        }));
+    }
+
+    #[test]
+    fn run_chain_heavy_rotation_deterministic_before_payout() {
         let strategy = Strategy {
             contracts_with_updates: vec![],
             operations: vec![],
@@ -1874,10 +2047,23 @@ mod tests {
             testing_configs: PlatformTestConfig::default_with_no_block_signing(),
             ..Default::default()
         };
-        let mut platform = TestPlatformBuilder::new()
+        let mut platform_a = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
-        platform
+        let mut platform_b = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        platform_a
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        platform_b
             .core_rpc
             .expect_get_best_chain_lock()
             .returning(move || {
@@ -1888,22 +2074,37 @@ mod tests {
                 })
             });
 
-        let outcome = run_chain_for_strategy(&mut platform, 100, strategy, config, 7);
-        assert_eq!(outcome.end_epoch_index, 5); // 100/18
-        assert_eq!(outcome.masternode_identity_balances.len(), 500); // 500 nodes
-        let masternodes_fingerprint = hash_to_hex_string(
-            outcome
+        let outcome_a =
+            run_chain_for_strategy(&mut platform_a, 18, strategy.clone(), config.clone(), 7);
+        let outcome_b = run_chain_for_strategy(&mut platform_b, 18, strategy, config, 7);
+        assert_eq!(outcome_a.end_epoch_index, outcome_b.end_epoch_index); // 100/18
+        assert_eq!(outcome_a.masternode_identity_balances.len(), 500); // 500 nodes
+        assert_eq!(outcome_b.masternode_identity_balances.len(), 500); // 500 nodes
+        assert_eq!(outcome_a.end_epoch_index, 0); // 100/18
+        let masternodes_fingerprint_a = hash_to_hex_string(
+            outcome_a
                 .masternode_identity_balances
                 .keys()
                 .map(|pro_tx_hash| hex::encode(pro_tx_hash))
                 .join("|"),
         );
         assert_eq!(
-            masternodes_fingerprint,
+            masternodes_fingerprint_a,
+            "3f13e499c5c49b04ab1edf2bbddca733fd9cf6f92875ccf51e827a6f4bf044e8".to_string()
+        );
+        let masternodes_fingerprint_b = hash_to_hex_string(
+            outcome_b
+                .masternode_identity_balances
+                .keys()
+                .map(|pro_tx_hash| hex::encode(pro_tx_hash))
+                .join("|"),
+        );
+        assert_eq!(
+            masternodes_fingerprint_b,
             "3f13e499c5c49b04ab1edf2bbddca733fd9cf6f92875ccf51e827a6f4bf044e8".to_string()
         );
 
-        let last_app_hash = outcome
+        let last_app_hash_a = outcome_a
             .abci_app
             .platform
             .drive
@@ -1912,20 +2113,142 @@ mod tests {
             .unwrap()
             .expect("should return app hash");
 
-        assert_eq!(
-            last_app_hash,
-            [
-                155, 183, 128, 96, 204, 221, 190, 134, 216, 190, 69, 90, 204, 103, 5, 164, 4, 250,
-                50, 179, 112, 43, 139, 237, 109, 203, 144, 68, 3, 78, 32, 179
-            ]
-        );
+        let last_app_hash_b = outcome_b
+            .abci_app
+            .platform
+            .drive
+            .grove
+            .root_hash(None)
+            .unwrap()
+            .expect("should return app hash");
 
-        let balance_count = outcome
+        assert_eq!(last_app_hash_a, last_app_hash_b);
+
+        let balance_count = outcome_a
             .masternode_identity_balances
             .into_iter()
             .filter(|(_, balance)| *balance != 0)
             .count();
-        // we have a maximum 90 quorums, that could have been used, 8 were used twice
-        assert_eq!(balance_count, 78);
+        assert_eq!(balance_count, 0);
+    }
+
+    #[test]
+    fn run_chain_proposer_proposes_a_chainlock_that_would_remove_themselves_from_the_list_deterministic(
+    ) {
+        let strategy = Strategy {
+            contracts_with_updates: vec![],
+            operations: vec![],
+            identities_inserts: Frequency {
+                //we do this to create some paying transactions
+                times_per_block_range: 1..2,
+                chance_per_block: None,
+            },
+            total_hpmns: 500,
+            extra_normal_mns: 0,
+            quorum_count: 100,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: 1..2,
+                chance_per_block: None,
+            },
+            proposer_strategy: Default::default(),
+            rotate_quorums: true,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: false,
+        };
+        let day_in_ms = 1000 * 60 * 60 * 24;
+        let config = PlatformConfig {
+            verify_sum_trees: true,
+            quorum_size: 3,
+            validator_set_quorum_rotation_block_count: 1,
+            block_spacing_ms: day_in_ms,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            ..Default::default()
+        };
+        let mut platform_a = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        let mut platform_b = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+        platform_a
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+        platform_b
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+
+        let outcome_a =
+            run_chain_for_strategy(&mut platform_a, 100, strategy.clone(), config.clone(), 7);
+        let outcome_b = run_chain_for_strategy(&mut platform_b, 100, strategy, config, 7);
+        assert_eq!(outcome_a.end_epoch_index, outcome_b.end_epoch_index); // 100/18
+        assert_eq!(outcome_a.masternode_identity_balances.len(), 500); // 500 nodes
+        assert_eq!(outcome_b.masternode_identity_balances.len(), 500); // 500 nodes
+                                                                       //assert_eq!(outcome_a.end_epoch_index, 1); // 100/18
+        let masternodes_fingerprint_a = hash_to_hex_string(
+            outcome_a
+                .masternode_identity_balances
+                .keys()
+                .map(|pro_tx_hash| hex::encode(pro_tx_hash))
+                .join("|"),
+        );
+        assert_eq!(
+            masternodes_fingerprint_a,
+            "3f13e499c5c49b04ab1edf2bbddca733fd9cf6f92875ccf51e827a6f4bf044e8".to_string()
+        );
+        let masternodes_fingerprint_b = hash_to_hex_string(
+            outcome_b
+                .masternode_identity_balances
+                .keys()
+                .map(|pro_tx_hash| hex::encode(pro_tx_hash))
+                .join("|"),
+        );
+        assert_eq!(
+            masternodes_fingerprint_b,
+            "3f13e499c5c49b04ab1edf2bbddca733fd9cf6f92875ccf51e827a6f4bf044e8".to_string()
+        );
+
+        let last_app_hash_a = outcome_a
+            .abci_app
+            .platform
+            .drive
+            .grove
+            .root_hash(None)
+            .unwrap()
+            .expect("should return app hash");
+
+        let last_app_hash_b = outcome_b
+            .abci_app
+            .platform
+            .drive
+            .grove
+            .root_hash(None)
+            .unwrap()
+            .expect("should return app hash");
+
+        assert_eq!(last_app_hash_a, last_app_hash_b);
+
+        let balance_count = outcome_a
+            .masternode_identity_balances
+            .into_iter()
+            .filter(|(_, balance)| *balance != 0)
+            .count();
+        // we have a maximum 90 quorums, that could have been used, 4 were used twice
+        assert_eq!(balance_count, 86);
     }
 }
