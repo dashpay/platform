@@ -73,7 +73,7 @@ mod tests {
     use dashcore_rpc::dashcore::BlockHash;
     use dashcore_rpc::dashcore_rpc_json::ExtendedQuorumDetails;
     use dpp::data_contract::extra::common::json_document_to_contract;
-    use dpp::util::hash::{hash, hash_to_hex_string};
+    use dpp::util::hash::hash_to_hex_string;
     use drive_abci::config::PlatformTestConfig;
     use drive_abci::rpc::core::QuorumListExtendedInfo;
     use itertools::Itertools;
@@ -273,9 +273,9 @@ mod tests {
             .expect("expected to recreate state");
 
         let ResponseInfo {
-            data,
-            version,
-            app_version,
+            data: _,
+            version: _,
+            app_version: _,
             last_block_height,
             last_block_app_hash,
         } = abci_app
@@ -1937,7 +1937,7 @@ mod tests {
 
         assert!(outcomes.iter().all(|outcome| {
             let last_proposers_fingerprint = hash_to_hex_string(
-                outcomes[0]
+                outcome
                     .proposers
                     .iter()
                     .map(|masternode_list_item_with_updates| {
@@ -1959,7 +1959,7 @@ mod tests {
 
         assert!(outcomes.iter().all(|outcome| {
             let last_masternodes_fingerprint = hash_to_hex_string(
-                outcomes[0]
+                outcome
                     .masternode_identity_balances
                     .keys()
                     .map(|pro_tx_hash| hex::encode(pro_tx_hash))
@@ -1980,7 +1980,7 @@ mod tests {
 
         assert!(outcomes.iter().all(|outcome| {
             let last_validator_set_fingerprint = hash_to_hex_string(
-                outcomes[0]
+                outcome
                     .current_quorum()
                     .validator_set
                     .iter()
