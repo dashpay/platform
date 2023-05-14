@@ -4,6 +4,7 @@ use crate::operations::FinalizeBlockOperation::IdentityAddKeys;
 use crate::operations::{
     DocumentAction, DocumentOp, FinalizeBlockOperation, IdentityUpdateOp, Operation, OperationType,
 };
+use crate::query::QueryStrategy;
 use crate::signer::SimpleSigner;
 use crate::BlockHeight;
 use dashcore_rpc::dashcore;
@@ -102,6 +103,12 @@ pub enum StrategyMode {
     //ProposerAndValidatorSigning, todo
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct FailureStrategy {
+    pub deterministic_start_seed: Option<u64>,
+    pub dont_finalize_block: bool,
+}
+
 #[derive(Clone, Debug)]
 pub struct Strategy {
     pub contracts_with_updates: Vec<(Contract, Option<BTreeMap<u64, Contract>>)>,
@@ -114,6 +121,9 @@ pub struct Strategy {
     pub core_height_increase: Frequency,
     pub proposer_strategy: MasternodeListChangesStrategy,
     pub rotate_quorums: bool,
+    pub failure_testing: Option<FailureStrategy>,
+    pub query_testing: Option<QueryStrategy>,
+    pub verify_state_transition_results: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -163,6 +173,13 @@ impl UpgradingInfo {
 }
 
 impl Strategy {
+    pub fn dont_finalize_block(&self) -> bool {
+        self.failure_testing
+            .as_ref()
+            .map(|failure_strategy| failure_strategy.dont_finalize_block)
+            .unwrap_or(false)
+    }
+
     // TODO: This belongs to `DocumentOp`
     pub fn add_strategy_contracts_into_drive(&mut self, drive: &Drive) {
         for op in &self.operations {
@@ -322,6 +339,12 @@ impl Strategy {
                         documents
                             .into_iter()
                             .for_each(|(document, identity, entropy)| {
+                                let updated_at =
+                                    if document_type.required_fields.contains("$updatedAt") {
+                                        document.created_at
+                                    } else {
+                                        None
+                                    };
                                 let document_create_transition = DocumentCreateTransition {
                                     base: DocumentBaseTransition {
                                         id: document.id,
@@ -332,7 +355,7 @@ impl Strategy {
                                     },
                                     entropy: entropy.to_buffer(),
                                     created_at: document.created_at,
-                                    updated_at: document.created_at,
+                                    updated_at,
                                     data: document.properties.into(),
                                 };
 
@@ -653,6 +676,12 @@ pub struct ChainExecutionOutcome<'a> {
     pub end_time_ms: u64,
     pub strategy: Strategy,
     pub withdrawals: Vec<dashcore::Transaction>,
+}
+
+impl<'a> ChainExecutionOutcome<'a> {
+    pub fn current_quorum(&self) -> &TestQuorumInfo {
+        self.quorums.get(&self.current_quorum_hash).unwrap()
+    }
 }
 
 pub struct ChainExecutionParameters {

@@ -61,6 +61,14 @@ impl StateTransitionValidation for IdentityTopUpTransition {
     fn validate_state<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
+        tx: TransactionArg,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        self.transform_into_action(platform, tx)
+    }
+
+    fn transform_into_action<C: CoreRPCLike>(
+        &self,
+        platform: &PlatformRef<C>,
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let mut validation_result = ConsensusValidationResult::<StateTransitionAction>::default();

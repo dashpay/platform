@@ -12,10 +12,11 @@ use drive::dpp::util::deserializer::ProtocolVersion;
 use indexmap::IndexMap;
 use std::collections::{BTreeMap, HashMap};
 
+mod commit;
 mod genesis;
 
 /// Platform state
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PlatformState {
     /// Information about the last block
     pub last_committed_block_info: Option<ExtendedBlockInfo>,
@@ -45,13 +46,31 @@ pub struct PlatformState {
 }
 
 /// Platform state for the first block
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PlatformInitializationState {
     /// Core initialization height
     pub core_initialization_height: u32,
 }
 
 impl PlatformState {
+    /// The default state at init chain
+    pub fn default_with_protocol_versions(
+        current_protocol_version_in_consensus: ProtocolVersion,
+        next_epoch_protocol_version: ProtocolVersion,
+    ) -> PlatformState {
+        PlatformState {
+            last_committed_block_info: None,
+            current_protocol_version_in_consensus,
+            next_epoch_protocol_version,
+            quorums_extended_info: Default::default(),
+            current_validator_set_quorum_hash: Default::default(),
+            next_validator_set_quorum_hash: None,
+            validator_sets: Default::default(),
+            full_masternode_list: Default::default(),
+            hpmn_masternode_list: Default::default(),
+            initialization_information: None,
+        }
+    }
     /// The height of the platform, only committed blocks increase height
     pub fn height(&self) -> u64 {
         self.last_committed_block_info
@@ -119,6 +138,21 @@ impl PlatformState {
             .as_ref()
             .map(|block_info| block_info.signature)
             .unwrap_or([0u8; 96])
+    }
+
+    /// The last block app hash
+    pub fn last_block_app_hash(&self) -> Option<[u8; 32]> {
+        self.last_committed_block_info
+            .as_ref()
+            .map(|block_info| block_info.app_hash)
+    }
+
+    /// The last block height or 0 for genesis
+    pub fn last_block_height(&self) -> u64 {
+        self.last_committed_block_info
+            .as_ref()
+            .map(|block_info| block_info.basic_info.height)
+            .unwrap_or_default()
     }
 
     /// The last block round

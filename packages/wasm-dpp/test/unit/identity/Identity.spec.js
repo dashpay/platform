@@ -141,6 +141,15 @@ describe('Identity', () => {
     });
   });
 
+  describe('#fromBuffer', () => {
+    it('should re-create identity from buffer', () => {
+      const buffer = identity.toBuffer();
+      const recoveredIdentity = Identity.fromBuffer(buffer);
+      expect(recoveredIdentity.toObject())
+        .to.be.deep.equal(identity.toObject());
+    });
+  });
+
   describe('#hash', () => {
     it('should return the same has as JS Identity', () => {
       const expectedHash = hashFunction(identity.toBuffer());

@@ -148,7 +148,7 @@ describe('IdentityPublicKey', () => {
       rawPublicKey = {
         id: 0,
         type: IdentityPublicKey.TYPES.ECDSA_HASH160,
-        data: Buffer.from('AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH', 'base64'),
+        data: Buffer.from('AkVuTKyF3YgKLAQlLEtaUL2HTdi', 'base64'),
         purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
         securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
         readOnly: false,
@@ -159,7 +159,7 @@ describe('IdentityPublicKey', () => {
 
       const result = publicKey.hash();
 
-      const expectedHash = Buffer.from('AkVuTKyF3YgKLAQlLEtaUL2HTditwGILfWUVqjzYnIgH', 'base64');
+      const expectedHash = Buffer.from('AkVuTKyF3YgKLAQlLEtaUL2HTdg=', 'base64');
 
       expect(result).to.deep.equal(expectedHash);
     });

@@ -28,6 +28,15 @@ Platform.getIdentity = {
   responseType: platform_pb.GetIdentityResponse
 };
 
+Platform.getIdentities = {
+  methodName: "getIdentities",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetIdentitiesRequest,
+  responseType: platform_pb.GetIdentitiesResponse
+};
+
 Platform.getIdentityKeys = {
   methodName: "getIdentityKeys",
   service: Platform,
@@ -53,6 +62,15 @@ Platform.getIdentityBalanceAndRevision = {
   responseStream: false,
   requestType: platform_pb.GetIdentityRequest,
   responseType: platform_pb.GetIdentityBalanceAndRevisionResponse
+};
+
+Platform.getProofs = {
+  methodName: "getProofs",
+  service: Platform,
+  requestStream: false,
+  responseStream: false,
+  requestType: platform_pb.GetProofsRequest,
+  responseType: platform_pb.GetProofsResponse
 };
 
 Platform.getDataContract = {
@@ -187,6 +205,37 @@ PlatformClient.prototype.getIdentity = function getIdentity(requestMessage, meta
   };
 };
 
+PlatformClient.prototype.getIdentities = function getIdentities(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getIdentities, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
 PlatformClient.prototype.getIdentityKeys = function getIdentityKeys(requestMessage, metadata, callback) {
   if (arguments.length === 2) {
     callback = arguments[1];
@@ -254,6 +303,37 @@ PlatformClient.prototype.getIdentityBalanceAndRevision = function getIdentityBal
     callback = arguments[1];
   }
   var client = grpc.unary(Platform.getIdentityBalanceAndRevision, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onEnd: function (response) {
+      if (callback) {
+        if (response.status !== grpc.Code.OK) {
+          var err = new Error(response.statusMessage);
+          err.code = response.status;
+          err.metadata = response.trailers;
+          callback(err, null);
+        } else {
+          callback(null, response.message);
+        }
+      }
+    }
+  });
+  return {
+    cancel: function () {
+      callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.getProofs = function getProofs(requestMessage, metadata, callback) {
+  if (arguments.length === 2) {
+    callback = arguments[1];
+  }
+  var client = grpc.unary(Platform.getProofs, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,

@@ -102,9 +102,17 @@ impl StateTransitionValidation for DataContractCreateTransition {
                 .into(),
             ]))
         } else {
-            let action: StateTransitionAction =
-                Into::<DataContractCreateTransitionAction>::into(self).into();
-            Ok(action.into())
+            self.transform_into_action(platform, tx)
         }
+    }
+
+    fn transform_into_action<C: CoreRPCLike>(
+        &self,
+        _platform: &PlatformRef<C>,
+        _tx: TransactionArg,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        let action: StateTransitionAction =
+            Into::<DataContractCreateTransitionAction>::into(self).into();
+        Ok(action.into())
     }
 }

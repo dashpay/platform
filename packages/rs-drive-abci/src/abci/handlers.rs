@@ -34,10 +34,12 @@
 
 use crate::abci::server::AbciApplication;
 use crate::error::execution::ExecutionError;
+
 use crate::error::Error;
 use crate::execution::block_proposal::BlockProposal;
 use crate::execution::engine::BlockExecutionOutcome;
 use crate::rpc::core::CoreRPCLike;
+use crate::state::PlatformState;
 use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dpp::errors::consensus::codes::ErrorWithCode;
 use drive::fee::credits::SignedCredits;
@@ -59,6 +61,8 @@ where
     C: CoreRPCLike,
 {
     fn info(&self, request: proto::RequestInfo) -> Result<proto::ResponseInfo, ResponseException> {
+        let state_guard = self.platform.state.read().unwrap();
+
         if !tenderdash_abci::check_version(&request.abci_version) {
             return Err(ResponseException::from(format!(
                 "tenderdash requires ABCI version {}, our version is {}",
@@ -68,9 +72,15 @@ where
         }
 
         let response = proto::ResponseInfo {
+            data: "".to_string(),
             app_version: 1,
+            last_block_height: state_guard.last_block_height() as i64,
             version: env!("CARGO_PKG_VERSION").to_string(),
-            ..Default::default()
+
+            last_block_app_hash: state_guard
+                .last_block_app_hash()
+                .map(|app_hash| app_hash.to_vec())
+                .unwrap_or_default(),
         };
 
         tracing::info!(method = "info", ?request, ?response, "info executed");
@@ -82,6 +92,24 @@ where
         request: RequestInitChain,
     ) -> Result<ResponseInitChain, ResponseException> {
         self.start_transaction();
+        // We need to drop the block execution context just in case init chain had already been called
+        let mut block_execution_context = self.platform.block_execution_context.write().unwrap();
+        let block_context = block_execution_context.take(); //drop the block execution context
+        if block_context.is_some() {
+            tracing::debug!(
+                method = "init_chain",
+                "block context was present during init chain, restarting"
+            );
+            let protocol_version_in_consensus = self.platform.config.initial_protocol_version;
+            let mut platform_state_write_guard = self.platform.state.write().unwrap();
+            *platform_state_write_guard = PlatformState::default_with_protocol_versions(
+                protocol_version_in_consensus,
+                protocol_version_in_consensus,
+            );
+            drop(platform_state_write_guard);
+        }
+        drop(block_execution_context);
+
         let transaction_guard = self.transaction.read().unwrap();
         let transaction = transaction_guard.as_ref().unwrap();
         let response = self.platform.init_chain(request, transaction)?;
@@ -164,13 +192,13 @@ where
         // We need to let Tenderdash know about the transactions we should remove from execution
         let (tx_results, tx_records): (Vec<Option<ExecTxResult>>, Vec<TxRecord>) = tx_results
             .into_iter()
-            .map(|result| {
+            .map(|(tx, result)| {
                 if result.code > 0 {
                     (
                         None,
                         TxRecord {
                             action: TxAction::Removed as i32,
-                            tx: result.data,
+                            tx,
                         },
                     )
                 } else {
@@ -178,7 +206,7 @@ where
                         Some(result.clone()),
                         TxRecord {
                             action: TxAction::Unmodified as i32,
-                            tx: result.data,
+                            tx,
                         },
                     )
                 }
@@ -294,7 +322,7 @@ where
             // TODO: implement all fields, including tx processing; for now, just leaving bare minimum
             let response = ResponseProcessProposal {
                 app_hash: app_hash.to_vec(),
-                tx_results,
+                tx_results: tx_results.into_iter().map(|(_, value)| value).collect(),
                 status: proto::response_process_proposal::ProposalStatus::Accept.into(),
                 validator_set_update,
                 ..Default::default()
@@ -507,23 +535,35 @@ where
     }
 
     fn query(&self, request: RequestQuery) -> Result<ResponseQuery, ResponseException> {
-        let RequestQuery {
-            data, path, prove, ..
-        } = request;
+        let RequestQuery { data, path, .. } = &request;
 
-        let result = self.platform.query(path.as_str(), data.as_slice(), prove)?;
+        let result = self.platform.query(path.as_str(), data.as_slice())?;
 
-        let (code, data) = if result.is_valid() {
-            (0, result.data.unwrap_or_default())
+        let (code, data, log) = if result.is_valid() {
+            (
+                0,
+                result.data.unwrap_or_default(),
+                "query success".to_string(),
+            )
         } else {
-            (1, vec![])
+            let mut buffer: Vec<u8> = Vec::new();
+            ciborium::ser::into_writer(
+                &result
+                    .errors
+                    .iter()
+                    .map(|e| e.to_string())
+                    .collect::<Vec<_>>(),
+                &mut buffer,
+            )
+            .map_err(|e| e.to_string())?;
+            (1, buffer, format!("{:?}", result.errors))
         };
 
-        Ok(ResponseQuery {
+        let response = ResponseQuery {
             //todo: right now just put GRPC error codes,
             //  later we will use own error codes
             code,
-            log: "".to_string(),
+            log,
             info: "".to_string(),
             index: 0,
             key: vec![],
@@ -531,7 +571,10 @@ where
             proof_ops: None,
             height: self.platform.state.read().unwrap().height() as i64,
             codespace: "".to_string(),
-        })
+        };
+        tracing::trace!(method = "query", ?request, ?response);
+
+        Ok(response)
     }
 }
 //

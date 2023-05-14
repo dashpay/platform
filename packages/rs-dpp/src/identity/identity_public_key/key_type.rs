@@ -131,7 +131,7 @@ impl KeyType {
                 let secret_key = dashcore::secp256k1::SecretKey::new(&mut rng);
                 let private_key = dashcore::PrivateKey::new(secret_key, Network::Dash);
                 (
-                    ripemd160_sha256(private_key.public_key(&secp).to_bytes().as_slice()),
+                    ripemd160_sha256(private_key.public_key(&secp).to_bytes().as_slice()).to_vec(),
                     private_key.to_bytes(),
                 )
             }
@@ -149,7 +149,7 @@ impl KeyType {
                 let secret_key = dashcore::secp256k1::SecretKey::new(&mut rng);
                 let private_key = dashcore::PrivateKey::new(secret_key, Network::Dash);
                 (
-                    ripemd160_sha256(private_key.public_key(&secp).to_bytes().as_slice()),
+                    ripemd160_sha256(private_key.public_key(&secp).to_bytes().as_slice()).to_vec(),
                     private_key.to_bytes(),
                 )
             }

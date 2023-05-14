@@ -119,6 +119,22 @@ impl StateTransitionValidation for DocumentsBatchTransition {
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let validation_result = validate_document_batch_transition_state(
+            false,
+            &platform.into(),
+            self,
+            tx,
+            &StateTransitionExecutionContext::default(),
+        )?;
+        Ok(validation_result.map(Into::into))
+    }
+
+    fn transform_into_action<C: CoreRPCLike>(
+        &self,
+        platform: &PlatformRef<C>,
+        tx: TransactionArg,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        let validation_result = validate_document_batch_transition_state(
+            true,
             &platform.into(),
             self,
             tx,

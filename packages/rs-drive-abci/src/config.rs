@@ -29,6 +29,7 @@
 use dashcore_rpc::json::QuorumType;
 use std::path::PathBuf;
 
+use dpp::util::deserializer::ProtocolVersion;
 use drive::drive::config::DriveConfig;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
@@ -160,6 +161,10 @@ pub struct PlatformConfig {
     /// How often should quorums change?
     pub validator_set_quorum_rotation_block_count: u32,
 
+    /// Initial protocol version
+    #[serde(default = "PlatformConfig::default_initial_protocol_version")]
+    pub initial_protocol_version: ProtocolVersion,
+
     /// Path to data storage
     pub db_path: PathBuf,
 
@@ -173,6 +178,12 @@ impl PlatformConfig {
     // #[allow(unused)]
     fn default_verify_sum_trees() -> bool {
         true
+    }
+
+    // #[allow(unused)]
+    fn default_initial_protocol_version() -> ProtocolVersion {
+        //todo: versioning
+        1
     }
 
     /// Return type of quorum
@@ -222,6 +233,7 @@ impl Default for PlatformConfig {
             core: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             testing_configs: PlatformTestConfig::default(),
+            initial_protocol_version: 1,
         }
     }
 }

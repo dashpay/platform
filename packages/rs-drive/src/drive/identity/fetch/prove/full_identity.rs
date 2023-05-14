@@ -16,7 +16,7 @@ impl Drive {
     }
 
     /// Proves identities with all its information from an identity ids.
-    pub fn proved_full_identities(
+    pub fn prove_full_identities(
         &self,
         identity_ids: &[[u8; 32]],
         transaction: TransactionArg,
@@ -87,7 +87,7 @@ mod tests {
             assert_eq!(elements.len(), 14);
 
             let fetched_identities = drive
-                .proved_full_identities(
+                .prove_full_identities(
                     identities
                         .keys()
                         .copied()
@@ -250,7 +250,7 @@ mod tests {
             assert_eq!(elements.len(), 70);
 
             let fetched_identities = drive
-                .proved_full_identities(
+                .prove_full_identities(
                     identities
                         .keys()
                         .copied()

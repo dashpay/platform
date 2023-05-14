@@ -110,6 +110,26 @@
              responseClass:[GetIdentityResponse class]];
 }
 
+#pragma mark getIdentities(GetIdentitiesRequest) returns (GetIdentitiesResponse)
+
+- (void)getIdentitiesWithRequest:(GetIdentitiesRequest *)request handler:(void(^)(GetIdentitiesResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetIdentitiesWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetIdentitiesWithRequest:(GetIdentitiesRequest *)request handler:(void(^)(GetIdentitiesResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getIdentities"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetIdentitiesResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getIdentitiesWithMessage:(GetIdentitiesRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getIdentities"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetIdentitiesResponse class]];
+}
+
 #pragma mark getIdentityKeys(GetIdentityKeysRequest) returns (GetIdentityKeysResponse)
 
 - (void)getIdentityKeysWithRequest:(GetIdentityKeysRequest *)request handler:(void(^)(GetIdentityKeysResponse *_Nullable response, NSError *_Nullable error))handler{
@@ -181,6 +201,26 @@
            responseHandler:handler
                callOptions:callOptions
              responseClass:[GetIdentityBalanceAndRevisionResponse class]];
+}
+
+#pragma mark getProofs(GetProofsRequest) returns (GetProofsResponse)
+
+- (void)getProofsWithRequest:(GetProofsRequest *)request handler:(void(^)(GetProofsResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetProofsWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetProofsWithRequest:(GetProofsRequest *)request handler:(void(^)(GetProofsResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getProofs"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetProofsResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getProofsWithMessage:(GetProofsRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getProofs"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetProofsResponse class]];
 }
 
 #pragma mark getDataContract(GetDataContractRequest) returns (GetDataContractResponse)

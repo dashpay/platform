@@ -200,7 +200,22 @@ impl DocumentFieldType {
             }
             DocumentFieldType::ByteArray(_, _) => {
                 let size = self.random_size(rng);
-                Value::Bytes(rng.sample_iter(Standard).take(size as usize).collect())
+                if self.min_size() == self.max_size() {
+                    match size {
+                        20 => Value::Bytes20(rng.gen()),
+                        32 => Value::Bytes32(rng.gen()),
+                        36 => Value::Bytes36(
+                            rng.sample_iter(Standard)
+                                .take(size as usize)
+                                .collect::<Vec<_>>()
+                                .try_into()
+                                .unwrap(),
+                        ),
+                        _ => Value::Bytes(rng.sample_iter(Standard).take(size as usize).collect()),
+                    }
+                } else {
+                    Value::Bytes(rng.sample_iter(Standard).take(size as usize).collect())
+                }
             }
             DocumentFieldType::Boolean => Value::Bool(rng.gen::<bool>()),
             DocumentFieldType::Date => {
@@ -662,9 +677,9 @@ impl DocumentFieldType {
 
                 encode_signed_integer(value_as_i64)
             }
-            DocumentFieldType::Number => {
-                encode_float(value.to_float().map_err(ProtocolError::ValueError)?)
-            }
+            DocumentFieldType::Number => Ok(encode_float(
+                value.to_float().map_err(ProtocolError::ValueError)?,
+            )),
             DocumentFieldType::ByteArray(_, _) => {
                 value.to_binary_bytes().map_err(ProtocolError::ValueError)
             }
@@ -839,7 +854,7 @@ pub fn encode_signed_integer(val: i64) -> Result<Vec<u8>, ProtocolError> {
     Ok(wtr)
 }
 
-pub fn encode_float(val: f64) -> Result<Vec<u8>, ProtocolError> {
+pub fn encode_float(val: f64) -> Vec<u8> {
     // Floats are represented based on the  IEEE 754-2008 standard
     // [sign bit] [biased exponent] [mantissa]
 
@@ -875,5 +890,5 @@ pub fn encode_float(val: f64) -> Result<Vec<u8>, ProtocolError> {
         wtr[0] ^= 0b1000_0000;
     }
 
-    Ok(wtr)
+    wtr
 }

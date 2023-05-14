@@ -7,7 +7,7 @@ use bincode::{Decode, Encode};
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
 /// Extended Block information
-#[derive(Clone, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
+#[derive(Clone, Debug, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
 #[platform_error_type(ProtocolError)]
 #[platform_deserialize_limit(15000)]
 pub struct ExtendedBlockInfo {
@@ -15,6 +15,8 @@ pub struct ExtendedBlockInfo {
     pub version: u16,
     /// Basic block info
     pub basic_info: BlockInfo,
+    /// App hash
+    pub app_hash: [u8; 32],
     /// Signature
     pub quorum_hash: [u8; 32],
     /// Signature
@@ -24,7 +26,7 @@ pub struct ExtendedBlockInfo {
 }
 
 /// Block information
-#[derive(Clone, Default, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
+#[derive(Clone, Default, Debug, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
 #[platform_error_type(ProtocolError)]
 #[platform_deserialize_limit(15000)]
 pub struct BlockInfo {

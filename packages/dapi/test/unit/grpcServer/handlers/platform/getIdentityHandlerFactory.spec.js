@@ -45,7 +45,7 @@ describe('getIdentityHandlerFactory', () => {
     };
 
     proofMock = new Proof();
-    proofMock.setMerkleProof(proofFixture.merkleProof);
+    proofMock.setGrovedbProof(proofFixture.merkleProof);
 
     response = new GetIdentityResponse();
     response.setProof(proofMock);
@@ -68,7 +68,7 @@ describe('getIdentityHandlerFactory', () => {
 
     expect(result).to.be.an.instanceOf(GetIdentityResponse);
     expect(result.getIdentity()).to.deep.equal(identity.toBuffer());
-    expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(id.toBuffer(), false);
+    expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(call.request);
 
     const proof = result.getProof();
     expect(proof).to.be.undefined();
@@ -84,11 +84,11 @@ describe('getIdentityHandlerFactory', () => {
     const proof = result.getProof();
 
     expect(proof).to.be.an.instanceOf(Proof);
-    const merkleProof = proof.getMerkleProof();
+    const merkleProof = proof.getGrovedbProof();
 
     expect(merkleProof).to.deep.equal(proofFixture.merkleProof);
 
-    expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(id.toBuffer(), true);
+    expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(call.request);
   });
 
   it('should throw an InvalidArgumentGrpcError if id is not specified', async () => {
@@ -116,7 +116,7 @@ describe('getIdentityHandlerFactory', () => {
       expect.fail('should throw an error');
     } catch (e) {
       expect(e).to.equal(error);
-      expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(id.toBuffer());
+      expect(driveStateRepositoryMock.fetchIdentity).to.be.calledOnceWith(call.request);
     }
   });
 });

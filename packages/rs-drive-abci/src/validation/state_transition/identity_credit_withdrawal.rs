@@ -118,6 +118,14 @@ impl StateTransitionValidation for IdentityCreditWithdrawalTransition {
             ));
         }
 
+        self.transform_into_action(platform, tx)
+    }
+
+    fn transform_into_action<C: CoreRPCLike>(
+        &self,
+        platform: &PlatformRef<C>,
+        _tx: TransactionArg,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let last_block_time = platform.state.last_block_time_ms().ok_or(Error::Execution(
             ExecutionError::StateNotInitialized(
                 "expected a last platform block during identity update validation",

@@ -66,6 +66,7 @@ use drive::fee_pools::epochs::operations_factory::EpochOperations;
 /// storage fees from future Epoch storage pools.
 
 /// Holds info relevant fees and a processed block
+#[derive(Debug)]
 pub struct ProcessedBlockFeesOutcome {
     /// Amount of fees in the storage and processing fee distribution pools
     pub fees_in_pools: FeesInPools,
