@@ -1,11 +1,11 @@
 module.exports = {
   testnet: {
     seeds: [
-      'seed-1.testnet.networks.dash.org',
-      'seed-2.testnet.networks.dash.org',
-      'seed-3.testnet.networks.dash.org',
-      'seed-4.testnet.networks.dash.org',
-      'seed-5.testnet.networks.dash.org',
+      'seed-1.testnet.networks.dash.org:1443:self-signed',
+      'seed-2.testnet.networks.dash.org:1443:self-signed',
+      'seed-3.testnet.networks.dash.org:1443:self-signed',
+      'seed-4.testnet.networks.dash.org:1443:self-signed',
+      'seed-5.testnet.networks.dash.org:1443:self-signed',
     ],
     network: 'testnet',
     // Since we don't have PoSe atm, 3rd party masternodes sometimes provide wrong data
