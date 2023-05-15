@@ -27,6 +27,7 @@ function ensureHomeDirFactory() {
 
     try {
       fs.mkdirSync(HOME_DIR_PATH);
+      fs.chmodSync(HOME_DIR_PATH, 0o700);
     } catch (e) {
       throw new CouldNotCreateHomeDirError(HOME_DIR_PATH);
     }
