@@ -11,7 +11,6 @@ if ! (getent passwd $USER_ID | grep -q $USER_ID); then
   adduser -u $USER_ID -D -H $USERNAME
 else
   USERNAME=$(getent passwd $USER_ID | cut -d: -f1)
-  ln -s /home/dashmate/.dashmate /home/$USERNAME/.dashmate
   echo "User exist: $USERNAME $USER_ID"
 fi
 
@@ -30,6 +29,6 @@ if ! (id -nG $USERNAME | grep -q $GROUP); then
   adduser $USERNAME $GROUP
 fi
 
-echo "Starting with: USERNAME: $USERNAME, UID: $USER_ID, GID: $GROUP_ID, USER: $USERNAME, GROUP: $GROUP"
+echo "Starting with UID: $USER_ID, GID: $GROUP_ID, USER: $USERNAME, GROUP: $GROUP"
 
-exec su - $USERNAME -c "cd /platform;DASHMATE_HELPER=1 $*"
+exec su - $USERNAME -c "cd /platform;DASHMATE_HELPER=1 DASHMATE_HOME_DIR=/home/dashmate/.dashmate $*"
