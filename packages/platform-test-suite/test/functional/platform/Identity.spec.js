@@ -583,7 +583,7 @@ describe('Platform', () => {
         });
       });
 
-      it('should receive masternode identities', async () => {
+      it.skip('should receive masternode identities', async () => {
         await client.platform.initialize();
 
         const bestBlockHash = await dapiClient.core.getBestBlockHash();

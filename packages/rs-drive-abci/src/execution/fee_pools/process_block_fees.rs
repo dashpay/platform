@@ -454,6 +454,7 @@ mod tests {
         use super::*;
 
         use crate::config::PlatformConfig;
+        use crate::test::helpers::setup::setup_platform_with_genesis_state;
         use drive::common::helpers::identities::create_test_masternode_identities;
 
         mod helpers {
@@ -557,7 +558,7 @@ mod tests {
         fn test_process_3_block_fees_from_different_epochs() {
             // We are not adding to the overall platform credits so we can't verify
             // the sum trees
-            let platform = setup_platform_with_initial_state_structure(Some(PlatformConfig {
+            let platform = setup_platform_with_genesis_state(Some(PlatformConfig {
                 verify_sum_trees: false,
                 ..Default::default()
             }));
