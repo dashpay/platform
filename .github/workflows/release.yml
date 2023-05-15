@@ -238,7 +238,6 @@ jobs:
           push: true
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
-          no-cache: true
           build-args: |
             SCCACHE_GHA_ENABLED=false
             CARGO_BUILD_PROFILE=release
