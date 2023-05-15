@@ -1,6 +1,6 @@
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifierAsync');
 
-const { default: loadWasmDpp } = require('../../../dist');
+const { default: loadWasmDpp } = require('../../..');
 
 describe('createDataContract', () => {
   let rawDataContract;
@@ -12,10 +12,10 @@ describe('createDataContract', () => {
     } = await loadWasmDpp());
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     rawDataContract = {
-      $id: generateRandomIdentifier().toBuffer(),
-      ownerId: generateRandomIdentifier().toBuffer(),
+      $id: (await generateRandomIdentifier()).toBuffer(),
+      ownerId: (await generateRandomIdentifier()).toBuffer(),
       protocolVersion: 4,
       version: 20,
       $schema: 'http://test.com/schema',

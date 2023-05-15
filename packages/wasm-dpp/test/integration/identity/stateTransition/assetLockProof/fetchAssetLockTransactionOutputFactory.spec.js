@@ -1,8 +1,8 @@
 const { Transaction } = require('@dashevo/dashcore-lib');
 
-const getChainAssetLockFixture = require('@dashevo/dpp/lib/test/fixtures/getChainAssetLockProofFixture');
-const getInstantAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
+const getChainAssetLockFixture = require('../../../../../lib/test/fixtures/getChainAssetLockProofFixture');
+const getInstantAssetLockProofFixture = require('../../../../../lib/test/fixtures/getInstantAssetLockProofFixture');
+const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
 const { default: loadWasmDpp } = require('../../../../../dist');
 
 describe('fetchAssetLockTransactionOutputFactory', () => {
@@ -11,7 +11,6 @@ describe('fetchAssetLockTransactionOutputFactory', () => {
   let executionContext;
 
   let StateTransitionExecutionContext;
-  let InstantAssetLockProof;
   let ChainAssetLockProof;
   let AssetLockTransactionIsNotFoundError;
   let UnknownAssetLockProofTypeError;
@@ -22,7 +21,6 @@ describe('fetchAssetLockTransactionOutputFactory', () => {
     ({
       StateTransitionExecutionContext,
       fetchAssetLockTransactionOutput: fetchAssetLockTransactionOutputDPP,
-      InstantAssetLockProof,
       ChainAssetLockProof,
       AssetLockTransactionIsNotFoundError,
       UnknownAssetLockProofTypeError,
@@ -44,9 +42,8 @@ describe('fetchAssetLockTransactionOutputFactory', () => {
   describe('InstantAssetLockProof', () => {
     let assetLockProofFixture;
 
-    beforeEach(() => {
-      const assetLockProofFixtureJS = getInstantAssetLockProofFixture();
-      assetLockProofFixture = new InstantAssetLockProof(assetLockProofFixtureJS.toObject());
+    beforeEach(async () => {
+      assetLockProofFixture = await getInstantAssetLockProofFixture();
     });
 
     it('should return asset lock output', async () => {

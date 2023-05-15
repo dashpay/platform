@@ -1,9 +1,9 @@
-const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
+const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/createStateRepositoryMock');
 const getDataContractFixture = require('../../../../../../../lib/test/fixtures/getDataContractFixture');
 const { expectJsonSchemaError, expectValidationError, expectValueError } = require('../../../../../../../lib/test/expect/expectError');
 
-const { default: loadWasmDpp } = require('../../../../../../../dist');
+const { default: loadWasmDpp } = require('../../../../../../..');
+const { getLatestProtocolVersion } = require('../../../../../../..');
 
 describe('validateDataContractUpdateTransitionBasicFactory', () => {
   let DataContractUpdateTransition;
@@ -45,7 +45,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
     rawDataContract.version += 1;
 
     stateTransition = new DataContractUpdateTransition({
-      protocolVersion: protocolVersion.latestVersion,
+      protocolVersion: getLatestProtocolVersion(),
       dataContract: rawDataContract,
       signature: Buffer.alloc(65),
       signaturePublicKeyId: 0,
@@ -54,7 +54,7 @@ describe('validateDataContractUpdateTransitionBasicFactory', () => {
     rawStateTransition = stateTransition.toObject();
 
     const validator = new DataContractValidator();
-    const dataContractFactory = new DataContractFactory(protocolVersion.latestVersion, validator);
+    const dataContractFactory = new DataContractFactory(getLatestProtocolVersion(), validator);
     const reCreatedDataContract = await dataContractFactory
       .createFromBuffer(dataContract.toBuffer());
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);

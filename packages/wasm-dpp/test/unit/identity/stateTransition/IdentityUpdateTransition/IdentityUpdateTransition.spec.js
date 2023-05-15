@@ -1,12 +1,7 @@
-const stateTransitionTypes = require(
-  '@dashevo/dpp/lib/stateTransition/stateTransitionTypes',
-);
-
-const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
-
 const getIdentityUpdateTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityUpdateTransitionFixture');
 
-const { default: loadWasmDpp } = require('../../../../../dist');
+const { default: loadWasmDpp } = require('../../../../..');
+const { getLatestProtocolVersion, StateTransitionTypes } = require('../../../../..');
 const generateRandomIdentifierAsync = require('../../../../../lib/test/utils/generateRandomIdentifierAsync');
 
 describe('IdentityUpdateTransition', () => {
@@ -32,7 +27,7 @@ describe('IdentityUpdateTransition', () => {
 
   describe('#getType', () => {
     it('should return IDENTITY_UPDATE type', () => {
-      expect(stateTransition.getType()).to.equal(stateTransitionTypes.IDENTITY_UPDATE);
+      expect(stateTransition.getType()).to.equal(StateTransitionTypes.IdentityUpdate);
     });
   });
 
@@ -143,8 +138,8 @@ describe('IdentityUpdateTransition', () => {
       rawStateTransition = stateTransition.toObject();
 
       expect(rawStateTransition).to.deep.equal({
-        protocolVersion: protocolVersion.latestVersion,
-        type: stateTransitionTypes.IDENTITY_UPDATE,
+        protocolVersion: getLatestProtocolVersion(),
+        type: StateTransitionTypes.IdentityUpdate,
         signature: undefined,
         identityId: rawStateTransition.identityId,
         revision: rawStateTransition.revision,
@@ -159,8 +154,8 @@ describe('IdentityUpdateTransition', () => {
       rawStateTransition = stateTransition.toObject({ skipSignature: true });
 
       expect(rawStateTransition).to.deep.equal({
-        protocolVersion: protocolVersion.latestVersion,
-        type: stateTransitionTypes.IDENTITY_UPDATE,
+        protocolVersion: getLatestProtocolVersion(),
+        type: StateTransitionTypes.IdentityUpdate,
         identityId: rawStateTransition.identityId,
         revision: rawStateTransition.revision,
         publicKeysDisabledAt: rawStateTransition.publicKeysDisabledAt,
@@ -177,8 +172,8 @@ describe('IdentityUpdateTransition', () => {
       rawStateTransition = stateTransition.toObject();
 
       expect(rawStateTransition).to.deep.equal({
-        protocolVersion: protocolVersion.latestVersion,
-        type: stateTransitionTypes.IDENTITY_UPDATE,
+        protocolVersion: getLatestProtocolVersion(),
+        type: StateTransitionTypes.IdentityUpdate,
         signature: undefined,
         identityId: rawStateTransition.identityId,
         revision: rawStateTransition.revision,
@@ -192,8 +187,8 @@ describe('IdentityUpdateTransition', () => {
       const jsonStateTransition = stateTransition.toJSON();
 
       expect(jsonStateTransition).to.deep.equal({
-        protocolVersion: protocolVersion.latestVersion,
-        type: stateTransitionTypes.IDENTITY_UPDATE,
+        protocolVersion: getLatestProtocolVersion(),
+        type: StateTransitionTypes.IdentityUpdate,
         signature: undefined,
         identityId: stateTransition.getIdentityId().toString(),
         revision: rawStateTransition.revision,

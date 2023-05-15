@@ -71,7 +71,7 @@ module.exports = {
     },
     sentinel: {
       docker: {
-        image: 'dashpay/sentinel:1.7.1',
+        image: 'dashpay/sentinel:1.7.3',
       },
     },
     devnet: {
@@ -79,7 +79,12 @@ module.exports = {
       minimumDifficultyBlocks: 0,
       powTargetSpacing: 150,
     },
-    debug: 0,
+    log: {
+      file: {
+        categories: [],
+        path: path.join(HOME_DIR_PATH, 'logs', 'base', 'core.log'),
+      },
+    },
     logIps: 0,
     indexes: true,
     reindex: {

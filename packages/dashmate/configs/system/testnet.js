@@ -17,13 +17,22 @@ module.exports = lodashMerge({}, baseConfig, {
   },
   core: {
     docker: {
-      image: 'dashpay/dashd:19.0.0-rc.7',
+      image: 'dashpay/dashd:19.0.0',
     },
     p2p: {
       port: 19999,
     },
     rpc: {
       port: 19998,
+    },
+    log: {
+      file: {
+        categories: [],
+        path: path.join(HOME_DIR_PATH, 'logs', 'testnet', 'core.log'),
+      },
+    },
+    spork: {
+      address: 'yjPtiKh2uwk3bDutTEA2q9mCtXyiZRWn55',
     },
   },
   platform: {
@@ -44,18 +53,21 @@ module.exports = lodashMerge({}, baseConfig, {
             path: path.join(HOME_DIR_PATH, 'logs', 'testnet', 'drive-json.log'),
           },
         },
+        validatorSet: {
+          llmqType: 6,
+        },
       },
       tenderdash: {
         p2p: {
           seeds: [
             {
               id: '74907790a03b51ac062c8a1453dafd72a08668a3',
-              host: '34.209.100.240',
+              host: '35.92.167.154',
               port: 36656,
             },
             {
               id: '2006632eb20e670923d13d4f53abc24468eaad4d',
-              host: '54.213.254.17',
+              host: '52.12.116.10',
               port: 36656,
             },
           ],
@@ -65,12 +77,18 @@ module.exports = lodashMerge({}, baseConfig, {
           port: 36657,
         },
         genesis: {
-          genesis_time: '2021-07-22T12:57:05.429Z',
-          chain_id: 'dash-testnet-17',
-          initial_height: '0',
-          initial_core_chain_locked_height: 814320,
-          initial_proposal_core_chain_lock: null,
+          genesis_time: '2023-04-26T10:43:20.921Z',
+          chain_id: 'dash-testnet-21',
+          initial_core_chain_locked_height: 879249,
           consensus_params: {
+            timeout: {
+              propose: '50000000000',
+              propose_delta: '10000000000',
+              vote: '500000000',
+              vote_delta: '100000000',
+              commit: '1000000000',
+              bypass_commit_timeout: false,
+            },
             block: {
               max_bytes: '22020096',
               max_gas: '-1',
@@ -89,59 +107,30 @@ module.exports = lodashMerge({}, baseConfig, {
             version: {
               app_version: '1',
             },
-            synchrony: {
-              precision: '505000000',
-              message_delay: '12000000000',
-            },
-            timeout: {
-              propose: '3000000000',
-              propose_delta: '500000000',
-              vote: '1000000000',
-              vote_delta: '500000000',
-              commit: '1000000000',
-              bypass_commit_timeout: false,
-            },
           },
-          validators: [
-            {
-              pub_key: {
-                type: 'tendermint/PubKeyBLS12381',
-                value: 'imxjukh5hRY91Mvm/sfhQp6iSnICyvKMMdhY5Sq6Ej0QJyB3vtN4UfYwvmxdzOVM',
-              },
-              power: 100,
-              name: '',
-              pro_tx_hash: 'F3D506822A24E7E4BE318A6ED7371CC1E1527880A594FE04629F50A1618DB8E7',
-            },
-          ],
-          validator_quorum_threshold_public_key: {
-            type: 'tendermint/PubKeyBLS12381',
-            value: 'imxjukh5hRY91Mvm/sfhQp6iSnICyvKMMdhY5Sq6Ej0QJyB3vtN4UfYwvmxdzOVM',
-          },
-          validator_quorum_type: 4,
-          validator_quorum_hash: '0000000000000000000000000000000000000000000000000000000000000000',
-          app_hash: '',
+          validator_quorum_type: 6,
         },
       },
     },
     dpns: {
-      masterPublicKey: '038b74aea104c19463b74be5fae9af2255fe42013aecd17092464214f2867ac19b',
-      secondPublicKey: '029df453a626cde501f454b44a9beeb8e525590c94ef2e78743993006651fcec4f',
+      masterPublicKey: '02c8b4747b528cac5fddf7a6cc63702ee04ed7d1332904e08510343ea00dce546a',
+      secondPublicKey: '0201ee28f84f5485390567e939c2b586010b63a69ec92cab535dc96a8c71913602',
     },
     dashpay: {
-      masterPublicKey: '02e57fb84728e6f10c885cf4d17025f8c6d7016321e4fab7b7ca8135d6e06b5ec2',
-      secondPublicKey: '03c7024f5f375f9a04152c8438e9bca612d084c752269c28965146caa73e223118',
+      masterPublicKey: '02d4dcce3f0a8d2936ce26df4d255fd2835b629b73eea39d4b2778096b91e77946',
+      secondPublicKey: '03699c8b4ebf1696c92e9ec605a02a38f6f9cec47d13fb584fdad779e936e20ccb',
     },
     featureFlags: {
-      masterPublicKey: '03aff4e943e005a2549757fdd308b0a7a04b03d74d78d53f981dd337ace47994cc',
-      secondPublicKey: '0311c23cf3ba6cdb32834d5a1ce2e4258ff7766a8e977f6318063d0bfe9bd476c3',
+      masterPublicKey: '029cf2232549de08c114c19763309cb067688e21e310ac07458b59c2c026be7234',
+      secondPublicKey: '02a2abb50c03ae9f778f08a93849ba334a82e625153720dd5ef14e564b78b414e5',
     },
     masternodeRewardShares: {
-      masterPublicKey: '0211234327aed200b2771788aec1c7d6a799f534d02dd6766c6de53e3fd7152dfc',
-      secondPublicKey: '035655d53d061275314535b74bfbbfb74cf640023a5cc466283e83881876cb9a3f',
+      masterPublicKey: '0319d795c0795bc8678bd0e58cfc7a4ad75c8e1797537728e7e8de8b9acc2bae2b',
+      secondPublicKey: '033756572938aaad752158b858ad38511c6edff4c79cf8462f70baa25fc6e8a616',
     },
     withdrawals: {
-      masterPublicKey: '0211234327aed200b2771788aec1c7d6a799f5343a5cfab7b7ca8135d6e06b5ec2',
-      secondPublicKey: '03aff4e943e005a2549757fdd3fbbfb74cf640023a5cc466283e83881876cb9a3f',
+      masterPublicKey: '032f79d1d9d6e652599d3315d30306b1277fbf588e32e383aef0a59749547d47b7',
+      secondPublicKey: '03eebbe3dc3721603a0b5a13441f214550ffa7d035b7dea9f1911de0f63ddac58d',
     },
   },
   network: NETWORK_TESTNET,
