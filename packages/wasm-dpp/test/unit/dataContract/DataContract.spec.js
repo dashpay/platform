@@ -1,6 +1,6 @@
 const bs58 = require('bs58');
 
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
+const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifierAsync');
 
 const { default: loadWasmDpp } = require('../../../dist');
 
@@ -25,7 +25,7 @@ describe('DataContract', () => {
     } = await loadWasmDpp());
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     documentType = 'niceDocument';
 
     documentSchema = {
@@ -44,9 +44,9 @@ describe('DataContract', () => {
       [documentType]: documentSchema,
     };
 
-    ownerId = generateRandomIdentifier();
+    ownerId = (await generateRandomIdentifier()).toBuffer();
     entropy = Buffer.alloc(32, 420);
-    contractId = generateRandomIdentifier();
+    contractId = (await generateRandomIdentifier()).toBuffer();
 
     defs = { something: { type: 'string' } };
 
@@ -62,8 +62,8 @@ describe('DataContract', () => {
   });
 
   describe('constructor', () => {
-    it('should create new DataContract', () => {
-      const id = generateRandomIdentifier();
+    it('should create new DataContract', async () => {
+      const id = (await generateRandomIdentifier()).toBuffer();
 
       dataContract = new DataContract({
         $schema: DataContractDefaults.SCHEMA,
@@ -75,8 +75,8 @@ describe('DataContract', () => {
         $defs: defs,
       });
 
-      expect(dataContract.getId().toBuffer()).to.deep.equal(id.toBuffer());
-      expect(dataContract.getOwnerId().toBuffer()).to.deep.equal(ownerId.toBuffer());
+      expect(dataContract.getId().toBuffer()).to.deep.equal(id);
+      expect(dataContract.getOwnerId().toBuffer()).to.deep.equal(ownerId);
       expect(dataContract.getJsonMetaSchema()).to.deep.equal(DataContractDefaults.SCHEMA);
       expect(dataContract.getDocuments()).to.deep.equal(documents);
       expect(dataContract.getDefinitions()).to.deep.equal(defs);
@@ -87,7 +87,7 @@ describe('DataContract', () => {
     it('should return DataContract Identifier', () => {
       const result = dataContract.getId();
 
-      expect(result.toBuffer()).to.deep.equal(contractId.toBuffer());
+      expect(result.toBuffer()).to.deep.equal(contractId);
       expect(result).to.be.instanceof(Identifier);
     });
   });

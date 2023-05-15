@@ -132,7 +132,8 @@ where
             .validator_sets
             .retain(|key, _| quorum_info.contains_key(key));
 
-        let new_quorums = quorum_info
+        // Fetch quorum info results and their keys from the RPC
+        let mut quorum_infos = quorum_info
             .iter()
             .filter(|(key, _)| {
                 !block_platform_state
@@ -143,12 +144,28 @@ where
                 let quorum_info_result =
                     self.core_rpc
                         .get_quorum_info(self.config.quorum_type(), key, None)?;
-                let quorum =
-                    Quorum::try_from_info_result(quorum_info_result, block_platform_state)?;
-                Ok((*key, quorum))
+                Ok((*key, quorum_info_result))
             })
             .collect::<Result<Vec<_>, Error>>()?;
 
+        // Sort by height and then by hash
+        quorum_infos.sort_by(|a, b| {
+            let height_cmp = a.1.height.cmp(&b.1.height);
+            if height_cmp == std::cmp::Ordering::Equal {
+                a.0.cmp(&b.0) // Compare hashes if heights are equal
+            } else {
+                height_cmp
+            }
+        });
+
+        // Map to quorums
+        let new_quorums = quorum_infos
+            .into_iter()
+            .map(|(key, info_result)| {
+                let quorum = Quorum::try_from_info_result(info_result, block_platform_state)?;
+                Ok((key, quorum))
+            })
+            .collect::<Result<Vec<_>, Error>>()?;
         // Add new validator_sets entries
         block_platform_state
             .validator_sets

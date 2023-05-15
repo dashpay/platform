@@ -1,11 +1,10 @@
 const varint = require('varint');
-const JSIdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
-const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
 const { hash: hashFunction } = require('@dashevo/dpp/lib/util/hash');
 const { expect } = require('chai');
 const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
-const { default: loadWasmDpp } = require('../../../dist');
+const { default: loadWasmDpp } = require('../../..');
+const { getLatestProtocolVersion } = require('../../..');
 
 describe('Identity', () => {
   let rawIdentity;
@@ -26,7 +25,7 @@ describe('Identity', () => {
 
   beforeEach(async () => {
     rawIdentity = {
-      protocolVersion: protocolVersion.latestVersion,
+      protocolVersion: getLatestProtocolVersion(),
       id: await generateRandomIdentifierAsync(),
       publicKeys: [
         {
@@ -108,7 +107,7 @@ describe('Identity', () => {
         readOnly: false,
       };
 
-      const ipk = new JSIdentityPublicKey(rawKey);
+      const ipk = new IdentityPublicKey(rawKey);
 
       identity.setPublicKeys([ipk]);
       expect(identity.getPublicKeys()).length(1);
@@ -138,6 +137,15 @@ describe('Identity', () => {
       const result = identity.toBuffer();
       expect(result).to.be.instanceOf(Buffer);
       expect(result).to.have.length(87);
+    });
+  });
+
+  describe('#fromBuffer', () => {
+    it('should re-create identity from buffer', () => {
+      const buffer = identity.toBuffer();
+      const recoveredIdentity = Identity.fromBuffer(buffer);
+      expect(recoveredIdentity.toObject())
+        .to.be.deep.equal(identity.toObject());
     });
   });
 
@@ -171,7 +179,7 @@ describe('Identity', () => {
       const jsonIdentity = identity.toJSON();
 
       expect(jsonIdentity).to.deep.equal({
-        protocolVersion: protocolVersion.latestVersion,
+        protocolVersion: getLatestProtocolVersion(),
         id: rawIdentity.id.toString(),
         publicKeys: [
           {

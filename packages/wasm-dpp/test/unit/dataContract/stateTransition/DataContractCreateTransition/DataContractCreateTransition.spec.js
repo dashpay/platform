@@ -1,9 +1,6 @@
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const stateTransitionTypes = require('@dashevo/dpp/lib/stateTransition/stateTransitionTypes');
-
-const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
-
-const { default: loadWasmDpp } = require('../../../../../dist');
+const getDataContractFixture = require('../../../../../lib/test/fixtures/getDataContractFixture');
+const { default: loadWasmDpp } = require('../../../../..');
+const { getLatestProtocolVersion, StateTransitionTypes } = require('../../../../..');
 
 describe('DataContractCreateTransition', () => {
   let stateTransition;
@@ -17,11 +14,11 @@ describe('DataContractCreateTransition', () => {
     } = await loadWasmDpp());
   });
 
-  beforeEach(() => {
-    dataContract = getDataContractFixture();
+  beforeEach(async () => {
+    dataContract = await getDataContractFixture();
 
     stateTransition = new DataContractCreateTransition({
-      protocolVersion: protocolVersion.latestVersion,
+      protocolVersion: getLatestProtocolVersion(),
       dataContract: dataContract.toObject(),
       entropy: dataContract.getEntropy(),
     });
@@ -31,7 +28,7 @@ describe('DataContractCreateTransition', () => {
     it('should return the current protocol version', () => {
       const result = stateTransition.getProtocolVersion();
 
-      expect(result).to.equal(protocolVersion.latestVersion);
+      expect(result).to.equal(getLatestProtocolVersion());
     });
   });
 
@@ -39,7 +36,7 @@ describe('DataContractCreateTransition', () => {
     it('should return State Transition type', () => {
       const result = stateTransition.getType();
 
-      expect(result).to.equal(stateTransitionTypes.DATA_CONTRACT_CREATE);
+      expect(result).to.equal(StateTransitionTypes.DataContractCreate);
     });
   });
 
@@ -53,10 +50,13 @@ describe('DataContractCreateTransition', () => {
 
   describe('#toJSON', () => {
     it('should return State Transition as plain JS object', () => {
+      const dc = dataContract.toJSON();
+      delete dc.$defs;
+
       expect(stateTransition.toJSON(true)).to.deep.equal({
-        protocolVersion: protocolVersion.latestVersion,
-        type: stateTransitionTypes.DATA_CONTRACT_CREATE,
-        dataContract: dataContract.toJSON(),
+        protocolVersion: getLatestProtocolVersion(),
+        type: StateTransitionTypes.DataContractCreate,
+        dataContract: dc,
         entropy: dataContract.getEntropy().toString('base64'),
       });
     });

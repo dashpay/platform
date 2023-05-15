@@ -42,7 +42,7 @@ describe('getMasternodeScopeFactory', () => {
 
       mockDockerCompose.execCommand
         .withArgs(config.toEnvs(), 'sentinel', 'python bin/sentinel.py -v')
-        .returns({ out: 'Dash Sentinel v1.7.1' });
+        .returns({ out: 'Dash Sentinel v1.7.3' });
 
       const mockProTxHash = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef';
       const mockDmnState = {
@@ -72,7 +72,7 @@ describe('getMasternodeScopeFactory', () => {
       expect(scope.status).to.be.equal('Ready');
 
       expect(scope.sentinel.state).to.be.equal('ok');
-      expect(scope.sentinel.version).to.be.equal('1.7.1');
+      expect(scope.sentinel.version).to.be.equal('1.7.3');
       expect(scope.nodeState.dmnState).to.be.equal(mockDmnState);
       expect(scope.nodeState.poSePenalty).to.be.equal(mockDmnState.PoSePenalty);
       expect(scope.nodeState.lastPaidHeight).to.be.equal(mockDmnState.lastPaidHeight);
@@ -112,7 +112,7 @@ describe('getMasternodeScopeFactory', () => {
 
       mockDockerCompose.execCommand
         .withArgs(config.toEnvs(), 'sentinel', 'python bin/sentinel.py -v')
-        .returns({ out: 'Dash Sentinel v1.7.1' });
+        .returns({ out: 'Dash Sentinel v1.7.3' });
 
       const scope = await getMasternodeScope(config);
 

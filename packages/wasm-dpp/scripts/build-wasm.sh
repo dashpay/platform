@@ -25,7 +25,7 @@ fi
 
 if ! [[ -x "$(command -v wasm-bindgen)" ]]; then
   echo 'Wasm-bindgen CLI is not installed. Installing'
-  cargo install --config net.git-fetch-with-cli=true -f wasm-bindgen-cli
+  cargo install --config net.git-fetch-with-cli=true -f wasm-bindgen-cli@0.2.84
 fi
 
 # On a mac, bundled clang won't work - you need to install LLVM manually through brew,

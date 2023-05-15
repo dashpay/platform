@@ -29,4 +29,9 @@ impl PlatformValueErrorWasm {
     pub fn to_string(&self) -> String {
         format!("PlatformValueError: {}", self.message)
     }
+
+    #[wasm_bindgen(js_name=valueOf)]
+    pub fn value_of(&self) -> String {
+        self.to_string()
+    }
 }

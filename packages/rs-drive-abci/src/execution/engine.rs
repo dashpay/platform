@@ -216,7 +216,7 @@ where
         // while we have the state transitions executed, we now need to process the block fees
 
         // Process fees
-        let _process_block_fees_outcome = self.process_block_fees(
+        let _processed_block_fees = self.process_block_fees(
             &block_execution_context.block_state_info,
             &epoch_info,
             block_fees.into(),

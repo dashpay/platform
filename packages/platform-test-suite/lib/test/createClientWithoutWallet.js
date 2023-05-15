@@ -8,6 +8,7 @@ function createClientWithoutWallet() {
   return new Dash.Client({
     seeds: getDAPISeeds(),
     network: process.env.NETWORK,
+    timeout: 25000,
     apps: {
       dpns: {
         contractId,

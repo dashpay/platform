@@ -1,10 +1,10 @@
-const getIdentityTopUpTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityTopUpTransitionFixture');
-
 const { convertSatoshiToCredits } = require('@dashevo/dpp/lib/identity/creditsConverter');
 
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
+const getIdentityTopUpTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityTopUpTransitionFixture');
 
-const { default: loadWasmDpp } = require('../../../../../dist');
+const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
+
+const { default: loadWasmDpp } = require('../../../../..');
 
 describe('applyIdentityTopUpTransitionFactory', () => {
   let stateTransition;
@@ -13,14 +13,12 @@ describe('applyIdentityTopUpTransitionFactory', () => {
   let executionContext;
 
   let StateTransitionExecutionContext;
-  let IdentityTopUpTransition;
 
   let applyIdentityTopUpTransitionDPP;
 
   before(async () => {
     ({
       StateTransitionExecutionContext,
-      IdentityTopUpTransition,
       applyIdentityTopUpTransition: applyIdentityTopUpTransitionDPP,
     } = await loadWasmDpp());
   });
@@ -39,9 +37,7 @@ describe('applyIdentityTopUpTransitionFactory', () => {
       height: 42,
     });
 
-    stateTransition = new IdentityTopUpTransition(
-      getIdentityTopUpTransitionFixture().toObject(),
-    );
+    stateTransition = await getIdentityTopUpTransitionFixture();
 
     executionContext = new StateTransitionExecutionContext();
 
