@@ -1,3 +1,24 @@
+### [0.24.1](https://github.com/dashpay/platform/compare/v0.24.0...v0.24.1) (2023-05-15)
+
+
+### Features
+
+* **dashmate:** platform flag for start, stop and restart commands ([#1063](https://github.com/dashpay/platform/issues/1063))
+
+
+### Bug Fixes
+
+* **dapi:** can't connect to testnet with default seeds ([#1084](https://github.com/dashpay/platform/issues/1084))
+* **dashmate:** check core is started checks everytime ([#1071](https://github.com/dashpay/platform/issues/1071))
+* **dashmate:** incorrect reset command prompt in case network is already set up ([#1064](https://github.com/dashpay/platform/issues/1064))
+* **dashmate:** outdated docker images and missed migration  ([#1069](https://github.com/dashpay/platform/issues/1069))
+
+
+### Miscellaneous Chores
+
+* **dashmate:** rename high-performance nodes to evo nodes ([#1062](https://github.com/dashpay/platform/issues/1062))
+* **drive:** payout fees only to single well-known Identity ([#1078](https://github.com/dashpay/platform/issues/1078))
+
 ## [0.24.0](https://github.com/dashpay/platform/compare/v0.24.0-dev.34...v0.24.0) (2023-05-10)
 
 ### Notes
