@@ -4656,18 +4656,12 @@ fn test_query_a_b_c_d_e_contract() {
 
     let contract = factory
         .create(owner_id, documents, None, None)
-        .expect("data in fixture should be correct");
-
-    let contract_cbor = contract.to_cbor().expect("should encode contract to cbor");
-
-    // TODO: Create method doesn't initiate document_types. It must be fixed
-    let contract = DataContract::from_cbor(contract_cbor.clone())
-        .expect("should create decode contract from cbor");
+        .expect("data in fixture should be correct")
+        .data_contract;
 
     drive
-        .apply_contract_with_serialization(
+        .apply_contract(
             &contract,
-            contract_cbor,
             block_info,
             true,
             StorageFlags::optional_default_as_cow(),

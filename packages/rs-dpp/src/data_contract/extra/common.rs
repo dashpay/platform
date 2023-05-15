@@ -5,12 +5,12 @@ use crate::prelude::DataContract;
 use crate::util::cbor_serializer::serializable_value_to_cbor;
 use crate::ProtocolError;
 
+use crate::data_contract::CreatedDataContract;
 use platform_value::Identifier;
 use std::convert::TryInto;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::Path;
-use crate::data_contract::CreatedDataContract;
 
 /// Reads a JSON file and converts it to serde_value.
 pub fn json_document_to_json_value(
@@ -70,7 +70,9 @@ pub fn json_document_to_contract(path: impl AsRef<Path>) -> Result<DataContract,
 }
 
 /// Reads a JSON file and converts it a contract.
-pub fn json_document_to_created_contract(path: impl AsRef<Path>) -> Result<CreatedDataContract, ProtocolError> {
+pub fn json_document_to_created_contract(
+    path: impl AsRef<Path>,
+) -> Result<CreatedDataContract, ProtocolError> {
     let data_contract = json_document_to_contract(path)?;
     Ok(CreatedDataContract {
         data_contract,
