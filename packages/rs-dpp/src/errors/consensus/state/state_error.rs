@@ -23,6 +23,8 @@ use crate::consensus::state::identity::{
 };
 use crate::consensus::ConsensusError;
 
+use super::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
+
 #[derive(Error, Debug, Serialize, Deserialize)]
 pub enum StateError {
     /*
@@ -88,6 +90,9 @@ pub enum StateError {
 
     #[error(transparent)]
     IdentityInsufficientBalanceError(IdentityInsufficientBalanceError),
+
+    #[error(transparent)]
+    DocumentTimestampsAreEqualError(DocumentTimestampsAreEqualError),
 }
 
 impl From<StateError> for ConsensusError {
