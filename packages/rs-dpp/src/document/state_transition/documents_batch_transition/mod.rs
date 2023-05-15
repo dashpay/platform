@@ -124,7 +124,7 @@ impl DocumentsBatchTransition {
 
         let mut batch_transitions = DocumentsBatchTransition {
             feature_version: json_value
-                .get_u64(property_names::PROTOCOL_VERSION)
+                .get_u64(property_names::STATE_TRANSITION_PROTOCOL_VERSION)
                 // js-dpp allows `protocolVersion` to be undefined
                 .unwrap_or(LATEST_VERSION as u64) as u16,
             signature,
@@ -189,7 +189,7 @@ impl DocumentsBatchTransition {
     ) -> Result<Self, ProtocolError> {
         let mut batch_transitions = DocumentsBatchTransition {
             feature_version: map
-                .get_integer(property_names::PROTOCOL_VERSION)
+                .get_integer(property_names::STATE_TRANSITION_PROTOCOL_VERSION)
                 // js-dpp allows `protocolVersion` to be undefined
                 .unwrap_or(LATEST_VERSION as u64) as u16,
             signature: map
@@ -333,7 +333,7 @@ impl DocumentsBatchTransition {
     fn to_value_map(&self, skip_signature: bool) -> Result<BTreeMap<String, Value>, ProtocolError> {
         let mut map = BTreeMap::new();
         map.insert(
-            property_names::PROTOCOL_VERSION.to_string(),
+            property_names::STATE_TRANSITION_PROTOCOL_VERSION.to_string(),
             Value::U16(self.feature_version),
         );
         map.insert(
@@ -421,7 +421,7 @@ impl StateTransitionConvert for DocumentsBatchTransition {
             .map_err(|e| ProtocolError::EncodingError(e.to_string()))?;
 
         let mut canonical_map: CborCanonicalMap = map.try_into()?;
-        canonical_map.remove(property_names::PROTOCOL_VERSION);
+        canonical_map.remove(property_names::STATE_TRANSITION_PROTOCOL_VERSION);
 
         // Replace binary fields individually for every transition using respective data contract
         if let Some(CborValue::Array(ref mut transitions)) =

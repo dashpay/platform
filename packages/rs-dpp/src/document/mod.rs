@@ -14,6 +14,8 @@ pub mod generate_document_id;
 mod serde_serialize;
 pub mod state_transition;
 mod v0;
+pub mod document_facade;
+pub mod document_factory;
 
 pub use v0::*;
 

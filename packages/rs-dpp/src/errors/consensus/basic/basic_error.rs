@@ -12,7 +12,7 @@ use crate::consensus::basic::data_contract::{
     SystemPropertyIndexAlreadyPresentError, UndefinedIndexPropertyError,
     UniqueIndicesLimitReachedError,
 };
-use crate::consensus::basic::decode::{ProtocolVersionParsingError, SerializedObjectParsingError};
+use crate::consensus::basic::decode::{ProtocolVersionParsingError, SerializedObjectParsingError, VersionError};
 use crate::consensus::basic::document::{
     DataContractNotPresentError, DuplicateDocumentTransitionsWithIdsError,
     DuplicateDocumentTransitionsWithIndicesError, InconsistentCompoundIndexDataError,
@@ -59,6 +59,9 @@ pub enum BasicError {
     // Decoding
     #[error(transparent)]
     ProtocolVersionParsingError(ProtocolVersionParsingError),
+
+    #[error(transparent)]
+    VersionError(VersionError),
 
     #[error(transparent)]
     SerializedObjectParsingError(SerializedObjectParsingError),

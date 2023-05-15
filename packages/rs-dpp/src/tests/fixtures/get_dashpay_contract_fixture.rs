@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::{
     data_contract::{
-        validation::data_contract_validator::DataContractValidator, DataContract,
+        validation::data_contract_validation::DataContractValidator, DataContract,
         DataContractFactory,
     },
     prelude::Identifier,

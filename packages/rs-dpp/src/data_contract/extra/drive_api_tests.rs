@@ -1,5 +1,5 @@
 mod test {
-    use crate::data_contract::contract_config::ContractConfig;
+    use crate::data_contract::contract_config::ContractConfigV0;
 
     use crate::data_contract::extra::common::json_document_to_contract;
     use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
@@ -226,7 +226,7 @@ mod test {
 
         assert!(matches!(
             deserialized_contract.config,
-            ContractConfig {
+            ContractConfigV0 {
                 can_be_deleted: false,
                 readonly: true,
                 keeps_history: true,
@@ -258,7 +258,7 @@ mod test {
 
         assert_eq!(
             deserialized_contract.config,
-            ContractConfig {
+            ContractConfigV0 {
                 can_be_deleted: false,
                 readonly: true,
                 keeps_history: true,

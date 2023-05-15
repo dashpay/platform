@@ -1,6 +1,6 @@
 mod v0;
 
-use crate::data_contract::contract_config::ContractConfig;
+use crate::data_contract::contract_config::ContractConfigV0;
 use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use crate::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use crate::data_contract::DataContract;
@@ -22,7 +22,7 @@ impl DataContractFactory {
         &self,
         owner_id: Identifier,
         documents: Value,
-        config: Option<ContractConfig>,
+        config: Option<Value>,
         definitions: Option<Value>,
     ) -> Result<DataContract, ProtocolError> {
         match self {

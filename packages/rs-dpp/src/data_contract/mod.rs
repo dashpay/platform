@@ -1,10 +1,12 @@
 use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use bincode::{config, BorrowDecode, Decode, Encode};
 pub use data_contract::*;
-pub use data_contract_factory::*;
+pub use factory::*;
 use derive_more::From;
 pub use generate_data_contract::*;
 use platform_serialization::{PlatformDeserialize, PlatformDeserializeNoLimit, PlatformSerialize};
+use platform_value::Value;
+
 mod data_contract_facade;
 
 pub mod errors;
@@ -19,12 +21,16 @@ mod v0;
 pub use v0::*;
 
 use crate::data_contract::v0::data_contract::DataContractV0;
-use crate::version::LATEST_PLATFORM_VERSION;
+use crate::version::{FeatureVersion, LATEST_PLATFORM_VERSION, PlatformVersion};
 use crate::ProtocolError;
 use platform_versioning::PlatformVersioned;
+use crate::consensus::basic::BasicError;
+use crate::consensus::ConsensusError;
+use crate::data_contract::property_names::{FEATURE_VERSION, SYSTEM_VERSION};
+use crate::validation::SimpleConsensusValidationResult;
 
 pub mod property_names {
-    pub const PROTOCOL_VERSION: &str = "protocolVersion";
+    pub const SYSTEM_VERSION: &str = "systemVersion";
     pub const ID: &str = "$id";
     pub const OWNER_ID: &str = "ownerId";
     pub const VERSION: &str = "version";
@@ -56,5 +62,29 @@ pub enum DataContract {
 impl Default for DataContract {
     fn default() -> Self {
         DataContract::V0(DataContractV0::default())
+    }
+}
+
+impl DataContract {
+    pub fn check_version_is_active(protocol_version: u32, data_contract_system_version: FeatureVersion) -> Result<bool, ProtocolError> {
+        let platform_version = PlatformVersion::get(protocol_version)?;
+        Ok(platform_version.contract.check_version(data_contract_system_version))
+    }
+
+    pub fn validate(
+        active_protocol_version: u32,
+        raw_data_contract: &Value,
+        allow_non_current_data_contract_versions: bool,
+    ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
+        let Some(system_version) = raw_data_contract.get_optional_integer::<u16>(SYSTEM_VERSION)? else {
+            Ok(SimpleConsensusValidationResult::new_with_error(ConsensusError::BasicError(BasicError::VersionError("no system version found on data contract object".into()))))
+        };
+        if !allow_non_current_data_contract_versions {
+            self.
+        }
+        match system_version {
+            0 => { DataContractV0::validate(raw_data_contract)}
+            _ => Err(ProtocolError::)
+        }
     }
 }

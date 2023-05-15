@@ -32,8 +32,6 @@
 //! This module defines the `Document` struct and implements its functions.
 //!
 
-pub mod document_facade;
-pub mod document_factory;
 pub mod document_validator;
 pub mod serialize;
 

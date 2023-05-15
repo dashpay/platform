@@ -141,7 +141,7 @@ mod test {
     use crate::{
         consensus::basic::BasicError,
         data_contract::{
-            validation::data_contract_validator::DataContractValidator, DataContract,
+            validation::data_contract_validation::DataContractValidator, DataContract,
             DataContractFactory,
         },
         state_repository::MockStateRepositoryLike,

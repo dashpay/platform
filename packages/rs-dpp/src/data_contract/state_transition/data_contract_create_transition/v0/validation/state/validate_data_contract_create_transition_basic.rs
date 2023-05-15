@@ -12,7 +12,7 @@ use crate::{
     data_contract::{generate_data_contract_id, state_transition::property_names},
     data_contract::{
         property_names as data_contract_property_names,
-        validation::data_contract_validator::DataContractValidator,
+        validation::data_contract_validation::DataContractValidator,
     },
     state_transition::state_transition_execution_context::StateTransitionExecutionContext,
     validation::{

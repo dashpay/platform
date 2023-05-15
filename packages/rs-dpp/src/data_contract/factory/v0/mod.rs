@@ -6,7 +6,7 @@ use std::sync::Arc;
 use data_contract::state_transition::property_names as st_prop;
 use platform_value::{Bytes32, Value};
 
-use crate::data_contract::contract_config::ContractConfig;
+use crate::data_contract::contract_config::ContractConfigV0;
 use crate::data_contract::errors::InvalidDataContractError;
 
 use crate::data_contract::property_names::PROTOCOL_VERSION;
@@ -16,7 +16,7 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use crate::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use crate::data_contract::validation::data_contract_validator::DataContractValidator;
+use crate::data_contract::validation::data_contract_validation::DataContractValidator;
 use crate::data_contract::DataContract;
 use crate::serialization_traits::PlatformDeserializable;
 use crate::state_transition::StateTransitionType;
@@ -73,7 +73,7 @@ impl DataContractFactoryV0 {
         &self,
         owner_id: Identifier,
         documents: Value,
-        config: Option<ContractConfig>,
+        config: Option<ContractConfigV0>,
         definitions: Option<Value>,
     ) -> Result<DataContract, ProtocolError> {
         let entropy = Bytes32::new(self.entropy_generator.generate()?);

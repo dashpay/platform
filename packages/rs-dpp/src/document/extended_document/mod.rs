@@ -6,7 +6,6 @@ use crate::data_contract::DataContract;
 use crate::ProtocolError;
 
 use crate::document::extended_document::v0::ExtendedDocumentV0;
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
 use platform_value::Value;
 use serde_json::Value as JsonValue;

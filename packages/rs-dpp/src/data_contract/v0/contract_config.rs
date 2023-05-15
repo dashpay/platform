@@ -17,7 +17,7 @@ pub mod property {
 
 #[derive(Serialize, Deserialize, Encode, Decode, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", default)]
-pub struct ContractConfig {
+pub struct ContractConfigV0 {
     /// Can the contract ever be deleted
     pub can_be_deleted: bool,
     /// Is the contract mutable
@@ -30,9 +30,9 @@ pub struct ContractConfig {
     pub documents_mutable_contract_default: bool,
 }
 
-impl std::default::Default for ContractConfig {
+impl std::default::Default for ContractConfigV0 {
     fn default() -> Self {
-        ContractConfig {
+        ContractConfigV0 {
             can_be_deleted: DEFAULT_CONTRACT_CAN_BE_DELETED,
             readonly: !DEFAULT_CONTRACT_MUTABILITY,
             keeps_history: DEFAULT_CONTRACT_KEEPS_HISTORY,

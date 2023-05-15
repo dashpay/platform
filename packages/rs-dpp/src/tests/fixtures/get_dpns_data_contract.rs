@@ -6,7 +6,7 @@ use serde_json::json;
 
 use crate::prelude::*;
 use crate::{
-    data_contract::validation::data_contract_validator::DataContractValidator,
+    data_contract::validation::data_contract_validation::DataContractValidator,
     data_contract::DataContractFactory,
     tests::utils::generate_random_identifier_struct,
     version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},

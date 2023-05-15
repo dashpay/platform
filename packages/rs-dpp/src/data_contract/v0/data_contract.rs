@@ -17,7 +17,7 @@ use serde_json::Value as JsonValue;
 use crate::consensus::basic::document::InvalidDocumentTypeError;
 use crate::data_contract::contract_config;
 use crate::data_contract::contract_config::{
-    ContractConfig, DEFAULT_CONTRACT_CAN_BE_DELETED, DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY,
+    ContractConfigV0, DEFAULT_CONTRACT_CAN_BE_DELETED, DEFAULT_CONTRACT_DOCUMENTS_KEEPS_HISTORY,
     DEFAULT_CONTRACT_DOCUMENT_MUTABILITY, DEFAULT_CONTRACT_KEEPS_HISTORY,
     DEFAULT_CONTRACT_MUTABILITY,
 };
@@ -131,7 +131,7 @@ pub struct DataContractV0 {
 
     /// Internal configuration for the contract.
     #[serde(skip)]
-    pub config: ContractConfig,
+    pub config: ContractConfigV0,
 
     /// A mapping of document names to their corresponding JSON schemas.
     pub documents: BTreeMap<DocumentName, JsonSchema>,
@@ -188,7 +188,7 @@ pub struct DataContractV0Inner {
 
     /// Internal configuration for the contract.
     #[serde(default)]
-    pub config: ContractConfig,
+    pub config: ContractConfigV0,
 
     /// A reference to the JSON schema that defines the contract.
     #[serde(rename = "$schema")]
@@ -654,7 +654,7 @@ impl TryFrom<Vec<u8>> for DataContractV0 {
 
 pub fn get_contract_configuration_properties(
     contract: &BTreeMap<String, Value>,
-) -> Result<ContractConfig, ProtocolError> {
+) -> Result<ContractConfigV0, ProtocolError> {
     let keeps_history = contract
         .get_optional_bool(contract_config::property::KEEPS_HISTORY)?
         .unwrap_or(DEFAULT_CONTRACT_KEEPS_HISTORY);
@@ -674,7 +674,7 @@ pub fn get_contract_configuration_properties(
         .get_optional_bool(contract_config::property::DOCUMENTS_MUTABLE_CONTRACT_DEFAULT)?
         .unwrap_or(DEFAULT_CONTRACT_DOCUMENT_MUTABILITY);
 
-    Ok(ContractConfig {
+    Ok(ContractConfigV0 {
         can_be_deleted,
         readonly,
         keeps_history,

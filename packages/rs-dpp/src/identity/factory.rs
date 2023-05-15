@@ -28,6 +28,7 @@ use crate::version::LATEST_PLATFORM_VERSION;
 
 use platform_value::Value;
 use std::sync::Arc;
+use crate::identity::v0::identity::IdentityV0;
 
 pub const IDENTITY_PROTOCOL_VERSION: u32 = 1;
 
@@ -56,15 +57,14 @@ where
         asset_lock_proof: AssetLockProof,
         public_keys: BTreeMap<KeyID, IdentityPublicKey>,
     ) -> Result<Identity, ProtocolError> {
-        let identity = Identity {
-            feature_version: LATEST_PLATFORM_VERSION.identity.default_current_version,
+        let identity = IdentityV0 {
             id: asset_lock_proof.create_identifier()?,
             balance: 0,
             public_keys,
             revision: 0,
             asset_lock_proof: Some(asset_lock_proof),
             metadata: None,
-        };
+        }.into();
 
         Ok(identity)
     }

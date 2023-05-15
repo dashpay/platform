@@ -84,7 +84,7 @@ use drive::query::DriveQuery;
 use drive::tests::helpers::setup::setup_drive;
 
 #[cfg(feature = "full")]
-use dpp::data_contract::validation::data_contract_validator::DataContractValidator;
+use dpp::data_contract::validation::data_contract_validation::DataContractValidator;
 #[cfg(feature = "full")]
 use dpp::document::Document;
 #[cfg(feature = "full")]

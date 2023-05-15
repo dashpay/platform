@@ -4,7 +4,7 @@ use platform_value::platform_value;
 
 use crate::prelude::*;
 use crate::{
-    data_contract::validation::data_contract_validator::DataContractValidator,
+    data_contract::validation::data_contract_validation::DataContractValidator,
     data_contract::DataContractFactory,
     identifier,
     tests::utils::generate_random_identifier_struct,
