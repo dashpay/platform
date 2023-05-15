@@ -252,9 +252,9 @@ jobs:
         run: |
           s5cmd sync 'cache/*' 's3://platform-runner-cache/cache-mounts/'
 
-      # - name: Setup tmate session
-      #   if: always()
-      #   uses: mxschmitt/action-tmate@v3
+      - name: Setup tmate session
+        if: ${{ failure() }}
+        uses: mxschmitt/action-tmate@v3
 
   release-dapi-docker-image:
     name: Release DAPI to Docker Hub
