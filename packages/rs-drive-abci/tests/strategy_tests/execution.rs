@@ -176,7 +176,7 @@ pub(crate) fn run_chain_for_strategy(
         &mut rng,
     );
 
-    let quorums_clone: HashMap<QuorumHash, ExtendedQuorumDetails> = quorums
+    let mut quorums_details: Vec<(QuorumHash, ExtendedQuorumDetails)> = quorums
         .keys()
         .map(|quorum_hash| {
             (
@@ -191,6 +191,8 @@ pub(crate) fn run_chain_for_strategy(
             )
         })
         .collect();
+
+    quorums_details.shuffle(&mut rng);
 
     let start_core_height = platform.config.abci.genesis_core_height;
 
@@ -216,7 +218,7 @@ pub(crate) fn run_chain_for_strategy(
                 Ok(dashcore_rpc::dashcore_rpc_json::ExtendedQuorumListResult {
                     quorums_by_type: HashMap::from([(
                         QuorumType::Llmq100_67,
-                        quorums_clone.clone(),
+                        quorums_details.clone().into_iter().collect(),
                     )]),
                 })
             } else {
@@ -228,18 +230,18 @@ pub(crate) fn run_chain_for_strategy(
                 let end_range = end_range % total_quorums as u32;
 
                 let quorums = if end_range > start_range {
-                    quorums_clone
+                    quorums_details
                         .iter()
                         .skip(start_range as usize)
                         .take((end_range - start_range) as usize)
                         .map(|(quorum_hash, quorum)| (*quorum_hash, quorum.clone()))
                         .collect()
                 } else {
-                    let first_range = quorums_clone
+                    let first_range = quorums_details
                         .iter()
                         .skip(start_range as usize)
                         .take((total_quorums as u32 - start_range) as usize);
-                    let second_range = quorums_clone.iter().take(end_range as usize);
+                    let second_range = quorums_details.iter().take(end_range as usize);
                     first_range
                         .chain(second_range)
                         .map(|(quorum_hash, quorum)| (*quorum_hash, quorum.clone()))

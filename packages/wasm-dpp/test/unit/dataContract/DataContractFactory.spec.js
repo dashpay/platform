@@ -1,7 +1,7 @@
-const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 
-const { default: loadWasmDpp, UnsupportedProtocolVersionError } = require('../../../dist');
+const { default: loadWasmDpp, UnsupportedProtocolVersionError } = require('../../..');
+const { getLatestProtocolVersion } = require('../../..');
 
 describe('DataContractFactory', () => {
   let DataContractFactory;
@@ -112,7 +112,7 @@ describe('DataContractFactory', () => {
 
       const result = await factory.createDataContractCreateTransition(newDataContract);
 
-      expect(result.getProtocolVersion()).to.equal(protocolVersion.latestVersion);
+      expect(result.getProtocolVersion()).to.equal(getLatestProtocolVersion());
       expect(result.getEntropy()).to.deep.equal(dataContract.getEntropy());
       expect(result.getDataContract().toObject()).to.deep.equal(dataContract.toObject());
     });

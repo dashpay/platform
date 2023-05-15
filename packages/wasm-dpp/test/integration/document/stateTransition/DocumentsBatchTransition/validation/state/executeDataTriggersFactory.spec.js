@@ -1,4 +1,3 @@
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
 const dpnsSystemIds = require('@dashevo/dpns-contract/lib/systemIds');
 const getDpnsContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDpnsContractFixture');
 const dpnsDocumentFixture = require('@dashevo/dpp/lib/test/fixtures/getDpnsDocumentFixture');
@@ -7,6 +6,7 @@ const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/ge
 const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
 
 const IdentifierJs = require('@dashevo/dpp/lib/identifier/Identifier');
+const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/createStateRepositoryMock');
 
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 

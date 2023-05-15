@@ -1,15 +1,15 @@
 const DocumentJs = require('@dashevo/dpp/lib/document/Document');
 const DocumentsBatchTransitionJs = require('@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/DocumentsBatchTransition');
 const DataTriggerExecutionResult = require('@dashevo/dpp/lib/dataTrigger/DataTriggerExecutionResult');
-
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
-const getDocumentTransitionsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentTransitionsFixture');
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
-
 const ValidationResultJs = require('@dashevo/dpp/lib/validation/ValidationResult');
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 const StateTransitionExecutionContextJs = require('@dashevo/dpp/lib/stateTransition/StateTransitionExecutionContext');
+
+const generateRandomIdentifier = require('../../../../../../../lib/test/utils/generateRandomIdentifierAsync');
+const getDataContractFixture = require('../../../../../../../lib/test/fixtures/js/getDataContractFixture');
+const getDocumentsFixture = require('../../../../../../../lib/test/fixtures/js/getDocumentsFixture');
+const getDocumentTransitionsFixture = require('../../../../../../../lib/test/fixtures/getDocumentTransitionsFixture');
+const createStateRepositoryMock = require('../../../../../../../lib/test/mocks/createStateRepositoryMock');
+
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 
 let Identifier;
@@ -263,7 +263,7 @@ describe('validateDocumentsBatchTransitionStateFactory', () => {
     replaceDocument.setRevision(1);
 
     const fetchedDocument = new ExtendedDocument(documentsJs[0].toObject(), dataContract);
-    fetchedDocument.setOwnerId(Identifier.from(generateRandomIdentifier().toBuffer()));
+    fetchedDocument.setOwnerId(Identifier.from((await generateRandomIdentifier()).toBuffer()));
 
     documentTransitionsJs = getDocumentTransitionsFixture({
       create: [],

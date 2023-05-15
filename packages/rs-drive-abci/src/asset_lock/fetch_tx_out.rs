@@ -63,7 +63,7 @@ impl FetchAssetLockProofTxOut for AssetLockProof {
                 };
 
                 if !transaction_data.chainlock {
-                    let best_chain_lock = core.get_best_chain_lock()?;
+                    let best_chain_lock = core.get_best_chain_lock()?; //todo: this could be a problem
                     if asset_lock_proof.core_chain_locked_height > best_chain_lock.core_block_height
                     {
                         // we received a chain lock height that is too new

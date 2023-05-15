@@ -531,7 +531,7 @@ impl StorageFlags {
                     "multi epoch must have enough bytes for the base epoch",
                 ))
             })?);
-            let mut offset = 3;
+            let mut offset = 35;
             let mut bytes_per_epoch: BTreeMap<u16, u32> = BTreeMap::default();
             while offset + 2 < len {
                 // 2 for epoch size

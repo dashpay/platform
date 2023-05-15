@@ -9,6 +9,8 @@ const {
   PRESET_MAINNET,
 } = require('../../constants');
 
+const wait = require('../../util/wait');
+
 /**
  * @typedef {createIpAndPortsForm}
  * @param {string} network
@@ -60,7 +62,11 @@ async function createIpAndPortsForm(network, options = {}) {
 
   let initialIp;
   if (options.initialIp !== '' || !options.initialIp) {
-    initialIp = await publicIp.v4();
+    initialIp = await Promise.race([
+      publicIp.v4().catch(() => ''),
+      // Resolve in 10 seconds if public IP is not available
+      wait(10000).then(() => ''),
+    ]);
   }
 
   let initialCoreP2PPort;

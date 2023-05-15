@@ -1,8 +1,6 @@
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-
-const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
-
-const { default: loadWasmDpp } = require('../../../../../dist');
+const getDataContractFixture = require('../../../../../lib/test/fixtures/getDataContractFixture');
+const { default: loadWasmDpp } = require('../../../../..');
+const { getLatestProtocolVersion } = require('../../../../..');
 
 describe('applyDataContractCreateTransitionFactory', () => {
   let stateTransition;
@@ -20,11 +18,11 @@ describe('applyDataContractCreateTransitionFactory', () => {
     } = await loadWasmDpp());
   });
 
-  beforeEach(() => {
-    dataContract = getDataContractFixture();
+  beforeEach(async () => {
+    dataContract = await getDataContractFixture();
 
     stateTransition = new DataContractCreateTransition({
-      protocolVersion: protocolVersion.latestVersion,
+      protocolVersion: getLatestProtocolVersion(),
       dataContract: dataContract.toObject(),
       entropy: Buffer.alloc(32),
     });
