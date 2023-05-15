@@ -508,7 +508,7 @@ mod tests {
             let result = drive
                 .grove
                 .get(
-                    epoch.get_path(),
+                    &epoch.get_path(),
                     KEY_PROPOSERS.as_slice(),
                     Some(&transaction),
                 )
@@ -735,7 +735,7 @@ mod tests {
             let error = drive
                 .grove
                 .get(
-                    epoch.get_path(),
+                    &epoch.get_path(),
                     KEY_PROPOSERS.as_slice(),
                     Some(&transaction),
                 )

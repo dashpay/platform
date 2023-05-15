@@ -263,7 +263,7 @@ impl Drive {
             }
         };
         self.batch_delete(
-            contract_documents_primary_key_path,
+            (&contract_documents_primary_key_path).into(),
             document_id.as_slice(),
             apply_type,
             transaction,
@@ -744,7 +744,7 @@ impl Drive {
 
         // next we need to get the document from storage
         let document_element: Option<Element> = self.grove_get_raw(
-            contract_documents_primary_key_path,
+            (&contract_documents_primary_key_path).into(),
             document_id.as_slice(),
             direct_query_type,
             transaction,

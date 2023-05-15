@@ -54,7 +54,7 @@ impl Drive {
         let element = self
             .grove
             .get(
-                epoch_tree.get_path(),
+                &epoch_tree.get_path(),
                 epoch_key_constants::KEY_POOL_STORAGE_FEES.as_slice(),
                 transaction,
             )
@@ -79,7 +79,7 @@ impl Drive {
         let element = self
             .grove
             .get(
-                epoch_tree.get_path(),
+                &epoch_tree.get_path(),
                 epoch_key_constants::KEY_POOL_PROCESSING_FEES.as_slice(),
                 transaction,
             )
@@ -104,7 +104,7 @@ impl Drive {
         let element = self
             .grove
             .get(
-                epoch_tree.get_path(),
+                &epoch_tree.get_path(),
                 epoch_key_constants::KEY_FEE_MULTIPLIER.as_slice(),
                 transaction,
             )
@@ -183,7 +183,7 @@ mod tests {
             drive
                 .grove
                 .insert(
-                    epoch.get_path(),
+                    &epoch.get_path(),
                     KEY_STORAGE_FEE_POOL.as_slice(),
                     Element::Item(u128::MAX.to_be_bytes().to_vec(), None),
                     None,
@@ -215,7 +215,7 @@ mod tests {
             drive
                 .grove
                 .insert(
-                    epoch.get_path(),
+                    &epoch.get_path(),
                     epoch_key_constants::KEY_POOL_PROCESSING_FEES.as_slice(),
                     Element::Item(u128::MAX.to_be_bytes().to_vec(), None),
                     None,
@@ -297,7 +297,7 @@ mod tests {
             drive
                 .grove
                 .insert(
-                    epoch.get_path(),
+                    &epoch.get_path(),
                     epoch_key_constants::KEY_FEE_MULTIPLIER.as_slice(),
                     Element::Item(u128::MAX.to_be_bytes().to_vec(), None),
                     None,
