@@ -61,8 +61,7 @@ impl StateTransitionValidation for DataContractCreateTransition {
         // }
 
         // Validate data contract id
-        let generated_id =
-            generate_data_contract_id(self.data_contract.owner_id, self.data_contract.entropy);
+        let generated_id = generate_data_contract_id(self.data_contract.owner_id, self.entropy);
         if generated_id.as_slice() != self.data_contract.id.as_ref() {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 BasicError::InvalidDataContractIdError(InvalidDataContractIdError::new(

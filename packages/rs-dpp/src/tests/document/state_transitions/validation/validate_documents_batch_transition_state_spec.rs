@@ -47,8 +47,9 @@ fn init() {
 fn setup_test() -> TestData {
     init();
     let owner_id = generate_random_identifier_struct();
-    let data_contract = get_data_contract_fixture(Some(owner_id));
-    let documents = get_extended_documents_fixture(data_contract.clone()).unwrap();
+    let created_data_contract = get_data_contract_fixture(Some(owner_id));
+    let documents =
+        get_extended_documents_fixture(created_data_contract.data_contract.clone()).unwrap();
 
     let document_transitions =
         get_document_transitions_fixture([(Action::Create, documents.clone())]);
@@ -63,12 +64,14 @@ fn setup_test() -> TestData {
         "transitions".to_string(),
         Value::Array(raw_document_transitions),
     );
-    let state_transition =
-        DocumentsBatchTransition::from_value_map(map, vec![data_contract.clone()])
-            .expect("documents batch state transition should be created");
+    let state_transition = DocumentsBatchTransition::from_value_map(
+        map,
+        vec![created_data_contract.data_contract.clone()],
+    )
+    .expect("documents batch state transition should be created");
 
     let mut state_repository_mock = MockStateRepositoryLike::default();
-    let data_contract_to_return = data_contract.clone();
+    let data_contract_to_return = created_data_contract.data_contract.clone();
     state_repository_mock
         .expect_fetch_data_contract()
         .returning(move |_, _| Ok(Some(data_contract_to_return.clone())));
@@ -79,7 +82,7 @@ fn setup_test() -> TestData {
 
     TestData {
         owner_id,
-        data_contract,
+        data_contract: created_data_contract.data_contract,
         document_transitions,
         extended_documents: documents,
         state_transition,

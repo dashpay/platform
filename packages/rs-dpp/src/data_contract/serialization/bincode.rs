@@ -9,8 +9,7 @@ mod tests {
     #[test]
     fn data_contract_ser_de() {
         let identity = Identity::random_identity(5, Some(5));
-        let mut contract = get_data_contract_fixture(Some(identity.id));
-        contract.entropy = Bytes32::default();
+        let mut contract = get_data_contract_fixture(Some(identity.id)).data_contract;
         let bytes = contract.serialize().expect("expected to serialize");
         let recovered_contract =
             DataContract::deserialize(&bytes).expect("expected to deserialize state transition");

@@ -13,8 +13,6 @@ use drive_abci::validation::state_transition::StateTransitionValidation;
 
 use prost::Message;
 
-use tenderdash_abci::Application;
-
 pub(crate) fn verify_state_transitions_were_executed(
     abci_app: &AbciApplication<MockCoreRPCLike>,
     expected_root_hash: &[u8; 32],

@@ -158,7 +158,7 @@ mod test {
             .get(0)
             .expect("document transition should be present");
 
-        let data_contract = get_dashpay_contract_fixture(None);
+        let data_contract = get_dashpay_contract_fixture(None).data_contract;
         let mut state_repository = MockStateRepositoryLike::new();
         state_repository
             .expect_fetch_identity()
@@ -190,7 +190,7 @@ mod test {
             .set("toUserId", platform_value::to_value(owner_id).unwrap())
             .expect("expected to set toUserId");
 
-        let data_contract = get_dashpay_contract_fixture(None);
+        let data_contract = get_dashpay_contract_fixture(None).data_contract;
         let document_transitions =
             get_document_transitions_fixture([(Action::Create, vec![contact_request_document])]);
         let document_transition = document_transitions
@@ -241,7 +241,7 @@ mod test {
     #[tokio::test]
     async fn should_fail_if_id_not_exists() {
         let contact_request_document = get_contact_request_document_fixture(None, None);
-        let data_contract = get_dashpay_contract_fixture(None);
+        let data_contract = get_dashpay_contract_fixture(None).data_contract;
         let owner_id = contact_request_document.owner_id();
         let contract_request_to_user_id = contact_request_document
             .document

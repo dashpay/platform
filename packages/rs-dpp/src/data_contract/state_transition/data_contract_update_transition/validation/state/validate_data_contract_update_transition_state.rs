@@ -110,7 +110,7 @@ mod test {
 
     #[tokio::test]
     async fn should_return_valid_result_on_dry_run() {
-        let data_contract = get_data_contract_fixture(None);
+        let data_contract = get_data_contract_fixture(None).data_contract;
         let state_transition = DataContractUpdateTransition {
             data_contract,
             ..Default::default()

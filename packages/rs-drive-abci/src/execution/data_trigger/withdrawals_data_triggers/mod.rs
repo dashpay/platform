@@ -143,7 +143,7 @@ mod tests {
         };
 
         let transition_execution_context = StateTransitionExecutionContext::default();
-        let data_contract = get_data_contract_fixture(None);
+        let data_contract = get_data_contract_fixture(None).data_contract;
         let owner_id = &data_contract.owner_id;
 
         let document_transition = DocumentTransitionAction::DeleteAction(Default::default());

@@ -347,7 +347,7 @@ mod test {
 
         let data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
-            data_contract: &data_contract,
+            data_contract: &data_contract.data_contract,
             owner_id: &owner_id,
             state_transition_execution_context: &transition_execution_context,
             transaction: None,
