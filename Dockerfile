@@ -180,9 +180,6 @@ RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
     cp -R /platform/.yarn/unplugged /tmp/ && \
     sccache --show-stats
 
-# Remove Rust sources (not needed anymore)
-RUN rm -fr ./packages/rs-*
-
 #
 # STAGE: FINAL DRIVE-ABCI IMAGE
 #
@@ -298,7 +295,36 @@ WORKDIR /platform
 
 COPY --from=build-test-suite /platform /platform
 
-RUN cp /platform/packages/platform-test-suite/.env.example /platform/packages/platform-test-suite/.env
+
+# Copy yarn and Cargo files
+COPY --from=build-test-suite /platform/.yarn /platform/.yarn
+COPY --from=build-test-suite /platform/package.json /platform/yarn.lock \
+    /platform/.yarnrc.yml /platform/.pnp.* /platform/Cargo.lock /platform/rust-toolchain.toml ./
+# Use Cargo.toml.template instead of Cargo.toml from project root to avoid copying unnecessary Rust packages
+COPY --from=build-test-suite /platform/packages/platform-test-suite/Cargo.toml.template ./Cargo.toml
+
+# Copy only necessary packages from monorepo
+COPY --from=build-test-suite /platform/packages/platform-test-suite packages/platform-test-suite
+COPY --from=build-test-suite /platform/packages/dashpay-contract packages/dashpay-contract
+COPY --from=build-test-suite /platform/packages/js-dpp packages/js-dpp
+COPY --from=build-test-suite /platform/packages/wallet-lib packages/wallet-lib
+COPY --from=build-test-suite /platform/packages/js-dash-sdk packages/js-dash-sdk
+COPY --from=build-test-suite /platform/packages/js-dapi-client packages/js-dapi-client
+COPY --from=build-test-suite /platform/packages/js-grpc-common packages/js-grpc-common
+COPY --from=build-test-suite /platform/packages/dapi-grpc packages/dapi-grpc
+COPY --from=build-test-suite /platform/packages/dash-spv packages/dash-spv
+COPY --from=build-test-suite /platform/packages/withdrawals-contract packages/withdrawals-contract
+COPY --from=build-test-suite /platform/packages/rs-platform-value packages/rs-platform-value
+COPY --from=build-test-suite /platform/packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
+COPY --from=build-test-suite /platform/packages/feature-flags-contract packages/feature-flags-contract
+COPY --from=build-test-suite /platform/packages/dpns-contract packages/dpns-contract
+COPY --from=build-test-suite /platform/packages/data-contracts packages/data-contracts
+COPY --from=build-test-suite /platform/packages/rs-platform-serialization packages/rs-platform-serialization
+COPY --from=build-test-suite /platform/packages/rs-platform-value-convertible packages/rs-platform-value-convertible
+COPY --from=build-test-suite /platform/packages/rs-dpp packages/rs-dpp
+COPY --from=build-test-suite /platform/packages/wasm-dpp packages/wasm-dpp
+
+COPY --from=build-test-suite /platform/packages/platform-test-suite/.env.example /platform/packages/platform-test-suite/.env
 
 EXPOSE 2500 2501 2510
 USER node
