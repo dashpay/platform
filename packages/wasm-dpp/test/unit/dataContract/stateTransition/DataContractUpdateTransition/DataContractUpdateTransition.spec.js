@@ -1,9 +1,8 @@
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const stateTransitionTypes = require('@dashevo/dpp/lib/stateTransition/stateTransitionTypes');
-const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 const JsDataContractUpdateTransition = require('@dashevo/dpp/lib/dataContract/stateTransition/DataContractUpdateTransition/DataContractUpdateTransition');
 
-const { default: loadWasmDpp } = require('../../../../../dist');
+const getDataContractFixture = require('../../../../../lib/test/fixtures/getDataContractFixture');
+const { default: loadWasmDpp } = require('../../../../..');
+const { getLatestProtocolVersion, StateTransitionTypes } = require('../../../../..');
 
 describe('DataContractUpdateTransition', () => {
   let stateTransition;
@@ -17,11 +16,11 @@ describe('DataContractUpdateTransition', () => {
     } = await loadWasmDpp());
   });
 
-  beforeEach(() => {
-    dataContract = getDataContractFixture();
+  beforeEach(async () => {
+    dataContract = await getDataContractFixture();
 
     stateTransition = new DataContractUpdateTransition({
-      protocolVersion: protocolVersion.latestVersion,
+      protocolVersion: getLatestProtocolVersion(),
       dataContract: dataContract.toObject(),
     });
   });
@@ -30,7 +29,7 @@ describe('DataContractUpdateTransition', () => {
     it('should return the current protocol version', () => {
       const result = stateTransition.getProtocolVersion();
 
-      expect(result).to.equal(protocolVersion.latestVersion);
+      expect(result).to.equal(getLatestProtocolVersion());
     });
   });
 
@@ -38,7 +37,7 @@ describe('DataContractUpdateTransition', () => {
     it('should return State Transition type', () => {
       const result = stateTransition.getType();
 
-      expect(result).to.equal(stateTransitionTypes.DATA_CONTRACT_UPDATE);
+      expect(result).to.equal(StateTransitionTypes.DataContractUpdate);
     });
   });
 
@@ -52,10 +51,13 @@ describe('DataContractUpdateTransition', () => {
 
   describe('#toJSON', () => {
     it('should return State Transition as plain JS object', () => {
+      const dc = dataContract.toJSON();
+      delete dc.$defs;
+
       expect(stateTransition.toJSON(true)).to.deep.equal({
-        protocolVersion: protocolVersion.latestVersion,
-        type: stateTransitionTypes.DATA_CONTRACT_UPDATE,
-        dataContract: dataContract.toJSON(),
+        protocolVersion: getLatestProtocolVersion(),
+        type: StateTransitionTypes.DataContractUpdate,
+        dataContract: dc,
       });
     });
   });

@@ -11,7 +11,7 @@ use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 /// ValidatorInQuorum represents a validator in a quorum or consensus algorithm.
 /// Each validator is identified by a `ProTxHash` and has a corresponding BLS private key and public key.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ValidatorInQuorum {
     /// The hash of the transaction that identifies this validator in the network.
     pub pro_tx_hash: ProTxHash,
@@ -82,7 +82,7 @@ impl From<ValidatorInQuorum> for Validator {
 /// TestQuorumInfo represents a test quorum used for threshold signing.
 /// A quorum is identified by a `QuorumHash` and contains a set of validators, as well as a map of validators
 /// indexed by their `ProTxHash` identifiers.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TestQuorumInfo {
     /// The core height that the quorum was created at
     pub core_height: u32,

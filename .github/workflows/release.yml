@@ -18,6 +18,7 @@ jobs:
   release-npm:
     name: Release NPM packages
     runs-on: self-hosted
+    timeout-minutes: 15
     if: github.event_name != 'workflow_dispatch'
     env:
       SCCACHE_GHA_ENABLED: "false"
@@ -112,6 +113,7 @@ jobs:
   release-drive-docker-image:
     name: Release Drive to Docker Hub
     runs-on: self-hosted
+    timeout-minutes: 120
     env:
       SCCACHE_GHA_ENABLED: "false"
       RUSTC_WRAPPER: ""
@@ -531,7 +533,7 @@ jobs:
           context: .
           builder: ${{ steps.buildx.outputs.name }}
           file: ./Dockerfile
-          target: testsuite
+          target: test-suite
           push: true
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}

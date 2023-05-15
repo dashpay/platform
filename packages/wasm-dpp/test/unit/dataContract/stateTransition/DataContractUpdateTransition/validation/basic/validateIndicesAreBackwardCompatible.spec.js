@@ -1,4 +1,4 @@
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDataContractFixture = require('../../../../../../../lib/test/fixtures/getDataContractFixture');
 
 const { default: loadWasmDpp } = require('../../../../../../../dist');
 
@@ -19,9 +19,9 @@ describe('validateIndicesAreBackwardCompatible', () => {
     } = await loadWasmDpp());
   });
 
-  beforeEach(() => {
-    const oldDataContract = getDataContractFixture();
-    const newDataContract = getDataContractFixture();
+  beforeEach(async () => {
+    const oldDataContract = await getDataContractFixture();
+    const newDataContract = await getDataContractFixture();
 
     oldDocumentsSchema = oldDataContract.getDocuments();
     newDocumentsSchema = newDataContract.getDocuments();

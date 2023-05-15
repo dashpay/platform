@@ -13,6 +13,8 @@ use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 pub struct ExtendedBlockInfo {
     /// Basic block info
     pub basic_info: BlockInfo,
+    /// App hash
+    pub app_hash: [u8; 32],
     /// Signature
     pub quorum_hash: [u8; 32],
     /// Signature

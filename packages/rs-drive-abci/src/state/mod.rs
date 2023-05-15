@@ -140,6 +140,21 @@ impl PlatformState {
             .unwrap_or([0u8; 96])
     }
 
+    /// The last block app hash
+    pub fn last_block_app_hash(&self) -> Option<[u8; 32]> {
+        self.last_committed_block_info
+            .as_ref()
+            .map(|block_info| block_info.app_hash)
+    }
+
+    /// The last block height or 0 for genesis
+    pub fn last_block_height(&self) -> u64 {
+        self.last_committed_block_info
+            .as_ref()
+            .map(|block_info| block_info.basic_info.height)
+            .unwrap_or_default()
+    }
+
     /// The last block round
     pub fn last_block_round(&self) -> u32 {
         self.last_committed_block_info

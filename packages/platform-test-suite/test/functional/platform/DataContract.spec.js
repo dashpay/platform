@@ -56,6 +56,9 @@ describe('Platform', () => {
     });
 
     it('should create new data contract with previously created identity as an owner', async () => {
+      // Additional wait time to mitigate testnet latency
+      await waitForSTPropagated();
+
       dataContractFixture = await getDataContractFixture(identity.getId());
 
       await client.platform.contracts.publish(dataContractFixture, identity);

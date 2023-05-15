@@ -216,7 +216,7 @@ where
         // while we have the state transitions executed, we now need to process the block fees
 
         // Process fees
-        let _process_block_fees_outcome = self.process_block_fees(
+        let _processed_block_fees = self.process_block_fees(
             &block_execution_context.block_state_info,
             &epoch_info,
             block_fees.into(),
@@ -566,6 +566,7 @@ where
 
         let extended_block_info = ExtendedBlockInfo {
             basic_info: to_commit_block_info,
+            app_hash: block_header.app_hash,
             quorum_hash: current_quorum_hash,
             signature: commit_info.block_signature,
             round,

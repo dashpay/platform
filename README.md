@@ -59,6 +59,7 @@ this repository may be used on the following networks:
       - LLVM installed from brew is keg only, and path to it must be provided in the profile file, e.g.`echo 'export PATH="/opt/homebrew/opt/llvm/bin:$PATH"' >> ~/.zshrc`
     - install `protoc` - protobuf compiler:
       - on debian/ubuntu: `apt install -y protobuf-compiler`
+      - on Mac: `brew install protobuf`
       - on other systems, install most recent version from [Protocol Buffers releases page](https://github.com/protocolbuffers/protobuf/releases) (tested with protobuf 22.4)
       - if needed, set PROTOC environment variable to location of `protoc` binary
     - `cargo install wasm-bindgen-cli`

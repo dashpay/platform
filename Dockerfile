@@ -6,7 +6,7 @@
 # - deps - includes all dependencies and some libraries
 # - sources - includes full source code
 # - build-* - actual build process of given image
-# - drive-abci, dashmate, testsuite, dapi - final images
+# - drive-abci, dashmate, test-suite, dapi - final images
 #
 # The following build arguments can be provided using --build-arg:
 # - CARGO_BUILD_PROFILE - set to `release` to build final binary, without debugging information
@@ -17,6 +17,15 @@
 #   image to be available
 # - USERNAME, USER_UID, USER_GID - specification of user used to run the binary
 #
+# BUILD PROCESS
+#
+# 1. All these --mount... are to cache reusable info between runs.
+# See https://doc.rust-lang.org/cargo/guide/cargo-home.html#caching-the-cargo-home-in-ci
+# 2. We add `--config net.git-fetch-with-cli=true` to address ARM build issue,
+# see https://github.com/rust-lang/cargo/issues/10781#issuecomment-1441071052
+# 3. Github Actions have shared networking configured, so we need to set a random
+# SCCACHE_SERVER_PORT port to avoid conflicts in case of parallel compilation
+
 ARG ALPINE_VERSION=3.16
 
 #
@@ -40,7 +49,7 @@ RUN apk add --no-cache \
         libc-dev \
         linux-headers \
         llvm-static llvm-dev  \
-        nodejs \
+        'nodejs~=16' \
         npm \
         openssl-dev \
         perl \
@@ -72,15 +81,6 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else expor
         https://github.com/mozilla/sccache/releases/download/v0.4.1/sccache-v0.4.1-${SCC_ARCH}-unknown-linux-musl.tar.gz | \
         tar -C /tmp -xz && \
         mv /tmp/sccache-*/sccache /usr/bin/
-
-# Install emcmake, dependency of bls-signatures -> bls-dash-sys
-# TODO: Build ARM image to check if this is still needed
-# RUN curl -Ls \
-#         https://github.com/emscripten-core/emsdk/archive/refs/tags/3.1.36.tar.gz | \
-#         tar -C /opt -xz && \
-#         ln -s /opt/emsdk-* /opt/emsdk && \
-#         /opt/emsdk/emsdk install latest && \
-#         /opt/emsdk/emsdk activate latest
 
 # Configure Node.js
 RUN npm install -g npm@9.6.6 && \
@@ -116,21 +116,17 @@ ENV NODE_ENV ${NODE_ENV}
 # Install wasm-bindgen-cli in the same profile as other components, to sacrifice some performance & disk space to gain
 # better build caching
 WORKDIR /platform
-# TODO: refactor to not need the wasm-bindgen-cli and remove the copy below, as deps stage should be independent
-COPY Cargo.lock .
+
 RUN whoami
 RUN --mount=type=cache,sharing=shared,target=/usr/local/cargo/registry/index \
     --mount=type=cache,sharing=shared,target=/usr/local/cargo/registry/cache \
     --mount=type=cache,sharing=shared,target=/usr/local/cargo/git/db \
     --mount=type=cache,sharing=shared,target=/platform/target \
-    export CARGO_TARGET_DIR=/platform/target ; \
     ls -lha /usr/local/cargo/registry/index && \
     ls -lha /usr/local/cargo/registry/cache && \
     ls -lha /usr/local/cargo/git/db && \
     ls -lha /platform/target && \
-    cargo install cargo-lock --features=cli --profile "$CARGO_BUILD_PROFILE" ; \
-    WASM_BINDGEN_VERSION=$(cargo-lock list -p wasm-bindgen | egrep -o '[0-9.]+') ; \
-    cargo install --profile "$CARGO_BUILD_PROFILE" "wasm-bindgen-cli@${WASM_BINDGEN_VERSION}"
+    CARGO_TARGET_DIR=/platform/target cargo install --profile "$CARGO_BUILD_PROFILE" wasm-bindgen-cli@0.2.84
 
 RUN --mount=type=cache,sharing=shared,target=/usr/local/cargo/registry/index \
     --mount=type=cache,sharing=shared,target=/usr/local/cargo/registry/cache \
@@ -142,26 +138,16 @@ RUN --mount=type=cache,sharing=shared,target=/usr/local/cargo/registry/index \
     ls -lha /platform/target
 
 #
-# EXECUTE BUILD
+# LOAD SOURCES
 #
 FROM deps as sources
 
-# We run builds with extensive caching.
-#
-# Note:
-# 1. All these --mount... are to cache reusable info between runs.
-# See https://doc.rust-lang.org/cargo/guide/cargo-home.html#caching-the-cargo-home-in-ci
-# 2. We add `--config net.git-fetch-with-cli=true` to address ARM build issue,
-# see https://github.com/rust-lang/cargo/issues/10781#issuecomment-1441071052
-# 3. Github Actions have shared networking configured, so we need to set a random
-# SCCACHE_SERVER_PORT port to avoid conflicts in case of parallel compilation
-# 4. We also set RUSTC to include exact toolchain name in compilation command, and
-# include this in cache key
 
 WORKDIR /platform
 
 COPY . .
 
+# print the JS build output
 RUN yarn config set enableInlineBuilds true
 
 #
@@ -257,18 +243,10 @@ FROM build-js AS build-dashmate
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=shared,target=/platform/target \
-    --mount=type=cache,target=/tmp/unplugged \
+RUN --mount=type=cache,target=/tmp/unplugged \
     cp -R /tmp/unplugged /platform/.yarn/ && \
     yarn workspaces focus --production dashmate && \
     cp -R /platform/.yarn/unplugged /tmp/
-
-RUN rm -fr ./packages/rs-*
-# TODO: Clean all other files not needed by dapi
 
 #
 #  STAGE: FINAL DASHMATE IMAGE
@@ -282,38 +260,45 @@ LABEL description="Dashmate Helper Node.JS"
 
 WORKDIR /platform
 
-COPY --from=build-dashmate /platform /platform
+COPY --from=build-dashmate /platform/.yarn /platform/.yarn
+COPY --from=build-dashmate /platform/package.json /platform/yarn.lock /platform/.yarnrc.yml /platform/.pnp* /platform/
+
+# Copy only necessary packages from monorepo
+COPY --from=build-dashmate /platform/packages/dashmate packages/dashmate
+COPY --from=build-dashmate /platform/packages/dashpay-contract packages/dashpay-contract
+COPY --from=build-dashmate /platform/packages/js-dpp packages/js-dpp
+COPY --from=build-dashmate /platform/packages/wallet-lib packages/wallet-lib
+COPY --from=build-dashmate /platform/packages/js-dash-sdk packages/js-dash-sdk
+COPY --from=build-dashmate /platform/packages/js-dapi-client packages/js-dapi-client
+COPY --from=build-dashmate /platform/packages/js-grpc-common packages/js-grpc-common
+COPY --from=build-dashmate /platform/packages/dapi-grpc packages/dapi-grpc
+COPY --from=build-dashmate /platform/packages/dash-spv packages/dash-spv
+COPY --from=build-dashmate /platform/packages/withdrawals-contract packages/withdrawals-contract
+COPY --from=build-dashmate /platform/packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
+COPY --from=build-dashmate /platform/packages/feature-flags-contract packages/feature-flags-contract
+COPY --from=build-dashmate /platform/packages/dpns-contract packages/dpns-contract
+COPY --from=build-dashmate /platform/packages/data-contracts packages/data-contracts
+COPY --from=build-dashmate /platform/packages/wasm-dpp packages/wasm-dpp
 
 USER node
 ENTRYPOINT ["/platform/packages/dashmate/docker/entrypoint.sh"]
 
-
 #
 # STAGE: TEST SUITE BUILD
 #
-FROM build-js AS build-testsuite
+FROM build-js AS build-test-suite
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=shared,id=wasm_dpp_target,target=/platform/target \
-    --mount=type=cache,target=/tmp/unplugged \
+RUN --mount=type=cache,target=/tmp/unplugged \
     cp -R /tmp/unplugged /platform/.yarn/ && \
     yarn workspaces focus --production @dashevo/platform-test-suite && \
     cp -R /platform/.yarn/unplugged /tmp/
 
-# Remove Rust sources
-RUN rm -fr ./packages/rs-*
-# TODO: Clean all other files not needed by dapi
-
-
 #
 #  STAGE: FINAL TEST SUITE IMAGE
 #
-FROM node:16-alpine${ALPINE_VERSION} AS testsuite
+FROM node:16-alpine${ALPINE_VERSION} AS test-suite
 
 RUN apk add --no-cache bash
 
@@ -322,9 +307,38 @@ LABEL description="Dash Platform test suite"
 
 WORKDIR /platform
 
-COPY --from=build-testsuite /platform /platform
+COPY --from=build-test-suite /platform /platform
 
-RUN cp /platform/packages/platform-test-suite/.env.example /platform/packages/platform-test-suite/.env
+
+# Copy yarn and Cargo files
+COPY --from=build-test-suite /platform/.yarn /platform/.yarn
+COPY --from=build-test-suite /platform/package.json /platform/yarn.lock \
+    /platform/.yarnrc.yml /platform/.pnp.* /platform/Cargo.lock /platform/rust-toolchain.toml ./
+# Use Cargo.toml.template instead of Cargo.toml from project root to avoid copying unnecessary Rust packages
+COPY --from=build-test-suite /platform/packages/platform-test-suite/Cargo.toml.template ./Cargo.toml
+
+# Copy only necessary packages from monorepo
+COPY --from=build-test-suite /platform/packages/platform-test-suite packages/platform-test-suite
+COPY --from=build-test-suite /platform/packages/dashpay-contract packages/dashpay-contract
+COPY --from=build-test-suite /platform/packages/js-dpp packages/js-dpp
+COPY --from=build-test-suite /platform/packages/wallet-lib packages/wallet-lib
+COPY --from=build-test-suite /platform/packages/js-dash-sdk packages/js-dash-sdk
+COPY --from=build-test-suite /platform/packages/js-dapi-client packages/js-dapi-client
+COPY --from=build-test-suite /platform/packages/js-grpc-common packages/js-grpc-common
+COPY --from=build-test-suite /platform/packages/dapi-grpc packages/dapi-grpc
+COPY --from=build-test-suite /platform/packages/dash-spv packages/dash-spv
+COPY --from=build-test-suite /platform/packages/withdrawals-contract packages/withdrawals-contract
+COPY --from=build-test-suite /platform/packages/rs-platform-value packages/rs-platform-value
+COPY --from=build-test-suite /platform/packages/masternode-reward-shares-contract packages/masternode-reward-shares-contract
+COPY --from=build-test-suite /platform/packages/feature-flags-contract packages/feature-flags-contract
+COPY --from=build-test-suite /platform/packages/dpns-contract packages/dpns-contract
+COPY --from=build-test-suite /platform/packages/data-contracts packages/data-contracts
+COPY --from=build-test-suite /platform/packages/rs-platform-serialization packages/rs-platform-serialization
+COPY --from=build-test-suite /platform/packages/rs-platform-value-convertible packages/rs-platform-value-convertible
+COPY --from=build-test-suite /platform/packages/rs-dpp packages/rs-dpp
+COPY --from=build-test-suite /platform/packages/wasm-dpp packages/wasm-dpp
+
+COPY --from=build-test-suite /platform/packages/platform-test-suite/.env.example /platform/packages/platform-test-suite/.env
 
 EXPOSE 2500 2501 2510
 USER node
@@ -337,19 +351,10 @@ FROM build-js AS build-dapi
 
 # Install Test Suite specific dependencies using previous
 # node_modules directory to reuse built binaries
-RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=shared,id=wasm_dpp_target,target=/platform/target \
-    --mount=type=cache,target=/tmp/unplugged \
+RUN --mount=type=cache,target=/tmp/unplugged \
     cp -R /tmp/unplugged /platform/.yarn/ && \
     yarn workspaces focus --production @dashevo/dapi && \
     cp -R /platform/.yarn/unplugged /tmp/
-
-# Remove Rust sources
-RUN rm -fr ./packages/rs-*
-# TODO: Clean all other files not needed by dapi
 
 #
 # STAGE: FINAL DAPI IMAGE
@@ -364,7 +369,16 @@ RUN apk add --no-cache zeromq-dev
 
 WORKDIR /platform
 
-COPY --from=build-dapi /platform /platform
+COPY --from=build-dapi /platform/.yarn /platform/.yarn
+COPY --from=build-dapi /platform/package.json /platform/yarn.lock /platform/.yarnrc.yml /platform/.pnp* /platform/
+# List of required dependencies. Based on:
+# yarn run ultra --info --filter '@dashevo/dapi' |  sed -E 's/.*@dashevo\/(.*)/COPY --from=build-dapi \/platform\/packages\/\1 \/platform\/packages\/\1/'
+COPY --from=build-dapi /platform/packages/dapi /platform/packages/dapi
+COPY --from=build-dapi /platform/packages/dapi-grpc /platform/packages/dapi-grpc
+COPY --from=build-dapi /platform/packages/js-dpp /platform/packages/js-dpp
+COPY --from=build-dapi /platform/packages/js-grpc-common /platform/packages/js-grpc-common
+COPY --from=build-dapi /platform/packages/wasm-dpp /platform/packages/wasm-dpp
+COPY --from=build-dapi /platform/packages/js-dapi-client /platform/packages/js-dapi-client
 
 RUN cp /platform/packages/dapi/.env.example /platform/packages/dapi/.env
 

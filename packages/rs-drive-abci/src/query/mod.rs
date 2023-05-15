@@ -23,7 +23,6 @@ use dpp::{check_validation_result_with_data, ProtocolError};
 use drive::drive::identity::IdentityDriveQuery;
 use drive::drive::identity::IdentityProveRequestType;
 
-use crate::error::Error::{Drive, Protocol};
 use dapi_grpc::platform::v0::get_data_contracts_response::DataContractEntry;
 use dapi_grpc::platform::v0::get_identities_response::IdentityEntry;
 use dpp::identity::{KeyID, Purpose, SecurityLevel};

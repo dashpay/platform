@@ -23,8 +23,10 @@ function stopNodeTaskFactory(
       {
         title: 'Check node is running',
         skip: (ctx) => ctx.isForce,
-        task: async () => {
-          if (!await dockerCompose.isServiceRunning(config.toEnvs())) {
+        task: async (ctx) => {
+          if (!await dockerCompose.isServiceRunning(
+            config.toEnvs({ platformOnly: ctx.platformOnly }),
+          )) {
             throw new Error('Node is not running');
           }
         },
@@ -48,7 +50,7 @@ function stopNodeTaskFactory(
       },
       {
         title: `Stopping ${config.getName()} node`,
-        task: async () => dockerCompose.stop(config.toEnvs()),
+        task: async (ctx) => dockerCompose.stop(config.toEnvs({ platformOnly: ctx.platformOnly })),
       },
     ]);
   }

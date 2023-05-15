@@ -25,9 +25,7 @@ fi
 
 if ! [[ -x "$(command -v wasm-bindgen)" ]]; then
   echo 'Wasm-bindgen CLI is not installed. Installing'
-  cargo install cargo-lock --features=cli --profile "${CARGO_BUILD_PROFILE}"
-  WASM_BINDGEN_VERSION=$(cargo-lock list -p wasm-bindgen | grep -Eo '[0-9.]+')
-  cargo install --config net.git-fetch-with-cli=true --profile "${CARGO_BUILD_PROFILE}" -f "wasm-bindgen-cli@${WASM_BINDGEN_VERSION}"
+  cargo install --config net.git-fetch-with-cli=true -f wasm-bindgen-cli@0.2.84
 fi
 
 # On a mac, bundled clang won't work - you need to install LLVM manually through brew,

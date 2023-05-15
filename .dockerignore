@@ -4,6 +4,7 @@
 .nyc_output
 *.log
 Dockerfile
+**/*.spec.ts
 
 tmp
 logs
