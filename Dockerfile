@@ -118,6 +118,7 @@ ENV NODE_ENV ${NODE_ENV}
 WORKDIR /platform
 # TODO: refactor to not need the wasm-bindgen-cli and remove the copy below, as deps stage should be independent
 COPY Cargo.lock .
+RUN whoami
 RUN --mount=type=cache,sharing=shared,target=/usr/local/cargo/registry/index \
     --mount=type=cache,sharing=shared,target=/usr/local/cargo/registry/cache \
     --mount=type=cache,sharing=shared,target=/usr/local/cargo/git/db \
