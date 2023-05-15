@@ -253,6 +253,8 @@ fn validate_transition(
             let mut result = ValidationResult::<DocumentTransitionAction>::new_with_data(
                 DocumentTransitionAction::CreateAction(DocumentCreateTransitionAction::default()),
             );
+
+            // TODO: move this check to basic validation
             let validation_result = check_if_timestamps_are_not_equal(transition);
             result.merge(validation_result);
 
