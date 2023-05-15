@@ -69,7 +69,7 @@ function getServicesScopeFactory(dockerCompose) {
         }
 
         services[serviceName] = {
-          humanName: null,
+          humanName: serviceDescription,
           containerId: null,
           image: null,
           status,

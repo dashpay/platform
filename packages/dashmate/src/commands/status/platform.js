@@ -1,4 +1,5 @@
 /* eslint-disable dot-notation */
+/* eslint-disable quote-props */
 const { Flags } = require('@oclif/core');
 const { OUTPUT_FORMATS } = require('../../constants');
 
@@ -35,26 +36,12 @@ class PlatformStatusCommand extends ConfigBaseCommand {
       'Tenderdash Service Status': 'n/a',
       'Drive Docker Status': 'n/a',
       'Drive Service Status': 'n/a',
-      Network: 'n/a',
+      'Network': 'n/a',
       'Tenderdash Version': 'n/a',
       'Block height': 'n/a',
       'Peer count': 'n/a',
       'App hash': 'n/a',
     };
-
-    if (!config.get('platform.enable')) {
-      if (process.env.DEBUG) {
-        // eslint-disable-next-line no-console
-        console.error('Platform is not supported for this node type and network');
-      }
-    }
-
-    if (!(await dockerCompose.isServiceRunning(config.toEnvs(), 'drive_tenderdash'))) {
-      if (process.env.DEBUG) {
-        // eslint-disable-next-line no-console
-        console.error('Platform is not running');
-      }
-    }
 
     // Collect platform data
     const scope = await getPlatformScope(config);
@@ -73,9 +60,9 @@ class PlatformStatusCommand extends ConfigBaseCommand {
       } = scope;
 
       plain['HTTP service'] = httpService || 'n/a';
-      plain['HTTP port'] = `${httpPort} ${colors.portState(httpPortState)(httpPortState)}` || 'n/a';
+      plain['HTTP port'] = `${httpPort} ${httpPortState ? colors.portState(httpPortState)(httpPortState) : ''}`;
       plain['P2P service'] = p2pService || 'n/a';
-      plain['P2P port'] = `${p2pPort} ${colors.portState(p2pPortState)(p2pPortState)}` || 'n/a';
+      plain['P2P port'] = `${p2pPort} ${p2pPortState ? colors.portState(p2pPortState)(p2pPortState) : ''}`;
       plain['RPC service'] = rpcService || 'n/a';
 
       const { dockerStatus: tenderdashDockerStatus } = tenderdash;

@@ -65,21 +65,21 @@ class GroupStatusCommand extends GroupBaseCommand {
         // eslint-disable-next-line no-console
         console.log(`Node ${name}`);
 
-        plain.Network = scope.core.network;
-        plain['Core Status'] = colors.status(scope.core.serviceStatus)(scope.core.serviceStatus);
-        plain['Core Height'] = scope.core.blockHeight;
-        plain['Platform Enabled'] = scope.platform.enabled;
+        plain.Network = scope.core.network || 'n/a';
+        plain['Core Status'] = colors.status(scope.core.serviceStatus)(scope.core.serviceStatus) || 'n/a';
+        plain['Core Height'] = scope.core.blockHeight || 'n/a';
+        plain['Platform Enabled'] = scope.platform.enabled || 'n/a';
 
         if (scope.platform.enabled) {
           if (scope.platform.tenderdash.serviceStatus === ServiceStatusEnum.error) {
-            plain['Platform Container'] = scope.platform.tenderdash.dockerStatus;
-            plain['Platform Status'] = colors.status(scope.platform.tenderdash.serviceStatus)(scope.platform.tenderdash.serviceStatus);
+            plain['Platform Container'] = scope.platform.tenderdash.dockerStatus || 'n/a';
+            plain['Platform Status'] = colors.status(scope.platform.tenderdash.serviceStatus)(scope.platform.tenderdash.serviceStatus) || 'n/a';
           } else {
-            plain['Platform Status'] = colors.status(scope.platform.tenderdash.serviceStatus)(scope.platform.tenderdash.serviceStatus);
-            plain['Platform Version'] = scope.platform.tenderdash.version;
-            plain['Platform Block Height'] = scope.platform.tenderdash.latestBlockHeight;
-            plain['Platform Peers'] = scope.platform.tenderdash.peers;
-            plain['Platform Network'] = scope.platform.tenderdash.network;
+            plain['Platform Status'] = colors.status(scope.platform.tenderdash.serviceStatus)(scope.platform.tenderdash.serviceStatus) || 'n/a';
+            plain['Platform Version'] = scope.platform.tenderdash.version || 'n/a';
+            plain['Platform Block Height'] = scope.platform.tenderdash.latestBlockHeight || 'n/a';
+            plain['Platform Peers'] = scope.platform.tenderdash.peers || 'n/a';
+            plain['Platform Network'] = scope.platform.tenderdash.network || 'n/a';
           }
         }
 

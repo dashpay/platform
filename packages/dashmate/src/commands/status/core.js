@@ -80,7 +80,8 @@ class CoreStatusCommand extends ConfigBaseCommand {
       plain['RPC service'] = rpcService || 'n/a';
       plain['Block height'] = colors.blockHeight(blockHeight, headerHeight, remoteBlockHeight)(blockHeight) || 'n/a';
       plain['Header height'] = headerHeight || 'n/a';
-      plain['Verification Progress'] = `${(verificationProgress * 100).toFixed(2)}%` || 'n/a';
+      plain['Verification Progress'] = verificationProgress
+        ? `${(verificationProgress * 100).toFixed(2)}%` : 'n/a';
       plain['Remote Block Height'] = remoteBlockHeight || 'n/a';
 
       return printObject(plain, flags.format);

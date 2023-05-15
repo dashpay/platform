@@ -168,6 +168,31 @@ function getPlatformScopeFactory(dockerCompose,
       },
     };
 
+    if (!config.get('platform.enable')) {
+      if (process.env.DEBUG) {
+        // eslint-disable-next-line no-console
+        console.error('Platform is not supported for this node type and network');
+
+        return scope;
+      }
+    }
+
+    try {
+      if (!(await dockerCompose.isServiceRunning(config.toEnvs(), 'drive_tenderdash'))) {
+        if (process.env.DEBUG) {
+          // eslint-disable-next-line no-console
+          console.error('Platform is not running');
+        }
+
+        return scope;
+      }
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('Could not fetch docker service running', e);
+
+      return scope;
+    }
+
     try {
       const coreIsSynced = await getMNSync(config);
       scope.coreIsSynced = coreIsSynced;

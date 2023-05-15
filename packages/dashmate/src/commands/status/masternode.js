@@ -59,7 +59,7 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
         plain['Masternode State'] = (scope.state === MasternodeStateEnum.READY
           ? chalk.green : chalk.red)(scope.state) || 'n/a';
       } else {
-        plain['Masternode Sync Status'] = chalk.yellow(scope.syncAsset) || 'n/a';
+        plain['Masternode Sync Status'] = scope.syncAsset ? chalk.yellow(scope.syncAsset) : 'n/a';
       }
 
       if (scope.state === MasternodeStateEnum.READY) {
