@@ -78,7 +78,7 @@ function obtainZeroSSLCertificateTaskFactory(
   ensure this port is accessible from the public internet. If you are using
   Network Address Translation (NAT), please enable port forwarding for port 80
   and all Dash service ports listed above.`,
-                message: 'Retry?',
+                message: 'Try again?',
                 enabled: 'Yes',
                 disabled: 'No',
                 initial: true,
@@ -112,7 +112,8 @@ function obtainZeroSSLCertificateTaskFactory(
           await verificationServer.stop();
           await verificationServer.destroy();
         },
-      }]);
+      },
+    ]);
   }
 
   return obtainZeroSSLCertificateTask;
