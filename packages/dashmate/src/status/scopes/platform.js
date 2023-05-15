@@ -3,7 +3,7 @@ const determineStatus = require('../determineStatus');
 const DockerStatusEnum = require('../enums/dockerStatus');
 const ServiceStatusEnum = require('../enums/serviceStatus');
 const providers = require('../providers');
-const ContainerIsNotPresentError = require("../../docker/errors/ContainerIsNotPresentError");
+const ContainerIsNotPresentError = require('../../docker/errors/ContainerIsNotPresentError');
 
 /**
  * @returns {getPlatformScopeFactory}
@@ -47,7 +47,7 @@ function getPlatformScopeFactory(dockerCompose,
     };
 
     if (!(await dockerCompose.isServiceRunning(config.toEnvs(), 'drive_tenderdash'))) {
-      info.dockerStatus = DockerStatusEnum.not_started
+      info.dockerStatus = DockerStatusEnum.not_started;
 
       if (process.env.DEBUG) {
         // eslint-disable-next-line no-console
@@ -133,18 +133,17 @@ function getPlatformScopeFactory(dockerCompose,
         serviceStatus = ServiceStatusEnum.error;
       }
 
-      return {dockerStatus, serviceStatus};
+      return { dockerStatus, serviceStatus };
     } catch (e) {
       if (e instanceof ContainerIsNotPresentError) {
         return {
           dockerStatus: DockerStatusEnum.not_started,
-          serviceStatus: null
-        }
+          serviceStatus: null,
+        };
       }
 
-      throw  e
+      throw e;
     }
-
   };
 
   /**
