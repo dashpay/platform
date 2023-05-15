@@ -62,7 +62,7 @@ function getServicesScopeFactory(dockerCompose) {
         status = null;
 
         if (e instanceof ContainerIsNotPresentError) {
-          status = DockerStatusEnum.not_created;
+          status = DockerStatusEnum.not_started;
         } else if (process.env.DEBUG) {
           // eslint-disable-next-line no-console
           console.error(e);

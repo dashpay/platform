@@ -1,7 +1,9 @@
 const fetch = require('node-fetch');
 const determineStatus = require('../determineStatus');
+const DockerStatusEnum = require('../enums/dockerStatus');
 const ServiceStatusEnum = require('../enums/serviceStatus');
 const providers = require('../providers');
+const ContainerIsNotPresentError = require("../../docker/errors/ContainerIsNotPresentError");
 
 /**
  * @returns {getPlatformScopeFactory}
@@ -43,6 +45,17 @@ function getPlatformScopeFactory(dockerCompose,
       moniker: null,
       network: null,
     };
+
+    if (!(await dockerCompose.isServiceRunning(config.toEnvs(), 'drive_tenderdash'))) {
+      info.dockerStatus = DockerStatusEnum.not_started
+
+      if (process.env.DEBUG) {
+        // eslint-disable-next-line no-console
+        console.error('Platform (tenderdash) is not running');
+      }
+
+      return info;
+    }
 
     const dockerStatus = await determineStatus.docker(dockerCompose, config, 'drive_tenderdash');
     const serviceStatus = determineStatus.platform(dockerStatus, isCoreSynced);
@@ -109,17 +122,29 @@ function getPlatformScopeFactory(dockerCompose,
   }
 
   const getDriveInfo = async (config, isCoreSynced) => {
-    const dockerStatus = await determineStatus.docker(dockerCompose, config, 'drive_abci');
-    let serviceStatus = determineStatus.platform(dockerStatus, isCoreSynced);
+    try {
+      const dockerStatus = await determineStatus.docker(dockerCompose, config, 'drive_abci');
+      let serviceStatus = determineStatus.platform(dockerStatus, isCoreSynced);
 
-    const driveEchoResult = await dockerCompose.execCommand(config.toEnvs(),
-      'drive_abci', 'yarn workspace @dashevo/drive echo');
+      const driveEchoResult = await dockerCompose.execCommand(config.toEnvs(),
+        'drive_abci', 'yarn workspace @dashevo/drive echo');
 
-    if (driveEchoResult.exitCode !== 0) {
-      serviceStatus = ServiceStatusEnum.error;
+      if (driveEchoResult.exitCode !== 0) {
+        serviceStatus = ServiceStatusEnum.error;
+      }
+
+      return {dockerStatus, serviceStatus};
+    } catch (e) {
+      if (e instanceof ContainerIsNotPresentError) {
+        return {
+          dockerStatus: DockerStatusEnum.not_started,
+          serviceStatus: null
+        }
+      }
+
+      throw  e
     }
 
-    return { dockerStatus, serviceStatus };
   };
 
   /**
@@ -175,22 +200,6 @@ function getPlatformScopeFactory(dockerCompose,
 
         return scope;
       }
-    }
-
-    try {
-      if (!(await dockerCompose.isServiceRunning(config.toEnvs(), 'drive_tenderdash'))) {
-        if (process.env.DEBUG) {
-          // eslint-disable-next-line no-console
-          console.error('Platform is not running');
-        }
-
-        return scope;
-      }
-    } catch (e) {
-      // eslint-disable-next-line no-console
-      console.error('Could not fetch docker service running', e);
-
-      return scope;
     }
 
     try {
