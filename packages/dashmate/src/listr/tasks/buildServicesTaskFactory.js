@@ -20,16 +20,6 @@ function buildServicesTaskFactory(
         const envs = config.toEnvs();
 
         let buildArgs = [];
-        if (process.env.SCCACHE_GHA_ENABLED === 'true') {
-          buildArgs = buildArgs.concat([
-            '--build-arg',
-            'SCCACHE_GHA_ENABLED=true',
-            '--build-arg',
-            `ACTIONS_CACHE_URL=${process.env.ACTIONS_CACHE_URL}`,
-            '--build-arg',
-            `ACTIONS_RUNTIME_TOKEN=${process.env.ACTIONS_RUNTIME_TOKEN}`,
-          ]);
-        }
 
         const obs = await dockerCompose.build(envs, undefined, buildArgs);
 
