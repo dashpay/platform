@@ -45,26 +45,33 @@ function getPlatformScopeFactory(dockerCompose,
       moniker: null,
       network: null,
     };
+    try {
+      if (!(await dockerCompose.isServiceRunning(config.toEnvs(), 'drive_tenderdash'))) {
+        info.dockerStatus = DockerStatusEnum.not_started;
+        info.serviceStatus = ServiceStatusEnum.stopped;
 
-    if (!(await dockerCompose.isServiceRunning(config.toEnvs(), 'drive_tenderdash'))) {
-      info.dockerStatus = DockerStatusEnum.not_started;
+        if (process.env.DEBUG) {
+          // eslint-disable-next-line no-console
+          console.error('Platform (tenderdash) is not running');
+        }
 
-      if (process.env.DEBUG) {
-        // eslint-disable-next-line no-console
-        console.error('Platform (tenderdash) is not running');
+        return info;
       }
+
+      const dockerStatus = await determineStatus.docker(dockerCompose, config, 'drive_tenderdash');
+      const serviceStatus = determineStatus.platform(dockerStatus, isCoreSynced);
+
+      info.dockerStatus = dockerStatus;
+      info.serviceStatus = serviceStatus;
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('Could not query docker for container status', e);
 
       return info;
     }
 
-    const dockerStatus = await determineStatus.docker(dockerCompose, config, 'drive_tenderdash');
-    const serviceStatus = determineStatus.platform(dockerStatus, isCoreSynced);
-
-    info.dockerStatus = dockerStatus;
-    info.serviceStatus = serviceStatus;
-
     // Collecting platform data fails if Tenderdash is waiting for core to sync
-    if (serviceStatus === ServiceStatusEnum.up) {
+    if (info.serviceStatus === ServiceStatusEnum.up) {
       const portStatusResult = await Promise.allSettled([
         providers.mnowatch.checkPortStatus(config.get('platform.dapi.envoy.http.port')),
         providers.mnowatch.checkPortStatus(config.get('platform.drive.tenderdash.p2p.port')),
@@ -122,27 +129,32 @@ function getPlatformScopeFactory(dockerCompose,
   }
 
   const getDriveInfo = async (config, isCoreSynced) => {
+    const info = {
+      dockerStatus: null,
+      serviceStatus: null,
+    };
+
     try {
-      const dockerStatus = await determineStatus.docker(dockerCompose, config, 'drive_abci');
-      let serviceStatus = determineStatus.platform(dockerStatus, isCoreSynced);
+      info.dockerStatus = await determineStatus.docker(dockerCompose, config, 'drive_abci');
+      info.serviceStatus = determineStatus.platform(info.dockerStatus, isCoreSynced);
 
       const driveEchoResult = await dockerCompose.execCommand(config.toEnvs(),
         'drive_abci', 'yarn workspace @dashevo/drive echo');
 
       if (driveEchoResult.exitCode !== 0) {
-        serviceStatus = ServiceStatusEnum.error;
+        info.serviceStatus = ServiceStatusEnum.error;
       }
 
-      return { dockerStatus, serviceStatus };
+      return info;
     } catch (e) {
       if (e instanceof ContainerIsNotPresentError) {
         return {
           dockerStatus: DockerStatusEnum.not_started,
-          serviceStatus: null,
+          serviceStatus: ServiceStatusEnum.stopped,
         };
       }
 
-      throw e;
+      return info;
     }
   };
 
@@ -217,20 +229,14 @@ function getPlatformScopeFactory(dockerCompose,
         // eslint-disable-next-line no-console
         console.error('Could not get MNSync from core', e);
       }
+
+      return scope;
     }
 
-    const response = await Promise.allSettled([
+    const [tenderdash, drive] = await Promise.all([
       getTenderdashInfo(config, scope.coreIsSynced),
       getDriveInfo(config, scope.coreIsSynced),
     ]);
-
-    if (process.env.DEBUG) {
-      for (const error of response.filter((e) => e.status === 'rejected')) {
-        // eslint-disable-next-line no-console
-        console.error(error.reason);
-      }
-    }
-    const [tenderdash, drive] = response.map((result) => (result.status === 'fulfilled' ? result.value : null));
 
     if (tenderdash) {
       scope.tenderdash = tenderdash;
