@@ -27,7 +27,7 @@ function getHostScopeFactory() {
 
     try {
       scope.hostname = os.hostname();
-      scope.hostname = prettyMs(os.uptime() * 1000);
+      scope.uptime = prettyMs(os.uptime() * 1000);
       scope.platform = os.platform();
       scope.arch = os.arch();
       scope.username = os.userInfo().username;
@@ -35,7 +35,10 @@ function getHostScopeFactory() {
       scope.cpus = os.cpus().length;
       scope.ip = await publicIp.v4();
     } catch (e) {
-      console.error(e);
+      if (process.env.DEBUG) {
+        // eslint-disable-next-line no-console
+        console.error('Could not retrieve host scope', e);
+      }
     }
 
     return scope;

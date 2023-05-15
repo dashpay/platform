@@ -4,6 +4,7 @@ const DockerStatusEnum = require('../../../../src/status/enums/dockerStatus');
 const getCoreScopeFactory = require('../../../../src/status/scopes/core');
 const determineStatus = require('../../../../src/status/determineStatus');
 const providers = require('../../../../src/status/providers');
+const PortStateEnum = require('../../../../src/status/enums/portState');
 
 describe('getCoreScopeFactory', () => {
   describe('#getCoreScope', () => {
@@ -265,6 +266,12 @@ describe('getCoreScopeFactory', () => {
         },
       });
 
+      mockGithubProvider.returns(Promise.reject());
+      mockMNOWatchProvider.returns(PortStateEnum.ERROR);
+      mockInsightProvider.returns({
+        status: () => Promise.reject(),
+      });
+
       const scope = await getCoreScope(config);
 
       const expectedScope = {
@@ -277,7 +284,7 @@ describe('getCoreScopeFactory', () => {
         dockerStatus: DockerStatusEnum.running,
         serviceStatus: ServiceStatusEnum.up,
         peersCount: 1,
-        p2pPortState: null,
+        p2pPortState: PortStateEnum.ERROR,
         blockHeight: 2,
         remoteBlockHeight: null,
         headerHeight: 3,

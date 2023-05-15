@@ -5,8 +5,6 @@ const { OUTPUT_FORMATS } = require('../../constants');
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 const printObject = require('../../printers/printObject');
 
-const ServiceIsNotRunningError = require('../../docker/errors/ServiceIsNotRunningError');
-
 const colors = require('../../status/colors');
 
 class PlatformStatusCommand extends ConfigBaseCommand {
@@ -27,12 +25,35 @@ class PlatformStatusCommand extends ConfigBaseCommand {
     config,
     getPlatformScope,
   ) {
+    const plain = {
+      'HTTP service': 'n/a',
+      'HTTP port': 'n/a',
+      'P2P service': 'n/a',
+      'P2P port': 'n/a',
+      'RPC service': 'n/a',
+      'Tenderdash Docker Status': 'n/a',
+      'Tenderdash Service Status': 'n/a',
+      'Drive Docker Status': 'n/a',
+      'Drive Service Status': 'n/a',
+      Network: 'n/a',
+      'Tenderdash Version': 'n/a',
+      'Block height': 'n/a',
+      'Peer count': 'n/a',
+      'App hash': 'n/a',
+    };
+
     if (!config.get('platform.enable')) {
-      throw new Error('Platform is not supported for this node type and network');
+      if (process.env.DEBUG) {
+        // eslint-disable-next-line no-console
+        console.error('Platform is not supported for this node type and network');
+      }
     }
 
     if (!(await dockerCompose.isServiceRunning(config.toEnvs(), 'drive_tenderdash'))) {
-      throw new ServiceIsNotRunningError(config.get('network'), 'drive_tenderdash');
+      if (process.env.DEBUG) {
+        // eslint-disable-next-line no-console
+        console.error('Platform is not running');
+      }
     }
 
     // Collect platform data
@@ -51,13 +72,11 @@ class PlatformStatusCommand extends ConfigBaseCommand {
         drive,
       } = scope;
 
-      const plain = {
-        'HTTP service': httpService,
-        'HTTP port': `${httpPort} ${colors.portState(httpPortState)(httpPortState)}`,
-        'P2P service': p2pService,
-        'P2P port': `${p2pPort} ${colors.portState(p2pPortState)(p2pPortState)}`,
-        'RPC service': rpcService,
-      };
+      plain['HTTP service'] = httpService || 'n/a';
+      plain['HTTP port'] = `${httpPort} ${colors.portState(httpPortState)(httpPortState)}` || 'n/a';
+      plain['P2P service'] = p2pService || 'n/a';
+      plain['P2P port'] = `${p2pPort} ${colors.portState(p2pPortState)(p2pPortState)}` || 'n/a';
+      plain['RPC service'] = rpcService || 'n/a';
 
       const { dockerStatus: tenderdashDockerStatus } = tenderdash;
       const { serviceStatus: tenderdashServiceStatus } = tenderdash;
@@ -65,11 +84,11 @@ class PlatformStatusCommand extends ConfigBaseCommand {
       const { dockerStatus: driveDockerStatus } = drive;
       const { serviceStatus: driveServiceStatus } = drive;
 
-      plain['Tenderdash Docker Status'] = colors.docker(tenderdashDockerStatus)(tenderdashDockerStatus);
-      plain['Tenderdash Service Status'] = colors.status(tenderdashServiceStatus)(tenderdashServiceStatus);
+      plain['Tenderdash Docker Status'] = colors.docker(tenderdashDockerStatus)(tenderdashDockerStatus) || 'n/a';
+      plain['Tenderdash Service Status'] = colors.status(tenderdashServiceStatus)(tenderdashServiceStatus) || 'n/a';
 
-      plain['Drive Docker Status'] = colors.docker(driveDockerStatus)(driveDockerStatus);
-      plain['Drive Service Status'] = colors.status(driveServiceStatus)(driveServiceStatus);
+      plain['Drive Docker Status'] = colors.docker(driveDockerStatus)(driveDockerStatus) || 'n/a';
+      plain['Drive Service Status'] = colors.status(driveServiceStatus)(driveServiceStatus) || 'n/a';
 
       if (tenderdash.version) {
         const {
@@ -80,11 +99,11 @@ class PlatformStatusCommand extends ConfigBaseCommand {
           network: tenderdashNetwork,
         } = tenderdash;
 
-        plain['Network'] = tenderdashNetwork;
-        plain['Tenderdash Version'] = tenderdashVersion;
-        plain['Block height'] = platformBlockHeight;
-        plain['Peer count'] = platformPeers;
-        plain['App hash'] = platformLatestAppHash;
+        plain['Network'] = tenderdashNetwork || 'n/a';
+        plain['Tenderdash Version'] = tenderdashVersion || 'n/a';
+        plain['Block height'] = platformBlockHeight || 'n/a';
+        plain['Peer count'] = platformPeers || 'n/a';
+        plain['App hash'] = platformLatestAppHash || 'n/a';
       }
 
       return printObject(plain, flags.format);

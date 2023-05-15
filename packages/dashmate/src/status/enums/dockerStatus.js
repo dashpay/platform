@@ -6,6 +6,7 @@ const ServiceStatusEnum = {
   removing: 'removing',
   exited: 'exited',
   dead: 'dead',
+  not_created: 'not_created',
 };
 
 module.exports = ServiceStatusEnum;

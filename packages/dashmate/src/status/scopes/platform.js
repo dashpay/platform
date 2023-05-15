@@ -96,7 +96,10 @@ function getPlatformScopeFactory(dockerCompose,
         info.moniker = moniker;
         info.network = network;
       } catch (e) {
-        console.error(e);
+        if (process.env.DEBUG) {
+          // eslint-disable-next-line no-console
+          console.error('Could not retrieve status from tenderdash RPC', e);
+        }
 
         info.serviceStatus = ServiceStatusEnum.error;
       }
@@ -128,11 +131,11 @@ function getPlatformScopeFactory(dockerCompose,
    */
   async function getPlatformScope(config) {
     const httpPort = config.get('platform.dapi.envoy.http.port');
-    const httpService = `${config.get('externalIp')}:${httpPort}`;
+    const httpService = config.get('externalIp') ? `${config.get('externalIp')}:${httpPort}` : null;
     const p2pPort = config.get('platform.drive.tenderdash.p2p.port');
-    const p2pService = `${config.get('externalIp')}:${p2pPort}`;
+    const p2pService = config.get('externalIp') ? `${config.get('externalIp')}:${p2pPort}` : null;
     const rpcPort = config.get('platform.drive.tenderdash.rpc.port');
-    const rpcService = `127.0.0.1:${rpcPort}`;
+    const rpcService = rpcPort ? `127.0.0.1:${rpcPort}` : rpcPort;
 
     const scope = {
       coreIsSynced: null,
@@ -170,34 +173,41 @@ function getPlatformScopeFactory(dockerCompose,
       scope.coreIsSynced = coreIsSynced;
 
       if (!coreIsSynced) {
-        console.error('Platform status is not available until masternode state is \'READY\'');
-
+        if (process.env.DEBUG) {
+          // eslint-disable-next-line no-console
+          console.error('Platform status is not available until masternode state is \'READY\'');
+        }
         return scope;
       }
+    } catch (e) {
+      if (process.env.DEBUG) {
+        // eslint-disable-next-line no-console
+        console.error('Could not get MNSync from core', e);
+      }
+    }
 
-      const response = await Promise.allSettled([
-        getTenderdashInfo(config, coreIsSynced),
-        getDriveInfo(config, coreIsSynced),
-      ]);
+    const response = await Promise.allSettled([
+      getTenderdashInfo(config, scope.coreIsSynced),
+      getDriveInfo(config, scope.coreIsSynced),
+    ]);
 
+    if (process.env.DEBUG) {
       for (const error of response.filter((e) => e.status === 'rejected')) {
+        // eslint-disable-next-line no-console
         console.error(error.reason);
       }
+    }
+    const [tenderdash, drive] = response.map((result) => (result.status === 'fulfilled' ? result.value : null));
 
-      const [tenderdash, drive] = response.map((result) => (result.status === 'fulfilled' ? result.value : null));
+    if (tenderdash) {
+      scope.tenderdash = tenderdash;
 
-      if (tenderdash) {
-        scope.tenderdash = tenderdash;
+      scope.httpPortState = tenderdash.httpPortState;
+      scope.p2pPortState = tenderdash.p2pPortState;
+    }
 
-        scope.httpPortState = tenderdash.httpPortState;
-        scope.p2pPortState = tenderdash.p2pPortState;
-      }
-
-      if (drive) {
-        scope.drive = drive;
-      }
-    } catch (e) {
-      console.error(e);
+    if (drive) {
+      scope.drive = drive;
     }
 
     return scope;

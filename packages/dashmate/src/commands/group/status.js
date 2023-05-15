@@ -38,11 +38,26 @@ class GroupStatusCommand extends GroupBaseCommand {
 
     for (const scopeResult of scopeResults) {
       if (scopeResult.status !== 'fulfilled') {
-        // eslint-disable-next-line no-console
-        console.error(scopeResult.reason);
+        if (process.env.DEBUG) {
+          // eslint-disable-next-line no-console
+          console.error(scopeResult.reason);
+        }
 
         continue;
       }
+
+      const plain = {
+        'Network': 'n/a',
+        'Core Status': 'n/a',
+        'Core Height': 'n/a',
+        'Platform Enabled': 'n/a',
+        'Platform Container': 'n/a',
+        'Platform Status': 'n/a',
+        'Platform Version': 'n/a',
+        'Platform Block Height': 'n/a',
+        'Platform Peers': 'n/a',
+        'Platform Network': 'n/a',
+      };
 
       const { name, scope } = scopeResult.value;
 
@@ -50,12 +65,10 @@ class GroupStatusCommand extends GroupBaseCommand {
         // eslint-disable-next-line no-console
         console.log(`Node ${name}`);
 
-        const plain = {
-          'Network': scope.core.network,
-          'Core Status': colors.status(scope.core.serviceStatus)(scope.core.serviceStatus),
-          'Core Height': scope.core.blockHeight,
-          'Platform Enabled': scope.platform.enabled,
-        };
+        plain.Network = scope.core.network;
+        plain['Core Status'] = colors.status(scope.core.serviceStatus)(scope.core.serviceStatus);
+        plain['Core Height'] = scope.core.blockHeight;
+        plain['Platform Enabled'] = scope.platform.enabled;
 
         if (scope.platform.enabled) {
           if (scope.platform.tenderdash.serviceStatus === ServiceStatusEnum.error) {

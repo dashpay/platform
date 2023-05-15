@@ -131,8 +131,11 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
       getSentinelInfo(config),
     ]);
 
-    for (const error of basicResult.filter((e) => e.status === 'rejected')) {
-      console.error(error.reason);
+    if (process.env.DEBUG) {
+      for (const error of basicResult.filter((e) => e.status === 'rejected')) {
+        // eslint-disable-next-line no-console
+        console.error(error.reason);
+      }
     }
 
     const [syncAsset, sentinelInfo] = basicResult
@@ -156,7 +159,10 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
         scope.status = masternodeInfo.status;
         scope.nodeState = masternodeInfo.nodeState;
       } catch (e) {
-        console.error(e);
+        if (process.env.DEBUG) {
+          // eslint-disable-next-line no-console
+          console.error('Could not retrieve dashcore masternode info', e);
+        }
       }
     }
 

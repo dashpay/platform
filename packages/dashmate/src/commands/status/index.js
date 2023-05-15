@@ -23,6 +23,32 @@ class StatusCommand extends ConfigBaseCommand {
     getOverviewScope,
     config,
   ) {
+    const plain = {
+      Network: 'n/a',
+      'Core Version': 'n/a',
+      'Core Status': 'n/a',
+      'Core Service Status': 'n/a',
+      'Core Size': 'n/a',
+      'Core Height': 'n/a',
+      'Core Sync Progress': 'n/a',
+      'Masternode Enabled': 'n/a',
+      'Masternode State': 'n/a',
+      'Masternode ProTX': 'n/a',
+      'PoSe Penalty': 'n/a',
+      'Last paid block': 'n/a',
+      'Last paid time': 'n/a',
+      'Payment queue position': 'n/a',
+      'Next payment time': 'n/a',
+      'Sentinel Version': 'n/a',
+      'Sentinel Status': 'n/a',
+      'Platform Enabled': 'n/a',
+      'Platform Status': 'n/a',
+      'Platform Version': 'n/a',
+      'Platform Block Height': 'n/a',
+      'Platform Peers': 'n/a',
+      'Platform Network': 'n/a',
+    };
+
     const scope = await getOverviewScope(config);
 
     if (flags.format === OUTPUT_FORMATS.PLAIN) {
@@ -33,23 +59,21 @@ class StatusCommand extends ConfigBaseCommand {
         dockerStatus, serviceStatus, version, verificationProgress, sizeOnDisk, blockHeight,
       } = core;
 
-      const plain = {
-        Network: network,
-        'Core Version': version,
-        'Core Status': dockerStatus,
-        'Core Service Status': colors.status(serviceStatus)(serviceStatus),
-        'Core Size': `${(sizeOnDisk / 1024 / 1024 / 1024).toFixed(2)} GB`,
-        'Core Height': blockHeight,
-      };
+      plain.Network = network || 'n/a';
+      plain['Core Version'] = version || 'n/a';
+      plain['Core Status'] = dockerStatus || 'n/a';
+      plain['Core Service Status'] = colors.status(serviceStatus)(serviceStatus) || 'n/a';
+      plain['Core Size'] = sizeOnDisk ? `${(sizeOnDisk / 1024 / 1024 / 1024).toFixed(2)} GB` : 'n/a';
+      plain['Core Height'] = blockHeight || 'n/a';
 
       if (serviceStatus === ServiceStatusEnum.syncing) {
-        plain['Core Sync Progress'] = `${(verificationProgress * 100).toFixed(2)}%`;
+        plain['Core Sync Progress'] = verificationProgress ? `${(verificationProgress * 100).toFixed(2)}%` : 'n/a';
       }
 
-      plain['Masternode Enabled'] = masternode.enabled;
+      plain['Masternode Enabled'] = masternode.enabled || 'n/a';
 
       if (masternode.enabled) {
-        plain['Masternode State'] = masternode.state;
+        plain['Masternode State'] = masternode.state || 'n/a';
 
         if (masternode.state === MasternodeStateEnum.READY) {
           const {
@@ -60,30 +84,30 @@ class StatusCommand extends ConfigBaseCommand {
             nextPaymentTime,
           } = masternode.nodeState;
 
-          plain['Masternode ProTX'] = masternode.proTxHash;
-          plain['PoSe Penalty'] = poSePenalty;
-          plain['Last paid block'] = lastPaidHeight;
-          plain['Last paid time'] = lastPaidTime;
-          plain['Payment queue position'] = paymentQueuePosition;
-          plain['Next payment time'] = nextPaymentTime;
+          plain['Masternode ProTX'] = masternode.proTxHash || 'n/a';
+          plain['PoSe Penalty'] = poSePenalty || 'n/a';
+          plain['Last paid block'] = lastPaidHeight || 'n/a';
+          plain['Last paid time'] = lastPaidTime || 'n/a';
+          plain['Payment queue position'] = paymentQueuePosition || 'n/a';
+          plain['Next payment time'] = nextPaymentTime || 'n/a';
         }
 
         if (masternode.sentinel.version) {
-          plain['Sentinel Version'] = masternode.sentinel.version;
-          plain['Sentinel Status'] = colors.sentinel(masternode.sentinel.state)(masternode.sentinel.state);
+          plain['Sentinel Version'] = masternode.sentinel.version || 'n/a';
+          plain['Sentinel Status'] = colors.sentinel(masternode.sentinel.state)(masternode.sentinel.state) || 'n/a';
         }
       }
 
-      plain['Platform Enabled'] = platform.enabled;
+      plain['Platform Enabled'] = platform.enabled || 'n/a';
 
       if (platform.enabled) {
-        plain['Platform Status'] = colors.status(platform.tenderdash.serviceStatus)(platform.tenderdash.serviceStatus);
+        plain['Platform Status'] = colors.status(platform.tenderdash.serviceStatus)(platform.tenderdash.serviceStatus) || 'n/a';
 
         if (platform.tenderdash.serviceStatus === ServiceStatusEnum.up) {
-          plain['Platform Version'] = platform.tenderdash.version;
-          plain['Platform Block Height'] = platform.tenderdash.latestBlockHeight;
-          plain['Platform Peers'] = platform.tenderdash.peers;
-          plain['Platform Network'] = platform.tenderdash.network;
+          plain['Platform Version'] = platform.tenderdash.version || 'n/a';
+          plain['Platform Block Height'] = platform.tenderdash.latestBlockHeight || 'n/a';
+          plain['Platform Peers'] = platform.tenderdash.peers || 'n/a';
+          plain['Platform Network'] = platform.tenderdash.network || 'n/a';
         }
       }
 

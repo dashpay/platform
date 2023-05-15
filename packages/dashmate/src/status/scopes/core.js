@@ -22,8 +22,8 @@ function getCoreScopeFactory(dockerCompose,
    */
   async function getCoreScope(config) {
     const network = config.get('network');
-    const rpcService = `127.0.0.1:${config.get('core.rpc.port')}`;
-    const p2pService = `${config.get('externalIp')}:${config.get('core.p2p.port')}`;
+    const rpcService = config.get('core.rpc.port') ? `127.0.0.1:${config.get('core.rpc.port')}` : null;
+    const p2pService = config.get('externalIp') ? `${config.get('externalIp')}:${config.get('core.p2p.port')}` : null;
 
     const core = {
       network,
@@ -47,13 +47,6 @@ function getCoreScopeFactory(dockerCompose,
 
     // this try catch handle getConnectionHost, isServiceRunning calls
     try {
-      const rpcClient = createRpcClient({
-        port: config.get('core.rpc.port'),
-        user: config.get('core.rpc.user'),
-        pass: config.get('core.rpc.password'),
-        host: await getConnectionHost(config, 'core'),
-      });
-
       if (!(await dockerCompose.isServiceRunning(config.toEnvs(), 'core'))) {
         core.serviceStatus = ServiceStatusEnum.stopped;
 
@@ -67,60 +60,77 @@ function getCoreScopeFactory(dockerCompose,
 
         return core;
       }
-
-      try {
-        const [mnsyncStatus, networkInfo, blockchainInfo] = await Promise.all([
-          rpcClient.mnsync('status'),
-          rpcClient.getNetworkInfo(),
-          rpcClient.getBlockchainInfo(),
-        ]);
-
-        const { AssetName: syncAsset } = mnsyncStatus.result;
-        core.serviceStatus = determineStatus.core(core.dockerStatus, syncAsset);
-        core.syncAsset = syncAsset;
-
-        const {
-          chain, difficulty, blocks, headers, verificationprogress, size_on_disk,
-        } = blockchainInfo.result;
-
-        core.chain = chain;
-        core.difficulty = difficulty;
-        core.blockHeight = blocks;
-        core.headerHeight = headers;
-        core.verificationProgress = verificationprogress;
-        core.sizeOnDisk = size_on_disk;
-
-        const { subversion, connections } = networkInfo.result;
-
-        core.peersCount = connections;
-        core.version = extractCoreVersion(subversion);
-      } catch (e) {
-        console.error(e);
-        core.serviceStatus = ServiceStatusEnum.error;
-      }
-
-      const providersResult = await Promise.allSettled([
-        providers.github.release('dashpay/dash'),
-        providers.mnowatch.checkPortStatus(config.get('core.p2p.port')),
-        providers.insight(config.get('network')).status(),
-      ]);
-
-      for (const error of providersResult.filter((e) => e.status === 'rejected')) {
-        console.error(error.reason);
-      }
-
-      const [latestVersion, p2pPortState, insightStatus] = providersResult
-        .map((result) => (result.status === 'fulfilled' ? result.value : null));
-
-      core.latestVersion = latestVersion;
-      core.p2pPortState = p2pPortState;
-      core.remoteBlockHeight = insightStatus ? insightStatus.info.blocks : null;
-
-      return core;
     } catch (e) {
-      console.error(e);
+      if (process.env.DEBUG) {
+        // eslint-disable-next-line no-console
+        console.error('Could not fetch docker status for core', e);
+      }
+
       return core;
     }
+
+    try {
+      const rpcClient = createRpcClient({
+        port: config.get('core.rpc.port'),
+        user: config.get('core.rpc.user'),
+        pass: config.get('core.rpc.password'),
+        host: await getConnectionHost(config, 'core'),
+      });
+
+      const [mnsyncStatus, networkInfo, blockchainInfo] = await Promise.all([
+        rpcClient.mnsync('status'),
+        rpcClient.getNetworkInfo(),
+        rpcClient.getBlockchainInfo(),
+      ]);
+
+      const { AssetName: syncAsset } = mnsyncStatus.result;
+      core.serviceStatus = determineStatus.core(core.dockerStatus, syncAsset);
+      core.syncAsset = syncAsset;
+
+      const {
+        chain, difficulty, blocks, headers, verificationprogress, size_on_disk,
+      } = blockchainInfo.result;
+
+      core.chain = chain;
+      core.difficulty = difficulty;
+      core.blockHeight = blocks;
+      core.headerHeight = headers;
+      core.verificationProgress = verificationprogress;
+      core.sizeOnDisk = size_on_disk;
+
+      const { subversion, connections } = networkInfo.result;
+
+      core.peersCount = connections;
+      core.version = extractCoreVersion(subversion);
+    } catch (e) {
+      if (process.env.DEBUG) {
+        // eslint-disable-next-line no-console
+        console.error('Could not fetch dashcore RPC', e);
+      }
+      core.serviceStatus = ServiceStatusEnum.error;
+    }
+
+    const providersResult = await Promise.allSettled([
+      providers.github.release('dashpay/dash'),
+      providers.mnowatch.checkPortStatus(config.get('core.p2p.port')),
+      providers.insight(config.get('network')).status(),
+    ]);
+
+    if (process.env.DEBUG) {
+      for (const error of providersResult.filter((e) => e.status === 'rejected')) {
+        // eslint-disable-next-line no-console
+        console.error('Could not retrieve provider response', error.reason);
+      }
+    }
+
+    const [latestVersion, p2pPortState, insightStatus] = providersResult
+      .map((result) => (result.status === 'fulfilled' ? result.value : null));
+
+    core.latestVersion = latestVersion;
+    core.p2pPortState = p2pPortState;
+    core.remoteBlockHeight = insightStatus ? insightStatus.info.blocks : null;
+
+    return core;
   }
 
   return getCoreScope;
