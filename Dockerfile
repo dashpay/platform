@@ -116,6 +116,7 @@ ENV NODE_ENV ${NODE_ENV}
 WORKDIR /platform
 
 RUN whoami
+RUN echo "bust cache 1"
 RUN --mount=type=cache,sharing=shared,target=/usr/local/cargo/registry/index \
     --mount=type=cache,sharing=shared,target=/usr/local/cargo/registry/cache \
     --mount=type=cache,sharing=shared,target=/usr/local/cargo/git/db \
