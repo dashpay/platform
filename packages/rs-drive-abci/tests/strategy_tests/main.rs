@@ -2267,4 +2267,126 @@ mod tests {
         // we have a maximum 90 quorums, that could have been used, 4 were used twice
         assert_eq!(balance_count, 86);
     }
+
+
+    #[test]
+    fn run_chain_stop_and_restart_with_rotation() {
+        let strategy = Strategy {
+            contracts_with_updates: vec![],
+            operations: vec![],
+            identities_inserts: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+            total_hpmns: 500,
+            extra_normal_mns: 0,
+            quorum_count: 100,
+            upgrading_info: None,
+            core_height_increase: Frequency {
+                times_per_block_range: Default::default(),
+                chance_per_block: None,
+            },
+            proposer_strategy: Default::default(),
+            rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: false,
+        };
+        let day_in_ms = 1000 * 60 * 60 * 24;
+        let config = PlatformConfig {
+            verify_sum_trees: true,
+            quorum_size: 3,
+            validator_set_quorum_rotation_block_count: 1,
+            block_spacing_ms: day_in_ms,
+            testing_configs: PlatformTestConfig::default_with_no_block_signing(),
+            ..Default::default()
+        };
+        let TempPlatform {
+            mut platform,
+            tempdir: _,
+        } = TestPlatformBuilder::new()
+            .with_config(config.clone())
+            .build_with_mock_rpc();
+
+        platform
+            .core_rpc
+            .expect_get_best_chain_lock()
+            .returning(move || {
+                Ok(CoreChainLock {
+                    core_block_height: 10,
+                    core_block_hash: [1; 32].to_vec(),
+                    signature: [2; 96].to_vec(),
+                })
+            });
+
+        let ChainExecutionOutcome {
+            abci_app,
+            proposers,
+            quorums,
+            current_quorum_hash,
+            current_proposer_versions,
+            end_time_ms,
+            ..
+        } = run_chain_for_strategy(&mut platform, 100, strategy.clone(), config.clone(), 89);
+
+        let known_root_hash = abci_app
+            .platform
+            .drive
+            .grove
+            .root_hash(None)
+            .unwrap()
+            .expect("expected root hash");
+
+        abci_app
+            .platform
+            .recreate_state()
+            .expect("expected to recreate state");
+
+        let ResponseInfo {
+            data: _,
+            version: _,
+            app_version: _,
+            last_block_height,
+            last_block_app_hash,
+        } = abci_app
+            .info(RequestInfo {
+                version: "0.12.0".to_string(),
+                block_version: 0,
+                p2p_version: 0,
+                abci_version: "0.20.0".to_string(),
+            })
+            .expect("expected to call info");
+
+        assert_eq!(last_block_height, 100);
+        assert_eq!(last_block_app_hash, known_root_hash);
+
+        let block_start = abci_app
+            .platform
+            .state
+            .read()
+            .unwrap()
+            .last_committed_block_info
+            .as_ref()
+            .unwrap()
+            .basic_info
+            .height
+            + 1;
+
+        continue_chain_for_strategy(
+            abci_app,
+            ChainExecutionParameters {
+                block_start,
+                core_height_start: 10,
+                block_count: 30,
+                proposers,
+                quorums,
+                current_quorum_hash,
+                current_proposer_versions: Some(current_proposer_versions),
+                current_time_ms: end_time_ms,
+            },
+            strategy,
+            config,
+            StrategyRandomness::SeedEntropy(block_start),
+        );
+    }
 }
