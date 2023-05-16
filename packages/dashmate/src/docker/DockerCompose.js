@@ -417,7 +417,6 @@ class DockerCompose {
       DASHMATE_HOME_DIR: HOME_DIR_PATH,
       LOCAL_UID: uid,
       LOCAL_GID: gid,
-      DOCKER_GID: 998, // TODO: on Linux: `cat /etc/group|grep ^docker: |cut -d: -f3`, on Mac: set to 0
     };
 
     if (isWsl) {

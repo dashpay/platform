@@ -115,7 +115,9 @@ services:
   dashmate_helper:
     image: ${DASHMATE_HELPER_DOCKER_IMAGE:?err}
     restart: unless-stopped
-    user: ${LOCAL_UID}:${DOCKER_GID}
+    environment:
+      - LOCAL_UID=${LOCAL_UID:?err}
+      - LOCAL_GID=${LOCAL_GID:?err}
     ports:
       - 127.0.0.1:${DASHMATE_HELPER_API_PORT:?err}:${DASHMATE_HELPER_API_PORT:?err}
     command: yarn workspace dashmate helper ${CONFIG_NAME:?err}
