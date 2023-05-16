@@ -1,3 +1,16 @@
+### [0.24.2](https://github.com/dashpay/platform/compare/v0.24.1...v0.24.2) (2023-05-16)
+
+
+### Features
+
+* **dashmate:** obtain SSL certificate command ([#1088](https://github.com/dashpay/platform/issues/1088))
+* **dpp:** document `$createdAt` and `$updatedAt` validation ([#948](https://github.com/dashpay/platform/issues/948))
+
+
+### Bug Fixes
+
+* **dashmate:** status command fails with errors ([#1059](https://github.com/dashpay/platform/issues/1059))
+
 ### [0.24.1](https://github.com/dashpay/platform/compare/v0.24.0...v0.24.1) (2023-05-15)
 
 
