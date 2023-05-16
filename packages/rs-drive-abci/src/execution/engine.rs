@@ -328,11 +328,7 @@ where
         state_cache.initialization_information = None;
 
         // Persist ephemeral data
-        self.store_ephemeral_data(
-            &block_info,
-            &state_cache.current_validator_set_quorum_hash,
-            transaction,
-        )?;
+        self.store_ephemeral_data(&state_cache, transaction)?;
 
         Ok(())
     }

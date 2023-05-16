@@ -10,13 +10,14 @@ use dpp::block::epoch::Epoch;
 
 use drive::dpp::util::deserializer::ProtocolVersion;
 use indexmap::IndexMap;
+use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
 
 mod commit;
 mod genesis;
 
 /// Platform state
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PlatformState {
     /// Information about the last block
     pub last_committed_block_info: Option<ExtendedBlockInfo>,
@@ -46,7 +47,7 @@ pub struct PlatformState {
 }
 
 /// Platform state for the first block
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PlatformInitializationState {
     /// Core initialization height
     pub core_initialization_height: u32,

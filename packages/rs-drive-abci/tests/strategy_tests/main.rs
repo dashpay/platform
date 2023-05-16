@@ -2268,7 +2268,6 @@ mod tests {
         assert_eq!(balance_count, 86);
     }
 
-
     #[test]
     fn run_chain_stop_and_restart_with_rotation() {
         let strategy = Strategy {

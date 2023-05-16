@@ -1,6 +1,8 @@
+use crate::error::serialization::SerializationError;
 use crate::error::Error;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
+use crate::state::PlatformState;
 use dpp::block::block_info::ExtendedBlockInfo;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::QuorumHash;
@@ -18,8 +20,7 @@ where
     ///
     /// # Arguments
     ///
-    /// * `block_info` - An `ExtendedBlockInfo` reference containing block information.
-    /// * `quorum_hash` - A `QuorumHash` reference.
+    /// * `platform_state` - A `PlatformState` reference.
     /// * `transaction` - A `Transaction` reference.
     ///
     /// # Returns
@@ -28,30 +29,26 @@ where
     ///
     pub(crate) fn store_ephemeral_data(
         &self,
-        block_info: &ExtendedBlockInfo,
-        quorum_hash: &QuorumHash,
+        platform_state: &PlatformState,
         transaction: &Transaction,
     ) -> Result<(), Error> {
+        let mut platform_state = platform_state.clone();
         // we need to serialize the block info
-        let serialized_block_info = block_info.serialize()?;
+        let mut serialized_platform_state = vec![];
+        ciborium::ser::into_writer(&platform_state, &mut serialized_platform_state).map_err(
+            |_| {
+                SerializationError::CorruptedSerialization(format!(
+                    "unable to encode PlatformState as cbor"
+                ))
+            },
+        )?;
 
         // next we need to store this data in grovedb
         self.drive
             .grove
             .put_aux(
                 b"saved_state",
-                &serialized_block_info,
-                None,
-                Some(transaction),
-            )
-            .unwrap()
-            .map_err(|e| Error::Drive(GroveDB(e)))?;
-
-        self.drive
-            .grove
-            .put_aux(
-                b"saved_quorum_hash",
-                &quorum_hash.into_inner(),
+                &serialized_platform_state,
                 None,
                 Some(transaction),
             )
