@@ -21,7 +21,9 @@ use crate::document::state_transition::documents_batch_transition::{
     DocumentsBatchTransitionAction, DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION,
 };
 use crate::document::Document;
-use crate::validation::{AsyncDataValidator, SimpleConsensusValidationResult};
+use crate::validation::{
+    AsyncDataValidator, SimpleConsensusValidationResult, SimpleValidationResult,
+};
 use crate::NonConsensusError;
 use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,
@@ -466,8 +468,8 @@ fn check_if_timestamps_are_not_equal(
 fn check_if_timestamps_are_equal(
     document_transition: &DocumentTransition,
     original_document: &Document,
-) -> SimpleValidationResult {
-    let mut result = SimpleValidationResult::default();
+) -> SimpleConsensusValidationResult {
+    let mut result = SimpleConsensusValidationResult::default();
     let created_at = original_document.created_at;
     let updated_at = document_transition.get_updated_at();
 

@@ -558,10 +558,15 @@ async fn should_return_invalid_result_if_created_at_and_updated_at_are_equal_for
         .expect_fetch_documents()
         .returning(move |_, _, _, _| Ok(vec![documents[0].document.clone()]));
 
-    let validation_result =
-        validate_document_batch_transition_state(&state_repository_mock, &state_transition)
-            .await
-            .expect("validation result should be returned");
+    let execution_context = StateTransitionExecutionContext::default();
+
+    let validation_result = validate_document_batch_transition_state(
+        &state_repository_mock,
+        &state_transition,
+        &execution_context,
+    )
+    .await
+    .expect("validation result should be returned");
 
     let state_error = get_state_error(&validation_result, 0);
     assert_eq!(4025, state_error.code());
