@@ -8073,6 +8073,15 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
           "linkType": "HARD"\
         }]\
       ]],\
+      ["csv-parse", [\
+        ["npm:5.3.10", {\
+          "packageLocation": "./.yarn/cache/csv-parse-npm-5.3.10-9673c20597-4d74c5912f.zip/node_modules/csv-parse/",\
+          "packageDependencies": [\
+            ["csv-parse", "npm:5.3.10"]\
+          ],\
+          "linkType": "HARD"\
+        }]\
+      ]],\
       ["custom-event", [\
         ["npm:1.0.1", {\
           "packageLocation": "./.yarn/cache/custom-event-npm-1.0.1-6693c8e298-334f48a6d5.zip/node_modules/custom-event/",\
@@ -8192,6 +8201,7 @@ function $$SETUP_STATE(hydrateRuntimeState, basePath) {
             ["chai-as-promised", "virtual:58fb68f2aed20e5e0f2e48520ab903ae9bb3440369bfd5e912034003cf27c5aae368649fc5620dd2acbed578131f3a0975e75b838d77d12335fb0412e24026c6#npm:7.1.1"],\
             ["chalk", "npm:4.1.2"],\
             ["cron", "npm:2.1.0"],\
+            ["csv-parse", "npm:5.3.10"],\
             ["dash", "workspace:packages/js-dash-sdk"],\
             ["dirty-chai", "virtual:12a596dc9572e25ce715d3736dc74b317c5ca5cfb3b4f67864b1e76b3a401006f84d381aaf975bb5b4da9cafac5125e6869fc78d5202f4c95780c81479112f32#npm:2.0.1"],\
             ["dockerode", "npm:3.3.5"],\

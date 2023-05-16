@@ -6033,6 +6033,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"csv-parse@npm:^5.3.10":
+  version: 5.3.10
+  resolution: "csv-parse@npm:5.3.10"
+  checksum: 4d74c5912f9903b84ecca06399191b0fb5c9e7e7c2f02b845393393a2b66192e47e4c2bc8bd03f0c483108ae8e4367a46b1e5f945ded26b386ce9148c0239d14
+  languageName: node
+  linkType: hard
+
 "custom-event@npm:~1.0.0":
   version: 1.0.1
   resolution: "custom-event@npm:1.0.1"
@@ -6145,6 +6152,7 @@ __metadata:
     chai-as-promised: ^7.1.1
     chalk: ^4.1.0
     cron: ^2.1.0
+    csv-parse: ^5.3.10
     dash: "workspace:*"
     dirty-chai: ^2.0.1
     dockerode: ^3.2.0
