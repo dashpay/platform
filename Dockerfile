@@ -33,8 +33,6 @@ ARG ALPINE_VERSION=3.16
 #
 FROM rust:alpine${ALPINE_VERSION} as deps
 
-RUN echo "bust cache 4"
-
 #
 # Install some dependencies
 #

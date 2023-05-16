@@ -12,9 +12,6 @@ db
 scripts
 node_modules
 
-# File below breaks build when tests are not built
-packages/js-dash-sdk/src/SDK/Client/Platform/methods/contracts/get.spec.ts
-
 packages/*/.nyc_output
 packages/*/.ultra.cache.json
 packages/*/test

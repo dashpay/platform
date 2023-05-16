@@ -20,6 +20,7 @@ function buildServicesTaskFactory(
         const envs = config.toEnvs();
 
         let buildArgs = [];
+
         const obs = await dockerCompose.build(envs, undefined, buildArgs);
 
         await new Promise((res, rej) => {
