@@ -9,6 +9,17 @@ class HostStatusCommand extends ConfigBaseCommand {
    * @return {Promise<void>}
    */
   async runWithDependencies(args, flags, getHostScope) {
+    const plain = {
+      Hostname: 'n/a',
+      Uptime: 'n/a',
+      Platform: 'n/a',
+      Arch: 'n/a',
+      Username: 'n/a',
+      Memory: 'n/a',
+      CPUs: 'n/a',
+      IP: 'n/a',
+    };
+
     const scope = await getHostScope();
 
     if (flags.format === OUTPUT_FORMATS.PLAIN) {
@@ -17,16 +28,14 @@ class HostStatusCommand extends ConfigBaseCommand {
         username, memory, cpus, ip,
       } = scope;
 
-      const plain = {
-        Hostname: hostname,
-        Uptime: uptime,
-        Platform: platform,
-        Arch: arch,
-        Username: username,
-        Memory: memory,
-        CPUs: cpus,
-        IP: ip,
-      };
+      plain.Hostname = hostname || 'n/a';
+      plain.Uptime = uptime || 'n/a';
+      plain.Platform = platform || 'n/a';
+      plain.Arch = arch || 'n/a';
+      plain.Username = username || 'n/a';
+      plain.Memory = memory || 'n/a';
+      plain.CPUs = cpus || 'n/a';
+      plain.IP = ip || 'n/a';
 
       return printObject(plain, flags.format);
     }

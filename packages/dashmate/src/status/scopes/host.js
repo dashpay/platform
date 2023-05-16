@@ -14,16 +14,34 @@ function getHostScopeFactory() {
    * @returns {Promise<Object>}
    */
   async function getHostScope() {
-    return ({
-      hostname: os.hostname(),
-      uptime: prettyMs(os.uptime() * 1000),
-      platform: os.platform(),
-      arch: os.arch(),
-      username: os.userInfo().username,
-      memory: `${prettyByte(os.totalmem())} / ${prettyByte(os.freemem())}`,
-      cpus: os.cpus().length,
-      ip: await publicIp.v4(),
-    });
+    const scope = {
+      hostname: null,
+      uptime: null,
+      platform: null,
+      arch: null,
+      username: null,
+      memory: null,
+      cpus: null,
+      ip: null,
+    };
+
+    try {
+      scope.hostname = os.hostname();
+      scope.uptime = prettyMs(os.uptime() * 1000);
+      scope.platform = os.platform();
+      scope.arch = os.arch();
+      scope.username = os.userInfo().username;
+      scope.memory = `${prettyByte(os.totalmem())} / ${prettyByte(os.freemem())}`;
+      scope.cpus = os.cpus().length;
+      scope.ip = await publicIp.v4();
+    } catch (e) {
+      if (process.env.DEBUG) {
+        // eslint-disable-next-line no-console
+        console.error('Could not retrieve host scope', e);
+      }
+    }
+
+    return scope;
   }
 
   return getHostScope;

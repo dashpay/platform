@@ -266,17 +266,17 @@ mod test {
 
     #[tokio::test]
     async fn should_create_data_contract_transition_if_type_is_data_contract_create() {
-        let data_contract = get_data_contract_fixture(None);
+        let created_data_contract = get_data_contract_fixture(None);
         let mut state_repostiory_mock = MockStateRepositoryLike::new();
-        let data_contract_to_return = data_contract.clone();
+        let data_contract_to_return = created_data_contract.data_contract.clone();
         state_repostiory_mock
             .expect_fetch_data_contract()
             .returning(move |_, _| Ok(Some(data_contract_to_return.clone())));
 
         let state_transition_data = platform_value!( {
                     "protocolVersion" :  PROTOCOL_VERSION as u32,
-                    "entropy": data_contract.entropy,
-                    "dataContract": data_contract.to_object().unwrap(),
+                    "entropy": created_data_contract.entropy_used,
+                    "dataContract": created_data_contract.data_contract.to_object().unwrap(),
                 }
         );
         let data_contract_create_state_transition =
@@ -293,14 +293,14 @@ mod test {
 
         assert!(
             matches!(result, StateTransition::DataContractCreate(transition) if  {
-                transition.get_data_contract().to_json_object().unwrap() == data_contract.to_json_object().unwrap()
+                transition.get_data_contract().to_json_object().unwrap() == created_data_contract.data_contract.to_json_object().unwrap()
             })
         )
     }
 
     #[tokio::test]
     async fn should_return_document_batch_transition_if_type_is_documents() {
-        let data_contract = get_data_contract_fixture(None);
+        let data_contract = get_data_contract_fixture(None).data_contract;
         let documents =
             get_documents_fixture_with_owner_id_from_contract(data_contract.clone()).unwrap();
         let document_transitions =

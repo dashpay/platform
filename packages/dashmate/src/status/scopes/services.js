@@ -1,4 +1,5 @@
 const ContainerIsNotPresentError = require('../../docker/errors/ContainerIsNotPresentError');
+const DockerStatusEnum = require('../enums/dockerStatus');
 
 /**
  * @returns {getServicesScopeFactory}
@@ -50,18 +51,30 @@ function getServicesScopeFactory(dockerCompose) {
             Image: image,
           },
         } = await dockerCompose.inspectService(config.toEnvs(), serviceName));
-      } catch (e) {
-        if (e instanceof ContainerIsNotPresentError) {
-          status = 'not_started';
-        }
-      }
 
-      services[serviceName] = {
-        humanName: serviceDescription,
-        containerId: containerId ? containerId.slice(0, 12) : null,
-        image,
-        status,
-      };
+        services[serviceName] = {
+          humanName: serviceDescription,
+          containerId: containerId ? containerId.slice(0, 12) : null,
+          image,
+          status,
+        };
+      } catch (e) {
+        status = null;
+
+        if (e instanceof ContainerIsNotPresentError) {
+          status = DockerStatusEnum.not_started;
+        } else if (process.env.DEBUG) {
+          // eslint-disable-next-line no-console
+          console.error(e);
+        }
+
+        services[serviceName] = {
+          humanName: serviceDescription,
+          containerId: null,
+          image: null,
+          status,
+        };
+      }
     }
 
     return services;

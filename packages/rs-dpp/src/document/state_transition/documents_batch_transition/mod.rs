@@ -58,6 +58,8 @@ pub mod property_names {
     pub const SIGNATURE: &str = "signature";
     pub const PROTOCOL_VERSION: &str = "protocolVersion";
     pub const SECURITY_LEVEL_REQUIREMENT: &str = "signatureSecurityLevelRequirement";
+    pub const CREATED_AT: &str = "$createdAt";
+    pub const UPDATED_AT: &str = "$updatedAt";
 }
 
 pub const IDENTIFIER_FIELDS: [&str; 3] = [
@@ -576,7 +578,7 @@ mod test {
 
     #[test]
     fn should_return_highest_sec_level_for_all_transitions() {
-        let mut data_contract = get_data_contract_fixture(None);
+        let mut data_contract = get_data_contract_fixture(None).data_contract;
         data_contract
             .documents
             .get_mut("niceDocument")
@@ -666,7 +668,7 @@ mod test {
         let owner_id = Identifier::from_string(owner_id_base58, Encoding::Base58).unwrap();
         let entropy_bytes: [u8; 32] = base64::decode(entropy_base64).unwrap().try_into().unwrap();
 
-        let mut data_contract = get_data_contract_fixture(Some(owner_id));
+        let mut data_contract = get_data_contract_fixture(Some(owner_id)).data_contract;
         data_contract.id = data_contract_id;
 
         let documents = get_extended_documents_fixture(data_contract.clone()).unwrap();

@@ -69,7 +69,7 @@ mod apply_identity_credit_withdrawal_transition_factory {
         state_repository
             .expect_fetch_data_contract()
             .times(1)
-            .returning(|_, _| anyhow::Ok(Some(get_data_contract_fixture(None))));
+            .returning(|_, _| anyhow::Ok(Some(get_data_contract_fixture(None).data_contract)));
 
         state_repository
             .expect_fetch_latest_platform_block_header()

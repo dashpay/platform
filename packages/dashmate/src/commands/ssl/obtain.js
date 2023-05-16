@@ -5,7 +5,7 @@ const MuteOneLineError = require('../../oclif/errors/MuteOneLineError');
 
 const ConfigBaseCommand = require('../../oclif/command/ConfigBaseCommand');
 
-class RenewCommand extends ConfigBaseCommand {
+class ObtainCommand extends ConfigBaseCommand {
   /**
    * @param {Object} args
    * @param {Object} flags
@@ -23,7 +23,7 @@ class RenewCommand extends ConfigBaseCommand {
   ) {
     const tasks = new Listr([
       {
-        title: 'Renew ZeroSSL certificate',
+        title: 'Obtain ZeroSSL certificate',
         task: async () => obtainZeroSSLCertificateTask(config),
       },
     ],
@@ -45,14 +45,14 @@ class RenewCommand extends ConfigBaseCommand {
   }
 }
 
-RenewCommand.description = `Renew SSL certificate
+ObtainCommand.description = `Obtain SSL certificate
 
-Renew SSL certificate using ZeroSSL API Key
+Obtain SSL certificate using ZeroSSL API Key
 `;
 
-RenewCommand.flags = {
+ObtainCommand.flags = {
   ...ConfigBaseCommand.flags,
   verbose: Flags.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
 };
 
-module.exports = RenewCommand;
+module.exports = ObtainCommand;
