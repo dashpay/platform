@@ -66,6 +66,7 @@
     "begoo": "^2.0.2",
     "chalk": "^4.1.0",
     "cron": "^2.1.0",
+    "csv-parse": "^5.3.10",
     "dash": "workspace:*",
     "dockerode": "^3.2.0",
     "dot": "^1.1.3",

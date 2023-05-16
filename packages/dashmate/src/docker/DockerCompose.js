@@ -1,4 +1,6 @@
+const csv = require('csv-parse/sync');
 const os = require('os');
+const fs = require('fs');
 const path = require('path');
 const { Observable } = require('rxjs');
 
@@ -408,8 +410,10 @@ class DockerCompose {
    * @param {Object} envs
    * @return {{cwd: string, env: Object}}
    */
-  getOptions(envs) {
+  async getOptions(envs) {
     const { uid, gid } = os.userInfo();
+
+    const docker_gid = this.getDockerGroup();
 
     const env = {
       ...process.env,
@@ -417,7 +421,7 @@ class DockerCompose {
       DASHMATE_HOME_DIR: HOME_DIR_PATH,
       LOCAL_UID: uid,
       LOCAL_GID: gid,
-      DOCKER_GID: 998, // TODO: on Linux: `cat /etc/group|grep ^docker: |cut -d: -f3`, on Mac: set to 0
+      DOCKER_GID: docker_gid,
     };
 
     if (isWsl) {
@@ -431,6 +435,39 @@ class DockerCompose {
       cwd: path.join(__dirname, '..', '..'),
       env,
     };
+  }
+
+
+  /**
+   * Read /etc/group and retrieve group id of "docker" group
+   * 
+   * @private
+   * @return {string}
+   */
+  getDockerGroup() {
+    // On Mac and Windows, we set docker_gid to 0
+    if (os.platform() != 'linux') {
+      return '0';
+    }
+    const groupFile = fs.readFileSync('/etc/group');
+    const groups = csv.parse(groupFile, {
+      columns: false,
+      delimiter: ":",
+      skip_empty_lines: true
+    });
+
+    let docker_gid = "";
+    for (let i = 0; i < groups.length; i++) {
+      if (groups[i][0] == 'docker') {
+        docker_gid = groups[i][2];
+        break
+      }
+    }
+    if (docker_gid == "") {
+      throw new Error("Docker group not found in /etc/group");
+    }
+
+    return docker_gid;
   }
 
   /**
