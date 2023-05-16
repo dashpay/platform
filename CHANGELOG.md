@@ -1,3 +1,15 @@
+### [0.24.3](https://github.com/dashpay/platform/compare/v0.24.2...v0.24.3) (2023-05-16)
+
+
+### Features
+
+* **dashmate:** `no-retry` flag for ssl obtain command ([#1093](https://github.com/dashpay/platform/issues/1093))
+
+
+### Miscellaneous Chores
+
+* support GA certificates for testnet ([#1092](https://github.com/dashpay/platform/issues/1092))
+
 ### [0.24.2](https://github.com/dashpay/platform/compare/v0.24.1...v0.24.2) (2023-05-16)
 
 
