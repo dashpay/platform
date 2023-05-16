@@ -743,7 +743,7 @@ jobs:
           context: .
           builder: ${{ steps.buildx.outputs.name }}
           file: ./Dockerfile
-          target: dashmate
+          target: dashmate-helper
           push: true
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}

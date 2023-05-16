@@ -72,7 +72,9 @@ mod tests {
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::BlockHash;
     use dashcore_rpc::dashcore_rpc_json::ExtendedQuorumDetails;
-    use dpp::data_contract::extra::common::json_document_to_contract;
+    use dpp::data_contract::extra::common::{
+        json_document_to_contract, json_document_to_created_contract,
+    };
     use dpp::util::hash::hash_to_hex_string;
     use drive_abci::config::PlatformTestConfig;
     use drive_abci::rpc::core::QuorumListExtendedInfo;
@@ -848,7 +850,7 @@ mod tests {
 
     #[test]
     fn run_chain_insert_one_new_identity_and_a_contract() {
-        let contract = json_document_to_contract(
+        let contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
         )
         .expect("expected to get contract from a json document");
@@ -908,6 +910,7 @@ mod tests {
                     .first()
                     .unwrap()
                     .0
+                    .data_contract
                     .id
                     .to_buffer(),
                 None,
@@ -921,25 +924,25 @@ mod tests {
 
     #[test]
     fn run_chain_insert_one_new_identity_and_a_contract_with_updates() {
-        let contract = json_document_to_contract(
+        let contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
         )
         .expect("expected to get contract from a json document");
 
-        let mut contract_update_1 = json_document_to_contract(
+        let mut contract_update_1 = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable-update-1.json",
         )
         .expect("expected to get contract from a json document");
 
         //todo: versions should start at 0 (so this should be 1)
-        contract_update_1.version = 2;
+        contract_update_1.data_contract.version = 2;
 
-        let mut contract_update_2 = json_document_to_contract(
+        let mut contract_update_2 = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable-update-2.json",
         )
         .expect("expected to get contract from a json document");
 
-        contract_update_2.version = 3;
+        contract_update_2.data_contract.version = 3;
 
         let strategy = Strategy {
             contracts_with_updates: vec![(
@@ -1002,6 +1005,7 @@ mod tests {
                     .first()
                     .unwrap()
                     .0
+                    .data_contract
                     .id
                     .to_buffer(),
                 None,
@@ -1015,10 +1019,12 @@ mod tests {
 
     #[test]
     fn run_chain_insert_one_new_identity_per_block_and_one_new_document() {
-        let contract = json_document_to_contract(
+        let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
         )
         .expect("expected to get contract from a json document");
+
+        let contract = &created_contract.data_contract;
 
         let document_op = DocumentOp {
             contract: contract.clone(),
@@ -1030,7 +1036,7 @@ mod tests {
         };
 
         let strategy = Strategy {
-            contracts_with_updates: vec![(contract, None)],
+            contracts_with_updates: vec![(created_contract, None)],
             operations: vec![Operation {
                 op_type: OperationType::Document(document_op),
                 frequency: Frequency {
@@ -1082,10 +1088,12 @@ mod tests {
 
     #[test]
     fn run_chain_insert_one_new_identity_per_block_and_a_document_with_epoch_change() {
-        let contract = json_document_to_contract(
+        let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
         )
         .expect("expected to get contract from a json document");
+
+        let contract = &created_contract.data_contract;
 
         let document_op = DocumentOp {
             contract: contract.clone(),
@@ -1097,7 +1105,7 @@ mod tests {
         };
 
         let strategy = Strategy {
-            contracts_with_updates: vec![(contract, None)],
+            contracts_with_updates: vec![(created_contract, None)],
             operations: vec![Operation {
                 op_type: OperationType::Document(document_op),
                 frequency: Frequency {
@@ -1159,10 +1167,12 @@ mod tests {
     #[test]
     fn run_chain_insert_one_new_identity_per_block_document_insertions_and_deletions_with_epoch_change(
     ) {
-        let contract = json_document_to_contract(
+        let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
         )
         .expect("expected to get contract from a json document");
+
+        let contract = &created_contract.data_contract;
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
@@ -1183,7 +1193,7 @@ mod tests {
         };
 
         let strategy = Strategy {
-            contracts_with_updates: vec![(contract, None)],
+            contracts_with_updates: vec![(created_contract, None)],
             operations: vec![
                 Operation {
                     op_type: OperationType::Document(document_insertion_op),
@@ -1254,10 +1264,12 @@ mod tests {
     #[test]
     fn run_chain_insert_one_new_identity_per_block_many_document_insertions_and_deletions_with_epoch_change(
     ) {
-        let contract = json_document_to_contract(
+        let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
         )
         .expect("expected to get contract from a json document");
+
+        let contract = &created_contract.data_contract;
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
@@ -1278,7 +1290,7 @@ mod tests {
         };
 
         let strategy = Strategy {
-            contracts_with_updates: vec![(contract, None)],
+            contracts_with_updates: vec![(created_contract, None)],
             operations: vec![
                 Operation {
                     op_type: OperationType::Document(document_insertion_op),
@@ -1363,10 +1375,12 @@ mod tests {
     #[test]
     fn run_chain_insert_many_new_identity_per_block_many_document_insertions_and_deletions_with_epoch_change(
     ) {
-        let contract = json_document_to_contract(
+        let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
         )
         .expect("expected to get contract from a json document");
+
+        let contract = &created_contract.data_contract;
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
@@ -1387,7 +1401,7 @@ mod tests {
         };
 
         let strategy = Strategy {
-            contracts_with_updates: vec![(contract, None)],
+            contracts_with_updates: vec![(created_contract, None)],
             operations: vec![
                 Operation {
                     op_type: OperationType::Document(document_insertion_op),
@@ -1461,10 +1475,12 @@ mod tests {
     #[test]
     fn run_chain_insert_many_new_identity_per_block_many_document_insertions_updates_and_deletions_with_epoch_change(
     ) {
-        let contract = json_document_to_contract(
+        let created_contract = json_document_to_created_contract(
             "tests/supporting_files/contract/dashpay/dashpay-contract-all-mutable.json",
         )
         .expect("expected to get contract from a json document");
+
+        let contract = &created_contract.data_contract;
 
         let document_insertion_op = DocumentOp {
             contract: contract.clone(),
@@ -1494,7 +1510,7 @@ mod tests {
         };
 
         let strategy = Strategy {
-            contracts_with_updates: vec![(contract, None)],
+            contracts_with_updates: vec![(created_contract, None)],
             operations: vec![
                 Operation {
                     op_type: OperationType::Document(document_insertion_op),

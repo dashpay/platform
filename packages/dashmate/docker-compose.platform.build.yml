@@ -23,7 +23,7 @@ services:
         SCCACHE_MEMCACHED: ${SCCACHE_MEMCACHED}
         SCCACHE_GHA_ENABLED: ${SCCACHE_GHA_ENABLED}
         ACTIONS_CACHE_URL: ${ACTIONS_CACHE_URL}
-        ACTIONS_RUNTIME_TOKEN: ${ACTIONS_RUNTIME_TOKEN}      
+        ACTIONS_RUNTIME_TOKEN: ${ACTIONS_RUNTIME_TOKEN}
     image: dapi:local
     stop_grace_period: 10s
 
@@ -36,7 +36,7 @@ services:
         SCCACHE_MEMCACHED: ${SCCACHE_MEMCACHED}
         SCCACHE_GHA_ENABLED: ${SCCACHE_GHA_ENABLED}
         ACTIONS_CACHE_URL: ${ACTIONS_CACHE_URL}
-        ACTIONS_RUNTIME_TOKEN: ${ACTIONS_RUNTIME_TOKEN}      
+        ACTIONS_RUNTIME_TOKEN: ${ACTIONS_RUNTIME_TOKEN}
     image: dapi:local
     stop_grace_period: 10s
 
@@ -48,7 +48,7 @@ services:
         SCCACHE_MEMCACHED: ${SCCACHE_MEMCACHED}
         SCCACHE_GHA_ENABLED: ${SCCACHE_GHA_ENABLED}
         ACTIONS_CACHE_URL: ${ACTIONS_CACHE_URL}
-        ACTIONS_RUNTIME_TOKEN: ${ACTIONS_RUNTIME_TOKEN}      
+        ACTIONS_RUNTIME_TOKEN: ${ACTIONS_RUNTIME_TOKEN}
     image: dapi-envoy:local
     stop_grace_period: 10s
 
@@ -56,11 +56,11 @@ services:
     build:
       context: ${PLATFORM_SOURCE_PATH:?err}
       dockerfile: ${PLATFORM_SOURCE_PATH:?err}/Dockerfile
-      target: dashmate
+      target: dashmate-helper
       args:
         SCCACHE_MEMCACHED: ${SCCACHE_MEMCACHED}
         SCCACHE_GHA_ENABLED: ${SCCACHE_GHA_ENABLED}
         ACTIONS_CACHE_URL: ${ACTIONS_CACHE_URL}
-        ACTIONS_RUNTIME_TOKEN: ${ACTIONS_RUNTIME_TOKEN}      
+        ACTIONS_RUNTIME_TOKEN: ${ACTIONS_RUNTIME_TOKEN}
     image: dashmate_helper:local
     stop_grace_period: 10s

@@ -22,7 +22,7 @@ struct TestData {
 }
 
 fn setup_test() -> TestData {
-    let data_contract = get_data_contract_fixture(None);
+    let data_contract = get_data_contract_fixture(None).data_contract;
     let documents =
         get_extended_documents_fixture(data_contract.clone()).expect("documents should be created");
 

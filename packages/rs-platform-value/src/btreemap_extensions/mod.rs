@@ -107,6 +107,8 @@ pub trait BTreeValueMapHelper {
     fn get_binary_bytes(&self, key: &str) -> Result<Vec<u8>, Error>;
     fn get_optional_binary_data(&self, key: &str) -> Result<Option<BinaryData>, Error>;
     fn get_binary_data(&self, key: &str) -> Result<BinaryData, Error>;
+    fn get_optional_u64(&self, key: &str) -> Result<Option<u64>, Error>;
+    fn get_u64(&self, key: &str) -> Result<u64, Error>;
 }
 
 impl<V> BTreeValueMapHelper for BTreeMap<String, V>
@@ -455,5 +457,21 @@ where
     fn get_float(&self, key: &str) -> Result<f64, Error> {
         self.get_optional_float(key)?
             .ok_or_else(|| Error::StructureError(format!("unable to get float property {key}")))
+    }
+
+    fn get_optional_u64(&self, key: &str) -> Result<Option<u64>, Error> {
+        Ok(self.get(key).and_then(|v| {
+            let borrowed = v.borrow();
+            if borrowed.is_null() {
+                None
+            } else {
+                v.borrow().as_integer::<u64>()
+            }
+        }))
+    }
+
+    fn get_u64(&self, key: &str) -> Result<u64, Error> {
+        self.get_optional_u64(key)?
+            .ok_or_else(|| Error::StructureError(format!("unable to get u64 property {key}")))
     }
 }

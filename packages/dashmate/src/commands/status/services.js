@@ -38,10 +38,10 @@ class ServicesStatusCommand extends ConfigBaseCommand {
         }
 
         outputRows.push({
-          Service: humanName,
-          'Container ID': containerId ? containerId.slice(0, 12) : undefined,
-          Image: image,
-          Status: statusText,
+          Service: humanName || 'n/a',
+          'Container ID': containerId ? containerId.slice(0, 12) : 'n/a',
+          Image: image || 'n/a',
+          Status: statusText || 'n/a',
         });
       } else {
         outputRows.push({

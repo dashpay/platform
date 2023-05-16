@@ -467,7 +467,7 @@ mod test {
 
     #[test]
     fn document_with_type_and_data() {
-        let mut data_contract = get_data_contract_fixture(None);
+        let mut data_contract = get_data_contract_fixture(None).data_contract;
         let document_type = "niceDocument";
 
         let factory = DocumentFactory::new(
@@ -529,7 +529,7 @@ mod test {
 
     #[test]
     fn create_transition_mismatch_user_id() {
-        let data_contract = get_data_contract_fixture(None);
+        let data_contract = get_data_contract_fixture(None).data_contract;
         let mut documents = get_extended_documents_fixture(data_contract).unwrap();
 
         let factory = DocumentFactory::new(
@@ -546,7 +546,7 @@ mod test {
 
     #[test]
     fn create_transition_invalid_initial_revision() {
-        let data_contract = get_data_contract_fixture(None);
+        let data_contract = get_data_contract_fixture(None).data_contract;
         let mut documents = get_extended_documents_fixture(data_contract).unwrap();
         documents[0].document.revision = Some(3);
 
@@ -561,7 +561,7 @@ mod test {
 
     #[test]
     fn create_transitions_with_passed_documents() {
-        let data_contract = get_data_contract_fixture(None);
+        let data_contract = get_data_contract_fixture(None).data_contract;
         let documents = get_extended_documents_fixture(data_contract).unwrap();
         let factory = DocumentFactory::new(
             1,

@@ -2,17 +2,17 @@ use std::sync::Arc;
 
 use crate::{
     data_contract::{
-        validation::data_contract_validator::DataContractValidator, DataContract,
-        DataContractFactory,
+        validation::data_contract_validator::DataContractValidator, DataContractFactory,
     },
     prelude::Identifier,
     tests::utils::generate_random_identifier_struct,
     version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
 };
 
+use crate::data_contract::CreatedDataContract;
 use data_contracts::SystemDataContract;
 
-pub fn get_dashpay_contract_fixture(owner_id: Option<Identifier>) -> DataContract {
+pub fn get_dashpay_contract_fixture(owner_id: Option<Identifier>) -> CreatedDataContract {
     let protocol_version_validator =
         ProtocolVersionValidator::new(LATEST_VERSION, LATEST_VERSION, COMPATIBILITY_MAP.clone());
     let data_contract_validator = DataContractValidator::new(Arc::new(protocol_version_validator));

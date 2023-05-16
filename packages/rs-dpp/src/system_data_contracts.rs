@@ -41,9 +41,9 @@ fn create_data_contract(
         definitions.map(|def| def.into()),
     )?;
 
-    data_contract.id = id;
+    data_contract.data_contract.id = id;
 
-    Ok(data_contract)
+    Ok(data_contract.data_contract)
 }
 
 pub fn load_system_data_contract(

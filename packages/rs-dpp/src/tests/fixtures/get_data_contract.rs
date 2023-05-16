@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use platform_value::platform_value;
 
+use crate::data_contract::CreatedDataContract;
 use crate::prelude::*;
 use crate::{
     data_contract::validation::data_contract_validator::DataContractValidator,
@@ -11,7 +12,7 @@ use crate::{
     version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION},
 };
 
-pub fn get_data_contract_fixture(owner_id: Option<Identifier>) -> DataContract {
+pub fn get_data_contract_fixture(owner_id: Option<Identifier>) -> CreatedDataContract {
     let defs = platform_value!(
     {
         "lastName": {

@@ -17,11 +17,7 @@ function buildServicesTaskFactory(
     return new Listr({
       title: 'Build services',
       task: async (ctx, task) => {
-        const envs = config.toEnvs();
-
-        let buildArgs = [];
-
-        const obs = await dockerCompose.build(envs, undefined, buildArgs);
+        const obs = await dockerCompose.build(config.toEnvs());
 
         await new Promise((res, rej) => {
           obs

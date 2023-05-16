@@ -47,8 +47,9 @@ fn init() {
 fn setup_test() -> TestData {
     init();
     let owner_id = generate_random_identifier_struct();
-    let data_contract = get_data_contract_fixture(Some(owner_id));
-    let documents = get_extended_documents_fixture(data_contract.clone()).unwrap();
+    let created_data_contract = get_data_contract_fixture(Some(owner_id));
+    let documents =
+        get_extended_documents_fixture(created_data_contract.data_contract.clone()).unwrap();
 
     let document_transitions =
         get_document_transitions_fixture([(Action::Create, documents.clone())]);
@@ -63,12 +64,14 @@ fn setup_test() -> TestData {
         "transitions".to_string(),
         Value::Array(raw_document_transitions),
     );
-    let state_transition =
-        DocumentsBatchTransition::from_value_map(map, vec![data_contract.clone()])
-            .expect("documents batch state transition should be created");
+    let state_transition = DocumentsBatchTransition::from_value_map(
+        map,
+        vec![created_data_contract.data_contract.clone()],
+    )
+    .expect("documents batch state transition should be created");
 
     let mut state_repository_mock = MockStateRepositoryLike::default();
-    let data_contract_to_return = data_contract.clone();
+    let data_contract_to_return = created_data_contract.data_contract.clone();
     state_repository_mock
         .expect_fetch_data_contract()
         .returning(move |_, _| Ok(Some(data_contract_to_return.clone())));
@@ -79,7 +82,7 @@ fn setup_test() -> TestData {
 
     TestData {
         owner_id,
-        data_contract,
+        data_contract: created_data_contract.data_contract,
         document_transitions,
         extended_documents: documents,
         state_transition,
@@ -505,6 +508,72 @@ async fn should_return_invalid_result_if_crated_at_has_violated_time_window() {
         StateError::DocumentTimestampWindowViolationError(e)   if  {
             e.document_id() == &transition_id &&
             e.timestamp_name() == "createdAt"
+        }
+    ));
+}
+
+#[tokio::test]
+async fn should_return_invalid_result_if_created_at_and_updated_at_are_equal_for_replace_transition(
+) {
+    let TestData {
+        data_contract,
+        owner_id,
+        extended_documents: documents,
+        mut state_repository_mock,
+        ..
+    } = setup_test();
+
+    let document_transitions = get_document_transitions_fixture([
+        (Action::Create, vec![]),
+        (Action::Replace, vec![documents[0].clone()]),
+    ]);
+    let transition_id = document_transitions[0].base().id;
+    let raw_document_transitions: Vec<Value> = document_transitions
+        .into_iter()
+        .map(|dt| dt.to_object().unwrap())
+        .collect();
+    let mut map = BTreeMap::new();
+    map.insert(
+        "ownerId".to_string(),
+        Value::Identifier(owner_id.to_buffer()),
+    );
+    map.insert(
+        "contractId".to_string(),
+        Value::Identifier(data_contract.id.to_buffer()),
+    );
+    map.insert(
+        "transitions".to_string(),
+        Value::Array(raw_document_transitions),
+    );
+    let mut state_transition =
+        DocumentsBatchTransition::from_value_map(map, vec![data_contract.clone()])
+            .expect("documents batch state transition should be created");
+
+    state_transition
+        .transitions
+        .iter_mut()
+        .for_each(|t| set_updated_at(t, documents[0].created_at().copied()));
+
+    state_repository_mock
+        .expect_fetch_documents()
+        .returning(move |_, _, _, _| Ok(vec![documents[0].document.clone()]));
+
+    let execution_context = StateTransitionExecutionContext::default();
+
+    let validation_result = validate_document_batch_transition_state(
+        &state_repository_mock,
+        &state_transition,
+        &execution_context,
+    )
+    .await
+    .expect("validation result should be returned");
+
+    let state_error = get_state_error(&validation_result, 0);
+    assert_eq!(4025, state_error.code());
+    assert!(matches!(
+        state_error,
+        StateError::DocumentTimestampsAreEqualError(e) if  {
+            e.document_id() == &transition_id
         }
     ));
 }

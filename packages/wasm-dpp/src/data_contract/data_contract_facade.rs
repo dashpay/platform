@@ -1,10 +1,11 @@
 use crate::errors::protocol_error::from_protocol_error;
+use std::convert::TryFrom;
 
 use crate::{
     js_value_to_data_contract_value, DataContractCreateTransitionWasm,
     DataContractUpdateTransitionWasm, DataContractWasm,
 };
-use dpp::data_contract::{DataContract, DataContractFacade};
+use dpp::data_contract::{CreatedDataContract, DataContract, DataContractFacade};
 use dpp::identifier::Identifier;
 use dpp::version::ProtocolVersionValidator;
 
@@ -114,7 +115,9 @@ impl DataContractFacadeWasm {
         data_contract: &DataContractWasm,
     ) -> Result<DataContractCreateTransitionWasm, JsValue> {
         self.0
-            .create_data_contract_create_transition(data_contract.clone().into())
+            .create_data_contract_create_transition(
+                CreatedDataContract::try_from(data_contract).with_js_error()?,
+            )
             .map(DataContractCreateTransitionWasm::from)
             .with_js_error()
     }

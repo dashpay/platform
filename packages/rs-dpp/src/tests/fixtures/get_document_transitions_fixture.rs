@@ -27,7 +27,7 @@ pub fn get_document_transitions_fixture(
     let create_documents = documents_collected
         .remove(&Action::Create)
         .unwrap_or_else(|| {
-            get_extended_documents_fixture(get_data_contract_fixture(None)).unwrap()
+            get_extended_documents_fixture(get_data_contract_fixture(None).data_contract).unwrap()
         });
     let replace_documents = documents_collected
         .remove(&Action::Replace)

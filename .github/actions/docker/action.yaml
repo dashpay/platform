@@ -14,7 +14,7 @@ inputs:
     options:
       - dapi
       - drive-abci
-      - dashmate
+      - dashmate-helper
       - test-suite
     required: false
   push:

@@ -580,48 +580,4 @@ where
 
         Ok(validation_result.into())
     }
-
-    /// Checks a state transition to determine if it should be added to the mempool.
-    ///
-    /// This function performs a few checks, including validating the state transition and ensuring that the
-    /// user can pay for it. It may be inaccurate in rare cases, so the proposer needs to re-check transactions
-    /// before proposing a block.
-    ///
-    /// # Arguments
-    ///
-    /// * `raw_tx` - A raw transaction represented as a vector of bytes.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<ValidationResult<FeeResult, ConsensusError>, Error>` - If the state transition passes all
-    ///   checks, it returns a `ValidationResult` with fee information. If any check fails, it returns an `Error`.
-    pub fn check_tx(
-        &self,
-        raw_tx: Vec<u8>,
-    ) -> Result<ValidationResult<FeeResult, ConsensusError>, Error> {
-        let state_transition =
-            StateTransition::deserialize(raw_tx.as_slice()).map_err(Error::Protocol)?;
-        let state_read_guard = self.state.read().unwrap();
-        let platform_ref = PlatformRef {
-            drive: &self.drive,
-            state: &state_read_guard,
-            config: &self.config,
-            core_rpc: &self.core_rpc,
-        };
-        let execution_event = process_state_transition(&platform_ref, state_transition, None)?;
-
-        // We should run the execution event in dry run to see if we would have enough fees for the transaction
-
-        // We need the approximate block info
-        if let Some(block_info) = state_read_guard.last_committed_block_info.as_ref() {
-            // We do not put the transaction, because this event happens outside of a block
-            execution_event.and_then_borrowed_validation(|execution_event| {
-                self.validate_fees_of_event(execution_event, &block_info.basic_info, None)
-            })
-        } else {
-            execution_event.and_then_borrowed_validation(|execution_event| {
-                self.validate_fees_of_event(execution_event, &BlockInfo::default(), None)
-            })
-        }
-    }
 }

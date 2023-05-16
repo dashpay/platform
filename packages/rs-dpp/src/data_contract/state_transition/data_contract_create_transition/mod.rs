@@ -285,6 +285,7 @@ impl StateTransitionConvert for DataContractCreateTransition {
 
 #[cfg(test)]
 mod test {
+    use crate::data_contract::CreatedDataContract;
     use integer_encoding::VarInt;
 
     use crate::tests::fixtures::get_data_contract_fixture;
@@ -295,21 +296,24 @@ mod test {
 
     struct TestData {
         state_transition: DataContractCreateTransition,
-        data_contract: DataContract,
+        created_data_contract: CreatedDataContract,
     }
 
     fn get_test_data() -> TestData {
-        let data_contract = get_data_contract_fixture(None);
+        let created_data_contract = get_data_contract_fixture(None);
 
         let state_transition = DataContractCreateTransition::from_raw_object(Value::from([
             (PROTOCOL_VERSION, version::LATEST_VERSION.into()),
-            (ENTROPY, data_contract.entropy.into()),
-            (DATA_CONTRACT, data_contract.to_object().unwrap()),
+            (ENTROPY, created_data_contract.entropy_used.into()),
+            (
+                DATA_CONTRACT,
+                created_data_contract.data_contract.to_object().unwrap(),
+            ),
         ]))
         .expect("state transition should be created without errors");
 
         TestData {
-            data_contract,
+            created_data_contract,
             state_transition,
         }
     }
@@ -341,7 +345,8 @@ mod test {
                 .get_data_contract()
                 .to_json_object()
                 .expect("conversion to object shouldn't fail"),
-            data.data_contract
+            data.created_data_contract
+                .data_contract
                 .to_json_object()
                 .expect("conversion to object shouldn't fail")
         );
@@ -382,7 +387,7 @@ mod test {
         );
 
         assert_eq!(
-            <Bytes32 as Into<String>>::into(data.data_contract.entropy),
+            <Bytes32 as Into<String>>::into(data.created_data_contract.entropy_used),
             json_object
                 .remove_into::<String>(ENTROPY)
                 .expect("the entropy should be present")
@@ -405,7 +410,7 @@ mod test {
     fn should_return_owner_id() {
         let data = get_test_data();
         assert_eq!(
-            &data.data_contract.owner_id,
+            &data.created_data_contract.data_contract.owner_id,
             data.state_transition.get_owner_id()
         );
     }
