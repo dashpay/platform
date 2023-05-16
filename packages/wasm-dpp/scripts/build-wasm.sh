@@ -14,6 +14,7 @@ if [[ "${CARGO_BUILD_PROFILE}" == "dev" ]]; then
 fi
 
 OUTPUT_DIR="${PWD}/wasm"
+WORKSPACE_ROOT="$(dirname "$0")/../../.."
 # shellcheck disable=SC2034
 OUTPUT_FILE="${OUTPUT_DIR}/wasm_dpp_bg.wasm"
 BUILD_COMMAND="cargo build --config net.git-fetch-with-cli=true --target=${TARGET} ${PROFILE_ARG}"
@@ -28,7 +29,7 @@ if ! [[ -x "$(command -v cargo-lock)" ]]; then
   cargo install cargo-lock --features=cli --profile "${CARGO_BUILD_PROFILE}"
 fi
 
-WASM_BINDGEN_VERSION=$(cargo-lock list -p wasm-bindgen | grep -Eo '[0-9.]+')
+WASM_BINDGEN_VERSION=$(cargo-lock list --file "${WORKSPACE_ROOT}/Cargo.lock" --package wasm-bindgen | grep -Eo '[0-9.]+')
 if ! [[ "$(wasm-bindgen --version)" =~ ${WASM_BINDGEN_VERSION} ]]; then
   echo "Wasm-bindgen CLI ${WASM_BINDGEN_VERSION} is not installed. Installing"
   cargo install --config net.git-fetch-with-cli=true --profile "${CARGO_BUILD_PROFILE}" -f "wasm-bindgen-cli@${WASM_BINDGEN_VERSION}"
