@@ -117,20 +117,20 @@ WORKDIR /platform
 
 RUN whoami
 RUN echo "bust cache 1"
-RUN --mount=type=cache,sharing=shared,target=/usr/local/cargo/registry/index \
-    --mount=type=cache,sharing=shared,target=/usr/local/cargo/registry/cache \
-    --mount=type=cache,sharing=shared,target=/usr/local/cargo/git/db \
-    --mount=type=cache,sharing=shared,target=/platform/target \
+RUN --mount=type=cache,sharing=shared,id=deps_cargo_index,target=/usr/local/cargo/registry/index \
+    --mount=type=cache,sharing=shared,id=deps_cargo_cache,target=/usr/local/cargo/registry/cache \
+    --mount=type=cache,sharing=shared,id=deps_cargo_git,target=/usr/local/cargo/git/db \
+    --mount=type=cache,sharing=shared,id=deps_target,target=/platform/target \
     ls -lha /usr/local/cargo/registry/index && \
     ls -lha /usr/local/cargo/registry/cache && \
     ls -lha /usr/local/cargo/git/db && \
     ls -lha /platform/target && \
     CARGO_TARGET_DIR=/platform/target cargo install --profile "$CARGO_BUILD_PROFILE" wasm-bindgen-cli@0.2.84
 
-RUN --mount=type=cache,sharing=shared,target=/usr/local/cargo/registry/index \
-    --mount=type=cache,sharing=shared,target=/usr/local/cargo/registry/cache \
-    --mount=type=cache,sharing=shared,target=/usr/local/cargo/git/db \
-    --mount=type=cache,sharing=shared,target=/platform/target \
+RUN --mount=type=cache,sharing=shared,id=deps_cargo_index,target=/usr/local/cargo/registry/index \
+    --mount=type=cache,sharing=shared,id=deps_cargo_cache,target=/usr/local/cargo/registry/cache \
+    --mount=type=cache,sharing=shared,id=deps_cargo_git,target=/usr/local/cargo/git/db \
+    --mount=type=cache,sharing=shared,id=deps_target,target=/platform/target \
     ls -lha /usr/local/cargo/registry/index && \
     ls -lha /usr/local/cargo/registry/cache && \
     ls -lha /usr/local/cargo/git/db && \
