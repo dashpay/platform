@@ -43,7 +43,7 @@ pub enum DataContractError {
     DocumentTypeNotFound(&'static str),
 
     #[error("document type field not found: {0}")]
-    DocumentTypeFieldNotFound(&'static str),
+    DocumentTypeFieldNotFound(String),
 
     #[error("reference definition not found error: {0}")]
     ReferenceDefinitionNotFound(&'static str),

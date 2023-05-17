@@ -1,3 +1,4 @@
+use itertools::Itertools;
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::TryInto;
 
@@ -177,8 +178,8 @@ impl DocumentType {
                 }
             }
             _ => {
-                let field_type = self.flattened_properties.get(key).ok_or({
-                    DataContractError::DocumentTypeFieldNotFound("expected contract to have field")
+                let field_type = self.flattened_properties.get(key).ok_or_else(|| {
+                    DataContractError::DocumentTypeFieldNotFound(format!("expected contract to have field: {key}, contract fields are {} on document type {}", self.flattened_properties.keys().join(" | "), self.name))
                 })?;
                 let bytes = field_type.document_type.encode_value_for_tree_keys(value)?;
                 if bytes.len() > MAX_INDEX_SIZE {

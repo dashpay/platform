@@ -1189,6 +1189,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "atty",
+ "base64 0.20.0",
  "bincode 2.0.0-rc.3",
  "bs58",
  "bytes",
