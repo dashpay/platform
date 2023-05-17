@@ -62,7 +62,7 @@ mod from_raw_object {
             "type": KeyType::BIP13_SCRIPT_HASH,
             "purpose": Purpose::AUTHENTICATION,
             "securityLevel": SecurityLevel::MASTER,
-            "data": "AuryIuMtRrl/VviQuyLD1l4nmxi9ogPzC9LT7tdpo0di",
+            "data": "n6I3y1cTf2efmnf3/oFvAmjpGQ8=",
             "readOnly": false
         });
 
@@ -72,8 +72,8 @@ mod from_raw_object {
         assert_eq!(
             public_key.hash().unwrap(),
             [
-                2, 234, 242, 34, 227, 45, 70, 185, 127, 86, 248, 144, 187, 34, 195, 214, 94, 39,
-                155, 24, 189, 162, 3, 243, 11, 210, 211, 238, 215, 105, 163, 71, 98
+                159, 162, 55, 203, 87, 19, 127, 103, 159, 154, 119, 247, 254, 129, 111, 2, 104,
+                233, 25, 15,
             ]
         );
     }

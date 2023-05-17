@@ -1,7 +1,6 @@
 const bs58 = require('bs58');
 
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
-const JsDataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
+const generateRandomIdentifier = require('../../../lib/test/utils/generateRandomIdentifierAsync');
 
 const { default: loadWasmDpp } = require('../../../dist');
 
@@ -9,7 +8,6 @@ describe('DataContract', () => {
   let documentType;
   let documentSchema;
   let documents;
-  let jsDataContract;
   let ownerId;
   let entropy;
   let contractId;
@@ -27,7 +25,7 @@ describe('DataContract', () => {
     } = await loadWasmDpp());
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     documentType = 'niceDocument';
 
     documentSchema = {
@@ -46,21 +44,11 @@ describe('DataContract', () => {
       [documentType]: documentSchema,
     };
 
-    ownerId = generateRandomIdentifier();
+    ownerId = (await generateRandomIdentifier()).toBuffer();
     entropy = Buffer.alloc(32, 420);
-    contractId = generateRandomIdentifier();
+    contractId = (await generateRandomIdentifier()).toBuffer();
 
     defs = { something: { type: 'string' } };
-
-    jsDataContract = new JsDataContract({
-      $schema: JsDataContract.DEFAULTS.SCHEMA,
-      $id: contractId,
-      version: 1,
-      protocolVersion: 1,
-      ownerId,
-      documents,
-      $defs: defs,
-    });
 
     dataContract = new DataContract({
       $schema: DataContractDefaults.SCHEMA,
@@ -74,8 +62,8 @@ describe('DataContract', () => {
   });
 
   describe('constructor', () => {
-    it('should create new DataContract', () => {
-      const id = generateRandomIdentifier();
+    it('should create new DataContract', async () => {
+      const id = (await generateRandomIdentifier()).toBuffer();
 
       dataContract = new DataContract({
         $schema: DataContractDefaults.SCHEMA,
@@ -87,8 +75,8 @@ describe('DataContract', () => {
         $defs: defs,
       });
 
-      expect(dataContract.getId().toBuffer()).to.deep.equal(id.toBuffer());
-      expect(dataContract.getOwnerId().toBuffer()).to.deep.equal(ownerId.toBuffer());
+      expect(dataContract.getId().toBuffer()).to.deep.equal(id);
+      expect(dataContract.getOwnerId().toBuffer()).to.deep.equal(ownerId);
       expect(dataContract.getJsonMetaSchema()).to.deep.equal(DataContractDefaults.SCHEMA);
       expect(dataContract.getDocuments()).to.deep.equal(documents);
       expect(dataContract.getDefinitions()).to.deep.equal(defs);
@@ -99,7 +87,7 @@ describe('DataContract', () => {
     it('should return DataContract Identifier', () => {
       const result = dataContract.getId();
 
-      expect(result.toBuffer()).to.deep.equal(contractId.toBuffer());
+      expect(result.toBuffer()).to.deep.equal(contractId);
       expect(result).to.be.instanceof(Identifier);
     });
   });
@@ -285,21 +273,21 @@ describe('DataContract', () => {
 
   describe('#toBuffer', () => {
     it('should return DataContract as a Buffer', () => {
-      expect(jsDataContract.getProtocolVersion()).to.deep.equal(dataContract.getProtocolVersion());
-
-      const jsResult = jsDataContract.toBuffer();
-      const wasmResult = dataContract.toBuffer();
-
-      expect(wasmResult).to.deep.equal(jsResult);
+      const result = dataContract.toBuffer();
+      expect(result).to.be.instanceOf(Buffer);
+      expect(result).to.have.lengthOf(251);
     });
   });
 
+  // TODO: can not compare to JS because rust
+  //  DataContract does not match JS anymore
   describe('#hash', () => {
     it('should return DataContract hash', () => {
-      const jsResult = jsDataContract.hash();
+      // const jsResult = jsDataContract.hash();
       const wasmResult = dataContract.hash();
-
-      expect(wasmResult).to.deep.equal(jsResult);
+      //
+      // expect(wasmResult).to.deep.equal(jsResult);
+      expect(wasmResult).to.be.instanceOf(Uint8Array);
     });
   });
 

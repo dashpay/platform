@@ -27,7 +27,7 @@ struct TestData {
 
 fn setup_test() -> TestData {
     let owner_id = generate_random_identifier_struct();
-    let data_contract = get_data_contract_fixture(Some(owner_id));
+    let data_contract = get_data_contract_fixture(Some(owner_id)).data_contract;
     let documents = get_extended_documents_fixture(data_contract.clone()).unwrap();
 
     TestData {

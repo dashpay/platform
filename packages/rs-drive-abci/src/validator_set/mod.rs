@@ -32,7 +32,7 @@ fn u8_to_bls12381_pubkey(public_key: Vec<u8>) -> abci_crypto::PublicKey {
     }
 }
 
-impl From<ValidatorSet> for tenderdash_abci::proto::abci::ValidatorSetUpdate {
+impl From<ValidatorSet> for abci::ValidatorSetUpdate {
     fn from(value: ValidatorSet) -> Self {
         let mut validator_updates: Vec<abci::ValidatorUpdate> = Vec::new();
         for validator in value.quorum_info.members {
@@ -43,8 +43,8 @@ impl From<ValidatorSet> for tenderdash_abci::proto::abci::ValidatorSetUpdate {
             let pubkey = validator.pub_key_share.map(u8_to_bls12381_pubkey);
             let vu = abci::ValidatorUpdate {
                 node_address: Default::default(),
-                power: 100,      // FIXME: double-check
-                pub_key: pubkey, // FIXME: double-check if it should be pub_key_share
+                power: 100,
+                pub_key: pubkey,
                 pro_tx_hash: validator.pro_tx_hash.to_vec(),
             };
 

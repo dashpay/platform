@@ -2,6 +2,16 @@ use crate::errors::consensus::ConsensusError;
 use crate::ProtocolError;
 use std::fmt::Debug;
 
+#[macro_export]
+macro_rules! check_validation_result_with_data {
+    ($result:expr) => {
+        match $result {
+            Ok(result) => result,
+            Err(e) => return Ok(ValidationResult::new_with_errors(vec![e.into()])),
+        }
+    };
+}
+
 pub type SimpleConsensusValidationResult = ConsensusValidationResult<()>;
 
 pub type SimpleValidationResult<E> = ValidationResult<(), E>;
@@ -232,11 +242,11 @@ impl<TData: Clone, E: Debug> From<TData> for ValidationResult<TData, E> {
     }
 }
 
-impl<TData: Clone, E: Debug> From<Result<TData, E>> for ValidationResult<TData, E> {
-    fn from(value: Result<TData, E>) -> Self {
+impl<TData: Clone, E: Debug, F: Into<E>> From<Result<TData, F>> for ValidationResult<TData, E> {
+    fn from(value: Result<TData, F>) -> Self {
         match value {
             Ok(data) => ValidationResult::new_with_data(data),
-            Err(e) => ValidationResult::new_with_errors(vec![e]),
+            Err(e) => ValidationResult::new_with_errors(vec![e.into()]),
         }
     }
 }

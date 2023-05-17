@@ -2,6 +2,7 @@ use dpp::consensus::state::identity::IdentityAlreadyExistsError;
 use dpp::identity::state_transition::identity_create_transition::validation::basic::IDENTITY_CREATE_TRANSITION_SCHEMA_VALIDATOR;
 use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransitionAction;
 use dpp::identity::PartialIdentity;
+use dpp::serialization_traits::{PlatformMessageSignable, Signable};
 use dpp::validation::ConsensusValidationResult;
 use dpp::{
     identity::state_transition::identity_create_transition::IdentityCreateTransition,
@@ -12,8 +13,7 @@ use drive::grovedb::TransactionArg;
 
 use crate::rpc::core::CoreRPCLike;
 use crate::validation::state_transition::key_validation::{
-    validate_identity_public_keys_signatures, validate_identity_public_keys_structure,
-    validate_unique_identity_public_key_hashes_state,
+    validate_identity_public_keys_structure, validate_unique_identity_public_key_hashes_state,
 };
 
 use crate::asset_lock::fetch_tx_out::FetchAssetLockProofTxOut;
@@ -51,9 +51,17 @@ impl StateTransitionValidation for IdentityCreateTransition {
         _tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         let mut validation_result = ConsensusValidationResult::<Option<PartialIdentity>>::default();
-        validation_result.add_errors(
-            validate_identity_public_keys_signatures(self.public_keys.as_slice())?.errors,
-        );
+        let bytes: Vec<u8> = self.signable_bytes()?;
+        for key in self.public_keys.iter() {
+            let result = bytes.as_slice().verify_signature(
+                key.key_type,
+                key.data.as_slice(),
+                key.signature.as_slice(),
+            )?;
+            if !result.is_valid() {
+                validation_result.add_errors(result.errors);
+            }
+        }
         // We need to set the data, even though we are setting to None,
         // We are really setting to Some(None) internally,
         validation_result.set_data(None);
@@ -91,6 +99,16 @@ impl StateTransitionValidation for IdentityCreateTransition {
         if !validation_result.is_valid() {
             return Ok(validation_result);
         }
+
+        self.transform_into_action(platform, tx)
+    }
+
+    fn transform_into_action<C: CoreRPCLike>(
+        &self,
+        platform: &PlatformRef<C>,
+        _tx: TransactionArg,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        let mut validation_result = ConsensusValidationResult::<StateTransitionAction>::default();
 
         let tx_out_validation = self
             .asset_lock_proof

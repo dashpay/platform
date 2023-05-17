@@ -11,6 +11,7 @@ use dpp::state_transition::state_transition_execution_context::StateTransitionEx
 use dpp::state_transition::validation::validate_state_transition_identity_signature::validate_state_transition_identity_signature;
 use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned};
 
+use crate::StateTransitionExecutionContextWasm;
 use std::sync::Arc;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
@@ -24,12 +25,13 @@ impl StValidator {
     pub async fn validate(
         &self,
         state_transition: &mut impl StateTransitionIdentitySigned,
+        execution_context: &StateTransitionExecutionContext,
     ) -> Result<ValidationResultWasm, JsValue> {
         let result = validate_state_transition_identity_signature(
             self.state_repository.clone(),
             state_transition,
             &self.bls,
-            &StateTransitionExecutionContext::default(), // TODO(v0.24-backport): is it fine using default context here?
+            execution_context,
         )
         .await
         .with_js_error()?;
@@ -43,12 +45,14 @@ impl StValidator {
 pub async fn validate_state_transition_identity_signature_wasm(
     external_state_repository: ExternalStateRepositoryLike,
     js_state_transition: &JsValue,
+    execution_context: &StateTransitionExecutionContextWasm,
     bls_adapter: JsBlsAdapter,
 ) -> Result<ValidationResultWasm, JsValue> {
     let bls = BlsAdapter(bls_adapter);
     let state_repository = Arc::new(ExternalStateRepositoryLikeWrapper::new(
         external_state_repository,
     ));
+    let execution_context: StateTransitionExecutionContext = execution_context.to_owned().into();
 
     let validator = StValidator {
         bls,
@@ -60,13 +64,19 @@ pub async fn validate_state_transition_identity_signature_wasm(
 
     match state_transition {
         StateTransition::DataContractCreate(mut state_transition) => {
-            validator.validate(&mut state_transition).await
+            validator
+                .validate(&mut state_transition, &execution_context)
+                .await
         }
         StateTransition::DataContractUpdate(mut state_transition) => {
-            validator.validate(&mut state_transition).await
+            validator
+                .validate(&mut state_transition, &execution_context)
+                .await
         }
         StateTransition::DocumentsBatch(mut state_transition) => {
-            validator.validate(&mut state_transition).await
+            validator
+                .validate(&mut state_transition, &execution_context)
+                .await
         }
         // TODO: We should use protocol error here, not consensus
         StateTransition::IdentityCreate(state_transition) => Err(from_consensus_error(
@@ -81,10 +91,14 @@ pub async fn validate_state_transition_identity_signature_wasm(
             )),
         )),
         StateTransition::IdentityCreditWithdrawal(mut state_transition) => {
-            validator.validate(&mut state_transition).await
+            validator
+                .validate(&mut state_transition, &execution_context)
+                .await
         }
         StateTransition::IdentityUpdate(mut state_transition) => {
-            validator.validate(&mut state_transition).await
+            validator
+                .validate(&mut state_transition, &execution_context)
+                .await
         }
     }
 }

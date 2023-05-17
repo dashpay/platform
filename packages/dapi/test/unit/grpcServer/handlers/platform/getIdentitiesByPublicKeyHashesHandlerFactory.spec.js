@@ -23,7 +23,7 @@ const GrpcCallMock = require('../../../../../lib/test/mock/GrpcCallMock');
 
 describe('getIdentitiesByPublicKeyHashesHandlerFactory', () => {
   let call;
-  let driveStateRepositoryMock;
+  let driveClientMock;
   let getIdentitiesByPublicKeyHashesHandler;
   let identity;
   let publicKeyHash;
@@ -48,24 +48,24 @@ describe('getIdentitiesByPublicKeyHashesHandlerFactory', () => {
     };
 
     proofMock = new Proof();
-    proofMock.setMerkleProof(proofFixture.merkleProof);
+    proofMock.setGrovedbProof(proofFixture.merkleProof);
 
     response = new GetIdentitiesByPublicKeyHashesResponse();
     response.setProof(proofMock);
     response.setIdentitiesList([identity.toBuffer()]);
 
-    driveStateRepositoryMock = {
+    driveClientMock = {
       fetchIdentitiesByPublicKeyHashes: this.sinon.stub().resolves(response.serializeBinary()),
     };
 
     getIdentitiesByPublicKeyHashesHandler = getIdentitiesByPublicKeyHashesHandlerFactory(
-      driveStateRepositoryMock,
+      driveClientMock,
     );
   });
 
   it('should return valid result', async () => {
     response.setProof(null);
-    driveStateRepositoryMock.fetchIdentitiesByPublicKeyHashes.resolves(response.serializeBinary());
+    driveClientMock.fetchIdentitiesByPublicKeyHashes.resolves(response.serializeBinary());
 
     const result = await getIdentitiesByPublicKeyHashesHandler(call);
 
@@ -75,8 +75,8 @@ describe('getIdentitiesByPublicKeyHashesHandlerFactory', () => {
       [identity.toBuffer()],
     );
 
-    expect(driveStateRepositoryMock.fetchIdentitiesByPublicKeyHashes)
-      .to.be.calledOnceWith([publicKeyHash], false);
+    expect(driveClientMock.fetchIdentitiesByPublicKeyHashes)
+      .to.be.calledOnceWith(call.request);
 
     const proof = result.getProof();
 
@@ -92,7 +92,7 @@ describe('getIdentitiesByPublicKeyHashesHandlerFactory', () => {
     const proof = result.getProof();
 
     expect(proof).to.be.an.instanceOf(Proof);
-    const merkleProof = proof.getMerkleProof();
+    const merkleProof = proof.getGrovedbProof();
 
     expect(merkleProof).to.deep.equal(proofFixture.merkleProof);
   });
@@ -107,14 +107,14 @@ describe('getIdentitiesByPublicKeyHashesHandlerFactory', () => {
     } catch (e) {
       expect(e).to.be.instanceOf(InvalidArgumentGrpcError);
       expect(e.getMessage()).to.equal('No public key hashes were provided');
-      expect(driveStateRepositoryMock.fetchIdentitiesByPublicKeyHashes).to.not.be.called();
+      expect(driveClientMock.fetchIdentitiesByPublicKeyHashes).to.not.be.called();
     }
   });
 
   it('should throw an error when fetchIdentity throws an error', async () => {
     const error = new Error('Unknown error');
 
-    driveStateRepositoryMock.fetchIdentitiesByPublicKeyHashes.throws(error);
+    driveClientMock.fetchIdentitiesByPublicKeyHashes.throws(error);
 
     try {
       await getIdentitiesByPublicKeyHashesHandler(call);
@@ -122,8 +122,8 @@ describe('getIdentitiesByPublicKeyHashesHandlerFactory', () => {
       expect.fail('should throw an error');
     } catch (e) {
       expect(e).to.equal(error);
-      expect(driveStateRepositoryMock.fetchIdentitiesByPublicKeyHashes)
-        .to.be.calledOnceWith([publicKeyHash]);
+      expect(driveClientMock.fetchIdentitiesByPublicKeyHashes)
+        .to.be.calledOnceWith(call.request);
     }
   });
 });

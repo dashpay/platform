@@ -3,14 +3,13 @@ use bincode::de::{BorrowDecoder, Decoder};
 use bincode::enc::Encoder;
 use bincode::error::{DecodeError, EncodeError};
 use bincode::{BorrowDecode, Decode, Encode};
-use futures::StreamExt;
 use std::collections::{BTreeMap, HashSet};
 use std::convert::{TryFrom, TryInto};
 
-use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable, ValueConvertible};
+use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use itertools::{Either, Itertools};
 use platform_value::btreemap_extensions::{BTreeValueMapHelper, BTreeValueRemoveFromMapHelper};
-use platform_value::{Bytes32, Identifier};
+use platform_value::Identifier;
 use platform_value::{ReplacementType, Value, ValueMapHelper};
 use serde::de::Error;
 use serde::{Deserialize, Serialize};
@@ -162,10 +161,6 @@ pub struct DataContract {
     /// Optional mapping of definition names to their corresponding JSON schemas.
     #[serde(rename = "$defs", default)]
     pub defs: Option<BTreeMap<DefinitionName, JsonSchema>>,
-
-    /// A randomly generated value used for creating unique identifiers within the contract.
-    #[serde(skip)]
-    pub entropy: Bytes32,
 
     /// A nested mapping of document names and property paths to their binary values.
     #[serde(skip)]
@@ -327,7 +322,6 @@ impl TryFrom<DataContractInner> for DataContract {
                         .collect::<Result<BTreeMap<DefinitionName, JsonSchema>, ProtocolError>>()
                 })
                 .transpose()?,
-            entropy: Default::default(),
             binary_properties,
         };
 
@@ -397,10 +391,6 @@ impl DataContract {
             config: mutability,
             documents,
             defs,
-            entropy: data_contract_map
-                .remove_optional_bytes_32(property_names::ENTROPY)
-                .map_err(ProtocolError::ValueError)?
-                .unwrap_or_default(),
             binary_properties,
         };
 
@@ -821,7 +811,7 @@ mod test {
     #[cfg(feature = "cbor")]
     fn conversion_to_cbor_buffer_from_cbor_buffer() {
         init();
-        let data_contract = get_data_contract_fixture(None);
+        let data_contract = get_data_contract_fixture(None).data_contract;
 
         let data_contract_bytes = data_contract
             .to_cbor_buffer()
@@ -852,7 +842,7 @@ mod test {
     #[cfg(feature = "cbor")]
     fn conversion_to_cbor_buffer_from_cbor_buffer_high_version() {
         init();
-        let mut data_contract = get_data_contract_fixture(None);
+        let mut data_contract = get_data_contract_fixture(None).data_contract;
         data_contract.protocol_version = 10000;
 
         let data_contract_bytes = data_contract
@@ -884,7 +874,7 @@ mod test {
     #[test]
     fn conversion_to_cbor_buffer_from_cbor_buffer_too_high_version() {
         init();
-        let data_contract = get_data_contract_fixture(None);
+        let data_contract = get_data_contract_fixture(None).data_contract;
 
         let data_contract_bytes = data_contract
             .to_cbor_buffer()

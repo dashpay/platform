@@ -51,6 +51,8 @@ pub mod rpc;
 // TODO We should compile it only for tests
 /// Asset Lock
 pub mod asset_lock;
+/// Querying
+pub mod query;
 /// Test helpers and fixtures
 pub mod test;
 /// Validator Set

@@ -91,7 +91,7 @@ impl StateTransitionValidation for DataContractUpdateTransition {
         // Data contract should exist
         let Some(contract_fetch_info) =
             drive
-                .get_contract_with_fetch_info(self.data_contract.id.0 .0, None, add_to_cache_if_pulled, tx)?
+                .get_contract_with_fetch_info_and_fee(self.data_contract.id.0 .0, None, add_to_cache_if_pulled, tx)?
                 .1
             else {
                 validation_result
@@ -212,6 +212,14 @@ impl StateTransitionValidation for DataContractUpdateTransition {
             return Ok(validation_result);
         }
 
+        self.transform_into_action(platform, tx)
+    }
+
+    fn transform_into_action<C: CoreRPCLike>(
+        &self,
+        _platform: &PlatformRef<C>,
+        _tx: TransactionArg,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let action: StateTransitionAction =
             Into::<DataContractUpdateTransitionAction>::into(self).into();
         Ok(action.into())

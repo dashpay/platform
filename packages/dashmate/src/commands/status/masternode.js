@@ -27,25 +27,39 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
     config,
     getMasternodeScope,
   ) {
+    const plain = {
+      'Sentinel Version': 'n/a',
+      'Sentinel Status': 'n/a',
+      'Masternode State': 'n/a',
+      'Masternode Sync Status': 'n/a',
+      'ProTx Hash': 'n/a',
+      'PoSe Penalty': 'n/a',
+      'Last paid block': 'n/a',
+      'Last paid time': 'n/a',
+      'Payment queue position': 'n/a',
+      'Next payment time': 'n/a',
+    };
+
     if (config.get('core.masternode.enable') === false) {
-      throw new Error('This is not a masternode!');
+      if (process.env.DEBUG) {
+        // eslint-disable-next-line no-console
+        console.error('This is not a masternode!');
+      }
     }
 
     const scope = await getMasternodeScope(config);
 
     if (flags.format === OUTPUT_FORMATS.PLAIN) {
-      const plain = {};
-
       if (scope.sentinel.version) {
-        plain['Sentinel Version'] = scope.sentinel.version;
-        plain['Sentinel Status'] = colors.sentinel(scope.sentinel.state)(scope.sentinel.state);
+        plain['Sentinel Version'] = scope.sentinel.version || 'n/a';
+        plain['Sentinel Status'] = colors.sentinel(scope.sentinel.state)(scope.sentinel.state) || 'n/a';
       }
 
       if (scope.syncAsset === MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED) {
         plain['Masternode State'] = (scope.state === MasternodeStateEnum.READY
-          ? chalk.green : chalk.red)(scope.state);
+          ? chalk.green : chalk.red)(scope.state) || 'n/a';
       } else {
-        plain['Masternode Sync Status'] = chalk.yellow(scope.syncAsset);
+        plain['Masternode Sync Status'] = scope.syncAsset ? chalk.yellow(scope.syncAsset) : 'n/a';
       }
 
       if (scope.state === MasternodeStateEnum.READY) {
@@ -55,12 +69,12 @@ class MasternodeStatusCommand extends ConfigBaseCommand {
           poSePenalty, enabledCount,
         } = scope.nodeState;
 
-        plain['ProTx Hash'] = scope.proTxHash;
-        plain['PoSe Penalty'] = colors.poSePenalty(poSePenalty, enabledCount)(`${poSePenalty}`);
-        plain['Last paid block'] = lastPaidHeight;
-        plain['Last paid time'] = lastPaidHeight === 0 ? 'Never' : lastPaidTime;
-        plain['Payment queue position'] = paymentQueuePosition;
-        plain['Next payment time'] = `in ${nextPaymentTime}`;
+        plain['ProTx Hash'] = scope.proTxHash || 'n/a';
+        plain['PoSe Penalty'] = colors.poSePenalty(poSePenalty, enabledCount)(`${poSePenalty}`) || 'n/a';
+        plain['Last paid block'] = lastPaidHeight || 'n/a';
+        plain['Last paid time'] = lastPaidHeight === 0 ? 'Never' : (lastPaidTime || 'n/a');
+        plain['Payment queue position'] = paymentQueuePosition || 'n/a';
+        plain['Next payment time'] = `in ${nextPaymentTime}` || 'n/a';
       }
 
       return printObject(plain, flags.format);

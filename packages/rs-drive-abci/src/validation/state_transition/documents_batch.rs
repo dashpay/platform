@@ -73,7 +73,7 @@ impl StateTransitionValidation for DocumentsBatchTransition {
             // This block cache only gets merged to the main cache if the block is finalized
             let Some(contract_fetch_info) =
                 drive
-                .get_contract_with_fetch_info(data_contract_id.0.0, None, true, tx)?
+                .get_contract_with_fetch_info_and_fee(data_contract_id.0.0, None, true, tx)?
                 .1
             else {
                 result.add_error(BasicError::DataContractNotPresentError(DataContractNotPresentError::new(
@@ -118,6 +118,22 @@ impl StateTransitionValidation for DocumentsBatchTransition {
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let validation_result = validate_document_batch_transition_state(
+            false,
+            &platform.into(),
+            self,
+            tx,
+            &StateTransitionExecutionContext::default(),
+        )?;
+        Ok(validation_result.map(Into::into))
+    }
+
+    fn transform_into_action<C: CoreRPCLike>(
+        &self,
+        platform: &PlatformRef<C>,
+        tx: TransactionArg,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        let validation_result = validate_document_batch_transition_state(
+            true,
             &platform.into(),
             self,
             tx,

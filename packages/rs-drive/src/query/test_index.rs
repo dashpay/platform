@@ -7,7 +7,8 @@ mod tests {
     use serde_json::json;
 
     use crate::contract::Contract;
-    use crate::error::{query::QueryError, Error};
+    use crate::drive::config::DriveConfig;
+    use crate::error::{query::QuerySyntaxError, Error};
     use crate::query::DriveQuery;
 
     fn construct_indexed_document_type() -> DocumentType {
@@ -84,8 +85,13 @@ mod tests {
         });
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
-            .expect("query should be valid");
+        let query = DriveQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            &document_type,
+            &DriveConfig::default(),
+        )
+        .expect("query should be valid");
         let index = query.find_best_index().expect("expected to find index");
         assert_eq!(index, document_type.indices.get(2).unwrap());
 
@@ -96,8 +102,13 @@ mod tests {
         });
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
-            .expect("query should be valid");
+        let query = DriveQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            &document_type,
+            &DriveConfig::default(),
+        )
+        .expect("query should be valid");
         let index = query.find_best_index().expect("expected to find index");
         assert_eq!(index, document_type.indices.get(0).unwrap());
     }
@@ -114,13 +125,18 @@ mod tests {
         });
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
-            .expect("query should be valid");
+        let query = DriveQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            &document_type,
+            &DriveConfig::default(),
+        )
+        .expect("query should be valid");
         let error = query
             .find_best_index()
             .expect_err("expected to not find index");
         assert!(
-            matches!(error, Error::Query(QueryError::WhereClauseOnNonIndexedProperty(message)) if message == "query must be for valid indexes")
+            matches!(error, Error::Query(QuerySyntaxError::WhereClauseOnNonIndexedProperty(message)) if message == "query must be for valid indexes")
         )
     }
 }

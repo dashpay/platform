@@ -1,14 +1,52 @@
 use crate::block::epoch::Epoch;
-use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
-use crate::ProtocolError;
-use bincode::config;
+
 use bincode::{Decode, Encode};
-use platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use serde::{Deserialize, Serialize};
+
+/// Extended Block information
+#[derive(Clone, Debug, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
+pub struct ExtendedBlockInfo {
+    /// Basic block info
+    pub basic_info: BlockInfo,
+    /// App hash
+    pub app_hash: [u8; 32],
+    /// Signature
+    pub quorum_hash: [u8; 32],
+    /// Signature
+    #[serde(with = "signature_serializer")]
+    pub signature: [u8; 96],
+    /// Round
+    pub round: u32,
+}
+
+mod signature_serializer {
+    use super::*;
+    use serde::de::Error;
+    use serde::{Deserializer, Serializer};
+
+    pub fn serialize<S>(signature: &[u8; 96], serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_bytes(signature)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<[u8; 96], D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let buf: Vec<u8> = Deserialize::deserialize(deserializer)?;
+        if buf.len() != 96 {
+            return Err(Error::invalid_length(buf.len(), &"array of length 96"));
+        }
+        let mut arr = [0u8; 96];
+        arr.copy_from_slice(&buf);
+        Ok(arr)
+    }
+}
 
 /// Block information
-#[derive(Clone, Default, Encode, Decode, PlatformSerialize, PlatformDeserialize)]
-#[platform_error_type(ProtocolError)]
-#[platform_deserialize_limit(15000)]
+#[derive(Clone, Default, Debug, PartialEq, Eq, Encode, Decode, Serialize, Deserialize)]
 pub struct BlockInfo {
     /// Block time in milliseconds
     pub time_ms: u64,
@@ -21,8 +59,6 @@ pub struct BlockInfo {
 
     /// Current fee epoch
     pub epoch: Epoch,
-    // /// current quorum
-    // pub current_validator_set_quorum_hash: QuorumHash,
 }
 
 impl BlockInfo {
@@ -45,5 +81,31 @@ impl BlockInfo {
             epoch,
             ..Default::default()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ciborium::{de::from_reader, ser::into_writer};
+
+    #[test]
+    fn test_extended_block_info_serde() {
+        let block_info = ExtendedBlockInfo {
+            basic_info: BlockInfo::default(),
+            app_hash: [1; 32],
+            quorum_hash: [2; 32],
+            signature: [3; 96],
+            round: 1,
+        };
+
+        // Serialize into a vector
+        let mut encoded: Vec<u8> = vec![];
+        into_writer(&block_info, &mut encoded).unwrap();
+
+        // Deserialize from the vector
+        let decoded: ExtendedBlockInfo = from_reader(&encoded[..]).unwrap();
+
+        assert_eq!(block_info, decoded);
     }
 }

@@ -1,7 +1,7 @@
 use crate::identity::{IdentityPublicKey, KeyID, KeyType, Purpose, SecurityLevel};
 #[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
-use dashcore::signer;
+
 use std::collections::BTreeMap;
 use std::convert::{TryFrom, TryInto};
 
@@ -13,28 +13,26 @@ use platform_value::{BinaryData, ReplacementType, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-use crate::consensus::signature::{
-    BasicBLSError, BasicECDSAError, SignatureError, SignatureShouldNotBePresentError,
-};
-
 use crate::errors::ProtocolError;
 use crate::identity::signer::Signer;
-use crate::platform_serialization::{PlatformDeserialize, PlatformSerialize};
-use crate::serialization_traits::{PlatformDeserializable, PlatformSerializable};
-use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
+use crate::platform_serialization::PlatformSignable;
+use crate::serialization_traits::PlatformMessageSignable;
+use crate::serialization_traits::Signable;
+
 #[cfg(feature = "cbor")]
 use crate::util::cbor_serializer;
 #[cfg(feature = "cbor")]
 use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
 use crate::util::vec;
-use crate::validation::SimpleConsensusValidationResult;
+
 use crate::{BlsModule, Convertible, InvalidVectorSizeError, SerdeParsingError};
 
 pub const BINARY_DATA_FIELDS: [&str; 2] = ["data", "signature"];
 
-#[derive(Debug, Serialize, Deserialize, Encode, Decode, Clone, PartialEq, Eq)]
+#[derive(Debug, Serialize, Deserialize, Encode, Decode, PlatformSignable, Clone, PartialEq, Eq)]
+#[platform_error_type(ProtocolError)]
 #[serde(rename_all = "camelCase")]
-pub struct IdentityPublicKeyInCreationWithWitness {
+pub struct IdentityPublicKeyInCreation {
     pub id: KeyID,
     #[serde(rename = "type")]
     pub key_type: KeyType,
@@ -43,45 +41,11 @@ pub struct IdentityPublicKeyInCreationWithWitness {
     pub read_only: bool,
     pub data: BinaryData,
     /// The signature is needed for ECDSA_SECP256K1 Key type and BLS12_381 Key type
+    #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
 }
 
-#[derive(Debug, Encode, Decode, PlatformDeserialize, PlatformSerialize, Clone, PartialEq, Eq)]
-#[platform_error_type(ProtocolError)]
-#[platform_deserialize_limit(2000)]
-#[platform_serialize_limit(2000)]
-pub struct IdentityPublicKeyInCreationWithoutWitness {
-    pub id: KeyID,
-    pub key_type: KeyType,
-    pub purpose: Purpose,
-    pub security_level: SecurityLevel,
-    pub read_only: bool,
-    pub data: BinaryData,
-}
-
-impl From<IdentityPublicKeyInCreationWithWitness> for IdentityPublicKeyInCreationWithoutWitness {
-    fn from(value: IdentityPublicKeyInCreationWithWitness) -> Self {
-        let IdentityPublicKeyInCreationWithWitness {
-            id,
-            purpose,
-            security_level,
-            key_type,
-            data,
-            read_only,
-            ..
-        } = value;
-        IdentityPublicKeyInCreationWithoutWitness {
-            id,
-            purpose,
-            security_level,
-            key_type,
-            data,
-            read_only,
-        }
-    }
-}
-
-impl Convertible for IdentityPublicKeyInCreationWithWitness {
+impl Convertible for IdentityPublicKeyInCreation {
     fn to_object(&self) -> Result<Value, ProtocolError> {
         platform_value::to_value(self).map_err(ProtocolError::ValueError)
     }
@@ -113,12 +77,7 @@ impl Convertible for IdentityPublicKeyInCreationWithWitness {
     }
 }
 
-impl IdentityPublicKeyInCreationWithWitness {
-    fn serialize_without_witness(&self) -> Result<Vec<u8>, ProtocolError> {
-        let without_witness: IdentityPublicKeyInCreationWithoutWitness = self.clone().into();
-        without_witness.serialize()
-    }
-
+impl IdentityPublicKeyInCreation {
     pub fn to_identity_public_key(self) -> IdentityPublicKey {
         let Self {
             id,
@@ -146,25 +105,28 @@ impl IdentityPublicKeyInCreationWithWitness {
 
     pub fn from_public_key_signed_with_private_key(
         public_key: IdentityPublicKey,
+        state_transition_bytes: &[u8],
         private_key: &[u8],
         bls: &impl BlsModule,
     ) -> Result<Self, ProtocolError> {
         let key_type = public_key.key_type;
-        let mut public_key_with_witness: IdentityPublicKeyInCreationWithWitness = public_key.into();
-        public_key_with_witness.sign_by_private_key(private_key, key_type, bls)?;
+        let mut public_key_with_witness: IdentityPublicKeyInCreation = public_key.into();
+        public_key_with_witness.signature = state_transition_bytes
+            .sign_by_private_key(private_key, key_type, bls)?
+            .into();
         Ok(public_key_with_witness)
     }
 
     pub fn from_public_key_signed_external<S: Signer>(
         public_key: IdentityPublicKey,
+        state_transition_bytes: &[u8],
         signer: &S,
     ) -> Result<Self, ProtocolError> {
-        let mut public_key_with_witness: IdentityPublicKeyInCreationWithWitness =
-            public_key.clone().into();
-        let data = public_key_with_witness.serialize_without_witness()?;
+        let mut public_key_with_witness: IdentityPublicKeyInCreation = public_key.clone().into();
         match public_key.key_type {
             KeyType::ECDSA_SECP256K1 | KeyType::BLS12_381 => {
-                public_key_with_witness.signature = signer.sign(&public_key, data.as_slice())?;
+                public_key_with_witness.signature =
+                    signer.sign(&public_key, state_transition_bytes)?;
             }
             KeyType::ECDSA_HASH160 | KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
                 // don't sign (on purpose)
@@ -172,35 +134,6 @@ impl IdentityPublicKeyInCreationWithWitness {
         }
         // dbg!(format!("signed signature {} data {} public key {}",hex::encode(public_key_with_witness.signature.as_slice()),  hex::encode(data), hex::encode(public_key.data.as_slice())));
         Ok(public_key_with_witness)
-    }
-
-    /// Signs data with the private key
-    fn sign_by_private_key(
-        &mut self,
-        private_key: &[u8],
-        key_type: KeyType,
-        bls: &impl BlsModule,
-    ) -> Result<(), ProtocolError> {
-        let data = self.serialize_without_witness()?;
-        match key_type {
-            KeyType::BLS12_381 => self.signature = bls.sign(&data, private_key)?.into(),
-
-            // https://github.com/dashevo/platform/blob/9c8e6a3b6afbc330a6ab551a689de8ccd63f9120/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L169
-            KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
-                let signature = signer::sign(&data, private_key)?;
-                self.signature = signature.to_vec().into();
-            }
-
-            // the default behavior from
-            // https://github.com/dashevo/platform/blob/6b02b26e5cd3a7c877c5fdfe40c4a4385a8dda15/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L187
-            // is to return the error for the BIP13_SCRIPT_HASH
-            KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
-                return Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
-                    InvalidIdentityPublicKeyTypeError::new(key_type),
-                ))
-            }
-        };
-        Ok(())
     }
 
     pub fn from_value_map(mut value_map: BTreeMap<String, Value>) -> Result<Self, ProtocolError> {
@@ -293,7 +226,9 @@ impl IdentityPublicKeyInCreationWithWitness {
 
     /// Get the original public key hash
     pub fn hash_as_vec(&self) -> Result<Vec<u8>, ProtocolError> {
-        Into::<IdentityPublicKey>::into(self).hash()
+        Into::<IdentityPublicKey>::into(self)
+            .hash()
+            .map(|hash| hash.to_vec())
     }
 
     /// Get the original public key hash
@@ -357,101 +292,10 @@ impl IdentityPublicKeyInCreationWithWitness {
 
         pk_map.to_value_sorted()
     }
-
-    pub fn verify_signature(&self) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        match self.key_type {
-            KeyType::ECDSA_SECP256K1 => {
-                let signable_data = self.serialize_without_witness()?;
-                if let Err(e) = signer::verify_data_signature(
-                    &signable_data,
-                    self.signature.as_slice(),
-                    self.data.as_slice(),
-                ) {
-                    // dbg!(format!("error with signature {} data {} public key {}",hex::encode(self.signature.as_slice()),  hex::encode(signable_data), hex::encode(self.data.as_slice())));
-                    Ok(SimpleConsensusValidationResult::new_with_error(
-                        SignatureError::BasicECDSAError(BasicECDSAError::new(e.to_string())).into(),
-                    ))
-                } else {
-                    Ok(SimpleConsensusValidationResult::default())
-                }
-            }
-            KeyType::BLS12_381 => {
-                let signable_data = self.serialize_without_witness()?;
-                let public_key = match bls_signatures::PublicKey::from_bytes(self.data.as_slice()) {
-                    Ok(public_key) => public_key,
-                    Err(e) => {
-                        // dbg!(format!("bls public_key could not be recovered"));
-                        return Ok(SimpleConsensusValidationResult::new_with_error(
-                            SignatureError::BasicBLSError(BasicBLSError::new(e.to_string())).into(),
-                        ));
-                    }
-                };
-                let signature =
-                    match bls_signatures::Signature::from_bytes(self.signature.as_slice()) {
-                        Ok(public_key) => public_key,
-                        Err(e) => {
-                            // dbg!(format!("bls signature could not be recovered"));
-                            return Ok(SimpleConsensusValidationResult::new_with_error(
-                                SignatureError::BasicBLSError(BasicBLSError::new(e.to_string()))
-                                    .into(),
-                            ));
-                        }
-                    };
-                if !public_key.verify(&signature, signable_data.as_slice()) {
-                    // dbg!(format!(
-                    //     "error with signature {} data {} public key {}",
-                    //     hex::encode(self.signature.as_slice()),
-                    //     hex::encode(signable_data),
-                    //     hex::encode(self.data.as_slice())
-                    // ));
-                    Ok(SimpleConsensusValidationResult::new_with_error(
-                        SignatureError::BasicBLSError(BasicBLSError::new(
-                            "bls signature was incorrect".to_string(),
-                        ))
-                        .into(),
-                    ))
-                } else {
-                    Ok(SimpleConsensusValidationResult::default())
-                }
-            }
-            KeyType::ECDSA_HASH160 => {
-                if !self.signature.is_empty() {
-                    Ok(SimpleConsensusValidationResult::new_with_error(
-                        SignatureError::SignatureShouldNotBePresentError(
-                            SignatureShouldNotBePresentError::new("ecdsa_hash160 keys should not have a signature as that would reveal the public key".to_string()),
-                        ).into()
-                    ))
-                } else {
-                    Ok(SimpleConsensusValidationResult::default())
-                }
-            }
-            KeyType::BIP13_SCRIPT_HASH => {
-                if !self.signature.is_empty() {
-                    Ok(SimpleConsensusValidationResult::new_with_error(
-                        SignatureError::SignatureShouldNotBePresentError(
-                            SignatureShouldNotBePresentError::new("script hash keys should not have a signature as that would reveal the script".to_string())
-                    ).into()))
-                } else {
-                    Ok(SimpleConsensusValidationResult::default())
-                }
-            }
-            KeyType::EDDSA_25519_HASH160 => {
-                if !self.signature.is_empty() {
-                    Ok(SimpleConsensusValidationResult::new_with_error(
-                        SignatureError::SignatureShouldNotBePresentError(
-                            SignatureShouldNotBePresentError::new("eddsa hash 160 keys should not have a signature as that would reveal the script".to_string())
-                        ).into()
-                    ))
-                } else {
-                    Ok(SimpleConsensusValidationResult::default())
-                }
-            }
-        }
-    }
 }
 
-impl From<&IdentityPublicKeyInCreationWithWitness> for IdentityPublicKey {
-    fn from(val: &IdentityPublicKeyInCreationWithWitness) -> Self {
+impl From<&IdentityPublicKeyInCreation> for IdentityPublicKey {
+    fn from(val: &IdentityPublicKeyInCreation) -> Self {
         IdentityPublicKey {
             id: val.id,
             purpose: val.purpose,
@@ -464,9 +308,9 @@ impl From<&IdentityPublicKeyInCreationWithWitness> for IdentityPublicKey {
     }
 }
 
-impl From<IdentityPublicKey> for IdentityPublicKeyInCreationWithWitness {
+impl From<IdentityPublicKey> for IdentityPublicKeyInCreation {
     fn from(val: IdentityPublicKey) -> Self {
-        IdentityPublicKeyInCreationWithWitness {
+        IdentityPublicKeyInCreation {
             id: val.id,
             purpose: val.purpose,
             security_level: val.security_level,
@@ -478,7 +322,7 @@ impl From<IdentityPublicKey> for IdentityPublicKeyInCreationWithWitness {
     }
 }
 
-impl TryFrom<Value> for IdentityPublicKeyInCreationWithWitness {
+impl TryFrom<Value> for IdentityPublicKeyInCreation {
     type Error = platform_value::Error;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
@@ -486,18 +330,18 @@ impl TryFrom<Value> for IdentityPublicKeyInCreationWithWitness {
     }
 }
 
-impl TryFrom<IdentityPublicKeyInCreationWithWitness> for Value {
+impl TryFrom<IdentityPublicKeyInCreation> for Value {
     type Error = platform_value::Error;
 
-    fn try_from(value: IdentityPublicKeyInCreationWithWitness) -> Result<Self, Self::Error> {
+    fn try_from(value: IdentityPublicKeyInCreation) -> Result<Self, Self::Error> {
         platform_value::to_value(value)
     }
 }
 
-impl TryFrom<&IdentityPublicKeyInCreationWithWitness> for Value {
+impl TryFrom<&IdentityPublicKeyInCreation> for Value {
     type Error = platform_value::Error;
 
-    fn try_from(value: &IdentityPublicKeyInCreationWithWitness) -> Result<Self, Self::Error> {
+    fn try_from(value: &IdentityPublicKeyInCreation) -> Result<Self, Self::Error> {
         platform_value::to_value(value)
     }
 }

@@ -194,12 +194,12 @@ pub fn create_domain_data_trigger(
                     ),
                 ]),
             },
-            offset: 0,
-            limit: 0,
+            offset: None,
+            limit: None,
             order_by: Default::default(),
             start_at: None,
             start_at_included: false,
-            block_time: None,
+            block_time_ms: None,
         };
 
         let documents = context
@@ -265,18 +265,18 @@ pub fn create_domain_data_trigger(
             equal_clauses: BTreeMap::from([(
                 "saltedDomainHash".to_string(),
                 WhereClause {
-                    field: "normalizedParentDomainName".to_string(),
+                    field: "saltedDomainHash".to_string(),
                     operator: WhereOperator::Equal,
                     value: Value::Bytes32(salted_domain_hash),
                 },
             )]),
         },
-        offset: 0,
-        limit: 0,
+        offset: None,
+        limit: None,
         order_by: Default::default(),
         start_at: None,
         start_at_included: false,
-        block_time: None,
+        block_time_ms: None,
     };
 
     let preorder_documents = context
@@ -347,7 +347,7 @@ mod test {
 
         let data_trigger_context = DataTriggerExecutionContext {
             platform: &platform_ref,
-            data_contract: &data_contract,
+            data_contract: &data_contract.data_contract,
             owner_id: &owner_id,
             state_transition_execution_context: &transition_execution_context,
             transaction: None,

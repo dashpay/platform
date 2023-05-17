@@ -2,9 +2,10 @@
 const lodashSet = require('lodash/set');
 const lodashGet = require('lodash/get');
 
+const path = require('path');
 const systemConfigs = require('./system');
 
-const { NETWORK_TESTNET } = require('../src/constants');
+const { NETWORK_TESTNET, HOME_DIR_PATH } = require('../src/constants');
 
 module.exports = {
   '0.17.2': (configFile) => {
@@ -516,7 +517,7 @@ module.exports = {
     let groupJsonApiPort = systemConfigs.local.dashmate.helper.api.port;
 
     Object.entries(configFile.configs)
-      .forEach(([, config]) => {
+      .forEach(([configName, config]) => {
         if (config.group === 'local') {
           config.dashmate.helper.api = {
             enable: false,
@@ -530,8 +531,47 @@ module.exports = {
             port: systemConfigs.base.dashmate.helper.api.port,
           };
         }
+
+        const categories = [];
+
+        if (config.core.debug) {
+          categories.push('all');
+        }
+
+        config.core.log = {
+          file: {
+            categories,
+            path: path.join(HOME_DIR_PATH, 'logs', configName, 'core.log'),
+          },
+        };
+
+        delete config.core.debug;
       });
 
+    return configFile;
+  },
+  '0.24.0': (configFile) => {
+    Object.entries(configFile.configs)
+      .forEach(([, config]) => {
+        // Update images
+        config.core.docker.image = systemConfigs.base.core.docker.image;
+
+        config.core.sentinel.docker.image = systemConfigs.base.core.sentinel.docker.image;
+
+        config.dashmate.helper.docker.image = systemConfigs.base.dashmate.helper.docker.image;
+
+        config.platform.drive.tenderdash.docker.image = systemConfigs.base.platform
+          .drive.tenderdash.docker.image;
+
+        config.platform.drive.abci.docker.image = systemConfigs.base.platform
+          .drive.abci.docker.image;
+
+        config.platform.dapi.api.docker.image = systemConfigs.base.platform
+          .dapi.api.docker.image;
+
+        config.platform.dapi.envoy.docker.image = systemConfigs.base.platform
+          .dapi.envoy.docker.image;
+      });
     return configFile;
   },
 };

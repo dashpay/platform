@@ -16,6 +16,9 @@ module.exports = {
     return chalk.red;
   },
   docker: (status) => {
+    if (!status) {
+      return () => null;
+    }
     switch (status) {
       case DockerStatusEnum.running:
         return chalk.green;
@@ -24,6 +27,9 @@ module.exports = {
     }
   },
   status: (status) => {
+    if (!status) {
+      return () => null;
+    }
     switch (status) {
       case ServiceStatusEnum.up:
         return chalk.green;
@@ -44,6 +50,9 @@ module.exports = {
     return chalk.red;
   },
   blockHeight: (blockHeight, headerHeight, remoteBlockHeight) => {
+    if (!blockHeight) {
+      return () => null;
+    }
     if ((!remoteBlockHeight && blockHeight === headerHeight)
       || blockHeight >= remoteBlockHeight) {
       return chalk.green;

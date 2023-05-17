@@ -30,6 +30,7 @@ pub mod chain;
 pub mod instant;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Encode, Decode)]
+#[serde(untagged)]
 pub enum AssetLockProof {
     Instant(#[bincode(with_serde)] InstantAssetLockProof),
     Chain(ChainAssetLockProof),

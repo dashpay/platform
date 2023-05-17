@@ -44,12 +44,11 @@ use std::sync::RwLock;
 
 use crate::rpc::core::MockCoreRPCLike;
 use dashcore_rpc::dashcore::hashes::hex::FromHex;
-use dashcore_rpc::dashcore::hashes::Hash;
-use dashcore_rpc::dashcore::{BlockHash, QuorumHash};
 
-use dpp::block::block_info::BlockInfo;
+use dashcore_rpc::dashcore::BlockHash;
+
 use dpp::serialization_traits::PlatformDeserializable;
-use drive::error::drive::DriveError;
+
 use drive::error::Error::GroveDB;
 use serde_json::json;
 
@@ -160,7 +159,7 @@ impl Platform<MockCoreRPCLike> {
 
     /// Recreate the state from the backing store
     pub fn recreate_state(&self) -> Result<bool, Error> {
-        let Some(serialized_block_info) = self.drive
+        let Some(serialized_platform_state) = self.drive
             .grove
             .get_aux(b"saved_state", None)
             .unwrap()
@@ -168,54 +167,10 @@ impl Platform<MockCoreRPCLike> {
             return Ok(false);
         };
 
-        let block_info: BlockInfo = BlockInfo::deserialize(serialized_block_info.as_slice())?;
-
-        let maybe_quorum_hash = self
-            .drive
-            .grove
-            .get_aux(b"saved_quorum_hash", None)
-            .unwrap()
-            .map_err(|e| Error::Drive(GroveDB(e)))?;
-
-        let current_protocol_version_in_consensus = self
-            .drive
-            .fetch_current_protocol_version(None)
-            .map_err(Error::Drive)?
-            .unwrap_or(PROTOCOL_VERSION);
-        let next_epoch_protocol_version = self
-            .drive
-            .fetch_next_protocol_version(None)
-            .map_err(Error::Drive)?
-            .unwrap_or(PROTOCOL_VERSION);
-
-        let current_validator_set_quorum_hash = QuorumHash::from_slice(&maybe_quorum_hash.unwrap())
-            .map_err(|_| {
-                Error::Drive(drive::error::Error::Drive(DriveError::CorruptedDriveState(
-                    "quorum hash should be 32 bytes".to_string(),
-                )))
-            })?;
-
-        let new_state = PlatformState {
-            last_committed_block_info: Some(block_info),
-            current_protocol_version_in_consensus,
-            next_epoch_protocol_version,
-            quorums_extended_info: Default::default(),
-            current_validator_set_quorum_hash,
-            next_validator_set_quorum_hash: None,
-            validator_sets: Default::default(),
-            full_masternode_list: Default::default(),
-            hpmn_masternode_list: Default::default(),
-            initialization_information: None,
-        };
-
-        let core_height = new_state.core_height();
+        let recreated_state = PlatformState::deserialize(&serialized_platform_state)?;
 
         let mut state_cache = self.state.write().unwrap();
-        *state_cache = new_state;
-        self.update_quorum_info(&mut state_cache, core_height, true)?;
-        self.update_state_masternode_list(&mut state_cache, core_height, true)?;
-        drop(state_cache);
-
+        *state_cache = recreated_state;
         Ok(true)
     }
 }
@@ -231,40 +186,29 @@ impl<C> Platform<C> {
         C: CoreRPCLike,
     {
         let config = config.unwrap_or_default();
-        let drive = Drive::open(path, config.drive.clone()).map_err(Error::Drive)?;
-
-        let current_protocol_version_in_consensus = drive
-            .fetch_current_protocol_version(None)
-            .map_err(Error::Drive)?
-            .unwrap_or(PROTOCOL_VERSION);
-        let next_epoch_protocol_version = drive
-            .fetch_next_protocol_version(None)
-            .map_err(Error::Drive)?
-            .unwrap_or(PROTOCOL_VERSION);
+        let drive = Drive::open(path, Some(config.drive.clone())).map_err(Error::Drive)?;
 
         // TODO: factor out key so we don't duplicate
-        let maybe_serialized_block_info = drive
+        let maybe_serialized_platform_state = drive
             .grove
             .get_aux(b"saved_state", None)
             .unwrap()
             .map_err(|e| Error::Drive(GroveDB(e)))?;
 
-        if let Some(serialized_block_info) = maybe_serialized_block_info {
+        if let Some(serialized_platform_state) = maybe_serialized_platform_state {
             Platform::open_with_client_saved_state::<P>(
                 drive,
                 core_rpc,
                 config,
-                serialized_block_info,
-                current_protocol_version_in_consensus,
-                next_epoch_protocol_version,
+                serialized_platform_state,
             )
         } else {
             Platform::open_with_client_no_saved_state::<P>(
                 drive,
                 core_rpc,
                 config,
-                current_protocol_version_in_consensus,
-                next_epoch_protocol_version,
+                PROTOCOL_VERSION,
+                PROTOCOL_VERSION,
             )
         }
     }
@@ -274,52 +218,20 @@ impl<C> Platform<C> {
         drive: Drive,
         core_rpc: C,
         config: PlatformConfig,
-        serialized_block_info: Vec<u8>,
-        current_protocol_version_in_consensus: u32,
-        next_epoch_protocol_version: u32,
+        serialized_platform_state: Vec<u8>,
     ) -> Result<Platform<C>, Error>
     where
         C: CoreRPCLike,
     {
-        let block_info = BlockInfo::deserialize(serialized_block_info.as_slice())?;
-
-        let maybe_quorum_hash = drive
-            .grove
-            .get_aux(b"saved_quorum_hash", None)
-            .unwrap()
-            .map_err(|e| Error::Drive(GroveDB(e)))?;
-
-        // TODO: remove unwrap
-        let current_validator_set_quorum_hash =
-            QuorumHash::from_slice(&maybe_quorum_hash.unwrap()).unwrap();
-
-        let state = PlatformState {
-            last_committed_block_info: Some(block_info),
-            current_protocol_version_in_consensus,
-            next_epoch_protocol_version,
-            quorums_extended_info: Default::default(),
-            current_validator_set_quorum_hash,
-            next_validator_set_quorum_hash: None,
-            validator_sets: Default::default(),
-            full_masternode_list: Default::default(),
-            hpmn_masternode_list: Default::default(),
-            initialization_information: None,
-        };
-
-        let core_height = state.core_height();
+        let platform_state = PlatformState::deserialize(&serialized_platform_state)?;
 
         let platform: Platform<C> = Platform {
             drive,
-            state: RwLock::new(state),
+            state: RwLock::new(platform_state),
             config,
             block_execution_context: RwLock::new(None),
             core_rpc,
         };
-
-        let mut state_cache = platform.state.write().unwrap();
-        platform.update_quorum_info(&mut state_cache, core_height, true)?;
-        platform.update_state_masternode_list(&mut state_cache, core_height, true)?;
-        drop(state_cache);
 
         Ok(platform)
     }
@@ -335,18 +247,10 @@ impl<C> Platform<C> {
     where
         C: CoreRPCLike,
     {
-        let state = PlatformState {
-            last_committed_block_info: None,
+        let state = PlatformState::default_with_protocol_versions(
             current_protocol_version_in_consensus,
             next_epoch_protocol_version,
-            quorums_extended_info: Default::default(),
-            current_validator_set_quorum_hash: Default::default(),
-            next_validator_set_quorum_hash: None,
-            validator_sets: Default::default(),
-            full_masternode_list: Default::default(),
-            hpmn_masternode_list: Default::default(),
-            initialization_information: None,
-        };
+        );
 
         Ok(Platform {
             drive,

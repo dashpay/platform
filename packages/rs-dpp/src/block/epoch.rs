@@ -9,7 +9,7 @@ pub const EPOCH_KEY_OFFSET: u16 = 256;
 pub type EpochIndex = u16;
 
 /// Epoch struct
-#[derive(Serialize, Deserialize, Default, Clone, Eq, PartialEq, Copy, Encode, Decode)]
+#[derive(Serialize, Deserialize, Default, Clone, Eq, PartialEq, Copy, Encode, Decode, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct Epoch {
     /// Epoch index

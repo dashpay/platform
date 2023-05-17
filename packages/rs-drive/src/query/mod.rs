@@ -42,8 +42,7 @@ pub use grovedb::{PathQuery, Query, QueryItem, SizedQuery};
 
 #[cfg(any(feature = "full", feature = "verify"))]
 use indexmap::IndexMap;
-#[cfg(feature = "full")]
-use integer_encoding::VarInt;
+
 #[cfg(any(feature = "full", feature = "verify"))]
 use sqlparser::ast;
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -67,7 +66,7 @@ use dpp::block::block_info::BlockInfo;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::data_contract::document_type::DocumentType;
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 use dpp::data_contract::document_type::{Index, IndexProperty};
 #[cfg(any(feature = "full", feature = "verify"))]
 
@@ -76,17 +75,15 @@ use dpp::data_contract::document_type::{Index, IndexProperty};
 pub use ordering::OrderClause;
 
 #[cfg(any(feature = "full", feature = "verify"))]
-use crate::common::encode::encode_float;
-#[cfg(any(feature = "full", feature = "verify"))]
 use crate::contract::Contract;
 #[cfg(feature = "full")]
 use crate::drive::grove_operations::QueryType::StatefulQuery;
 #[cfg(feature = "full")]
 use crate::drive::Drive;
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 use crate::error::drive::DriveError;
 #[cfg(any(feature = "full", feature = "verify"))]
-use crate::error::query::QueryError;
+use crate::error::query::QuerySyntaxError;
 #[cfg(any(feature = "full", feature = "verify"))]
 use crate::error::Error;
 #[cfg(feature = "full")]
@@ -94,7 +91,7 @@ use crate::fee::calculate_fee;
 #[cfg(feature = "full")]
 use crate::fee::op::LowLevelDriveOperation;
 
-#[cfg(feature = "full")]
+#[cfg(any(feature = "full", feature = "verify"))]
 use crate::drive::contract::paths::ContractPaths;
 
 #[cfg(any(feature = "full", feature = "verify"))]
@@ -106,6 +103,9 @@ use dpp::platform_value::platform_value;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::platform_value::Value;
 
+use crate::common::encode::encode_u64;
+use crate::drive::config::DriveConfig;
+use crate::error::Error::GroveDB;
 #[cfg(any(feature = "full", feature = "verify"))]
 use dpp::ProtocolError;
 
@@ -115,8 +115,13 @@ pub mod conditions;
 mod defaults;
 #[cfg(any(feature = "full", feature = "verify"))]
 pub mod ordering;
+#[cfg(any(feature = "full", feature = "verify"))]
+mod single_document_drive_query;
 #[cfg(feature = "full")]
 mod test_index;
+
+#[cfg(any(feature = "full", feature = "verify"))]
+pub use single_document_drive_query::SingleDocumentDriveQuery;
 
 #[cfg(any(feature = "full", feature = "verify"))]
 /// Internal clauses struct
@@ -153,13 +158,13 @@ impl InternalClauses {
         }
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// Returns true if the query clause is for primary keys.
     pub fn is_for_primary_key(&self) -> bool {
         self.primary_key_in_clause.is_some() || self.primary_key_equal_clause.is_some()
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// Returns true if self is empty.
     pub fn is_empty(&self) -> bool {
         self.in_clause.is_none()
@@ -206,7 +211,7 @@ impl InternalClauses {
                     .clone(),
             )),
             _ => Err(Error::Query(
-                QueryError::DuplicateNonGroupableClauseSameField(
+                QuerySyntaxError::DuplicateNonGroupableClauseSameField(
                     "There should only be one equal clause for the primary key",
                 ),
             )),
@@ -221,7 +226,7 @@ impl InternalClauses {
                     .clone(),
             )),
             _ => Err(Error::Query(
-                QueryError::DuplicateNonGroupableClauseSameField(
+                QuerySyntaxError::DuplicateNonGroupableClauseSameField(
                     "There should only be one in clause for the primary key",
                 ),
             )),
@@ -237,9 +242,9 @@ impl InternalClauses {
 
         match internal_clauses.verify() {
             true => Ok(internal_clauses),
-            false => Err(Error::Query(QueryError::InvalidWhereClauseComponents(
-                "Query has invalid where clauses",
-            ))),
+            false => Err(Error::Query(
+                QuerySyntaxError::InvalidWhereClauseComponents("Query has invalid where clauses"),
+            )),
         }
     }
 }
@@ -278,17 +283,17 @@ pub struct DriveQuery<'a> {
     /// Internal clauses
     pub internal_clauses: InternalClauses,
     /// Offset
-    pub offset: u16,
+    pub offset: Option<u16>,
     /// Limit
-    pub limit: u16,
+    pub limit: Option<u16>,
     /// Order by
     pub order_by: IndexMap<String, OrderClause>,
     /// Start at
-    pub start_at: Option<Vec<u8>>,
+    pub start_at: Option<[u8; 32]>,
     /// Start at included
     pub start_at_included: bool,
     /// Block time
-    pub block_time: Option<f64>,
+    pub block_time_ms: Option<u64>,
 }
 
 // TODO: expose this also
@@ -301,16 +306,16 @@ impl<'a> DriveQuery<'a> {
             contract,
             document_type,
             internal_clauses: Default::default(),
-            offset: 0,
-            limit: 1,
+            offset: None,
+            limit: Some(1),
             order_by: Default::default(),
             start_at: None,
             start_at_included: true,
-            block_time: None,
+            block_time_ms: None,
         }
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// Returns true if the query clause if for primary keys.
     pub fn is_for_primary_key(&self) -> bool {
         self.internal_clauses.is_for_primary_key()
@@ -333,13 +338,14 @@ impl<'a> DriveQuery<'a> {
         query_cbor: &[u8],
         contract: &'a Contract,
         document_type: &'a DocumentType,
+        config: &DriveConfig,
     ) -> Result<Self, Error> {
         let query_document_value: Value = ciborium::de::from_reader(query_cbor).map_err(|_| {
-            Error::Query(QueryError::DeserializationError(
-                "unable to decode query from cbor",
+            Error::Query(QuerySyntaxError::DeserializationError(
+                "unable to decode query from cbor".to_string(),
             ))
         })?;
-        Self::from_value(query_document_value, contract, document_type)
+        Self::from_value(query_document_value, contract, document_type, config)
     }
 
     #[cfg(any(feature = "full", feature = "verify"))]
@@ -348,9 +354,10 @@ impl<'a> DriveQuery<'a> {
         query_value: Value,
         contract: &'a Contract,
         document_type: &'a DocumentType,
+        config: &DriveConfig,
     ) -> Result<Self, Error> {
         let query_document: BTreeMap<String, Value> = query_value.into_btree_string_map()?;
-        Self::from_btree_map_value(query_document, contract, document_type)
+        Self::from_btree_map_value(query_document, contract, document_type, config)
     }
 
     #[cfg(any(feature = "full", feature = "verify"))]
@@ -359,25 +366,27 @@ impl<'a> DriveQuery<'a> {
         mut query_document: BTreeMap<String, Value>,
         contract: &'a Contract,
         document_type: &'a DocumentType,
+        config: &DriveConfig,
     ) -> Result<Self, Error> {
         let maybe_limit: Option<u16> = query_document
             .remove_optional_integer("limit")
             .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
 
         let limit = maybe_limit
-            .map_or(Some(defaults::DEFAULT_QUERY_LIMIT), |limit_value| {
-                if limit_value == 0 || limit_value > defaults::DEFAULT_QUERY_LIMIT {
+            .map_or(Some(config.default_query_limit), |limit_value| {
+                if limit_value == 0 || limit_value > config.default_query_limit {
                     None
                 } else {
                     Some(limit_value)
                 }
             })
-            .ok_or(Error::Query(QueryError::InvalidLimit(
-                "limit should be a integer from 1 to 100",
-            )))?;
+            .ok_or(Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                "limit greater than max limit {}",
+                config.max_query_limit
+            ))))?;
 
-        let block_time: Option<f64> = query_document
-            .remove_optional_float("blockTime")
+        let block_time_ms: Option<u64> = query_document
+            .remove_optional_integer("blockTime")
             .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
 
         let all_where_clauses: Vec<WhereClause> =
@@ -391,14 +400,14 @@ impl<'a> DriveQuery<'a> {
                                 if let Value::Array(clauses_components) = where_clause {
                                     WhereClause::from_components(clauses_components)
                                 } else {
-                                    Err(Error::Query(QueryError::InvalidFormatWhereClause(
+                                    Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
                                         "where clause must be an array",
                                     )))
                                 }
                             })
                             .collect::<Result<Vec<WhereClause>, Error>>()
                     } else {
-                        Err(Error::Query(QueryError::InvalidFormatWhereClause(
+                        Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
                             "where clause must be an array",
                         )))
                     }
@@ -409,7 +418,7 @@ impl<'a> DriveQuery<'a> {
         let start_at_option = query_document.remove("startAt");
         let start_after_option = query_document.remove("startAfter");
         if start_after_option.is_some() && start_at_option.is_some() {
-            return Err(Error::Query(QueryError::DuplicateStartConditions(
+            return Err(Error::Query(QuerySyntaxError::DuplicateStartConditions(
                 "only one of startAt or startAfter should be provided",
             )));
         }
@@ -426,10 +435,11 @@ impl<'a> DriveQuery<'a> {
             start_at_included = true;
         }
 
-        let start_at: Option<Vec<u8>> = start_option
+        let start_at: Option<[u8; 32]> = start_option
             .map(|v| {
-                v.into_identifier_bytes()
+                v.into_identifier()
                     .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))
+                    .map(|identifier| identifier.into_buffer())
             })
             .transpose()?;
 
@@ -456,7 +466,7 @@ impl<'a> DriveQuery<'a> {
             .collect::<Result<IndexMap<String, OrderClause>, Error>>()?;
 
         if !query_document.is_empty() {
-            return Err(Error::Query(QueryError::Unsupported(
+            return Err(Error::Query(QuerySyntaxError::Unsupported(
                 "unsupported syntax in where clause".to_string(),
             )));
         }
@@ -465,32 +475,122 @@ impl<'a> DriveQuery<'a> {
             contract,
             document_type,
             internal_clauses,
-            offset: 0,
-            limit,
+            offset: None,
+            limit: Some(limit),
             order_by,
             start_at,
             start_at_included,
-            block_time,
+            block_time_ms,
+        })
+    }
+
+    #[cfg(any(feature = "full", feature = "verify"))]
+    /// Converts a query Value to a `DriveQuery`.
+    pub fn from_decomposed_values(
+        where_clause: Value,
+        order_by: Option<Value>,
+        maybe_limit: Option<u16>,
+        start_at: Option<[u8; 32]>,
+        start_at_included: bool,
+        block_time_ms: Option<u64>,
+        contract: &'a Contract,
+        document_type: &'a DocumentType,
+        config: &DriveConfig,
+    ) -> Result<Self, Error> {
+        let _limit = maybe_limit
+            .map_or(Some(config.default_query_limit), |limit_value| {
+                if limit_value == 0 || limit_value > config.default_query_limit {
+                    None
+                } else {
+                    Some(limit_value)
+                }
+            })
+            .ok_or(Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                "limit greater than max limit {}",
+                config.max_query_limit
+            ))))?;
+
+        let all_where_clauses: Vec<WhereClause> = match where_clause {
+            Value::Null => Ok(vec![]),
+            Value::Array(clauses) => clauses
+                .iter()
+                .map(|where_clause| {
+                    if let Value::Array(clauses_components) = where_clause {
+                        WhereClause::from_components(clauses_components)
+                    } else {
+                        Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
+                            "where clause must be an array",
+                        )))
+                    }
+                })
+                .collect::<Result<Vec<WhereClause>, Error>>(),
+            _ => Err(Error::Query(QuerySyntaxError::InvalidFormatWhereClause(
+                "where clause must be an array",
+            ))),
+        }?;
+
+        let internal_clauses = InternalClauses::extract_from_clauses(all_where_clauses)?;
+
+        let order_by: IndexMap<String, OrderClause> = order_by
+            .map_or(vec![], |id_cbor| {
+                if let Value::Array(clauses) = id_cbor {
+                    clauses
+                        .iter()
+                        .filter_map(|order_clause| {
+                            if let Value::Array(clauses_components) = order_clause {
+                                OrderClause::from_components(clauses_components).ok()
+                            } else {
+                                None
+                            }
+                        })
+                        .collect()
+                } else {
+                    vec![]
+                }
+            })
+            .iter()
+            .map(|order_clause| Ok((order_clause.field.clone(), order_clause.to_owned())))
+            .collect::<Result<IndexMap<String, OrderClause>, Error>>()?;
+
+        Ok(DriveQuery {
+            contract,
+            document_type,
+            internal_clauses,
+            offset: None,
+            limit: Some(1),
+            order_by,
+            start_at,
+            start_at_included,
+            block_time_ms,
         })
     }
 
     #[cfg(any(feature = "full", feature = "verify"))]
     /// Converts a SQL expression to a `DriveQuery`.
-    pub fn from_sql_expr(sql_string: &str, contract: &'a Contract) -> Result<Self, Error> {
+    pub fn from_sql_expr(
+        sql_string: &str,
+        contract: &'a Contract,
+        config: &DriveConfig,
+    ) -> Result<Self, Error> {
         let dialect: GenericDialect = sqlparser::dialect::GenericDialect {};
         let statements: Vec<Statement> = Parser::parse_sql(&dialect, sql_string)
-            .map_err(|_| Error::Query(QueryError::InvalidSQL("Issue parsing sql")))?;
+            .map_err(|_| Error::Query(QuerySyntaxError::InvalidSQL("Issue parsing sql")))?;
 
         // Should ideally iterate over each statement
-        let first_statement = statements
-            .get(0)
-            .ok_or(Error::Query(QueryError::InvalidSQL("Issue parsing sql")))?;
+        let first_statement =
+            statements
+                .get(0)
+                .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(
+                    "Issue parsing sql",
+                )))?;
 
         let query: &ast::Query = match first_statement {
             ast::Statement::Query(query_struct) => Some(query_struct),
             _ => None,
         }
-        .ok_or(Error::Query(QueryError::InvalidSQL("Issue parsing sql")))?;
+        .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(
+            "Issue parsing sql",
+        )))?;
 
         let limit: u16 = if let Some(limit_expr) = &query.limit {
             match limit_expr {
@@ -500,11 +600,12 @@ impl<'a> DriveQuery<'a> {
                 }
                 _ => None,
             }
-            .ok_or(Error::Query(QueryError::InvalidLimit(
-                "Issue parsing sql: invalid limit value",
-            )))?
+            .ok_or(Error::Query(QuerySyntaxError::InvalidLimit(format!(
+                "limit greater than max limit {}",
+                config.max_query_limit
+            ))))?
         } else {
-            defaults::DEFAULT_QUERY_LIMIT
+            config.default_query_limit
         };
 
         let order_by: IndexMap<String, OrderClause> = query
@@ -522,13 +623,15 @@ impl<'a> DriveQuery<'a> {
             ast::SetExpr::Select(select) => Some(select),
             _ => None,
         }
-        .ok_or(Error::Query(QueryError::InvalidSQL("Issue parsing sql")))?;
+        .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(
+            "Issue parsing sql",
+        )))?;
 
         // Get the document type from the 'from' section
         let document_type_name = match &select
             .from
             .get(0)
-            .ok_or(Error::Query(QueryError::InvalidSQL(
+            .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(
                 "Invalid query: missing from section",
             )))?
             .relation
@@ -541,14 +644,14 @@ impl<'a> DriveQuery<'a> {
             } => name.0.get(0).as_ref().map(|identifier| &identifier.value),
             _ => None,
         }
-        .ok_or(Error::Query(QueryError::InvalidSQL(
+        .ok_or(Error::Query(QuerySyntaxError::InvalidSQL(
             "Issue parsing sql: invalid from value",
         )))?;
 
         let document_type = contract
             .document_types
             .get(document_type_name)
-            .ok_or(Error::Query(QueryError::DocumentTypeNotFound(
+            .ok_or(Error::Query(QuerySyntaxError::DocumentTypeNotFound(
                 "document type not found in contract",
             )))?;
 
@@ -587,10 +690,11 @@ impl<'a> DriveQuery<'a> {
             start_at_included = true;
         }
 
-        let start_at: Option<Vec<u8>> = start_option
+        let start_at: Option<[u8; 32]> = start_option
             .map(|v| {
-                v.into_identifier_bytes()
+                v.into_identifier()
                     .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))
+                    .map(|identifier| identifier.into_buffer())
             })
             .transpose()?;
 
@@ -598,13 +702,42 @@ impl<'a> DriveQuery<'a> {
             contract,
             document_type,
             internal_clauses,
-            offset: 0,
-            limit,
+            offset: None,
+            limit: Some(limit),
             order_by,
             start_at,
             start_at_included,
-            block_time: None,
+            block_time_ms: None,
         })
+    }
+
+    #[cfg(any(feature = "full", feature = "verify"))]
+    /// Operations to construct a path query.
+    pub fn start_at_document_path_and_key(&self, starts_at: &[u8; 32]) -> (Vec<Vec<u8>>, Vec<u8>) {
+        if self.document_type.documents_keep_history {
+            let document_holding_path = self.contract.documents_with_history_primary_key_path(
+                self.document_type.name.as_str(),
+                starts_at,
+            );
+            (
+                document_holding_path
+                    .into_iter()
+                    .map(|key| key.to_vec())
+                    .collect::<Vec<_>>(),
+                vec![0],
+            )
+        } else {
+            let document_holding_path = self
+                .contract
+                .documents_primary_key_path(self.document_type.name.as_str());
+            (
+                document_holding_path
+                    .into_iter()
+                    .map(|key| key.to_vec())
+                    .collect::<Vec<_>>(),
+                starts_at.to_vec(),
+            )
+        }
     }
 
     #[cfg(feature = "full")]
@@ -612,6 +745,7 @@ impl<'a> DriveQuery<'a> {
     pub fn construct_path_query_operations(
         &self,
         drive: &Drive,
+        include_start_at_for_proof: bool,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<PathQuery, Error> {
@@ -623,33 +757,20 @@ impl<'a> DriveQuery<'a> {
             .map(|a| a.to_vec())
             .collect::<Vec<Vec<u8>>>();
 
-        let starts_at_document: Option<(Document, bool)> = match &self.start_at {
-            None => Ok(None),
+        let (starts_at_document, start_at_path_query) = match &self.start_at {
+            None => Ok((None, None)),
             Some(starts_at) => {
                 // First if we have a startAt or or startsAfter we must get the element
                 // from the backing store
 
                 let (start_at_document_path, start_at_document_key) =
-                    if self.document_type.documents_keep_history {
-                        let document_holding_path =
-                            self.contract.documents_with_history_primary_key_path(
-                                self.document_type.name.as_str(),
-                                starts_at,
-                            );
-                        (Vec::from(document_holding_path), vec![0])
-                    } else {
-                        let document_holding_path = self
-                            .contract
-                            .documents_primary_key_path(self.document_type.name.as_str());
-                        (
-                            Vec::from(document_holding_path.as_slice()),
-                            starts_at.clone(),
-                        )
-                    };
-
+                    self.start_at_document_path_and_key(starts_at);
                 let start_at_document = drive
                     .grove_get(
-                        start_at_document_path,
+                        start_at_document_path
+                            .iter()
+                            .map(|a| a.as_slice())
+                            .collect::<Vec<_>>(),
                         &start_at_document_key,
                         StatefulQuery,
                         transaction,
@@ -665,7 +786,7 @@ impl<'a> DriveQuery<'a> {
                                 "startAfter document not found"
                             };
 
-                            Error::Query(QueryError::StartDocumentNotFound(error_message))
+                            Error::Query(QuerySyntaxError::StartDocumentNotFound(error_message))
                         }
                         _ => e,
                     })?
@@ -673,9 +794,12 @@ impl<'a> DriveQuery<'a> {
                         "expected a value",
                     )))?;
 
+                let path_query =
+                    PathQuery::new_single_key(start_at_document_path, start_at_document_key);
+
                 if let Element::Item(item, _) = start_at_document {
                     let document = Document::from_bytes(item.as_slice(), self.document_type)?;
-                    Ok(Some((document, self.start_at_included)))
+                    Ok((Some((document, self.start_at_included)), Some(path_query)))
                 } else {
                     Err(Error::Drive(DriveError::CorruptedDocumentPath(
                         "Holding paths should only have items",
@@ -683,6 +807,41 @@ impl<'a> DriveQuery<'a> {
                 }
             }
         }?;
+        let mut main_path_query = if self.is_for_primary_key() {
+            self.get_primary_key_path_query(document_type_path, starts_at_document)
+        } else {
+            self.get_non_primary_key_path_query(document_type_path, starts_at_document)
+        }?;
+        if !include_start_at_for_proof {
+            return Ok(main_path_query);
+        }
+
+        if let Some(start_at_path_query) = start_at_path_query {
+            let limit = main_path_query.query.limit.take();
+            let mut merged =
+                PathQuery::merge(vec![&start_at_path_query, &main_path_query]).map_err(GroveDB)?;
+            merged.query.limit = limit.map(|a| a.saturating_add(1));
+            Ok(merged)
+        } else {
+            Ok(main_path_query)
+        }
+    }
+
+    #[cfg(any(feature = "full", feature = "verify"))]
+    /// Operations to construct a path query.
+    pub fn construct_path_query(
+        &self,
+        starts_at_document: Option<Document>,
+    ) -> Result<PathQuery, Error> {
+        // First we should get the overall document_type_path
+        let document_type_path = self
+            .contract
+            .document_type_path(self.document_type.name.as_str())
+            .into_iter()
+            .map(|a| a.to_vec())
+            .collect::<Vec<Vec<u8>>>();
+        let starts_at_document = starts_at_document
+            .map(|starts_at_document| (starts_at_document, self.start_at_included));
         if self.is_for_primary_key() {
             self.get_primary_key_path_query(document_type_path, starts_at_document)
         } else {
@@ -690,7 +849,6 @@ impl<'a> DriveQuery<'a> {
         }
     }
 
-    // #[cfg(feature = "full")]
     #[cfg(any(feature = "full", feature = "verify"))]
     /// Returns a path query given a document type path and starting document.
     pub fn get_primary_key_path_query(
@@ -712,8 +870,8 @@ impl<'a> DriveQuery<'a> {
 
             if self.document_type.documents_keep_history {
                 // if the documents keep history then we should insert a subquery
-                if let Some(block_time) = self.block_time {
-                    let encoded_block_time = encode_float(block_time)?;
+                if let Some(block_time) = self.block_time_ms {
+                    let encoded_block_time = encode_u64(block_time);
                     let mut sub_query = Query::new_with_direction(false);
                     sub_query.insert_range_to_inclusive(..=encoded_block_time);
                     query.set_subquery(sub_query);
@@ -727,7 +885,7 @@ impl<'a> DriveQuery<'a> {
             // This is for a range
             let left_to_right = if self.order_by.keys().len() == 1 {
                 if self.order_by.keys().next().unwrap() != "$id" {
-                    return Err(Error::Query(QueryError::InvalidOrderByProperties(
+                    return Err(Error::Query(QuerySyntaxError::InvalidOrderByProperties(
                         "order by should include $id only",
                     )));
                 }
@@ -778,9 +936,9 @@ impl<'a> DriveQuery<'a> {
 
                 if self.document_type.documents_keep_history {
                     // if the documents keep history then we should insert a subquery
-                    if let Some(_block_time) = self.block_time {
+                    if let Some(_block_time) = self.block_time_ms {
                         //todo
-                        return Err(Error::Query(QueryError::Unsupported(
+                        return Err(Error::Query(QuerySyntaxError::Unsupported(
                             "Not yet implemented".to_string(),
                         )));
                         // in order to be able to do this we would need limited subqueries
@@ -797,7 +955,7 @@ impl<'a> DriveQuery<'a> {
 
                 Ok(PathQuery::new(
                     path,
-                    SizedQuery::new(query, Some(self.limit), Some(self.offset)),
+                    SizedQuery::new(query, self.limit, self.offset),
                 ))
             } else {
                 // this is a range on all elements
@@ -819,8 +977,8 @@ impl<'a> DriveQuery<'a> {
 
                 if self.document_type.documents_keep_history {
                     // if the documents keep history then we should insert a subquery
-                    if let Some(_block_time) = self.block_time {
-                        return Err(Error::Query(QueryError::Unsupported(
+                    if let Some(_block_time) = self.block_time_ms {
+                        return Err(Error::Query(QuerySyntaxError::Unsupported(
                             "this query is not supported".to_string(),
                         )));
                         // in order to be able to do this we would need limited subqueries
@@ -837,13 +995,13 @@ impl<'a> DriveQuery<'a> {
 
                 Ok(PathQuery::new(
                     path,
-                    SizedQuery::new(query, Some(self.limit), Some(self.offset)),
+                    SizedQuery::new(query, self.limit, self.offset),
                 ))
             }
         }
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// Finds the best index for the query.
     pub fn find_best_index(&self) -> Result<&Index, Error> {
         let equal_fields = self
@@ -886,18 +1044,20 @@ impl<'a> DriveQuery<'a> {
         let (index, difference) = self
             .document_type
             .index_for_types(fields.as_slice(), in_field, order_by_keys.as_slice())
-            .ok_or(Error::Query(QueryError::WhereClauseOnNonIndexedProperty(
-                "query must be for valid indexes",
-            )))?;
+            .ok_or(Error::Query(
+                QuerySyntaxError::WhereClauseOnNonIndexedProperty(
+                    "query must be for valid indexes",
+                ),
+            ))?;
         if difference > defaults::MAX_INDEX_DIFFERENCE {
-            return Err(Error::Query(QueryError::QueryTooFarFromIndex(
+            return Err(Error::Query(QuerySyntaxError::QueryTooFarFromIndex(
                 "query must better match an existing index",
             )));
         }
         Ok(index)
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// Returns a `QueryItem` given a start key and query direction.
     fn query_item_for_starts_at_key(starts_at_key: Vec<u8>, left_to_right: bool) -> QueryItem {
         if left_to_right {
@@ -907,7 +1067,7 @@ impl<'a> DriveQuery<'a> {
         }
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// Returns a `Query` that either starts at or after the given document ID if given.
     fn inner_query_from_starts_at_for_id(
         starts_at_document: &Option<(Document, &DocumentType, &IndexProperty, bool)>,
@@ -930,7 +1090,7 @@ impl<'a> DriveQuery<'a> {
         inner_query
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// Returns a `Query` that either starts at or after the given key.
     fn inner_query_starts_from_key(
         start_at_key: Vec<u8>,
@@ -953,7 +1113,7 @@ impl<'a> DriveQuery<'a> {
         inner_query
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// Returns a `Query` that either starts at or after the given document if given.
     // We are passing in starts_at_document 4 parameters
     // The document
@@ -997,7 +1157,7 @@ impl<'a> DriveQuery<'a> {
         Ok(inner_query)
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// Recursively queries as long as there are leftover index properties.
     fn recursive_insert_on_query(
         query: Option<&mut Query>,
@@ -1123,7 +1283,7 @@ impl<'a> DriveQuery<'a> {
         }
     }
 
-    #[cfg(feature = "full")]
+    #[cfg(any(feature = "full", feature = "verify"))]
     /// Returns a path query for non-primary keys given a document type path and starting document.
     pub fn get_non_primary_key_path_query(
         &self,
@@ -1213,7 +1373,7 @@ impl<'a> DriveQuery<'a> {
                     let order_clause: &OrderClause = self
                         .order_by
                         .get(where_clause.field.as_str())
-                        .ok_or(Error::Query(QueryError::MissingOrderByForRange(
+                        .ok_or(Error::Query(QuerySyntaxError::MissingOrderByForRange(
                             "query must have an orderBy field for each range element",
                         )))?;
 
@@ -1263,7 +1423,7 @@ impl<'a> DriveQuery<'a> {
                         let order_clause: &OrderClause = self
                             .order_by
                             .get(subquery_where_clause.field.as_str())
-                            .ok_or(Error::Query(QueryError::MissingOrderByForRange(
+                            .ok_or(Error::Query(QuerySyntaxError::MissingOrderByForRange(
                                 "query must have an orderBy field for each range element",
                             )))?;
                         let mut subquery = subquery_where_clause.to_path_query(
@@ -1303,7 +1463,9 @@ impl<'a> DriveQuery<'a> {
 
         // Now we should construct the path
         let last_index = last_indexes.first().ok_or(Error::Query(
-            QueryError::QueryOnDocumentTypeWithNoIndexes("document query has no index with fields"),
+            QuerySyntaxError::QueryOnDocumentTypeWithNoIndexes(
+                "document query has no index with fields",
+            ),
         ))?;
 
         let mut path = document_type_path;
@@ -1319,7 +1481,7 @@ impl<'a> DriveQuery<'a> {
 
         Ok(PathQuery::new(
             path,
-            SizedQuery::new(final_query, Some(self.limit), Some(self.offset)),
+            SizedQuery::new(final_query, self.limit, self.offset),
         ))
     }
 
@@ -1351,7 +1513,7 @@ impl<'a> DriveQuery<'a> {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<Vec<u8>, Error> {
         let path_query =
-            self.construct_path_query_operations(drive, transaction, drive_operations)?;
+            self.construct_path_query_operations(drive, true, transaction, drive_operations)?;
         drive.grove_get_proved_path_query(&path_query, false, transaction, drive_operations)
     }
 
@@ -1387,33 +1549,15 @@ impl<'a> DriveQuery<'a> {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<([u8; 32], Vec<Vec<u8>>), Error> {
         let path_query =
-            self.construct_path_query_operations(drive, transaction, drive_operations)?;
+            self.construct_path_query_operations(drive, true, transaction, drive_operations)?;
 
-        let proof =
-            drive.grove_get_proved_path_query(&path_query, false, transaction, drive_operations)?;
-        let (root_hash, key_value_elements) =
-            GroveDb::verify_query(proof.as_slice(), &path_query).map_err(Error::GroveDB)?;
-
-        let values = key_value_elements
-            .into_iter()
-            .filter_map(|proved_key_value| {
-                let Some(element) = proved_key_value.2 else {
-                return None;
-            };
-
-                match element {
-                    Element::Item(val, _) => Some(Ok(val)),
-                    Element::SumItem(val, _) => Some(Ok(val.encode_var_vec())),
-                    Element::Tree(..) | Element::SumTree(..) | Element::Reference(..) => {
-                        Some(Err(Error::GroveDB(GroveError::InvalidQuery(
-                            "path query should only point to items: got trees",
-                        ))))
-                    }
-                }
-            })
-            .collect::<Result<Vec<Vec<u8>>, Error>>()?;
-
-        Ok((root_hash, values))
+        let proof = drive.grove_get_proved_path_query(
+            &path_query,
+            self.start_at.is_some(),
+            transaction,
+            drive_operations,
+        )?;
+        self.verify_proof_keep_serialized(proof.as_slice())
     }
 
     #[cfg(feature = "full")]
@@ -1468,7 +1612,7 @@ impl<'a> DriveQuery<'a> {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(Vec<Vec<u8>>, u16), Error> {
         let path_query =
-            self.construct_path_query_operations(drive, transaction, drive_operations)?;
+            self.construct_path_query_operations(drive, false, transaction, drive_operations)?;
         let query_result = drive.grove_get_path_query_serialized_results(
             &path_query,
             transaction,
@@ -1497,7 +1641,7 @@ impl<'a> DriveQuery<'a> {
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(QueryResultElements, u16), Error> {
         let path_query =
-            self.construct_path_query_operations(drive, transaction, drive_operations)?;
+            self.construct_path_query_operations(drive, false, transaction, drive_operations)?;
         let query_result =
             drive.grove_get_path_query(&path_query, transaction, result_type, drive_operations);
         match query_result {
@@ -1534,6 +1678,7 @@ mod tests {
     use dpp::util::cbor_serializer;
     use serde_json::Value::Null;
 
+    use crate::drive::config::DriveConfig;
     use dpp::block::block_info::BlockInfo;
 
     fn setup_family_contract() -> (Drive, Contract) {
@@ -1596,8 +1741,13 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
-            .expect_err("all ranges must be on same field");
+        DriveQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            &document_type,
+            &DriveConfig::default(),
+        )
+        .expect_err("all ranges must be on same field");
     }
 
     #[test]
@@ -1618,9 +1768,13 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type).expect_err(
-            "fields of queries must of defined supported types (where, limit, orderBy...)",
-        );
+        DriveQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            &document_type,
+            &DriveConfig::default(),
+        )
+        .expect_err("fields of queries must of defined supported types (where, limit, orderBy...)");
     }
 
     #[test]
@@ -1642,8 +1796,13 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
-            .expect_err("the query should not be created");
+        DriveQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            &document_type,
+            &DriveConfig::default(),
+        )
+        .expect_err("the query should not be created");
     }
 
     #[test]
@@ -1665,8 +1824,13 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
-            .expect("the query should be created");
+        DriveQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            &document_type,
+            &DriveConfig::default(),
+        )
+        .expect("the query should be created");
     }
 
     #[test]
@@ -1687,8 +1851,13 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
-            .expect("query should be fine for a 255 byte long string");
+        DriveQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            &document_type,
+            &DriveConfig::default(),
+        )
+        .expect("query should be fine for a 255 byte long string");
     }
 
     #[test]
@@ -1713,8 +1882,13 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
-            .expect("fields of queries length must be under 256 bytes long");
+        let query = DriveQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            document_type,
+            &DriveConfig::default(),
+        )
+        .expect("fields of queries length must be under 256 bytes long");
         query
             .execute_raw_results_no_proof(&drive, None, None)
             .expect_err("fields of queries length must be under 256 bytes long");
@@ -1740,7 +1914,7 @@ mod tests {
     //     });
     //
     //     let where_cbor = serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
-    //     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
+    //     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type, &DriveConfig::default())
     //         .expect("The query itself should be valid for a null type");
     //     query
     //         .execute_no_proof(&drive, None, None)
@@ -1768,7 +1942,7 @@ mod tests {
     //     });
     //
     //     let where_cbor = serializer::value_to_cbor(query_value, None).expect("expected to serialize to cbor");
-    //     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
+    //     let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type, &DriveConfig::default())
     //         .expect("The query itself should be valid for a null type");
     //     query
     //         .execute_no_proof(&drive, None, None)
@@ -1795,8 +1969,13 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
-            .expect("The query itself should be valid for a null type");
+        let query = DriveQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            document_type,
+            &DriveConfig::default(),
+        )
+        .expect("The query itself should be valid for a null type");
         query
             .execute_raw_results_no_proof(&drive, None, None)
             .expect("a Null value doesn't make sense for a float");
@@ -1822,8 +2001,13 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
-            .expect("query should be valid for empty array");
+        let query = DriveQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            document_type,
+            &DriveConfig::default(),
+        )
+        .expect("query should be valid for empty array");
 
         query
             .execute_raw_results_no_proof(&drive, None, None)
@@ -1854,8 +2038,13 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
-            .expect("query is valid for too many elements");
+        let query = DriveQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            document_type,
+            &DriveConfig::default(),
+        )
+        .expect("query is valid for too many elements");
 
         query
             .execute_raw_results_no_proof(&drive, None, None)
@@ -1886,8 +2075,13 @@ mod tests {
         // The is actually valid, however executing it is not
         // This is in order to optimize query execution
 
-        let query = DriveQuery::from_cbor(where_cbor.as_slice(), &contract, document_type)
-            .expect("the query should be created");
+        let query = DriveQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            document_type,
+            &DriveConfig::default(),
+        )
+        .expect("the query should be created");
 
         query
             .execute_raw_results_no_proof(&drive, None, None)
@@ -1911,8 +2105,13 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
-            .expect_err("starts with can not start with an empty string");
+        DriveQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            &document_type,
+            &DriveConfig::default(),
+        )
+        .expect_err("starts with can not start with an empty string");
     }
 
     #[test]
@@ -1932,8 +2131,13 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
-            .expect_err("starts with can not start with an empty string");
+        DriveQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            &document_type,
+            &DriveConfig::default(),
+        )
+        .expect_err("starts with can not start with an empty string");
     }
 
     #[test]
@@ -1953,8 +2157,13 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
-            .expect_err("starts with can not start with an empty string");
+        DriveQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            &document_type,
+            &DriveConfig::default(),
+        )
+        .expect_err("starts with can not start with an empty string");
     }
 
     #[test]
@@ -1974,7 +2183,12 @@ mod tests {
 
         let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
             .expect("expected to serialize to cbor");
-        DriveQuery::from_cbor(where_cbor.as_slice(), &contract, &document_type)
-            .expect_err("starts with can not start with an empty string");
+        DriveQuery::from_cbor(
+            where_cbor.as_slice(),
+            &contract,
+            &document_type,
+            &DriveConfig::default(),
+        )
+        .expect_err("starts with can not start with an empty string");
     }
 }

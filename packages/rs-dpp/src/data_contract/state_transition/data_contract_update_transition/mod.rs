@@ -77,9 +77,9 @@ pub struct DataContractUpdateTransition {
     #[serde(rename = "type")]
     pub transition_type: StateTransitionType,
     pub data_contract: DataContract,
-    #[exclude_from_sig_hash]
+    #[platform_signable(exclude_from_sig_hash)]
     pub signature_public_key_id: KeyID,
-    #[exclude_from_sig_hash]
+    #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
 }
 
@@ -275,7 +275,7 @@ mod test {
     }
 
     fn get_test_data() -> TestData {
-        let data_contract = get_data_contract_fixture(None);
+        let data_contract = get_data_contract_fixture(None).data_contract;
 
         let value_map = BTreeMap::from([
             (

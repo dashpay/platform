@@ -101,7 +101,6 @@ impl Drive {
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
-        //let mut base_operations : EnumMap<Op, u64> = EnumMap::default();
         let contract = document_and_contract_info.contract;
         let document_type = document_and_contract_info.document_type;
         let primary_key_path = contract_documents_primary_key_path(

@@ -32,11 +32,10 @@
 //! This module defines encoding functions.
 //!
 
-use crate::error::Error;
 use byteorder::{BigEndian, WriteBytesExt};
 
 /// Encodes an unsigned integer on 64 bits.
-pub fn encode_u64(val: u64) -> Result<Vec<u8>, Error> {
+pub fn encode_u64(val: u64) -> Vec<u8> {
     // Positive integers are represented in binary with the signed bit set to 0
     // Negative integers are represented in 2's complement form
 
@@ -58,11 +57,11 @@ pub fn encode_u64(val: u64) -> Result<Vec<u8>, Error> {
     // change was uniform across all elements
     wtr[0] ^= 0b1000_0000;
 
-    Ok(wtr)
+    wtr
 }
 
 /// Encodes a signed integer on 64 bits.
-pub fn encode_i64(val: i64) -> Result<Vec<u8>, Error> {
+pub fn encode_i64(val: i64) -> Vec<u8> {
     // Positive integers are represented in binary with the signed bit set to 0
     // Negative integers are represented in 2's complement form
 
@@ -84,11 +83,11 @@ pub fn encode_i64(val: i64) -> Result<Vec<u8>, Error> {
     // change was uniform across all elements
     wtr[0] ^= 0b1000_0000;
 
-    Ok(wtr)
+    wtr
 }
 
 /// Encodes a float.
-pub fn encode_float(val: f64) -> Result<Vec<u8>, Error> {
+pub fn encode_float(val: f64) -> Vec<u8> {
     // Floats are represented based on the  IEEE 754-2008 standard
     // [sign bit] [biased exponent] [mantissa]
 
@@ -124,11 +123,11 @@ pub fn encode_float(val: f64) -> Result<Vec<u8>, Error> {
         wtr[0] ^= 0b1000_0000;
     }
 
-    Ok(wtr)
+    wtr
 }
 
 /// Encodes an unsigned integer on 16 bits.
-pub fn encode_u16(val: u16) -> Result<Vec<u8>, Error> {
+pub fn encode_u16(val: u16) -> Vec<u8> {
     // Positive integers are represented in binary with the signed bit set to 0
     // Negative integers are represented in 2's complement form
 
@@ -150,7 +149,7 @@ pub fn encode_u16(val: u16) -> Result<Vec<u8>, Error> {
     // change was uniform across all elements
     wtr[0] ^= 0b1000_0000;
 
-    Ok(wtr)
+    wtr
 }
 
 /// Encodes an unsigned integer on 32 bits.

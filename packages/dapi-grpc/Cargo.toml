@@ -1,0 +1,39 @@
+[package]
+name = "dapi-grpc"
+description = "GRPC client for Dash Platform"
+version = "0.25.0-dev.6"
+authors = [
+    "Samuel Westrich <sam@dash.org>",
+    "Igor Markin <igor.markin@dash.org>",
+    "Łukasz Klimek <lukasz.klimek@dash.org>",
+    "Anton Suprunchuk <anton.suprunchuk@dash.org>",
+    "Ivan Shumkov <shumkov@dash.org>",
+]
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+prost = { version = "0.11.9" }
+prost-types = { version = "0.11.9" }
+
+[build-dependencies]
+prost-build = { version = "0.11" }
+
+[features]
+default = ["core", "platform"]
+core = ["core_v0"]
+platform = ["platform_v0"]
+
+core_v0 = []
+platform_v0 = []
+
+[lib]
+
+[[example]]
+name = "core_example"
+path = "clients/core/v0/rust/core_example.rs"
+
+
+[[example]]
+name = "platform_example"
+path = "clients/platform/v0/rust/platform_example.rs"

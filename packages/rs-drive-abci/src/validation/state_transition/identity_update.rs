@@ -6,6 +6,8 @@ use dpp::consensus::state::identity::invalid_identity_revision_error::InvalidIde
 use dpp::consensus::state::state_error::StateError;
 use dpp::identity::state_transition::identity_update_transition::IdentityUpdateTransitionAction;
 use dpp::identity::state_transition::identity_update_transition::validate_identity_update_transition_basic::IDENTITY_UPDATE_JSON_SCHEMA_VALIDATOR;
+use dpp::serialization_traits::PlatformMessageSignable;
+use dpp::serialization_traits::Signable;
 use drive::grovedb::TransactionArg;
 use drive::drive::Drive;
 
@@ -17,9 +19,8 @@ use crate::rpc::core::CoreRPCLike;
 use crate::validation::state_transition::common::{validate_protocol_version, validate_schema};
 use crate::validation::state_transition::key_validation::{
     validate_identity_public_key_ids_dont_exist_in_state,
-    validate_identity_public_key_ids_exist_in_state, validate_identity_public_keys_signatures,
-    validate_identity_public_keys_structure, validate_state_transition_identity_signature,
-    validate_unique_identity_public_key_hashes_state,
+    validate_identity_public_key_ids_exist_in_state, validate_identity_public_keys_structure,
+    validate_state_transition_identity_signature, validate_unique_identity_public_key_hashes_state,
 };
 
 use super::StateTransitionValidation;
@@ -49,12 +50,17 @@ impl StateTransitionValidation for IdentityUpdateTransition {
         transaction: TransactionArg,
     ) -> Result<ConsensusValidationResult<Option<PartialIdentity>>, Error> {
         let mut result = ConsensusValidationResult::<Option<PartialIdentity>>::default();
-        result.add_errors(
-            validate_identity_public_keys_signatures(self.add_public_keys.as_slice())?.errors,
-        );
 
-        if !result.is_valid() {
-            return Ok(result);
+        let bytes: Vec<u8> = self.signable_bytes()?;
+        for key in self.add_public_keys.iter() {
+            let validation_result = bytes.as_slice().verify_signature(
+                key.key_type,
+                key.data.as_slice(),
+                key.signature.as_slice(),
+            )?;
+            if !validation_result.is_valid() {
+                result.add_errors(validation_result.errors);
+            }
         }
 
         let validation_result =
@@ -180,6 +186,15 @@ impl StateTransitionValidation for IdentityUpdateTransition {
                 }
             }
         }
+        self.transform_into_action(platform, tx)
+    }
+
+    fn transform_into_action<C: CoreRPCLike>(
+        &self,
+        _platform: &PlatformRef<C>,
+        _tx: TransactionArg,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        let mut validation_result = ConsensusValidationResult::<StateTransitionAction>::default();
 
         validation_result.set_data(IdentityUpdateTransitionAction::from(self).into());
         Ok(validation_result)

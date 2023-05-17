@@ -102,9 +102,9 @@ where
         match serialization_result {
             Ok(serialized) => {
                 let len = serialized.len();
-                if len > 16384 {
+                if len > 25600 {
                     result.add_error(BasicError::StateTransitionMaxSizeExceededError(
-                        StateTransitionMaxSizeExceededError::new(len / 1024, 16),
+                        StateTransitionMaxSizeExceededError::new(len / 1024, 25),
                     ));
                 }
             }
@@ -163,7 +163,7 @@ mod test {
 
     fn setup_test() -> TestData {
         let bls = NativeBlsModule::default();
-        let data_contract = get_data_contract_fixture(None);
+        let created_data_contract = get_data_contract_fixture(None);
         let private_key_bytes =
             hex::decode("9b67f852093bc61cea0eeca38599dbfba0de28574d2ed9b99d10d33dc1bde7b2")
                 .unwrap();
@@ -178,7 +178,7 @@ mod test {
         let data_contract_factory = DataContractFactory::new(1, Arc::new(data_contract_validator));
 
         let mut state_transition = data_contract_factory
-            .create_data_contract_create_transition(data_contract.clone())
+            .create_data_contract_create_transition(created_data_contract.clone())
             .unwrap();
 
         state_transition
@@ -192,7 +192,7 @@ mod test {
         let raw_state_transition = state_transition.to_object(false).unwrap();
 
         TestData {
-            data_contract,
+            data_contract: created_data_contract.data_contract,
             state_transition,
             raw_state_transition,
             bls,
@@ -309,7 +309,7 @@ mod test {
     }
 
     #[tokio::test]
-    async fn should_return_invalid_result_if_state_transition_size_is_more_than_16_kb() {
+    async fn should_return_invalid_result_if_state_transition_size_is_more_than_25_kb() {
         let TestData {
             mut raw_state_transition,
             ..
@@ -344,7 +344,7 @@ mod test {
         match basic_error {
             BasicError::StateTransitionMaxSizeExceededError(err) => {
                 assert_eq!(err.actual_size_kbytes(), 60);
-                assert_eq!(err.max_size_kbytes(), 16);
+                assert_eq!(err.max_size_kbytes(), 25);
             }
             _ => panic!(
                 "Expected StateTransitionMaxSizeExceededError, got {}",

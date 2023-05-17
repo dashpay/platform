@@ -61,8 +61,7 @@ impl StateTransitionValidation for DataContractCreateTransition {
         // }
 
         // Validate data contract id
-        let generated_id =
-            generate_data_contract_id(self.data_contract.owner_id, self.data_contract.entropy);
+        let generated_id = generate_data_contract_id(self.data_contract.owner_id, self.entropy);
         if generated_id.as_slice() != self.data_contract.id.as_ref() {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 BasicError::InvalidDataContractIdError(InvalidDataContractIdError::new(
@@ -97,7 +96,12 @@ impl StateTransitionValidation for DataContractCreateTransition {
         let drive = platform.drive;
         // Data contract shouldn't exist
         if drive
-            .get_contract_with_fetch_info(self.data_contract.id.to_buffer(), None, false, tx)?
+            .get_contract_with_fetch_info_and_fee(
+                self.data_contract.id.to_buffer(),
+                None,
+                false,
+                tx,
+            )?
             .1
             .is_some()
         {
@@ -108,9 +112,17 @@ impl StateTransitionValidation for DataContractCreateTransition {
                 .into(),
             ]))
         } else {
-            let action: StateTransitionAction =
-                Into::<DataContractCreateTransitionAction>::into(self).into();
-            Ok(action.into())
+            self.transform_into_action(platform, tx)
         }
+    }
+
+    fn transform_into_action<C: CoreRPCLike>(
+        &self,
+        _platform: &PlatformRef<C>,
+        _tx: TransactionArg,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        let action: StateTransitionAction =
+            Into::<DataContractCreateTransitionAction>::into(self).into();
+        Ok(action.into())
     }
 }

@@ -195,9 +195,9 @@ mod test {
         pub owner_id: Identifier,
 
         pub return_error: Option<usize>,
-        #[exclude_from_sig_hash]
+        #[platform_signable(exclude_from_sig_hash)]
         pub signature_public_key_id: KeyID,
-        #[exclude_from_sig_hash]
+        #[platform_signable(exclude_from_sig_hash)]
         pub signature: BinaryData,
     }
 

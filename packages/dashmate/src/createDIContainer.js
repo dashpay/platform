@@ -9,6 +9,7 @@ const {
 const Docker = require('dockerode');
 
 const ensureHomeDirFactory = require('./config/ensureHomeDirFactory');
+const ensureFileMountExistsFactory = require('./docker/ensureFileMountExistsFactory');
 const getConnectionHostFactory = require('./docker/getConnectionHostFactory');
 const ConfigFileJsonRepository = require('./config/configFile/ConfigFileJsonRepository');
 const createSystemConfigsFactory = require('./config/systemConfigs/createSystemConfigsFactory');
@@ -75,7 +76,6 @@ const reindexNodeTaskFactory = require('./listr/tasks/reindexNodeTaskFactory');
 const generateHDPrivateKeys = require('./util/generateHDPrivateKeys');
 
 const obtainZeroSSLCertificateTaskFactory = require('./listr/tasks/ssl/zerossl/obtainZeroSSLCertificateTaskFactory');
-const renewZeroSSLCertificateTaskFactory = require('./listr/tasks/ssl/zerossl/renewZeroSSLCertificateTaskFactory');
 const VerificationServer = require('./listr/tasks/ssl/VerificationServer');
 const saveCertificateTask = require('./listr/tasks/ssl/saveCertificateTask');
 
@@ -112,6 +112,7 @@ async function createDIContainer() {
     migrateConfigFile: asValue(migrateConfigFile),
     isHelper: asValue(process.env.DASHMATE_HELPER === '1'),
     getConnectionHost: asClass(getConnectionHostFactory).singleton(),
+    ensureFileMountExists: asFunction(ensureFileMountExistsFactory).singleton(),
     // `configFile` and `config` are registering on command init
   });
 
@@ -228,7 +229,6 @@ async function createDIContainer() {
     enableCoreQuorumsTask: asFunction(enableCoreQuorumsTaskFactory).singleton(),
     registerMasternodeGuideTask: asFunction(registerMasternodeGuideTaskFactory).singleton(),
     obtainZeroSSLCertificateTask: asFunction(obtainZeroSSLCertificateTaskFactory).singleton(),
-    renewZeroSSLCertificateTask: asFunction(renewZeroSSLCertificateTaskFactory).singleton(),
     obtainSelfSignedCertificateTask: asFunction(obtainSelfSignedCertificateTaskFactory).singleton(),
     saveCertificateTask: asValue(saveCertificateTask),
     reindexNodeTask: asFunction(reindexNodeTaskFactory).singleton(),

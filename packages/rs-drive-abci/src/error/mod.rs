@@ -10,6 +10,8 @@ use tracing::error;
 /// Execution errors module
 pub mod execution;
 
+/// Query errors module
+pub mod query;
 /// Serialization errors module
 pub mod serialization;
 

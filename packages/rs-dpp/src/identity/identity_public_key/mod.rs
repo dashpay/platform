@@ -12,7 +12,7 @@ use anyhow::anyhow;
 #[cfg(feature = "cbor")]
 use ciborium::value::Value as CborValue;
 use dashcore::PublicKey as ECDSAPublicKey;
-use platform_value::{BinaryData, ReplacementType, Value, ValueMapHelper};
+use platform_value::{BinaryData, Bytes20, ReplacementType, Value, ValueMapHelper};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 
@@ -27,8 +27,9 @@ use crate::util::cbor_value::{CborCanonicalMap, CborMapExtension};
 use crate::util::hash::ripemd160_sha256;
 use crate::Convertible;
 use bincode::{config, Decode, Encode};
+use dashcore::hashes::Hash;
 
-use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreationWithWitness;
+use crate::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
 use crate::util::vec;
 use platform_serialization::{PlatformDeserialize, PlatformSerialize};
 
@@ -68,9 +69,9 @@ pub struct IdentityPublicKey {
     pub disabled_at: Option<TimestampMillis>,
 }
 
-impl Into<IdentityPublicKeyInCreationWithWitness> for &IdentityPublicKey {
-    fn into(self) -> IdentityPublicKeyInCreationWithWitness {
-        IdentityPublicKeyInCreationWithWitness {
+impl Into<IdentityPublicKeyInCreation> for &IdentityPublicKey {
+    fn into(self) -> IdentityPublicKeyInCreation {
+        IdentityPublicKeyInCreation {
             id: self.id,
             purpose: self.purpose,
             security_level: self.security_level,
@@ -142,7 +143,7 @@ impl IdentityPublicKey {
     }
 
     /// Get the original public key hash
-    pub fn hash(&self) -> Result<Vec<u8>, ProtocolError> {
+    pub fn hash(&self) -> Result<[u8; 20], ProtocolError> {
         if self.data.is_empty() {
             return Err(ProtocolError::EmptyPublicKeyDataError);
         }
@@ -160,7 +161,7 @@ impl IdentityPublicKey {
                         )));
                     }
                 };
-                Ok(key.pubkey_hash().to_vec())
+                Ok(key.pubkey_hash().into_inner())
             }
             KeyType::BLS12_381 => {
                 if self.data.len() != 48 {
@@ -173,7 +174,7 @@ impl IdentityPublicKey {
                 }
             }
             KeyType::ECDSA_HASH160 | KeyType::BIP13_SCRIPT_HASH | KeyType::EDDSA_25519_HASH160 => {
-                Ok(self.data.to_vec())
+                Ok(Bytes20::from_vec(self.data.to_vec())?.into_buffer())
             }
         }
     }

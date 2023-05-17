@@ -3,7 +3,8 @@ extern crate proc_macro;
 use proc_macro::TokenStream;
 
 use quote::quote;
-use syn::{parse_macro_input, DeriveInput};
+use syn::{parse_macro_input, DeriveInput, Expr, Lit, Meta};
+
 #[proc_macro_derive(
     PlatformSerialize,
     attributes(platform_error_type, platform_serialize_limit, platform_serialize_into)
@@ -262,10 +263,7 @@ pub fn derive_platform_deserialize_no_limit(input: TokenStream) -> TokenStream {
     TokenStream::from(expanded)
 }
 
-#[proc_macro_derive(
-    PlatformSignable,
-    attributes(platform_error_type, exclude_from_sig_hash)
-)]
+#[proc_macro_derive(PlatformSignable, attributes(platform_error_type, platform_signable))]
 pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
@@ -290,35 +288,143 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
     let filtered_fields: Vec<&syn::Field> = fields
         .iter()
         .filter(|field| {
-            !field
-                .attrs
-                .iter()
-                .any(|attr| attr.path().is_ident("exclude_from_sig_hash"))
+            !field.attrs.iter().any(|attr| {
+                if attr.path().is_ident("platform_signable") {
+                    let meta: Meta = attr.parse_args().expect("Unable to parse attribute");
+                    meta.path().is_ident("exclude_from_sig_hash")
+                } else {
+                    false
+                }
+            })
         })
         .collect();
 
-    let intermediate_name = syn::Ident::new(&format!("{}Intermediate", name), name.span());
-    let intermediate_fields: Vec<_> = filtered_fields
-        .iter()
-        .map(|field| {
-            let ident = &field.ident;
-            let ty = &field.ty;
-            quote! { #ident: std::borrow::Cow<'a, #ty> }
-        })
-        .collect();
+    let intermediate_name = syn::Ident::new(&format!("{}Signable", name), name.span());
+
+    let mut intermediate_fields = Vec::new();
+    let mut field_conversions = Vec::new();
+    let mut field_mapping = Vec::new();
+
+    for field in &filtered_fields {
+        let ident = &field.ident;
+        let ty = &field.ty;
+
+        let conversion = field.attrs.iter().find_map(|attr| {
+            if attr.path().is_ident("platform_signable") {
+                let meta: Meta = attr
+                    .parse_args()
+                    .expect("Failed to parse 'platform_signable' attribute arguments");
+                match meta {
+                    Meta::Path(_) => None,
+                    Meta::List(meta_list) => meta_list
+                        .tokens
+                        .into_iter()
+                        .filter_map(|token| {
+                            if let proc_macro2::TokenTree::Group(group) = token {
+                                Some(group.stream())
+                            } else {
+                                None
+                            }
+                        })
+                        .find_map(|stream| {
+                            let mut iter = stream.into_iter();
+                            if let Some(proc_macro2::TokenTree::Ident(ident)) = iter.next() {
+                                if ident == "into" {
+                                    if let Some(proc_macro2::TokenTree::Literal(lit)) = iter.next()
+                                    {
+                                        let lit_str =
+                                            syn::LitStr::new(&lit.to_string(), lit.span());
+                                        Some(
+                                            lit_str
+                                                .parse::<syn::Type>()
+                                                .expect("Failed to parse type"),
+                                        )
+                                    } else {
+                                        panic!("Expected a string literal for 'into' attribute");
+                                    }
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        }),
+                    Meta::NameValue(name_value) => {
+                        if name_value.path.is_ident("into") {
+                            if let Expr::Lit(lit) = name_value.value {
+                                if let Lit::Str(lit_str) = lit.lit {
+                                    Some(
+                                        lit_str.parse::<syn::Type>().expect("Failed to parse type"),
+                                    )
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    }
+                }
+            } else {
+                None
+            }
+        });
+
+        if let Some(into_ty) = conversion {
+            if let syn::Type::Path(type_path) = &into_ty {
+                if let Some(segment) = type_path.path.segments.first() {
+                    if segment.ident == "Vec" {
+                        if let syn::PathArguments::AngleBracketed(angle_bracketed) =
+                            &segment.arguments
+                        {
+                            let inner_ty = angle_bracketed.args.first().unwrap();
+                            intermediate_fields.push(quote! { #ident: Vec<#inner_ty<'a>> });
+                            field_conversions.push(quote! { #ident: original.#ident.iter().map(|x| x.into()).collect() });
+                            let ident = field.ident.as_ref().expect("Expected named field");
+                            field_mapping.push(quote! {
+                            (self.#ident.len() as u64).encode(encoder)?;
+                            for item in self.#ident.iter() {
+                                item.encode(encoder) ? ;
+                            } });
+                        } else {
+                            panic!("Expected a type inside the vector");
+                        }
+                    } else {
+                        intermediate_fields.push(quote! { #ident: std::borrow::Cow<'a, #ty> });
+                        field_conversions.push(quote! { #ident: std::borrow::Cow::<'a, #into_ty>::from(&original.#ident).into() });
+                        let ident = field.ident.as_ref().expect("Expected named field");
+                        field_mapping.push(quote! { self.#ident.encode(encoder)?; });
+                    }
+                } else {
+                    intermediate_fields.push(quote! { #ident: std::borrow::Cow<'a, #ty> });
+                    field_conversions
+                        .push(quote! { #ident: std::borrow::Cow::Borrowed(&original.#ident) });
+                    let ident = field.ident.as_ref().expect("Expected named field");
+                    field_mapping.push(quote! { self.#ident.encode(encoder)?; });
+                }
+            } else {
+                intermediate_fields.push(quote! { #ident: std::borrow::Cow<'a, #ty> });
+                field_conversions
+                    .push(quote! { #ident: std::borrow::Cow::Borrowed(&original.#ident) });
+                let ident = field.ident.as_ref().expect("Expected named field");
+                field_mapping.push(quote! { self.#ident.encode(encoder)?; });
+            }
+        } else {
+            intermediate_fields.push(quote! { #ident: std::borrow::Cow<'a, #ty> });
+            field_conversions.push(quote! { #ident: std::borrow::Cow::Borrowed(&original.#ident) });
+            let ident = field.ident.as_ref().expect("Expected named field");
+            field_mapping.push(quote! { self.#ident.encode(encoder)?; });
+        }
+    }
 
     let generics = &input.generics;
     let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
 
-    let field_mapping = filtered_fields.iter().map(|field| {
-        let ident = field.ident.as_ref().expect("Expected named field");
-        quote! { #ident }
-    });
-
-    let cloned_field_mapping = field_mapping.clone();
-
     let expanded = quote! {
-        struct #intermediate_name<'a> #impl_generics {
+        #[derive(Debug, Clone)]
+        pub struct #intermediate_name<'a> #impl_generics {
             #( #intermediate_fields, )*
         }
 
@@ -328,7 +434,7 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
                 E: bincode::enc::Encoder,
             {
 
-                #(self.#field_mapping.encode(encoder)?; )*
+                #(#field_mapping)*
                 Ok(())
             }
         }
@@ -336,7 +442,7 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
         impl #impl_generics <'a> From<&'a #name #ty_generics> for #intermediate_name<'a> #ty_generics #where_clause {
             fn from(original: &'a #name #ty_generics) -> Self {
                 #intermediate_name {
-                    #( #cloned_field_mapping: std::borrow::Cow::Borrowed(&original.#cloned_field_mapping), )*
+                    #( #field_conversions, )*
                 }
             }
         }
@@ -353,5 +459,6 @@ pub fn derive_platform_signable(input: TokenStream) -> TokenStream {
             }
         }
     };
+
     TokenStream::from(expanded)
 }

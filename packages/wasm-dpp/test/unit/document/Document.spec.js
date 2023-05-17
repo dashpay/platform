@@ -4,12 +4,13 @@ const JsDocument = require('@dashevo/dpp/lib/document/Document');
 const DocumentCreateTransition = require(
   '@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/documentTransition/DocumentCreateTransition',
 );
-const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
+
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
 const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
-const { default: loadWasmDpp } = require('../../../dist');
+const { default: loadWasmDpp } = require('../../..');
+const { getLatestProtocolVersion } = require('../../..');
 
 let DataContractFactory;
 let DataContractValidator;
@@ -80,7 +81,7 @@ describe('Document', () => {
     dataContractJs = jsDataContractFactory.create(jsOwnerId, rawDataContract);
 
     rawDocument = {
-      $protocolVersion: protocolVersion.latestVersion,
+      $protocolVersion: getLatestProtocolVersion(),
       $id: id,
       $type: 'test',
       $dataContractId: dataContract.getId(),
@@ -91,7 +92,7 @@ describe('Document', () => {
     };
 
     rawDocumentWithBuffers = {
-      $protocolVersion: protocolVersion.latestVersion,
+      $protocolVersion: getLatestProtocolVersion(),
       $id: id.toBuffer(),
       $type: 'test',
       $dataContractId: dataContract.getId().toBuffer(),
@@ -411,15 +412,15 @@ describe('Document', () => {
   });
 
   describe('#toBuffer', () => {
-    it('returned bytes should be the same as JS version', () => {
-      const jsBuffer = documentJs.toBuffer();
+    it('should return serialized Document', () => {
       const buffer = document.toBuffer();
-
-      expect(jsBuffer.length).to.equal(buffer.length);
-      expect(jsBuffer).to.deep.equal(buffer);
+      expect(buffer).to.be.instanceOf(Buffer);
+      expect(buffer.length).to.equal(509);
     });
 
-    it('should return the same bytes as JS version when dynamic identifier is in Document', () => {
+    // TODO: remove or replace?
+    //  can not be compared to JS buffers anymore because uses bin code
+    it.skip('should return the same bytes as JS version when dynamic identifier is in Document', () => {
       const jsId = generateRandomIdentifier();
       const id = new Identifier(jsId.toBuffer());
       const path = 'dataObject.binaryObject.identifier';
@@ -438,7 +439,9 @@ describe('Document', () => {
       expect(jsBuffer).to.deep.equal(buffer);
     });
 
-    it('should return the same bytes as JS version when dynamic binaryData is in Document', () => {
+    // TODO: remove or replace?
+    //  can not be compared to JS buffers anymore because uses bin code
+    it.skip('should return the same bytes as JS version when dynamic binaryData is in Document', () => {
       const data = Buffer.alloc(32);
       const path = 'dataObject.binaryObject.binaryData';
 

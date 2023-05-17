@@ -89,7 +89,7 @@ mod test {
     async fn should_successfully_execute_on_dry_run() {
         let transition_execution_context = StateTransitionExecutionContext::default();
         let state_repository = MockStateRepositoryLike::new();
-        let data_contract = get_data_contract_fixture(None);
+        let data_contract = get_data_contract_fixture(None).data_contract;
         let owner_id = &data_contract.owner_id;
 
         let document_transition = DocumentTransition::Create(Default::default());

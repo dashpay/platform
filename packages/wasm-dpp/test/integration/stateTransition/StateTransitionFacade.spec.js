@@ -1,11 +1,10 @@
 const { PrivateKey } = require('@dashevo/dashcore-lib');
 const crypto = require('crypto');
 
-const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
+const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRepositoryMock');
 
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
-
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const getIdentityFixture = require('../../../lib/test/fixtures/getIdentityFixture');
+const getIdentityCreateTransitionFixture = require('../../../lib/test/fixtures/getIdentityCreateTransitionFixture');
 const getDocumentsFixture = require('../../../lib/test/fixtures/getDocumentsFixture');
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 
@@ -33,7 +32,6 @@ describe('StateTransitionFacade', () => {
   let DocumentFactory;
   let DocumentValidator;
   let ProtocolVersionValidator;
-  let IdentityCreateTransition;
   let UnsupportedProtocolVersionError;
   let InvalidStateTransitionSignatureError;
   let DataContractAlreadyPresentError;
@@ -52,7 +50,6 @@ describe('StateTransitionFacade', () => {
       DocumentFactory,
       DocumentValidator,
       ProtocolVersionValidator,
-      IdentityCreateTransition,
       UnsupportedProtocolVersionError,
       InvalidStateTransitionSignatureError,
       DataContractAlreadyPresentError,
@@ -62,12 +59,15 @@ describe('StateTransitionFacade', () => {
   });
 
   beforeEach(async function beforeEach() {
+    this.timeout(20000);
     const privateKeyModel = new PrivateKey();
     const privateKey = privateKeyModel.toBuffer();
     const publicKey = privateKeyModel.toPublicKey().toBuffer();
     const publicKeyId = 1;
 
     executionContext = new StateTransitionExecutionContext();
+
+    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
 
     identityPublicKey = new IdentityPublicKey({
       id: publicKeyId,
@@ -99,15 +99,14 @@ describe('StateTransitionFacade', () => {
     });
     await documentsBatchTransition.sign(identityPublicKey, privateKey);
 
-    const identityObjectJS = getIdentityFixture().toObject();
-    identityObjectJS.id = await generateRandomIdentifierAsync();
-    identityObjectJS.balance = 10000000;
-    identity = new Identity(identityObjectJS);
+    const identityObject = (await getIdentityFixture()).toObject();
+    identityObject.id = await generateRandomIdentifierAsync();
+    identityObject.balance = 10000000;
+    identity = new Identity(identityObject);
     identity.setPublicKeys([identityPublicKey]);
 
     const blockTime = Date.now();
 
-    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.fetchIdentity.resolves(identity);
     stateRepositoryMock.fetchIdentityBalance.resolves(identity.getBalance());
     stateRepositoryMock.fetchLatestPlatformBlockTime.resolves(blockTime);
@@ -137,7 +136,7 @@ describe('StateTransitionFacade', () => {
   });
 
   describe('createFromBuffer', () => {
-    it('should create State Transition from string', async () => {
+    it('should create Data Contract State Transition from buffer', async () => {
       const result = await dpp.stateTransition.createFromBuffer(
         dataContractCreateTransition.toBuffer(),
       );
@@ -254,10 +253,7 @@ describe('StateTransitionFacade', () => {
         'af432c476f65211f45f48f1d42c9c0b497e56696aa1736b40544ef1a496af837',
       );
 
-      const identityCreateTransitionJS = getIdentityCreateTransitionFixture(oneTimePrivateKey);
-      const identityCreateTransition = new IdentityCreateTransition(
-        identityCreateTransitionJS.toObject(),
-      );
+      const identityCreateTransition = await getIdentityCreateTransitionFixture(oneTimePrivateKey);
 
       await identityCreateTransition.signByPrivateKey(
         oneTimePrivateKey.toBuffer(),

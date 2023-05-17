@@ -34,6 +34,9 @@ mod tests {
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: false,
         };
         let twenty_minutes_in_ms = 1000 * 60 * 20;
         let mut config = PlatformConfig {
@@ -87,6 +90,7 @@ mod tests {
                     .last_committed_block_info
                     .as_ref()
                     .unwrap()
+                    .basic_info
                     .epoch
                     .index,
                 0
@@ -99,7 +103,7 @@ mod tests {
                     .current_protocol_version_in_consensus,
                 1
             );
-            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&12), Some(&420)));
+            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&16), Some(&416)));
             //most nodes were hit (63 were not)
         }
 
@@ -116,6 +120,7 @@ mod tests {
             .last_committed_block_info
             .as_ref()
             .unwrap()
+            .basic_info
             .height
             + 1;
 
@@ -159,6 +164,7 @@ mod tests {
                     .last_committed_block_info
                     .as_ref()
                     .unwrap()
+                    .basic_info
                     .epoch
                     .index,
                 1
@@ -189,6 +195,7 @@ mod tests {
             .last_committed_block_info
             .as_ref()
             .unwrap()
+            .basic_info
             .height
             + 1;
         let ChainExecutionOutcome { .. } = continue_chain_for_strategy(
@@ -221,6 +228,7 @@ mod tests {
                     .last_committed_block_info
                     .as_ref()
                     .unwrap()
+                    .basic_info
                     .epoch
                     .index,
                 2
@@ -265,6 +273,9 @@ mod tests {
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: false,
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
@@ -314,6 +325,7 @@ mod tests {
                     .last_committed_block_info
                     .as_ref()
                     .unwrap()
+                    .basic_info
                     .epoch
                     .index,
                 5
@@ -334,7 +346,7 @@ mod tests {
                 .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
-            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&39), Some(&60)));
+            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&35), Some(&64)));
         }
 
         // we did not yet hit the required threshold to upgrade
@@ -348,6 +360,7 @@ mod tests {
             .last_committed_block_info
             .as_ref()
             .unwrap()
+            .basic_info
             .height
             + 1;
         let ChainExecutionOutcome {
@@ -387,6 +400,7 @@ mod tests {
                     .last_committed_block_info
                     .as_ref()
                     .unwrap()
+                    .basic_info
                     .epoch
                     .index,
                 11
@@ -404,7 +418,7 @@ mod tests {
                 2
             );
             // the counter is for the current voting during that window
-            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&10), Some(&77)));
+            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&8), Some(&79)));
         }
 
         // we are now locked in, the current protocol version will change on next epoch
@@ -416,6 +430,7 @@ mod tests {
             .last_committed_block_info
             .as_ref()
             .unwrap()
+            .basic_info
             .height
             + 1;
         let ChainExecutionOutcome { .. } = continue_chain_for_strategy(
@@ -444,6 +459,7 @@ mod tests {
                     .last_committed_block_info
                     .as_ref()
                     .unwrap()
+                    .basic_info
                     .epoch
                     .index,
                 12
@@ -486,6 +502,9 @@ mod tests {
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: false,
         };
         let hour_in_ms = 1000 * 60 * 60;
         let mut config = PlatformConfig {
@@ -534,6 +553,7 @@ mod tests {
                     .last_committed_block_info
                     .as_ref()
                     .unwrap()
+                    .basic_info
                     .epoch
                     .index,
                 4
@@ -558,6 +578,7 @@ mod tests {
             .last_committed_block_info
             .as_ref()
             .unwrap()
+            .basic_info
             .height
             + 1;
         let ChainExecutionOutcome {
@@ -572,7 +593,7 @@ mod tests {
             ChainExecutionParameters {
                 block_start,
                 core_height_start: 1,
-                block_count: 1800,
+                block_count: 3000,
                 proposers,
                 quorums,
                 current_quorum_hash,
@@ -597,9 +618,10 @@ mod tests {
                     .last_committed_block_info
                     .as_ref()
                     .unwrap()
+                    .basic_info
                     .epoch
                     .index,
-                8
+                11
             );
             assert_eq!(
                 platform
@@ -613,7 +635,7 @@ mod tests {
                 platform.state.read().unwrap().next_epoch_protocol_version,
                 2
             );
-            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&23), Some(&134)));
+            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&18), Some(&111)));
             //not all nodes have upgraded
         }
 
@@ -641,6 +663,9 @@ mod tests {
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: false,
         };
 
         let block_start = platform
@@ -650,6 +675,7 @@ mod tests {
             .last_committed_block_info
             .as_ref()
             .unwrap()
+            .basic_info
             .height
             + 1;
         config.block_spacing_ms = hour_in_ms / 5; //speed things up
@@ -683,7 +709,7 @@ mod tests {
                 .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
-            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&176), Some(&24)));
+            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&170), Some(&24)));
             //a lot nodes reverted to previous version, however this won't impact things
             assert_eq!(
                 platform
@@ -693,9 +719,10 @@ mod tests {
                     .last_committed_block_info
                     .as_ref()
                     .unwrap()
+                    .basic_info
                     .epoch
                     .index,
-                9
+                12
             );
             assert_eq!(
                 platform
@@ -718,6 +745,7 @@ mod tests {
             .last_committed_block_info
             .as_ref()
             .unwrap()
+            .basic_info
             .height
             + 1;
         config.block_spacing_ms = hour_in_ms * 4; //let's try to move to next epoch
@@ -743,7 +771,7 @@ mod tests {
                 .protocol_versions_counter
                 .as_ref()
                 .expect("expected a version counter");
-            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&45), Some(&8)));
+            assert_eq!((counter.get(&1), counter.get(&2)), (Some(&22), Some(&3)));
             assert_eq!(
                 platform
                     .state
@@ -752,9 +780,10 @@ mod tests {
                     .last_committed_block_info
                     .as_ref()
                     .unwrap()
+                    .basic_info
                     .epoch
                     .index,
-                10
+                13
             );
             assert_eq!(
                 platform
@@ -794,6 +823,9 @@ mod tests {
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: false,
         };
         let hour_in_ms = 1000 * 60 * 60;
         let config = PlatformConfig {
@@ -842,6 +874,7 @@ mod tests {
                     .last_committed_block_info
                     .as_ref()
                     .unwrap()
+                    .basic_info
                     .epoch
                     .index,
                 3
@@ -860,7 +893,7 @@ mod tests {
             );
             assert_eq!(
                 (counter.get(&1), counter.get(&2), counter.get(&3)),
-                (Some(&4), Some(&68), Some(&2))
+                (Some(&2), Some(&69), Some(&3))
             ); //some nodes reverted to previous version
         }
 
@@ -885,6 +918,9 @@ mod tests {
             },
             proposer_strategy: Default::default(),
             rotate_quorums: false,
+            failure_testing: None,
+            query_testing: None,
+            verify_state_transition_results: false,
         };
 
         // we hit the required threshold to upgrade
@@ -897,6 +933,7 @@ mod tests {
             .last_committed_block_info
             .as_ref()
             .unwrap()
+            .basic_info
             .height
             + 1;
         let ChainExecutionOutcome { .. } = continue_chain_for_strategy(
@@ -929,6 +966,7 @@ mod tests {
                     .last_committed_block_info
                     .as_ref()
                     .unwrap()
+                    .basic_info
                     .epoch
                     .index,
                 4

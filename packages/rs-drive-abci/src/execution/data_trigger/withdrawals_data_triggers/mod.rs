@@ -59,12 +59,12 @@ pub fn delete_withdrawal_data_trigger(
             range_clause: None,
             equal_clauses: BTreeMap::default(),
         },
-        offset: 0,
-        limit: 100,
+        offset: None,
+        limit: Some(100),
         order_by: Default::default(),
         start_at: None,
         start_at_included: false,
-        block_time: None,
+        block_time_ms: None,
     };
 
     let withdrawals = context
@@ -143,7 +143,7 @@ mod tests {
         };
 
         let transition_execution_context = StateTransitionExecutionContext::default();
-        let data_contract = get_data_contract_fixture(None);
+        let data_contract = get_data_contract_fixture(None).data_contract;
         let owner_id = &data_contract.owner_id;
 
         let document_transition = DocumentTransitionAction::DeleteAction(Default::default());

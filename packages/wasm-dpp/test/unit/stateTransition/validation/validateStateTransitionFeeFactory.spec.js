@@ -42,10 +42,9 @@ describe('validateStateTransitionFeeFactory', () => {
 
     const validator = new StateTransitionFeeValidator(stateRepositoryMock);
 
-    validateStateTransitionFee = (st) => validator.validate(st);
-
     executionContext = new StateTransitionExecutionContext();
     executionContext.disableDryRun();
+    validateStateTransitionFee = (st) => validator.validate(st, executionContext);
 
     dataContract = await getDataContractFixture();
   });
@@ -61,7 +60,6 @@ describe('validateStateTransitionFeeFactory', () => {
 
     it('should return invalid result if balance is not enough', async () => {
       executionContext.addOperation(new PreCalculatedOperation(0, 42, []));
-      dataContractCreateTransition.setExecutionContext(executionContext);
       stateRepositoryMock.fetchIdentityBalance.resolves(1);
 
       const result = await validateStateTransitionFee(dataContractCreateTransition);
@@ -83,7 +81,6 @@ describe('validateStateTransitionFeeFactory', () => {
       stateRepositoryMock.fetchIdentityBalance.resolves(42);
 
       executionContext.addOperation(new PreCalculatedOperation(0, 42, []));
-      dataContractCreateTransition.setExecutionContext(executionContext);
 
       const result = await validateStateTransitionFee(dataContractCreateTransition);
 
@@ -112,7 +109,6 @@ describe('validateStateTransitionFeeFactory', () => {
       stateRepositoryMock.fetchIdentityBalance.resolves(1);
 
       executionContext.addOperation(new PreCalculatedOperation(0, 42, []));
-      documentsBatchTransition.setExecutionContext(executionContext);
 
       const result = await validateStateTransitionFee(documentsBatchTransition);
 
@@ -133,7 +129,6 @@ describe('validateStateTransitionFeeFactory', () => {
       stateRepositoryMock.fetchIdentityBalance.resolves(42);
 
       executionContext.addOperation(new PreCalculatedOperation(0, 42, []));
-      documentsBatchTransition.setExecutionContext(executionContext);
 
       const result = await validateStateTransitionFee(documentsBatchTransition);
 
@@ -151,11 +146,10 @@ describe('validateStateTransitionFeeFactory', () => {
       executionContext.enableDryRun();
 
       executionContext.addOperation(new PreCalculatedOperation(0, 42, []));
-      documentsBatchTransition.setExecutionContext(executionContext);
 
       const result = await validateStateTransitionFee(documentsBatchTransition);
 
-      documentsBatchTransition.getExecutionContext().disableDryRun();
+      executionContext.disableDryRun();
 
       expect(result.isValid()).to.be.true();
 
@@ -182,7 +176,6 @@ describe('validateStateTransitionFeeFactory', () => {
 
     it('should return invalid result if asset lock output amount is not enough', async () => {
       executionContext.addOperation(new PreCalculatedOperation(0, outputAmount + 1, []));
-      identityCreateTransition.setExecutionContext(executionContext);
 
       const result = await validateStateTransitionFee(identityCreateTransition);
 
@@ -198,7 +191,6 @@ describe('validateStateTransitionFeeFactory', () => {
 
     it('should return valid result', async () => {
       executionContext.addOperation(new PreCalculatedOperation(0, outputAmount, []));
-      identityCreateTransition.setExecutionContext(executionContext);
 
       const result = await validateStateTransitionFee(identityCreateTransition);
 
@@ -210,11 +202,10 @@ describe('validateStateTransitionFeeFactory', () => {
     it('should not increase balance on dry run', async () => {
       executionContext.enableDryRun();
       executionContext.addOperation(new PreCalculatedOperation(0, outputAmount + 1, []));
-      identityCreateTransition.setExecutionContext(executionContext);
 
       const result = await validateStateTransitionFee(identityCreateTransition);
 
-      identityCreateTransition.getExecutionContext().disableDryRun();
+      executionContext.disableDryRun();
 
       expect(result.isValid()).to.be.true();
     });
@@ -240,7 +231,6 @@ describe('validateStateTransitionFeeFactory', () => {
       stateRepositoryMock.fetchIdentityBalanceWithDebt.resolves(1);
 
       executionContext.addOperation(new PreCalculatedOperation(0, outputAmount + 2, []));
-      identityTopUpTransition.setExecutionContext(executionContext);
 
       const result = await validateStateTransitionFee(identityTopUpTransition);
 
@@ -261,7 +251,6 @@ describe('validateStateTransitionFeeFactory', () => {
       stateRepositoryMock.fetchIdentityBalanceWithDebt.resolves(41);
 
       executionContext.addOperation(new PreCalculatedOperation(0, outputAmount - 1, []));
-      identityTopUpTransition.setExecutionContext(executionContext);
 
       const result = await validateStateTransitionFee(identityTopUpTransition);
 
@@ -278,11 +267,10 @@ describe('validateStateTransitionFeeFactory', () => {
 
       executionContext.enableDryRun();
       executionContext.addOperation(new PreCalculatedOperation(0, outputAmount + 42, []));
-      identityTopUpTransition.setExecutionContext(executionContext);
 
       const result = await validateStateTransitionFee(identityTopUpTransition);
 
-      identityTopUpTransition.getExecutionContext().disableDryRun();
+      executionContext.disableDryRun();
 
       expect(result.isValid()).to.be.true();
 

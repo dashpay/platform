@@ -24,7 +24,12 @@ impl Drive {
         let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
 
         let contract_fetch_info = self
-            .get_contract_with_fetch_info(data_contract_id.to_buffer(), None, true, transaction)?
+            .get_contract_with_fetch_info_and_fee(
+                data_contract_id.to_buffer(),
+                None,
+                true,
+                transaction,
+            )?
             .1
             .ok_or_else(|| {
                 Error::Drive(DriveError::CorruptedCodeExecution(
@@ -68,12 +73,12 @@ impl Drive {
                 range_clause: None,
                 equal_clauses: where_clauses,
             },
-            offset: 0,
-            limit: 100,
+            offset: None,
+            limit: Some(100),
             order_by,
             start_at: None,
             start_at_included: false,
-            block_time: None,
+            block_time_ms: None,
         };
 
         let QuerySerializedDocumentsOutcome {
@@ -107,7 +112,12 @@ impl Drive {
         let data_contract_id = withdrawals_contract::CONTRACT_ID.deref();
 
         let contract_fetch_info = self
-            .get_contract_with_fetch_info(data_contract_id.to_buffer(), None, true, transaction)?
+            .get_contract_with_fetch_info_and_fee(
+                data_contract_id.to_buffer(),
+                None,
+                true,
+                transaction,
+            )?
             .1
             .ok_or_else(|| {
                 Error::Drive(DriveError::CorruptedCodeExecution(
@@ -149,12 +159,12 @@ impl Drive {
                 range_clause: None,
                 equal_clauses: where_clauses,
             },
-            offset: 0,
-            limit: 100,
+            offset: None,
+            limit: Some(100),
             order_by: IndexMap::new(),
             start_at: None,
             start_at_included: false,
-            block_time: None,
+            block_time_ms: None,
         };
 
         let QuerySerializedDocumentsOutcome {

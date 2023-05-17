@@ -1,4 +1,6 @@
 syntax = "proto3";
+import "google/protobuf/wrappers.proto";
+import "google/protobuf/struct.proto";
 
 package org.dash.platform.dapi.v0;
 
@@ -7,22 +9,31 @@ import "google/protobuf/timestamp.proto";
 service Platform {
   rpc broadcastStateTransition (BroadcastStateTransitionRequest) returns (BroadcastStateTransitionResponse);
   rpc getIdentity (GetIdentityRequest) returns (GetIdentityResponse);
+  rpc getIdentities (GetIdentitiesRequest) returns (GetIdentitiesResponse);
+  rpc getIdentityKeys (GetIdentityKeysRequest) returns (GetIdentityKeysResponse);
+//  rpc getIdentitiesKeys (GetIdentitiesKeysRequest) returns (GetIdentitiesKeysResponse);
+  rpc getIdentityBalance(GetIdentityRequest) returns (GetIdentityBalanceResponse);
+  rpc getIdentityBalanceAndRevision(GetIdentityRequest)
+          returns (GetIdentityBalanceAndRevisionResponse);
+  rpc getProofs (GetProofsRequest) returns (GetProofsResponse);
   rpc getDataContract (GetDataContractRequest) returns (GetDataContractResponse);
+  rpc getDataContracts (GetDataContractsRequest) returns (GetDataContractsResponse);
   rpc getDocuments (GetDocumentsRequest) returns (GetDocumentsResponse);
   rpc getIdentitiesByPublicKeyHashes (GetIdentitiesByPublicKeyHashesRequest) returns (GetIdentitiesByPublicKeyHashesResponse);
+  rpc getIdentityByPublicKeyHashes (GetIdentityByPublicKeyHashesRequest) returns (GetIdentityByPublicKeyHashesResponse);
   rpc waitForStateTransitionResult (WaitForStateTransitionResultRequest) returns (WaitForStateTransitionResultResponse);
   rpc getConsensusParams (GetConsensusParamsRequest) returns (GetConsensusParamsResponse);
 }
 
 message Proof {
-  bytes merkle_proof = 1;
+  bytes grovedb_proof = 1;
   bytes quorum_hash = 2;
   bytes signature = 3;
   uint32 round = 4;
 }
 
 message ResponseMetadata {
-  int64 height = 1;
+  uint64 height = 1;
   uint32 core_chain_locked_height = 2;
   uint64 time_ms = 3;
   uint32 protocol_version = 4;
@@ -53,7 +64,161 @@ message GetIdentityResponse {
   ResponseMetadata metadata = 3;
 }
 
- message GetDataContractRequest {
+message GetIdentitiesRequest {
+  repeated bytes ids = 1;
+  bool prove = 2;
+}
+
+message GetIdentitiesResponse {
+  message IdentityValue {
+    bytes value = 1;
+  }
+
+  message IdentityEntry {
+    bytes key = 1;
+    IdentityValue value = 2;
+  }
+
+  message Identities {
+    repeated IdentityEntry identity_entries = 1;
+  }
+
+  oneof result {
+    Identities identities = 1;
+    Proof proof = 2;
+  }
+  ResponseMetadata metadata = 3;
+}
+
+message GetIdentityBalanceResponse {
+  google.protobuf.UInt64Value balance = 1;
+  Proof proof = 2;
+  ResponseMetadata metadata = 3;
+}
+
+message GetIdentityBalanceAndRevisionResponse {
+  google.protobuf.UInt64Value  balance = 1;
+  google.protobuf.UInt64Value  revision = 2;
+  Proof proof = 3;
+  ResponseMetadata metadata = 4;
+}
+
+message KeyRequestType {
+  oneof request {
+    AllKeys all_keys = 1;
+    SpecificKeys specific_keys = 2;
+    SearchKey search_key = 3;
+  }
+}
+
+message AllKeys {
+}
+
+message SpecificKeys {
+  repeated uint32 key_ids = 1;
+}
+
+message SearchKey {
+  map<uint32, SecurityLevelMap> purpose_map = 1;
+}
+
+message SecurityLevelMap {
+  enum KeyKindRequestType {
+    CURRENT_KEY_OF_KIND_REQUEST = 0;
+    ALL_KEYS_OF_KIND_REQUEST = 1;
+  }
+  map<uint32, KeyKindRequestType> security_level_map = 1;
+}
+
+message GetIdentityKeysRequest {
+  bytes identity_id = 1;
+  KeyRequestType request_type = 2;
+  google.protobuf.UInt32Value limit = 3;
+  google.protobuf.UInt32Value offset = 4;
+  bool prove = 5;
+}
+
+message GetIdentityKeysResponse {
+  message Keys {
+    repeated bytes keys_bytes = 1;
+  }
+  oneof result {
+    Keys keys = 1;
+    Proof proof = 2;
+  }
+  ResponseMetadata metadata = 3;
+}
+
+
+message GetIdentitiesKeysRequest {
+  repeated bytes identity_ids = 1;
+  KeyRequestType request_type = 2;
+  google.protobuf.UInt32Value limit = 3;
+  google.protobuf.UInt32Value offset = 4;
+  bool prove = 5;
+
+  message SecurityLevelMap {
+    enum KeyKindRequestType {
+      CURRENT_KEY_OF_KIND_REQUEST = 0;
+    }
+    map<uint32, KeyKindRequestType> security_level_map = 1;
+  }
+}
+
+message GetIdentitiesKeysResponse {
+  message PublicKey {
+    bytes value = 1;
+  }
+
+  message PublicKeyEntry {
+    bytes key = 1;
+    PublicKey value = 2;
+  }
+
+  message PublicKeyEntries {
+    repeated PublicKeyEntry public_key_entries = 1;
+  }
+
+  oneof result {
+    PublicKeyEntries public_keys = 1;
+    Proof proof = 2;
+  }
+  ResponseMetadata metadata = 3;
+}
+
+message GetProofsRequest {
+  message DocumentRequest {
+    bytes contract_id = 1;
+    string document_type = 2;
+    bool document_type_keeps_history = 3;
+    bytes document_id = 4;
+  }
+
+  message IdentityRequest {
+    enum Type {
+      FULL_IDENTITY = 0;
+      BALANCE = 1;
+      KEYS = 2;
+    }
+    bytes identity_id = 1;
+    Type request_type = 2;
+  }
+
+  message ContractRequest {
+    bytes contract_id = 1;
+  }
+
+  repeated IdentityRequest identities = 1;
+  repeated ContractRequest contracts = 2;
+  repeated DocumentRequest documents = 3;
+}
+
+message GetProofsResponse {
+  Proof proof = 1;
+  ResponseMetadata metadata = 2;
+}
+
+message GetDataContractRequest {
   bytes id = 1;
   bool prove = 2;
 }
@@ -64,6 +229,31 @@ message GetDataContractResponse {
   ResponseMetadata metadata = 3;
 }
 
+message GetDataContractsRequest {
+  repeated bytes ids = 1;
+  bool prove = 2;
+}
+
+message GetDataContractsResponse {
+  message DataContractValue {
+    bytes value = 1;
+  }
+
+  message DataContractEntry {
+    bytes key = 1;
+    DataContractValue value = 2;
+  }
+
+  message DataContracts {
+    repeated DataContractEntry data_contract_entries = 1;
+  }
+
+  oneof result {
+    DataContracts data_contracts = 1;
+    Proof proof = 2;
+  }
+  ResponseMetadata metadata = 3;
+}
 message GetDocumentsRequest {
   bytes data_contract_id = 1;
   string document_type = 2;
@@ -73,10 +263,10 @@ message GetDocumentsRequest {
 
   uint32 limit = 5;
 
-    oneof start {
-      bytes start_after = 6;
-      bytes start_at = 7;
-    }
+  oneof start {
+    bytes start_after = 6;
+    bytes start_at = 7;
+  }
 
   bool prove = 8;
 }
@@ -95,6 +285,19 @@ message GetIdentitiesByPublicKeyHashesRequest {
 message GetIdentitiesByPublicKeyHashesResponse {
   repeated bytes identities = 1;
   Proof proof = 2;
+  ResponseMetadata metadata = 3;
+}
+
+message GetIdentityByPublicKeyHashesRequest {
+  bytes public_key_hash = 1;
+  bool prove = 2;
+}
+
+message GetIdentityByPublicKeyHashesResponse {
+  oneof result {
+    bytes identity = 1;
+    Proof proof = 2;
+  }
   ResponseMetadata metadata = 3;
 }
 

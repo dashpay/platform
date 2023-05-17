@@ -1,9 +1,9 @@
 /// Query errors
 #[derive(Debug, thiserror::Error)]
-pub enum QueryError {
+pub enum QuerySyntaxError {
     /// Deserialization
     #[error("deserialization error: {0}")]
-    DeserializationError(&'static str),
+    DeserializationError(String),
     /// Unsupported error
     #[error("unsupported error: {0}")]
     Unsupported(String),
@@ -11,6 +11,9 @@ pub enum QueryError {
     #[error("invalid sql error: {0}")]
     InvalidSQL(&'static str),
 
+    /// We asked for nothing
+    #[error("no query items error: {0}")]
+    NoQueryItems(&'static str),
     /// Contract not found error
     #[error("contract not found error: {0}")]
     ContractNotFound(&'static str),
@@ -58,9 +61,15 @@ pub enum QueryError {
     /// Invalid contract id error
     #[error("invalid contract id error: {0}")]
     InvalidContractId(&'static str),
+    /// Query for a key has an invalid parameter
+    #[error("query invalid key parameter error: {0}")]
+    InvalidKeyParameter(String),
     /// Query invalid limit error
     #[error("query invalid limit error: {0}")]
-    InvalidLimit(&'static str),
+    InvalidLimit(String),
+    /// Query invalid parameter error
+    #[error("query invalid parameter error: {0}")]
+    InvalidParameter(String),
     /// Query invalid format for where clause error
     #[error("query invalid format for where clause error: {0}")]
     InvalidFormatWhereClause(&'static str),
@@ -114,4 +123,8 @@ pub enum QueryError {
     /// Starts with illegal string error
     #[error("starts with illegal string error: {0}")]
     StartsWithIllegalString(&'static str),
+
+    /// Invalid identity prove request error
+    #[error("invalid identity prove request error: {0}")]
+    InvalidIdentityProveRequest(&'static str),
 }
