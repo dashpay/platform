@@ -14,13 +14,13 @@ function areServicesRunningFactory(configGroup, dockerCompose, services) {
   async function areServicesRunning() {
     for (const config of configGroup) {
       if (config.name === 'local_seed') {
-        result = await dockerCompose.isServiceRunning(config.toEnvs(), 'core');
+        const result = await dockerCompose.isServiceRunning(config.toEnvs(), 'core');
         if (!result) {
           throw new Error('Core in local_seed is not running');
         }
       } else {
         for (const serviceName of Object.keys(services)) {
-          result = await dockerCompose.isServiceRunning(config.toEnvs(), serviceName);
+          const result = await dockerCompose.isServiceRunning(config.toEnvs(), serviceName);
           if (!result) {
             throw new Error(`Service ${serviceName} in ${config.name} is not running`);
           }
