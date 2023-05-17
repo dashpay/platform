@@ -116,7 +116,7 @@ ENV NODE_ENV ${NODE_ENV}
 WORKDIR /platform
 
 RUN whoami
-RUN echo "bust cache 7"
+RUN echo "bust cache 8"
 RUN --mount=type=cache,sharing=shared,id=deps_cargo_index,target=/usr/local/cargo/registry/index \
     --mount=type=cache,sharing=shared,id=deps_cargo_cache,target=/usr/local/cargo/registry/cache \
     --mount=type=cache,sharing=shared,id=deps_cargo_git,target=/usr/local/cargo/git/db \
