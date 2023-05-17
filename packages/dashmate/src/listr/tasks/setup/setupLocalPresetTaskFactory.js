@@ -109,8 +109,6 @@ function setupLocalPresetTaskFactory(
 
           const hostDockerInternalIp = await resolveDockerHostIp();
 
-          console.log('got external ip', hostDockerInternalIp);
-
           const network = ctx.configGroup[0].get('network');
 
           const {
@@ -260,7 +258,7 @@ function setupLocalPresetTaskFactory(
                       .toPublicKey().toString(),
                   );
 
-                  config.set('dashmate.helper.api.port', config.get('dashmate.helper.api.port') + (i * 100));
+                  config.set('dashmate.helper.api.port', config.get('dashmate.helper.api.port') + (i + 1 * 100));
                 }
               },
               options: {

@@ -8,7 +8,7 @@ const { asValue } = require('awilix');
 
 const createDIContainer = require('../../src/createDIContainer');
 const areServicesRunningFactory = require('../../src/test/areServicesRunningFactory');
-const services = require('../../src/test/constants/services');
+const { SERVICES } = require('../../src/test/constants/services');
 
 describe('Local HP Masternode', function main() {
   this.timeout(30 * 60 * 1000); // 30 minutes
@@ -57,7 +57,7 @@ describe('Local HP Masternode', function main() {
 
     dockerCompose = await container.resolve('dockerCompose');
 
-    areServicesRunning = areServicesRunningFactory(group, dockerCompose, services);
+    areServicesRunning = areServicesRunningFactory(group, dockerCompose, SERVICES);
 
     const setupTask = setupLocalPresetTask();
 
@@ -93,7 +93,7 @@ describe('Local HP Masternode', function main() {
   it('#start', async () => {
     group = configFile.getGroupConfigs(groupName);
 
-    areServicesRunning = areServicesRunningFactory(group, dockerCompose, services);
+    areServicesRunning = areServicesRunningFactory(group, dockerCompose, SERVICES);
 
     const task = startGroupNodesTask(group);
 
