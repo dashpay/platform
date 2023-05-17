@@ -11,7 +11,7 @@ const areServicesRunningFactory = require('../../src/test/areServicesRunningFact
 const { SERVICES } = require('../../src/test/constants/services');
 
 describe('Local HP Masternode', function main() {
-  this.timeout(30 * 60 * 1000); // 30 minutes
+  this.timeout(60 * 60 * 1000); // 60 minutes
 
   let container;
   let setupLocalPresetTask;
@@ -21,6 +21,8 @@ describe('Local HP Masternode', function main() {
   let startGroupNodesTask;
   let dockerCompose;
   let areServicesRunning;
+  let stopNodeTask;
+  let restartNodeTask;
 
   const groupName = 'local';
 
@@ -54,6 +56,8 @@ describe('Local HP Masternode', function main() {
     setupLocalPresetTask = await container.resolve('setupLocalPresetTask');
     resetNodeTask = await container.resolve('resetNodeTask');
     startGroupNodesTask = await container.resolve('startGroupNodesTask');
+    restartNodeTask = await container.resolve('restartNodeTask');
+    stopNodeTask = await container.resolve('stopNodeTask');
 
     dockerCompose = await container.resolve('dockerCompose');
 
@@ -95,10 +99,46 @@ describe('Local HP Masternode', function main() {
 
     areServicesRunning = areServicesRunningFactory(group, dockerCompose, SERVICES);
 
+    for (const config of group) {
+      config.set('platform.sourcePath', path.resolve(__dirname, '../../../../'));
+    }
+
     const task = startGroupNodesTask(group);
 
     await task.run();
 
-    await areServicesRunning();
+    const result = await areServicesRunning();
+
+    expect(result).to.be.true();
+  });
+
+  it('#restart', async () => {
+    group = configFile.getGroupConfigs(groupName);
+
+    areServicesRunning = areServicesRunningFactory(group, dockerCompose, SERVICES);
+
+    for (const config of group) {
+      const task = restartNodeTask(config);
+      await task.run();
+    }
+
+    const result = await areServicesRunning();
+
+    expect(result).to.be.true();
+  });
+
+  it('#stop', async () => {
+    group = configFile.getGroupConfigs(groupName);
+
+    areServicesRunning = areServicesRunningFactory(group, dockerCompose, SERVICES);
+
+    for (const config of group.reverse()) {
+      const task = stopNodeTask(config);
+      await task.run();
+    }
+
+    const result = await areServicesRunning();
+
+    expect(result).to.be.false();
   });
 });

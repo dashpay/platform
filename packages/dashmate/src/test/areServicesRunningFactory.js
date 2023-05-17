@@ -9,24 +9,22 @@ function areServicesRunningFactory(configGroup, dockerCompose, services) {
   /**
    * Check all node services are up and running
    *
-   * @returns {Promise<void>}
+   * @returns {Promise<boolean>}
    */
   async function areServicesRunning() {
+    let result = true;
+
     for (const config of configGroup) {
       if (config.name === 'local_seed') {
-        const result = await dockerCompose.isServiceRunning(config.toEnvs(), 'core');
-        if (!result) {
-          throw new Error('Core in local_seed is not running');
-        }
+        result = result && (await dockerCompose.isServiceRunning(config.toEnvs(), 'core'));
       } else {
         for (const serviceName of Object.keys(services)) {
-          const result = await dockerCompose.isServiceRunning(config.toEnvs(), serviceName);
-          if (!result) {
-            throw new Error(`Service ${serviceName} in ${config.name} is not running`);
-          }
+          result = result && (await dockerCompose.isServiceRunning(config.toEnvs(), serviceName));
         }
       }
     }
+
+    return result;
   }
 
   return areServicesRunning;
