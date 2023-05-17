@@ -1,14 +1,14 @@
 /**
- * @param {Config[]} configGroup 
- * @param {DockerCompose} dockerCompose 
+ * @param {Config[]} configGroup
+ * @param {DockerCompose} dockerCompose
  * @param {Object} services
- *  
+ *
  * @returns {areServicesRunning}
  */
 function areServicesRunningFactory(configGroup, dockerCompose, services) {
   /**
    * Check all node services are up and running
-   * 
+   *
    * @returns {Promise<void>}
    */
   async function areServicesRunning() {
