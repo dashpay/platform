@@ -10,14 +10,7 @@ const MasternodeSyncAssetEnum = require('../enums/masternodeSyncAsset');
  * @param getConnectionHost {getConnectionHost}
  */
 function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnectionHost) {
-  /**
-   * Get masternode status scope
-   *
-   * @typedef {Promise} getMasternodeScope
-   * @param {Config} config
-   * @returns {Promise<Object>}
-   */
-  async function getMasternodeScope(config) {
+  async function getSyncAsset(config) {
     const rpcClient = createRpcClient({
       port: config.get('core.rpc.port'),
       user: config.get('core.rpc.user'),
@@ -28,12 +21,18 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
     const mnsyncStatus = await rpcClient.mnsync('status');
     const { AssetName: syncAsset } = mnsyncStatus.result;
 
-    const masternode = {
-      syncAsset,
-      sentinel: {
-        state: null,
-        version: null,
-      },
+    return syncAsset;
+  }
+
+  async function getMasternodeInfo(config) {
+    const rpcClient = createRpcClient({
+      port: config.get('core.rpc.port'),
+      user: config.get('core.rpc.user'),
+      pass: config.get('core.rpc.password'),
+      host: await getConnectionHost(config, 'core'),
+    });
+
+    const info = {
       proTxHash: null,
       state: null,
       status: null,
@@ -47,62 +46,127 @@ function getMasternodeScopeFactory(dockerCompose, createRpcClient, getConnection
       },
     };
 
-    // cannot be put in Promise.all, because sentinel will cause exit 1 with simultaneous requests
-    try {
-      const sentinelStateResponse = await dockerCompose
-        .execCommand(config.toEnvs(), 'sentinel', 'python bin/sentinel.py');
-      const sentinelVersionResponse = await dockerCompose
-        .execCommand(config.toEnvs(), 'sentinel', 'python bin/sentinel.py -v');
+    const [blockchainInfo, masternodeCount, masternodeStatus] = await Promise.all([
+      rpcClient.getBlockchainInfo(),
+      rpcClient.masternode('count'),
+      rpcClient.masternode('status'),
+    ]);
+    const { blocks: coreBlocks } = blockchainInfo.result;
 
-      const [state] = sentinelStateResponse.out.split(/\r?\n/);
+    const countInfo = masternodeCount.result;
+    const { enabled } = countInfo;
 
-      masternode.sentinel.state = state === '' ? 'ok' : state;
-      masternode.sentinel.version = sentinelVersionResponse.out
-        .replace(/Dash Sentinel v/, '').trim();
-      // eslint-disable-next-line no-empty
-    } catch (e) {
+    const { state, status, proTxHash } = masternodeStatus.result;
+
+    info.proTxHash = proTxHash;
+    info.status = status;
+    info.state = state;
+
+    if (state === MasternodeStateEnum.READY) {
+      const { dmnState } = masternodeStatus.result;
+
+      const { PoSePenalty: poSePenalty, lastPaidHeight } = dmnState;
+
+      const position = calculatePaymentQueuePosition(dmnState, enabled, coreBlocks);
+      const lastPaidTime = blocksToTime(coreBlocks - lastPaidHeight);
+      const paymentQueuePosition = position / enabled;
+      const nextPaymentTime = `${blocksToTime(paymentQueuePosition)}`;
+
+      info.nodeState.dmnState = dmnState;
+      info.nodeState.poSePenalty = poSePenalty;
+      info.nodeState.lastPaidHeight = lastPaidHeight;
+      info.nodeState.lastPaidTime = lastPaidTime;
+      info.nodeState.paymentQueuePosition = paymentQueuePosition;
+      info.nodeState.nextPaymentTime = nextPaymentTime;
     }
 
-    masternode.state = MasternodeStateEnum.UNKNOWN;
+    return info;
+  }
 
-    if (syncAsset === MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED) {
-      const [blockchainInfo, masternodeCount, masternodeStatus] = await Promise.all([
-        rpcClient.getBlockchainInfo(),
-        rpcClient.masternode('count'),
-        rpcClient.masternode('status'),
-      ]);
+  async function getSentinelInfo(config) {
+    // cannot be put in Promise.all, because sentinel will cause exit 1 with simultaneous requests
+    const sentinelStateResponse = await dockerCompose
+      .execCommand(config.toEnvs(), 'sentinel', 'python bin/sentinel.py');
+    const sentinelVersionResponse = await dockerCompose
+      .execCommand(config.toEnvs(), 'sentinel', 'python bin/sentinel.py -v');
 
-      const { blocks: coreBlocks } = blockchainInfo.result;
+    const [state] = sentinelStateResponse.out.split(/\r?\n/);
 
-      const countInfo = masternodeCount.result;
-      const { enabled } = countInfo;
+    return {
+      state: state === '' ? 'ok' : state,
+      version: sentinelVersionResponse.out
+        .replace(/Dash Sentinel v/, '').trim(),
+    };
+  }
 
-      const { state, status, proTxHash } = masternodeStatus.result;
+  /**
+   * Get masternode status scope
+   *
+   * @typedef {Promise} getMasternodeScope
+   * @param {Config} config
+   * @returns {Promise<Object>}
+   */
+  async function getMasternodeScope(config) {
+    const scope = {
+      syncAsset: null,
+      sentinel: {
+        state: null,
+        version: null,
+      },
+      proTxHash: null,
+      state: MasternodeStateEnum.UNKNOWN,
+      status: null,
+      nodeState: {
+        dmnState: null,
+        poSePenalty: null,
+        lastPaidHeight: null,
+        lastPaidTime: null,
+        paymentQueuePosition: null,
+        nextPaymentTime: null,
+      },
+    };
 
-      masternode.proTxHash = proTxHash;
-      masternode.status = status;
-      masternode.state = state;
+    const basicResult = await Promise.allSettled([
+      getSyncAsset(config),
+      getSentinelInfo(config),
+    ]);
 
-      if (state === MasternodeStateEnum.READY) {
-        const { dmnState } = masternodeStatus.result;
-
-        const { PoSePenalty: poSePenalty, lastPaidHeight } = dmnState;
-
-        const position = calculatePaymentQueuePosition(dmnState, enabled, coreBlocks);
-        const lastPaidTime = blocksToTime(coreBlocks - lastPaidHeight);
-        const paymentQueuePosition = position / enabled;
-        const nextPaymentTime = `${blocksToTime(paymentQueuePosition)}`;
-
-        masternode.nodeState.dmnState = dmnState;
-        masternode.nodeState.poSePenalty = poSePenalty;
-        masternode.nodeState.lastPaidHeight = lastPaidHeight;
-        masternode.nodeState.lastPaidTime = lastPaidTime;
-        masternode.nodeState.paymentQueuePosition = paymentQueuePosition;
-        masternode.nodeState.nextPaymentTime = nextPaymentTime;
+    if (process.env.DEBUG) {
+      for (const error of basicResult.filter((e) => e.status === 'rejected')) {
+        // eslint-disable-next-line no-console
+        console.error(error.reason);
       }
     }
 
-    return masternode;
+    const [syncAsset, sentinelInfo] = basicResult
+      .map((result) => (result.status === 'fulfilled' ? result.value : null));
+
+    if (syncAsset) {
+      scope.syncAsset = syncAsset;
+    }
+
+    if (sentinelInfo) {
+      scope.sentinel.state = sentinelInfo.state;
+      scope.sentinel.version = sentinelInfo.version;
+    }
+
+    if (scope.syncAsset === MasternodeSyncAssetEnum.MASTERNODE_SYNC_FINISHED) {
+      try {
+        const masternodeInfo = await getMasternodeInfo(config);
+
+        scope.proTxHash = masternodeInfo.proTxHash;
+        scope.state = masternodeInfo.state;
+        scope.status = masternodeInfo.status;
+        scope.nodeState = masternodeInfo.nodeState;
+      } catch (e) {
+        if (process.env.DEBUG) {
+          // eslint-disable-next-line no-console
+          console.error('Could not retrieve dashcore masternode info', e);
+        }
+      }
+    }
+
+    return scope;
   }
 
   return getMasternodeScope;
