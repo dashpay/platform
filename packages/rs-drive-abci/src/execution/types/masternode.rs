@@ -1,9 +1,9 @@
-use dashcore_rpc::dashcore_rpc_json::{DMNState, DMNStateDiff, MasternodeType};
+use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeType};
 use dashcore_rpc::json::MasternodeListItem;
 use dpp::bincode::{Decode, Encode};
-use dpp::dashcore::hashes::Hash;
+
 use dpp::dashcore::{ProTxHash, Txid};
-use dpp::platform_value::{Bytes20, Bytes32};
+
 use std::net::SocketAddr;
 
 /// `Masternode` represents a masternode on the network.

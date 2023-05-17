@@ -21,9 +21,7 @@ use crate::document::state_transition::documents_batch_transition::{
     DocumentsBatchTransitionAction, DOCUMENTS_BATCH_TRANSITION_ACTION_VERSION,
 };
 use crate::document::Document;
-use crate::validation::{
-    AsyncDataValidator, SimpleConsensusValidationResult, SimpleValidationResult,
-};
+use crate::validation::{AsyncDataValidator, SimpleConsensusValidationResult};
 use crate::NonConsensusError;
 use crate::{
     block_time_window::validate_time_in_block_time_window::validate_time_in_block_time_window,

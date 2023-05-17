@@ -1,11 +1,8 @@
-use crate::error::serialization::SerializationError;
 use crate::error::Error;
 use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformState;
-use dpp::block::block_info::ExtendedBlockInfo;
-use dpp::dashcore::hashes::Hash;
-use dpp::dashcore::QuorumHash;
+
 use dpp::serialization_traits::PlatformSerializable;
 use drive::error::Error::GroveDB;
 use drive::grovedb::Transaction;

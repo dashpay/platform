@@ -497,7 +497,7 @@ impl<'a> DriveQuery<'a> {
         document_type: &'a DocumentType,
         config: &DriveConfig,
     ) -> Result<Self, Error> {
-        let limit = maybe_limit
+        let _limit = maybe_limit
             .map_or(Some(config.default_query_limit), |limit_value| {
                 if limit_value == 0 || limit_value > config.default_query_limit {
                     None

@@ -17,7 +17,7 @@ use dpp::serialization_traits::{PlatformDeserializable, PlatformSerializable};
 use dpp::ProtocolError;
 use drive::dpp::util::deserializer::ProtocolVersion;
 use indexmap::IndexMap;
-use serde::{Deserialize, Serialize};
+
 use std::collections::{BTreeMap, HashMap};
 
 mod commit;

@@ -72,9 +72,7 @@ mod tests {
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::BlockHash;
     use dashcore_rpc::dashcore_rpc_json::ExtendedQuorumDetails;
-    use dpp::data_contract::extra::common::{
-        json_document_to_contract, json_document_to_created_contract,
-    };
+    use dpp::data_contract::extra::common::json_document_to_created_contract;
     use dpp::util::hash::hash_to_hex_string;
     use drive_abci::config::PlatformTestConfig;
     use drive_abci::rpc::core::QuorumListExtendedInfo;

@@ -44,13 +44,11 @@ use std::sync::RwLock;
 
 use crate::rpc::core::MockCoreRPCLike;
 use dashcore_rpc::dashcore::hashes::hex::FromHex;
-use dashcore_rpc::dashcore::hashes::Hash;
-use dashcore_rpc::dashcore::{BlockHash, QuorumHash};
 
-use crate::error::serialization::SerializationError;
-use dpp::block::block_info::ExtendedBlockInfo;
+use dashcore_rpc::dashcore::BlockHash;
+
 use dpp::serialization_traits::PlatformDeserializable;
-use drive::error::drive::DriveError;
+
 use drive::error::Error::GroveDB;
 use serde_json::json;
 
