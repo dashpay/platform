@@ -199,4 +199,39 @@ mod tests {
         //todo fix
         // assert!(validation_result.errors.is_empty());
     }
+
+    #[test]
+    fn identity_top_up_check_tx() {
+        let identity_top_up = hex::decode("04030000c601018c047719bb8b287e33b788671131b16b1f355d1b3ba6c4917396d0d7bf41e681000000007f1df760772c7ab48c042c01319bd553b7a635936e9a06fa382eb5037638e6ba077a524aa82c6b20e7b8dcadafa46f8ecc59b2dea8c3d6269a24cd5cad74b712ae5a460d11242bd345e168028b3e8442439a63847aa736057a6cd587ae9f7bca1f59f3045566233566142cbca5a7b525085bf96c621ba39f838d6c5c31b116e756753177aa303a8ea712e17ad1ff5dfb0b1504c03d5c225c5cbdb1ee8f6636f0df03000000018c047719bb8b287e33b788671131b16b1f355d1b3ba6c4917396d0d7bf41e681000000006b483045022100d71b565e319a0b85725d1eca250da27d846c6b015e601254e3f8aeb11c0feab60220381c92a46467d6c5270d424b666b989e444e72955f3d5b77d8be9965335b43bd01210222150e3b66410341308b646234bff9c203172c6720b2ecc838c71d94f670066affffffff02e093040000000000166a144cf5fee3ebdce0f51540a3504091c0dccb0f7d343832963b000000001976a914f3b05a1dda565b0013cb9857e708d840bcd47bef88ac00000000003012c19b98ec0033addb36cd64b7f510670f2a351a4304b5f6994144286efdac014120d56826c39c07eaea7157b8b717fdcef73fbc99cc680e34f695e0c763d79531691d8ea117cd4623e96a25cbf673e5b1da6e43a96d5bb2a65fe82c2efd4dc2c6dc").expect("expected to decode");
+
+        let platform = TestPlatformBuilder::new()
+            .with_config(PlatformConfig::default())
+            .build_with_mock_rpc();
+
+        let genesis_time = 0;
+
+        platform
+            .create_genesis_state(genesis_time, platform.config.abci.keys.clone().into(), None)
+            .expect("expected to create genesis state");
+
+        let validation_result = platform
+            .check_tx(identity_top_up.clone())
+            .expect("expected to check tx");
+
+        assert!(validation_result.errors.is_empty());
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let validation_result = platform
+            .execute_tx(identity_top_up, &BlockInfo::default(), &transaction)
+            .expect("expected to execute identity top up tx");
+        assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+    }
 }
