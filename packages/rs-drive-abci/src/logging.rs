@@ -1,77 +1,187 @@
-use std::default;
 use std::fmt::Debug;
-use std::io::BufWriter;
-use std::io::Stderr;
-use std::io::Write;
+use std::ops::DerefMut;
 use std::path::Path;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::sync::RwLock;
 
+use bytes::Bytes;
 use file_rotate::suffix::AppendTimestamp;
 use file_rotate::suffix::FileLimit;
 use file_rotate::ContentLimit;
 use file_rotate::TimeFrequency;
-use serde::Deserialize;
+use lazy_static::__Deref;
 use tracing::Subscriber;
 use tracing_subscriber::fmt;
-use tracing_subscriber::fmt::writer::ArcWriter;
-use tracing_subscriber::fmt::writer::BoxMakeWriter;
-use tracing_subscriber::fmt::writer::MutexGuardWriter;
-use tracing_subscriber::fmt::MakeWriter;
-use tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt;
-use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
-use tracing_subscriber::Layer;
 
-#[derive(Default, Debug)]
-pub enum LogDestination<'a> {
+/// Where to send logs
+#[derive(Default)]
+pub enum LogDestination {
     #[default]
+    /// Standard error
     StdErr,
+    /// Standard out
     StdOut,
-    RotationWriter(Arc<Mutex<RotationWriter>>),
-    ByteBuffer(Mutex<&'a mut [u8]>),
+    /// File that is logrotated
+    RotationWriter(RotationWriter),
+    // Just some bytes
+    Bytes(Arc<Mutex<Vec<u8>>>),
 }
 
-struct RotationWriter {
+struct Writer<T>(Arc<Mutex<T>>);
+
+impl<T: std::io::Write> std::io::Write for Writer<T> {
+    #[inline]
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().expect("logging mutex poisoned").write(buf)
+    }
+
+    #[inline]
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.0.lock().expect("logging mutex poisoned").flush()
+    }
+
+    #[inline]
+    fn write_vectored(&mut self, bufs: &[std::io::IoSlice<'_>]) -> std::io::Result<usize> {
+        self.0
+            .lock()
+            .expect("logging mutex poisoned")
+            .write_vectored(bufs)
+    }
+
+    #[inline]
+    fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
+        self.0
+            .lock()
+            .expect("logging mutex poisoned")
+            .write_all(buf)
+    }
+
+    #[inline]
+    fn write_fmt(&mut self, fmt: std::fmt::Arguments<'_>) -> std::io::Result<()> {
+        self.0
+            .lock()
+            .expect("logging mutex poisoned")
+            .write_fmt(fmt)
+    }
+}
+
+// trait LogWriter {
+//     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize>;
+//     fn flush(&mut self) -> std::io::Result<()>;
+//     fn write_vectored(&mut self, bufs: &[std::io::IoSlice<'_>]) -> std::io::Result<usize>;
+//     fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()>;
+//     fn write_fmt(&mut self, fmt: std::fmt::Arguments<'_>) -> std::io::Result<()>;
+// }
+
+// impl<T: std::io::Write> LogWriter for Mutex<T> {
+//     #[inline]
+//     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+//         self.lock().expect("logging mutex poisoned").write(buf)
+//     }
+
+//     #[inline]
+//     fn flush(&mut self) -> std::io::Result<()> {
+//         self.lock().expect("logging mutex poisoned").flush()
+//     }
+
+//     #[inline]
+//     fn write_vectored(&mut self, bufs: &[std::io::IoSlice<'_>]) -> std::io::Result<usize> {
+//         self.lock()
+//             .expect("logging mutex poisoned")
+//             .write_vectored(bufs)
+//     }
+
+//     #[inline]
+//     fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
+//         self.lock().expect("logging mutex poisoned").write_all(buf)
+//     }
+
+//     #[inline]
+//     fn write_fmt(&mut self, fmt: std::fmt::Arguments<'_>) -> std::io::Result<()> {
+//         self.lock().expect("logging mutex poisoned").write_fmt(fmt)
+//     }
+// }
+impl LogDestination {
+    fn to_writer(&self) -> Box<dyn std::io::Write> {
+        let writer = match self {
+            LogDestination::StdErr => Box::new(std::io::stderr()) as Box<dyn std::io::Write>,
+            LogDestination::StdOut => Box::new(std::io::stdout()) as Box<dyn std::io::Write>,
+            // LogDestination::RotationWriter(w) => {
+            //     let mut w = Arc::clone(w);
+            //     let mut w = w.lock().unwrap().inner;
+            //     Box::new(&mut w) as Self::Writer
+            // }
+            // LogDestination::ByteBuffer(buf) => {
+            //     let b = buf.lock().expect("logging mux is poisoned").as_mut();
+            //     Box::new(Arc::clone(buf.lock().expect("logging mux is poisoned")))
+            // }
+            _ => todo!(),
+        };
+
+        writer
+    }
+
+    /// Return human-readable name of selected log destination
+    pub fn name(&self) -> String {
+        let s = match self {
+            LogDestination::StdOut => "stdout",
+            LogDestination::StdErr => "stderr",
+            LogDestination::Bytes(_) => "ByteBuffer",
+            LogDestination::RotationWriter(_) => "RotationWriter",
+        };
+
+        String::from(s)
+    }
+}
+
+impl Debug for LogDestination {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.name())
+    }
+}
+
+impl std::io::Write for LogDestination {
+    #[inline]
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.to_writer().write(buf)
+    }
+
+    #[inline]
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.to_writer().flush()
+    }
+
+    #[inline]
+    fn write_vectored(&mut self, bufs: &[std::io::IoSlice<'_>]) -> std::io::Result<usize> {
+        self.to_writer().write_vectored(bufs)
+    }
+
+    #[inline]
+    fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
+        self.to_writer().write_all(buf)
+    }
+
+    #[inline]
+    fn write_fmt(&mut self, fmt: std::fmt::Arguments<'_>) -> std::io::Result<()> {
+        self.to_writer().write_fmt(fmt)
+    }
+}
+
+/// RotationWriter allows writing logs to a file that is automatically rotated
+pub struct RotationWriter {
     inner: file_rotate::FileRotate<AppendTimestamp>,
 }
 
 impl Debug for RotationWriter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "RotationWriter")
+        f.write_str("RotationWriter")
     }
 }
 
-// impl std::io::Write for &mut RotationWriter {
-//     #[inline]
-//     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-//         self.inner.write(buf)
-//     }
-
-//     #[inline]
-//     fn flush(&mut self) -> std::io::Result<()> {
-//         self.inner.flush()
-//     }
-
-//     #[inline]
-//     fn write_vectored(&mut self, bufs: &[std::io::IoSlice<'_>]) -> std::io::Result<usize> {
-//         self.inner.write_vectored(bufs)
-//     }
-
-//     #[inline]
-//     fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
-//         self.inner.write_all(buf)
-//     }
-
-//     #[inline]
-//     fn write_fmt(&mut self, fmt: std::fmt::Arguments<'_>) -> std::io::Result<()> {
-//         self.inner.write_fmt(fmt)
-//     }
-// }
 impl RotationWriter {
-    fn new(path: &Path, max_files: usize) -> Self {
+    /// Create new rotating writer
+    pub fn new(path: &Path, max_files: usize) -> Self {
         let suffix_scheme = AppendTimestamp::default(FileLimit::MaxFiles(max_files));
         let content_limit = ContentLimit::Time(TimeFrequency::Daily);
         let compression = file_rotate::compression::Compression::OnRotate(2);
@@ -84,9 +194,9 @@ impl RotationWriter {
 
 /// Logger configuration
 #[derive(Debug)]
-pub struct Logger<'writer> {
+pub struct Logger {
     /// Destination of logs; either absolute path to dir where log files will be stored, `stdout` or `stderr`
-    pub destination: LogDestination<'writer>,
+    pub destination: Arc<Mutex<LogDestination>>,
 
     /// Log verbosity level, number; see [super::Cli::verbose].
     pub verbosity: u8,
@@ -98,10 +208,10 @@ pub struct Logger<'writer> {
     pub max_files: usize,
 }
 
-impl<'a> Default for Logger<'a> {
+impl Default for Logger {
     fn default() -> Self {
         Self {
-            destination: LogDestination::StdErr,
+            destination: Arc::new(Mutex::new(LogDestination::StdErr)),
             verbosity: 0,
             color: None,
             max_files: 7,
@@ -114,21 +224,32 @@ impl<'a> Default for Logger<'a> {
 //         L: Layer<Self>,
 //         Self: Sized,
 
-impl<'a> Logger<'a> {
-    pub fn subscriber(&'static self) {
+impl Logger {
+    /// Register the logger in a registry
+    pub fn subscriber<S>(&mut self) -> impl Subscriber {
         let builder = fmt::fmt();
 
-        let ansi = self.color.unwrap_or(match self.destination {
-            LogDestination::StdOut => atty::is(atty::Stream::Stdout),
-            LogDestination::StdErr => atty::is(atty::Stream::Stderr),
-            _ => false,
-        });
-        let self_arc = Arc::new(self);
+        let ansi = self
+            .color
+            .unwrap_or(match self.destination.lock().unwrap().deref() {
+                LogDestination::StdOut => atty::is(atty::Stream::Stdout),
+                LogDestination::StdErr => atty::is(atty::Stream::Stderr),
+                _ => false,
+            });
+        let dest = self.destination.clone();
+        let cloned = dest;
+        // let make_writer = { move || Writer(dest.clone()) };
+        let make_writer = { move || Writer(Arc::clone(&cloned)) };
 
-        let fmt_layer = fmt::layer().with_ansi(ansi).with_writer(self);
+        // let make_writer = self.destination.clone() as Arc<Mutex<dyn std::io::Write>>;
+        // let make_writer = *make_writer;
+        let builder = builder
+            .with_env_filter(self.env_filter())
+            .with_ansi(ansi)
+            .with_writer(make_writer);
+        let subscriber = builder.finish();
 
-        let registry = tracing_subscriber::registry();
-        let subscriber = registry.with(fmt_layer).with(self.env_filter());
+        subscriber
     }
 
     fn env_filter(&self) -> EnvFilter {
@@ -149,43 +270,24 @@ impl<'a> Logger<'a> {
         }
     }
 }
-//impl<'a, W> MakeWriter<'a> for Mutex<W>
-impl<'writer> MakeWriter<'writer> for &Logger<'writer> {
-    type Writer = Box<dyn std::io::Write + 'writer>;
-    fn make_writer(&'writer self) -> Self::Writer {
-        let writer = match &self.destination {
-            LogDestination::StdErr => Box::new(std::io::stderr()) as Self::Writer,
-            LogDestination::StdOut => Box::new(std::io::stdout()) as Self::Writer,
-            LogDestination::RotationWriter(w) => {
-                let mut w = Arc::clone(w);
-                let mut w = w.lock().unwrap().inner;
-                Box::new(&mut w) as Self::Writer
-            }
-            // LogDestination::ByteBuffer(buf) => {
-            //     let b = buf.lock().expect("logging mux is poisoned").as_mut();
-            //     Box::new(b)
-            // }
-            _ => todo!(),
-        };
 
-        writer
-    }
-}
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
     fn test_two_loggers() {
-        let mut buf1 = Vec::<u8>::new();
-        let mut buf2 = Vec::<u8>::new();
+        let mut buf1 = Arc::new(Mutex::new(Vec::<u8>::new()));
+        let mut buf2 = Arc::new(Mutex::new(Vec::<u8>::new()));
 
         let logger1 = Logger {
-            destination: super::LogDestination::ByteBuffer(Mutex::new(&mut buf1)),
+            destination: Arc::new(Mutex::new(super::LogDestination::Bytes(buf1))),
             ..Default::default()
         };
         let logger2 = Logger {
-            destination: super::LogDestination::ByteBuffer(Mutex::new(&mut buf2)),
+            destination: Arc::new(Mutex::new(super::LogDestination::Bytes(buf2))),
             ..Default::default()
         };
+
+        // logger1.subscriber()
     }
 }

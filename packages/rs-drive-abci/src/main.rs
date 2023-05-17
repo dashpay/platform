@@ -7,11 +7,12 @@ use drive_abci::config::{FromEnv, PlatformConfig};
 
 use drive_abci::rpc::core::DefaultCoreRPC;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use tracing::warn;
 use tracing_log::LogTracer;
-use tracing_subscriber::prelude::*;
 
-use crate::logging::Logger;
+mod logging;
+use logging::Logger;
 
 // struct aaa {}
 
@@ -118,17 +119,13 @@ fn configure_logging(cli: &Cli) {
     use tracing_subscriber::*;
 
     let stderr_config = Logger {
-        destination: logging::LogDestination::StdErr,
+        destination: Arc::new(Mutex::new(crate::logging::LogDestination::StdErr.into())),
         verbosity: cli.verbose,
         color: cli.color,
+        ..Default::default()
     };
-
-    let env_filter = stderr_config.env_filter();
- 
-    let ansi = cli.color.unwrap_or(atty::is(atty::Stream::Stdout));
-    let layer = fmt::layer().with_ansi(ansi);
-
-    registry().with(layer).with(env_filter).init();
+    let mut registry = registry();
+    // let registry = stderr_config.register(&mut registry);
 
     LogTracer::init().expect("cannot initialize LogTracer");
 }
