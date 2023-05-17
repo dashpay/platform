@@ -125,7 +125,7 @@ RUN --mount=type=cache,sharing=shared,id=deps_cargo_index,target=/usr/local/carg
     ls -lha /usr/local/cargo/registry/cache && \
     ls -lha /usr/local/cargo/git/db && \
     ls -lha /platform/target && \
-    CARGO_TARGET_DIR=/platform/target CARGO_LOG=cargo::core::compiler::fingerprint=trace \
+    CARGO_TARGET_DIR=/platform/target \
     cargo install --profile "$CARGO_BUILD_PROFILE" wasm-bindgen-cli@0.2.84
 
 RUN --mount=type=cache,sharing=shared,id=deps_cargo_index,target=/usr/local/cargo/registry/index \
