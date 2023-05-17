@@ -25,6 +25,25 @@ class CoreStatusCommand extends ConfigBaseCommand {
     config,
     getCoreScope,
   ) {
+    const plain = {
+      'Network': 'n/a',
+      'Version': 'n/a',
+      'Chain': 'n/a',
+      'Docker Status': 'n/a',
+      'Service Status': 'n/a',
+      'Difficulty': 'n/a',
+      'Latest version': 'n/a',
+      'Sync asset': 'n/a',
+      'Peer count': 'n/a',
+      'P2P service': 'n/a',
+      'P2P port': 'n/a',
+      'RPC service': 'n/a',
+      'Block height': 'n/a',
+      'Header height': 'n/a',
+      'Verification Progress': 'n/a',
+      'Remote Block Height': 'n/a',
+    };
+
     const scope = await getCoreScope(config);
 
     if (flags.format === OUTPUT_FORMATS.PLAIN) {
@@ -47,24 +66,23 @@ class CoreStatusCommand extends ConfigBaseCommand {
         verificationProgress,
       } = scope;
 
-      const plain = {
-        'Network': network,
-        'Version': colors.status(version, latestVersion)(version),
-        'Chain': chain,
-        'Docker Status': dockerStatus,
-        'Service Status': colors.status(serviceStatus)(serviceStatus),
-        'Difficulty': difficulty,
-        'Latest version': latestVersion || 'N/A',
-        'Sync asset': syncAsset,
-        'Peer count': peersCount,
-        'P2P service': p2pService,
-        'P2P port': colors.portState(p2pPortState)(p2pPortState),
-        'RPC service': rpcService,
-        'Block height': colors.blockHeight(blockHeight, headerHeight, remoteBlockHeight)(blockHeight),
-        'Header height': headerHeight,
-        'Verification Progress': `${(verificationProgress * 100).toFixed(2)}%`,
-        'Remote Block Height': remoteBlockHeight || 'N/A',
-      };
+      plain.Network = network || 'n/a';
+      plain.Version = colors.status(version, latestVersion)(version) || 'n/a';
+      plain.Chain = chain || 'n/a';
+      plain['Docker Status'] = dockerStatus || 'n/a';
+      plain['Service Status'] = serviceStatus || 'n/a';
+      plain.Difficulty = difficulty || 'n/a';
+      plain['Latest version'] = network || 'n/a';
+      plain['Sync asset'] = syncAsset || 'n/a';
+      plain['Peer count'] = peersCount || 'n/a';
+      plain['P2P service'] = p2pService || 'n/a';
+      plain['P2P port'] = p2pPortState || 'n/a';
+      plain['RPC service'] = rpcService || 'n/a';
+      plain['Block height'] = colors.blockHeight(blockHeight, headerHeight, remoteBlockHeight)(blockHeight) || 'n/a';
+      plain['Header height'] = headerHeight || 'n/a';
+      plain['Verification Progress'] = verificationProgress
+        ? `${(verificationProgress * 100).toFixed(2)}%` : 'n/a';
+      plain['Remote Block Height'] = remoteBlockHeight || 'n/a';
 
       return printObject(plain, flags.format);
     }

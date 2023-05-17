@@ -992,7 +992,7 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc"
 version = "0.15.0"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=master#8f879a2db8bd746d4bc67b07fb65ac7d6eb54276"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=feat/bincode#6bdd993a05ddcb738b4dd5b236518d56b5073801"
 dependencies = [
  "dashcore-rpc-json",
  "env_logger 0.10.0",
@@ -1005,8 +1005,9 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc-json"
 version = "0.15.0"
-source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=master#8f879a2db8bd746d4bc67b07fb65ac7d6eb54276"
+source = "git+https://github.com/dashpay/rust-dashcore-rpc?branch=feat/bincode#6bdd993a05ddcb738b4dd5b236518d56b5073801"
 dependencies = [
+ "bincode 2.0.0-rc.3",
  "dashcore",
  "hex",
  "serde",
@@ -1037,9 +1038,9 @@ dependencies = [
 
 [[package]]
 name = "der"
-version = "0.7.5"
+version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05e58dffcdcc8ee7b22f0c1f71a69243d7c2d9ad87b5a14361f2424a1565c219"
+checksum = "56acb310e15652100da43d130af8d97b509e95af61aab1c5a7939ef24337ee17"
 dependencies = [
  "const-oid",
  "zeroize",
@@ -1189,6 +1190,8 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "atty",
+ "base64 0.20.0",
+ "bincode 2.0.0-rc.3",
  "bs58",
  "bytes",
  "chrono",
@@ -4341,9 +4344,9 @@ checksum = "2a0956f1ba7c7909bfb66c2e9e4124ab6f6482560f6628b5aaeba39207c9aad9"
 
 [[package]]
 name = "zip"
-version = "0.6.5"
+version = "0.6.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e92305c174683d78035cbf1b70e18db6329cc0f1b9cae0a52ca90bf5bfe7125"
+checksum = "760394e246e4c28189f19d488c058bf16f564016aefac5d32bb1f3b51d5e9261"
 dependencies = [
  "byteorder",
  "crc32fast",

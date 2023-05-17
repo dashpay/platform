@@ -238,7 +238,8 @@ jobs:
         with:
           context: .
           builder: ${{ steps.buildx.outputs.name }}
-          file: ./packages/rs-drive-abci/Dockerfile
+          file: ./Dockerfile
+          target: drive-abci
           push: true
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
@@ -378,7 +379,8 @@ jobs:
         with:
           context: .
           builder: ${{ steps.buildx.outputs.name }}
-          file: ./packages/dapi/Dockerfile
+          file: ./Dockerfile
+          target: dapi
           push: true
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
@@ -524,7 +526,8 @@ jobs:
         with:
           context: .
           builder: ${{ steps.buildx.outputs.name }}
-          file: ./packages/platform-test-suite/Dockerfile
+          file: ./Dockerfile
+          target: test-suite
           push: true
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
@@ -739,7 +742,8 @@ jobs:
         with:
           context: .
           builder: ${{ steps.buildx.outputs.name }}
-          file: ./packages/dashmate/Dockerfile
+          file: ./Dockerfile
+          target: dashmate-helper
           push: true
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
@@ -811,7 +815,7 @@ jobs:
       - name: Setup Node.JS
         uses: actions/setup-node@v3
         with:
-          node-version: '16'
+          node-version: "16"
       - uses: ./.github/actions/rust
         with:
           toolchain: stable

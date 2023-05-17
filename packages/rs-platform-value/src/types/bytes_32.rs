@@ -158,6 +158,18 @@ impl TryFrom<&Value> for Bytes32 {
     }
 }
 
+impl From<[u8; 32]> for Bytes32 {
+    fn from(value: [u8; 32]) -> Self {
+        Bytes32(value)
+    }
+}
+
+impl From<&[u8; 32]> for Bytes32 {
+    fn from(value: &[u8; 32]) -> Self {
+        Bytes32(*value)
+    }
+}
+
 impl From<Bytes32> for Value {
     fn from(value: Bytes32) -> Self {
         Value::Bytes32(value.0)

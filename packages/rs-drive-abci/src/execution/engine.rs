@@ -3,15 +3,13 @@ use dashcore_rpc::dashcore::Txid;
 use dpp::block::block_info::{BlockInfo, ExtendedBlockInfo};
 use dpp::block::epoch::Epoch;
 use dpp::bls_signatures;
-use dpp::consensus::ConsensusError;
-use dpp::state_transition::StateTransition;
+
 use dpp::validation::{SimpleValidationResult, ValidationResult};
 use drive::error::Error::GroveDB;
-use drive::fee::result::FeeResult;
+
 use drive::grovedb::Transaction;
 use std::collections::BTreeMap;
 
-use dpp::serialization_traits::PlatformDeserializable;
 use tenderdash_abci::proto::abci::{ExecTxResult, ValidatorSetUpdate};
 use tenderdash_abci::proto::serializers::timestamp::ToMilis;
 
@@ -25,10 +23,8 @@ use crate::error::Error;
 use crate::execution::block_proposal::BlockProposal;
 use crate::execution::fee_pools::epoch::EpochInfo;
 use crate::execution::finalize_block_cleaned_request::{CleanedBlock, FinalizeBlockCleanedRequest};
-use crate::platform::{Platform, PlatformRef};
+use crate::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
-
-use crate::validation::state_transition::process_state_transition;
 
 /// The outcome of the block execution, either by prepare proposal, or process proposal
 #[derive(Clone)]
@@ -328,11 +324,7 @@ where
         state_cache.initialization_information = None;
 
         // Persist ephemeral data
-        self.store_ephemeral_data(
-            &block_info,
-            &state_cache.current_validator_set_quorum_hash,
-            transaction,
-        )?;
+        self.store_ephemeral_data(&state_cache, transaction)?;
 
         Ok(())
     }

@@ -2,8 +2,11 @@
   "compilerOptions": {
     "target": "es5",
     "module": "commonjs",
-    "lib": ["es6"],
+    "lib": [
+      "es6"
+    ],
     "outDir": "./build",
+    "rootDir": ".",
     "skipLibCheck": true,
     "strict": true,
     "allowUmdGlobalAccess": true,
@@ -15,6 +18,10 @@
     "declaration": true,
     "declarationDir": "./dist"
   },
-  "include": ["src"],
-  "typeRoots": ["node_modules/@types"]
+  "include": [
+    "src"
+  ],
+  "typeRoots": [
+    "node_modules/@types"
+  ]
 }

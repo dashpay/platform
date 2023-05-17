@@ -720,7 +720,7 @@ mod tests {
     use dpp::document::document_validator::DocumentValidator;
 
     use dpp::platform_value::{platform_value, Identifier, Value};
-    use dpp::prelude::DataContract;
+
     use dpp::util::cbor_serializer;
     use dpp::version::{ProtocolVersionValidator, COMPATIBILITY_MAP, LATEST_VERSION};
     use rand::Rng;
