@@ -168,6 +168,7 @@ static_resources:
               "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext
               common_tls_context:
                 tls_certificates:
+                  alpn_protocols: [ "h2,http/1.1" ]
                   - certificate_chain:
                       filename: "/etc/ssl/bundle.crt"
                     private_key:
