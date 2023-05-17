@@ -10,9 +10,11 @@ use file_rotate::suffix::FileLimit;
 use file_rotate::ContentLimit;
 use file_rotate::TimeFrequency;
 use lazy_static::__Deref;
+use tracing::metadata::LevelFilter;
 use tracing::Subscriber;
 use tracing_subscriber::fmt;
 use tracing_subscriber::EnvFilter;
+use tracing_subscriber::Layer;
 
 /// Where to send logs
 #[derive(Default)]
@@ -226,9 +228,9 @@ impl Default for Logger {
 
 impl Logger {
     /// Register the logger in a registry
-    pub fn subscriber<S>(&mut self) -> impl Subscriber {
-        let builder = fmt::fmt();
-
+    pub fn layer<S: Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>>(
+        &self,
+    ) -> impl Layer<S> {
         let ansi = self
             .color
             .unwrap_or(match self.destination.lock().unwrap().deref() {
@@ -243,23 +245,19 @@ impl Logger {
 
         // let make_writer = self.destination.clone() as Arc<Mutex<dyn std::io::Write>>;
         // let make_writer = *make_writer;
-        let builder = builder
-            .with_env_filter(self.env_filter())
-            .with_ansi(ansi)
-            .with_writer(make_writer);
-        let subscriber = builder.finish();
+        let filter = self.env_filter();
+        let formatter = fmt::layer::<S>().with_writer(make_writer).with_ansi(ansi);
 
-        subscriber
+        let layered = formatter.with_filter(filter);
+
+        layered
     }
 
     fn env_filter(&self) -> EnvFilter {
+        const default_logging: &str = "*=error,tenderdash_abci=warn,drive_abci=warn";
         match self.verbosity {
             0 => EnvFilter::builder()
-                .with_default_directive(
-                    "error,tenderdash_abci=warn,drive_abci=warn"
-                        .parse()
-                        .unwrap(),
-                )
+                .with_default_directive(LevelFilter::INFO.into())
                 .from_env_lossy(),
             1 => EnvFilter::new("error,tenderdash_abci=info,drive_abci=info"),
             2 => EnvFilter::new("info,tenderdash_abci=debug,drive_abci=debug"),
@@ -273,11 +271,16 @@ impl Logger {
 
 #[cfg(test)]
 mod tests {
+    use tracing_subscriber::util::SubscriberInitExt;
+    use tracing_subscriber::{
+        prelude::__tracing_subscriber_SubscriberExt, registry, FmtSubscriber, Registry,
+    };
+
     use super::*;
     #[test]
-    fn test_two_loggers() {
-        let mut buf1 = Arc::new(Mutex::new(Vec::<u8>::new()));
-        let mut buf2 = Arc::new(Mutex::new(Vec::<u8>::new()));
+    fn test_two_loggers_bytes() {
+        let buf1 = Arc::new(Mutex::new(Vec::<u8>::new()));
+        let buf2 = Arc::new(Mutex::new(Vec::<u8>::new()));
 
         let logger1 = Logger {
             destination: Arc::new(Mutex::new(super::LogDestination::Bytes(buf1))),
@@ -288,6 +291,35 @@ mod tests {
             ..Default::default()
         };
 
-        // logger1.subscriber()
+        // let subscriber1 = logger1.subscriber::<Registry>();
+        // let subscriber2 = logger2.subscriber::<Registry>();
+
+        let r = registry();
+        r.with(logger1.layer()).with(logger2.layer()).init();
+
+        tracing::error!("testing error trace");
+    }
+
+    #[test]
+    fn test_stdout_stderr() {
+        let logger1 = Logger {
+            destination: Arc::new(Mutex::new(super::LogDestination::StdOut)),
+            verbosity: 1,
+            ..Default::default()
+        };
+        let logger2 = Logger {
+            destination: Arc::new(Mutex::new(super::LogDestination::StdErr)),
+            verbosity: 5,
+            ..Default::default()
+        };
+
+        // let subscriber1 = logger1.subscriber::<Registry>();
+        // let subscriber2 = logger2.subscriber::<Registry>();
+
+        let r = registry();
+        r.with(logger1.layer()).with(logger2.layer()).init();
+
+        tracing::error!("testing error trace - should be visibe 2 times");
+        tracing::debug!("testing debug trace - should be visibe 1 time");
     }
 }
