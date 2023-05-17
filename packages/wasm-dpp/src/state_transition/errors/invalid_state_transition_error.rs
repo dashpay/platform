@@ -1,6 +1,6 @@
 use dpp::consensus::ConsensusError;
 use serde::Serialize;
-use serde_json::json;
+
 use wasm_bindgen::{prelude::wasm_bindgen, JsError, JsValue};
 
 use crate::{
