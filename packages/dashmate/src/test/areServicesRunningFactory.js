@@ -21,7 +21,7 @@ function areServicesRunningFactory(configGroup, dockerCompose, services) {
       } else {
         for (const serviceName of Object.keys(services)) {
           result = await dockerCompose.isServiceRunning(config.toEnvs(), serviceName);
-          if (result !== isRunning) {
+          if (!result) {
             throw new Error(`Service ${serviceName} in ${config.name} is not running`);
           }
         }
