@@ -93,6 +93,8 @@ describe('Local HP Masternode', function main() {
   it('#start', async () => {
     group = configFile.getGroupConfigs(groupName);
 
+    areServicesRunning = areServicesRunningFactory(group, dockerCompose, services);
+
     const task = startGroupNodesTask(group);
 
     await task.run();
