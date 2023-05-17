@@ -4,8 +4,6 @@ services:
   drive_abci:
     image: ${PLATFORM_DRIVE_ABCI_DOCKER_IMAGE:?err}
     restart: unless-stopped
-    depends_on:
-      - core
     volumes:
       - drive_abci_data:/platform/packages/js-drive/db
       - ${PLATFORM_DRIVE_ABCI_LOG_PRETTY_DIRECTORY_PATH:?err}:/var/log/pretty
@@ -58,7 +56,6 @@ services:
     restart: unless-stopped
     depends_on:
       - drive_tenderdash
-      - core
     environment:
       - API_JSON_RPC_PORT=3004
       - API_GRPC_PORT=3005
@@ -81,8 +78,6 @@ services:
   dapi_tx_filter_stream:
     image: ${PLATFORM_DAPI_API_DOCKER_IMAGE:?err}
     restart: unless-stopped
-    depends_on:
-      - core
     environment:
       - TX_FILTER_STREAM_GRPC_PORT=3006
       - DASHCORE_RPC_HOST=core
@@ -121,7 +116,6 @@ services:
     image: ${DASHMATE_HELPER_DOCKER_IMAGE:?err}
     restart: unless-stopped
     environment:
-      - DASHMATE_HOME_DIR=/home/dashmate/.dashmate
       - LOCAL_UID=${LOCAL_UID:?err}
       - LOCAL_GID=${LOCAL_GID:?err}
     ports:

@@ -1,10 +1,10 @@
 const crypto = require('crypto');
-const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
 
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDataContractFixture = require('../../../../../../../lib/test/fixtures/getDataContractFixture');
 const { expectJsonSchemaError, expectValidationError, expectValueError } = require('../../../../../../../lib/test/expect/expectError');
 
-const { default: loadWasmDpp } = require('../../../../../../../dist');
+const { default: loadWasmDpp } = require('../../../../../../..');
+const { getLatestProtocolVersion } = require('../../../../../../..');
 
 describe('validateDataContractCreateTransitionBasicFactory', () => {
   let stateTransition;
@@ -29,11 +29,11 @@ describe('validateDataContractCreateTransitionBasicFactory', () => {
   });
 
   beforeEach(async () => {
-    dataContract = getDataContractFixture();
+    dataContract = await getDataContractFixture();
     rawDataContract = dataContract.toObject();
 
     stateTransition = new DataContractCreateTransition({
-      protocolVersion: protocolVersion.latestVersion,
+      protocolVersion: getLatestProtocolVersion(),
       dataContract: rawDataContract,
       entropy: dataContract.getEntropy(),
       signature: Buffer.alloc(65),

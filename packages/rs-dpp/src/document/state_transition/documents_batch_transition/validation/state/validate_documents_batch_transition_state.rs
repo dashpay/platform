@@ -8,6 +8,7 @@ use crate::consensus::state::document::document_already_present_error::DocumentA
 use crate::consensus::state::document::document_not_found_error::DocumentNotFoundError;
 use crate::consensus::state::document::document_owner_id_mismatch_error::DocumentOwnerIdMismatchError;
 use crate::consensus::state::document::document_timestamp_window_violation_error::DocumentTimestampWindowViolationError;
+use crate::consensus::state::document::document_timestamps_are_equal_error::DocumentTimestampsAreEqualError;
 use crate::consensus::state::document::document_timestamps_mismatch_error::DocumentTimestampsMismatchError;
 use crate::consensus::state::document::invalid_document_revision_error::InvalidDocumentRevisionError;
 use crate::consensus::state::state_error::StateError;
@@ -252,7 +253,9 @@ fn validate_transition(
             let mut result = ValidationResult::<DocumentTransitionAction>::new_with_data(
                 DocumentTransitionAction::CreateAction(DocumentCreateTransitionAction::default()),
             );
-            let validation_result = check_if_timestamps_are_equal(transition);
+
+            // TODO: move this check to basic validation
+            let validation_result = check_if_timestamps_are_not_equal(transition);
             result.merge(validation_result);
 
             let validation_result =
@@ -294,6 +297,9 @@ fn validate_transition(
                 result.add_errors(validation_result.errors);
                 return Ok(result);
             };
+
+            let validation_result = check_if_timestamps_are_equal(transition, &original_document);
+            result.merge(validation_result);
 
             let validation_result = check_ownership(transition, original_document, owner_id);
             result.merge(validation_result);
@@ -434,7 +440,7 @@ fn check_if_document_can_be_found<'a>(
     }
 }
 
-fn check_if_timestamps_are_equal(
+fn check_if_timestamps_are_not_equal(
     document_transition: &DocumentTransition,
 ) -> SimpleValidationResult {
     let mut result = SimpleValidationResult::default();
@@ -444,6 +450,25 @@ fn check_if_timestamps_are_equal(
     if created_at.is_some() && updated_at.is_some() && updated_at.unwrap() != created_at.unwrap() {
         result.add_error(ConsensusError::StateError(
             StateError::DocumentTimestampsMismatchError(DocumentTimestampsMismatchError::new(
+                document_transition.base().id,
+            )),
+        ));
+    }
+
+    result
+}
+
+fn check_if_timestamps_are_equal(
+    document_transition: &DocumentTransition,
+    original_document: &Document,
+) -> SimpleValidationResult {
+    let mut result = SimpleValidationResult::default();
+    let created_at = original_document.created_at;
+    let updated_at = document_transition.get_updated_at();
+
+    if created_at.is_some() && updated_at.is_some() && updated_at.unwrap() == created_at.unwrap() {
+        result.add_error(ConsensusError::StateError(
+            StateError::DocumentTimestampsAreEqualError(DocumentTimestampsAreEqualError::new(
                 document_transition.base().id,
             )),
         ));

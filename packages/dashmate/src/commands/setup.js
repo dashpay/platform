@@ -81,10 +81,13 @@ class SetupCommand extends BaseCommand {
           }
 
           if (isAlreadyConfigured) {
+            const resetCommand = ctx.preset === PRESET_LOCAL
+              ? `dashmate group reset --group ${ctx.preset} --hard` : `dashmate reset --config ${ctx.preset} --hard`;
+
             // eslint-disable-next-line no-param-reassign
             task.output = chalk`Preset {bold ${ctx.preset}} already configured.
 
-  To set up a node with this preset from scratch use {bold.cyanBright dashmate reset --config ${ctx.preset} --hard}.
+  To set up a node with this preset from scratch use {bold.cyanBright ${resetCommand}}.
   Previous data and configuration for this preset will be lost.
 
   If you want to keep the existing data and configuration, please use the {bold.cyanBright dashmate config create}

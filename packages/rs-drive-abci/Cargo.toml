@@ -24,6 +24,7 @@ dpp = { path = "../rs-dpp", features = ["fixtures-and-mocks"]}
 rust_decimal = "1.2.5"
 rust_decimal_macros = "1.25.0"
 mockall= { version ="0.11", optional = true }
+masternode-reward-shares-contract = { path = "../masternode-reward-shares-contract" }
 
 [dev-dependencies]
 itertools = { version = "0.10.5" }

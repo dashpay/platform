@@ -1,10 +1,9 @@
-const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
+const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRepositoryMock');
 
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
-
-const { default: loadWasmDpp } = require('../../../dist');
+const { default: loadWasmDpp } = require('../../..');
+const { getLatestProtocolVersion } = require('../../..');
 const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
 
 describe('StateTransitionFactory', function main() {
@@ -29,12 +28,12 @@ describe('StateTransitionFactory', function main() {
   });
 
   beforeEach(async function beforeEach() {
-    const dataContract = getDataContractFixture();
+    const dataContract = await getDataContractFixture();
 
     const rawDataContract = dataContract.toObject();
 
     stateTransition = new DataContractCreateTransition({
-      protocolVersion: protocolVersion.latestVersion,
+      protocolVersion: getLatestProtocolVersion(),
       dataContract: rawDataContract,
       entropy: dataContract.getEntropy(),
       signature: Buffer.alloc(65),

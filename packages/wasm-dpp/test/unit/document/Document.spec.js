@@ -4,12 +4,13 @@ const JsDocument = require('@dashevo/dpp/lib/document/Document');
 const DocumentCreateTransition = require(
   '@dashevo/dpp/lib/document/stateTransition/DocumentsBatchTransition/documentTransition/DocumentCreateTransition',
 );
-const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
+
 const createDPPMock = require('@dashevo/dpp/lib/test/mocks/createDPPMock');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
 const generateRandomIdentifierAsync = require('../../../lib/test/utils/generateRandomIdentifierAsync');
-const { default: loadWasmDpp } = require('../../../dist');
+const { default: loadWasmDpp } = require('../../..');
+const { getLatestProtocolVersion } = require('../../..');
 
 let DataContractFactory;
 let DataContractValidator;
@@ -80,7 +81,7 @@ describe('Document', () => {
     dataContractJs = jsDataContractFactory.create(jsOwnerId, rawDataContract);
 
     rawDocument = {
-      $protocolVersion: protocolVersion.latestVersion,
+      $protocolVersion: getLatestProtocolVersion(),
       $id: id,
       $type: 'test',
       $dataContractId: dataContract.getId(),
@@ -91,7 +92,7 @@ describe('Document', () => {
     };
 
     rawDocumentWithBuffers = {
-      $protocolVersion: protocolVersion.latestVersion,
+      $protocolVersion: getLatestProtocolVersion(),
       $id: id.toBuffer(),
       $type: 'test',
       $dataContractId: dataContract.getId().toBuffer(),

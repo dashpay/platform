@@ -583,7 +583,7 @@ describe('Platform', () => {
         });
       });
 
-      it('should receive masternode identities', async () => {
+      it.skip('should receive masternode identities', async () => {
         await client.platform.initialize();
 
         const bestBlockHash = await dapiClient.core.getBestBlockHash();
@@ -635,25 +635,28 @@ describe('Platform', () => {
             expect(fetchedIdentity).to.be.not.null();
           }
 
-          const publicKeyOwner = Buffer.from(transaction.extraPayload.keyIDOwner, 'hex').reverse();
-          const votingPubKeyHash = Buffer.from(transaction.extraPayload.keyIDVoting, 'hex').reverse();
-
-          if (!votingPubKeyHash.equals(publicKeyOwner)) {
-            const votingIdentityId = Identifier.from(
-              hash(
-                Buffer.concat([
-                  Buffer.from(masternodeEntry.proRegTxHash, 'hex'),
-                  votingPubKeyHash,
-                ]),
-              ),
-            );
-
-            fetchedIdentity = await client.platform.identities.get(
-              votingIdentityId,
-            );
-
-            expect(fetchedIdentity).to.be.not.null();
-          }
+          // TODO Enable when non-unique keys are supported
+          // const publicKeyOwner = Buffer.from(transaction.extraPayload.keyIDOwner, 'hex')
+          // .reverse();
+          // const votingPubKeyHash = Buffer.from(transaction.extraPayload.keyIDVoting,
+          // 'hex').reverse();
+          //
+          // if (!votingPubKeyHash.equals(publicKeyOwner)) {
+          //   const votingIdentityId = Identifier.from(
+          //     hash(
+          //       Buffer.concat([
+          //         Buffer.from(masternodeEntry.proRegTxHash, 'hex'),
+          //         votingPubKeyHash,
+          //       ]),
+          //     ),
+          //   );
+          //
+          //   fetchedIdentity = await client.platform.identities.get(
+          //     votingIdentityId,
+          //   );
+          //
+          //   expect(fetchedIdentity).to.be.not.null();
+          // }
         }
       });
     });

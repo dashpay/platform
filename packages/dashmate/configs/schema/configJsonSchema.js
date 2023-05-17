@@ -243,9 +243,35 @@ module.exports = {
           additionalProperties: false,
           required: ['name', 'minimumDifficultyBlocks', 'powTargetSpacing'],
         },
-        debug: {
-          type: 'integer',
-          enum: [0, 1],
+        log: {
+          type: 'object',
+          properties: {
+            file: {
+              type: 'object',
+              properties: {
+                categories: {
+                  type: 'array',
+                  uniqueItems: true,
+                  items: {
+                    type: 'string',
+                    enum: ['all', 'net', 'tor', 'mempool', 'http', 'bench', 'zmq', 'walletdb', 'rpc', 'estimatefee',
+                      'addrman', 'selectcoins', 'reindex', 'cmpctblock', 'rand', 'prune', 'proxy', 'mempoolrej',
+                      'libevent', 'coindb', 'qt', 'leveldb', 'chainlocks', 'gobject', 'instantsend', 'llmq',
+                      'llmq-dkg', 'llmq-sigs', 'mnpayments', 'mnsync', 'coinjoin', 'spork', 'netconn',
+                    ],
+                  },
+                },
+                path: {
+                  type: 'string',
+                  minLength: 1,
+                },
+              },
+              additionalProperties: false,
+              required: ['categories', 'path'],
+            },
+          },
+          additionalProperties: false,
+          required: ['file'],
         },
         logIps: {
           type: 'integer',
@@ -271,7 +297,7 @@ module.exports = {
         },
       },
       required: ['docker', 'p2p', 'rpc', 'spork', 'masternode', 'miner', 'devnet',
-        'debug', 'reindex', 'logIps', 'indexes'],
+        'log', 'reindex', 'logIps', 'indexes'],
       additionalProperties: false,
     },
     platform: {

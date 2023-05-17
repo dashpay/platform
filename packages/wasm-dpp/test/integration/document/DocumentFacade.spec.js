@@ -1,8 +1,8 @@
 const crypto = require('crypto');
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const generateRandomIdentifier = require('../../../lib/test/fixtures/js/generateRandomIdentifier');
+const getDataContractFixture = require('../../../lib/test/fixtures/js/getDataContractFixture');
+const getDocumentsFixture = require('../../../lib/test/fixtures/js/getDocumentsFixture');
+const createStateRepositoryMock = require('../../../lib/test/mocks/createStateRepositoryMock');
 const getDocumentTransitionsFixture = require('../../../lib/test/fixtures/getDocumentTransitionsFixture');
 
 const { default: loadWasmDpp } = require('../../../dist');

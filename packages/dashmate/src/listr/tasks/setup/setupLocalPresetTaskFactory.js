@@ -58,6 +58,7 @@ function setupLocalPresetTaskFactory(
 
               return true;
             },
+            result: (value) => Number(value),
           });
         },
       },
@@ -183,8 +184,11 @@ function setupLocalPresetTaskFactory(
                 config.set('docker.network.subnet', `172.24.${nodeIndex}.0/24`);
 
                 // Setup Core debug logs
+                const coreLogFilePath = path.join(HOME_DIR_PATH, 'logs', config.getName(), 'core.log');
+                config.set('core.log.file.path', coreLogFilePath);
+
                 if (ctx.debugLogs) {
-                  config.set('core.debug', 1);
+                  config.set('core.log.file.categories', ['all']);
                 }
 
                 // Although not all nodes are miners, all nodes should be aware of

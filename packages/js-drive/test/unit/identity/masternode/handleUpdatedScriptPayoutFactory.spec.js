@@ -3,7 +3,7 @@ const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
 const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 const {
-  Identity, IdentityPublicKey, KeyPurpose, KeyType, KeySecurityLevel,
+  Identity, IdentityPublicKey, KeyType,
 } = require('@dashevo/wasm-dpp');
 
 const Script = require('@dashevo/dashcore-lib/lib/script');
@@ -98,37 +98,39 @@ describe('handleUpdatedScriptPayoutFactory', () => {
       identity.getPublicKeys()[0].getData(),
     );
 
-    const newWithdrawalIdentityPublicKey = new IdentityPublicKey({
-      id: 2,
-      type: KeyType.ECDSA_HASH160,
-      data: Buffer.from(newPubKeyData),
-      readOnly: true,
-      purpose: KeyPurpose.WITHDRAW,
-      securityLevel: KeySecurityLevel.MASTER,
-    });
+    // TODO: Enable keys when we have support of non unique keys in DPP
+    // const newWithdrawalIdentityPublicKey = new IdentityPublicKey({
+    //   id: 2,
+    //   type: KeyType.ECDSA_HASH160,
+    //   data: Buffer.from(newPubKeyData),
+    //   readOnly: true,
+    //   purpose: KeyPurpose.WITHDRAW,
+    //   securityLevel: KeySecurityLevel.MASTER,
+    // });
 
-    expect(identityRepositoryMock.updateRevision).to.be.calledOnceWithExactly(
-      identity.getId(),
-      1,
-      blockInfo,
-      { useTransaction: true },
-    );
+    // expect(identityRepositoryMock.updateRevision).to.be.calledOnceWithExactly(
+    //   identity.getId(),
+    //   1,
+    //   blockInfo,
+    //   { useTransaction: true },
+    // );
 
-    expect(identityPublicKeyRepositoryMock.add).to.be.calledOnceWithExactly(
-      identity.getId(),
-      [newWithdrawalIdentityPublicKey],
-      blockInfo,
-      { useTransaction: true },
-    );
+    // expect(identityPublicKeyRepositoryMock.add).to.be.calledOnceWithExactly(
+    //   identity.getId(),
+    //   [newWithdrawalIdentityPublicKey],
+    //   blockInfo,
+    //   { useTransaction: true },
+    // );
 
-    expect(result.createdEntities).to.have.lengthOf(1);
+    // TODO: Enable keys when we have support of non unique keys in DPP
+    expect(result.createdEntities).to.have.lengthOf(0); // 1
     expect(result.updatedEntities).to.have.lengthOf(1);
     expect(result.removedEntities).to.have.lengthOf(0);
 
-    expect(result.createdEntities[0]).to.be.instanceOf(IdentityPublicKey);
-    expect(result.createdEntities[0].toObject()).to.deep.equal(
-      newWithdrawalIdentityPublicKey.toObject(),
-    );
+    // expect(result.createdEntities[0]).to.be.instanceOf(IdentityPublicKey);
+    // expect(result.createdEntities[0].toObject()).to.deep.equal(
+    //   newWithdrawalIdentityPublicKey.toObject(),
+    // );
 
     expect(result.updatedEntities[0]).to.be.instanceOf(Identity);
     expect(result.updatedEntities[0].toObject()).to.deep.equal(identity.toObject());
@@ -144,30 +146,31 @@ describe('handleUpdatedScriptPayoutFactory', () => {
       new Script(),
     );
 
-    const newWithdrawalIdentityPublicKey = new IdentityPublicKey({
-      id: 2,
-      type: KeyType.ECDSA_HASH160,
-      data: Buffer.from(newPubKeyData),
-      readOnly: true,
-      purpose: KeyPurpose.WITHDRAW,
-      securityLevel: KeySecurityLevel.MASTER,
-    });
+    // TODO: Enable keys when we have support of non unique keys in DPP
+    // const newWithdrawalIdentityPublicKey = new IdentityPublicKey({
+    //   id: 2,
+    //   type: KeyType.ECDSA_HASH160,
+    //   data: Buffer.from(newPubKeyData),
+    //   readOnly: true,
+    //   purpose: KeyPurpose.WITHDRAW,
+    //   securityLevel: KeySecurityLevel.MASTER,
+    // });
 
-    expect(identityRepositoryMock.updateRevision).to.be.calledOnceWithExactly(
-      identity.getId(),
-      1,
-      blockInfo,
-      { useTransaction: true },
-    );
+    // expect(identityRepositoryMock.updateRevision).to.be.calledOnceWithExactly(
+    //   identity.getId(),
+    //   1,
+    //   blockInfo,
+    //   { useTransaction: true },
+    // );
 
-    expect(identityPublicKeyRepositoryMock.add).to.be.calledOnceWithExactly(
-      identity.getId(),
-      [newWithdrawalIdentityPublicKey],
-      blockInfo,
-      { useTransaction: true },
-    );
+    // expect(identityPublicKeyRepositoryMock.add).to.be.calledOnceWithExactly(
+    //   identity.getId(),
+    //   [newWithdrawalIdentityPublicKey],
+    //   blockInfo,
+    //   { useTransaction: true },
+    // );
 
-    expect(result.createdEntities).to.have.lengthOf(1);
+    expect(result.createdEntities).to.have.lengthOf(0); // 1
     expect(result.updatedEntities).to.have.lengthOf(1);
     expect(result.removedEntities).to.have.lengthOf(0);
 

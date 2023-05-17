@@ -1,7 +1,7 @@
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
+const getDataContractFixture = require('../../../../../../../lib/test/fixtures/getDataContractFixture');
 
-const { default: loadWasmDpp } = require('../../../../../../../dist');
+const { default: loadWasmDpp } = require('../../../../../../..');
+const { getLatestProtocolVersion } = require('../../../../../../..');
 
 describe('validateDataContractUpdateTransitionStateFactory', () => {
   let validateDataContractUpdateTransitionState;
@@ -31,7 +31,7 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
   });
 
   beforeEach(async () => {
-    dataContract = getDataContractFixture();
+    dataContract = await getDataContractFixture();
 
     const updatedRawDataContract = dataContract.toObject();
 
@@ -39,7 +39,7 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
 
     stateTransition = new DataContractUpdateTransition({
       dataContract: updatedRawDataContract,
-      protocolVersion: protocolVersion.latestVersion,
+      protocolVersion: getLatestProtocolVersion(),
     });
 
     executionContext = new StateTransitionExecutionContext();
@@ -47,7 +47,7 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
     stateTransition.setExecutionContext(executionContext);
 
     const validator = new DataContractValidator();
-    const dataContractFactory = new DataContractFactory(protocolVersion.latestVersion, validator);
+    const dataContractFactory = new DataContractFactory(getLatestProtocolVersion(), validator);
     const wasmDataContract = await dataContractFactory.createFromBuffer(dataContract.toBuffer());
 
     const stateRepositoryLike = {
@@ -87,7 +87,7 @@ describe('validateDataContractUpdateTransitionStateFactory', () => {
 
     const badStateTransition = new DataContractUpdateTransition({
       dataContract: badlyUpdatedRawDataContract,
-      protocolVersion: protocolVersion.latestVersion,
+      protocolVersion: getLatestProtocolVersion(),
     });
 
     const result = await validateTransitionWithExistingContract(badStateTransition);

@@ -22,10 +22,17 @@ const {
   contractId: withdrawalsContractId,
 } = require('@dashevo/withdrawals-contract/lib/systemIds');
 
+const semver = require('semver');
+
 const {
   NETWORK_TESTNET,
   HOME_DIR_PATH,
 } = require('../../src/constants');
+
+const { version } = require('../../package.json');
+
+const prereleaseTag = semver.prerelease(version) === null ? '' : `-${semver.prerelease(version)[0]}`;
+const dockerImageVersion = `${semver.major(version)}.${semver.minor(version)}${prereleaseTag}`;
 
 module.exports = {
   description: 'base config for use as template',
@@ -37,7 +44,7 @@ module.exports = {
   },
   core: {
     docker: {
-      image: 'dashpay/dashd:19.0.0-rc.7',
+      image: 'dashpay/dashd:19.0.0',
     },
     p2p: {
       port: 9999,
@@ -71,7 +78,7 @@ module.exports = {
     },
     sentinel: {
       docker: {
-        image: 'dashpay/sentinel:1.7.1',
+        image: 'dashpay/sentinel:1.7.3',
       },
     },
     devnet: {
@@ -79,7 +86,12 @@ module.exports = {
       minimumDifficultyBlocks: 0,
       powTargetSpacing: 150,
     },
-    debug: 0,
+    log: {
+      file: {
+        categories: [],
+        path: path.join(HOME_DIR_PATH, 'logs', 'base', 'core.log'),
+      },
+    },
     logIps: 0,
     indexes: true,
     reindex: {
@@ -91,7 +103,7 @@ module.exports = {
     dapi: {
       envoy: {
         docker: {
-          image: 'dashpay/envoy:0.24-dev',
+          image: `dashpay/envoy:${dockerImageVersion}`,
         },
         http: {
           port: 443,
@@ -115,14 +127,14 @@ module.exports = {
       },
       api: {
         docker: {
-          image: 'dashpay/dapi:0.24.0-dev',
+          image: `dashpay/dapi:${dockerImageVersion}`,
         },
       },
     },
     drive: {
       abci: {
         docker: {
-          image: 'dashpay/drive:0.24.0-dev',
+          image: `dashpay/drive:${dockerImageVersion}`,
         },
         log: {
           stdout: {
@@ -143,7 +155,7 @@ module.exports = {
       },
       tenderdash: {
         docker: {
-          image: 'dashpay/tenderdash:0.11.0-dev.4',
+          image: 'dashpay/tenderdash:0.11.2',
         },
         p2p: {
           port: 26656,
@@ -233,7 +245,7 @@ module.exports = {
   dashmate: {
     helper: {
       docker: {
-        image: 'dashpay/dashmate-helper:0.24-dev',
+        image: `dashpay/dashmate-helper:${dockerImageVersion}`,
       },
       api: {
         enable: false,

@@ -1,8 +1,8 @@
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
-const getInstantAssetLockProofFixture = require('@dashevo/dpp/lib/test/fixtures/getInstantAssetLockProofFixture');
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const getInstantAssetLockProofFixture = require('../../../lib/test/fixtures/getInstantAssetLockProofFixture');
+const getIdentityFixture = require('../../../lib/test/fixtures/getIdentityFixture');
 const getChainAssetLockProofFixture = require('../../../lib/test/fixtures/getChainAssetLockProofFixture');
-const { default: loadWasmDpp } = require('../../../dist');
+const { default: loadWasmDpp } = require('../../..');
+const { IdentityPublicKey } = require('../../..');
 const getBlsAdapterMock = require('../../../lib/test/mocks/getBlsAdapterMock');
 
 describe('IdentityFactory', () => {
@@ -35,10 +35,10 @@ describe('IdentityFactory', () => {
   });
 
   beforeEach(async function () {
-    const instantAssetLockProofJS = getInstantAssetLockProofFixture();
-    const chainAssetLockProofJS = getChainAssetLockProofFixture();
-    instantAssetLockProof = new InstantAssetLockProof(instantAssetLockProofJS.toObject());
-    chainAssetLockProof = new ChainAssetLockProof(chainAssetLockProofJS.toObject());
+    // const instantAssetLockProofJS = ;
+    // const chainAssetLockProofJS = ;
+    instantAssetLockProof = await getInstantAssetLockProofFixture();
+    chainAssetLockProof = new ChainAssetLockProof(getChainAssetLockProofFixture().toObject());
 
     const blsAdapter = await getBlsAdapterMock();
 
@@ -49,7 +49,7 @@ describe('IdentityFactory', () => {
       identityValidator,
     );
 
-    const identityObject = getIdentityFixture().toObject();
+    const identityObject = (await getIdentityFixture()).toObject();
     identityObject.id = instantAssetLockProof.createIdentifier();
 
     identity = new Identity(identityObject);
@@ -191,8 +191,8 @@ describe('IdentityFactory', () => {
   });
 
   describe('createChainAssetLockProof', () => {
-    it('should create IdentityCreateTransition from Identity model', () => {
-      const identityObject = getIdentityFixture().toObject();
+    it('should create IdentityCreateTransition from Identity model', async () => {
+      const identityObject = (await getIdentityFixture()).toObject();
       identityObject.id = chainAssetLockProof.createIdentifier();
       identity = new Identity(identityObject);
       identity.setAssetLockProof(chainAssetLockProof);

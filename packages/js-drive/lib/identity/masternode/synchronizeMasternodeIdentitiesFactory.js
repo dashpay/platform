@@ -146,19 +146,19 @@ function synchronizeMasternodeIdentitiesFactory(
           result = mergeEntities(result, affectedEntities);
         }
 
-        const previousVotingMnEntry = previousMNList.find((previousMnListEntry) => (
-          previousMnListEntry.proRegTxHash === mnEntry.proRegTxHash
-          && previousMnListEntry.votingAddress !== mnEntry.votingAddress
-        ));
-
-        if (previousVotingMnEntry) {
-          const affectedEntities = await handleUpdatedVotingAddress(
-            mnEntry,
-            blockInfo,
-          );
-
-          result = mergeEntities(result, affectedEntities);
-        }
+        // const previousVotingMnEntry = previousMNList.find((previousMnListEntry) => (
+        //   previousMnListEntry.proRegTxHash === mnEntry.proRegTxHash
+        //   && previousMnListEntry.votingAddress !== mnEntry.votingAddress
+        // ));
+        //
+        // if (previousVotingMnEntry) {
+        //   const affectedEntities = await handleUpdatedVotingAddress(
+        //     mnEntry,
+        //     blockInfo,
+        //   );
+        //
+        //   result = mergeEntities(result, affectedEntities);
+        // }
 
         if (mnEntry.payoutAddress) {
           const mnEntryWithChangedPayoutAddress = previousMNList.find((previousMnListEntry) => (
