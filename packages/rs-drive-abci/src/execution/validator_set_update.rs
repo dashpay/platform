@@ -83,8 +83,9 @@ where
                         {
                             tracing::debug!(
                                 method = "validator_set_update",
-                                "rotation: to new quorum: {}",
-                                &quorum_hash
+                                "rotation: to new quorum: {} with {} members",
+                                &quorum_hash,
+                                new_quorum.validator_set.len()
                             );
                             block_execution_context
                                 .block_platform_state

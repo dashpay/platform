@@ -4,6 +4,8 @@ pub mod block_proposal;
 pub mod execution_event;
 /// A clean version of the the requst to finalize a block
 pub mod finalize_block_cleaned_request;
+/// Masternode methods
+pub mod masternode;
 /// Quorum methods
 pub mod quorum;
 /// Test quorum for mimic block execution

@@ -1,5 +1,7 @@
 use crate::error::Error;
+#[cfg(test)]
 use crate::execution::execution_event::ExecutionResult;
+#[cfg(test)]
 use crate::execution::execution_event::ExecutionResult::ConsensusExecutionError;
 use crate::platform::{Platform, PlatformRef};
 use crate::rpc::core::CoreRPCLike;
@@ -8,8 +10,11 @@ use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::serialization_traits::PlatformDeserializable;
 use dpp::state_transition::StateTransition;
-use dpp::validation::{SimpleConsensusValidationResult, ValidationResult};
+#[cfg(test)]
+use dpp::validation::SimpleConsensusValidationResult;
+use dpp::validation::ValidationResult;
 use drive::fee::result::FeeResult;
+#[cfg(test)]
 use drive::grovedb::Transaction;
 
 impl<C> Platform<C>
