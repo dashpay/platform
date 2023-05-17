@@ -110,17 +110,17 @@ class SetupCommand extends BaseCommand {
         },
       },
     ],
-    {
-      concurrent: false,
-      renderer: isVerbose ? 'verbose' : 'default',
-      rendererOptions: {
-        showTimer: isVerbose,
-        clearOutput: false,
-        collapse: false,
-        showSubtasks: true,
-        removeEmptyLines: false,
-      },
-    });
+      {
+        concurrent: false,
+        renderer: isVerbose ? 'verbose' : 'default',
+        rendererOptions: {
+          showTimer: isVerbose,
+          clearOutput: false,
+          collapse: false,
+          showSubtasks: true,
+          removeEmptyLines: false,
+        },
+      });
 
     if (!isVerbose) { // TODO: We need to print it only with default renderer
       // eslint-disable-next-line import/extensions

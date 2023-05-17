@@ -54,6 +54,8 @@ function resetNodeTaskFactory(
 
           const projectVolumeNames = await dockerCompose.getVolumeNames(config.toEnvs());
 
+          console.dir(projectVolumeNames);
+
           await Promise.all(
             projectVolumeNames
               .filter((volumeName) => !coreVolumeNames.includes(volumeName))

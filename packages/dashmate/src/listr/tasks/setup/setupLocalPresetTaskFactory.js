@@ -108,6 +108,8 @@ function setupLocalPresetTaskFactory(
 
           const hostDockerInternalIp = await resolveDockerHostIp();
 
+          console.log('got external ip', hostDockerInternalIp);
+
           const network = ctx.configGroup[0].get('network');
 
           const {
@@ -304,7 +306,9 @@ function setupLocalPresetTaskFactory(
           return new Listr(subTasks);
         },
       },
-    ]);
+    ], {
+      renderer: 'verbose',
+    });
   }
 
   return setupLocalPresetTask;

@@ -7,19 +7,29 @@ process.env.DASHMATE_HOME_DIR = path.resolve(os.tmpdir(), '.dashmate');
 const { asValue } = require('awilix');
 
 const createDIContainer = require('../../src/createDIContainer');
+const areServicesRunningFactory = require('../../src/test/areServicesRunningFactory');
+const services = require('../../src/test/constants/services');
 
 describe('Local HP Masternode', function main() {
-  this.timeout(100000);
+  this.timeout(30 * 60 * 1000); // 30 minutes
 
   let container;
   let setupLocalPresetTask;
+  let resetNodeTask;
+  let group;
+  let configFile;
+  let startGroupNodesTask;
+  let dockerCompose;
+  let areServicesRunning;
+
+  const groupName = 'local';
 
   before(async () => {
     container = await createDIContainer();
 
     const createSystemConfigs = container.resolve('createSystemConfigs');
 
-    const configFile = createSystemConfigs();
+    configFile = createSystemConfigs();
 
     container.register({
       configFile: asValue(configFile),
@@ -27,7 +37,7 @@ describe('Local HP Masternode', function main() {
 
     const defaultGroupName = configFile.getDefaultGroupName();
 
-    const group = configFile.getGroupConfigs(defaultGroupName);
+    group = configFile.getGroupConfigs(defaultGroupName);
 
     container.register({
       configGroup: asValue(group),
@@ -42,19 +52,51 @@ describe('Local HP Masternode', function main() {
     }
 
     setupLocalPresetTask = await container.resolve('setupLocalPresetTask');
-  });
+    resetNodeTask = await container.resolve('resetNodeTask');
+    startGroupNodesTask = await container.resolve('startGroupNodesTask');
 
-  after(async () => {
-    await fs.removeSync(process.env.DASHMATE_HOME_DIR, { recursive: true, force: true });
-  });
+    dockerCompose = await container.resolve('dockerCompose');
 
-  it('#setup', async () => {
-    const task = setupLocalPresetTask();
+    areServicesRunning = areServicesRunningFactory(group, dockerCompose, services);
 
-    await task.run({
+    const setupTask = setupLocalPresetTask();
+
+    await setupTask.run({
       nodeCount: 3,
       debugLogs: true,
       minerInterval: '2.5m',
+      isVerbose: true,
     });
+  });
+
+  after(async () => {
+    if (fs.existsSync(process.env.DASHMATE_HOME_DIR)) {
+      for (const config of group) {
+        const resetTask = resetNodeTask(config);
+
+        await resetTask.run({
+          isHardReset: false,
+          isForce: false,
+        });
+
+        await configFile.removeConfig(config.getName());
+      }
+    }
+  });
+
+  it('#setup', async () => {
+    const configExists = configFile.isGroupExists(groupName);
+
+    expect(configExists).to.be.true();
+  });
+
+  it('#start', async () => {
+    group = configFile.getGroupConfigs(groupName);
+
+    const task = startGroupNodesTask(group);
+
+    await task.run();
+
+    await areServicesRunning();
   });
 });
