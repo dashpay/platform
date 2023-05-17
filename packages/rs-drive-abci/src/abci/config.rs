@@ -63,42 +63,42 @@ pub struct Keys {
     // dpns contract
     /// hex-encoded
     #[serde_as(as = "serde_with::hex::Hex")]
-    dpns_master_public_key: Vec<u8>,
+    pub(crate) dpns_master_public_key: Vec<u8>,
     /// hex-encoded
     #[serde_as(as = "serde_with::hex::Hex")]
-    dpns_second_public_key: Vec<u8>,
+    pub(crate) dpns_second_public_key: Vec<u8>,
 
     // dashpay contract
     /// hex-encoded
     #[serde_as(as = "serde_with::hex::Hex")]
-    dashpay_master_public_key: Vec<u8>,
+    pub(crate) dashpay_master_public_key: Vec<u8>,
     /// hex-encoded
     #[serde_as(as = "serde_with::hex::Hex")]
-    dashpay_second_public_key: Vec<u8>,
+    pub(crate) dashpay_second_public_key: Vec<u8>,
 
     // feature flags contract
     /// hex-encoded
     #[serde_as(as = "serde_with::hex::Hex")]
-    feature_flags_master_public_key: Vec<u8>,
+    pub(crate) feature_flags_master_public_key: Vec<u8>,
     /// hex-encoded
     #[serde_as(as = "serde_with::hex::Hex")]
-    feature_flags_second_public_key: Vec<u8>,
+    pub(crate) feature_flags_second_public_key: Vec<u8>,
 
     // masternode reward shares contract
     /// hex-encoded
     #[serde_as(as = "serde_with::hex::Hex")]
-    masternode_reward_shares_master_public_key: Vec<u8>,
+    pub(crate) masternode_reward_shares_master_public_key: Vec<u8>,
     /// hex-encoded
     #[serde_as(as = "serde_with::hex::Hex")]
-    masternode_reward_shares_second_public_key: Vec<u8>,
+    pub(crate) masternode_reward_shares_second_public_key: Vec<u8>,
 
     // withdrawals contract
     /// hex-encoded
     #[serde_as(as = "serde_with::hex::Hex")]
-    withdrawals_master_public_key: Vec<u8>,
+    pub(crate) withdrawals_master_public_key: Vec<u8>,
     /// hex-encoded
     #[serde_as(as = "serde_with::hex::Hex")]
-    withdrawals_second_public_key: Vec<u8>,
+    pub(crate) withdrawals_second_public_key: Vec<u8>,
 }
 
 impl Keys {

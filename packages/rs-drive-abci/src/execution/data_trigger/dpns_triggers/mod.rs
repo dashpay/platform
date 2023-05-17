@@ -265,7 +265,7 @@ pub fn create_domain_data_trigger(
             equal_clauses: BTreeMap::from([(
                 "saltedDomainHash".to_string(),
                 WhereClause {
-                    field: "normalizedParentDomainName".to_string(),
+                    field: "saltedDomainHash".to_string(),
                     operator: WhereOperator::Equal,
                     value: Value::Bytes32(salted_domain_hash),
                 },
