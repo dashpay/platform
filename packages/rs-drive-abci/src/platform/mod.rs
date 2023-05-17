@@ -169,12 +169,7 @@ impl Platform<MockCoreRPCLike> {
             return Ok(false);
         };
 
-        let recreated_state: PlatformState =
-            ciborium::de::from_reader(serialized_platform_state.as_slice()).map_err(|e| {
-                SerializationError::CorruptedDeserialization(format!(
-                    "unable to decode PlatformState {e}"
-                ))
-            })?;
+        let recreated_state = PlatformState::deserialize(&serialized_platform_state)?;
 
         let mut state_cache = self.state.write().unwrap();
         *state_cache = recreated_state;
@@ -230,12 +225,7 @@ impl<C> Platform<C> {
     where
         C: CoreRPCLike,
     {
-        let platform_state: PlatformState =
-            ciborium::de::from_reader(serialized_platform_state.as_slice()).map_err(|_| {
-                SerializationError::CorruptedDeserialization(format!(
-                    "unable to decode PlatformState"
-                ))
-            })?;
+        let platform_state = PlatformState::deserialize(&serialized_platform_state)?;
 
         let platform: Platform<C> = Platform {
             drive,

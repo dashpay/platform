@@ -32,16 +32,8 @@ where
         platform_state: &PlatformState,
         transaction: &Transaction,
     ) -> Result<(), Error> {
-        let mut platform_state = platform_state.clone();
-        // we need to serialize the block info
-        let mut serialized_platform_state = vec![];
-        ciborium::ser::into_writer(&platform_state, &mut serialized_platform_state).map_err(
-            |_| {
-                SerializationError::CorruptedSerialization(format!(
-                    "unable to encode PlatformState as cbor"
-                ))
-            },
-        )?;
+        // we need to serialize the platform state
+        let serialized_platform_state = platform_state.serialize()?;
 
         // next we need to store this data in grovedb
         self.drive
