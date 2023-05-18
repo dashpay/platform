@@ -109,7 +109,6 @@ services:
     image: ${DASHMATE_HELPER_DOCKER_IMAGE:?err}
     restart: unless-stopped
     environment:
-      - DASHMATE_HOME_DIR=/home/dashmate/.dashmate
       - LOCAL_UID=${LOCAL_UID:?err}
       - LOCAL_GID=${LOCAL_GID:?err}
     ports:
