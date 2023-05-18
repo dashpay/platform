@@ -33,7 +33,7 @@ struct Cli {
     ///
     /// Repeat `v` multiple times to increase log verbosity:
     ///
-    /// * none     - `warn` unless overriden by RUST_LOG variable{n}
+    /// * none     - use RUST_LOG variable, default to `info`{n}
     /// * `-v`     - `info` from Drive, `error` from libraries{n}
     /// * `-vv`    - `debug` from Drive, `info` from libraries{n}
     /// * `-vvv`   - `debug` from all components{n}

@@ -1,5 +1,6 @@
 use std::fmt::Debug;
 use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -23,102 +24,60 @@ pub enum LogDestination {
     /// Standard out
     StdOut,
     /// File that is logrotated
-    RotationWriter(RotationWriter),
+    RotationWriter(Arc<Mutex<RotationWriter>>),
     #[cfg(test)]
     // Just some bytes, for testing
     Bytes(Arc<Mutex<Vec<u8>>>),
 }
 
-struct Writer<T>(Arc<Mutex<T>>);
+struct Writer<T>(Arc<Mutex<T>>)
+where
+    T: std::io::Write;
 
-impl<T: std::io::Write> std::io::Write for Writer<T> {
-    #[inline]
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.lock().expect("logging mutex poisoned").write(buf)
-    }
+// impl<T> From<T> for Writer<T>
+// where
+//     T: std::io::Write,
+// {
+//     fn from(value: T) -> Self {
+//         Self(Arc::new(Mutex::new(value)))
+//     }
+// }
 
-    #[inline]
-    fn flush(&mut self) -> std::io::Result<()> {
-        self.0.lock().expect("logging mutex poisoned").flush()
-    }
+impl<T> std::io::Write for Writer<T>
+where
+    T: std::io::Write,
+{
+    delegate::delegate! {
+        to self.0.lock().expect("logging mutex poisoned") {
+            #[inline]
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize>;
 
-    #[inline]
-    fn write_vectored(&mut self, bufs: &[std::io::IoSlice<'_>]) -> std::io::Result<usize> {
-        self.0
-            .lock()
-            .expect("logging mutex poisoned")
-            .write_vectored(bufs)
-    }
+            #[inline]
+            fn flush(&mut self) -> std::io::Result<()> ;
 
-    #[inline]
-    fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
-        self.0
-            .lock()
-            .expect("logging mutex poisoned")
-            .write_all(buf)
-    }
+            #[inline]
+            fn write_vectored(&mut self, bufs: &[std::io::IoSlice<'_>]) -> std::io::Result<usize>;
 
-    #[inline]
-    fn write_fmt(&mut self, fmt: std::fmt::Arguments<'_>) -> std::io::Result<()> {
-        self.0
-            .lock()
-            .expect("logging mutex poisoned")
-            .write_fmt(fmt)
+            #[inline]
+            fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()>;
+
+            #[inline]
+            fn write_fmt(&mut self, fmt: std::fmt::Arguments<'_>) -> std::io::Result<()>;
+        }
     }
 }
 
-// trait LogWriter {
-//     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize>;
-//     fn flush(&mut self) -> std::io::Result<()>;
-//     fn write_vectored(&mut self, bufs: &[std::io::IoSlice<'_>]) -> std::io::Result<usize>;
-//     fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()>;
-//     fn write_fmt(&mut self, fmt: std::fmt::Arguments<'_>) -> std::io::Result<()>;
-// }
-
-// impl<T: std::io::Write> LogWriter for Mutex<T> {
-//     #[inline]
-//     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-//         self.lock().expect("logging mutex poisoned").write(buf)
-//     }
-
-//     #[inline]
-//     fn flush(&mut self) -> std::io::Result<()> {
-//         self.lock().expect("logging mutex poisoned").flush()
-//     }
-
-//     #[inline]
-//     fn write_vectored(&mut self, bufs: &[std::io::IoSlice<'_>]) -> std::io::Result<usize> {
-//         self.lock()
-//             .expect("logging mutex poisoned")
-//             .write_vectored(bufs)
-//     }
-
-//     #[inline]
-//     fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
-//         self.lock().expect("logging mutex poisoned").write_all(buf)
-//     }
-
-//     #[inline]
-//     fn write_fmt(&mut self, fmt: std::fmt::Arguments<'_>) -> std::io::Result<()> {
-//         self.lock().expect("logging mutex poisoned").write_fmt(fmt)
-//     }
-// }
 impl LogDestination {
     fn to_writer(&self) -> Box<dyn std::io::Write> {
         let writer = match self {
             LogDestination::StdErr => Box::new(std::io::stderr()) as Box<dyn std::io::Write>,
             LogDestination::StdOut => Box::new(std::io::stdout()) as Box<dyn std::io::Write>,
+            LogDestination::RotationWriter(w) => Box::new(Writer(w.clone())),
             #[cfg(test)]
             LogDestination::Bytes(buf) => {
                 // let mut d = buf.lock().unwrap();
                 Box::new(Writer(buf.clone())) as Box<dyn std::io::Write>
             }
-            // LogDestination::RotationWriter(w) => {
-            //     let mut w = Arc::clone(w);
-            //     let mut w = w.lock().unwrap().inner;
-            //     Box::new(&mut w) as Self::Writer
-            // }
-            _ => todo!(),
         };
 
         writer
@@ -145,29 +104,23 @@ impl Debug for LogDestination {
 }
 
 impl std::io::Write for LogDestination {
-    #[inline]
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.to_writer().write(buf)
-    }
+    delegate::delegate! {
+        to self.to_writer() {
+            #[inline]
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> ;
 
-    #[inline]
-    fn flush(&mut self) -> std::io::Result<()> {
-        self.to_writer().flush()
-    }
+            #[inline]
+            fn flush(&mut self) -> std::io::Result<()> ;
 
-    #[inline]
-    fn write_vectored(&mut self, bufs: &[std::io::IoSlice<'_>]) -> std::io::Result<usize> {
-        self.to_writer().write_vectored(bufs)
-    }
+            #[inline]
+            fn write_vectored(&mut self, bufs: &[std::io::IoSlice<'_>]) -> std::io::Result<usize> ;
 
-    #[inline]
-    fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
-        self.to_writer().write_all(buf)
-    }
+            #[inline]
+            fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> ;
 
-    #[inline]
-    fn write_fmt(&mut self, fmt: std::fmt::Arguments<'_>) -> std::io::Result<()> {
-        self.to_writer().write_fmt(fmt)
+            #[inline]
+            fn write_fmt(&mut self, fmt: std::fmt::Arguments<'_>) -> std::io::Result<()> ;
+        }
     }
 }
 
@@ -176,15 +129,9 @@ pub struct RotationWriter {
     inner: file_rotate::FileRotate<AppendTimestamp>,
 }
 
-impl Debug for RotationWriter {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("RotationWriter")
-    }
-}
-
 impl RotationWriter {
     /// Create new rotating writer
-    pub fn new(path: &Path, max_files: usize) -> Self {
+    pub fn new(path: &PathBuf, max_files: usize) -> Self {
         let suffix_scheme = AppendTimestamp::default(FileLimit::MaxFiles(max_files));
         let content_limit = ContentLimit::Time(TimeFrequency::Daily);
         let compression = file_rotate::compression::Compression::OnRotate(2);
@@ -192,6 +139,32 @@ impl RotationWriter {
         let f = file_rotate::FileRotate::new(path, suffix_scheme, content_limit, compression, mode);
 
         Self { inner: f }
+    }
+}
+impl std::io::Write for RotationWriter {
+    delegate::delegate! {
+        to self.inner {
+            #[inline]
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize>;
+
+            #[inline]
+            fn flush(&mut self) -> std::io::Result<()> ;
+
+            #[inline]
+            fn write_vectored(&mut self, bufs: &[std::io::IoSlice<'_>]) -> std::io::Result<usize> ;
+
+            #[inline]
+            fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> ;
+
+            #[inline]
+            fn write_fmt(&mut self, fmt: std::fmt::Arguments<'_>) -> std::io::Result<()> ;
+        }
+    }
+}
+
+impl Debug for RotationWriter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("RotationWriter")
     }
 }
 
@@ -244,8 +217,6 @@ impl Logger {
         // let make_writer = { move || Writer(dest.clone()) };
         let make_writer = { move || Writer(Arc::clone(&cloned)) };
 
-        // let make_writer = self.destination.clone() as Arc<Mutex<dyn std::io::Write>>;
-        // let make_writer = *make_writer;
         let filter = self.env_filter();
         let formatter = fmt::layer::<S>().with_writer(make_writer).with_ansi(ansi);
 
@@ -268,6 +239,57 @@ impl Logger {
             _ => panic!("max verbosity level is 5"),
         }
     }
+}
+
+pub struct LogConfig {
+    /// Destination of logs; either absolute path to dir where log files will be stored, `stdout` or `stderr`
+    destination: String,
+    /// Verbosity level, 0 to 5; see `-v` option in `drive-abci --help` for more details.
+    verbosity: u8,
+    /// Whether or not to use colorful output; defaults to autodetect
+    color: Option<bool>,
+
+    /// Max number of daily files to store; only used when storing logs in file; defaults to 7
+    max_files: usize,
+}
+
+// TODO: move to correct place
+pub enum LogError {
+    Generic(String),
+}
+
+impl TryFrom<LogConfig> for Logger {
+    type Error = LogError;
+    fn try_from(config: LogConfig) -> Result<Self, Self::Error> {
+        let max_files = config.max_files;
+        let destination = match config.destination.as_str() {
+            "stdout" => LogDestination::StdOut,
+            "stderr" => LogDestination::StdErr,
+            path => {
+                let writer = RotationWriter::new(&PathBuf::from(path), max_files);
+                LogDestination::RotationWriter(Arc::new(Mutex::new(writer)))
+            }
+        };
+        let verbosity = config.verbosity;
+        let color = config.color;
+
+        Ok(Self {
+            destination: Arc::new(Mutex::new(destination)),
+            verbosity,
+            color,
+            max_files,
+        })
+    }
+}
+
+pub struct LogController {}
+
+impl LogController {
+    pub fn new() -> Self {
+        Self {}
+    }
+
+    pub fn add() {}
 }
 
 #[cfg(test)]
