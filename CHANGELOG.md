@@ -1,3 +1,16 @@
+### [0.24.4](https://github.com/dashpay/platform/compare/v0.24.3...v0.24.4) (2023-05-18)
+
+
+### Bug Fixes
+
+* **dashmate:** dashmate helper crashing ([#1072](https://github.com/dashpay/platform/issues/1072))
+* **dashmate:** unable to find compatible protocol ([#1102](https://github.com/dashpay/platform/issues/1102))
+
+
+### Continuous Integration
+
+* add a name to PR linter step ([#1103](https://github.com/dashpay/platform/issues/1103))
+
 ### [0.24.3](https://github.com/dashpay/platform/compare/v0.24.2...v0.24.3) (2023-05-16)
 
 
