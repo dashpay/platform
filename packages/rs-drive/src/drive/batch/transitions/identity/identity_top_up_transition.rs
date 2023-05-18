@@ -14,6 +14,7 @@ impl DriveHighLevelOperationConverter for IdentityTopUpTransitionAction {
         let IdentityTopUpTransitionAction {
             top_up_balance_amount,
             identity_id,
+            asset_lock_outpoint,
             ..
         } = self;
 
@@ -24,6 +25,9 @@ impl DriveHighLevelOperationConverter for IdentityTopUpTransitionAction {
             }),
             SystemOperation(SystemOperationType::AddToSystemCredits {
                 amount: top_up_balance_amount,
+            }),
+            SystemOperation(SystemOperationType::AddUsedAssetLock {
+                asset_lock_outpoint,
             }),
         ];
         Ok(drive_operations)
