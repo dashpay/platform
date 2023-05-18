@@ -227,7 +227,7 @@ mod tests {
     #[test]
     fn data_contract_create_ser_de() {
         let identity = Identity::random_identity(5, Some(5));
-        let mut data_contract = get_data_contract_fixture(Some(identity.id));
+        let data_contract = get_data_contract_fixture(Some(identity.id));
         let data_contract_create_transition = DataContractCreateTransition {
             protocol_version: LATEST_VERSION,
             transition_type: StateTransitionType::DataContractCreate,

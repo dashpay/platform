@@ -3,20 +3,31 @@ use crate::error::Error;
 use crate::execution::quorum::Quorum;
 use crate::rpc::core::QuorumListExtendedInfo;
 use dashcore_rpc::dashcore::{ProTxHash, QuorumHash};
-use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
+use dashcore_rpc::dashcore_rpc_json::{ExtendedQuorumDetails, MasternodeListItem};
 use dashcore_rpc::json::QuorumType;
 use dpp::block::block_info::ExtendedBlockInfo;
 use dpp::block::epoch::Epoch;
 
+use crate::execution::masternode::Masternode;
+use dpp::bincode::{config, Decode, Encode};
+use dpp::dashcore::hashes::Hash;
+use dpp::platform_serialization::{PlatformDeserialize, PlatformSerialize};
+use dpp::platform_value::Bytes32;
+use dpp::serialization_traits::{PlatformDeserializable, PlatformSerializable};
+use dpp::ProtocolError;
 use drive::dpp::util::deserializer::ProtocolVersion;
 use indexmap::IndexMap;
+
 use std::collections::{BTreeMap, HashMap};
 
 mod commit;
 mod genesis;
 
 /// Platform state
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PlatformSerialize, PlatformDeserialize)]
+#[platform_serialize_into(PlatformStateForSaving)]
+#[platform_deserialize_from(PlatformStateForSaving)]
+#[platform_error_type(ProtocolError)]
 pub struct PlatformState {
     /// Information about the last block
     pub last_committed_block_info: Option<ExtendedBlockInfo>,
@@ -45,8 +56,132 @@ pub struct PlatformState {
     pub initialization_information: Option<PlatformInitializationState>,
 }
 
+/// Platform state
+#[derive(Clone, Debug, Encode, Decode)]
+pub struct PlatformStateForSaving {
+    /// Information about the last block
+    pub last_committed_block_info: Option<ExtendedBlockInfo>,
+    /// Current Version
+    pub current_protocol_version_in_consensus: ProtocolVersion,
+    /// upcoming protocol version
+    pub next_epoch_protocol_version: ProtocolVersion,
+    /// current quorums
+    pub quorums_extended_info: Vec<(QuorumType, Vec<(Bytes32, ExtendedQuorumDetails)>)>,
+    /// current quorum
+    pub current_validator_set_quorum_hash: Bytes32,
+    /// next quorum
+    pub next_validator_set_quorum_hash: Option<Bytes32>,
+    /// current validator set quorums
+    /// The validator set quorums are a subset of the quorums, but they also contain the list of
+    /// all members
+    #[bincode(with_serde)]
+    pub validator_sets: Vec<(Bytes32, Quorum)>,
+
+    /// current full masternode list
+    pub full_masternode_list: BTreeMap<Bytes32, Masternode>,
+
+    /// current HPMN masternode list
+    pub hpmn_masternode_list: BTreeMap<Bytes32, Masternode>,
+
+    /// if we initialized the chain this block
+    pub initialization_information: Option<PlatformInitializationState>,
+}
+
+impl From<PlatformState> for PlatformStateForSaving {
+    fn from(value: PlatformState) -> Self {
+        PlatformStateForSaving {
+            last_committed_block_info: value.last_committed_block_info,
+            current_protocol_version_in_consensus: value.current_protocol_version_in_consensus,
+            next_epoch_protocol_version: value.next_epoch_protocol_version,
+            quorums_extended_info: value
+                .quorums_extended_info
+                .into_iter()
+                .map(|(quorum_type, quorum_extended_info)| {
+                    (
+                        quorum_type,
+                        quorum_extended_info
+                            .into_iter()
+                            .map(|(k, v)| (k.into_inner().into(), v))
+                            .collect(),
+                    )
+                })
+                .collect(),
+            current_validator_set_quorum_hash: value
+                .current_validator_set_quorum_hash
+                .into_inner()
+                .into(),
+            next_validator_set_quorum_hash: value
+                .next_validator_set_quorum_hash
+                .map(|quorum_hash| quorum_hash.into_inner().into()),
+            validator_sets: value
+                .validator_sets
+                .into_iter()
+                .map(|(k, v)| (k.into_inner().into(), v))
+                .collect(),
+            full_masternode_list: value
+                .full_masternode_list
+                .into_iter()
+                .map(|(k, v)| (k.into_inner().into(), v.into()))
+                .collect(),
+            hpmn_masternode_list: value
+                .hpmn_masternode_list
+                .into_iter()
+                .map(|(k, v)| (k.into_inner().into(), v.into()))
+                .collect(),
+            initialization_information: value.initialization_information,
+        }
+    }
+}
+
+impl TryFrom<PlatformStateForSaving> for PlatformState {
+    type Error = ProtocolError;
+
+    fn try_from(value: PlatformStateForSaving) -> Result<Self, Self::Error> {
+        Ok(PlatformState {
+            last_committed_block_info: value.last_committed_block_info,
+            current_protocol_version_in_consensus: value.current_protocol_version_in_consensus,
+            next_epoch_protocol_version: value.next_epoch_protocol_version,
+            quorums_extended_info: value
+                .quorums_extended_info
+                .into_iter()
+                .map(|(quorum_type, quorum_extended_info)| {
+                    (
+                        quorum_type,
+                        quorum_extended_info
+                            .into_iter()
+                            .map(|(k, v)| (QuorumHash::from_inner(k.to_buffer()), v))
+                            .collect(),
+                    )
+                })
+                .collect(),
+            current_validator_set_quorum_hash: QuorumHash::from_inner(
+                value.current_validator_set_quorum_hash.to_buffer(),
+            ),
+            next_validator_set_quorum_hash: value
+                .next_validator_set_quorum_hash
+                .map(|bytes| QuorumHash::from_inner(bytes.to_buffer())),
+            validator_sets: value
+                .validator_sets
+                .into_iter()
+                .map(|(k, v)| (QuorumHash::from_inner(k.to_buffer()), v))
+                .collect(),
+            full_masternode_list: value
+                .full_masternode_list
+                .into_iter()
+                .map(|(k, v)| (ProTxHash::from_inner(k.to_buffer()), v.into()))
+                .collect(),
+            hpmn_masternode_list: value
+                .hpmn_masternode_list
+                .into_iter()
+                .map(|(k, v)| (ProTxHash::from_inner(k.to_buffer()), v.into()))
+                .collect(),
+            initialization_information: value.initialization_information,
+        })
+    }
+}
+
 /// Platform state for the first block
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Encode, Decode)]
 pub struct PlatformInitializationState {
     /// Core initialization height
     pub core_initialization_height: u32,
