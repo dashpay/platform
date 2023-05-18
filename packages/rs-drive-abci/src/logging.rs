@@ -1,5 +1,4 @@
 use std::fmt::Debug;
-use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -8,16 +7,140 @@ use file_rotate::suffix::AppendTimestamp;
 use file_rotate::suffix::FileLimit;
 use file_rotate::ContentLimit;
 use file_rotate::TimeFrequency;
+use itertools::Itertools;
 use lazy_static::__Deref;
 use tracing::metadata::LevelFilter;
-use tracing::Subscriber;
 use tracing_subscriber::fmt;
+use tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt;
+use tracing_subscriber::registry;
+use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 use tracing_subscriber::Layer;
+use tracing_subscriber::Registry;
+
+/// Logging configuration.
+pub struct LogConfig {
+    /// Destination of logs; either absolute path to dir where log files will be stored, "stdout" or "stderr".
+    ///
+    /// For testing, use "bytes".
+    pub destination: String,
+    /// Verbosity level, 0 to 5; see `-v` option in `drive-abci --help` for more details.
+    pub verbosity: u8,
+    /// Whether or not to use colorful output; defaults to autodetect
+    pub color: Option<bool>,
+
+    /// Max number of daily files to store; only used when storing logs in file; defaults to 7
+    pub max_files: usize,
+}
+
+impl Default for LogConfig {
+    fn default() -> Self {
+        Self {
+            destination: String::from("stderr"),
+            verbosity: 0,
+            color: None,
+            max_files: 7,
+        }
+    }
+}
+
+/// Errors returned by logging subsystem
+#[derive(thiserror::Error, Debug)]
+pub enum Error {
+    /// File rotation error
+    #[error("file rotation: {0}")]
+    FileRotate(std::io::Error),
+
+    /// Invalid destination
+    #[error(
+        "invalid destination {0}: must be one of: stderr, stdout, or absolute path to a directory"
+    )]
+    InvalidDestination(String),
+
+    /// Log file path is invalid
+    #[error("log file path {0}: {1}")]
+    FilePath(PathBuf, String),
+}
+/// LogController is managing logging methods.
+pub struct LogController {
+    loggers: Vec<Logger>,
+}
+
+type LoggerID = usize;
+
+impl LogController {
+    /// Create new LogController
+    pub fn new() -> Self {
+        Self {
+            loggers: Vec::new(),
+        }
+    }
+
+    /// Add new logger to log controller.
+    ///
+    /// Returns ID of log controller.
+    pub fn add(&mut self, config: &LogConfig) -> Result<LoggerID, Error> {
+        let logger = Logger::try_from(config)?;
+        self.loggers.push(logger);
+        Ok(self.loggers.len() - 1)
+    }
+
+    /// Flush all loggers.
+    ///
+    /// Note that we ignore errors.
+    pub fn flush(&self) {
+        for logger in self.loggers.iter() {
+            logger
+                .destination
+                .clone()
+                .lock()
+                .expect("logging lock poisoned")
+                .to_writer()
+                .flush()
+                .ok();
+        }
+    }
+
+    /// Trigger log rotation.
+    ///
+    /// In case of multiple errors, we return error from last logger.
+    pub fn rotate(&self) -> Result<(), Error> {
+        let mut result: Result<(), Error> = Ok(());
+
+        for logger in self.loggers.iter() {
+            let logger = logger.destination.lock().expect("logging lock poisoned");
+
+            if let LogDestination::RotationWriter(writer) = logger.deref() {
+                if let Err(e) = writer.lock().expect("logging lock poisoned").inner.rotate() {
+                    result = Err(Error::FileRotate(e));
+                };
+            };
+        }
+        result
+    }
+
+    /// Initialize logging subsystem after finishing configuration.
+    ///
+    /// Panics if logging subsystem is already initialized.
+    pub fn finalize(&self) {
+        // Based on  examples from  https://docs.rs/tracing-subscriber/0.3.17/tracing_subscriber/layer/index.html
+        let loggers = self
+            .loggers
+            .iter()
+            .map(|l| Box::new(l.layer()))
+            .collect_vec();
+
+        registry().with(loggers).init();
+    }
+}
+
+//
+// NON-PUBLIC TYPES
+//
 
 /// Where to send logs
 #[derive(Default)]
-pub enum LogDestination {
+enum LogDestination {
     #[default]
     /// Standard error
     StdErr,
@@ -33,15 +156,6 @@ pub enum LogDestination {
 struct Writer<T>(Arc<Mutex<T>>)
 where
     T: std::io::Write;
-
-// impl<T> From<T> for Writer<T>
-// where
-//     T: std::io::Write,
-// {
-//     fn from(value: T) -> Self {
-//         Self(Arc::new(Mutex::new(value)))
-//     }
-// }
 
 impl<T> std::io::Write for Writer<T>
 where
@@ -74,17 +188,14 @@ impl LogDestination {
             LogDestination::StdOut => Box::new(std::io::stdout()) as Box<dyn std::io::Write>,
             LogDestination::RotationWriter(w) => Box::new(Writer(w.clone())),
             #[cfg(test)]
-            LogDestination::Bytes(buf) => {
-                // let mut d = buf.lock().unwrap();
-                Box::new(Writer(buf.clone())) as Box<dyn std::io::Write>
-            }
+            LogDestination::Bytes(buf) => Box::new(Writer(buf.clone())) as Box<dyn std::io::Write>,
         };
 
         writer
     }
 
     /// Return human-readable name of selected log destination
-    pub fn name(&self) -> String {
+    fn name(&self) -> String {
         let s = match self {
             LogDestination::StdOut => "stdout",
             LogDestination::StdErr => "stderr",
@@ -125,13 +236,13 @@ impl std::io::Write for LogDestination {
 }
 
 /// RotationWriter allows writing logs to a file that is automatically rotated
-pub struct RotationWriter {
+struct RotationWriter {
     inner: file_rotate::FileRotate<AppendTimestamp>,
 }
 
 impl RotationWriter {
     /// Create new rotating writer
-    pub fn new(path: &PathBuf, max_files: usize) -> Self {
+    fn new(path: &PathBuf, max_files: usize) -> Self {
         let suffix_scheme = AppendTimestamp::default(FileLimit::MaxFiles(max_files));
         let content_limit = ContentLimit::Time(TimeFrequency::Daily);
         let compression = file_rotate::compression::Compression::OnRotate(2);
@@ -141,6 +252,7 @@ impl RotationWriter {
         Self { inner: f }
     }
 }
+
 impl std::io::Write for RotationWriter {
     delegate::delegate! {
         to self.inner {
@@ -170,18 +282,52 @@ impl Debug for RotationWriter {
 
 /// Logger configuration
 #[derive(Debug)]
-pub struct Logger {
+struct Logger {
     /// Destination of logs; either absolute path to dir where log files will be stored, `stdout` or `stderr`
-    pub destination: Arc<Mutex<LogDestination>>,
+    destination: Arc<Mutex<LogDestination>>,
 
     /// Log verbosity level, number; see [super::Cli::verbose].
-    pub verbosity: u8,
+    verbosity: u8,
 
     /// Whether to use colored output
-    pub color: Option<bool>,
+    color: Option<bool>,
+}
 
-    /// Max number of files to keep; only applies to file destination
-    pub max_files: usize,
+impl TryFrom<&LogConfig> for Logger {
+    type Error = Error;
+    fn try_from(config: &LogConfig) -> Result<Self, Self::Error> {
+        let max_files = config.max_files;
+        let destination = match config.destination.as_str() {
+            "stdout" => LogDestination::StdOut,
+            "stderr" => LogDestination::StdErr,
+            #[cfg(test)]
+            "bytes" => LogDestination::Bytes(Arc::new(Mutex::new(Vec::<u8>::new()))),
+            dest => {
+                let path = PathBuf::from(dest);
+
+                if !path.is_absolute() {
+                    return Err(Error::InvalidDestination(dest.to_string()));
+                }
+                if !path.is_dir() {
+                    return Err(Error::FilePath(
+                        path,
+                        "Path must be an existing directory".into(),
+                    ));
+                }
+
+                let writer = RotationWriter::new(&PathBuf::from(path), max_files);
+                LogDestination::RotationWriter(Arc::new(Mutex::new(writer)))
+            }
+        };
+        let verbosity = config.verbosity;
+        let color = config.color;
+
+        Ok(Self {
+            destination: Arc::new(Mutex::new(destination)),
+            verbosity,
+            color,
+        })
+    }
 }
 
 impl Default for Logger {
@@ -190,7 +336,6 @@ impl Default for Logger {
             destination: Arc::new(Mutex::new(LogDestination::StdErr)),
             verbosity: 0,
             color: None,
-            max_files: 7,
         }
     }
 }
@@ -200,11 +345,12 @@ impl Default for Logger {
 //         L: Layer<Self>,
 //         Self: Sized,
 
+impl<S: tracing::Subscriber> Layer<S> for Logger {}
+
 impl Logger {
     /// Register the logger in a registry
-    pub fn layer<S: Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>>(
-        &self,
-    ) -> impl Layer<S> {
+    // : Subscriber + for<'a> tracing_subscriber::registry::LookupSpan<'a>
+    fn layer(&self) -> impl Layer<Registry> {
         let ansi = self
             .color
             .unwrap_or(match self.destination.lock().unwrap().deref() {
@@ -218,7 +364,9 @@ impl Logger {
         let make_writer = { move || Writer(Arc::clone(&cloned)) };
 
         let filter = self.env_filter();
-        let formatter = fmt::layer::<S>().with_writer(make_writer).with_ansi(ansi);
+        let formatter = fmt::layer::<Registry>()
+            .with_writer(make_writer)
+            .with_ansi(ansi);
 
         let layered = formatter.with_filter(filter);
 
@@ -226,7 +374,6 @@ impl Logger {
     }
 
     fn env_filter(&self) -> EnvFilter {
-        const default_logging: &str = "*=error,tenderdash_abci=warn,drive_abci=warn";
         match self.verbosity {
             0 => EnvFilter::builder()
                 .with_default_directive(LevelFilter::INFO.into())
@@ -241,104 +388,63 @@ impl Logger {
     }
 }
 
-pub struct LogConfig {
-    /// Destination of logs; either absolute path to dir where log files will be stored, `stdout` or `stderr`
-    destination: String,
-    /// Verbosity level, 0 to 5; see `-v` option in `drive-abci --help` for more details.
-    verbosity: u8,
-    /// Whether or not to use colorful output; defaults to autodetect
-    color: Option<bool>,
-
-    /// Max number of daily files to store; only used when storing logs in file; defaults to 7
-    max_files: usize,
-}
-
-// TODO: move to correct place
-pub enum LogError {
-    Generic(String),
-}
-
-impl TryFrom<LogConfig> for Logger {
-    type Error = LogError;
-    fn try_from(config: LogConfig) -> Result<Self, Self::Error> {
-        let max_files = config.max_files;
-        let destination = match config.destination.as_str() {
-            "stdout" => LogDestination::StdOut,
-            "stderr" => LogDestination::StdErr,
-            path => {
-                let writer = RotationWriter::new(&PathBuf::from(path), max_files);
-                LogDestination::RotationWriter(Arc::new(Mutex::new(writer)))
-            }
-        };
-        let verbosity = config.verbosity;
-        let color = config.color;
-
-        Ok(Self {
-            destination: Arc::new(Mutex::new(destination)),
-            verbosity,
-            color,
-            max_files,
-        })
-    }
-}
-
-pub struct LogController {}
-
-impl LogController {
-    pub fn new() -> Self {
-        Self {}
-    }
-
-    pub fn add() {}
-}
-
 #[cfg(test)]
 mod tests {
-    use std::str::from_utf8;
-
-    use tracing_subscriber::util::SubscriberInitExt;
-    use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, registry};
-
     use super::*;
+    use std::str::from_utf8;
 
     /// Test that two loggers can work independently, with different log levels.
     ///
     /// Note that, due to limitation of [tracing::subscriber::set_global_default()], we can only have one test.
     #[test]
     fn test_two_loggers_bytes() {
-        let buf_v0 = Arc::new(Mutex::new(Vec::<u8>::new()));
-        let logger_v0 = Logger {
-            destination: Arc::new(Mutex::new(super::LogDestination::Bytes(buf_v0.clone()))),
+        let mut logging = LogController::new();
+
+        let logger_v0 = LogConfig {
+            destination: "bytes".to_string(),
             verbosity: 0,
             ..Default::default()
         };
+        logging.add(&logger_v0).unwrap();
 
-        let buf_v4 = Arc::new(Mutex::new(Vec::<u8>::new()));
-        let logger_v4 = Logger {
-            destination: Arc::new(Mutex::new(super::LogDestination::Bytes(buf_v4.clone()))),
+        let logger_v4 = LogConfig {
+            destination: "bytes".to_string(),
             verbosity: 4,
             ..Default::default()
         };
+        logging.add(&logger_v4).unwrap();
 
-        registry()
-            .with(logger_v0.layer())
-            .with(logger_v4.layer())
-            .init();
+        // Get bytes from logger with verbosity 0
+        let dest = logging.loggers[0].destination.lock().unwrap();
+        let bytes_v0 = if let LogDestination::Bytes(b) = dest.deref() {
+            b.lock().unwrap().clone()
+        } else {
+            panic!("wrong type of log destination 0")
+        };
+        let bytes_v0 = from_utf8(bytes_v0.as_slice()).unwrap();
+
+        // Get bytes from logger with verbosity 4
+        let dest = logging.loggers[1].destination.lock().unwrap();
+        let bytes_v4 = if let LogDestination::Bytes(b) = dest.deref() {
+            b.lock().unwrap().clone()
+        } else {
+            panic!("wrong type of log destination 1")
+        };
+        let bytes_v4 = from_utf8(bytes_v4.as_slice()).unwrap();
 
         const TEST_STRING_DEBUG: &str = "testing debug trace";
         const TEST_STRING_ERROR: &str = "testing error trace";
         tracing::error!(TEST_STRING_ERROR);
         tracing::debug!(TEST_STRING_DEBUG);
 
-        let bytes_v0 = buf_v0.lock().unwrap();
-        let bytes_v0 = from_utf8(&bytes_v0).unwrap();
-        let bytes_v4 = buf_v4.lock().unwrap();
-        let bytes_v4 = from_utf8(&bytes_v4).unwrap();
+        // let bytes_v0 = from_utf8(&bytes_v0).unwrap();
+        // let bytes_v4 = buf_v4.lock().unwrap();
+        // let bytes_v4 = from_utf8(&bytes_v4).unwrap();
 
-        assert!(String::from(bytes_v0).contains(TEST_STRING_ERROR));
-        assert!(String::from(bytes_v4).contains(TEST_STRING_ERROR));
+        assert!(bytes_v0.contains(TEST_STRING_ERROR));
+        assert!(bytes_v4.contains(TEST_STRING_ERROR));
 
-        assert!(!String::from(bytes_v0).contains(TEST_STRING_DEBUG));
-        assert!(String::from(bytes_v4).contains(TEST_STRING_DEBUG));
+        assert!(!bytes_v0.contains(TEST_STRING_ERROR));
+        assert!(bytes_v4.contains(TEST_STRING_ERROR));
     }
 }

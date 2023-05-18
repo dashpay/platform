@@ -7,12 +7,9 @@ use drive_abci::config::{FromEnv, PlatformConfig};
 
 use drive_abci::rpc::core::DefaultCoreRPC;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 use tracing::warn;
-use tracing_log::LogTracer;
 
-mod logging;
-use logging::Logger;
+use drive_abci::logging::{LogConfig, LogController};
 
 // struct aaa {}
 
@@ -66,7 +63,7 @@ pub fn main() {
     let cli = Cli::parse();
     let config = load_config(&cli.config);
 
-    configure_logging(&cli);
+    configure_logging(&cli).expect("failed to configure logging");
 
     install_panic_hook();
 
@@ -115,19 +112,19 @@ fn load_config(path: &Option<PathBuf>) -> PlatformConfig {
     config.expect("cannot parse configuration file")
 }
 
-fn configure_logging(cli: &Cli) {
-    use tracing_subscriber::*;
+fn configure_logging(cli: &Cli) -> Result<LogController, drive_abci::logging::Error> {
+    let mut controller = LogController::new();
 
-    let stderr_config = Logger {
-        destination: Arc::new(Mutex::new(crate::logging::LogDestination::StdErr.into())),
+    let stderr_config = LogConfig {
+        destination: "stderr".to_string(),
         verbosity: cli.verbose,
         color: cli.color,
         ..Default::default()
     };
-    let mut registry = registry();
-    // let registry = stderr_config.register(&mut registry);
+    controller.add(&stderr_config)?;
+    controller.finalize();
 
-    LogTracer::init().expect("cannot initialize LogTracer");
+    Ok(controller)
 }
 
 /// Install panic hook to ensure that all panic logs are correctly formatted.

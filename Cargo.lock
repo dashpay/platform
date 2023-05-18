@@ -1189,7 +1189,6 @@ dependencies = [
  "tenderdash-abci",
  "thiserror",
  "tracing",
- "tracing-log",
  "tracing-subscriber",
 ]
 
@@ -3758,6 +3757,7 @@ dependencies = [
  "thread_local",
  "tracing",
  "tracing-core",
+ "tracing-log",
  "tracing-serde",
 ]
 
