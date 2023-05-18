@@ -65,9 +65,19 @@ GC Policy rule#0:
 
 ### Sccache
 
-[Sccache](https://github.com/mozilla/sccache) is an additional layer of caching that can be used to improve build speed. Sccache can cache build artifacts using multiple storage systems, like localfilesystem, Github Actions, S3 buckets, memcache, and others.
+[Sccache](https://github.com/mozilla/sccache) is an additional layer of caching that can be used to improve build speed. Sccache can cache build artifacts using multiple storage systems, like local filesystem, Github Actions, S3 buckets, memcache, and others.
 
 For local development in Docker, sccache uses Docker cache mounts. Alternative solution can be to use memcached daemon for caching.
+
+Sccache is disabled by default.
+
+#### Enabling sccache
+
+To enable sccache, set `RUSTC_WRAPPER=sccache` build argument when building the Docker image. For example:
+
+```bash
+docker buildx build --build-arg RUSTC_WRAPPER=sccache --target drive-abci .
+```
 
 #### Sccache and memcached
 
@@ -82,9 +92,10 @@ Replace `172.17.0.1` with IP address of the host running memcached accessible fr
 
 ##### Using memcache with Dashmate
 
-To use sccache an Before starting dashmate build, set `SCCACHE_MEMCACHED` to address of your memcache server:
+Before starting dashmate build, set `SCCACHE_MEMCACHED` to address of your memcache server:
 
 ```bash
+export RUSTC_WRAPPER=sccache
 export SCCACHE_MEMCACHED=tcp://172.17.0.1:11211
 ```
 

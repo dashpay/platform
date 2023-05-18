@@ -4,6 +4,8 @@
 #
 # This image is divided multiple parts:
 # - deps - includes all dependencies and some libraries
+# - depssccache - deps image with sccache included
+# - deps-bindgen-cli - includes wasm-bindgen-cli; built on top of either deps or deps-sccache
 # - sources - includes full source code
 # - build-* - actual build process of given image
 # - drive-abci, dashmate-helper, test-suite, dapi - final images
@@ -11,8 +13,9 @@
 # The following build arguments can be provided using --build-arg:
 # - CARGO_BUILD_PROFILE - set to `release` to build final binary, without debugging information
 # - NODE_ENV - node.js environment name to use to build the library
-# - SCCACHE_GHA_ENABLED, ACTIONS_CACHE_URL, ACTIONS_RUNTIME_TOKEN - store sccache caches inside github actions
-# - SCCACHE_MEMCACHED - set to memcache server URI (eg. tcp://172.17.0.1:11211) to enable sccache memcached backend
+# - RUSTC_WRAPPER - set to `sccache` to enable sccache support and make the following variables avaialable:
+#   - SCCACHE_GHA_ENABLED, ACTIONS_CACHE_URL, ACTIONS_RUNTIME_TOKEN - store sccache caches inside github actions
+#   - SCCACHE_MEMCACHED - set to memcache server URI (eg. tcp://172.17.0.1:11211) to enable sccache memcached backend
 # - ALPINE_VERSION - use different version of Alpine base image; requires also rust:apline...
 #   image to be available
 # - USERNAME, USER_UID, USER_GID - specification of user used to run the binary
@@ -27,6 +30,9 @@
 # SCCACHE_SERVER_PORT port to avoid conflicts in case of parallel compilation
 
 ARG ALPINE_VERSION=3.16
+
+# Set RUSTC_WRAPPER to `sccache` to enable sccache caching
+ARG RUSTC_WRAPPER
 
 #
 # DEPS: INSTALL AND CACHE DEPENDENCIES
@@ -73,13 +79,6 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else e
     rm /tmp/protoc.zip && \
     ln -s /opt/protoc/bin/protoc /usr/bin/
 
-# Install sccache for caching
-RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else export SCC_ARCH=x86_64; fi; \
-    curl -Ls \
-        https://github.com/mozilla/sccache/releases/download/v0.4.1/sccache-v0.4.1-${SCC_ARCH}-unknown-linux-musl.tar.gz | \
-        tar -C /tmp -xz && \
-        mv /tmp/sccache-*/sccache /usr/bin/
-
 # Configure Node.js
 RUN npm install -g npm@9.6.6 && \
     npm install -g corepack@latest && \
@@ -89,11 +88,28 @@ RUN npm install -g npm@9.6.6 && \
 # Switch to clang
 RUN rm /usr/bin/cc && ln -s /usr/bin/clang /usr/bin/cc
 
+
+# Select whether we want dev or release
+ARG CARGO_BUILD_PROFILE=dev
+ENV CARGO_BUILD_PROFILE ${CARGO_BUILD_PROFILE}
+
+ARG NODE_ENV=production
+ENV NODE_ENV ${NODE_ENV}
+
+ARG RUSTC_WRAPPER
+
+FROM deps AS depssccache
+
+# Install sccache for caching
+RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else export SCC_ARCH=x86_64; fi; \
+    curl -Ls \
+        https://github.com/mozilla/sccache/releases/download/v0.4.1/sccache-v0.4.1-${SCC_ARCH}-unknown-linux-musl.tar.gz | \
+        tar -C /tmp -xz && \
+        mv /tmp/sccache-*/sccache /usr/bin/
+
 #
 # Configure sccache
 #
-# Set RUSTC_WRAPPER to `sccache` to enable sccache caching
-ARG RUSTC_WRAPPER=
 # Set args below to use Github Actions cache; see https://github.com/mozilla/sccache/blob/main/docs/GHA.md
 ARG SCCACHE_GHA_ENABLED
 ARG ACTIONS_CACHE_URL
@@ -104,12 +120,11 @@ ARG SCCACHE_MEMCACHED
 # Disable incremental buildings, not supported by sccache
 ARG CARGO_INCREMENTAL=false
 
-# Select whether we want dev or release
-ARG CARGO_BUILD_PROFILE=dev
-ENV CARGO_BUILD_PROFILE ${CARGO_BUILD_PROFILE}
-
-ARG NODE_ENV=production
-ENV NODE_ENV ${NODE_ENV}
+#
+# DEPS-BINDGEN-CLI: ADD DEPS-BINDGEN-CLI TOOL
+#
+# This is separate from `deps` to use sccache for caching
+FROM deps${RUSTC_WRAPPER} AS deps-bindgen-cli
 
 # Install wasm-bindgen-cli in the same profile as other components, to sacrifice some performance & disk space to gain
 # better build caching
@@ -126,7 +141,7 @@ RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
 #
 # LOAD SOURCES
 #
-FROM deps as sources
+FROM deps-bindgen-cli as sources
 
 
 WORKDIR /platform
@@ -156,7 +171,8 @@ RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
         -p drive-abci \
        --config net.git-fetch-with-cli=true && \
     cp /platform/target/*/drive-abci /artifacts/drive-abci && \
-    sccache --show-stats
+    if [[ "${RUSTC_WRAPPER}" == "sccache" ]] ; then sccache --show-stats; fi
+
 
 #
 # STAGE: BUILD JAVASCRIPT INTERMEDIATE IMAGE
@@ -178,7 +194,7 @@ RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
     yarn install && \
     yarn build && \
     cp -R /platform/.yarn/unplugged /tmp/ && \
-    sccache --show-stats
+    if [[ "${RUSTC_WRAPPER}" == "sccache" ]]; then sccache --show-stats; fi
 
 #
 # STAGE: FINAL DRIVE-ABCI IMAGE
