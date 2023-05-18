@@ -214,7 +214,7 @@ impl Drive {
                                 equal_clauses: where_queries,
                             },
                             offset: None,
-                            limit: 0,
+                            limit: Some(1),
                             order_by: Default::default(),
                             start_at: None,
                             start_at_included: false,

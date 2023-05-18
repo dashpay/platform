@@ -285,7 +285,7 @@ pub struct DriveQuery<'a> {
     /// Offset
     pub offset: Option<u16>,
     /// Limit
-    pub limit: u16,
+    pub limit: Option<u16>,
     /// Order by
     pub order_by: IndexMap<String, OrderClause>,
     /// Start at
@@ -307,7 +307,7 @@ impl<'a> DriveQuery<'a> {
             document_type,
             internal_clauses: Default::default(),
             offset: None,
-            limit: 1,
+            limit: Some(1),
             order_by: Default::default(),
             start_at: None,
             start_at_included: true,
@@ -476,7 +476,7 @@ impl<'a> DriveQuery<'a> {
             document_type,
             internal_clauses,
             offset: None,
-            limit,
+            limit: Some(limit),
             order_by,
             start_at,
             start_at_included,
@@ -497,7 +497,7 @@ impl<'a> DriveQuery<'a> {
         document_type: &'a DocumentType,
         config: &DriveConfig,
     ) -> Result<Self, Error> {
-        let limit = maybe_limit
+        let _limit = maybe_limit
             .map_or(Some(config.default_query_limit), |limit_value| {
                 if limit_value == 0 || limit_value > config.default_query_limit {
                     None
@@ -557,7 +557,7 @@ impl<'a> DriveQuery<'a> {
             document_type,
             internal_clauses,
             offset: None,
-            limit,
+            limit: Some(1),
             order_by,
             start_at,
             start_at_included,
@@ -703,7 +703,7 @@ impl<'a> DriveQuery<'a> {
             document_type,
             internal_clauses,
             offset: None,
-            limit,
+            limit: Some(limit),
             order_by,
             start_at,
             start_at_included,
@@ -955,7 +955,7 @@ impl<'a> DriveQuery<'a> {
 
                 Ok(PathQuery::new(
                     path,
-                    SizedQuery::new(query, Some(self.limit), self.offset),
+                    SizedQuery::new(query, self.limit, self.offset),
                 ))
             } else {
                 // this is a range on all elements
@@ -995,7 +995,7 @@ impl<'a> DriveQuery<'a> {
 
                 Ok(PathQuery::new(
                     path,
-                    SizedQuery::new(query, Some(self.limit), self.offset),
+                    SizedQuery::new(query, self.limit, self.offset),
                 ))
             }
         }
@@ -1481,7 +1481,7 @@ impl<'a> DriveQuery<'a> {
 
         Ok(PathQuery::new(
             path,
-            SizedQuery::new(final_query, Some(self.limit), self.offset),
+            SizedQuery::new(final_query, self.limit, self.offset),
         ))
     }
 

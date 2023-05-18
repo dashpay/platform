@@ -16,12 +16,9 @@ use serde::Deserialize;
 use crate::errors::consensus::basic::state_transition::InvalidStateTransitionTypeErrorWasm;
 use crate::errors::protocol_error::from_protocol_error;
 use crate::errors::value_error::PlatformValueErrorWasm;
-use crate::state_transition::errors::invalid_state_transition_error::InvalidStateTransitionErrorWasm;
+
 use dpp::data_contract::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 
-use dpp::document::DocumentsBatchTransition;
-use dpp::ProtocolError;
-use dpp::ProtocolError::InvalidStateTransitionTypeError;
 use num_enum::TryFromPrimitiveError;
 use std::sync::Arc;
 use wasm_bindgen::prelude::*;
