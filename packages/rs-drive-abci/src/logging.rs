@@ -1,10 +1,8 @@
 use std::fmt::Debug;
-use std::ops::DerefMut;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use bytes::Bytes;
 use file_rotate::suffix::AppendTimestamp;
 use file_rotate::suffix::FileLimit;
 use file_rotate::ContentLimit;
@@ -26,7 +24,8 @@ pub enum LogDestination {
     StdOut,
     /// File that is logrotated
     RotationWriter(RotationWriter),
-    // Just some bytes
+    #[cfg(test)]
+    // Just some bytes, for testing
     Bytes(Arc<Mutex<Vec<u8>>>),
 }
 
@@ -109,14 +108,15 @@ impl LogDestination {
         let writer = match self {
             LogDestination::StdErr => Box::new(std::io::stderr()) as Box<dyn std::io::Write>,
             LogDestination::StdOut => Box::new(std::io::stdout()) as Box<dyn std::io::Write>,
+            #[cfg(test)]
+            LogDestination::Bytes(buf) => {
+                // let mut d = buf.lock().unwrap();
+                Box::new(Writer(buf.clone())) as Box<dyn std::io::Write>
+            }
             // LogDestination::RotationWriter(w) => {
             //     let mut w = Arc::clone(w);
             //     let mut w = w.lock().unwrap().inner;
             //     Box::new(&mut w) as Self::Writer
-            // }
-            // LogDestination::ByteBuffer(buf) => {
-            //     let b = buf.lock().expect("logging mux is poisoned").as_mut();
-            //     Box::new(Arc::clone(buf.lock().expect("logging mux is poisoned")))
             // }
             _ => todo!(),
         };
@@ -129,6 +129,7 @@ impl LogDestination {
         let s = match self {
             LogDestination::StdOut => "stdout",
             LogDestination::StdErr => "stderr",
+            #[cfg(test)]
             LogDestination::Bytes(_) => "ByteBuffer",
             LogDestination::RotationWriter(_) => "RotationWriter",
         };
@@ -271,55 +272,51 @@ impl Logger {
 
 #[cfg(test)]
 mod tests {
+    use std::str::from_utf8;
+
     use tracing_subscriber::util::SubscriberInitExt;
-    use tracing_subscriber::{
-        prelude::__tracing_subscriber_SubscriberExt, registry, FmtSubscriber, Registry,
-    };
+    use tracing_subscriber::{prelude::__tracing_subscriber_SubscriberExt, registry};
 
     use super::*;
+
+    /// Test that two loggers can work independently, with different log levels.
+    ///
+    /// Note that, due to limitation of [tracing::subscriber::set_global_default()], we can only have one test.
     #[test]
     fn test_two_loggers_bytes() {
-        let buf1 = Arc::new(Mutex::new(Vec::<u8>::new()));
-        let buf2 = Arc::new(Mutex::new(Vec::<u8>::new()));
-
-        let logger1 = Logger {
-            destination: Arc::new(Mutex::new(super::LogDestination::Bytes(buf1))),
-            ..Default::default()
-        };
-        let logger2 = Logger {
-            destination: Arc::new(Mutex::new(super::LogDestination::Bytes(buf2))),
+        let buf_v0 = Arc::new(Mutex::new(Vec::<u8>::new()));
+        let logger_v0 = Logger {
+            destination: Arc::new(Mutex::new(super::LogDestination::Bytes(buf_v0.clone()))),
+            verbosity: 0,
             ..Default::default()
         };
 
-        // let subscriber1 = logger1.subscriber::<Registry>();
-        // let subscriber2 = logger2.subscriber::<Registry>();
-
-        let r = registry();
-        r.with(logger1.layer()).with(logger2.layer()).init();
-
-        tracing::error!("testing error trace");
-    }
-
-    #[test]
-    fn test_stdout_stderr() {
-        let logger1 = Logger {
-            destination: Arc::new(Mutex::new(super::LogDestination::StdOut)),
-            verbosity: 1,
-            ..Default::default()
-        };
-        let logger2 = Logger {
-            destination: Arc::new(Mutex::new(super::LogDestination::StdErr)),
-            verbosity: 5,
+        let buf_v4 = Arc::new(Mutex::new(Vec::<u8>::new()));
+        let logger_v4 = Logger {
+            destination: Arc::new(Mutex::new(super::LogDestination::Bytes(buf_v4.clone()))),
+            verbosity: 4,
             ..Default::default()
         };
 
-        // let subscriber1 = logger1.subscriber::<Registry>();
-        // let subscriber2 = logger2.subscriber::<Registry>();
+        registry()
+            .with(logger_v0.layer())
+            .with(logger_v4.layer())
+            .init();
 
-        let r = registry();
-        r.with(logger1.layer()).with(logger2.layer()).init();
+        const TEST_STRING_DEBUG: &str = "testing debug trace";
+        const TEST_STRING_ERROR: &str = "testing error trace";
+        tracing::error!(TEST_STRING_ERROR);
+        tracing::debug!(TEST_STRING_DEBUG);
 
-        tracing::error!("testing error trace - should be visibe 2 times");
-        tracing::debug!("testing debug trace - should be visibe 1 time");
+        let bytes_v0 = buf_v0.lock().unwrap();
+        let bytes_v0 = from_utf8(&bytes_v0).unwrap();
+        let bytes_v4 = buf_v4.lock().unwrap();
+        let bytes_v4 = from_utf8(&bytes_v4).unwrap();
+
+        assert!(String::from(bytes_v0).contains(TEST_STRING_ERROR));
+        assert!(String::from(bytes_v4).contains(TEST_STRING_ERROR));
+
+        assert!(!String::from(bytes_v0).contains(TEST_STRING_DEBUG));
+        assert!(String::from(bytes_v4).contains(TEST_STRING_DEBUG));
     }
 }
