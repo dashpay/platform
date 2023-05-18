@@ -20,10 +20,6 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 15
     if: github.event_name != 'workflow_dispatch'
-    env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
-      CARGO_INCREMENTAL: "false"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -42,15 +38,9 @@ jobs:
       - name: Setup Cargo cache
         uses: Swatinem/rust-cache@v2
         with:
-          # Don't cache ./target, as it takes tons of space, use sccache instead.
-          cache-targets: false
+          cache-targets: true
           # We set a shared key, as our cache is reusable between jobs
           shared-key: rust-cargo
-
-      - name: Setup Rust compilation cache
-        uses: mozilla-actions/sccache-action@v0.0.3
-        with:
-          version: "v0.4.1"
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -114,10 +104,6 @@ jobs:
     name: Release Drive to Docker Hub
     runs-on: self-hosted
     timeout-minutes: 120
-    env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
-      CARGO_INCREMENTAL: "false"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -137,15 +123,9 @@ jobs:
       - name: Setup Cargo cache
         uses: Swatinem/rust-cache@v2
         with:
-          # Don't cache ./target, as it takes tons of space, use sccache instead.
-          cache-targets: false
+          cache-targets: true
           # We set a shared key, as our cache is reusable between jobs
           shared-key: rust-cargo
-
-      - name: Setup Rust compilation cache
-        uses: mozilla-actions/sccache-action@v0.0.3
-        with:
-          version: "v0.4.1"
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -243,10 +223,6 @@ jobs:
           push: true
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
-          build-args: |
-            SCCACHE_GHA_ENABLED=true
-            ACTIONS_CACHE_URL=${{ env.ACTIONS_CACHE_URL }}
-            ACTIONS_RUNTIME_TOKEN=${{ env.ACTIONS_RUNTIME_TOKEN }}
             CARGO_BUILD_PROFILE=release
           platforms: linux/amd64,linux/arm64
 
@@ -254,10 +230,6 @@ jobs:
     name: Release DAPI to Docker Hub
     runs-on: self-hosted
     timeout-minutes: 120
-    env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
-      CARGO_INCREMENTAL: "false"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -277,15 +249,9 @@ jobs:
       - name: Setup Cargo cache
         uses: Swatinem/rust-cache@v2
         with:
-          # Don't cache ./target, as it takes tons of space, use sccache instead.
-          cache-targets: false
+          cache-targets: true
           # We set a shared key, as our cache is reusable between jobs
           shared-key: rust-cargo
-
-      - name: Setup Rust compilation cache
-        uses: mozilla-actions/sccache-action@v0.0.3
-        with:
-          version: "v0.4.1"
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -386,25 +352,16 @@ jobs:
           labels: ${{ steps.docker_meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
           build-args: |
-            SCCACHE_GHA_ENABLED=true
-            ACTIONS_CACHE_URL=${{ env.ACTIONS_CACHE_URL }}
-            ACTIONS_RUNTIME_TOKEN=${{ env.ACTIONS_RUNTIME_TOKEN }}
             CARGO_BUILD_PROFILE=release
           cache-from: |
             type=gha
-          # In practice, time spent preparing images is much lower than build.
-          # We minimize cached info to leave more space for sccache cache.
           cache-to: |
-            type=gha,mode=min
+            type=gha,mode=max
 
   release-test-suite-docker-image:
     name: Release Test Suite to Docker Hub
     runs-on: self-hosted
     timeout-minutes: 120
-    env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
-      CARGO_INCREMENTAL: "false"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -424,15 +381,9 @@ jobs:
       - name: Setup Cargo cache
         uses: Swatinem/rust-cache@v2
         with:
-          # Don't cache ./target, as it takes tons of space, use sccache instead.
-          cache-targets: false
+          cache-targets: true
           # We set a shared key, as our cache is reusable between jobs
           shared-key: rust-cargo
-
-      - name: Setup Rust compilation cache
-        uses: mozilla-actions/sccache-action@v0.0.3
-        with:
-          version: "v0.4.1"
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -533,16 +484,11 @@ jobs:
           labels: ${{ steps.docker_meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
           build-args: |
-            SCCACHE_GHA_ENABLED=true
-            ACTIONS_CACHE_URL=${{ env.ACTIONS_CACHE_URL }}
-            ACTIONS_RUNTIME_TOKEN=${{ env.ACTIONS_RUNTIME_TOKEN }}
             CARGO_BUILD_PROFILE=release
           cache-from: |
             type=gha
-          # In practice, time spent preparing images is much lower than build.
-          # We minimize cached info to leave more space for sccache cache.
           cache-to: |
-            type=gha,mode=min
+            type=gha,mode=max
 
   release-envoy-docker-image:
     name: Release Envoy to Docker Hub
@@ -617,10 +563,6 @@ jobs:
     name: Release Dashmate helper to Docker Hub
     runs-on: self-hosted
     timeout-minutes: 60
-    env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
-      CARGO_INCREMENTAL: "false"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -634,8 +576,7 @@ jobs:
       - name: Setup Cargo cache
         uses: Swatinem/rust-cache@v2
         with:
-          # Don't cache ./target, as it takes tons of space, use sccache instead.
-          cache-targets: false
+          cache-targets: true
           # We set a shared key, as our cache is reusable between jobs
           shared-key: rust-cargo
 
@@ -644,11 +585,6 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Setup Rust compilation cache
-        uses: mozilla-actions/sccache-action@v0.0.3
-        with:
-          version: "v0.4.1"
 
       - name: Setup Node.JS
         uses: actions/setup-node@v3
@@ -749,9 +685,6 @@ jobs:
           labels: ${{ steps.docker_meta.outputs.labels }}
           platforms: linux/amd64,linux/arm64
           build-args: |
-            SCCACHE_GHA_ENABLED=true
-            ACTIONS_CACHE_URL=${{ env.ACTIONS_CACHE_URL }}
-            ACTIONS_RUNTIME_TOKEN=${{ env.ACTIONS_RUNTIME_TOKEN }}
             CARGO_BUILD_PROFILE=release
 
   release-dashmate:
@@ -770,10 +703,6 @@ jobs:
             os: ubuntu-22.04
           - package_type: macos
             os: macos-12
-    env:
-      SCCACHE_GHA_ENABLED: "true"
-      RUSTC_WRAPPER: "sccache"
-      CARGO_INCREMENTAL: "false"
     steps:
       - name: Check out repo
         uses: actions/checkout@v3
@@ -824,15 +753,9 @@ jobs:
       - name: Setup Cargo cache
         uses: Swatinem/rust-cache@v2
         with:
-          # Don't cache ./target, as it takes tons of space, use sccache instead.
-          cache-targets: false
+          cache-targets: true
           # We set a shared key, as our cache is reusable between jobs
           shared-key: rust-cargo
-
-      - name: Setup Rust compilation cache
-        uses: mozilla-actions/sccache-action@v0.0.3
-        with:
-          version: "v0.4.1"
 
       - name: Enable corepack
         run: corepack enable

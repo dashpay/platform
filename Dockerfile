@@ -92,8 +92,8 @@ RUN rm /usr/bin/cc && ln -s /usr/bin/clang /usr/bin/cc
 #
 # Configure sccache
 #
-# Activate sccache for Rust code
-ENV RUSTC_WRAPPER=/usr/bin/sccache
+# Set RUSTC_WRAPPER to `sccache` to enable sccache caching
+ARG RUSTC_WRAPPER=
 # Set args below to use Github Actions cache; see https://github.com/mozilla/sccache/blob/main/docs/GHA.md
 ARG SCCACHE_GHA_ENABLED
 ARG ACTIONS_CACHE_URL
