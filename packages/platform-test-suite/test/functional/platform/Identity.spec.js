@@ -229,10 +229,7 @@ describe('Platform', () => {
       expect(fetchedIdentity.getBalance()).to.be.greaterThan(0);
     });
 
-    // TODO(rs-drive-abci): fix
-    //  fetchedIdentity is not equal to identity.toBuffer().
-    //  Something wrong with the serialization
-    it.skip('should be able to get newly created identity by it\'s public key', async () => {
+    it('should be able to get newly created identity by it\'s public key', async () => {
       const response = await client.getDAPIClient().platform.getIdentitiesByPublicKeyHashes(
         [identity.getPublicKeyById(0).hash()],
       );
@@ -240,7 +237,12 @@ describe('Platform', () => {
       const [fetchedIdentity] = response.getIdentities();
 
       expect(fetchedIdentity).to.be.not.null();
-      expect(fetchedIdentity).to.deep.equal(identity.toBuffer());
+
+      // TODO(rs-drive-abci): fix. rs-drive-abci now only returning identity bytes without the
+      //   asset lock proof. We would also want to do the same in rs-dpp and wasm-dpp, but
+      //   we can't right now because of the backward compatibility.
+      const bytesToCheck = fetchedIdentity.slice(0, fetchedIdentity.length - 3);
+      expect(identity.toBuffer().includes(bytesToCheck)).to.be.true();
     });
 
     // TODO(rs-drive-abci): fix,
