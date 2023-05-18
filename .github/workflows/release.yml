@@ -208,7 +208,7 @@ jobs:
         id: docker_meta
         uses: docker/metadata-action@v4
         with:
-          images: dashpay/drive
+          images: dashpay/deps
           tags: |
             type=match,pattern=v(\d+),group=1,value=${{steps.tag.outputs.result}}
             type=match,pattern=v(\d+.\d+),group=1,value=${{steps.tag.outputs.result}}
@@ -236,7 +236,7 @@ jobs:
           context: .
           builder: ${{ steps.buildx.outputs.name }}
           file: ./Dockerfile
-          target: drive-abci
+          target: deps
           push: true
           tags: ${{ steps.docker_meta.outputs.tags }}
           labels: ${{ steps.docker_meta.outputs.labels }}
