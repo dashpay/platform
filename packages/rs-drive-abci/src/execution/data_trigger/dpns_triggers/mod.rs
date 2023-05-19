@@ -89,7 +89,11 @@ pub fn create_domain_data_trigger(
         .map_err(ProtocolError::ValueError)?;
 
     let mut result = DataTriggerExecutionResult::default();
-    let full_domain_name = normalized_label;
+    let full_domain_name = if normalized_parent_domain_name.is_empty() {
+        normalized_label.to_string()
+    } else {
+        format!("{normalized_label}.{normalized_parent_domain_name}")
+    };
 
     if !is_dry_run {
         if full_domain_name.len() > MAX_PRINTABLE_DOMAIN_NAME_LENGTH {
