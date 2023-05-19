@@ -6,6 +6,7 @@ use std::sync::Mutex;
 use file_rotate::suffix::AppendTimestamp;
 use file_rotate::suffix::FileLimit;
 use file_rotate::ContentLimit;
+use file_rotate::FileRotate;
 use file_rotate::TimeFrequency;
 use itertools::Itertools;
 use lazy_static::__Deref;
@@ -98,7 +99,7 @@ impl LogController {
                 .clone()
                 .lock()
                 .expect("logging lock poisoned")
-                .to_writer()
+                .to_write()
                 .flush()
                 .ok();
         }
@@ -114,7 +115,7 @@ impl LogController {
             let logger = logger.destination.lock().expect("logging lock poisoned");
 
             if let LogDestination::RotationWriter(writer) = logger.deref() {
-                if let Err(e) = writer.lock().expect("logging lock poisoned").inner.rotate() {
+                if let Err(e) = writer.0.lock().expect("logging lock poisoned").rotate() {
                     result = Err(Error::FileRotate(e));
                 };
             };
@@ -150,7 +151,7 @@ enum LogDestination {
     /// Standard out
     StdOut,
     /// File that is logrotated
-    RotationWriter(Arc<Mutex<RotationWriter>>),
+    RotationWriter(Writer<FileRotate<AppendTimestamp>>),
     #[cfg(test)]
     // Just some bytes, for testing
     Bytes(Arc<Mutex<Vec<u8>>>),
@@ -184,12 +185,24 @@ where
     }
 }
 
+impl<T: std::io::Write> From<T> for Writer<T> {
+    fn from(value: T) -> Self {
+        Self(Arc::new(Mutex::new(value)))
+    }
+}
+
+impl<T: std::io::Write> Clone for Writer<T> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
 impl LogDestination {
-    fn to_writer(&self) -> Box<dyn std::io::Write> {
+    fn to_write(&self) -> Box<dyn std::io::Write> {
         let writer = match self {
             LogDestination::StdErr => Box::new(std::io::stderr()) as Box<dyn std::io::Write>,
             LogDestination::StdOut => Box::new(std::io::stdout()) as Box<dyn std::io::Write>,
-            LogDestination::RotationWriter(w) => Box::new(Writer(Arc::clone(w))),
+            LogDestination::RotationWriter(w) => Box::new(w.clone()) as Box<dyn std::io::Write>,
             #[cfg(test)]
             LogDestination::Bytes(buf) => Box::new(Writer(buf.clone())) as Box<dyn std::io::Write>,
         };
@@ -219,7 +232,7 @@ impl Debug for LogDestination {
 
 impl std::io::Write for LogDestination {
     delegate::delegate! {
-        to self.to_writer() {
+        to self.to_write() {
             #[inline]
             fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> ;
 
@@ -239,49 +252,88 @@ impl std::io::Write for LogDestination {
 }
 
 /// RotationWriter allows writing logs to a file that is automatically rotated
-struct RotationWriter {
-    inner: file_rotate::FileRotate<AppendTimestamp>,
-}
+// struct RotationWriter {
+//     inner: file_rotate::FileRotate<AppendTimestamp>,
+// }
 
-impl RotationWriter {
-    /// Create new rotating writer
-    fn new(path: &PathBuf, max_files: usize) -> Self {
-        let suffix_scheme = AppendTimestamp::default(FileLimit::MaxFiles(max_files));
+impl TryFrom<&LogConfig> for file_rotate::FileRotate<AppendTimestamp> {
+    type Error = Error;
+    fn try_from(config: &LogConfig) -> Result<Self, Self::Error> {
+        let suffix_scheme = AppendTimestamp::default(FileLimit::MaxFiles(config.max_files));
         let content_limit = ContentLimit::Time(TimeFrequency::Daily);
         let compression = file_rotate::compression::Compression::OnRotate(2);
         let mode = Some(0o600);
-        let f = file_rotate::FileRotate::new(path, suffix_scheme, content_limit, compression, mode);
-
-        Self { inner: f }
-    }
-}
-
-impl std::io::Write for RotationWriter {
-    delegate::delegate! {
-        to self.inner {
-            #[inline]
-            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize>;
-
-            #[inline]
-            fn flush(&mut self) -> std::io::Result<()> ;
-
-            #[inline]
-            fn write_vectored(&mut self, bufs: &[std::io::IoSlice<'_>]) -> std::io::Result<usize> ;
-
-            #[inline]
-            fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> ;
-
-            #[inline]
-            fn write_fmt(&mut self, fmt: std::fmt::Arguments<'_>) -> std::io::Result<()> ;
+        let path = PathBuf::from(config.destination.clone());
+        if !path.is_absolute() {
+            return Err(Error::FilePath(
+                path,
+                "log path must be absolute".to_string(),
+            ));
         }
+        if !path.is_dir() {
+            return Err(Error::FilePath(
+                path,
+                "log path must be an existing directory".to_string(),
+            ));
+        }
+
+        let f = file_rotate::FileRotate::new(
+            path.join("drive-abci.log"),
+            suffix_scheme,
+            content_limit,
+            compression,
+            mode,
+        );
+
+        Ok(f)
     }
 }
 
-impl Debug for RotationWriter {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("RotationWriter")
-    }
-}
+// impl RotationWriter {
+//     /// Create new rotating writer
+//     fn new(path: &PathBuf, max_files: usize) -> Self {
+//         let suffix_scheme = AppendTimestamp::default(FileLimit::MaxFiles(max_files));
+//         let content_limit = ContentLimit::Time(TimeFrequency::Daily);
+//         let compression = file_rotate::compression::Compression::OnRotate(2);
+//         let mode = Some(0o600);
+//         let f = file_rotate::FileRotate::new(
+//             path.join("drive-abci.log"),
+//             suffix_scheme,
+//             content_limit,
+//             compression,
+//             mode,
+//         );
+
+//         Self { inner: f }
+//     }
+// }
+
+// impl std::io::Write for RotationWriter {
+//     delegate::delegate! {
+//         to self.inner {
+//             #[inline]
+//             fn write(&mut self, buf: &[u8]) -> std::io::Result<usize>;
+
+//             #[inline]
+//             fn flush(&mut self) -> std::io::Result<()> ;
+
+//             #[inline]
+//             fn write_vectored(&mut self, bufs: &[std::io::IoSlice<'_>]) -> std::io::Result<usize> ;
+
+//             #[inline]
+//             fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> ;
+
+//             #[inline]
+//             fn write_fmt(&mut self, fmt: std::fmt::Arguments<'_>) -> std::io::Result<()> ;
+//         }
+//     }
+// }
+
+// impl Debug for RotationWriter {
+//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//         f.write_str("RotationWriter")
+//     }
+// }
 
 /// Logger configuration
 #[derive(Debug)]
@@ -299,7 +351,6 @@ struct Logger {
 impl TryFrom<&LogConfig> for Logger {
     type Error = Error;
     fn try_from(config: &LogConfig) -> Result<Self, Self::Error> {
-        let max_files = config.max_files;
         let destination = match config.destination.as_str() {
             "stdout" => LogDestination::StdOut,
             "stderr" => LogDestination::StdErr,
@@ -311,15 +362,10 @@ impl TryFrom<&LogConfig> for Logger {
                 if !path.is_absolute() {
                     return Err(Error::InvalidDestination(dest.to_string()));
                 }
-                if !path.is_dir() {
-                    return Err(Error::FilePath(
-                        path,
-                        "Path must be an existing directory".into(),
-                    ));
-                }
 
-                let writer = RotationWriter::new(&PathBuf::from(path), max_files);
-                LogDestination::RotationWriter(Arc::new(Mutex::new(writer)))
+                let file: FileRotate<AppendTimestamp> = FileRotate::try_from(config)?;
+                let writer = Writer::from(file);
+                LogDestination::RotationWriter(writer)
             }
         };
         let verbosity = config.verbosity;
@@ -396,19 +442,32 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
-    use std::{io::Write, ops::DerefMut, str::from_utf8};
+    use std::str::from_utf8;
 
+    /// dest_bytes reads bytes from provided destination.
+    ///
+    /// Only [LogDestination::Bytes] and [LogDestination::RotationWriter] are supported.
+    ///
+    /// Contract: LogDestination::RotationWriter was rotated
     fn dest_bytes(dest: Arc<Mutex<LogDestination>>) -> String {
         let dest = dest.lock().unwrap();
-        let bytes_v0 = if let LogDestination::Bytes(b) = dest.deref() {
-            let guard = b.lock().unwrap();
-            let b = guard.clone();
-            b
-        } else {
-            panic!("wrong type of log destination 0")
-        };
+        match dest.deref() {
+            LogDestination::Bytes(b) => {
+                let guard = b.lock().unwrap();
+                let b = guard.clone();
 
-        from_utf8(bytes_v0.as_slice()).unwrap().to_string()
+                from_utf8(b.as_slice()).unwrap().to_string()
+            }
+            LogDestination::RotationWriter(w) => {
+                let mut guard = w.0.lock().unwrap();
+                let paths = guard.log_paths();
+                println!("log paths: {:?}", paths);
+
+                let path = paths.get(0).expect("exactly one path excepted");
+                std::fs::read_to_string(path).unwrap()
+            }
+            _ => todo!(),
+        }
     }
 
     /// Test that two loggers can work independently, with different log levels.
@@ -466,37 +525,24 @@ mod tests {
         tracing::error!(TEST_STRING_ERROR);
         tracing::debug!(TEST_STRING_DEBUG);
 
+        logging.flush();
+        logging.rotate().unwrap();
         // CHECK ASSERTIONS
 
-        let result_verbosity_0 = dest_bytes(logging.loggers[2].destination.clone());
-        let result_verbosity_4 = dest_bytes(logging.loggers[3].destination.clone());
+        let result_verb_0 = dest_bytes(logging.loggers[2].destination.clone());
+        let result_verb_4 = dest_bytes(logging.loggers[3].destination.clone());
+        let result_dir_verb_0 = dest_bytes(logging.loggers[4].destination.clone());
 
-        println!("{:?}", result_verbosity_0);
-        println!("{:?}", result_verbosity_4);
+        println!("{:?}", result_verb_0);
+        println!("{:?}", result_verb_4);
         println!("Dest dir: {:?}", dir_v0);
 
-        assert!(result_verbosity_0.contains(TEST_STRING_ERROR));
-        assert!(result_verbosity_4.contains(TEST_STRING_ERROR));
+        assert!(result_verb_0.contains(TEST_STRING_ERROR));
+        assert!(result_dir_verb_0.contains(TEST_STRING_ERROR));
+        assert!(result_verb_4.contains(TEST_STRING_ERROR));
 
-        assert!(!result_verbosity_0.contains(TEST_STRING_DEBUG));
-        assert!(result_verbosity_4.contains(TEST_STRING_DEBUG));
-
-        if let LogDestination::RotationWriter(w) = logging.loggers[4]
-            .destination
-            .clone()
-            .lock()
-            .unwrap()
-            .deref()
-        {
-            let c = w.clone();
-            let mut w = c.lock().unwrap();
-            let mut cloned = w.deref_mut();
-            cloned.write_all("test\n".as_bytes()).unwrap();
-            println!("{:?}", cloned.inner.log_paths())
-        } else {
-            panic!("not a rotation writer")
-        }
-
-        // std::thread::sleep(std::time::Duration::from_secs(30));
+        assert!(!result_verb_0.contains(TEST_STRING_DEBUG));
+        assert!(!result_dir_verb_0.contains(TEST_STRING_DEBUG));
+        assert!(result_verb_4.contains(TEST_STRING_DEBUG));
     }
 }
