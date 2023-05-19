@@ -116,16 +116,12 @@ ENV NODE_ENV ${NODE_ENV}
 # better build caching
 WORKDIR /platform
 
-RUN echo "bust cache 22"
+RUN echo "bust cache 25"
 RUN --mount=type=cache,sharing=shared,id=cargo_registry,target=/usr/local/cargo/registry \
     --mount=type=cache,sharing=shared,id=cargo_git,target=/usr/local/cargo/git \
     --mount=type=cache,sharing=shared,id=target,target=/platform/target \
-    tree -L 4 /usr/local/cargo || true&& \
-    tree -L 4 /platform/target || true&& \
     CARGO_TARGET_DIR=/platform/target \
-    cargo install --profile "$CARGO_BUILD_PROFILE" wasm-bindgen-cli@0.2.84 && \
-    tree -L 4 /usr/local/cargo && \
-    tree -L 4 /platform/target
+    cargo install --profile "$CARGO_BUILD_PROFILE" wasm-bindgen-cli@0.2.84
 
 
 #
@@ -148,20 +144,15 @@ RUN yarn config set enableInlineBuilds true
 FROM sources AS build-drive-abci
 
 RUN mkdir /artifacts
-RUN echo "bust cache 19"
+RUN echo "bust cache 23"
 RUN --mount=type=cache,sharing=shared,id=cargo_registry,target=/usr/local/cargo/registry \
     --mount=type=cache,sharing=shared,id=cargo_git,target=/usr/local/cargo/git \
     --mount=type=cache,sharing=shared,id=target,target=/platform/target \
-    tree -L 4 /usr/local/cargo || true && \
-    tree -L 4 /platform/target || true && \
     cargo build \
       --profile "$CARGO_BUILD_PROFILE" \
       --package drive-abci \
       --config net.git-fetch-with-cli=true && \
-    cp /platform/target/*/drive-abci /artifacts/drive-abci && \
-    tree -L 4 /usr/local/cargo && \
-    tree -L 4 /platform/target && \
-    tree /artifacts
+    cp /platform/target/*/drive-abci /artifacts/drive-abci
 
 #
 # STAGE: BUILD JAVASCRIPT INTERMEDIATE IMAGE
