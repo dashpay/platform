@@ -2251,6 +2251,117 @@ fn test_family_basic_queries() {
 
 #[cfg(feature = "full")]
 #[test]
+fn test_family_person_update() {
+    let (drive, contract) = setup_family_tests(10, 73509);
+
+    let db_transaction = drive.grove.start_transaction();
+
+    let mut rng = rand::rngs::StdRng::seed_from_u64(84594);
+    let id_bytes = bs58::decode("ATxXeP5AvY4aeUFA6WRo7uaBKTBgPQCjTrgtNpCMNVRD")
+        .into_vec()
+        .expect("this should decode");
+
+    let owner_id_bytes = bs58::decode("BYR3zJgXDuz1BYAkEagwSjVqTcE1gbqEojd6RwAGuMzj")
+        .into_vec()
+        .expect("this should decode");
+
+    let fixed_person = Person {
+        id: id_bytes.clone(),
+        owner_id: owner_id_bytes.clone(),
+        first_name: String::from("Wisdom"),
+        middle_name: String::from("Madman"),
+        last_name: String::from("Ogwu"),
+        age: rng.gen_range(0..85),
+    };
+    let serialized_person = serde_json::to_value(fixed_person).expect("serialized person");
+    let person_cbor = cbor_serializer::serializable_value_to_cbor(
+        &serialized_person,
+        Some(drive::drive::defaults::PROTOCOL_VERSION),
+    )
+        .expect("expected to serialize to cbor");
+    let document = Document::from_cbor(person_cbor.as_slice(), None, None)
+        .expect("document should be properly deserialized");
+
+    let document_type = contract
+        .document_type_for_name("person")
+        .expect("expected to get document type");
+
+    let storage_flags = Some(Cow::Owned(StorageFlags::SingleEpoch(0)));
+
+    drive
+        .add_document_for_contract(
+            DocumentAndContractInfo {
+                owned_document_info: OwnedDocumentInfo {
+                    document_info: DocumentRefInfo((&document, storage_flags)),
+                    owner_id: None,
+                },
+                contract: &contract,
+                document_type,
+            },
+            true,
+            BlockInfo::genesis(),
+            true,
+            Some(&db_transaction),
+        )
+        .expect("document should be inserted");
+
+
+    let updated_fixed_person = Person {
+        id: id_bytes,
+        owner_id: owner_id_bytes,
+        first_name: String::from("Wisdom"),
+        middle_name: String::from("Madabuchukwu"),
+        last_name: String::from("Ogwu"),
+        age: rng.gen_range(0..85),
+    };
+    let serialized_person = serde_json::to_value(updated_fixed_person).expect("serialized person");
+    let person_cbor = cbor_serializer::serializable_value_to_cbor(
+        &serialized_person,
+        Some(drive::drive::defaults::PROTOCOL_VERSION),
+    )
+        .expect("expected to serialize to cbor");
+    let document = Document::from_cbor(person_cbor.as_slice(), None, None)
+        .expect("document should be properly deserialized");
+
+    let fee = drive.update_document_for_contract(&document, &contract, &document_type, None, BlockInfo::genesis(), true, None,             Some(&db_transaction)).expect("expected to override document");
+    assert!(fee.storage_fee > 0);
+
+    let query_value = json!({
+        "where": [
+            ["firstName", "==", "Wisdom"]
+        ],
+        "limit": 1,
+    });
+    let where_cbor = cbor_serializer::serializable_value_to_cbor(&query_value, None)
+        .expect("expected to serialize to cbor");
+    let person_document_type = contract
+        .document_types
+        .get("person")
+        .expect("contract should have a person document type");
+    let query = DriveQuery::from_cbor(
+        where_cbor.as_slice(),
+        &contract,
+        person_document_type,
+        &drive.config,
+    )
+        .expect("query should be built");
+    let (results, _, _) = query
+        .execute_raw_results_no_proof(&drive, None, Some(&db_transaction))
+        .expect("proof should be executed");
+
+    assert_eq!(results.len(), 1);
+
+    drive.commit_transaction(db_transaction).expect("expected to commit transaction");
+
+    let (proof, fee) = query.clone().execute_with_proof(&drive, None, None).expect("expected proof to be generated");
+
+    let (root_hash,documents) = query.verify_proof(&proof).expect("expected to verify proof");
+
+    assert_eq!(documents.len(), 1);
+}
+
+#[cfg(feature = "full")]
+#[test]
 fn test_family_starts_at_queries() {
     let (drive, contract) = setup_family_tests(10, 73509);
 
