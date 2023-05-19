@@ -9,6 +9,7 @@ const {
 } = require('../../../constants');
 const generateTenderdashNodeKey = require('../../../tenderdash/generateTenderdashNodeKey');
 const deriveTenderdashNodeId = require('../../../tenderdash/deriveTenderdashNodeId');
+const generateRandomString = require('../../../util/generateRandomString');
 
 /**
  * @param {ConfigFile} configFile
@@ -39,18 +40,25 @@ function setupLocalPresetTaskFactory(
         enabled: (ctx) => ctx.nodeCount === undefined,
         task: async (ctx, task) => {
           ctx.nodeCount = await task.prompt({
-            type: 'Numeral',
+            type: 'input',
             message: 'Enter the number of masternodes',
             initial: 3,
-            float: false,
-            min: 3,
             validate: (state) => {
+              if (Number.isNaN(+state)) {
+                return 'You must set a number of masternodes';
+              }
+
+              if (!Number.isInteger(+state)) {
+                return 'Must be an integer';
+              }
+
               if (+state < 3) {
                 return 'You must set not less than 3';
               }
 
               return true;
             },
+            result: (value) => Number(value),
           });
         },
       },
@@ -167,13 +175,18 @@ function setupLocalPresetTaskFactory(
                 config.set('group', 'local');
                 config.set('core.p2p.port', config.get('core.p2p.port') + (i * 100));
                 config.set('core.rpc.port', config.get('core.rpc.port') + (i * 100));
+                config.set('core.rpc.user', generateRandomString(8));
+                config.set('core.rpc.password', generateRandomString(12));
                 config.set('externalIp', hostDockerInternalIp);
 
                 config.set('docker.network.subnet', `172.24.${nodeIndex}.0/24`);
 
                 // Setup Core debug logs
+                const coreLogFilePath = path.join(HOME_DIR_PATH, 'logs', config.getName(), 'core.log');
+                config.set('core.log.file.path', coreLogFilePath);
+
                 if (ctx.debugLogs) {
-                  config.set('core.debug', 1);
+                  config.set('core.log.file.categories', ['all']);
                 }
 
                 // Although not all nodes are miners, all nodes should be aware of

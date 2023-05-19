@@ -1,6 +1,4 @@
-const IdentifierError = require('@dashevo/dpp/lib/identifier/errors/IdentifierError');
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
-
+const { Identifier, IdentifierError } = require('@dashevo/wasm-dpp');
 const InvalidQueryError = require('./errors/InvalidQueryError');
 
 /**

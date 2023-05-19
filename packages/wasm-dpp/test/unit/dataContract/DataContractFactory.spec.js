@@ -1,8 +1,7 @@
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDataContractFixture = require('../../../lib/test/fixtures/js/getDataContractFixture');
 
-const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
-
-const { default: loadWasmDpp } = require('../../../dist');
+const { default: loadWasmDpp } = require('../../..');
+const { getLatestProtocolVersion } = require('../../..');
 
 describe('DataContractFactory', () => {
   let DataContractFactory;
@@ -121,7 +120,7 @@ describe('DataContractFactory', () => {
 
       const result = await factory.createDataContractCreateTransition(dataContract);
 
-      expect(result.getProtocolVersion()).to.equal(protocolVersion.latestVersion);
+      expect(result.getProtocolVersion()).to.equal(getLatestProtocolVersion());
       expect(result.getEntropy()).to.deep.equal(jsDataContract.getEntropy());
       expect(result.getDataContract().toObject()).to.deep.equal(jsDataContract.toObject());
     });

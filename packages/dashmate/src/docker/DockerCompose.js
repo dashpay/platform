@@ -122,6 +122,7 @@ class DockerCompose {
    *
    * @param {Object} envs
    * @param {string} [serviceName]
+   * @param {Array} [options]
    * @return {Observable<{string}>}
    */
   // eslint-disable-next-line no-unused-vars
@@ -144,6 +145,7 @@ class DockerCompose {
           await dockerCompose.buildAll({
             ...this.getOptions(envs),
             callback,
+            commandOptions: options,
           });
         }
 
@@ -233,7 +235,7 @@ class DockerCompose {
    * @param {Object} envs
    * @param {string} [filterServiceNames]
    * @param {boolean} returnServiceNames
-   * @return {string[]}
+   * @return {Promise<string[]>}
    */
   async getContainersList(
     envs,
@@ -322,7 +324,7 @@ class DockerCompose {
     try {
       await dockerCompose.rm({
         ...this.getOptions(envs),
-        commandOptions: ['--stop', '-v'],
+        commandOptions: ['--stop'],
       }, ...serviceNames);
     } catch (e) {
       throw new DockerComposeError(e);
@@ -349,7 +351,6 @@ class DockerCompose {
   }
 
   /**
-   * @private
    * @return {Promise<void>}
    */
   async throwErrorIfNotInstalled() {
@@ -359,23 +360,33 @@ class DockerCompose {
 
     this.isDockerSetupVerified = true;
 
+    const dockerComposeInstallLink = 'https://docs.docker.com/compose/install/';
+    const dockerInstallLink = 'https://docs.docker.com/engine/install/';
+    const dockerPostInstallLinuxLink = 'https://docs.docker.com/engine/install/linux-postinstall/';
+    const dockerContextLink = 'https://docs.docker.com/engine/context/working-with-contexts/';
+
     // Check docker
     if (!hasbin.sync('docker')) {
-      throw new Error('Docker is not installed');
+      throw new Error(`Docker is not installed. Please follow instructions ${dockerInstallLink}`);
     }
 
-    const dockerVersion = await new Promise((resolve, reject) => {
-      this.docker.version((err, data) => {
-        if (err) {
-          return reject(err);
-        }
+    let dockerVersion;
+    try {
+      dockerVersion = await new Promise((resolve, reject) => {
+        this.docker.version((err, data) => {
+          if (err) {
+            return reject(err);
+          }
 
-        return resolve(data.Version);
+          return resolve(data.Version);
+        });
       });
-    });
+    } catch (e) {
+      throw new Error(`Can't connect to Docker Engine: ${e.message}.\n\nPossible reasons:\n1. Docker is not started\n2. Permission issues ${dockerPostInstallLinuxLink}\n3. Wrong context ${dockerContextLink}`);
+    }
 
     if (semver.lt(dockerVersion.trim(), DockerCompose.DOCKER_MIN_VERSION)) {
-      throw new Error(`Update Docker to version ${DockerCompose.DOCKER_MIN_VERSION} or higher`);
+      throw new Error(`Update Docker to version ${DockerCompose.DOCKER_MIN_VERSION} or higher. Please follow instructions ${dockerInstallLink}`);
     }
 
     let version;
@@ -384,11 +395,11 @@ class DockerCompose {
     try {
       ({ out: version } = await dockerCompose.version());
     } catch (e) {
-      throw new Error('Docker Compose V2 is not available in your system');
+      throw new Error(`Docker Compose V2 is not available in your system. Please follow instructions ${dockerComposeInstallLink}`);
     }
 
     if (semver.lt(version.trim(), DockerCompose.DOCKER_COMPOSE_MIN_VERSION)) {
-      throw new Error(`Update Docker Compose to version ${DockerCompose.DOCKER_COMPOSE_MIN_VERSION} or higher`);
+      throw new Error(`Update Docker Compose to version ${DockerCompose.DOCKER_COMPOSE_MIN_VERSION} or higher. Please follow instructions ${dockerComposeInstallLink}`);
     }
   }
 

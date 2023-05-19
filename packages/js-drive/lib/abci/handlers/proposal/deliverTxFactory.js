@@ -186,7 +186,7 @@ function deliverTxFactory(
 
       txContextLogger.info(message);
       txContextLogger.debug({
-        consensusError,
+        consensusError: consensusError.toString(),
       });
 
       throw new DPPValidationAbciError(message, result.getFirstError());
@@ -258,7 +258,8 @@ function deliverTxFactory(
             desiredAmount: actualStateTransitionFees.desiredAmount,
             operations: actualStateTransitionOperations.map((operation) => operation.toJSON()),
           },
-          debt: actualStateTransitionFees.desiredAmount - transactionFees.processingFee,
+          // TODO(wasm-dpp): refactor FeeResult to return BigInt?
+          debt: actualStateTransitionFees.desiredAmount - BigInt(transactionFees.processingFee),
         },
         txType: stateTransition.getType(),
       },

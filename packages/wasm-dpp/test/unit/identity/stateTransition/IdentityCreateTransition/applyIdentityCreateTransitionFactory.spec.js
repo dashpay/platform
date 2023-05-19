@@ -1,12 +1,10 @@
-const getIdentityCreateTransitionFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityCreateTransitionFixture');
-
 const { convertSatoshiToCredits } = require('@dashevo/dpp/lib/identity/creditsConverter');
 
-const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
+const getIdentityCreateTransitionFixture = require('../../../../../lib/test/fixtures/getIdentityCreateTransitionFixture');
+const createStateRepositoryMock = require('../../../../../lib/test/mocks/createStateRepositoryMock');
 
-const protocolVersion = require('@dashevo/dpp/lib/version/protocolVersion');
-
-const { default: loadWasmDpp } = require('../../../../../dist');
+const { default: loadWasmDpp } = require('../../../../..');
+const { getLatestProtocolVersion } = require('../../../../..');
 
 describe('applyIdentityCreateTransitionFactory', () => {
   let stateTransition;
@@ -16,7 +14,6 @@ describe('applyIdentityCreateTransitionFactory', () => {
   let executionContext;
 
   let StateTransitionExecutionContext;
-  let IdentityCreateTransition;
   let Identity;
 
   let applyIdentityCreateTransitionDPP;
@@ -24,21 +21,18 @@ describe('applyIdentityCreateTransitionFactory', () => {
   before(async () => {
     ({
       StateTransitionExecutionContext,
-      IdentityCreateTransition,
       applyIdentityCreateTransition: applyIdentityCreateTransitionDPP,
       Identity,
     } = await loadWasmDpp());
   });
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
     stateRepositoryMock.createIdentity.resolves();
     stateRepositoryMock.addToSystemCredits.resolves();
     stateRepositoryMock.markAssetLockTransactionOutPointAsUsed.resolves();
 
-    stateTransition = new IdentityCreateTransition(
-      getIdentityCreateTransitionFixture().toObject(),
-    );
+    stateTransition = await getIdentityCreateTransitionFixture();
 
     executionContext = new StateTransitionExecutionContext();
 
@@ -60,7 +54,7 @@ describe('applyIdentityCreateTransitionFactory', () => {
     );
 
     const identity = new Identity({
-      protocolVersion: protocolVersion.latestVersion,
+      protocolVersion: getLatestProtocolVersion(),
       id: stateTransition.getIdentityId(),
       publicKeys: stateTransition.getPublicKeys()
         .map((key) => key.toObject({ skipSignature: true })),

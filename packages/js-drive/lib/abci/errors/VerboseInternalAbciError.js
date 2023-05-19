@@ -7,10 +7,15 @@ class VerboseInternalAbciError extends InternalAbciError {
    */
   constructor(error) {
     const originalError = error.getError();
-    let [, errorPath] = originalError.stack.toString().split(/\r\n|\n/);
 
-    if (!errorPath) {
-      errorPath = originalError.stack;
+    let errorPath = '';
+    if (originalError.stack) {
+      [, errorPath] = originalError.stack.toString()
+        .split(/\r\n|\n/);
+
+      if (!errorPath) {
+        errorPath = originalError.stack;
+      }
     }
 
     const message = `${originalError.message} ${errorPath.trim()}`;

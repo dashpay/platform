@@ -3,8 +3,12 @@ daemon=0  # leave this set to 0 for Docker
 reindex={{?it.core.reindex.enable}}1{{??}}0{{?}}
 logtimestamps=1
 maxconnections=256
-printtoconsole=1
-debug={{=it.core.debug }}
+{{~it.core.log.file.categories :category}}
+{{? category === 'all'}}
+debug=1
+{{??}}
+debug={{=category}}{{?}}{{~}}
+debuglogfile=/var/log/dash/core.log
 logips={{=it.core.logIps }}
 
 # JSONRPC
@@ -58,6 +62,8 @@ regtest=1
 {{? it.core.spork.address}}sporkaddr={{=it.core.spork.address}}{{?}}
 {{? it.core.spork.privateKey}}sporkkey={{=it.core.spork.privateKey}}{{?}}
 {{? it.core.miner.mediantime}}mocktime={{=it.core.miner.mediantime}}{{?}}
+llmqinstantsend=llmq_test
+llmqinstantsenddip0024=llmq_test_instantsend
 
 {{?? it.network === 'devnet'}}
 devnet={{=it.core.devnet.name}}

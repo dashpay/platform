@@ -1,6 +1,6 @@
 const rimraf = require('rimraf');
 const cbor = require('cbor');
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
 const Drive = require('@dashevo/rs-drive');
 const getBlockExecutionContextObjectFixture = require('../../../lib/test/fixtures/getBlockExecutionContextObjectFixture');
 const BlockExecutionContext = require('../../../lib/blockExecution/BlockExecutionContext');
@@ -17,10 +17,10 @@ describe('BlockExecutionContextRepository', () => {
   let options;
 
   beforeEach(async () => {
-    const dataContract = getDataContractFixture();
+    const dataContract = await getDataContractFixture();
     delete dataContract.entropy;
 
-    const plainObject = getBlockExecutionContextObjectFixture(dataContract);
+    const plainObject = await getBlockExecutionContextObjectFixture(dataContract);
 
     blockExecutionContext = new BlockExecutionContext();
     blockExecutionContext.fromObject(plainObject);

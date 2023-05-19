@@ -1,4 +1,4 @@
-import Identifier from '@dashevo/dpp/lib/Identifier';
+import { Identifier } from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
 
 const { hash } = require('@dashevo/dpp/lib/util/hash');

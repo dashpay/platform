@@ -1,7 +1,6 @@
-const { TYPES } = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+const { InstantLock } = require('@dashevo/dashcore-lib');
+const { ReadOperation, SignatureVerificationOperation, KeyType } = require('@dashevo/wasm-dpp');
 
-const ReadOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/ReadOperation');
-const SignatureVerificationOperation = require('@dashevo/dpp/lib/stateTransition/fee/operations/SignatureVerificationOperation');
 const BlockInfo = require('../blockExecution/BlockInfo');
 
 /**
@@ -73,7 +72,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
 
     return result.getValue();
@@ -97,7 +98,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
   }
 
@@ -114,13 +117,15 @@ class DriveStateRepository {
 
     const result = await this.identityPublicKeyRepository.add(
       identityId,
-      keys,
+      keys.map((key) => key.toObject()),
       blockInfo,
       this.#createRepositoryOptions(executionContext),
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
   }
 
@@ -143,7 +148,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
 
     return result.getValue();
@@ -166,7 +173,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
 
     return result.getValue();
@@ -191,7 +200,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
   }
 
@@ -234,7 +245,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
   }
 
@@ -257,7 +270,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
   }
 
@@ -276,7 +291,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
   }
 
@@ -295,7 +312,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
 
     return !result.isNull();
@@ -324,7 +343,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
 
     return result.getValue();
@@ -348,7 +369,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
   }
 
@@ -370,7 +393,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
   }
 
@@ -398,7 +423,42 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
+    }
+
+    return result.getValue();
+  }
+
+  /**
+   * Fetch Extended Documents by contract ID and type
+   *
+   * @param {Identifier} contractId
+   * @param {string} type
+   * @param {{ where: Object }} [options]
+   * @param {StateTransitionExecutionContext} [executionContext]
+   *
+   * @returns {Promise<ExtendedDocument[]>}
+   */
+  async fetchExtendedDocuments(contractId, type, options = {}, executionContext = undefined) {
+    const blockInfo = BlockInfo.createFromBlockExecutionContext(this.blockExecutionContext);
+
+    const result = await this.fetchDocumentsFunction(
+      contractId,
+      type,
+      {
+        blockInfo,
+        ...options,
+        ...this.#createRepositoryOptions(executionContext),
+      },
+      true,
+    );
+
+    if (executionContext) {
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
 
     return result.getValue();
@@ -422,7 +482,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
   }
 
@@ -444,7 +506,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
   }
 
@@ -470,7 +534,9 @@ class DriveStateRepository {
     );
 
     if (executionContext) {
-      executionContext.addOperation(...result.getOperations());
+      for (const operation of result.getOperations()) {
+        executionContext.addOperation(operation);
+      }
     }
   }
 
@@ -556,13 +622,13 @@ class DriveStateRepository {
   /**
    * Verify instant lock
    *
-   * @param {InstantLock} instantLock
+   * @param {Buffer} rawInstantLock
    * @param {StateTransitionExecutionContext} [executionContext]
    *
    * @return {Promise<boolean>}
    */
   // eslint-disable-next-line no-unused-vars
-  async verifyInstantLock(instantLock, executionContext = undefined) {
+  async verifyInstantLock(rawInstantLock, executionContext = undefined) {
     const coreChainLockedHeight = this.blockExecutionContext.getCoreChainLockedHeight();
 
     if (coreChainLockedHeight === null) {
@@ -571,11 +637,40 @@ class DriveStateRepository {
 
     if (executionContext) {
       executionContext.addOperation(
-        new SignatureVerificationOperation(TYPES.ECDSA_SECP256K1),
+        new SignatureVerificationOperation(KeyType.ECDSA_SECP256K1),
       );
 
       if (executionContext.isDryRun()) {
         return true;
+      }
+    }
+
+    const smlStore = this.simplifiedMasternodeList.getStore();
+    const offset = 8;
+    const instantlockSML = smlStore.getSMLbyHeight(
+      smlStore.getTipHeight() - offset + 1,
+    );
+
+    const instantLock = new InstantLock(Buffer.from(rawInstantLock));
+
+    // below is a fix for DIP 24
+    // see https://github.com/dashpay/dash/pull/5158
+    const llmqType = instantlockSML.getInstantSendLLMQType();
+
+    if (instantlockSML.isLLMQTypeRotated(llmqType)) {
+      const quorum = instantLock.selectSignatoryRotatedQuorum(
+        smlStore,
+        instantLock.getRequestId(),
+        offset,
+      );
+
+      // TODO: We should throw an error if quorum is not found?
+      if (quorum) {
+        const { result: quorumInfo } = await this.coreRpcClient.quorum('info', llmqType, quorum.quorumHash);
+
+        if (quorumInfo.previousConsecutiveDKGFailures !== 0) {
+          return false;
+        }
       }
     }
 
@@ -641,6 +736,21 @@ class DriveStateRepository {
       transactionBytes,
       blockInfo,
       this.#options.useTransaction,
+    );
+  }
+
+  /**
+   * Verifies that a given masternode id is in the current valid masternode list
+   *
+   * @param {Buffer} masternodeId
+   * @returns {Promise<boolean>}
+   */
+  async isInTheValidMasterNodesList(masternodeId) {
+    const smlStore = await this.fetchSMLStore();
+    const validMasternodesList = smlStore.getCurrentSML().getValidMasternodesList();
+
+    return !!validMasternodesList.find(
+      (smlEntry) => Buffer.compare(masternodeId, Buffer.from(smlEntry.proRegTxHash, 'hex')) === 0,
     );
   }
 

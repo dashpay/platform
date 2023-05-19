@@ -15,7 +15,7 @@ const {
 
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
 
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const documentQueryHandlerFactory = require('../../../../../lib/abci/handlers/query/documentQueryHandlerFactory');
@@ -36,8 +36,8 @@ describe('documentQueryHandlerFactory', () => {
   let createQueryResponseMock;
   let responseMock;
 
-  beforeEach(function beforeEach() {
-    documents = getDocumentsFixture();
+  beforeEach(async function beforeEach() {
+    documents = await getDocumentsFixture();
 
     fetchSignedDocumentsMock = this.sinon.stub();
     proveSignedDocumentsMock = this.sinon.stub();

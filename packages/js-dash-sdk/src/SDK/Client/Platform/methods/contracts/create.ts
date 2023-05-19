@@ -13,9 +13,15 @@ export async function create(
   contractDefinitions: any,
   identity: any,
 ): Promise<any> {
+  this.logger.debug('[Contracts#create] create data contract');
+
   await this.initialize();
 
-  return this.dpp.dataContract.create(identity.getId(), contractDefinitions);
+  const dataContract = this.dpp.dataContract.create(identity.getId(), contractDefinitions);
+
+  this.logger.debug(`[Contracts#create] created data contract "${dataContract.getId()}"`);
+
+  return dataContract;
 }
 
 export default create;

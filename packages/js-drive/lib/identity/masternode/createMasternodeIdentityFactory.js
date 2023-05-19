@@ -1,6 +1,5 @@
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
-const Identity = require('@dashevo/dpp/lib/identity/Identity');
-const InvalidMasternodeIdentityError = require('./errors/InvalidMasternodeIdentityError');
+const { Identity } = require('@dashevo/wasm-dpp');
+// const InvalidMasternodeIdentityError = require('./errors/InvalidMasternodeIdentityError');
 
 /**
  * @param {DashPlatformProtocol} dpp
@@ -27,19 +26,20 @@ function createMasternodeIdentityFactory(
   async function createMasternodeIdentity(
     blockInfo,
     identifier,
-    pubKeyData,
-    pubKeyType,
+    // pubKeyData,
+    // pubKeyType,
     // payoutScript,
   ) {
-    const publicKeys = [{
-      id: 0,
-      type: pubKeyType,
-      purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
-      securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
-      readOnly: true,
-      // Copy data buffer
-      data: Buffer.from(pubKeyData),
-    }];
+    // TODO: Enable keys when we have support of non unique keys in DPP
+    // const publicKeys = [{
+    //   id: 0,
+    //   type: pubKeyType,
+    //   purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+    //   securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+    //   readOnly: true,
+    //   // Copy data buffer
+    //   data: Buffer.from(pubKeyData),
+    // }];
 
     // TODO: Enable keys when we have support of non unique keys in DPP
     // if (payoutScript) {
@@ -57,18 +57,19 @@ function createMasternodeIdentityFactory(
 
     const identity = new Identity({
       protocolVersion: dpp.getProtocolVersion(),
-      id: identifier.toBuffer(),
-      publicKeys,
+      id: identifier,
+      publicKeys: [],
       balance: 0,
       revision: 0,
     });
 
-    const validationResult = await dpp.identity.validate(identity);
-    if (!validationResult.isValid()) {
-      const validationError = validationResult.getFirstError();
-
-      throw new InvalidMasternodeIdentityError(validationError);
-    }
+    // TODO: Enable validation when we have support of non unique keys in DPP
+    // const validationResult = await dpp.identity.validate(identity);
+    // if (!validationResult.isValid()) {
+    //   const validationError = validationResult.getFirstError();
+    //
+    //   throw new InvalidMasternodeIdentityError(validationError);
+    // }
 
     await identityRepository.create(identity, blockInfo, {
       useTransaction: true,

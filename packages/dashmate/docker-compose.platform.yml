@@ -4,8 +4,6 @@ services:
   drive_abci:
     image: ${PLATFORM_DRIVE_ABCI_DOCKER_IMAGE:?err}
     restart: unless-stopped
-    depends_on:
-      - core
     volumes:
       - drive_abci_data:/platform/packages/js-drive/db
       - ${PLATFORM_DRIVE_ABCI_LOG_PRETTY_DIRECTORY_PATH:?err}:/var/log/pretty
@@ -58,7 +56,6 @@ services:
     restart: unless-stopped
     depends_on:
       - drive_tenderdash
-      - core
     environment:
       - API_JSON_RPC_PORT=3004
       - API_GRPC_PORT=3005
@@ -81,8 +78,6 @@ services:
   dapi_tx_filter_stream:
     image: ${PLATFORM_DAPI_API_DOCKER_IMAGE:?err}
     restart: unless-stopped
-    depends_on:
-      - core
     environment:
       - TX_FILTER_STREAM_GRPC_PORT=3006
       - DASHCORE_RPC_HOST=core
@@ -108,10 +103,13 @@ services:
     depends_on:
       - dapi_api
       - dapi_tx_filter_stream
+    environment:
+      - ENVOY_UID=${LOCAL_UID:?err}
+      - ENVOY_GID=${LOCAL_GID:?err}
     volumes:
-      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/dapi/envoy/envoy.yaml:/etc/envoy/envoy.yaml
-      - ${DASHMATE_HOME_DIR:?err}/ssl/${CONFIG_NAME:?err}/bundle.crt:/etc/ssl/bundle.crt
-      - ${DASHMATE_HOME_DIR:?err}/ssl/${CONFIG_NAME:?err}/private.key:/etc/ssl/private.key
+      - ${DASHMATE_HOME_DIR:?err}/${CONFIG_NAME:?err}/platform/dapi/envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro
+      - ${DASHMATE_HOME_DIR:?err}/ssl/${CONFIG_NAME:?err}/bundle.crt:/etc/ssl/bundle.crt:ro
+      - ${DASHMATE_HOME_DIR:?err}/ssl/${CONFIG_NAME:?err}/private.key:/etc/ssl/private.key:ro
     stop_grace_period: 10s
 
   dashmate_helper:

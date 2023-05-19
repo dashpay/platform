@@ -31,7 +31,7 @@ module.exports = {
     return ServiceStatusEnum.error;
   },
   /**
-   * Determine ServiceStatus based on DockerStatusEnum and MasternodeSyncAssetEnum
+   * Determine platform ServiceStatus based on DockerStatusEnum and core readiness
    * @param dockerStatus {DockerStatusEnum}
    * @param coreIsSynced {boolean}
    * @returns {ServiceStatusEnum}

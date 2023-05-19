@@ -1,15 +1,14 @@
 const BufferWriter = require('@dashevo/dashcore-lib/lib/encoding/bufferwriter');
 const Hash = require('@dashevo/dashcore-lib/lib/crypto/hash');
-const { LLMQ_TYPES } = require('@dashevo/dashcore-lib/lib/constants');
+// const { LLMQ_TYPES } = require('@dashevo/dashcore-lib/lib/constants');
+const QuorumEntry = require('@dashevo/dashcore-lib/lib/deterministicmnlist/QuorumEntry');
 const QuorumsNotFoundError = require('./errors/QuorumsNotFoundError');
-const ValidatorSet = require('../validator/ValidatorSet');
-
-const MIN_QUORUM_VALID_MEMBERS = 90;
-
-const LLMQ_TYPE_TO_NAME = Object
-  .fromEntries(Object
-    .entries(LLMQ_TYPES)
-    .map(([key, value]) => [value, key.toLowerCase().replace('type_', '')]));
+// const ValidatorSet = require('../validator/ValidatorSet');
+//
+// const LLMQ_TYPE_TO_NAME = Object
+//   .fromEntries(Object
+//     .entries(LLMQ_TYPES)
+//     .map(([key, value]) => [value, key.toLowerCase().replace('type_', '')]));
 
 /**
  * Calculates scores for validator quorum selection
@@ -18,7 +17,7 @@ const LLMQ_TYPE_TO_NAME = Object
  *
  * @param {Buffer[]} quorumHashes
  * @param {Buffer} modifier
- * @return {Object[]} scores
+ * @return {Object[]|null} scores
  */
 function calculateQuorumHashScores(quorumHashes, modifier) {
   return quorumHashes.map((hash) => {
@@ -31,12 +30,56 @@ function calculateQuorumHashScores(quorumHashes, modifier) {
   });
 }
 
+const testnetWhiteList = [
+  '34.214.48.68',
+  '35.166.18.166',
+  '35.165.50.126',
+  '52.42.202.128',
+  '52.12.176.90',
+  '44.233.44.95',
+  '35.167.145.149',
+  '52.34.144.50',
+  '44.240.98.102',
+  '54.201.32.131',
+  '52.10.229.11',
+  '52.13.132.146',
+  '44.228.242.181',
+  '35.82.197.197',
+  '52.40.219.41',
+  '44.239.39.153',
+  '54.149.33.167',
+  '35.164.23.245',
+  '52.33.28.47',
+  '52.43.86.231',
+  '52.43.13.92',
+  '35.163.144.230',
+  '52.89.154.48',
+  '52.24.124.162',
+  '44.227.137.77',
+  '35.85.21.179',
+  '54.187.14.232',
+  '54.68.235.201',
+  '52.13.250.182',
+  '35.82.49.196',
+  '44.232.196.6',
+  '54.189.164.39',
+  '54.213.204.85',
+];
+
 /**
  *
  * @param {RpcClient} coreRpcClient
+ * @param {fetchQuorumMembers} fetchQuorumMembers
+ * @param {SimplifiedMasternodeList} simplifiedMasternodeList
+ * @param {string} network
  * @return {getRandomQuorum}
  */
-function getRandomQuorumFactory(coreRpcClient) {
+function getRandomQuorumFactory(
+  coreRpcClient,
+  fetchQuorumMembers,
+  simplifiedMasternodeList,
+  network,
+) {
   /**
    * Gets the current validator set quorum hash for a particular core height
    *
@@ -45,8 +88,10 @@ function getRandomQuorumFactory(coreRpcClient) {
    * @param {number} quorumType
    * @param {Buffer} entropy - the entropy to select the quorum
    * @param {number} coreHeight
-   * @return return {Promise<QuorumEntry>} - the current validator set's quorumHash
+   * @returns {Promise<{ quorum: QuorumEntry, members: Object[]}|null>} - the current validator
+   *  set's quorumHash
    */
+  // eslint-disable-next-line no-unused-vars
   async function getRandomQuorum(sml, quorumType, entropy, coreHeight) {
     const validatorQuorums = sml.getQuorumsOfType(quorumType);
 
@@ -54,45 +99,91 @@ function getRandomQuorumFactory(coreRpcClient) {
       throw new QuorumsNotFoundError(sml, quorumType);
     }
 
-    const { result: allValidatorQuorumsExtendedInfo } = await coreRpcClient.quorum('listextended', coreHeight);
+    const validMasternodesList = simplifiedMasternodeList
+      .getStore()
+      .getCurrentSML()
+      .getValidMasternodesList();
+
+    // const {
+    //   result: allValidatorQuorumsExtendedInfo,
+    // } = await coreRpcClient.quorum('listextended', coreHeight);
 
     // convert to object
-    const validatorQuorumsInfo = allValidatorQuorumsExtendedInfo[LLMQ_TYPE_TO_NAME[quorumType]]
-      .reduce(
-        (obj, item) => ({
-          ...obj,
-          ...item,
-        }),
-        {},
+    // const validatorQuorumsInfo = allValidatorQuorumsExtendedInfo[LLMQ_TYPE_TO_NAME[quorumType]]
+    //   .reduce(
+    //     (obj, item) => ({
+    //       ...obj,
+    //       ...item,
+    //     }),
+    //     {},
+    //   );
+    //
+    // const numberOfQuorums = validatorQuorums.length;
+    // const minTtl = ValidatorSet.ROTATION_BLOCK_INTERVAL * 3; // minutes
+    // const dkgInterval = 24;
+
+    const quorumsMembers = {};
+
+    await Promise.all(validatorQuorums.map(async (quorum) => {
+      const members = await fetchQuorumMembers(
+        quorumType,
+        quorum.quorumHash,
       );
 
-    const numberOfQuorums = validatorQuorums.length;
-    const minTtl = ValidatorSet.ROTATION_BLOCK_INTERVAL * 3;
-    const dkgInterval = 24;
-
-    // filter quorum by the number of valid members to choose the most vital ones
-    let filteredValidatorQuorums = validatorQuorums
-      .filter(
-        (validatorQuorum) => validatorQuorum.validMembersCount >= MIN_QUORUM_VALID_MEMBERS,
-      )
-      .filter((validatorQuorum) => {
-        const validatorQuorumInfo = validatorQuorumsInfo[validatorQuorum.quorumHash];
-
-        if (!validatorQuorumInfo) {
+      quorumsMembers[quorum.quorumHash] = members.filter((member) => {
+        // Remove invalid quorum members
+        if (!member.valid) {
           return false;
         }
 
-        const quorumRemoveHeight = validatorQuorumInfo.creationHeight
-          + (dkgInterval * numberOfQuorums);
-        const howMuchInRest = quorumRemoveHeight - coreHeight;
-        const quorumTtl = howMuchInRest * 2.5;
+        // Ignore members which are banned
+        const isValid = validMasternodesList
+          .find((mnEntry) => mnEntry.proRegTxHash === member.proTxHash);
 
-        return quorumTtl > minTtl;
+        if (!isValid) {
+          return false;
+        }
+
+        // Remove non DCG nodes on testnet
+        if (network === 'testnet') {
+          const [ip] = member.service.split(':');
+
+          return testnetWhiteList.includes(ip);
+        }
+
+        return true;
       });
+    }));
+
+    // filter quorum by the number of valid members to choose the most vital ones
+    const filteredValidatorQuorums = validatorQuorums
+      .filter(
+        (validatorQuorum) => {
+          const { threshold, size } = QuorumEntry.getParams(quorumType);
+
+          const minimumNodeCount = Math.ceil((threshold / 100) * size);
+
+          return quorumsMembers[validatorQuorum.quorumHash].length >= minimumNodeCount;
+        },
+      );
+      // TODO This logic doesn't work properly
+      // .filter((validatorQuorum) => {
+      //   const validatorQuorumInfo = validatorQuorumsInfo[validatorQuorum.quorumHash];
+      //
+      //   if (!validatorQuorumInfo) {
+      //     return false;
+      //   }
+      //
+      //   const quorumRemoveHeight = validatorQuorumInfo.creationHeight
+      //     + (dkgInterval * numberOfQuorums);
+      //   const howMuchInRest = quorumRemoveHeight - coreHeight;
+      //   const quorumTtl = howMuchInRest * 2.5; // minutes
+      //
+      //   return quorumTtl > minTtl;
+      // });
 
     if (filteredValidatorQuorums.length === 0) {
-      // if there is no "vital" quorums, we choose among others with default min quorum size
-      filteredValidatorQuorums = validatorQuorums;
+      return null;
     }
 
     const validatorQuorumHashes = filteredValidatorQuorums
@@ -104,7 +195,10 @@ function getRandomQuorumFactory(coreRpcClient) {
 
     const quorumHash = scoredHashes[0].hash.toString('hex');
 
-    return sml.getQuorum(quorumType, quorumHash);
+    return {
+      quorum: sml.getQuorum(quorumType, quorumHash),
+      members: quorumsMembers[quorumHash],
+    };
   }
 
   return getRandomQuorum;

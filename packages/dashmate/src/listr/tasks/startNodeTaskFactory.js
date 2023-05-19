@@ -1,6 +1,3 @@
-const fs = require('fs');
-const path = require('path');
-
 const { Listr } = require('listr2');
 const { Observable } = require('rxjs');
 
@@ -14,6 +11,7 @@ const { NETWORK_LOCAL } = require('../../constants');
  * @param {createRpcClient} createRpcClient
  * @param {buildServicesTask} buildServicesTask
  * @param getConnectionHost {getConnectionHost}
+ * @param ensureFileMountExists {ensureFileMountExists}
  * @return {startNodeTask}
  */
 function startNodeTaskFactory(
@@ -23,6 +21,7 @@ function startNodeTaskFactory(
   createRpcClient,
   buildServicesTask,
   getConnectionHost,
+  ensureFileMountExists,
 ) {
   /**
    * @typedef {startNodeTask}
@@ -46,39 +45,35 @@ function startNodeTaskFactory(
       throw new Error(`'core.miner.enable' option only works with local network. Your network is ${config.get('network')}.`);
     }
 
+    const coreLogFilePath = config.get('core.log.file.path');
+    ensureFileMountExists(coreLogFilePath, 0o666);
+
     // Check Drive log files are created
     if (config.get('platform.enable')) {
       const prettyFilePath = config.get('platform.drive.abci.log.prettyFile.path');
-
-      // Remove directory that could potentially be created by Docker mount
-      if (fs.existsSync(prettyFilePath) && fs.lstatSync(prettyFilePath).isDirectory()) {
-        fs.rmSync(prettyFilePath, { recursive: true });
-      }
-
-      if (!fs.existsSync(prettyFilePath)) {
-        fs.mkdirSync(path.dirname(prettyFilePath), { recursive: true });
-        fs.writeFileSync(prettyFilePath, '');
-      }
+      ensureFileMountExists(prettyFilePath);
 
       const jsonFilePath = config.get('platform.drive.abci.log.jsonFile.path');
-
-      // Remove directory that could potentially be created by Docker mount
-      if (fs.existsSync(jsonFilePath) && fs.lstatSync(jsonFilePath).isDirectory()) {
-        fs.rmSync(jsonFilePath, { recursive: true });
-      }
-
-      if (!fs.existsSync(jsonFilePath)) {
-        fs.mkdirSync(path.dirname(jsonFilePath), { recursive: true });
-        fs.writeFileSync(jsonFilePath, '');
-      }
+      ensureFileMountExists(jsonFilePath);
     }
 
     return new Listr([
       {
         title: 'Check node is not started',
-        task: async () => {
-          if (await dockerCompose.isServiceRunning(config.toEnvs())) {
+        task: async (ctx) => {
+          if (await dockerCompose.isServiceRunning(
+            config.toEnvs({ platformOnly: ctx.platformOnly }),
+          )) {
             throw new Error('Running services detected. Please ensure all services are stopped for this config before starting');
+          }
+        },
+      },
+      {
+        title: 'Check core is started',
+        enabled: (ctx) => ctx.platformOnly === true,
+        task: async () => {
+          if (!await dockerCompose.isServiceRunning(config.toEnvs(), 'core')) {
+            throw new Error('Platform services depend on Core and can\'t be started without it. Please run "dashmate start" without "--platform" flag');
           }
         },
       },
@@ -90,14 +85,14 @@ function startNodeTaskFactory(
       },
       {
         title: 'Start services',
-        task: async () => {
+        task: async (ctx) => {
           const isMasternode = config.get('core.masternode.enable');
           if (isMasternode) {
             // Check operatorPrivateKey is set
             config.get('core.masternode.operator.privateKey', true);
           }
 
-          const envs = config.toEnvs();
+          const envs = config.toEnvs({ platformOnly: ctx.platformOnly });
 
           await dockerCompose.up(envs);
         },

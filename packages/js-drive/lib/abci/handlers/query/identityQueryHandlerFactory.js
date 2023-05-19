@@ -12,9 +12,7 @@ const {
   },
 } = require('@dashevo/dapi-grpc');
 
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
-const IdentifierError = require('@dashevo/dpp/lib/identifier/errors/IdentifierError');
-
+const { Identifier, IdentifierError } = require('@dashevo/wasm-dpp');
 const NotFoundAbciError = require('../../errors/NotFoundAbciError');
 const InvalidArgumentAbciError = require('../../errors/InvalidArgumentAbciError');
 

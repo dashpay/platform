@@ -142,7 +142,7 @@ describe('initChainHandlerFactory', () => {
 
     expect(groveDBStoreMock.commitTransaction).to.be.calledOnce();
 
-    expect(groveDBStoreMock.getRootHash).to.be.calledOnce();
+    expect(groveDBStoreMock.getRootHash).to.be.calledTwice();
 
     // Initialize VS
 

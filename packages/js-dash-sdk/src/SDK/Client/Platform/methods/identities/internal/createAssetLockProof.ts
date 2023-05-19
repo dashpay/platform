@@ -61,8 +61,8 @@ export async function createAssetLockProof(
 
         // @ts-ignore
         return dpp.identity.createInstantAssetLockProof(
-          instantLock,
-          assetLockTransaction,
+          instantLock.toBuffer(),
+          assetLockTransaction.toBuffer(),
           outputIndex,
         );
       })
@@ -90,11 +90,19 @@ export async function createAssetLockProof(
           clearTimeout(rejectTimer);
           cancelInstantLock();
 
+          // Changing endianness of raw txId bytes in outPoint to
+          // match expectations of dashcore-rust
+          let outPointBuffer = assetLockTransaction.getOutPointBuffer(outputIndex);
+          const txIdBuffer = outPointBuffer.slice(0, 32);
+          const outputIndexBuffer = outPointBuffer.slice(32);
+          txIdBuffer.reverse();
+          outPointBuffer = Buffer.concat([txIdBuffer, outputIndexBuffer]);
+
           // @ts-ignore
           return dpp.identity.createChainAssetLockProof(
             // @ts-ignore
             assetLockMetadata.height,
-            assetLockTransaction.getOutPointBuffer(outputIndex),
+            outPointBuffer,
           );
         }))
       .catch((error) => {

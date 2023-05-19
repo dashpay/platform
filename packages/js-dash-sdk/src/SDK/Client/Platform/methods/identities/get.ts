@@ -1,6 +1,5 @@
 // @ts-ignore
-import Identifier from '@dashevo/dpp/lib/Identifier';
-import Metadata from '@dashevo/dpp/lib/Metadata';
+import { Identifier, Metadata } from '@dashevo/wasm-dpp';
 import { Platform } from '../../Platform';
 
 const NotFoundError = require('@dashevo/dapi-client/lib/transport/GrpcTransport/errors/NotFoundError');
@@ -19,7 +18,8 @@ export async function get(this: Platform, id: Identifier | string): Promise<any>
 
   let identityResponse;
   try {
-    identityResponse = await this.client.getDAPIClient().platform.getIdentity(identifier);
+    identityResponse = await this.client.getDAPIClient().platform
+      .getIdentity(identifier);
   } catch (e) {
     if (e instanceof NotFoundError) {
       return null;
@@ -28,9 +28,13 @@ export async function get(this: Platform, id: Identifier | string): Promise<any>
     throw e;
   }
 
-  const identity = this.dpp.identity.createFromBuffer(identityResponse.getIdentity());
+  // TODO: Remove skipValidation when non-unique keys are supported
+  const identity = this.dpp.identity.createFromBuffer(
+    identityResponse.getIdentity(),
+    { skipValidation: true },
+  );
 
-  let metadata = null;
+  let metadata;
   const responseMetadata = identityResponse.getMetadata();
   if (responseMetadata) {
     metadata = new Metadata({

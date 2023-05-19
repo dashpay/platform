@@ -9,8 +9,10 @@ const {
 
 const Long = require('long');
 
+// TODO: should we load it from other place?
 const { hash } = require('@dashevo/dpp/lib/util/hash');
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
+
 const finalizeBlockHandlerFactory = require('../../../../lib/abci/handlers/finalizeBlockHandlerFactory');
 const LoggerMock = require('../../../../lib/test/mock/LoggerMock');
 const BlockExecutionContextMock = require('../../../../lib/test/mock/BlockExecutionContextMock');
@@ -34,7 +36,7 @@ describe('finalizeBlockHandlerFactory', () => {
   let broadcastWithdrawalTransactions;
   let createContextLoggerMock;
 
-  beforeEach(function beforeEach() {
+  beforeEach(async function beforeEach() {
     round = 0;
     appHash = Buffer.alloc(0);
     proposalBlockExecutionContextMock = new BlockExecutionContextMock(this.sinon);
@@ -80,7 +82,7 @@ describe('finalizeBlockHandlerFactory', () => {
       block,
     };
 
-    dataContract = getDataContractFixture();
+    dataContract = await getDataContractFixture();
 
     proposalBlockExecutionContextMock.getHeight.returns(new Long(42));
     proposalBlockExecutionContextMock.getRound.returns(round);

@@ -1,21 +1,19 @@
 const fs = require('fs');
-
 const { PrivateKey } = require('@dashevo/dashcore-lib');
 
-const { expect, use } = require('chai');
-use(require('dirty-chai'));
+const {
+  default: loadWasmDpp, DashPlatformProtocol, Identifier, IdentityPublicKey,
+} = require('@dashevo/wasm-dpp');
 
-const DashPlatformProtocol = require('@dashevo/dpp');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
+const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
+const createStateRepositoryMock = require('@dashevo/wasm-dpp/lib/test/mocks/createStateRepositoryMock');
+const getBlsAdapterMock = require('@dashevo/wasm-dpp/lib/test/mocks/getBlsAdapterMock');
 
-const Document = require('@dashevo/dpp/lib/document/Document');
-const Identifier = require('@dashevo/dpp/lib/Identifier');
-
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
-const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
-
+const generateRandomIdentifier = require('@dashevo/wasm-dpp/lib/test/utils/generateRandomIdentifierAsync');
 const withdrawalContractDocumentsSchema = require('@dashevo/withdrawals-contract/schema/withdrawals-documents.json');
+
 const withdrawalContractIds = require('@dashevo/withdrawals-contract/lib/systemIds');
 
 const {
@@ -38,8 +36,11 @@ describe('Drive', function main() {
   let documents;
   let initialRootHash;
   let withdrawalsDataContract;
+  let blsAdapter;
+  let stateRepositoryMock;
 
-  beforeEach(async () => {
+  beforeEach(async function beforeEach() {
+    await loadWasmDpp();
     drive = new Drive(TEST_DATA_PATH, {
       drive: {
         dataContractsGlobalCacheSize: 500,
@@ -54,23 +55,22 @@ describe('Drive', function main() {
       },
     });
 
-    const dpp = new DashPlatformProtocol({
-      stateRepository: {
-        fetchDataContract: () => { },
-      },
+    blsAdapter = await getBlsAdapterMock();
+    stateRepositoryMock = createStateRepositoryMock(this.sinonSandbox);
+
+    const dpp = new DashPlatformProtocol(blsAdapter, stateRepositoryMock, {
+      generate: () => Buffer.alloc(32),
     });
 
-    await dpp.initialize();
-
-    withdrawalsDataContract = dpp.dataContract.create(
-      generateRandomIdentifier(),
+    withdrawalsDataContract = await dpp.dataContract.create(
+      await generateRandomIdentifier(),
       withdrawalContractDocumentsSchema,
     );
 
     withdrawalsDataContract.id = Identifier.from(withdrawalContractIds.contractId);
 
-    dataContract = getDataContractFixture();
-    identity = getIdentityFixture();
+    dataContract = await getDataContractFixture();
+    identity = await getIdentityFixture();
 
     blockInfo = {
       height: 1,
@@ -78,7 +78,7 @@ describe('Drive', function main() {
       timeMs: new Date().getTime(),
     };
 
-    documents = getDocumentsFixture(dataContract);
+    documents = await getDocumentsFixture(dataContract);
     initialRootHash = await drive.getGroveDB().getRootHash();
   });
 
@@ -421,8 +421,7 @@ describe('Drive', function main() {
       });
 
       expect(fetchedDocuments).to.have.lengthOf(1);
-      expect(fetchedDocuments[0]).to.be.an.instanceOf(Document);
-      expect(fetchedDocuments[0].toObject()).to.deep.equal(documents[4].toObject());
+      expect(fetchedDocuments[0].toObject({}, dataContract, 'indexedDocument')).to.deep.equal(documents[4].toObject());
 
       // costs are not calculating without block info
       expect(processingCost).to.be.equal(0);
@@ -440,8 +439,7 @@ describe('Drive', function main() {
       });
 
       expect(fetchedDocuments).to.have.lengthOf(1);
-      expect(fetchedDocuments[0]).to.be.an.instanceOf(Document);
-      expect(fetchedDocuments[0].toObject()).to.deep.equal(documents[4].toObject());
+      expect(fetchedDocuments[0].toObject({}, dataContract, 'indexedDocument')).to.deep.equal(documents[4].toObject());
 
       expect(processingCost).to.be.greaterThan(0);
     });
@@ -685,7 +683,7 @@ describe('Drive', function main() {
     it('should add to balance', async () => {
       await drive.insertIdentity(identity, blockInfo);
 
-      const amount = 100;
+      const amount = 10000;
 
       const result = await drive.addToIdentityBalance(
         identity.getId(),
@@ -778,15 +776,21 @@ describe('Drive', function main() {
       await drive.createInitialStateStructure();
     });
 
-    it('should change balance according to provided fees', async () => {
+    it('should change balance according to provided fees', async function it() {
       blockInfo.epoch = 3;
 
       await drive.insertIdentity(identity, blockInfo);
 
-      const feeResult = FeeResult.create(10000, 10, [{
-        identifier: identity.getId().toBuffer(),
-        creditsPerEpoch: { 0: 1000000 },
-      }]);
+      const feeRefunds = {
+        toObject: this.sinonSandbox.stub().returns(
+          {
+            identifier: identity.getId().toBuffer(),
+            creditsPerEpoch: new Map([['0', BigInt(1000000)]]),
+          },
+        ),
+      };
+
+      const feeResult = FeeResult.create(BigInt(10000), BigInt(10), [feeRefunds]);
 
       const result = await drive.applyFeesToIdentityBalance(
         identity.getId(),
@@ -836,7 +840,9 @@ describe('Drive', function main() {
         identity.getPublicKeys().map((k) => k.hash()),
       );
 
-      expect(result).to.deep.equal(identity.getPublicKeys().map(() => identity));
+      const resultBuffers = result.map((item) => item.toBuffer());
+
+      expect(resultBuffers).to.deep.equal(identity.getPublicKeys().map(() => identity.toBuffer()));
     });
   });
 
@@ -846,8 +852,19 @@ describe('Drive', function main() {
     });
 
     it('should add keys to identity', async () => {
-      const keysToAdd = [identity.getPublicKeys().pop()];
+      const privateKey = new PrivateKey();
+      const publicKey = privateKey.toPublicKey();
 
+      const identityPublicKey = new IdentityPublicKey({
+        id: 2,
+        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+        data: publicKey.toBuffer(),
+        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+        readOnly: false,
+      });
+
+      const keysToAdd = [identityPublicKey.toObject()];
       await drive.insertIdentity(identity, blockInfo);
 
       const result = await drive.addKeysToIdentity(
@@ -868,7 +885,19 @@ describe('Drive', function main() {
     it('should not update state with dry run', async () => {
       initialRootHash = await drive.getGroveDB().getRootHash();
 
-      const keysToAdd = [identity.getPublicKeys().pop()];
+      const privateKey = new PrivateKey();
+      const publicKey = privateKey.toPublicKey();
+
+      const identityPublicKey = new IdentityPublicKey({
+        id: 2,
+        type: IdentityPublicKey.TYPES.ECDSA_SECP256K1,
+        data: publicKey.toBuffer(),
+        purpose: IdentityPublicKey.PURPOSES.AUTHENTICATION,
+        securityLevel: IdentityPublicKey.SECURITY_LEVELS.MASTER,
+        readOnly: false,
+      });
+
+      const keysToAdd = [identityPublicKey.toObject()];
 
       const result = await drive.addKeysToIdentity(
         identity.getId(),
@@ -895,12 +924,12 @@ describe('Drive', function main() {
       await drive.insertIdentity(identity, blockInfo);
 
       const keyIds = identity.getPublicKeys().map((key) => key.getId());
-      const disableAt = Date.now();
+      const disableAt = new Date();
 
       const result = await drive.disableIdentityKeys(
         identity.getId(),
         keyIds,
-        disableAt,
+        disableAt.getTime(),
         blockInfo,
       );
 
@@ -911,7 +940,7 @@ describe('Drive', function main() {
       expect(fetchedIdentity.getPublicKeys()).to.have.lengthOf(identity.getPublicKeys().length);
 
       fetchedIdentity.getPublicKeys().forEach((key) => {
-        expect(key.getDisabledAt()).to.equals(disableAt);
+        expect(key.getDisabledAt()).to.deep.equal(disableAt);
       });
     });
 

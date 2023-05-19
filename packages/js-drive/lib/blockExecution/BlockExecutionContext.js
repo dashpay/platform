@@ -1,5 +1,3 @@
-const DataContract = require('@dashevo/dpp/lib/dataContract/DataContract');
-
 const {
   tendermint: {
     abci: {
@@ -12,6 +10,8 @@ const {
 } = require('@dashevo/abci/types');
 
 const Long = require('long');
+
+const { DataContract } = require('@dashevo/wasm-dpp');
 
 class BlockExecutionContext {
   constructor() {

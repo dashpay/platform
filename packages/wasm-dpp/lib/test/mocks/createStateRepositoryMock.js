@@ -37,6 +37,7 @@ module.exports = function createStateRepositoryMock(sinonSandbox) {
     createDataContract: sinonSandbox.stub(),
     updateDataContract: sinonSandbox.stub(),
     fetchDocuments: sinonSandbox.stub(),
+    fetchExtendedDocuments: sinonSandbox.stub(),
     createDocument: sinonSandbox.stub(),
     updateDocument: sinonSandbox.stub(),
     removeDocument: sinonSandbox.stub(),

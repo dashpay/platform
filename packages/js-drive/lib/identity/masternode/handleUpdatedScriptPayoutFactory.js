@@ -1,4 +1,4 @@
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
+// const { IdentityPublicKey, KeyPurpose, KeySecurityLevel } = require('@dashevo/wasm-dpp');
 const identitySchema = require('@dashevo/dpp/schema/identity/identity.json');
 
 /**
@@ -46,7 +46,7 @@ function handleUpdatedScriptPayoutFactory(
     const identityPublicKeys = identity
       .getPublicKeys();
 
-    if (identityPublicKeys.length === identitySchema.properties.publicKeys.maxItems) {
+    if (identityPublicKeys.length > identitySchema.properties.publicKeys.maxItems) {
       // do not add new public key
       return result;
     }
@@ -76,35 +76,37 @@ function handleUpdatedScriptPayoutFactory(
       }
     }
 
+    // TODO: Enable validation when we have support of non unique keys in DPP
     // add new
-    const withdrawPubKeyType = getWithdrawPubKeyTypeFromPayoutScript(newPayoutScript);
-    const pubKeyData = getPublicKeyFromPayoutScript(newPayoutScript, withdrawPubKeyType);
+    // const withdrawPubKeyType = getWithdrawPubKeyTypeFromPayoutScript(newPayoutScript);
+    // const pubKeyData = getPublicKeyFromPayoutScript(newPayoutScript, withdrawPubKeyType);
 
-    const newWithdrawalIdentityPublicKey = new IdentityPublicKey()
-      .setId(identity.getPublicKeyMaxId() + 1)
-      .setType(withdrawPubKeyType)
-      .setData(pubKeyData)
-      .setPurpose(IdentityPublicKey.PURPOSES.WITHDRAW)
-      .setReadOnly(true)
-      .setSecurityLevel(IdentityPublicKey.SECURITY_LEVELS.MASTER);
+    // const newWithdrawalIdentityPublicKey = new IdentityPublicKey({
+    //   id: identity.getPublicKeyMaxId() + 1,
+    //   type: withdrawPubKeyType,
+    //   data: pubKeyData,
+    //   purpose: KeyPurpose.WITHDRAW,
+    //   readOnly: true,
+    //   securityLevel: KeySecurityLevel.MASTER,
+    // });
+    //
+    // await identityPublicKeyRepository.add(
+    //   identityId,
+    //   [newWithdrawalIdentityPublicKey],
+    //   blockInfo,
+    //   { useTransaction: true },
+    // );
 
-    await identityPublicKeyRepository.add(
-      identityId,
-      [newWithdrawalIdentityPublicKey],
-      blockInfo,
-      { useTransaction: true },
-    );
+    // result.createdEntities.push(newWithdrawalIdentityPublicKey);
 
-    result.createdEntities.push(newWithdrawalIdentityPublicKey);
+    // identity.setRevision(identity.getRevision() + 1);
 
-    identity.setRevision(identity.getRevision() + 1);
-
-    await identityRepository.updateRevision(
-      identityId,
-      identity.getRevision(),
-      blockInfo,
-      { useTransaction: true },
-    );
+    // await identityRepository.updateRevision(
+    //   identityId,
+    //   identity.getRevision(),
+    //   blockInfo,
+    //   { useTransaction: true },
+    // );
 
     result.updatedEntities.push(identity);
 

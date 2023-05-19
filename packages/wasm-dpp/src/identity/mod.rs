@@ -24,6 +24,7 @@ use crate::buffer::Buffer;
 use crate::errors::from_dpp_err;
 pub use state_transition::*;
 
+pub mod credits_converter;
 pub mod errors;
 pub mod state_transition;
 
@@ -101,6 +102,11 @@ impl IdentityWasm {
             .get_public_key_by_id(key_id)
             .map(IdentityPublicKey::to_owned)
             .map(Into::into)
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn balance(&self) -> f64 {
+        self.0.get_balance() as f64
     }
 
     #[wasm_bindgen(js_name=getBalance)]

@@ -1,7 +1,7 @@
-const getIdentityFixture = require('@dashevo/dpp/lib/test/fixtures/getIdentityFixture');
+const getIdentityFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getIdentityFixture');
 const createStateRepositoryMock = require('@dashevo/dpp/lib/test/mocks/createStateRepositoryMock');
-const getDataContractFixture = require('@dashevo/dpp/lib/test/fixtures/getDataContractFixture');
-const getDocumentsFixture = require('@dashevo/dpp/lib/test/fixtures/getDocumentsFixture');
+const getDataContractFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDataContractFixture');
+const getDocumentsFixture = require('@dashevo/wasm-dpp/lib/test/fixtures/getDocumentsFixture');
 const generateRandomIdentifier = require('@dashevo/dpp/lib/test/utils/generateRandomIdentifier');
 
 const LoggedStateRepositoryDecorator = require('../../../lib/dpp/LoggedStateRepositoryDecorator');
@@ -35,7 +35,7 @@ describe('LoggedStateRepositoryDecorator', () => {
     });
 
     it('should call logger with proper params', async () => {
-      const response = getIdentityFixture();
+      const response = await getIdentityFixture();
 
       stateRepositoryMock.fetchIdentity.resolves(response);
 
@@ -76,8 +76,8 @@ describe('LoggedStateRepositoryDecorator', () => {
   describe('#storeIdentity', () => {
     let identity;
 
-    beforeEach(() => {
-      identity = getIdentityFixture();
+    beforeEach(async () => {
+      identity = await getIdentityFixture();
     });
 
     it('should call logger with proper params', async () => {
@@ -122,8 +122,8 @@ describe('LoggedStateRepositoryDecorator', () => {
   describe('#addKeysToIdentity', () => {
     let identity;
 
-    beforeEach(() => {
-      identity = getIdentityFixture();
+    beforeEach(async () => {
+      identity = await getIdentityFixture();
     });
 
     it('should call logger with proper params', async () => {
@@ -174,8 +174,8 @@ describe('LoggedStateRepositoryDecorator', () => {
   describe('#fetchIdentityBalance', () => {
     let identity;
 
-    beforeEach(() => {
-      identity = getIdentityFixture();
+    beforeEach(async () => {
+      identity = await getIdentityFixture();
     });
 
     it('should call logger with proper params', async () => {
@@ -222,8 +222,8 @@ describe('LoggedStateRepositoryDecorator', () => {
   describe('#fetchIdentityBalanceWithDebt', () => {
     let identity;
 
-    beforeEach(() => {
-      identity = getIdentityFixture();
+    beforeEach(async () => {
+      identity = await getIdentityFixture();
     });
 
     it('should call logger with proper params', async () => {
@@ -270,8 +270,8 @@ describe('LoggedStateRepositoryDecorator', () => {
   describe('#addToIdentityBalance', () => {
     let identity;
 
-    beforeEach(() => {
-      identity = getIdentityFixture();
+    beforeEach(async () => {
+      identity = await getIdentityFixture();
     });
 
     it('should call logger with proper params', async () => {
@@ -323,8 +323,8 @@ describe('LoggedStateRepositoryDecorator', () => {
   describe('#disableIdentityKeys', () => {
     let identity;
 
-    beforeEach(() => {
-      identity = getIdentityFixture();
+    beforeEach(async () => {
+      identity = await getIdentityFixture();
     });
 
     it('should call logger with proper params', async () => {
@@ -383,8 +383,8 @@ describe('LoggedStateRepositoryDecorator', () => {
   describe('#updateIdentityRevision', () => {
     let identity;
 
-    beforeEach(() => {
-      identity = getIdentityFixture();
+    beforeEach(async () => {
+      identity = await getIdentityFixture();
     });
 
     it('should call logger with proper params', async () => {
@@ -444,7 +444,7 @@ describe('LoggedStateRepositoryDecorator', () => {
     });
 
     it('should call logger with proper params', async () => {
-      const response = getDataContractFixture();
+      const response = await getDataContractFixture();
 
       stateRepositoryMock.fetchDataContract.resolves(response);
 
@@ -485,8 +485,8 @@ describe('LoggedStateRepositoryDecorator', () => {
   describe('#createDataContract', () => {
     let dataContract;
 
-    beforeEach(() => {
-      dataContract = getDataContractFixture();
+    beforeEach(async () => {
+      dataContract = await getDataContractFixture();
     });
 
     it('should call logger with proper params', async () => {
@@ -531,8 +531,8 @@ describe('LoggedStateRepositoryDecorator', () => {
   describe('#updateDataContract', () => {
     let dataContract;
 
-    beforeEach(() => {
-      dataContract = getDataContractFixture();
+    beforeEach(async () => {
+      dataContract = await getDataContractFixture();
     });
 
     it('should call logger with proper params', async () => {
@@ -588,7 +588,7 @@ describe('LoggedStateRepositoryDecorator', () => {
     });
 
     it('should call logger with proper params', async () => {
-      const response = getDocumentsFixture();
+      const response = await getDocumentsFixture();
 
       stateRepositoryMock.fetchDocuments.resolves(response);
 
@@ -629,8 +629,8 @@ describe('LoggedStateRepositoryDecorator', () => {
   describe('#createDocument', () => {
     let document;
 
-    beforeEach(() => {
-      [document] = getDocumentsFixture();
+    beforeEach(async () => {
+      [document] = await getDocumentsFixture();
     });
 
     it('should call logger with proper params', async () => {
@@ -675,8 +675,8 @@ describe('LoggedStateRepositoryDecorator', () => {
   describe('#updateDocument', () => {
     let document;
 
-    beforeEach(() => {
-      [document] = getDocumentsFixture();
+    beforeEach(async () => {
+      [document] = await getDocumentsFixture();
     });
 
     it('should call logger with proper params', async () => {
@@ -723,8 +723,8 @@ describe('LoggedStateRepositoryDecorator', () => {
     let type;
     let id;
 
-    beforeEach(() => {
-      dataContract = getDataContractFixture();
+    beforeEach(async () => {
+      dataContract = await getDataContractFixture();
       type = 'type';
       id = generateRandomIdentifier();
     });

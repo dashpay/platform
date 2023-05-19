@@ -1,9 +1,7 @@
-const Identifier = require('@dashevo/dpp/lib/identifier/Identifier');
-const IdentityPublicKey = require('@dashevo/dpp/lib/identity/IdentityPublicKey');
 const Address = require('@dashevo/dashcore-lib/lib/address');
 const Script = require('@dashevo/dashcore-lib/lib/script');
+const { KeyType, Identifier } = require('@dashevo/wasm-dpp');
 const createOperatorIdentifier = require('./createOperatorIdentifier');
-const createVotingIdentifier = require('./createVotingIdentifier');
 
 /**
  *
@@ -56,7 +54,7 @@ function handleNewMasternodeFactory(
         blockInfo,
         masternodeIdentifier,
         ownerPublicKeyHash,
-        IdentityPublicKey.TYPES.ECDSA_HASH160,
+        KeyType.ECDSA_HASH160,
         payoutScript,
       ),
     );
@@ -79,7 +77,7 @@ function handleNewMasternodeFactory(
           blockInfo,
           operatorIdentifier,
           operatorPubKey,
-          IdentityPublicKey.TYPES.BLS12_381,
+          KeyType.BLS12_381,
           operatorPayoutScript,
         ),
       );
@@ -98,22 +96,23 @@ function handleNewMasternodeFactory(
       }
     }
 
-    const votingPubKeyHash = Buffer.from(proRegTxPayload.keyIDVoting, 'hex').reverse();
+    // const votingPubKeyHash = Buffer.from(proRegTxPayload.keyIDVoting, 'hex').reverse();
 
+    // TODO: Disabled until we have uniq keys support in DPP
     // don't need to create a separate Identity in case we don't have
     // voting public key (keyIDVoting === keyIDOwner)
-    if (!votingPubKeyHash.equals(ownerPublicKeyHash)) {
-      const votingIdentifier = createVotingIdentifier(masternodeEntry);
-
-      createdEntities.push(
-        await createMasternodeIdentity(
-          blockInfo,
-          votingIdentifier,
-          votingPubKeyHash,
-          IdentityPublicKey.TYPES.ECDSA_HASH160,
-        ),
-      );
-    }
+    // if (!votingPubKeyHash.equals(ownerPublicKeyHash)) {
+    //   const votingIdentifier = createVotingIdentifier(masternodeEntry);
+    //
+    //   createdEntities.push(
+    //     await createMasternodeIdentity(
+    //       blockInfo,
+    //       votingIdentifier,
+    //       votingPubKeyHash,
+    //       KeyType.ECDSA_HASH160,
+    //     ),
+    //   );
+    // }
 
     return {
       createdEntities,

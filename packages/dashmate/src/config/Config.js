@@ -151,14 +151,20 @@ class Config {
   }
 
   /**
-   *
+   * @param {Object} [options={}]
+   * @param {boolean} [options.platformOnly=false]
    * @return {{CONFIG_NAME: string, COMPOSE_PROJECT_NAME: string}}
    */
-  toEnvs() {
-    const dockerComposeFiles = ['docker-compose.yml'];
+  toEnvs(options = {}) {
+    const dockerComposeFiles = [];
 
-    if (this.get('core.masternode.enable') === true) {
-      dockerComposeFiles.push('docker-compose.sentinel.yml');
+    if (!options.platformOnly) {
+      // TODO: it should contain only the dashmate helper that must be ran always
+      dockerComposeFiles.push('docker-compose.yml');
+
+      if (this.get('core.masternode.enable') === true) {
+        dockerComposeFiles.push('docker-compose.sentinel.yml');
+      }
     }
 
     if (this.get('platform.enable')) {
@@ -171,10 +177,14 @@ class Config {
 
     let envs = {
       CONFIG_NAME: this.getName(),
-      COMPOSE_PROJECT_NAME: `dash_masternode_${this.getName()}`,
+      COMPOSE_PROJECT_NAME: `dashmate_${this.getName()}`,
       COMPOSE_FILE: dockerComposeFiles.join(':'),
       COMPOSE_PATH_SEPARATOR: ':',
       DOCKER_BUILDKIT: 1,
+      COMPOSE_DOCKER_CLI_BUILD: 1,
+      CORE_LOG_DIRECTORY_PATH: nodePath.dirname(
+        this.get('core.log.file.path'),
+      ),
       ...convertObjectToEnvs(this.getOptions()),
     };
 

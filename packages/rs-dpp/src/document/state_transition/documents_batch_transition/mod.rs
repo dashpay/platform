@@ -51,6 +51,8 @@ pub mod property_names {
     pub const SIGNATURE: &str = "signature";
     pub const PROTOCOL_VERSION: &str = "protocolVersion";
     pub const SECURITY_LEVEL_REQUIREMENT: &str = "signatureSecurityLevelRequirement";
+    pub const CREATED_AT: &str = "$createdAt";
+    pub const UPDATED_AT: &str = "$updatedAt";
 }
 
 pub const IDENTIFIER_FIELDS: [&str; 3] = [

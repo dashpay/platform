@@ -1,6 +1,6 @@
 const createDIContainer = require('../createDIContainer');
 
-async function createTestDIContainer(dashCore = undefined) {
+async function createTestDIContainer(blsAdapter, dashCore = undefined) {
   let coreOptions = {};
   if (dashCore) {
     coreOptions = {
@@ -11,18 +11,12 @@ async function createTestDIContainer(dashCore = undefined) {
     };
   }
 
-  const container = createDIContainer({
+  const container = createDIContainer(blsAdapter, {
     ...process.env,
     GROVEDB_LATEST_FILE: './db/latest_state_test',
     EXTERNAL_STORE_LEVEL_DB_FILE: './db/external_leveldb_test',
     ...coreOptions,
   });
-
-  const dpp = container.resolve('dpp');
-  const transactionalDpp = container.resolve('transactionalDpp');
-
-  await dpp.initialize();
-  await transactionalDpp.initialize();
 
   return container;
 }
