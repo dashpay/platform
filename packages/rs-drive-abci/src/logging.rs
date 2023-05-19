@@ -251,11 +251,6 @@ impl std::io::Write for LogDestination {
     }
 }
 
-/// RotationWriter allows writing logs to a file that is automatically rotated
-// struct RotationWriter {
-//     inner: file_rotate::FileRotate<AppendTimestamp>,
-// }
-
 impl TryFrom<&LogConfig> for file_rotate::FileRotate<AppendTimestamp> {
     type Error = Error;
     fn try_from(config: &LogConfig) -> Result<Self, Self::Error> {
@@ -288,52 +283,6 @@ impl TryFrom<&LogConfig> for file_rotate::FileRotate<AppendTimestamp> {
         Ok(f)
     }
 }
-
-// impl RotationWriter {
-//     /// Create new rotating writer
-//     fn new(path: &PathBuf, max_files: usize) -> Self {
-//         let suffix_scheme = AppendTimestamp::default(FileLimit::MaxFiles(max_files));
-//         let content_limit = ContentLimit::Time(TimeFrequency::Daily);
-//         let compression = file_rotate::compression::Compression::OnRotate(2);
-//         let mode = Some(0o600);
-//         let f = file_rotate::FileRotate::new(
-//             path.join("drive-abci.log"),
-//             suffix_scheme,
-//             content_limit,
-//             compression,
-//             mode,
-//         );
-
-//         Self { inner: f }
-//     }
-// }
-
-// impl std::io::Write for RotationWriter {
-//     delegate::delegate! {
-//         to self.inner {
-//             #[inline]
-//             fn write(&mut self, buf: &[u8]) -> std::io::Result<usize>;
-
-//             #[inline]
-//             fn flush(&mut self) -> std::io::Result<()> ;
-
-//             #[inline]
-//             fn write_vectored(&mut self, bufs: &[std::io::IoSlice<'_>]) -> std::io::Result<usize> ;
-
-//             #[inline]
-//             fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> ;
-
-//             #[inline]
-//             fn write_fmt(&mut self, fmt: std::fmt::Arguments<'_>) -> std::io::Result<()> ;
-//         }
-//     }
-// }
-
-// impl Debug for RotationWriter {
-//     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//         f.write_str("RotationWriter")
-//     }
-// }
 
 /// Logger configuration
 #[derive(Debug)]
