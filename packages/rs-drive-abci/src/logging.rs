@@ -158,7 +158,7 @@ enum LogDestination {
     RotationWriter(Writer<FileRotate<AppendTimestamp>>),
     #[cfg(test)]
     // Just some bytes, for testing
-    Bytes(Arc<Mutex<Vec<u8>>>),
+    Bytes(Writer<Vec<u8>>),
 }
 
 struct Writer<T>(Arc<Mutex<T>>)
@@ -208,7 +208,7 @@ impl LogDestination {
             LogDestination::StdOut => Box::new(std::io::stdout()) as Box<dyn std::io::Write>,
             LogDestination::RotationWriter(w) => Box::new(w.clone()) as Box<dyn std::io::Write>,
             #[cfg(test)]
-            LogDestination::Bytes(buf) => Box::new(Writer(buf.clone())) as Box<dyn std::io::Write>,
+            LogDestination::Bytes(w) => Box::new(w.clone()) as Box<dyn std::io::Write>,
         };
 
         writer
@@ -308,17 +308,15 @@ impl TryFrom<&LogConfig> for Logger {
             "stdout" => LogDestination::StdOut,
             "stderr" => LogDestination::StdErr,
             #[cfg(test)]
-            "bytes" => LogDestination::Bytes(Arc::new(Mutex::new(Vec::<u8>::new()))),
+            "bytes" => LogDestination::Bytes(Vec::<u8>::new().into()),
             dest => {
                 let path = PathBuf::from(dest);
-
                 if !path.is_absolute() {
                     return Err(Error::InvalidDestination(dest.to_string()));
                 }
 
                 let file: FileRotate<AppendTimestamp> = FileRotate::try_from(config)?;
-                let writer = Writer::from(file);
-                LogDestination::RotationWriter(writer)
+                LogDestination::RotationWriter(file.into())
             }
         };
         let verbosity = config.verbosity;
@@ -406,7 +404,7 @@ mod tests {
         let dest = dest.lock().unwrap();
         match dest.deref() {
             LogDestination::Bytes(b) => {
-                let guard = b.lock().unwrap();
+                let guard = b.0.lock().unwrap();
                 let b = guard.clone();
 
                 from_utf8(b.as_slice()).unwrap().to_string()
