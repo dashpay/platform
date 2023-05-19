@@ -52,6 +52,7 @@ RUN apk add --no-cache \
         openssl-dev \
         perl \
         python3 \
+        tree \
         unzip \
         wget \
         xz \
@@ -73,12 +74,12 @@ RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else e
     rm /tmp/protoc.zip && \
     ln -s /opt/protoc/bin/protoc /usr/bin/
 
-# Install sccache for caching
-RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else export SCC_ARCH=x86_64; fi; \
-    curl -Ls \
-        https://github.com/mozilla/sccache/releases/download/v0.4.1/sccache-v0.4.1-${SCC_ARCH}-unknown-linux-musl.tar.gz | \
-        tar -C /tmp -xz && \
-        mv /tmp/sccache-*/sccache /usr/bin/
+# # Install sccache for caching
+# RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export SCC_ARCH=aarch64; else export SCC_ARCH=x86_64; fi; \
+#     curl -Ls \
+#         https://github.com/mozilla/sccache/releases/download/v0.4.1/sccache-v0.4.1-${SCC_ARCH}-unknown-linux-musl.tar.gz | \
+#         tar -C /tmp -xz && \
+#         mv /tmp/sccache-*/sccache /usr/bin/
 
 # Configure Node.js
 RUN npm install -g npm@9.6.6 && \
@@ -93,7 +94,7 @@ RUN rm /usr/bin/cc && ln -s /usr/bin/clang /usr/bin/cc
 # Configure sccache
 #
 # Activate sccache for Rust code
-ENV RUSTC_WRAPPER=/usr/bin/sccache
+ENV RUSTC_WRAPPER=
 # Set args below to use Github Actions cache; see https://github.com/mozilla/sccache/blob/main/docs/GHA.md
 ARG SCCACHE_GHA_ENABLED
 ARG ACTIONS_CACHE_URL
@@ -102,7 +103,7 @@ ARG ACTIONS_RUNTIME_TOKEN
 ARG SCCACHE_MEMCACHED
 
 # Disable incremental buildings, not supported by sccache
-ARG CARGO_INCREMENTAL=false
+ARG CARGO_INCREMENTAL=true
 
 # Select whether we want dev or release
 ARG CARGO_BUILD_PROFILE=dev
@@ -115,17 +116,16 @@ ENV NODE_ENV ${NODE_ENV}
 # better build caching
 WORKDIR /platform
 
-RUN echo "bust cache 16"
-RUN --mount=type=cache,sharing=shared,id=deps_cargo_index,target=/usr/local/cargo/registry/index \
-    --mount=type=cache,sharing=shared,id=deps_cargo_cache,target=/usr/local/cargo/registry/cache \
-    --mount=type=cache,sharing=shared,id=deps_cargo_git,target=/usr/local/cargo/git/db \
-    --mount=type=cache,sharing=shared,id=deps_target,target=/platform/target \
-    ls -lha /usr/local/cargo/registry/index && \
-    ls -lha /usr/local/cargo/registry/cache && \
-    ls -lha /usr/local/cargo/git/db && \
-    ls -lha /platform/target && \
+RUN echo "bust cache 21"
+RUN --mount=type=cache,sharing=shared,id=cargo_registry,target=/usr/local/cargo/registry \
+    --mount=type=cache,sharing=shared,id=cargo_git,target=/usr/local/cargo/git \
+    --mount=type=cache,sharing=shared,id=target,target=/platform/target \
+    tree -L 4 /usr/local/cargo || true&& \
+    tree -L 4 /platform/target || true&& \
     CARGO_TARGET_DIR=/platform/target \
-    cargo install --profile "$CARGO_BUILD_PROFILE" wasm-bindgen-cli@0.2.84
+    cargo install --profile "$CARGO_BUILD_PROFILE" wasm-bindgen-cli@0.2.84 && \
+    tree -L 4 /usr/local/cargo && \
+    tree -L 4 /platform/target
 
 
 #
@@ -148,24 +148,20 @@ RUN yarn config set enableInlineBuilds true
 FROM sources AS build-drive-abci
 
 RUN mkdir /artifacts
-RUN echo "bust cache 8"
-RUN --mount=type=cache,sharing=locked,id=drive_cargo_index,target=/usr/local/cargo/registry/index \
-    --mount=type=cache,sharing=locked,id=drive_cargo_cache,target=/usr/local/cargo/registry/cache \
-    --mount=type=cache,sharing=locked,id=drive_cargo_git,target=/usr/local/cargo/git/db \
-    --mount=type=cache,sharing=locked,id=drive_target,target=/platform/target \
-    ls -lha /usr/local/cargo/registry/index && \
-    ls -lha /usr/local/cargo/registry/cache && \
-    ls -lha /usr/local/cargo/git/db && \
-    ls -lha /platform/target && \
+RUN echo "bust cache 18"
+RUN --mount=type=cache,sharing=shared,id=cargo_registry,target=/usr/local/cargo/registry \
+    --mount=type=cache,sharing=shared,id=cargo_git,target=/usr/local/cargo/git \
+    --mount=type=cache,sharing=shared,id=target,target=/platform/target \
+    tree -L 4 /usr/local/cargo || true && \
+    tree -L 4 /platform/target || true && \
     cargo build \
-        --profile "$CARGO_BUILD_PROFILE" \
-        -p drive-abci \
-       --config net.git-fetch-with-cli=true && \
+      --profile "$CARGO_BUILD_PROFILE" \
+      --package drive-abci \
+      --config net.git-fetch-with-cli=true && \
     cp /platform/target/*/drive-abci /artifacts/drive-abci && \
-    ls -lha /usr/local/cargo/registry/index && \
-    ls -lha /usr/local/cargo/registry/cache && \
-    ls -lha /usr/local/cargo/git/db && \
-    ls -lha /platform/target
+    tree -L 4 /usr/local/cargo && \
+    tree -L 4 /platform/target && \
+    tree /artifacts
 
 #
 # STAGE: BUILD JAVASCRIPT INTERMEDIATE IMAGE
