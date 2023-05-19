@@ -9,6 +9,8 @@ use file_rotate::ContentLimit;
 use file_rotate::TimeFrequency;
 use itertools::Itertools;
 use lazy_static::__Deref;
+use serde::Deserialize;
+use serde::Serialize;
 use tracing::metadata::LevelFilter;
 use tracing_subscriber::fmt;
 use tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt;
@@ -19,6 +21,7 @@ use tracing_subscriber::Layer;
 use tracing_subscriber::Registry;
 
 /// Logging configuration.
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LogConfig {
     /// Destination of logs; either absolute path to dir where log files will be stored, "stdout" or "stderr".
     ///
@@ -186,7 +189,7 @@ impl LogDestination {
         let writer = match self {
             LogDestination::StdErr => Box::new(std::io::stderr()) as Box<dyn std::io::Write>,
             LogDestination::StdOut => Box::new(std::io::stdout()) as Box<dyn std::io::Write>,
-            LogDestination::RotationWriter(w) => Box::new(Writer(w.clone())),
+            LogDestination::RotationWriter(w) => Box::new(Writer(Arc::clone(w))),
             #[cfg(test)]
             LogDestination::Bytes(buf) => Box::new(Writer(buf.clone())) as Box<dyn std::io::Write>,
         };
@@ -390,8 +393,23 @@ impl Logger {
 
 #[cfg(test)]
 mod tests {
+    use tempfile::TempDir;
+
     use super::*;
-    use std::str::from_utf8;
+    use std::{io::Write, ops::DerefMut, str::from_utf8};
+
+    fn dest_bytes(dest: Arc<Mutex<LogDestination>>) -> String {
+        let dest = dest.lock().unwrap();
+        let bytes_v0 = if let LogDestination::Bytes(b) = dest.deref() {
+            let guard = b.lock().unwrap();
+            let b = guard.clone();
+            b
+        } else {
+            panic!("wrong type of log destination 0")
+        };
+
+        from_utf8(bytes_v0.as_slice()).unwrap().to_string()
+    }
 
     /// Test that two loggers can work independently, with different log levels.
     ///
@@ -399,6 +417,20 @@ mod tests {
     #[test]
     fn test_two_loggers_bytes() {
         let mut logging = LogController::new();
+
+        let logger_stdout = LogConfig {
+            destination: "stdout".to_string(),
+            verbosity: 0,
+            ..Default::default()
+        };
+        logging.add(&logger_stdout).unwrap();
+
+        let logger_stderr = LogConfig {
+            destination: "stderr".to_string(),
+            verbosity: 4,
+            ..Default::default()
+        };
+        logging.add(&logger_stderr).unwrap();
 
         let logger_v0 = LogConfig {
             destination: "bytes".to_string(),
@@ -414,37 +446,57 @@ mod tests {
         };
         logging.add(&logger_v4).unwrap();
 
-        // Get bytes from logger with verbosity 0
-        let dest = logging.loggers[0].destination.lock().unwrap();
-        let bytes_v0 = if let LogDestination::Bytes(b) = dest.deref() {
-            b.lock().unwrap().clone()
-        } else {
-            panic!("wrong type of log destination 0")
+        let dir_v0 = TempDir::new().unwrap();
+        let logger_dir_v0 = LogConfig {
+            destination: dir_v0
+                .path()
+                .canonicalize()
+                .unwrap()
+                .to_string_lossy()
+                .to_string(),
+            verbosity: 4,
+            ..Default::default()
         };
-        let bytes_v0 = from_utf8(bytes_v0.as_slice()).unwrap();
+        logging.add(&logger_dir_v0).unwrap();
 
-        // Get bytes from logger with verbosity 4
-        let dest = logging.loggers[1].destination.lock().unwrap();
-        let bytes_v4 = if let LogDestination::Bytes(b) = dest.deref() {
-            b.lock().unwrap().clone()
-        } else {
-            panic!("wrong type of log destination 1")
-        };
-        let bytes_v4 = from_utf8(bytes_v4.as_slice()).unwrap();
+        logging.finalize();
 
         const TEST_STRING_DEBUG: &str = "testing debug trace";
         const TEST_STRING_ERROR: &str = "testing error trace";
         tracing::error!(TEST_STRING_ERROR);
         tracing::debug!(TEST_STRING_DEBUG);
 
-        // let bytes_v0 = from_utf8(&bytes_v0).unwrap();
-        // let bytes_v4 = buf_v4.lock().unwrap();
-        // let bytes_v4 = from_utf8(&bytes_v4).unwrap();
+        // CHECK ASSERTIONS
 
-        assert!(bytes_v0.contains(TEST_STRING_ERROR));
-        assert!(bytes_v4.contains(TEST_STRING_ERROR));
+        let result_verbosity_0 = dest_bytes(logging.loggers[2].destination.clone());
+        let result_verbosity_4 = dest_bytes(logging.loggers[3].destination.clone());
 
-        assert!(!bytes_v0.contains(TEST_STRING_ERROR));
-        assert!(bytes_v4.contains(TEST_STRING_ERROR));
+        println!("{:?}", result_verbosity_0);
+        println!("{:?}", result_verbosity_4);
+        println!("Dest dir: {:?}", dir_v0);
+
+        assert!(result_verbosity_0.contains(TEST_STRING_ERROR));
+        assert!(result_verbosity_4.contains(TEST_STRING_ERROR));
+
+        assert!(!result_verbosity_0.contains(TEST_STRING_DEBUG));
+        assert!(result_verbosity_4.contains(TEST_STRING_DEBUG));
+
+        if let LogDestination::RotationWriter(w) = logging.loggers[4]
+            .destination
+            .clone()
+            .lock()
+            .unwrap()
+            .deref()
+        {
+            let c = w.clone();
+            let mut w = c.lock().unwrap();
+            let mut cloned = w.deref_mut();
+            cloned.write_all("test\n".as_bytes()).unwrap();
+            println!("{:?}", cloned.inner.log_paths())
+        } else {
+            panic!("not a rotation writer")
+        }
+
+        // std::thread::sleep(std::time::Duration::from_secs(30));
     }
 }

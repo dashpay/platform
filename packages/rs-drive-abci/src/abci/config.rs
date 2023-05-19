@@ -1,6 +1,6 @@
 //! Configuration of ABCI Application server
 
-use crate::config::FromEnv;
+use crate::{config::FromEnv, logging::LogConfig};
 use rand::prelude::StdRng;
 use rand::SeedableRng;
 
@@ -37,6 +37,10 @@ pub struct AbciConfig {
     /// Chain ID of the network to use
     #[serde(default)]
     pub chain_id: String,
+
+    /// Logging configuration
+    #[serde(rename = "abci_log")]
+    pub log: Vec<LogConfig>,
 }
 
 impl AbciConfig {
@@ -46,6 +50,19 @@ impl AbciConfig {
 
     pub(crate) fn default_genesis_core_height() -> u32 {
         1
+    }
+}
+
+impl Default for AbciConfig {
+    fn default() -> Self {
+        Self {
+            bind_address: "tcp://127.0.0.1:1234".to_string(),
+            keys: Keys::new_random_keys_with_seed(18012014), //Dash genesis day
+            genesis_height: AbciConfig::default_genesis_height(),
+            genesis_core_height: AbciConfig::default_genesis_core_height(),
+            chain_id: "chain_id".to_string(),
+            log: vec![Default::default()],
+        }
     }
 }
 
