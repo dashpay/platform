@@ -115,10 +115,10 @@ ENV NODE_ENV ${NODE_ENV}
 # better build caching
 WORKDIR /platform
 RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=shared,target=/platform/target \
+    --mount=type=cache,sharing=private,target=${CARGO_HOME}/registry/index \
+    --mount=type=cache,sharing=private,target=${CARGO_HOME}/registry/cache \
+    --mount=type=cache,sharing=private,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=private,target=/platform/target \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     CARGO_TARGET_DIR=/platform/target cargo install --profile "$CARGO_BUILD_PROFILE" wasm-bindgen-cli@0.2.84
@@ -145,10 +145,10 @@ FROM sources AS build-drive-abci
 RUN mkdir /artifacts
 
 RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
-    --mount=type=cache,sharing=shared,target=/platform/target \
+    --mount=type=cache,sharing=private,target=${CARGO_HOME}/registry/index \
+    --mount=type=cache,sharing=private,target=${CARGO_HOME}/registry/cache \
+    --mount=type=cache,sharing=private,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=private,target=/platform/target \
     export SCCACHE_SERVER_PORT=$((RANDOM+1025)) && \
     if [[ -z "${SCCACHE_MEMCACHED}" ]] ; then unset SCCACHE_MEMCACHED ; fi ; \
     cargo build \
@@ -166,9 +166,9 @@ FROM sources AS build-js
 RUN mkdir /artifacts
 
 RUN --mount=type=cache,sharing=shared,target=/root/.cache/sccache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/index \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/registry/cache \
-    --mount=type=cache,sharing=shared,target=${CARGO_HOME}/git/db \
+    --mount=type=cache,sharing=private,target=${CARGO_HOME}/registry/index \
+    --mount=type=cache,sharing=private,target=${CARGO_HOME}/registry/cache \
+    --mount=type=cache,sharing=private,target=${CARGO_HOME}/git/db \
     --mount=type=cache,sharing=shared,id=wasm_dpp_target,target=/platform/target \
     --mount=type=cache,target=/tmp/unplugged \
     cp -R /tmp/unplugged /platform/.yarn/ && \
