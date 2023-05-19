@@ -148,21 +148,20 @@ RUN yarn config set enableInlineBuilds true
 FROM sources AS build-drive-abci
 
 RUN mkdir /artifacts
-RUN echo "bust cache 6"
+RUN echo "bust cache 7"
 RUN --mount=type=cache,sharing=shared,id=drive_cargo_index,target=/usr/local/cargo/registry/index \
     --mount=type=cache,sharing=shared,id=drive_cargo_cache,target=/usr/local/cargo/registry/cache \
     --mount=type=cache,sharing=shared,id=drive_cargo_git,target=/usr/local/cargo/git/db \
     --mount=type=cache,sharing=shared,id=drive_target,target=/platform/target \
+    ls -lha /usr/local/cargo/registry/index && \
+    ls -lha /usr/local/cargo/registry/cache && \
+    ls -lha /usr/local/cargo/git/db && \
+    ls -lha /platform/target && \
     cargo build \
         --profile "$CARGO_BUILD_PROFILE" \
         -p drive-abci \
        --config net.git-fetch-with-cli=true && \
-    cp /platform/target/*/drive-abci /artifacts/drive-abci
-
-RUN --mount=type=cache,sharing=shared,id=drive_cargo_index,target=/usr/local/cargo/registry/index \
-    --mount=type=cache,sharing=shared,id=drive_cargo_cache,target=/usr/local/cargo/registry/cache \
-    --mount=type=cache,sharing=shared,id=drive_cargo_git,target=/usr/local/cargo/git/db \
-    --mount=type=cache,sharing=shared,id=drive_target,target=/platform/target \
+    cp /platform/target/*/drive-abci /artifacts/drive-abci && \
     ls -lha /usr/local/cargo/registry/index && \
     ls -lha /usr/local/cargo/registry/cache && \
     ls -lha /usr/local/cargo/git/db && \
