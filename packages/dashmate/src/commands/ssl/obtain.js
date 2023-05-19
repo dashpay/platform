@@ -17,6 +17,7 @@ class ObtainCommand extends ConfigBaseCommand {
     args,
     {
       verbose: isVerbose,
+      'no-retry': noRetry,
     },
     config,
     obtainZeroSSLCertificateTask,
@@ -38,7 +39,9 @@ class ObtainCommand extends ConfigBaseCommand {
     });
 
     try {
-      await tasks.run();
+      await tasks.run({
+        noRetry,
+      });
     } catch (e) {
       throw new MuteOneLineError(e);
     }
@@ -53,6 +56,7 @@ Obtain SSL certificate using ZeroSSL API Key
 ObtainCommand.flags = {
   ...ConfigBaseCommand.flags,
   verbose: Flags.boolean({ char: 'v', description: 'use verbose mode for output', default: false }),
+  'no-retry': Flags.boolean({ description: 'do not retry on IP verification failure', default: false }),
 };
 
 module.exports = ObtainCommand;
