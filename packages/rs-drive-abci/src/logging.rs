@@ -23,15 +23,30 @@ use tracing_subscriber::Registry;
 /// Logging configuration.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LogConfig {
-    /// Destination of logs; either absolute path to dir where log files will be stored, "stdout" or "stderr".
+    /// Destination of logs.
     ///
-    /// For testing, use "bytes".
+    /// One of:
+    /// * "stdout",
+    /// * "stderr",
+    /// * absolute path to existing directory where log files will be stored
+    ///
+    /// For testing, also "bytes" is available.
     pub destination: String,
     /// Verbosity level, 0 to 5; see `-v` option in `drive-abci --help` for more details.
     pub verbosity: u8,
     /// Whether or not to use colorful output; defaults to autodetect
     pub color: Option<bool>,
-
+    /// Output format to use.
+    ///
+    /// One of:
+    /// * full
+    /// * compact
+    /// * pretty
+    /// * json
+    ///
+    /// See https://docs.rs/tracing-subscriber/latest/tracing_subscriber/fmt/format/index.html#formatters for more
+    /// detailed description.
+    pub format: String,
     /// Max number of daily files to store; only used when storing logs in file; defaults to 7
     pub max_files: usize,
 }
@@ -42,6 +57,7 @@ impl Default for LogConfig {
             destination: String::from("stderr"),
             verbosity: 0,
             color: None,
+            format: String::from("full"),
             max_files: 7,
         }
     }
@@ -63,6 +79,10 @@ pub enum Error {
     /// Log file path is invalid
     #[error("log file path {0}: {1}")]
     FilePath(PathBuf, String),
+
+    /// Invalid logformat
+    #[error("invalid format {0}: must be one of: full, compact, pretty, json")]
+    InvalidFormat(String),
 }
 
 /// LogController is managing logging methods.
@@ -288,6 +308,14 @@ impl TryFrom<&LogConfig> for file_rotate::FileRotate<AppendTimestamp> {
     }
 }
 
+#[derive(Debug)]
+enum LogFormat {
+    Full,
+    Compact,
+    Pretty,
+    Json,
+}
+
 /// Logger configuration
 #[derive(Debug)]
 struct Logger {
@@ -299,6 +327,9 @@ struct Logger {
 
     /// Whether to use colored output
     color: Option<bool>,
+
+    /// Log format to use
+    format: LogFormat,
 }
 
 impl TryFrom<&LogConfig> for Logger {
@@ -322,10 +353,19 @@ impl TryFrom<&LogConfig> for Logger {
         let verbosity = config.verbosity;
         let color = config.color;
 
+        let format = match config.format.as_str() {
+            "full" => LogFormat::Full,
+            "compact" => LogFormat::Compact,
+            "pretty" => LogFormat::Pretty,
+            "json" => LogFormat::Json,
+            _ => return Err(Error::InvalidFormat(config.format.clone())),
+        };
+
         Ok(Self {
             destination: Arc::new(Mutex::new(destination)),
             verbosity,
             color,
+            format,
         })
     }
 }
@@ -336,16 +376,10 @@ impl Default for Logger {
             destination: Arc::new(Mutex::new(LogDestination::StdErr)),
             verbosity: 0,
             color: None,
+            format: LogFormat::Full,
         }
     }
 }
-
-// fn with<L>(self, layer: L) -> Layered<L, Self>
-//     where
-//         L: Layer<Self>,
-//         Self: Sized,
-
-impl<S: tracing::Subscriber> Layer<S> for Logger {}
 
 impl Logger {
     /// Register the logger in a registry
@@ -368,9 +402,14 @@ impl Logger {
             .with_writer(make_writer)
             .with_ansi(ansi);
 
-        let layered = formatter.with_filter(filter);
+        let formatter = match self.format {
+            LogFormat::Full => formatter.with_filter(filter).boxed(),
+            LogFormat::Compact => formatter.compact().with_filter(filter).boxed(),
+            LogFormat::Pretty => formatter.pretty().with_filter(filter).boxed(),
+            LogFormat::Json => formatter.json().with_filter(filter).boxed(),
+        };
 
-        layered
+        formatter
     }
 
     fn env_filter(&self) -> EnvFilter {
@@ -400,7 +439,7 @@ mod tests {
     /// Only [LogDestination::Bytes] and [LogDestination::RotationWriter] are supported.
     ///
     /// Contract: LogDestination::RotationWriter was rotated
-    fn dest_bytes(dest: Arc<Mutex<LogDestination>>) -> String {
+    fn dest_to_string(dest: Arc<Mutex<LogDestination>>) -> String {
         let dest = dest.lock().unwrap();
         match dest.deref() {
             LogDestination::Bytes(b) => {
@@ -431,6 +470,7 @@ mod tests {
         let logger_stdout = LogConfig {
             destination: "stdout".to_string(),
             verbosity: 0,
+            format: "pretty".to_string(),
             ..Default::default()
         };
         logging.add(&logger_stdout).unwrap();
@@ -452,6 +492,7 @@ mod tests {
         let logger_v4 = LogConfig {
             destination: "bytes".to_string(),
             verbosity: 4,
+            format: "json".to_string(),
             ..Default::default()
         };
         logging.add(&logger_v4).unwrap();
@@ -480,9 +521,9 @@ mod tests {
         logging.rotate().unwrap();
         // CHECK ASSERTIONS
 
-        let result_verb_0 = dest_bytes(logging.loggers[2].destination.clone());
-        let result_verb_4 = dest_bytes(logging.loggers[3].destination.clone());
-        let result_dir_verb_0 = dest_bytes(logging.loggers[4].destination.clone());
+        let result_verb_0 = dest_to_string(logging.loggers[2].destination.clone());
+        let result_verb_4 = dest_to_string(logging.loggers[3].destination.clone());
+        let result_dir_verb_0 = dest_to_string(logging.loggers[4].destination.clone());
 
         println!("{:?}", result_verb_0);
         println!("{:?}", result_verb_4);
