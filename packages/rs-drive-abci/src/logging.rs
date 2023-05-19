@@ -1,8 +1,3 @@
-use std::fmt::Debug;
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::Mutex;
-
 use file_rotate::suffix::AppendTimestamp;
 use file_rotate::suffix::FileLimit;
 use file_rotate::ContentLimit;
@@ -12,6 +7,10 @@ use itertools::Itertools;
 use lazy_static::__Deref;
 use serde::Deserialize;
 use serde::Serialize;
+use std::fmt::Debug;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::Mutex;
 use tracing::metadata::LevelFilter;
 use tracing_subscriber::fmt;
 use tracing_subscriber::prelude::__tracing_subscriber_SubscriberExt;
@@ -65,6 +64,7 @@ pub enum Error {
     #[error("log file path {0}: {1}")]
     FilePath(PathBuf, String),
 }
+
 /// LogController is managing logging methods.
 pub struct LogController {
     loggers: Vec<Logger>,
@@ -91,18 +91,22 @@ impl LogController {
 
     /// Flush all loggers.
     ///
-    /// Note that we ignore errors.
-    pub fn flush(&self) {
+    /// In case of multiple errors, returns only last one.
+    pub fn flush(&self) -> Result<(), std::io::Error> {
+        let mut result = Ok(());
         for logger in self.loggers.iter() {
-            logger
+            if let Err(e) = logger
                 .destination
                 .clone()
                 .lock()
                 .expect("logging lock poisoned")
                 .to_write()
                 .flush()
-                .ok();
+            {
+                result = Err(e);
+            };
         }
+        result
     }
 
     /// Trigger log rotation.
@@ -462,7 +466,7 @@ mod tests {
                 .unwrap()
                 .to_string_lossy()
                 .to_string(),
-            verbosity: 4,
+            verbosity: 0,
             ..Default::default()
         };
         logging.add(&logger_dir_v0).unwrap();
@@ -474,7 +478,7 @@ mod tests {
         tracing::error!(TEST_STRING_ERROR);
         tracing::debug!(TEST_STRING_DEBUG);
 
-        logging.flush();
+        logging.flush().unwrap();
         logging.rotate().unwrap();
         // CHECK ASSERTIONS
 
