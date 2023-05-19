@@ -68,10 +68,9 @@ where
     ///   checks, it returns a `ValidationResult` with fee information. If any check fails, it returns an `Error`.
     pub fn check_tx(
         &self,
-        raw_tx: Vec<u8>,
+        raw_tx: &[u8],
     ) -> Result<ValidationResult<FeeResult, ConsensusError>, Error> {
-        let state_transition =
-            StateTransition::deserialize(raw_tx.as_slice()).map_err(Error::Protocol)?;
+        let state_transition = StateTransition::deserialize(raw_tx).map_err(Error::Protocol)?;
         let state_read_guard = self.state.read().unwrap();
         let platform_ref = PlatformRef {
             drive: &self.drive,
@@ -105,17 +104,20 @@ mod tests {
     use crate::platform::Platform;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
-    use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointAlreadyExistsError;
-    use dpp::consensus::basic::BasicError;
-    use dpp::consensus::state::state_error::StateError;
-    use dpp::consensus::ConsensusError;
-    use dpp::dashcore::hashes::Hash;
-    use dpp::dashcore::Txid;
-    use dpp::identity::Identity;
+    use dpp::dashcore::secp256k1::{Secp256k1, SecretKey};
+    use dpp::dashcore::{signer, KeyPair, PrivateKey};
+    use dpp::data_contracts::dpns_contract;
+    use dpp::data_contracts::SystemDataContract::DPNS;
+    use dpp::identity::state_transition::identity_public_key_transitions::IdentityPublicKeyInCreation;
+    use dpp::identity::state_transition::identity_update_transition::identity_update_transition::IdentityUpdateTransition;
+    use dpp::identity::{Identity, KeyType, Purpose, SecurityLevel};
     use dpp::prelude::{Identifier, IdentityPublicKey};
-    use dpp::serialization_traits::{PlatformDeserializable, Signable};
-    use dpp::state_transition::StateTransition;
+    use dpp::serialization_traits::{PlatformDeserializable, PlatformSerializable, Signable};
     use dpp::state_transition::StateTransition::DataContractCreate;
+    use dpp::state_transition::{StateTransition, StateTransitionType};
+    use dpp::version::LATEST_VERSION;
+    use rand::rngs::StdRng;
+    use rand::SeedableRng;
     use std::collections::BTreeMap;
     use tenderdash_abci::proto::abci::RequestInitChain;
     use tenderdash_abci::proto::google::protobuf::Timestamp;
@@ -150,7 +152,9 @@ mod tests {
             .add_new_identity(identity, &BlockInfo::default(), true, None)
             .expect("expected to insert identity");
 
-        let validation_result = platform.check_tx(serialized).expect("expected to check tx");
+        let validation_result = platform
+            .check_tx(serialized.as_slice())
+            .expect("expected to check tx");
 
         //todo fix
         // assert!(validation_result.errors.is_empty());
@@ -198,7 +202,7 @@ mod tests {
             .expect("expected to commit transaction");
 
         let validation_result = platform
-            .check_tx(document_update)
+            .check_tx(document_update.as_slice())
             .expect("expected to check tx");
 
         dbg!(&validation_result.errors);
@@ -221,7 +225,7 @@ mod tests {
             .expect("expected to create genesis state");
 
         let validation_result = platform
-            .check_tx(identity_top_up.clone())
+            .check_tx(identity_top_up.as_slice())
             .expect("expected to check tx");
 
         assert!(validation_result.errors.is_empty());
@@ -373,10 +377,8 @@ mod tests {
             .expect("expected to commit transaction");
 
         let validation_result = platform
-            .check_tx(dpns_domain_document.clone())
+            .check_tx(dpns_domain_document.as_slice())
             .expect("expected to check tx");
-
-        dbg!(&validation_result.errors);
 
         assert!(validation_result.errors.is_empty());
 
@@ -393,5 +395,95 @@ mod tests {
             .commit_transaction(transaction)
             .unwrap()
             .expect("expected to commit transaction");
+    }
+
+    #[test]
+    fn identity_update_with_non_master_key_check_tx() {
+        let mut config = PlatformConfig::default();
+
+        let mut rng = StdRng::seed_from_u64(1);
+
+        let secp = Secp256k1::new();
+
+        let master_key_pair = KeyPair::new(&secp, &mut rng);
+
+        let master_secret_key = master_key_pair.secret_key();
+
+        let master_public_key = master_key_pair.public_key();
+
+        config.abci.keys.dpns_master_public_key = master_public_key.serialize().to_vec();
+
+        let high_key_pair = KeyPair::new(&secp, &mut rng);
+
+        let high_secret_key = high_key_pair.secret_key();
+
+        let high_public_key = high_key_pair.public_key();
+
+        config.abci.keys.dpns_second_public_key = high_public_key.serialize().to_vec();
+
+        let platform = TestPlatformBuilder::new()
+            .with_config(config)
+            .build_with_mock_rpc();
+
+        let genesis_time = 0;
+
+        platform
+            .create_genesis_state(genesis_time, platform.config.abci.keys.clone().into(), None)
+            .expect("expected to create genesis state");
+
+        let new_key_pair = KeyPair::new(&secp, &mut rng);
+
+        let mut new_key = IdentityPublicKeyInCreation {
+            id: 2,
+            purpose: Purpose::AUTHENTICATION,
+            security_level: SecurityLevel::HIGH,
+            key_type: KeyType::ECDSA_SECP256K1,
+            read_only: false,
+            data: new_key_pair.public_key().serialize().to_vec().into(),
+            signature: Default::default(),
+        };
+
+        let signable_bytes = new_key
+            .signable_bytes()
+            .expect("expected to get signable bytes");
+        let secret = new_key_pair.secret_key();
+        let signature =
+            signer::sign(&signable_bytes, &secret.secret_bytes()).expect("expected to sign");
+
+        new_key.signature = signature.to_vec().into();
+
+        let mut update_transition = IdentityUpdateTransition {
+            protocol_version: LATEST_VERSION,
+            transition_type: StateTransitionType::IdentityUpdate,
+            identity_id: dpns_contract::OWNER_ID_BYTES.into(),
+            revision: 0,
+            add_public_keys: vec![new_key],
+            disable_public_keys: vec![],
+            public_keys_disabled_at: None,
+            signature_public_key_id: 1,
+            signature: Default::default(),
+        };
+
+        let signature = signer::sign(
+            &update_transition
+                .signable_bytes()
+                .expect("expected signable bytes"),
+            &high_secret_key.secret_bytes(),
+        )
+        .expect("expected to sign");
+
+        update_transition.signature = signature.to_vec().into();
+
+        let transition: StateTransition = update_transition.into();
+
+        let update_transition_bytes = transition.serialize().expect("expected to serialize");
+
+        let validation_result = platform
+            .check_tx(update_transition_bytes.as_slice())
+            .expect("expected to execute identity top up tx");
+
+        // Only master keys can sign an update
+
+        validation_result.errors.first().expect("expected an error");
     }
 }
