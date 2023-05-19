@@ -148,7 +148,7 @@ RUN yarn config set enableInlineBuilds true
 FROM sources AS build-drive-abci
 
 RUN mkdir /artifacts
-RUN echo "bust cache 7"
+RUN echo "bust cache 8"
 RUN --mount=type=cache,sharing=locked,id=drive_cargo_index,target=/usr/local/cargo/registry/index \
     --mount=type=cache,sharing=locked,id=drive_cargo_cache,target=/usr/local/cargo/registry/cache \
     --mount=type=cache,sharing=locked,id=drive_cargo_git,target=/usr/local/cargo/git/db \
