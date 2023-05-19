@@ -107,6 +107,7 @@ mod tests {
     use dpp::block::block_info::BlockInfo;
     use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointAlreadyExistsError;
     use dpp::consensus::basic::BasicError;
+    use dpp::consensus::state::state_error::StateError;
     use dpp::consensus::ConsensusError;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::Txid;
@@ -277,6 +278,47 @@ mod tests {
             ConsensusError::BasicError(
                 BasicError::IdentityAssetLockTransactionOutPointAlreadyExistsError(_)
             )
+        ));
+    }
+
+    #[test]
+    fn identity_cant_create_with_used_outpoint() {
+        let identity_create = hex::decode("03020200000000002102b60f8631519ee2245dfbd7ff107540d378b9d9ca3e8356d1f791703b3027d71b412039feb0213146906bbe7b5c3edd127d567780258f11fd33475af3d2a48679c05e22c446a312d047ed61e94664a787bcac3aae2ab82417232e4a8edae519c525c4010000020021035f06136d7de4240dcfaa885f0c8236d752f906b3e1e8eb157cb816b5a58d6cd141202a6be48392e482a283380fc4679c0147589a898767897e958b3b85abf5703ef734c2041e172794199ecac63ee37f2744e13b6fc9e7d8265b9f2d0ea5a05e9be30000c601013f4fdb109bcd46a4f8eaf72c8bfca482b028e51a8e136519107c7b2c525a5f4100000000de33c4662f152d963eb1ee779cd11891d77890009e4aeabbfce29af45c402b846cc532593e62741065732e91762ac89822b1a6295c36c82863baf59bc0a0ad0b82f3a8f5d956f005dd505ad7e27cbb75c0196fa92f45f504079edb0ba5b64c2e93830f13a63cf9b7cba5a82836a979c1016378237e48859057bd6d2a09c47f78f0aa56f259aba31f205f68adc9f7b5931ea8929806dcd497c23fca262898a163de03000000013f4fdb109bcd46a4f8eaf72c8bfca482b028e51a8e136519107c7b2c525a5f41000000006a47304402207e065274128f612325de5c4e8332e8d3f49891ef2cd1ce4e57da7520484af7290220095d40dfa4490ea336155e82e969ee0f4b59d12126bec6ec7bfe1fee4cbf27d6012102faf354bb3b1487f939e7d7e2e25ec71ad6e3d9804f649e3765ea143d65042bdfffffffff02a086010000000000166a1445399c0424ad422c9dd1f1798ac570666a23f519d8230900000000001976a9143f10001d7dfcdbe673eccecd0cc5dabf208eb78388ac000000000001411f656fd575598f79545029603db7978810292c4b6d923898a09aaeaee2276c32da66f46fbb9ce3230c2485ae803ed98d3bf415fc31f4f1d8f17c44413580c8f7b6563829f5f8f22a6d3dba3143ac38cff96c1fcef4c18b2dbb7da0a2be80757955").expect("expected to decode");
+
+        let platform = TestPlatformBuilder::new()
+            .with_config(PlatformConfig::default())
+            .build_with_mock_rpc();
+
+        let genesis_time = 0;
+
+        platform
+            .create_genesis_state(genesis_time, platform.config.abci.keys.clone().into(), None)
+            .expect("expected to create genesis state");
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let validation_result = platform
+            .execute_tx(identity_create.clone(), &BlockInfo::default(), &transaction)
+            .expect("expected to execute identity create tx");
+
+        assert!(matches!(validation_result, SuccessfulPaidExecution(..)));
+
+        platform
+            .drive
+            .grove
+            .commit_transaction(transaction)
+            .unwrap()
+            .expect("expected to commit transaction");
+
+        let validation_result = platform
+            .check_tx(identity_create.clone())
+            .expect("expected to check tx");
+
+        dbg!(&validation_result);
+
+        assert!(matches!(
+            validation_result.errors.first().expect("expected an error"),
+            ConsensusError::StateError(StateError::IdentityAlreadyExistsError(_))
         ));
     }
 

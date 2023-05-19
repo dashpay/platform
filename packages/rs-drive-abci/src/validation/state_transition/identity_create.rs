@@ -2,11 +2,13 @@ use dpp::consensus::basic::identity::{
     IdentityAssetLockTransactionOutPointAlreadyExistsError,
     IdentityAssetLockTransactionOutputNotFoundError,
 };
+use dpp::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::identity::IdentityAlreadyExistsError;
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::{OutPoint, Txid};
+use dpp::identifier::Identifier;
 use dpp::identity::state_transition::identity_create_transition::validation::basic::IDENTITY_CREATE_TRANSITION_SCHEMA_VALIDATOR;
 use dpp::identity::state_transition::identity_create_transition::IdentityCreateTransitionAction;
 use dpp::identity::PartialIdentity;
@@ -16,6 +18,7 @@ use dpp::validation::ConsensusValidationResult;
 use dpp::{
     identity::state_transition::identity_create_transition::IdentityCreateTransition,
     state_transition::StateTransitionAction, validation::SimpleConsensusValidationResult,
+    NonConsensusError,
 };
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
@@ -71,6 +74,35 @@ impl StateTransitionValidation for IdentityCreateTransition {
                 validation_result.add_errors(result.errors);
             }
         }
+
+        // We should validate that the identity id is created from the asset lock proof
+
+        let identifier_from_outpoint = match self.get_asset_lock_proof().create_identifier() {
+            Ok(identifier) => identifier,
+            Err(_) => {
+                return Ok(ConsensusValidationResult::new_with_error(
+                    ConsensusError::BasicError(
+                        BasicError::IdentityAssetLockTransactionOutputNotFoundError(
+                            IdentityAssetLockTransactionOutputNotFoundError::new(
+                                self.asset_lock_proof.instant_lock_output_index().unwrap(),
+                            ),
+                        ),
+                    ),
+                ))
+            }
+        };
+
+        if identifier_from_outpoint != self.identity_id {
+            return Ok(ConsensusValidationResult::new_with_error(
+                ConsensusError::BasicError(BasicError::InvalidIdentifierError(
+                    InvalidIdentifierError::new(
+                        "identity_id".to_string(),
+                        "does not match created identifier from asset lock".to_string(),
+                    ),
+                )),
+            ));
+        }
+
         // We need to set the data, even though we are setting to None,
         // We are really setting to Some(None) internally,
         validation_result.set_data(None);
