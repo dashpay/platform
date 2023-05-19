@@ -302,6 +302,9 @@ mod tests {
         use super::*;
         use serde_json::json;
         use tracing_subscriber::util::SubscriberInitExt;
+        use dpp::assert_state_consensus_errors;
+        use dpp::errors::consensus::ConsensusError;
+        use dpp::consensus::state::state_error::StateError::DataContractIsReadonlyError;
 
         #[test]
         pub fn should_return_error_if_trying_to_update_document_schema_in_a_readonly_contract() {
@@ -312,8 +315,6 @@ mod tests {
             } = setup_test();
 
             data_contract.config.readonly = true;
-            // platform = platform.set_initial_state_structure();
-            // let action = state_transition.transform_into_action(&platform_ref, None).expect("to convert st into action").data;
             apply_contract(&platform, &data_contract);
 
             let updated_document = json!({
@@ -346,8 +347,6 @@ mod tests {
                 transition_type: StateTransitionType::DataContractUpdate,
             };
 
-            // let tx = platform.drive.grove.start_transaction();
-
             let platform_ref = PlatformRef {
                 drive: &platform.drive,
                 state: &platform.state.read().unwrap(),
@@ -355,20 +354,12 @@ mod tests {
                 core_rpc: &platform.core_rpc,
             };
 
-            // let state_transition = DataContractUpdateTransition::from_raw_object(
-            //     raw_state_transition.clone(),
-            // ).expect("state transition to be created");
-
             let result = state_transition
                 .validate_state(&platform_ref, None)
                 .expect("state transition to be validated");
 
             assert!(!result.is_valid());
-
-            let errors = result.errors;
-
-            assert_eq!(errors.len(), 1);
-            println!("{:?}", errors);
+            assert_state_consensus_errors!(result, DataContractIsReadonlyError, 1);
         }
     }
 }
