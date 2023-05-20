@@ -122,7 +122,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry,target=/usr/local/cargo/
     --mount=type=cache,sharing=shared,id=deps_target,target=/platform/target \
     tree -L 3 /usr/local/cargo && \
     tree -L 3 /platform && \
-    CARGO_TARGET_DIR=/platform/target \
+    CARGO_TARGET_DIR=/platform/target CARGO_LOG=cargo::core::compiler::fingerprint=trace \
     cargo install \
       --profile "$CARGO_BUILD_PROFILE" \
       wasm-bindgen-cli@0.2.84
@@ -155,6 +155,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry,target=/usr/local/cargo/
     --mount=type=cache,sharing=shared,id=drive_target,target=/platform/target \
     tree -L 3 /usr/local/cargo && \
     tree -L 3 /platform && \
+    CARGO_LOG=cargo::core::compiler::fingerprint=trace \
     cargo build \
       --profile "$CARGO_BUILD_PROFILE" \
       --package drive-abci \
