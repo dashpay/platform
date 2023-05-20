@@ -116,7 +116,7 @@ ENV NODE_ENV ${NODE_ENV}
 # better build caching
 WORKDIR /platform
 
-RUN echo "bust cache 30"
+RUN echo "bust cache 31"
 RUN --mount=type=cache,sharing=shared,id=cargo_registry,target=/usr/local/cargo/registry \
     --mount=type=cache,sharing=shared,id=cargo_git,target=/usr/local/cargo/git \
     --mount=type=cache,sharing=shared,id=deps_target,target=/platform/target \
