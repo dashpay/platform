@@ -120,6 +120,8 @@ RUN echo "bust cache 30"
 RUN --mount=type=cache,sharing=private,id=cargo_registry,target=/usr/local/cargo/registry \
     --mount=type=cache,sharing=private,id=cargo_git,target=/usr/local/cargo/git \
     --mount=type=cache,sharing=private,id=deps_target,target=/platform/target \
+    tree -L 3 /usr/local/cargo && \
+    tree -L 3 /platform && \
     CARGO_TARGET_DIR=/platform/target \
     cargo install \
       --profile "$CARGO_BUILD_PROFILE" \
@@ -151,6 +153,8 @@ RUN echo "bust cache 34"
 RUN --mount=type=cache,sharing=private,id=cargo_registry,target=/usr/local/cargo/registry \
     --mount=type=cache,sharing=private,id=cargo_git,target=/usr/local/cargo/git \
     --mount=type=cache,sharing=private,id=drive_target,target=/platform/target \
+    tree -L 3 /usr/local/cargo && \
+    tree -L 3 /platform && \
     cargo build \
       --profile "$CARGO_BUILD_PROFILE" \
       --package drive-abci \
