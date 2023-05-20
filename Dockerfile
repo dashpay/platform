@@ -121,7 +121,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry,target=/usr/local/cargo/
     --mount=type=cache,sharing=shared,id=cargo_git,target=/usr/local/cargo/git \
     --mount=type=cache,sharing=shared,id=deps_target,target=/platform/target \
     tree -L 3 /usr/local/cargo && \
-    tree -L 3 /platform && \
+    tree -L 3 /platform/target && \
     CARGO_TARGET_DIR=/platform/target CARGO_LOG=cargo::core::compiler::fingerprint=trace \
     cargo install \
       --profile "$CARGO_BUILD_PROFILE" \
@@ -154,7 +154,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry,target=/usr/local/cargo/
     --mount=type=cache,sharing=shared,id=cargo_git,target=/usr/local/cargo/git \
     --mount=type=cache,sharing=shared,id=drive_target,target=/platform/target \
     tree -L 3 /usr/local/cargo && \
-    tree -L 3 /platform && \
+    tree -L 3 /platform/target && \
     CARGO_LOG=cargo::core::compiler::fingerprint=trace \
     cargo build \
       --profile "$CARGO_BUILD_PROFILE" \
