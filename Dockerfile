@@ -116,10 +116,10 @@ ENV NODE_ENV ${NODE_ENV}
 # better build caching
 WORKDIR /platform
 
-RUN echo "bust cache 25"
+RUN echo "bust cache 29"
 RUN --mount=type=cache,sharing=shared,id=cargo_registry,target=/usr/local/cargo/registry \
     --mount=type=cache,sharing=shared,id=cargo_git,target=/usr/local/cargo/git \
-    --mount=type=cache,sharing=shared,id=target,target=/platform/target \
+    --mount=type=cache,sharing=shared,id=deps_target,target=/platform/target \
     CARGO_TARGET_DIR=/platform/target \
     cargo install --profile "$CARGO_BUILD_PROFILE" wasm-bindgen-cli@0.2.84
 
@@ -144,10 +144,10 @@ RUN yarn config set enableInlineBuilds true
 FROM sources AS build-drive-abci
 
 RUN mkdir /artifacts
-RUN echo "bust cache 23"
+RUN echo "bust cache 32"
 RUN --mount=type=cache,sharing=shared,id=cargo_registry,target=/usr/local/cargo/registry \
     --mount=type=cache,sharing=shared,id=cargo_git,target=/usr/local/cargo/git \
-    --mount=type=cache,sharing=shared,id=target,target=/platform/target \
+    --mount=type=cache,sharing=shared,id=drive_target,target=/platform/target \
     cargo build \
       --profile "$CARGO_BUILD_PROFILE" \
       --package drive-abci \
