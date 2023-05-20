@@ -245,7 +245,7 @@ jobs:
             CARGO_BUILD_PROFILE=release
           platforms: linux/amd64
           cache-from: type=s3,region=eu-west-1,bucket=platform-runner-cache
-          cache-to: type=s3,region=eu-west-1,bucket=platform-runner-cache
+          cache-to: type=s3,region=eu-west-1,bucket=platform-runner-cache,mode=max
 
       - name: extract go-build-cache from docker
         uses: dcginfra/buildkit-cache-dance/extract@main
