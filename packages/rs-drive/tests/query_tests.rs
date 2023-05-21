@@ -2278,7 +2278,7 @@ fn test_family_person_update() {
         &serialized_person,
         Some(drive::drive::defaults::PROTOCOL_VERSION),
     )
-        .expect("expected to serialize to cbor");
+    .expect("expected to serialize to cbor");
     let document = Document::from_cbor(person_cbor.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
@@ -2305,7 +2305,6 @@ fn test_family_person_update() {
         )
         .expect("document should be inserted");
 
-
     let updated_fixed_person = Person {
         id: id_bytes,
         owner_id: owner_id_bytes,
@@ -2319,11 +2318,22 @@ fn test_family_person_update() {
         &serialized_person,
         Some(drive::drive::defaults::PROTOCOL_VERSION),
     )
-        .expect("expected to serialize to cbor");
+    .expect("expected to serialize to cbor");
     let document = Document::from_cbor(person_cbor.as_slice(), None, None)
         .expect("document should be properly deserialized");
 
-    let fee = drive.update_document_for_contract(&document, &contract, &document_type, None, BlockInfo::genesis(), true, None,             Some(&db_transaction)).expect("expected to override document");
+    let fee = drive
+        .update_document_for_contract(
+            &document,
+            &contract,
+            &document_type,
+            None,
+            BlockInfo::genesis(),
+            true,
+            None,
+            Some(&db_transaction),
+        )
+        .expect("expected to override document");
     assert!(fee.storage_fee > 0);
 
     let query_value = json!({
@@ -2344,18 +2354,25 @@ fn test_family_person_update() {
         person_document_type,
         &drive.config,
     )
-        .expect("query should be built");
+    .expect("query should be built");
     let (results, _, _) = query
         .execute_raw_results_no_proof(&drive, None, Some(&db_transaction))
         .expect("proof should be executed");
 
     assert_eq!(results.len(), 1);
 
-    drive.commit_transaction(db_transaction).expect("expected to commit transaction");
+    drive
+        .commit_transaction(db_transaction)
+        .expect("expected to commit transaction");
 
-    let (proof, fee) = query.clone().execute_with_proof(&drive, None, None).expect("expected proof to be generated");
+    let (proof, fee) = query
+        .clone()
+        .execute_with_proof(&drive, None, None)
+        .expect("expected proof to be generated");
 
-    let (root_hash,documents) = query.verify_proof(&proof).expect("expected to verify proof");
+    let (root_hash, documents) = query
+        .verify_proof(&proof)
+        .expect("expected to verify proof");
 
     assert_eq!(documents.len(), 1);
 }
