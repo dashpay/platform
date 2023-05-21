@@ -218,14 +218,14 @@ jobs:
             suffix=${{ steps.suffix.outputs.result }},onlatest=true
             latest=${{ github.event_name == 'release' }}
 
-      - name: Setup s5cmd
-        run: |
-          curl -sL --retry 5 -o /tmp/s5cmd.tar.gz https://github.com/peak/s5cmd/releases/download/v2.0.0/s5cmd_2.0.0_Linux-64bit.tar.gz
-          sudo tar -xf /tmp/s5cmd.tar.gz -C /usr/local/bin s5cmd
+      # - name: Setup s5cmd
+      #   run: |
+      #     curl -sL --retry 5 -o /tmp/s5cmd.tar.gz https://github.com/peak/s5cmd/releases/download/v2.0.0/s5cmd_2.0.0_Linux-64bit.tar.gz
+      #     sudo tar -xf /tmp/s5cmd.tar.gz -C /usr/local/bin s5cmd
 
-      - name: Sync files
-        run: |
-          s5cmd sync 's3://platform-runner-cache/cache-mounts/*' 'cache'
+      # - name: Sync files
+      #   run: |
+      #     s5cmd sync 's3://platform-runner-cache/cache-mounts/*' 'cache'
 
       - name: inject go-build-cache into docker
         uses: dcginfra/buildkit-cache-dance/inject@main
