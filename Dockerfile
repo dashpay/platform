@@ -116,13 +116,14 @@ ENV NODE_ENV ${NODE_ENV}
 # better build caching
 WORKDIR /platform
 
-RUN echo "bust cache 33"
+RUN echo "bust cache 34"
 RUN --mount=type=cache,sharing=shared,id=cargo_registry,target=/usr/local/cargo/registry \
     --mount=type=cache,sharing=shared,id=cargo_git,target=/usr/local/cargo/git \
     --mount=type=cache,sharing=shared,id=deps_target,target=/platform/target \
     tree -L 3 /usr/local/cargo && \
     tree -L 3 /platform/target && \
-    CARGO_TARGET_DIR=/platform/target CARGO_LOG=cargo::core::compiler::fingerprint=trace \
+    CARGO_TARGET_DIR=/platform/target \
+    CARGO_LOG=cargo::core::compiler::fingerprint=trace \
     cargo install \
       --profile "$CARGO_BUILD_PROFILE" \
       wasm-bindgen-cli@0.2.84
