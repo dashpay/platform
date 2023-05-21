@@ -250,9 +250,9 @@ jobs:
       - name: extract go-build-cache from docker
         uses: dcginfra/buildkit-cache-dance/extract@main
 
-      - name: Sync files
-        run: |
-          s5cmd sync 'cache/*' 's3://platform-runner-cache/cache-mounts/'
+      # - name: Sync files
+      #   run: |
+      #     s5cmd sync 'cache/*' 's3://platform-runner-cache/cache-mounts/'
 
       # - name: Setup tmate session
       #   if: ${{ failure() }}
