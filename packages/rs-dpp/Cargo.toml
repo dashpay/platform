@@ -22,7 +22,7 @@ dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
     "rand",
     "signer",
     "use-serde",
-], default-features = false, branch = "feat/addons" }
+], default-features = false, branch = "feat/core-v20" }
 env_logger = { version = "0.9" }
 futures = { version = "0.3" }
 getrandom = { version = "0.2", features = ["js"] }
