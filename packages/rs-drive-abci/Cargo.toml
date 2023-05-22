@@ -59,6 +59,7 @@ itertools = { version = "0.10.5" }
 # tracing-log = { version = "0.1.3", features = ["log-tracer"] }
 file-rotate = { version = "0.7.3" }
 delegate = { version = "0.9.0" }
+regex = { version = "1.8.1" }
 
 [dev-dependencies]
 base64 = "0.20.0"

@@ -5,8 +5,10 @@ use file_rotate::FileRotate;
 use file_rotate::TimeFrequency;
 use itertools::Itertools;
 use lazy_static::__Deref;
+use regex::Regex;
 use serde::Deserialize;
 use serde::Serialize;
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -20,8 +22,10 @@ use tracing_subscriber::EnvFilter;
 use tracing_subscriber::Layer;
 use tracing_subscriber::Registry;
 
+use crate::config::FromEnv;
+
 /// Logging configuration.
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct LogConfig {
     /// Destination of logs.
     ///
@@ -35,19 +39,22 @@ pub struct LogConfig {
     /// Verbosity level, 0 to 5; see `-v` option in `drive-abci --help` for more details.
     pub verbosity: u8,
     /// Whether or not to use colorful output; defaults to autodetect
+    #[serde(default)]
     pub color: Option<bool>,
     /// Output format to use.
     ///
     /// One of:
-    /// * full
-    /// * compact
-    /// * pretty
-    /// * json
+    /// * Full
+    /// * Compact
+    /// * Pretty
+    /// * Json
     ///
     /// See https://docs.rs/tracing-subscriber/latest/tracing_subscriber/fmt/format/index.html#formatters for more
     /// detailed description.
-    pub format: String,
+    #[serde(default)]
+    pub format: LogFormat,
     /// Max number of daily files to store; only used when storing logs in file; defaults to 7
+    #[serde(default)]
     pub max_files: usize,
 }
 
@@ -57,9 +64,82 @@ impl Default for LogConfig {
             destination: String::from("stderr"),
             verbosity: 0,
             color: None,
-            format: String::from("full"),
+            format: Default::default(),
             max_files: 7,
         }
+    }
+}
+
+/// Format of logs to use.
+///
+/// See https://docs.rs/tracing-subscriber/latest/tracing_subscriber/fmt/index.html#formatters
+#[derive(Debug, Deserialize, Default, Clone, Copy)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum LogFormat {
+    /// Default, human-readable, single-line logs
+    #[default]
+    Full,
+    ///  A variant of the default formatter, optimized for short line lengths
+    Compact,
+    /// Pretty, multi-line logs, optimized for human readability
+    Pretty,
+    /// Outputs newline-delimited JSON logs, for machine processing
+    Json,
+}
+
+/// Configuration of log destinations.
+///
+/// Logs can be sent to multiple destination. Configuration of each of them is prefixed with `ABCI_LOG_<key>_`,
+/// where `<key>` is some arbitrary alphanumeric name of log configuaration.
+///
+/// Key must match pattern `[A-Za-z0-9]+`.
+///
+/// Note that parsing of LogConfigs is implemented in [PlatformConfig::from_env()] due to limitations of [envy] crate.
+///
+/// ## Example
+///
+/// ```bash
+/// # First logger, logging to stderr on verbosity level 5
+/// ABCI_LOG_StdErr_DESTINATION=stderr
+/// ABCI_LOG_StdErr_VERBOSITY=6
+///
+/// # Second logger, logging to stdout on verbosity level 1
+/// ABCI_LOG_StdErr_DESTINATION=stdout
+/// ABCI_LOG_StdErr_VERBOSITY=1
+/// ```
+///
+///
+/// [PlatformConfig::from_env()]: crate::config::PlatformConfig::from_env()
+pub type LogConfigs = HashMap<String, LogConfig>;
+
+impl FromEnv for LogConfigs {
+    /// create new object using values from environment variables
+    fn from_env() -> Result<Self, crate::error::Error>
+    where
+        Self: Sized,
+    {
+        let re: Regex = Regex::new(r"^ABCI_LOG_([0-9a-zA-Z]+)_DESTINATION").unwrap();
+        let keys = std::env::vars().filter_map(|(key, val)| {
+            re.captures(&key)
+                .and_then(|capt| capt.get(1))
+                .and_then(|m| Some(m.as_str().to_string()))
+        });
+
+        let mut configs: HashMap<String, LogConfig> = HashMap::new();
+        for key in keys {
+            // if key != key.to_uppercase() {
+            //     return Err(crate::error::Error::Configuration(envy::Error::Custom(
+            //         "All names in ABCI_LOG_* must be uppercase".to_string(),
+            //     )));
+            // }
+            let config: LogConfig = envy::prefixed(format! {"ABCI_LOG_{}_", key.as_str()})
+                .from_env()
+                .map_err(crate::error::Error::from)?;
+
+            configs.insert(key.as_str().to_string(), config);
+        }
+
+        Ok(configs)
     }
 }
 
@@ -79,10 +159,6 @@ pub enum Error {
     /// Log file path is invalid
     #[error("log file path {0}: {1}")]
     FilePath(PathBuf, String),
-
-    /// Invalid logformat
-    #[error("invalid format {0}: must be one of: full, compact, pretty, json")]
-    InvalidFormat(String),
 }
 
 /// LogController is managing logging methods.
@@ -165,22 +241,6 @@ impl LogController {
 //
 // NON-PUBLIC TYPES
 //
-
-/// Where to send logs
-#[derive(Default)]
-enum LogDestination {
-    #[default]
-    /// Standard error
-    StdErr,
-    /// Standard out
-    StdOut,
-    /// File that is logrotated
-    RotationWriter(Writer<FileRotate<AppendTimestamp>>),
-    #[cfg(test)]
-    // Just some bytes, for testing
-    Bytes(Writer<Vec<u8>>),
-}
-
 struct Writer<T>(Arc<Mutex<T>>)
 where
     T: std::io::Write;
@@ -219,6 +279,21 @@ impl<T: std::io::Write> Clone for Writer<T> {
     fn clone(&self) -> Self {
         Self(self.0.clone())
     }
+}
+
+/// Where to send logs
+#[derive(Default)]
+enum LogDestination {
+    #[default]
+    /// Standard error
+    StdErr,
+    /// Standard out
+    StdOut,
+    /// File that is logrotated
+    RotationWriter(Writer<FileRotate<AppendTimestamp>>),
+    #[cfg(test)]
+    // Just some bytes, for testing
+    Bytes(Writer<Vec<u8>>),
 }
 
 impl LogDestination {
@@ -308,14 +383,6 @@ impl TryFrom<&LogConfig> for file_rotate::FileRotate<AppendTimestamp> {
     }
 }
 
-#[derive(Debug)]
-enum LogFormat {
-    Full,
-    Compact,
-    Pretty,
-    Json,
-}
-
 /// Logger configuration
 #[derive(Debug)]
 struct Logger {
@@ -352,14 +419,7 @@ impl TryFrom<&LogConfig> for Logger {
         };
         let verbosity = config.verbosity;
         let color = config.color;
-
-        let format = match config.format.as_str() {
-            "full" => LogFormat::Full,
-            "compact" => LogFormat::Compact,
-            "pretty" => LogFormat::Pretty,
-            "json" => LogFormat::Json,
-            _ => return Err(Error::InvalidFormat(config.format.clone())),
-        };
+        let format = config.format;
 
         Ok(Self {
             destination: Arc::new(Mutex::new(destination)),
@@ -464,13 +524,13 @@ mod tests {
     ///
     /// Note that, due to limitation of [tracing::subscriber::set_global_default()], we can only have one test.
     #[test]
-    fn test_two_loggers_bytes() {
+    fn test_logging() {
         let mut logging = LogController::new();
 
         let logger_stdout = LogConfig {
             destination: "stdout".to_string(),
             verbosity: 0,
-            format: "pretty".to_string(),
+            format: LogFormat::Pretty,
             ..Default::default()
         };
         logging.add(&logger_stdout).unwrap();
@@ -492,7 +552,7 @@ mod tests {
         let logger_v4 = LogConfig {
             destination: "bytes".to_string(),
             verbosity: 4,
-            format: "json".to_string(),
+            format: LogFormat::Json,
             ..Default::default()
         };
         logging.add(&logger_v4).unwrap();

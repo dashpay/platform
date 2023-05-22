@@ -33,7 +33,7 @@ use dpp::util::deserializer::ProtocolVersion;
 use drive::drive::config::DriveConfig;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
-use crate::abci::config::Keys;
+use crate::logging::LogConfigs;
 use crate::{abci::config::AbciConfig, error::Error};
 
 /// Configuration for Dash Core RPC client
@@ -212,7 +212,17 @@ pub trait FromEnv {
     }
 }
 
-impl FromEnv for PlatformConfig {}
+impl FromEnv for PlatformConfig {
+    fn from_env() -> Result<Self, Error>
+    where
+        Self: Sized + DeserializeOwned,
+    {
+        let mut me = envy::from_env::<Self>().map_err(Error::from)?;
+        me.abci.log = LogConfigs::from_env()?;
+
+        Ok(me)
+    }
+}
 
 impl Default for PlatformConfig {
     fn default() -> Self {
@@ -223,7 +233,7 @@ impl Default for PlatformConfig {
             block_spacing_ms: 5000,
             validator_set_quorum_rotation_block_count: 15,
             drive: Default::default(),
-            abci:Default::default(),
+            abci: Default::default(),
             core: Default::default(),
             db_path: PathBuf::from("/var/lib/dash-platform/data"),
             testing_configs: PlatformTestConfig::default(),

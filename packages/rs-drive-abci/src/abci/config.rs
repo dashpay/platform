@@ -39,8 +39,8 @@ pub struct AbciConfig {
     pub chain_id: String,
 
     /// Logging configuration
-    #[serde(rename = "abci_log")]
-    pub log: Vec<LogConfig>,
+    #[serde(skip)]
+    pub log: crate::logging::LogConfigs,
 }
 
 impl AbciConfig {
@@ -61,12 +61,10 @@ impl Default for AbciConfig {
             genesis_height: AbciConfig::default_genesis_height(),
             genesis_core_height: AbciConfig::default_genesis_core_height(),
             chain_id: "chain_id".to_string(),
-            log: vec![Default::default()],
+            log: Default::default(),
         }
     }
 }
-
-impl FromEnv for AbciConfig {}
 
 #[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -163,22 +161,5 @@ impl From<Keys> for SystemIdentityPublicKeys {
                 high: keys.dashpay_second_public_key,
             },
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::env;
-
-    use super::FromEnv;
-
-    #[test]
-    fn test_config_from_env() {
-        let envfile = format!("{}/.env.example", env!("CARGO_MANIFEST_DIR"));
-        let envfile = std::path::PathBuf::from(envfile);
-
-        dotenvy::from_path(envfile.as_path()).expect("cannot load .env file");
-
-        let _config = super::AbciConfig::from_env().unwrap();
     }
 }
