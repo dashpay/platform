@@ -10,7 +10,6 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::io::BufWriter;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -75,7 +74,39 @@ impl Default for LogConfig {
         }
     }
 }
+/*Please write documentation for sysops, describing how to configure logging. We support multiple logging destinations, each of them defined in a series of environment variables prefixed with ABCI_LOG_<key>_ where <key> is some arbitrary name of destination. Here's the configuration of single destination:
 
+pub struct LogConfig {
+    /// Destination of logs.
+    ///
+    /// One of:
+    /// * "stdout",
+    /// * "stderr",
+    /// * absolute path to existing directory where log files will be stored
+    ///
+    /// For testing, also "bytes" is available.
+    pub destination: String,
+    /// Verbosity level, 0 to 5; see `-v` option in `drive-abci --help` for more details.
+    pub verbosity: u8,
+    /// Whether or not to use colorful output; defaults to autodetect
+    #[serde(default)]
+    pub color: Option<bool>,
+    /// Output format to use.
+    ///
+    /// One of:
+    /// * Full
+    /// * Compact
+    /// * Pretty
+    /// * Json
+    ///
+    /// See https://docs.rs/tracing-subscriber/latest/tracing_subscriber/fmt/format/index.html#formatters for more
+    /// detailed description.
+    #[serde(default)]
+    pub format: LogFormat,
+    /// Max number of daily files to store; only used when storing logs in file; defaults to 7
+    #[serde(default = "LogConfig::default_max_files")]
+    pub max_files: usize,
+} */
 /// Format of logs to use.
 ///
 /// See https://docs.rs/tracing-subscriber/latest/tracing_subscriber/fmt/index.html#formatters
@@ -94,7 +125,7 @@ pub enum LogFormat {
 
 /// Configuration of log destinations.
 ///
-/// Logs can be sent to multiple destination. Configuration of each of them is prefixed with `ABCI_LOG_<key>_`,
+/// Logs can be sent to multiple destinations. Configuration of each of them is prefixed with `ABCI_LOG_<key>_`,
 /// where `<key>` is some arbitrary alphanumeric name of log configuaration.
 ///
 /// Key must match pattern `[A-Za-z0-9]+`.
@@ -236,8 +267,8 @@ impl LogController {
             let guard = cloned.lock().expect("logging lock poisoned");
 
             if let LogDestination::RotationWriter(writer) = guard.deref() {
-                let mut guard = writer.0.lock().expect("logging lock poisoned");
-                let inner = guard.get_mut();
+                let mut inner = writer.0.lock().expect("logging lock poisoned");
+                // let inner = guard.get_mut();
                 if let Err(e) = inner.rotate() {
                     result = Err(Error::FileRotate(e));
                 };
@@ -317,7 +348,7 @@ enum LogDestination {
     /// Standard out
     StdOut,
     /// File that is logrotated
-    RotationWriter(Writer<BufWriter<FileRotate<AppendTimestamp>>>),
+    RotationWriter(Writer<FileRotate<AppendTimestamp>>),
     #[cfg(test)]
     // Just some bytes, for testing
     Bytes(Writer<Vec<u8>>),
@@ -446,7 +477,7 @@ impl TryFrom<&LogConfig> for Logger {
                 }
 
                 let file: FileRotate<AppendTimestamp> = FileRotate::try_from(config)?;
-                LogDestination::RotationWriter(BufWriter::new(file).into())
+                LogDestination::RotationWriter(file.into())
             }
         };
         let verbosity = config.verbosity;
@@ -539,10 +570,7 @@ mod tests {
                 from_utf8(b.as_slice()).unwrap().to_string()
             }
             LogDestination::RotationWriter(w) => {
-                let mut guard = w.0.lock().unwrap();
-                let paths = guard.get_mut().log_paths();
-                println!("log paths: {:?}", paths);
-
+                let paths = w.0.lock().unwrap().log_paths();
                 let path = paths.get(0).expect("exactly one path excepted");
                 std::fs::read_to_string(path).unwrap()
             }
