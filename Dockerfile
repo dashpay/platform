@@ -221,7 +221,7 @@ USER $USERNAME
 ENV RUST_BACKTRACE=1
 WORKDIR /var/lib/dash/rs-drive-abci
 ENTRYPOINT ["/usr/bin/drive-abci"]
-CMD ["-vvvv", "start"]
+CMD ["start"]
 
 EXPOSE 26658
 

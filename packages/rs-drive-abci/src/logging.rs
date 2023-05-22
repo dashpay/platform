@@ -108,8 +108,8 @@ pub enum LogFormat {
 /// ABCI_LOG_StdErr_VERBOSITY=6
 ///
 /// # Second logger, logging to stdout on verbosity level 1
-/// ABCI_LOG_StdErr_DESTINATION=stdout
-/// ABCI_LOG_StdErr_VERBOSITY=1
+/// ABCI_LOG_StdOut_DESTINATION=stdout
+/// ABCI_LOG_StdOut_VERBOSITY=1
 /// ```
 ///
 ///
@@ -122,20 +122,15 @@ impl FromEnv for LogConfigs {
     where
         Self: Sized,
     {
-        let re: Regex = Regex::new(r"^ABCI_LOG_([0-9a-zA-Z]+)_DESTINATION").unwrap();
-        let keys = std::env::vars().filter_map(|(key, val)| {
+        let re: Regex = Regex::new(r"^ABCI_LOG_([0-9a-zA-Z]+)_DESTINATION$").unwrap();
+        let keys = std::env::vars().filter_map(|(key, _)| {
             re.captures(&key)
                 .and_then(|capt| capt.get(1))
-                .and_then(|m| Some(m.as_str().to_string()))
+                .map(|m| m.as_str().to_string())
         });
 
         let mut configs: HashMap<String, LogConfig> = HashMap::new();
         for key in keys {
-            // if key != key.to_uppercase() {
-            //     return Err(crate::error::Error::Configuration(envy::Error::Custom(
-            //         "All names in ABCI_LOG_* must be uppercase".to_string(),
-            //     )));
-            // }
             let config: LogConfig = envy::prefixed(format! {"ABCI_LOG_{}_", key.as_str()})
                 .from_env()
                 .map_err(crate::error::Error::from)?;
@@ -177,24 +172,28 @@ pub struct LogController {
     loggers: HashMap<LoggerID, Logger>,
 }
 
-impl LogController {
-    /// Create new LogController
-    pub fn new() -> Self {
+impl Default for LogController {
+    fn default() -> Self {
         Self {
             loggers: HashMap::new(),
         }
     }
+}
+
+impl LogController {
+    /// Create new LogController
+    pub fn new() -> Self {
+        Default::default()
+    }
 
     /// Add new logger to log controller.
-    ///
-    /// Returns ID of log controller.
-    pub fn add(&mut self, configuration_name: &str, config: &LogConfig) -> Result<LoggerID, Error> {
+    pub fn add(&mut self, configuration_name: &str, config: &LogConfig) -> Result<(), Error> {
         let logger = Logger::try_from(config)?;
         if self.loggers.contains_key(configuration_name) {
             return Err(Error::DuplicateConfigName(configuration_name.to_string()));
         }
         self.loggers.insert(configuration_name.to_string(), logger);
-        Ok(configuration_name.to_string())
+        Ok(())
     }
 
     /// Add all configuration configs
@@ -210,7 +209,7 @@ impl LogController {
     /// In case of multiple errors, returns only last one.
     pub fn flush(&self) -> Result<(), std::io::Error> {
         let mut result = Ok(());
-        for (_, logger) in self.loggers.iter() {
+        for logger in self.loggers.values() {
             if let Err(e) = logger
                 .destination
                 .clone()
@@ -231,7 +230,7 @@ impl LogController {
     pub fn rotate(&self) -> Result<(), Error> {
         let mut result: Result<(), Error> = Ok(());
 
-        for (_, logger) in self.loggers.iter() {
+        for logger in self.loggers.values() {
             let logger = logger.destination.lock().expect("logging lock poisoned");
 
             if let LogDestination::RotationWriter(writer) = logger.deref() {
@@ -250,8 +249,8 @@ impl LogController {
         // Based on  examples from  https://docs.rs/tracing-subscriber/0.3.17/tracing_subscriber/layer/index.html
         let loggers = self
             .loggers
-            .iter()
-            .map(|(_, l)| Box::new(l.layer()))
+            .values()
+            .map(|l| Box::new(l.layer()))
             .collect_vec();
 
         registry().with(loggers).init();
@@ -261,6 +260,10 @@ impl LogController {
 //
 // NON-PUBLIC TYPES
 //
+
+/// Writer wraps Arc<Mutex<...>> data structure to implement std::io::Write on it.
+///
+/// Implementation of std::io::Write is required by [tracing_subscriber] crate.
 struct Writer<T>(Arc<Mutex<T>>)
 where
     T: std::io::Write;
@@ -301,7 +304,7 @@ impl<T: std::io::Write> Clone for Writer<T> {
     }
 }
 
-/// Where to send logs
+/// Log destination represents actual destination (implementing std::io::Write) where logs are sent
 #[derive(Default)]
 enum LogDestination {
     #[default]
@@ -317,16 +320,15 @@ enum LogDestination {
 }
 
 impl LogDestination {
+    /// Convert this log destination to std::io::Write implementation
     fn to_write(&self) -> Box<dyn std::io::Write> {
-        let writer = match self {
+        match self {
             LogDestination::StdErr => Box::new(std::io::stderr()) as Box<dyn std::io::Write>,
             LogDestination::StdOut => Box::new(std::io::stdout()) as Box<dyn std::io::Write>,
             LogDestination::RotationWriter(w) => Box::new(w.clone()) as Box<dyn std::io::Write>,
             #[cfg(test)]
             LogDestination::Bytes(w) => Box::new(w.clone()) as Box<dyn std::io::Write>,
-        };
-
-        writer
+        }
     }
 
     /// Return human-readable name of selected log destination
@@ -334,9 +336,9 @@ impl LogDestination {
         let s = match self {
             LogDestination::StdOut => "stdout",
             LogDestination::StdErr => "stderr",
+            LogDestination::RotationWriter(_) => "RotationWriter",
             #[cfg(test)]
             LogDestination::Bytes(_) => "ByteBuffer",
-            LogDestination::RotationWriter(_) => "RotationWriter",
         };
 
         String::from(s)
@@ -349,6 +351,7 @@ impl Debug for LogDestination {
     }
 }
 
+/// Whenever we want to write to log destination, we delegate to the Writer implementation
 impl std::io::Write for LogDestination {
     delegate::delegate! {
         to self.to_write() {
@@ -372,10 +375,14 @@ impl std::io::Write for LogDestination {
 
 impl TryFrom<&LogConfig> for file_rotate::FileRotate<AppendTimestamp> {
     type Error = Error;
+    /// Configure new FileRotate based on log configuration.
+    ///
+    /// In future, we might allow more detailed configuration, like log rotation frequency, compression, etc.
     fn try_from(config: &LogConfig) -> Result<Self, Self::Error> {
         let suffix_scheme = AppendTimestamp::default(FileLimit::MaxFiles(config.max_files));
         let content_limit = ContentLimit::Time(TimeFrequency::Daily);
         let compression = file_rotate::compression::Compression::OnRotate(2);
+        // Only owner can see logs
         let mode = Some(0o600);
         let path = PathBuf::from(config.destination.clone());
         if !path.is_absolute() {
@@ -387,7 +394,7 @@ impl TryFrom<&LogConfig> for file_rotate::FileRotate<AppendTimestamp> {
         if !path.is_dir() {
             return Err(Error::FilePath(
                 path,
-                "log path must be an existing directory".to_string(),
+                "log path must point to an existing directory".to_string(),
             ));
         }
 
@@ -403,7 +410,7 @@ impl TryFrom<&LogConfig> for file_rotate::FileRotate<AppendTimestamp> {
     }
 }
 
-/// Logger configuration
+// Individual logger
 #[derive(Debug)]
 struct Logger {
     /// Destination of logs; either absolute path to dir where log files will be stored, `stdout` or `stderr`
@@ -422,13 +429,14 @@ struct Logger {
 impl TryFrom<&LogConfig> for Logger {
     type Error = Error;
     fn try_from(config: &LogConfig) -> Result<Self, Self::Error> {
-        let destination = match config.destination.as_str() {
+        let destination = match config.destination.to_lowercase().as_str() {
             "stdout" => LogDestination::StdOut,
             "stderr" => LogDestination::StdErr,
             #[cfg(test)]
             "bytes" => LogDestination::Bytes(Vec::<u8>::new().into()),
             dest => {
-                let path = PathBuf::from(dest);
+                // we refer directly to config.destination, as dest was converted to lowercase
+                let path = PathBuf::from(&config.destination);
                 if !path.is_absolute() {
                     return Err(Error::InvalidDestination(dest.to_string()));
                 }
@@ -472,24 +480,22 @@ impl Logger {
                 LogDestination::StdErr => atty::is(atty::Stream::Stderr),
                 _ => false,
             });
-        let dest = self.destination.clone();
-        let cloned = dest;
-        // let make_writer = { move || Writer(dest.clone()) };
+
+        let cloned = self.destination.clone();
         let make_writer = { move || Writer(Arc::clone(&cloned)) };
 
         let filter = self.env_filter();
+
         let formatter = fmt::layer::<Registry>()
             .with_writer(make_writer)
             .with_ansi(ansi);
 
-        let formatter = match self.format {
+        match self.format {
             LogFormat::Full => formatter.with_filter(filter).boxed(),
             LogFormat::Compact => formatter.compact().with_filter(filter).boxed(),
             LogFormat::Pretty => formatter.pretty().with_filter(filter).boxed(),
             LogFormat::Json => formatter.json().with_filter(filter).boxed(),
-        };
-
-        formatter
+        }
     }
 
     fn env_filter(&self) -> EnvFilter {
@@ -514,12 +520,12 @@ mod tests {
     use super::*;
     use std::str::from_utf8;
 
-    /// dest_bytes reads bytes from provided destination.
+    /// Reads data written to provided destination.
     ///
     /// Only [LogDestination::Bytes] and [LogDestination::RotationWriter] are supported.
     ///
     /// Contract: LogDestination::RotationWriter was rotated
-    fn dest_to_string(dest: Arc<Mutex<LogDestination>>) -> String {
+    fn dest_read_as_string(dest: Arc<Mutex<LogDestination>>) -> String {
         let dest = dest.lock().unwrap();
         match dest.deref() {
             LogDestination::Bytes(b) => {
@@ -540,7 +546,7 @@ mod tests {
         }
     }
 
-    /// Test that two loggers can work independently, with different log levels.
+    /// Test that multiple loggers can work independently, with different log levels.
     ///
     /// Note that, due to limitation of [tracing::subscriber::set_global_default()], we can only have one test.
     #[test]
@@ -599,11 +605,12 @@ mod tests {
 
         logging.flush().unwrap();
         logging.rotate().unwrap();
+        
         // CHECK ASSERTIONS
 
-        let result_verb_0 = dest_to_string(logging.loggers["v0"].destination.clone());
-        let result_verb_4 = dest_to_string(logging.loggers["v4"].destination.clone());
-        let result_dir_verb_0 = dest_to_string(logging.loggers["dir_v0"].destination.clone());
+        let result_verb_0 = dest_read_as_string(logging.loggers["v0"].destination.clone());
+        let result_verb_4 = dest_read_as_string(logging.loggers["v4"].destination.clone());
+        let result_dir_verb_0 = dest_read_as_string(logging.loggers["dir_v0"].destination.clone());
 
         println!("{:?}", result_verb_0);
         println!("{:?}", result_verb_4);
