@@ -4,12 +4,11 @@
 
 use clap::{Parser, Subcommand};
 use drive_abci::config::{FromEnv, PlatformConfig};
-
+use drive_abci::logging::{LogConfig, LogController};
 use drive_abci::rpc::core::DefaultCoreRPC;
+use itertools::Itertools;
 use std::path::PathBuf;
 use tracing::warn;
-
-use drive_abci::logging::{LogConfig, LogController};
 
 // struct aaa {}
 
@@ -132,6 +131,8 @@ fn configure_logging(
 
     controller.add_all(&configs);
     controller.finalize();
+
+    tracing::info!("Configured log destinations: {}", configs.keys().join(","));
 
     Ok(controller)
 }
