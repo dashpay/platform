@@ -116,12 +116,15 @@ ENV NODE_ENV ${NODE_ENV}
 # better build caching
 WORKDIR /platform
 
-RUN echo "bust cache 36"
+RUN echo "bust cache 37"
 RUN --mount=type=cache,sharing=locked,id=cargo_registry,target=/usr/local/cargo/registry \
     --mount=type=cache,sharing=locked,id=cargo_git,target=/usr/local/cargo/git \
     --mount=type=cache,sharing=locked,id=deps_target,target=/platform/target \
     tree -L 3 /usr/local/cargo && \
     tree -L 3 /platform/target && \
+    find /usr/local/cargo/registry/ -exec stat -c '%n %Y' {} + && \
+    find /usr/local/cargo/git/ -exec stat -c '%n %Y' {} + && \
+    find /platform/target/ -exec stat -c '%n %Y' {} + && \
     CARGO_TARGET_DIR=/platform/target \
     CARGO_LOG=cargo::core::compiler::fingerprint=trace \
     cargo install \
@@ -150,7 +153,7 @@ FROM sources AS build-drive-abci
 
 RUN mkdir /artifacts
 
-RUN echo "bust cache 38"
+RUN echo "bust cache 39"
 RUN --mount=type=cache,sharing=locked,id=cargo_registry,target=/usr/local/cargo/registry \
     --mount=type=cache,sharing=locked,id=cargo_git,target=/usr/local/cargo/git \
     --mount=type=cache,sharing=locked,id=drive_target,target=/platform/target \
