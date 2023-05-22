@@ -6,7 +6,8 @@ const {
   NODE_TYPE_MASTERNODE,
   NODE_TYPE_HPMN,
   NODE_TYPE_FULLNODE,
-} = require('../../../constants');
+  PRESET_MAINNET,
+  } = require('../../../constants');
 
 const systemConfigs = require('../../../../configs/system');
 
@@ -60,9 +61,9 @@ function setupRegularPresetTaskFactory(
               // Keep this order, because each item references the text in the previous item
               header: `  The Dash network consists of several different node types:
     Fullnode             - Host the full Dash blockchain (no collateral)
-    Masternode           - Fullnode features, plus Core services such as ChainLocks 
+    Masternode           - Fullnode features, plus Core services such as ChainLocks
                            and InstantSend (1000 DASH collateral)
-    Evolution fullnode   - Fullnode features, plus host a full copy of the Platform 
+    Evolution fullnode   - Fullnode features, plus host a full copy of the Platform
                            blockchain (no collateral)
     Evolution masternode - Masternode features, plus Platform services such as DAPI
                            and Drive (4000 DASH collateral)\n`,
@@ -133,7 +134,8 @@ function setupRegularPresetTaskFactory(
         task: () => configureNodeTask(),
       },
       {
-        enabled: (ctx) => ctx.config && ctx.config.get('platform.enable'),
+        enabled: (ctx) => ctx.config && ctx.config.get('platform.enable')
+          && ctx.config.get('network') !== PRESET_MAINNET,
         task: () => configureSSLCertificateTask(),
       },
       {
