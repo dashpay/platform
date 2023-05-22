@@ -8,7 +8,7 @@
 
 ### Bug Fixes
 
-* **dashmate:** platform should be enabled on mainnet ([#1112](https://github.com/dashpay/platform/issues/1112))
+* **dashmate:** platform should not be enabled on mainnet ([#1112](https://github.com/dashpay/platform/issues/1112))
 
 
 ### Miscellaneous Chores
