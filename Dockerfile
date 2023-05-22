@@ -116,7 +116,7 @@ ENV NODE_ENV ${NODE_ENV}
 # better build caching
 WORKDIR /platform
 
-RUN echo "bust cache 39"
+RUN echo "bust cache 40"
 RUN --mount=type=cache,sharing=locked,id=cargo_registry_index,target=/usr/local/cargo/registry/index \
     --mount=type=cache,sharing=locked,id=cargo_registry_cache,target=/usr/local/cargo/registry/cache \
     --mount=type=cache,sharing=locked,id=cargo_git,target=/usr/local/cargo/git \
@@ -154,7 +154,7 @@ FROM sources AS build-drive-abci
 
 RUN mkdir /artifacts
 
-RUN echo "bust cache 41"
+RUN echo "bust cache 42"
 RUN --mount=type=cache,sharing=locked,id=cargo_registry_index,target=/usr/local/cargo/registry/index \
     --mount=type=cache,sharing=locked,id=cargo_registry_cache,target=/usr/local/cargo/registry/cache \
     --mount=type=cache,sharing=locked,id=cargo_git,target=/usr/local/cargo/git \
