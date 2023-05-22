@@ -39,7 +39,7 @@ pub struct AbciConfig {
     pub chain_id: String,
 
     /// Logging configuration
-    #[serde(skip)]
+    #[serde(default)]
     pub log: crate::logging::LogConfigs,
 }
 

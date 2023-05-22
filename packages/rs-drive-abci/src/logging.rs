@@ -25,7 +25,7 @@ use tracing_subscriber::Registry;
 use crate::config::FromEnv;
 
 /// Logging configuration.
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LogConfig {
     /// Destination of logs.
     ///
@@ -54,8 +54,13 @@ pub struct LogConfig {
     #[serde(default)]
     pub format: LogFormat,
     /// Max number of daily files to store; only used when storing logs in file; defaults to 7
-    #[serde(default)]
+    #[serde(default = "LogConfig::default_max_files")]
     pub max_files: usize,
+}
+impl LogConfig {
+    fn default_max_files() -> usize {
+        7
+    }
 }
 
 impl Default for LogConfig {
@@ -65,7 +70,7 @@ impl Default for LogConfig {
             verbosity: 0,
             color: None,
             format: Default::default(),
-            max_files: 7,
+            max_files: LogConfig::default_max_files(),
         }
     }
 }
@@ -73,8 +78,7 @@ impl Default for LogConfig {
 /// Format of logs to use.
 ///
 /// See https://docs.rs/tracing-subscriber/latest/tracing_subscriber/fmt/index.html#formatters
-#[derive(Debug, Deserialize, Default, Clone, Copy)]
-#[serde(rename_all = "UPPERCASE")]
+#[derive(Debug, Serialize, Deserialize, Default, Clone, Copy)]
 pub enum LogFormat {
     /// Default, human-readable, single-line logs
     #[default]
