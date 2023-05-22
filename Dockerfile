@@ -116,7 +116,7 @@ ENV NODE_ENV ${NODE_ENV}
 # better build caching
 WORKDIR /platform
 
-RUN echo "bust cache 34"
+RUN echo "bust cache 36"
 RUN --mount=type=cache,sharing=locked,id=cargo_registry,target=/usr/local/cargo/registry \
     --mount=type=cache,sharing=locked,id=cargo_git,target=/usr/local/cargo/git \
     --mount=type=cache,sharing=locked,id=deps_target,target=/platform/target \
@@ -150,7 +150,7 @@ FROM sources AS build-drive-abci
 
 RUN mkdir /artifacts
 
-RUN echo "bust cache 35"
+RUN echo "bust cache 38"
 RUN --mount=type=cache,sharing=locked,id=cargo_registry,target=/usr/local/cargo/registry \
     --mount=type=cache,sharing=locked,id=cargo_git,target=/usr/local/cargo/git \
     --mount=type=cache,sharing=locked,id=drive_target,target=/platform/target \
@@ -159,8 +159,6 @@ RUN --mount=type=cache,sharing=locked,id=cargo_registry,target=/usr/local/cargo/
     find /usr/local/cargo/registry/ -exec stat -c '%n %Y' {} + && \
     find /usr/local/cargo/git/ -exec stat -c '%n %Y' {} + && \
     find /platform/target/ -exec stat -c '%n %Y' {} + && \
-    echo "sleeping before build..." && \
-    sleep 5 && \
     CARGO_LOG=cargo::core::compiler::fingerprint=trace \
     cargo build \
       --profile "$CARGO_BUILD_PROFILE" \
