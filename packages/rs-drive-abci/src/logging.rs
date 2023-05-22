@@ -10,6 +10,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::io::BufWriter;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -231,10 +232,13 @@ impl LogController {
         let mut result: Result<(), Error> = Ok(());
 
         for logger in self.loggers.values() {
-            let logger = logger.destination.lock().expect("logging lock poisoned");
+            let cloned = logger.destination.clone();
+            let guard = cloned.lock().expect("logging lock poisoned");
 
-            if let LogDestination::RotationWriter(writer) = logger.deref() {
-                if let Err(e) = writer.0.lock().expect("logging lock poisoned").rotate() {
+            if let LogDestination::RotationWriter(writer) = guard.deref() {
+                let mut guard = writer.0.lock().expect("logging lock poisoned");
+                let inner = guard.get_mut();
+                if let Err(e) = inner.rotate() {
                     result = Err(Error::FileRotate(e));
                 };
             };
@@ -313,7 +317,7 @@ enum LogDestination {
     /// Standard out
     StdOut,
     /// File that is logrotated
-    RotationWriter(Writer<FileRotate<AppendTimestamp>>),
+    RotationWriter(Writer<BufWriter<FileRotate<AppendTimestamp>>>),
     #[cfg(test)]
     // Just some bytes, for testing
     Bytes(Writer<Vec<u8>>),
@@ -442,7 +446,7 @@ impl TryFrom<&LogConfig> for Logger {
                 }
 
                 let file: FileRotate<AppendTimestamp> = FileRotate::try_from(config)?;
-                LogDestination::RotationWriter(file.into())
+                LogDestination::RotationWriter(BufWriter::new(file).into())
             }
         };
         let verbosity = config.verbosity;
@@ -536,7 +540,7 @@ mod tests {
             }
             LogDestination::RotationWriter(w) => {
                 let mut guard = w.0.lock().unwrap();
-                let paths = guard.log_paths();
+                let paths = guard.get_mut().log_paths();
                 println!("log paths: {:?}", paths);
 
                 let path = paths.get(0).expect("exactly one path excepted");
@@ -605,7 +609,7 @@ mod tests {
 
         logging.flush().unwrap();
         logging.rotate().unwrap();
-        
+
         // CHECK ASSERTIONS
 
         let result_verb_0 = dest_read_as_string(logging.loggers["v0"].destination.clone());
