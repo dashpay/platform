@@ -74,39 +74,7 @@ impl Default for LogConfig {
         }
     }
 }
-/*Please write documentation for sysops, describing how to configure logging. We support multiple logging destinations, each of them defined in a series of environment variables prefixed with ABCI_LOG_<key>_ where <key> is some arbitrary name of destination. Here's the configuration of single destination:
 
-pub struct LogConfig {
-    /// Destination of logs.
-    ///
-    /// One of:
-    /// * "stdout",
-    /// * "stderr",
-    /// * absolute path to existing directory where log files will be stored
-    ///
-    /// For testing, also "bytes" is available.
-    pub destination: String,
-    /// Verbosity level, 0 to 5; see `-v` option in `drive-abci --help` for more details.
-    pub verbosity: u8,
-    /// Whether or not to use colorful output; defaults to autodetect
-    #[serde(default)]
-    pub color: Option<bool>,
-    /// Output format to use.
-    ///
-    /// One of:
-    /// * Full
-    /// * Compact
-    /// * Pretty
-    /// * Json
-    ///
-    /// See https://docs.rs/tracing-subscriber/latest/tracing_subscriber/fmt/format/index.html#formatters for more
-    /// detailed description.
-    #[serde(default)]
-    pub format: LogFormat,
-    /// Max number of daily files to store; only used when storing logs in file; defaults to 7
-    #[serde(default = "LogConfig::default_max_files")]
-    pub max_files: usize,
-} */
 /// Format of logs to use.
 ///
 /// See https://docs.rs/tracing-subscriber/latest/tracing_subscriber/fmt/index.html#formatters
