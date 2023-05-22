@@ -39,6 +39,7 @@ pub struct AbciConfig {
     pub chain_id: String,
 
     /// Logging configuration
+    // Note it is parsed directly in PlatformConfig::from_env() so here we just set defaults.
     #[serde(default)]
     pub log: crate::logging::LogConfigs,
 }

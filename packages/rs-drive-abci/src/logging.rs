@@ -163,30 +163,46 @@ pub enum Error {
     /// Log file path is invalid
     #[error("log file path {0}: {1}")]
     FilePath(PathBuf, String),
+
+    /// Duplicate config
+    #[error("duplicate log configuration name {0}")]
+    DuplicateConfigName(String),
 }
 
-/// LogController is managing logging methods.
+/// Name of logging configuration
+pub type LoggerID = String;
+
+/// Add and manage logging methods
 pub struct LogController {
-    loggers: Vec<Logger>,
+    loggers: HashMap<LoggerID, Logger>,
 }
-
-type LoggerID = usize;
 
 impl LogController {
     /// Create new LogController
     pub fn new() -> Self {
         Self {
-            loggers: Vec::new(),
+            loggers: HashMap::new(),
         }
     }
 
     /// Add new logger to log controller.
     ///
     /// Returns ID of log controller.
-    pub fn add(&mut self, config: &LogConfig) -> Result<LoggerID, Error> {
+    pub fn add(&mut self, configuration_name: &str, config: &LogConfig) -> Result<LoggerID, Error> {
         let logger = Logger::try_from(config)?;
-        self.loggers.push(logger);
-        Ok(self.loggers.len() - 1)
+        if self.loggers.contains_key(configuration_name) {
+            return Err(Error::DuplicateConfigName(configuration_name.to_string()));
+        }
+        self.loggers.insert(configuration_name.to_string(), logger);
+        Ok(configuration_name.to_string())
+    }
+
+    /// Add all configuration configs
+    pub fn add_all(&mut self, configs: &LogConfigs) -> Result<(), Error> {
+        for (name, config) in configs {
+            self.add(name, config)?;
+        }
+        Ok(())
     }
 
     /// Flush all loggers.
@@ -194,7 +210,7 @@ impl LogController {
     /// In case of multiple errors, returns only last one.
     pub fn flush(&self) -> Result<(), std::io::Error> {
         let mut result = Ok(());
-        for logger in self.loggers.iter() {
+        for (_, logger) in self.loggers.iter() {
             if let Err(e) = logger
                 .destination
                 .clone()
@@ -215,7 +231,7 @@ impl LogController {
     pub fn rotate(&self) -> Result<(), Error> {
         let mut result: Result<(), Error> = Ok(());
 
-        for logger in self.loggers.iter() {
+        for (_, logger) in self.loggers.iter() {
             let logger = logger.destination.lock().expect("logging lock poisoned");
 
             if let LogDestination::RotationWriter(writer) = logger.deref() {
@@ -235,7 +251,7 @@ impl LogController {
         let loggers = self
             .loggers
             .iter()
-            .map(|l| Box::new(l.layer()))
+            .map(|(_, l)| Box::new(l.layer()))
             .collect_vec();
 
         registry().with(loggers).init();
@@ -537,21 +553,21 @@ mod tests {
             format: LogFormat::Pretty,
             ..Default::default()
         };
-        logging.add(&logger_stdout).unwrap();
+        logging.add("stdout", &logger_stdout).unwrap();
 
         let logger_stderr = LogConfig {
             destination: "stderr".to_string(),
             verbosity: 4,
             ..Default::default()
         };
-        logging.add(&logger_stderr).unwrap();
+        logging.add("stderr", &logger_stderr).unwrap();
 
         let logger_v0 = LogConfig {
             destination: "bytes".to_string(),
             verbosity: 0,
             ..Default::default()
         };
-        logging.add(&logger_v0).unwrap();
+        logging.add("v0", &logger_v0).unwrap();
 
         let logger_v4 = LogConfig {
             destination: "bytes".to_string(),
@@ -559,7 +575,7 @@ mod tests {
             format: LogFormat::Json,
             ..Default::default()
         };
-        logging.add(&logger_v4).unwrap();
+        logging.add("v4", &logger_v4).unwrap();
 
         let dir_v0 = TempDir::new().unwrap();
         let logger_dir_v0 = LogConfig {
@@ -572,7 +588,7 @@ mod tests {
             verbosity: 0,
             ..Default::default()
         };
-        logging.add(&logger_dir_v0).unwrap();
+        logging.add("dir_v0", &logger_dir_v0).unwrap();
 
         logging.finalize();
 
@@ -585,9 +601,9 @@ mod tests {
         logging.rotate().unwrap();
         // CHECK ASSERTIONS
 
-        let result_verb_0 = dest_to_string(logging.loggers[2].destination.clone());
-        let result_verb_4 = dest_to_string(logging.loggers[3].destination.clone());
-        let result_dir_verb_0 = dest_to_string(logging.loggers[4].destination.clone());
+        let result_verb_0 = dest_to_string(logging.loggers["v0"].destination.clone());
+        let result_verb_4 = dest_to_string(logging.loggers["v4"].destination.clone());
+        let result_dir_verb_0 = dest_to_string(logging.loggers["dir_v0"].destination.clone());
 
         println!("{:?}", result_verb_0);
         println!("{:?}", result_verb_4);

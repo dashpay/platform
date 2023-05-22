@@ -63,7 +63,7 @@ pub fn main() {
     let cli = Cli::parse();
     let config = load_config(&cli.config);
 
-    configure_logging(&cli).expect("failed to configure logging");
+    configure_logging(&cli, &config).expect("failed to configure logging");
 
     install_panic_hook();
 
@@ -112,16 +112,25 @@ fn load_config(path: &Option<PathBuf>) -> PlatformConfig {
     config.expect("cannot parse configuration file")
 }
 
-fn configure_logging(cli: &Cli) -> Result<LogController, drive_abci::logging::Error> {
+fn configure_logging(
+    cli: &Cli,
+    config: &PlatformConfig,
+) -> Result<LogController, drive_abci::logging::Error> {
     let mut controller = LogController::new();
 
-    let stderr_config = LogConfig {
-        destination: "stderr".to_string(),
-        verbosity: cli.verbose,
-        color: cli.color,
-        ..Default::default()
-    };
-    controller.add(&stderr_config)?;
+    let mut configs = config.abci.log.clone();
+    if configs.is_empty() || cli.verbose > 0 {
+        let cli_config = LogConfig {
+            destination: "stderr".to_string(),
+            verbosity: cli.verbose,
+            color: cli.color,
+            ..Default::default()
+        };
+        // we use key with underscores which are not allowed in config read from env
+        configs.insert("cli_verbosity".to_string(), cli_config);
+    }
+
+    controller.add_all(&configs);
     controller.finalize();
 
     Ok(controller)
