@@ -159,6 +159,8 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry,target=/usr/local/cargo/
     find /usr/local/cargo/registry/ -exec stat -c '%n %Y' {} + && \
     find /usr/local/cargo/git/ -exec stat -c '%n %Y' {} + && \
     find /platform/target/ -exec stat -c '%n %Y' {} + && \
+    echo "sleeping before build..." && \
+    sleep 5 && \
     CARGO_LOG=cargo::core::compiler::fingerprint=trace \
     cargo build \
       --profile "$CARGO_BUILD_PROFILE" \
