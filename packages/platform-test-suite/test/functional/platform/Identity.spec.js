@@ -37,7 +37,7 @@ describe('Platform', () => {
     let walletAccount;
 
     before(async () => {
-      client = await createClientWithFundedWallet(700000);
+      client = await createClientWithFundedWallet(1100000);
 
       walletAccount = await client.getWalletAccount();
     });
@@ -54,8 +54,8 @@ describe('Platform', () => {
       expect(identity).to.exist();
     });
 
-    // TODO(rs-drive-abci): restore?
-    //  logic for checking asset lock structure in rs-drive-abci is missing
+    // TODO(rs-drive-abci): restore
+    //  logic for checking asset lock signature in rs-drive-abci is missing
     it.skip('should fail to create an identity if instantLock is not valid', async () => {
       await client.platform.initialize();
 
@@ -95,10 +95,10 @@ describe('Platform', () => {
       );
     });
 
-    // TODO(rs-drive-abci): restore?
-    //  logic for checking asset lock in rs-drive-abci is missing
-    //  and validation returns "Identity Already Exists" error
-    it.skip('should fail to create an identity with already used asset lock output', async () => {
+    it('should fail to create an identity with already used asset lock output', async () => {
+      // Create new identity
+      const sourceIdentity = await client.platform.identities.register(400000);
+
       const {
         transaction,
         privateKey,
@@ -115,28 +115,18 @@ describe('Platform', () => {
       const assetLockProof = await client.platform.identities.utils
         .createAssetLockProof(transaction, outputIndex);
 
-      const {
-        identity: identityOne,
-        identityCreateTransition: identityCreateTransitionOne,
-        identityIndex: identityOneIndex,
-      } = await client.platform.identities.utils
-        .createIdentityCreateTransition(assetLockProof, privateKey);
+      // Top up identity
+      const identityTopUpTransition = await client.platform.identities.utils
+        .createIdentityTopUpTransition(assetLockProof, privateKey, sourceIdentity.getId());
 
       await client.platform.broadcastStateTransition(
-        identityCreateTransitionOne,
+        identityTopUpTransition,
       );
 
       // Additional wait time to mitigate testnet latency
       await waitForSTPropagated();
 
-      walletAccount.storage
-        .getWalletStore(walletAccount.walletId)
-        .insertIdentityIdAtIndex(
-          identityOne.getId().toString(),
-          identityOneIndex,
-        );
-
-      // Creating transition that tries to spend the same transaction
+      // Try to create transition that tries to spend the same transaction
       const {
         identityCreateTransition: identityCreateDoubleSpendTransition,
       } = await client.platform.identities.utils

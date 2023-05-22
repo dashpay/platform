@@ -89,6 +89,7 @@ impl DocumentFacadeWasm {
             .await
     }
 
+    // TODO(rs-drive-abci): add tests
     #[wasm_bindgen(js_name=createExtendedDocumentFromDocumentBuffer)]
     pub fn create_extended_from_document_buffer(
         &self,
