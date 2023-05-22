@@ -117,9 +117,9 @@ ENV NODE_ENV ${NODE_ENV}
 WORKDIR /platform
 
 RUN echo "bust cache 34"
-RUN --mount=type=cache,sharing=shared,id=cargo_registry,target=/usr/local/cargo/registry \
-    --mount=type=cache,sharing=shared,id=cargo_git,target=/usr/local/cargo/git \
-    --mount=type=cache,sharing=shared,id=deps_target,target=/platform/target \
+RUN --mount=type=cache,sharing=locked,id=cargo_registry,target=/usr/local/cargo/registry \
+    --mount=type=cache,sharing=locked,id=cargo_git,target=/usr/local/cargo/git \
+    --mount=type=cache,sharing=locked,id=deps_target,target=/platform/target \
     tree -L 3 /usr/local/cargo && \
     tree -L 3 /platform/target && \
     CARGO_TARGET_DIR=/platform/target \
@@ -151,9 +151,9 @@ FROM sources AS build-drive-abci
 RUN mkdir /artifacts
 
 RUN echo "bust cache 35"
-RUN --mount=type=cache,sharing=shared,id=cargo_registry,target=/usr/local/cargo/registry \
-    --mount=type=cache,sharing=shared,id=cargo_git,target=/usr/local/cargo/git \
-    --mount=type=cache,sharing=shared,id=drive_target,target=/platform/target \
+RUN --mount=type=cache,sharing=locked,id=cargo_registry,target=/usr/local/cargo/registry \
+    --mount=type=cache,sharing=locked,id=cargo_git,target=/usr/local/cargo/git \
+    --mount=type=cache,sharing=locked,id=drive_target,target=/platform/target \
     tree -L 3 /usr/local/cargo && \
     tree -L 3 /platform/target && \
     find /usr/local/cargo/registry/ -exec stat -c '%n %Y' {} + && \
