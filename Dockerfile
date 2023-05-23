@@ -123,7 +123,7 @@ RUN --mount=type=cache,sharing=locked,id=cargo_registry_index,target=/usr/local/
     --mount=type=cache,sharing=locked,id=deps_target,target=/platform/target \
     tree -L 3 /usr/local/cargo && \
     tree -L 3 /platform/target && \
-    CACHEDATE=`date '+%Y-%m-%d %H:%M:%S' -d@"$((\`date +%s\`+180))"` && \
+    CACHEDATE=`date '+%Y-%m-%d %H:%M:%S' -d@"$((\`date +%s\`-180))"` && \
     find /usr/local/cargo/registry/index/ -exec touch -d "$CACHEDATE" {} + &&\
     find /usr/local/cargo/registry/cache/ -exec touch -d "$CACHEDATE" {} + && \
     find /usr/local/cargo/git/db/ -exec touch -d "$CACHEDATE" {} + && \
