@@ -164,7 +164,7 @@ impl Drive {
     ) -> Result<(), Error> {
         let mut drive_operations = vec![];
         let batch_operations =
-            self.add_to_system_credits_operation(amount, &mut None, transaction)?;
+            self.add_to_system_credits_operations(amount, &mut None, transaction)?;
         let grove_db_operations =
             LowLevelDriveOperation::grovedb_operations_batch(&batch_operations);
         self.grove_apply_batch_with_add_costs(
@@ -176,7 +176,7 @@ impl Drive {
     }
 
     /// The operations to add to system credits
-    pub(crate) fn add_to_system_credits_operation(
+    pub(crate) fn add_to_system_credits_operations(
         &self,
         amount: u64,
         estimated_costs_only_with_layer_info: &mut Option<
