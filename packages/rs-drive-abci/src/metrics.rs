@@ -6,8 +6,7 @@
 use lazy_static::lazy_static;
 use prometheus_exporter::{
     prometheus::{
-        register_histogram_vec_with_registry, register_int_gauge, HistogramTimer, HistogramVec,
-        IntGauge, Registry,
+        register_histogram_vec, register_int_gauge, HistogramTimer, HistogramVec, IntGauge,
     },
     Exporter,
 };
@@ -15,10 +14,6 @@ use prometheus_exporter::{
 /// Default Prometheus port (29090)
 pub const DEFAULT_PROMETHEUS_PORT: u16 = 29090;
 
-lazy_static! {
-    static ref ABCI_REGISTRY: Registry = Registry::new_custom(Some("abci".to_string()), None)
-        .expect("cannot create metrics registry");
-}
 /// Error returned by metrics subsystem
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -112,10 +107,10 @@ impl Prometheus {
 /// let height = 42;
 /// last_platform_height(height);
 /// ```
-pub fn last_platform_height(height: i64) {
+pub fn abci_last_platform_height(height: i64) {
     lazy_static! {
         static ref GAUGE: IntGauge = register_int_gauge!(
-            "last_platform_height",
+            "abci_last_platform_height",
             "Last finalized height of platform  chain"
         )
         .expect("cannot register gauge last_platform_height");
@@ -147,11 +142,10 @@ pub fn last_platform_height(height: i64) {
 /// A `HistogramTimer` instance for the specified `request_name`.
 pub fn abci_request_duration(request_name: &str) -> HistogramTimer {
     lazy_static! {
-        static ref HISTOGRAM: HistogramVec = register_histogram_vec_with_registry!(
-            "request_duration",
+        static ref HISTOGRAM: HistogramVec = register_histogram_vec!(
+            "abci_request_duration",
             "Duration of ABCI requests",
-            &["method"],
-            ABCI_REGISTRY
+            &["method"]
         )
         .expect("cannot register gauge last_platform_height");
     }

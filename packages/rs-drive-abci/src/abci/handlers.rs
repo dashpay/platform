@@ -515,7 +515,7 @@ where
 
         self.commit_transaction()?;
 
-        crate::metrics::last_platform_height(height);
+        crate::metrics::abci_last_platform_height(height);
 
         Ok(ResponseFinalizeBlock {
             events: vec![],
