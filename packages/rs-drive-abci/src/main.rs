@@ -4,6 +4,7 @@
 use clap::{Parser, Subcommand};
 use drive_abci::config::{FromEnv, PlatformConfig};
 
+use drive_abci::metrics::DEFAULT_PROMETHEUS_PORT;
 use drive_abci::rpc::core::DefaultCoreRPC;
 use std::path::PathBuf;
 use tracing::warn;
@@ -83,7 +84,7 @@ pub fn main() -> Result<(), String> {
             let _prometheus = if let Some(addr) = config.abci.prometheus_bind_address.clone() {
                 let addr = url::Url::parse(&addr).map_err(|e| e.to_string())?;
                 Some(drive_abci::metrics::Prometheus::new(addr).map_err(|e| e.to_string())?)
-            } else{
+            } else {
                 None
             };
 
@@ -105,12 +106,30 @@ fn dump_config(config: &PlatformConfig) -> Result<(), String> {
 }
 
 /// Check status of ABCI server.
-///
-/// Returns 0
-/// TODO: For now, it's just a placeholder.
-fn check_status(_config: &PlatformConfig) -> Result<(), String> {
-    println!("OK");
-    Ok(())
+fn check_status(config: &PlatformConfig) -> Result<(), String> {
+    if let Some(addr) = config.abci.prometheus_bind_address.clone() {
+        let url = url::Url::parse(&addr).expect("cannot parse ABCI_PROMETHEUS_BIND_ADDRESS");
+
+        let addr = format!(
+            "{}://{}:{}/metrics",
+            url.scheme(),
+            url.host()
+                .ok_or("ABCI_PROMETHEUS_BIND_ADDRESS must contain valid host".to_string())?,
+            url.port().unwrap_or(DEFAULT_PROMETHEUS_PORT)
+        );
+
+        let body: String = ureq::get(&addr)
+            .set("Content-type", "text/plain")
+            .call()
+            .map_err(|e| e.to_string())?
+            .into_string()
+            .map_err(|e| e.to_string())?;
+
+        println!("{}", body);
+        Ok(())
+    } else {
+        Err("ABCI_PROMETHEUS_BIND_ADDRESS not defined, cannot check status".to_string())
+    }
 }
 
 fn load_config(path: &Option<PathBuf>) -> PlatformConfig {

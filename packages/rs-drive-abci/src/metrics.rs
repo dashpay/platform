@@ -36,7 +36,7 @@ pub enum Error {
 /// # Examples
 ///
 /// ```
-/// use your_crate::Prometheus;
+/// use drive_abci::metrics::Prometheus;
 /// use url::Url;
 ///
 /// let listen_address = Url::parse("http://127.0.0.1:9090").unwrap();
@@ -56,8 +56,8 @@ impl Prometheus {
     ///
     /// # Examples
     ///
-    /// ```
-    /// use crate::Prometheus;
+    /// ```no_run
+    /// use drive_abci::metrics::Prometheus;
     /// use url::Url;
     ///
     /// let listen_address = Url::parse("http://127.0.0.1:9090").unwrap();
@@ -107,7 +107,7 @@ impl Prometheus {
 /// # Examples
 ///
 /// ```
-/// use crate::metrics::last_platform_height;
+/// use drive_abci::metrics::last_platform_height;
 ///
 /// let height = 42;
 /// last_platform_height(height);
@@ -135,6 +135,8 @@ pub fn last_platform_height(height: i64) {
 /// # Example
 ///
 /// ```
+/// use drive_abci::metrics::abci_request_duration;
+///
 /// let timer = abci_request_duration("check_tx");
 /// // ... perform some work ...
 /// drop(timer);
