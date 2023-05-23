@@ -52,7 +52,7 @@ impl Prometheus {
     /// # Arguments
     ///
     /// * `listen_address` - A `url::Url` representing the address the server should listen on.
-    ///   The URL scheme must be "tcp". Any other scheme will result in an `Error::InvalidListenAddress`.
+    ///   The URL scheme must be "http". Any other scheme will result in an `Error::InvalidListenAddress`.
     ///
     /// # Examples
     ///
@@ -60,7 +60,7 @@ impl Prometheus {
     /// use crate::Prometheus;
     /// use url::Url;
     ///
-    /// let listen_address = Url::parse("tcp://127.0.0.1:9090").unwrap();
+    /// let listen_address = Url::parse("http://127.0.0.1:9090").unwrap();
     /// let prometheus = Prometheus::new(listen_address).unwrap();
     /// ```
     ///
@@ -72,7 +72,7 @@ impl Prometheus {
     ///
     /// If the port number is not specified, it defaults to [DEFAULT_PROMETHEUS_PORT].
     pub fn new(listen_address: url::Url) -> Result<Self, Error> {
-        if listen_address.scheme() != "tcp" {
+        if listen_address.scheme() != "http" {
             return Err(Error::InvalidListenAddress(
                 listen_address.clone(),
                 format!("unsupported scheme {}", listen_address.scheme()),

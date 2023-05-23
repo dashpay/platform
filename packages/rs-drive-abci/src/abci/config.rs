@@ -26,8 +26,8 @@ pub struct AbciConfig {
     ///
     /// Optional.
     ///
-    /// /// Address should be an URL with scheme `tcp://`, for example:
-    /// - `tcp://127.0.0.1:29090`
+    /// /// Address should be an URL with scheme `http://`, for example:
+    /// - `http://127.0.0.1:29090`
     ///
     /// Port number defaults to [DEFAULT_PROMETHEUS_PORT].
     ///
