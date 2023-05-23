@@ -143,8 +143,8 @@ pub fn abci_last_platform_height(height: i64) {
 pub fn abci_request_duration(request_name: &str) -> HistogramTimer {
     lazy_static! {
         static ref HISTOGRAM: HistogramVec = register_histogram_vec!(
-            "abci_request_duration",
-            "Duration of ABCI requests",
+            "abci_request_duration_seconds",
+            "Duration of ABCI request processing",
             &["method"]
         )
         .expect("cannot register gauge last_platform_height");
