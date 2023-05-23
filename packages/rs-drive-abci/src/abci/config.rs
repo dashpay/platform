@@ -22,6 +22,19 @@ pub struct AbciConfig {
     #[serde(rename = "abci_bind_address")]
     pub bind_address: String,
 
+    /// Address to listen for Prometheus connection.
+    ///
+    /// Optional.
+    ///
+    /// /// Address should be an URL with scheme `tcp://`, for example:
+    /// - `tcp://127.0.0.1:29090`
+    ///
+    /// Port number defaults to [DEFAULT_PROMETHEUS_PORT].
+    ///
+    /// [DEFAULT_PROMETHEUS_PORT]: crate::metrics::DEFAULT_PROMETHEUS_PORT
+    #[serde(default, rename = "abci_prometheus_bind_address")]
+    pub prometheus_bind_address: Option<String>,
+
     /// Public keys used for system identity
     #[serde(flatten)]
     pub keys: Keys,

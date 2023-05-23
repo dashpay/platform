@@ -23,6 +23,7 @@ struct Cli {
     /// Path to the config (.env) file.
     #[arg(short, long, value_hint = clap::ValueHint::FilePath) ]
     config: Option<std::path::PathBuf>,
+
     /// Enable verbose logging. Use multiple times for even more logs.
     ///
     /// Repeat `v` multiple times to increase log verbosity:
@@ -78,6 +79,14 @@ pub fn main() -> Result<(), String> {
                 config.core.rpc.password.clone(),
             )
             .unwrap();
+
+            let _prometheus = if let Some(addr) = config.abci.prometheus_bind_address.clone() {
+                let addr = url::Url::parse(&addr).map_err(|e| e.to_string())?;
+                Some(drive_abci::metrics::Prometheus::new(addr).map_err(|e| e.to_string())?)
+            } else{
+                None
+            };
+
             drive_abci::abci::start(&config, core_rpc).unwrap();
             Ok(())
         }
