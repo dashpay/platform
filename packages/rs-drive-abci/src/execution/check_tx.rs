@@ -104,6 +104,9 @@ mod tests {
     use crate::platform::Platform;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
+    use dpp::consensus::basic::BasicError;
+    use dpp::consensus::state::state_error::StateError;
+    use dpp::consensus::ConsensusError;
     use dpp::dashcore::secp256k1::{Secp256k1, SecretKey};
     use dpp::dashcore::{signer, KeyPair, PrivateKey};
     use dpp::data_contracts::dpns_contract;
@@ -274,7 +277,7 @@ mod tests {
             .expect("expected to commit transaction");
 
         let validation_result = platform
-            .check_tx(identity_top_up.clone())
+            .check_tx(identity_top_up.as_slice())
             .expect("expected to check tx");
 
         assert!(matches!(
@@ -315,10 +318,8 @@ mod tests {
             .expect("expected to commit transaction");
 
         let validation_result = platform
-            .check_tx(identity_create.clone())
+            .check_tx(identity_create.as_slice())
             .expect("expected to check tx");
-
-        dbg!(&validation_result);
 
         assert!(matches!(
             validation_result.errors.first().expect("expected an error"),
