@@ -14,7 +14,7 @@ use super::messages::{RequiredIdentityPublicKeysSet, SystemIdentityPublicKeys};
 #[allow(dead_code)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AbciConfig {
-    /// Address to listen on
+    /// Address to listen for ABCI connections
     ///
     /// Address should be an URL with scheme `tcp://` or `unix://`, for example:
     /// - `tcp://127.0.0.1:1234`
