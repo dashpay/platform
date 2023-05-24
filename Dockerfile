@@ -153,6 +153,10 @@ FROM sources AS build-drive-abci
 
 RUN mkdir /artifacts
 
+RUN echo "inspect platform dir"
+RUN ls -lha /platform
+RUN ls -lha /platform/target
+
 RUN echo "bust cache 47"
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=/usr/local/cargo/registry/index \
     --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=/usr/local/cargo/registry/cache \
