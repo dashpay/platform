@@ -4,7 +4,7 @@
 use clap::{Parser, Subcommand};
 use drive_abci::config::{FromEnv, PlatformConfig};
 
-use drive_abci::metrics::DEFAULT_PROMETHEUS_PORT;
+use drive_abci::metrics::{Prometheus, DEFAULT_PROMETHEUS_PORT};
 use drive_abci::rpc::core::DefaultCoreRPC;
 use std::path::PathBuf;
 use tracing::warn;
@@ -80,19 +80,31 @@ pub fn main() -> Result<(), String> {
                 config.core.rpc.password.clone(),
             )
             .unwrap();
-
-            let _prometheus = if let Some(addr) = config.abci.prometheus_bind_address.clone() {
-                let addr = url::Url::parse(&addr).map_err(|e| e.to_string())?;
-                Some(drive_abci::metrics::Prometheus::new(addr).map_err(|e| e.to_string())?)
-            } else {
-                None
-            };
+            let _prometheus = start_prometheus(&config)?;
 
             drive_abci::abci::start(&config, core_rpc).unwrap();
             Ok(())
         }
         Commands::Config {} => dump_config(&config),
         Commands::Status {} => check_status(&config),
+    }
+}
+
+/// Start prometheus exporter if it's configured.
+fn start_prometheus(config: &PlatformConfig) -> Result<Option<Prometheus>, String> {
+    let prometheus_addr = config
+        .abci
+        .prometheus_bind_address
+        .clone()
+        .filter(|s| !s.is_empty());
+
+    if let Some(addr) = prometheus_addr {
+        let addr = url::Url::parse(&addr).map_err(|e| e.to_string())?;
+        Ok(Some(
+            drive_abci::metrics::Prometheus::new(addr).map_err(|e| e.to_string())?,
+        ))
+    } else {
+        Ok(None)
     }
 }
 
