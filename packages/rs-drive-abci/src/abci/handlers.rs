@@ -42,7 +42,9 @@ use crate::rpc::core::CoreRPCLike;
 use crate::state::PlatformState;
 use dashcore_rpc::dashcore::hashes::hex::ToHex;
 use dpp::errors::consensus::codes::ErrorWithCode;
+use dpp::platform_value::platform_value;
 use drive::fee::credits::SignedCredits;
+use serde_json::{json, Value};
 use tenderdash_abci::proto::abci::response_verify_vote_extension::VerifyStatus;
 use tenderdash_abci::proto::abci::tx_record::TxAction;
 use tenderdash_abci::proto::abci::{self as proto, ExtendVoteExtension, ResponseException};
@@ -58,7 +60,6 @@ use super::AbciError;
 
 use dpp::platform_value::string_encoding::{encode, Encoding};
 use serde_json::Map;
-use serde_json::Value;
 
 impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>
 where
@@ -519,17 +520,29 @@ where
 
         let validation_error = validation_result.errors.first();
 
-        let (code, serialized_error, info) = if let Some(validation_error) = validation_error {
+        let (code, info) = if let Some(validation_error) = validation_error {
+            let serialized_error = platform_value!(validation_error
+                .serialize()
+                .map_err(|e| ResponseException::from(Error::Protocol(e)))?);
+
+            let error_data = json!({
+                "message": "Drive check_tx error",
+                "data": {
+                    "serializedError": serialized_error
+                }
+            });
+
+            let mut error_data_buffer: Vec<u8> = Vec::new();
+            ciborium::ser::into_writer(&error_data, &mut error_data_buffer)
+                .map_err(|e| e.to_string())?;
+
             (
                 validation_error.code(),
-                validation_error
-                    .serialize()
-                    .map_err(|e| ResponseException::from(Error::Protocol(e)))?,
-                validation_error.to_string(),
+                encode(&error_data_buffer, Encoding::Base64),
             )
         } else {
             // If there are no execution errors the code will be 0
-            (0, vec![], "".to_string())
+            (0, "".to_string())
         };
 
         let gas_wanted = validation_result
@@ -538,7 +551,7 @@ where
             .unwrap_or_default();
         Ok(ResponseCheckTx {
             code,
-            data: serialized_error,
+            data: vec![],
             info,
             gas_wanted: gas_wanted as SignedCredits,
             codespace: "".to_string(),

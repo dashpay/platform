@@ -57,14 +57,14 @@ async function createGrpcErrorFromDriveResponse(code, info) {
     return new InternalGrpcError(new Error('Drive’s error code is empty'));
   }
 
+  const decodedInfo = info ? cbor.decode(Buffer.from(info, 'base64')) : { };
+
+  // eslint-disable-next-line prefer-destructuring
+  const message = decodedInfo.message;
+  const data = decodedInfo.data || {};
+
   // gRPC error codes
   if (code <= 16) {
-    const decodedInfo = info ? cbor.decode(Buffer.from(info, 'base64')) : { };
-
-    // eslint-disable-next-line prefer-destructuring
-    const message = decodedInfo.message;
-    const data = decodedInfo.data || {};
-
     const CommonErrorClass = COMMON_ERROR_CLASSES[code.toString()];
     if (CommonErrorClass) {
       return new CommonErrorClass(
@@ -101,12 +101,6 @@ async function createGrpcErrorFromDriveResponse(code, info) {
 
   // Undefined Drive and DAPI errors
   if (code >= 17 && code < 1000) {
-    const decodedInfo = info ? cbor.decode(Buffer.from(info, 'base64')) : { };
-
-    // eslint-disable-next-line prefer-destructuring
-    const message = decodedInfo.message;
-    const data = decodedInfo.data || {};
-
     return new GrpcError(
       GrpcErrorCodes.UNKNOWN,
       message,
@@ -116,14 +110,13 @@ async function createGrpcErrorFromDriveResponse(code, info) {
 
   // DPP errors
   if (code >= 1000 && code < 5000) {
-    const serializedError = Buffer.from(info, 'hex');
-    const consensusError = deserializeConsensusError(serializedError || []);
+    const consensusError = deserializeConsensusError(data.serializedError || []);
 
     // Basic
     if (code >= 1000 && code < 2000) {
       return new InvalidArgumentGrpcError(
         consensusError.message,
-        { code, ...createRawMetadata({ serializedError }) },
+        { code, ...createRawMetadata(data) },
       );
     }
 
@@ -132,7 +125,7 @@ async function createGrpcErrorFromDriveResponse(code, info) {
       return new GrpcError(
         GrpcErrorCodes.UNAUTHENTICATED,
         consensusError.message,
-        { code, ...createRawMetadata({ serializedError }) },
+        { code, ...createRawMetadata(data) },
       );
     }
 
@@ -140,7 +133,7 @@ async function createGrpcErrorFromDriveResponse(code, info) {
     if (code >= 3000 && code < 4000) {
       return new FailedPreconditionGrpcError(
         consensusError.message,
-        { code, ...createRawMetadata({ serializedError }) },
+        { code, ...createRawMetadata(data) },
       );
     }
 
@@ -148,7 +141,7 @@ async function createGrpcErrorFromDriveResponse(code, info) {
     if (code >= 4000 && code < 5000) {
       return new InvalidArgumentGrpcError(
         consensusError.message,
-        { code, ...createRawMetadata({ serializedError }) },
+        { code, ...createRawMetadata(data) },
       );
     }
   }
