@@ -110,6 +110,8 @@ mod system;
 mod test_utils;
 
 #[cfg(feature = "full")]
+mod asset_lock;
+#[cfg(feature = "full")]
 mod prove;
 #[cfg(feature = "full")]
 mod system_contracts_cache;
