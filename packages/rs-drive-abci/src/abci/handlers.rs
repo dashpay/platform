@@ -491,8 +491,6 @@ where
             ),
         ))?;
 
-        let height = request.height;
-
         let block_finalization_outcome = self
             .platform
             .finalize_block_proposal(request.try_into()?, transaction)?;
@@ -514,8 +512,6 @@ where
         drop(transaction_guard);
 
         self.commit_transaction()?;
-
-        crate::metrics::abci_last_platform_height(height as u64);
 
         Ok(ResponseFinalizeBlock {
             events: vec![],

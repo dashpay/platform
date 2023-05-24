@@ -8,10 +8,9 @@ use std::{
     time::Instant,
 };
 
-use lazy_static::lazy_static;
 use metrics::{
-    counter, describe_counter, describe_histogram, histogram, register_histogram, Histogram,
-    HistogramFn, Key, Label,
+    absolute_counter,  describe_counter,  describe_histogram, 
+    histogram,Histogram, HistogramFn,  Label,
 };
 use metrics_exporter_prometheus::PrometheusBuilder;
 
@@ -147,6 +146,8 @@ impl Prometheus {
         let builder = PrometheusBuilder::new().with_http_listener(*saddr);
         builder.install()?;
 
+        Self::register_metrics();
+
         Ok(Self {})
     }
 
@@ -155,17 +156,28 @@ impl Prometheus {
 
         START.call_once(|| {
             describe_counter!(
-                "abci_last_finalized_height",
+                COUNTER_LAST_HEIGHT,
                 "Last finalized height of platform chain (eg. Tenderdash)"
             );
-            describe_histogram!(
-                "abci_request_duration_seconds",
+
+            describe_counter!(
+                COUNTER_LAST_BLOCK_TIME,
                 metrics::Unit::Seconds,
-                "Processing time of ABCI requests"
+                "Time of last finalized block, seconds since epoch"
+            );
+
+            describe_histogram!(
+                HISTOGRAM_FINALIZED_ROUND,
+                "Rounds at which blocks are finalized"
             );
         });
     }
 }
+
+const COUNTER_LAST_BLOCK_TIME: &str = "abci_last_block_time_seconds";
+const COUNTER_LAST_HEIGHT: &str = "abci_last_finalized_height";
+const HISTOGRAM_FINALIZED_ROUND: &str = "abci_finalized_round";
+
 /// Sets the last finalized height metric to the provided height value.
 ///
 /// # Examples
@@ -177,7 +189,17 @@ impl Prometheus {
 /// abci_last_platform_height(height);
 /// ```
 pub fn abci_last_platform_height(height: u64) {
-    counter!("abci_last_finalized_height", height);
+    absolute_counter!(COUNTER_LAST_HEIGHT, height);
+}
+
+/// Add round of last finalized round to [HISTOGRAM_FINALIZED_ROUND] metric.
+pub fn abci_last_finalized_round(round: u32) {
+    histogram!(HISTOGRAM_FINALIZED_ROUND, round as f64);
+}
+
+/// Set time of last block into [COUNTER_LAST_BLOCK_TIME].
+pub fn abci_last_block_time(time: u64) {
+    absolute_counter!(COUNTER_LAST_BLOCK_TIME, time);
 }
 
 /// Returns a `HistogramTimer` for measuring the duration of ABCI requests.

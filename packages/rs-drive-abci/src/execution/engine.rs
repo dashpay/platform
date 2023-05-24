@@ -570,6 +570,11 @@ where
 
         drive_cache.cached_contracts.clear_block_cache();
 
+        // Gather some metrics
+        crate::metrics::abci_last_block_time(block_header.time.seconds as u64);
+        crate::metrics::abci_last_platform_height(height);
+        crate::metrics::abci_last_finalized_round(round);
+
         Ok(validation_result.into())
     }
 }
