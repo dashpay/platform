@@ -9,8 +9,8 @@ use std::{
 };
 
 use metrics::{
-    absolute_counter,  describe_counter,  describe_histogram, 
-    histogram,Histogram, HistogramFn,  Label,
+    absolute_counter, describe_counter, describe_histogram, histogram, Histogram, HistogramFn,
+    Label,
 };
 use metrics_exporter_prometheus::PrometheusBuilder;
 
@@ -170,6 +170,11 @@ impl Prometheus {
                 HISTOGRAM_FINALIZED_ROUND,
                 "Rounds at which blocks are finalized"
             );
+
+            describe_histogram!(
+                HISTOGRAM_ABCI_REQUEST_DURATION,
+                "Duration of ABCI request execution inside Drive per endpoint, in seconds"
+            )
         });
     }
 }
@@ -177,6 +182,8 @@ impl Prometheus {
 const COUNTER_LAST_BLOCK_TIME: &str = "abci_last_block_time_seconds";
 const COUNTER_LAST_HEIGHT: &str = "abci_last_finalized_height";
 const HISTOGRAM_FINALIZED_ROUND: &str = "abci_finalized_round";
+const HISTOGRAM_ABCI_REQUEST_DURATION: &str = "abci_request_duration_seconds";
+const LABEL_ENDPOINT: &str = "endpoint";
 
 /// Sets the last finalized height metric to the provided height value.
 ///
@@ -225,8 +232,8 @@ pub fn abci_last_block_time(time: u64) {
 ///
 /// A `HistogramTimer` instance for the specified `request_name`.
 pub fn abci_request_duration(endpoint: &str) -> HistogramTiming {
-    let labels = vec![Label::new("endpoint", endpoint.to_string())];
+    let labels = vec![Label::new(LABEL_ENDPOINT, endpoint.to_string())];
     HistogramTiming::new(
-        metrics::Key::from_name("abci_request_duration_seconds").with_extra_labels(labels),
+        metrics::Key::from_name(HISTOGRAM_ABCI_REQUEST_DURATION).with_extra_labels(labels),
     )
 }
