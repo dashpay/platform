@@ -127,7 +127,6 @@ RUN --mount=type=cache,sharing=locked,id=cargo_registry_index,target=/usr/local/
     find /usr/local/cargo/git/ -exec stat -c '%n %Y' {} + && \
     find /platform/target/ -exec stat -c '%n %Y' {} + && \
     CARGO_TARGET_DIR=/platform/target \
-    CARGO_LOG=cargo::core::compiler::fingerprint=trace \
     cargo install \
       --profile "$CARGO_BUILD_PROFILE" \
       wasm-bindgen-cli@0.2.84
@@ -164,7 +163,6 @@ RUN --mount=type=cache,sharing=locked,id=cargo_registry_index,target=/usr/local/
     find /usr/local/cargo/registry/ -exec stat -c '%n %Y' {} + && \
     find /usr/local/cargo/git/ -exec stat -c '%n %Y' {} + && \
     find /platform/target/ -exec stat -c '%n %Y' {} + && \
-    CARGO_LOG=cargo::core::compiler::fingerprint=trace \
     cargo build \
       --profile "$CARGO_BUILD_PROFILE" \
       --package drive-abci \
