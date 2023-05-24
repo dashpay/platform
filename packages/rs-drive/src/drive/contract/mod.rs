@@ -139,6 +139,24 @@ pub struct ContractFetchInfo {
     pub fee: Option<FeeResult>,
 }
 
+#[cfg(any(feature = "full", feature = "verify"))]
+/// Contract history and fetch information
+#[derive(Default, PartialEq, Debug, Clone)]
+pub struct HistoricalContractFetchInfo {
+    // TODO: figure out how history should look like
+    pub history: Vec<Contract>,
+    /// The contract
+    pub contract: Contract,
+    /// The contract's potential storage flags
+    pub storage_flags: Option<StorageFlags>,
+    /// These are the operations that are used to fetch a contract
+    /// This is only used on epoch change
+    pub(crate) cost: OperationCost,
+    /// The fee is updated every epoch based on operation costs
+    /// Except if protocol version has changed in which case all the cache is cleared
+    pub fee: Option<FeeResult>,
+}
+
 #[cfg(feature = "full")]
 impl Drive {
     /// Adds a contract to storage.
@@ -1151,6 +1169,10 @@ impl Drive {
             ) => Ok(None).wrap_with_cost(cost),
             Err(e) => Err(Error::GroveDB(e)).wrap_with_cost(cost),
         }
+    }
+
+    pub fn fetch_contract_with_history() {
+
     }
 
     /// Applies a contract and returns the fee for applying.

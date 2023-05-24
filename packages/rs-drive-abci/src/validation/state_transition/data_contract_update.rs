@@ -254,6 +254,19 @@ mod tests {
         platform: TempPlatform<T>,
     }
 
+    pub struct PlatformTestHelper {
+        platform: TempPlatform<MockCoreRPCLike>
+    }
+
+    impl PlatformTestHelper {
+        pub fn apply_data_contract(&self, data_contract: &DataContract) {
+            self.platform
+                .drive
+                .apply_contract(data_contract, Default::default(), true, None, None)
+                .expect("to apply contract");
+        }
+    }
+
     fn apply_contract(platform: &TempPlatform<MockCoreRPCLike>, data_contract: &DataContract) {
         platform
             .drive
@@ -360,6 +373,83 @@ mod tests {
 
             assert!(!result.is_valid());
             assert_state_consensus_errors!(result, DataContractIsReadonlyError, 1);
+        }
+
+        #[test]
+        pub fn should_keep_history_if_contract_config_keeps_history_is_true() {
+            let TestData {
+                raw_state_transition,
+                mut data_contract,
+                mut platform,
+            } = setup_test();
+
+            data_contract.config.keeps_history = true;
+            data_contract.config.readonly = false;
+
+            // TODO: check that keep_history actually works
+            apply_contract(&platform, &data_contract);
+
+            let updated_document = json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string"
+                    },
+                    "newProp": {
+                        "type": "integer",
+                        "minimum": 0
+                    }
+                },
+                "required": [
+                "$createdAt"
+                ],
+                "additionalProperties": false
+            });
+
+            data_contract.increment_version();
+            data_contract
+                .set_document_schema("niceDocument".into(), updated_document)
+                .expect("to be able to set document schema");
+
+            // TODO: add a data contract stop transition
+            let state_transition = DataContractUpdateTransition {
+                protocol_version: LATEST_VERSION,
+                data_contract: data_contract.clone(),
+                signature: BinaryData::new(vec![0; 65]),
+                signature_public_key_id: 0,
+                transition_type: StateTransitionType::DataContractUpdate,
+            };
+
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &platform.state.read().unwrap(),
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
+            let result = state_transition
+                .validate_state(&platform_ref, None)
+                .expect("state transition to be validated");
+
+            assert!(result.is_valid());
+
+            // This should store update and history
+            apply_contract(&platform, &data_contract);
+
+            // TODO: this shouldn't be working, investigate one day
+            let res = platform.drive.fetch_contract(
+                *data_contract.id.as_bytes(),
+                None,
+                None,
+                None
+            );
+
+            // TODO: what to actually check here?
+            let fetch_result = res.value
+                .expect("to get contract")
+                .expect("to get contract");
+
+            println!("{:?}", fetch_result.contract);
         }
     }
 }
