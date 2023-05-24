@@ -10,7 +10,7 @@ const createDIContainer = require('../../src/createDIContainer');
 const areServicesRunningFactory = require('../../src/test/areServicesRunningFactory');
 const { SERVICES } = require('../../src/test/constants/services');
 
-describe('Local HP Masternode', function main() {
+describe('Testnet Masternode', function main() {
   this.timeout(60 * 60 * 1000); // 60 minutes
 
   let container;
@@ -24,7 +24,7 @@ describe('Local HP Masternode', function main() {
   let stopNodeTask;
   let restartNodeTask;
 
-  const groupName = 'local';
+  const groupName = 'testnet';
 
   before(async () => {
     container = await createDIContainer();

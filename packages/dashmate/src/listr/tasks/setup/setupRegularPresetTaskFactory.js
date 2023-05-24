@@ -54,31 +54,33 @@ function setupRegularPresetTaskFactory(
       {
         title: 'Node type',
         task: async (ctx, task) => {
-          const nodeTypeName = await task.prompt([
-            {
-              type: 'select',
-              // Keep this order, because each item references the text in the previous item
-              header: `  The Dash network consists of several different node types:
-    Fullnode             - Host the full Dash blockchain (no collateral)
-    Masternode           - Fullnode features, plus Core services such as ChainLocks 
-                           and InstantSend (1000 DASH collateral)
-    Evolution fullnode   - Fullnode features, plus host a full copy of the Platform 
-                           blockchain (no collateral)
-    Evolution masternode - Masternode features, plus Platform services such as DAPI
-                           and Drive (4000 DASH collateral)\n`,
-              message: 'Select node type',
-              choices: [
-                { name: NODE_TYPE_NAMES.FULLNODE },
-                { name: NODE_TYPE_NAMES.MASTERNODE, hint: '1000 DASH collateral' },
-                { name: NODE_TYPE_NAMES.HP_FULLNODE },
-                { name: NODE_TYPE_NAMES.HP_MASTERNODE, hint: '4000 DASH collateral' },
-              ],
-              initial: NODE_TYPE_NAMES.MASTERNODE,
-            },
-          ]);
+          if (!ctx.nodeType) {
+            const nodeTypeName = await task.prompt([
+              {
+                type: 'select',
+                // Keep this order, because each item references the text in the previous item
+                header: `  The Dash network consists of several different node types:
+      Fullnode             - Host the full Dash blockchain (no collateral)
+      Masternode           - Fullnode features, plus Core services such as ChainLocks 
+                            and InstantSend (1000 DASH collateral)
+      Evolution fullnode   - Fullnode features, plus host a full copy of the Platform 
+                            blockchain (no collateral)
+      Evolution masternode - Masternode features, plus Platform services such as DAPI
+                            and Drive (4000 DASH collateral)\n`,
+                message: 'Select node type',
+                choices: [
+                  { name: NODE_TYPE_NAMES.FULLNODE },
+                  { name: NODE_TYPE_NAMES.MASTERNODE, hint: '1000 DASH collateral' },
+                  { name: NODE_TYPE_NAMES.HP_FULLNODE },
+                  { name: NODE_TYPE_NAMES.HP_MASTERNODE, hint: '4000 DASH collateral' },
+                ],
+                initial: NODE_TYPE_NAMES.MASTERNODE,
+              },
+            ]);
 
-          ctx.nodeType = getNodeTypeByName(nodeTypeName);
-          ctx.isHP = isNodeTypeNameHighPerformance(nodeTypeName);
+            ctx.nodeType = getNodeTypeByName(nodeTypeName);
+            ctx.isHP = isNodeTypeNameHighPerformance(nodeTypeName);
+          }
 
           ctx.config = new Config(ctx.preset, systemConfigs[ctx.preset]);
 
@@ -89,7 +91,7 @@ function setupRegularPresetTaskFactory(
           ctx.config.set('core.rpc.password', generateRandomString(12));
 
           // eslint-disable-next-line no-param-reassign
-          task.output = nodeTypeName;
+          task.output = ctx.nodeType ? ctx.nodeType : nodeTypeName;
         },
         options: {
           persistentOutput: true,
