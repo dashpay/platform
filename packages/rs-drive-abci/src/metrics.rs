@@ -1,17 +1,10 @@
 //! # Metrics Module
 //!
 //! This module provides a singleton implementation for managing metrics.
-//! It exposes an `instance()` function to get the current instance of the `Metrics` struct.
 
-use std::{
-    sync::{Arc, Once},
-    time::Instant,
-};
+use std::{sync::Once, time::Instant};
 
-use metrics::{
-    absolute_counter, describe_counter, describe_histogram, histogram, Histogram, HistogramFn,
-    Label,
-};
+use metrics::{absolute_counter, describe_counter, describe_histogram, histogram, Label};
 use metrics_exporter_prometheus::PrometheusBuilder;
 
 /// Default Prometheus port (29090)
@@ -75,15 +68,8 @@ impl Drop for HistogramTiming {
         let stop = self.start.elapsed();
         let key = self.key.name().to_string();
 
-        let labels: Vec<Label> = self.key.labels().map(|a| a.clone()).collect();
+        let labels: Vec<Label> = self.key.labels().cloned().collect();
         histogram!(key, stop.as_secs_f64(), labels);
-    }
-}
-
-struct HistogramWrapper(Arc<Histogram>);
-impl HistogramFn for HistogramWrapper {
-    fn record(&self, value: f64) {
-        self.0.record(value)
     }
 }
 
@@ -96,7 +82,7 @@ impl HistogramFn for HistogramWrapper {
 /// use drive_abci::metrics::Prometheus;
 /// use url::Url;
 ///
-/// let listen_address = Url::parse("http://127.0.0.1:9090").unwrap();
+/// let listen_address = Url::parse("http://127.0.0.1:57090").unwrap();
 /// let prometheus = Prometheus::new(listen_address).unwrap();
 /// ```
 pub struct Prometheus {}
@@ -106,16 +92,16 @@ impl Prometheus {
     ///
     /// # Arguments
     ///
-    /// * `listen_address` - A `url::Url` representing the address the server should listen on.
+    /// * `listen_address` - A `[url::Url]` representing the address the server should listen on.
     ///   The URL scheme must be "http". Any other scheme will result in an `Error::InvalidListenAddress`.
     ///
     /// # Examples
     ///
-    /// ```no_run
+    /// ```
     /// use drive_abci::metrics::Prometheus;
     /// use url::Url;
     ///
-    /// let listen_address = Url::parse("http://127.0.0.1:9090").unwrap();
+    /// let listen_address = Url::parse("http://127.0.0.1:43238").unwrap();
     /// let prometheus = Prometheus::new(listen_address).unwrap();
     /// ```
     ///
@@ -209,28 +195,24 @@ pub fn abci_last_block_time(time: u64) {
     absolute_counter!(COUNTER_LAST_BLOCK_TIME, time);
 }
 
-/// Returns a `HistogramTimer` for measuring the duration of ABCI requests.
+/// Returns a `[HistogramTiming]` instance for measuring ABCI request duration.
 ///
-/// This function creates and registers a `HistogramVec` with the given `request_name`.
-/// The `HistogramVec` is used to track the duration of ABCI requests in seconds.
+/// Duration measurement starts when this function is called, and stops when returned value
+/// goes out of scope.
 ///
 /// # Arguments
 ///
-/// * `request_name` - A string slice that holds the name of the ABCI request method.
+/// * `endpoint` - A string slice representing the ABCI endpoint name.
 ///
-/// # Example
+/// # Examples
 ///
 /// ```
 /// use drive_abci::metrics::abci_request_duration;
-///
-/// let timer = abci_request_duration("check_tx");
-/// // ... perform some work ...
-/// drop(timer);
+/// let endpoint = "check_tx";
+/// let timing = abci_request_duration(endpoint);
+/// // Your code here
+/// drop(timing); // stop measurement and report the metric
 /// ```
-///
-/// # Returns
-///
-/// A `HistogramTimer` instance for the specified `request_name`.
 pub fn abci_request_duration(endpoint: &str) -> HistogramTiming {
     let labels = vec![Label::new(LABEL_ENDPOINT, endpoint.to_string())];
     HistogramTiming::new(
