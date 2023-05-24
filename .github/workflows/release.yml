@@ -230,6 +230,14 @@ jobs:
       - name: inject go-build-cache into docker
         uses: dcginfra/buildkit-cache-dance/inject@main
 
+      - name: Inspect cache
+        uses: docker/build-push-action@v3
+        with:
+          context: .
+          builder: ${{ steps.buildx.outputs.name }}
+          file: ./Dockerfile2
+          push: false
+
       - name: Build and push Docker image for Drive
         uses: docker/build-push-action@v3
         with:

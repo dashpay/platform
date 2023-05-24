@@ -1,0 +1,8 @@
+# syntax = docker/dockerfile:1.5
+
+FROM rust:alpine${ALPINE_VERSION}
+
+RUN --mount=type=cache,sharing=shared,id=deps_target,target=/deps \
+    --mount=type=cache,sharing=shared,id=drive_target,target=/drive \
+    tree -L 3 /deps && \
+    tree -L 3 /drive
