@@ -56,6 +56,10 @@ use tenderdash_abci::proto::types::VoteExtensionType;
 use super::withdrawal::WithdrawalTxs;
 use super::AbciError;
 
+use dpp::platform_value::string_encoding::{encode, Encoding};
+use serde_json::Map;
+use serde_json::Value;
+
 impl<'a, C> tenderdash_abci::Application for AbciApplication<'a, C>
 where
     C: CoreRPCLike,
@@ -548,32 +552,35 @@ where
 
         let result = self.platform.query(path.as_str(), data.as_slice())?;
 
-        let (code, data, log) = if result.is_valid() {
-            (
-                0,
-                result.data.unwrap_or_default(),
-                "query success".to_string(),
-            )
+        let (code, data, info) = if result.is_valid() {
+            (0, result.data.unwrap_or_default(), "success".to_string())
         } else {
-            let mut buffer: Vec<u8> = Vec::new();
-            ciborium::ser::into_writer(
-                &result
-                    .errors
-                    .iter()
-                    .map(|e| e.to_string())
-                    .collect::<Vec<_>>(),
-                &mut buffer,
-            )
-            .map_err(|e| e.to_string())?;
-            (1, buffer, format!("{:?}", result.errors))
+            let error = result.errors.first();
+
+            let error_message = if let Some(error) = error {
+                error.to_string()
+            } else {
+                "Unknown Drive error".to_string()
+            };
+
+            let mut error_data = Map::new();
+            error_data.insert("message".to_string(), Value::String(error_message));
+
+            let mut error_data_buffer: Vec<u8> = Vec::new();
+            ciborium::ser::into_writer(&error_data, &mut error_data_buffer)
+                .map_err(|e| e.to_string())?;
+            // TODO(rs-drive-abci): restore different error codes?
+            //   For now return error code 2, because it is recognized by DAPI as UNKNOWN error
+            //   and error code 1 corresponds to CANCELED grpc request which is not suitable
+            (2, vec![], encode(&error_data_buffer, Encoding::Base64))
         };
 
         let response = ResponseQuery {
             //todo: right now just put GRPC error codes,
             //  later we will use own error codes
             code,
-            log,
-            info: "".to_string(),
+            log: "".to_string(),
+            info,
             index: 0,
             key: vec![],
             value: data,
