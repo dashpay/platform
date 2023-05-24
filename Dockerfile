@@ -155,7 +155,9 @@ RUN mkdir /artifacts
 
 RUN echo "inspect platform dir"
 RUN ls -lha /platform
-RUN ls -lha /platform/target
+RUN ls -lha /platform/target || true
+RUN --mount=type=cache,sharing=shared,id=drive_target,target=/platform/target \
+    ls -lha /platform/target
 
 RUN echo "bust cache 47"
 RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=/usr/local/cargo/registry/index \
