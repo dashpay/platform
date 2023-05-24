@@ -165,7 +165,7 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=/usr/local/
     --mount=type=cache,sharing=shared,id=cargo_git,target=/usr/local/cargo/git/db \
     --mount=type=cache,sharing=shared,id=drive_target,target=/platform/target \
     tree -L 3 /usr/local/cargo && \
-    tree -L 4 /platform && \
+    tree -L 4 /platform/target/ && \
     find /platform/target/ -exec stat -c '%n %Y' {} + && \
     cargo build \
       --profile "$CARGO_BUILD_PROFILE" \
