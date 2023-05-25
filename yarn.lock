@@ -1823,6 +1823,7 @@ __metadata:
     conventional-changelog-dash: "github:dashevo/conventional-changelog-dash"
     node-gyp: ^9.3.1
     semver: ^7.3.2
+    socket.io-parser: ^4.2.3
     tempfile: ^3.0.0
     ultra-runner: ^3.10.5
   languageName: unknown
@@ -13346,6 +13347,16 @@ fsevents@~2.3.2:
   version: 2.4.0
   resolution: "socket.io-adapter@npm:2.4.0"
   checksum: a84639946dce13547b95f6e09fe167cdcd5d80941afc2e46790cc23384e0fd3c901e690ecc9bdd600939ce6292261ee15094a0b486f797ed621cfc8783d87a0c
+  languageName: node
+  linkType: hard
+
+"socket.io-parser@npm:^4.2.3":
+  version: 4.2.3
+  resolution: "socket.io-parser@npm:4.2.3"
+  dependencies:
+    "@socket.io/component-emitter": ~3.1.0
+    debug: ~4.3.1
+  checksum: f14030d09ccb82fa32ee68abe7ba586b8b991b16584194eb3c9e5dba8e80829f39c3b39b53ba4efb6a73e16beeaef8478020650a0c1352e0b833aa1da9af4682
   languageName: node
   linkType: hard
 
