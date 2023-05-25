@@ -66,7 +66,7 @@ impl StateTransitionValidation for IdentityUpdateTransition {
         let validation_result =
             validate_state_transition_identity_signature(drive, self, true, transaction)?;
 
-        if !result.is_valid() {
+        if !validation_result.is_valid() {
             result.merge(validation_result);
             return Ok(result);
         }

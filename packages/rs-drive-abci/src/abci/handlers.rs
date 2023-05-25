@@ -528,7 +528,7 @@ where
         let _timer = crate::metrics::abci_request_duration("check_tx");
 
         let RequestCheckTx { tx, .. } = request;
-        let validation_result = self.platform.check_tx(tx)?;
+        let validation_result = self.platform.check_tx(tx.as_slice())?;
 
         let validation_error = validation_result.errors.first();
 
